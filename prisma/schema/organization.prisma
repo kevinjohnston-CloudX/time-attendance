@@ -1,0 +1,74 @@
+model Site {
+  id        String   @id @default(cuid())
+  name      String
+  timezone  String   @default("America/New_York")
+  address   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  departments Department[]
+  employees   Employee[]
+
+  @@map("sites")
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  name      String
+  siteId    String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  site      Site       @relation(fields: [siteId], references: [id])
+  employees Employee[]
+
+  @@map("departments")
+}
+
+model Employee {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  employeeCode String   @unique
+  adpWorkerId  String?  @unique  /// ADP Workforce Now worker ID for sync
+  role         Role     @default(EMPLOYEE)
+  supervisorId String?
+  siteId       String
+  departmentId String
+  ruleSetId    String
+  isActive     Boolean  @default(true)
+  hireDate     DateTime
+  terminatedAt DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  supervisor   Employee?    @relation("EmployeeSupervisor", fields: [supervisorId], references: [id])
+  subordinates Employee[]   @relation("EmployeeSupervisor")
+  site         Site         @relation(fields: [siteId], references: [id])
+  department   Department   @relation(fields: [departmentId], references: [id])
+  ruleSet      RuleSet      @relation(fields: [ruleSetId], references: [id])
+  punches      Punch[]
+  timesheets   Timesheet[]
+  leaveBalances LeaveBalance[]
+  leaveRequests LeaveRequest[]
+  documents    Document[]
+  auditLogs    AuditLog[]
+
+  @@map("employees")
+}
+
+model Document {
+  id          String   @id @default(cuid())
+  employeeId  String
+  title       String
+  fileUrl     String
+  fileType    String
+  uploadedAt  DateTime @default(now())
+  uploadedBy  String
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("documents")
+}

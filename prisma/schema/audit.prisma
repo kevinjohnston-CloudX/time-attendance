@@ -1,0 +1,19 @@
+/// Immutable audit trail — append-only, never UPDATE or DELETE.
+model AuditLog {
+  id         String          @id @default(cuid())
+  actorId    String?         // employeeId, null for system actions
+  action     String          // e.g. "PUNCH_RECORDED", "TIMESHEET_SUBMITTED"
+  entityType AuditEntityType
+  entityId   String
+  changes    Json?           // { before: {...}, after: {...} }
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime        @default(now())
+
+  actor Employee? @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

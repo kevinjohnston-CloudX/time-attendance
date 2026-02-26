@@ -1,0 +1,33 @@
+model RuleSet {
+  id   String @id @default(cuid())
+  name String @unique
+
+  // Overtime thresholds
+  dailyOtMinutes      Int @default(480)  // 8 hours
+  dailyDtMinutes      Int @default(720)  // 12 hours
+  weeklyOtMinutes     Int @default(2400) // 40 hours
+  consecutiveDayOtDay Int @default(7)    // 7th consecutive day triggers OT
+
+  // Punch rounding (minutes, 0 = no rounding)
+  punchRoundingMinutes Int @default(0)
+
+  // Meal rules
+  mealBreakMinutes        Int     @default(30)  // unpaid meal duration
+  mealBreakAfterMinutes   Int     @default(300) // trigger meal after 5h work
+  autoDeductMeal          Boolean @default(false)
+
+  // Short break rules (paid)
+  shortBreakMinutes       Int @default(15)
+  shortBreaksPerDay       Int @default(2)
+
+  // Exception thresholds
+  longShiftMinutes        Int @default(720) // flag if shift > 12h
+
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employees Employee[]
+
+  @@map("rule_sets")
+}

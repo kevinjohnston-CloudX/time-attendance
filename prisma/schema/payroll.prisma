@@ -1,0 +1,31 @@
+model OvertimeBucket {
+  id             String    @id @default(cuid())
+  timesheetId    String
+  bucket         PayBucket
+  totalMinutes   Int       @default(0)
+  updatedAt      DateTime  @updatedAt
+
+  timesheet Timesheet @relation(fields: [timesheetId], references: [id])
+
+  @@unique([timesheetId, bucket])
+  @@map("overtime_buckets")
+}
+
+model PayrollRun {
+  id           String          @id @default(cuid())
+  payPeriodId  String          @unique
+  status       PayPeriodStatus @default(OPEN)
+  exportedAt   DateTime?
+  exportedById String?
+  adpResponse  Json?
+  pushedCount  Int             @default(0)
+  skippedCount Int             @default(0)
+  errorCount   Int             @default(0)
+  notes        String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  payPeriod PayPeriod @relation(fields: [payPeriodId], references: [id])
+
+  @@map("payroll_runs")
+}

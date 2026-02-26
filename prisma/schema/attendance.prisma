@@ -1,0 +1,107 @@
+model PayPeriod {
+  id        String          @id @default(cuid())
+  startDate DateTime
+  endDate   DateTime
+  status    PayPeriodStatus @default(OPEN)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  timesheets  Timesheet[]
+  payrollRun  PayrollRun?
+
+  @@unique([startDate, endDate])
+  @@map("pay_periods")
+}
+
+model Timesheet {
+  id           String          @id @default(cuid())
+  employeeId   String
+  payPeriodId  String
+  status       TimesheetStatus @default(OPEN)
+  submittedAt  DateTime?
+  supApprovedAt    DateTime?
+  supApprovedById  String?
+  payrollApprovedAt   DateTime?
+  payrollApprovedById String?
+  lockedAt     DateTime?
+  rejectedAt   DateTime?
+  rejectedById String?
+  rejectionNote String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  employee   Employee   @relation(fields: [employeeId], references: [id])
+  payPeriod  PayPeriod  @relation(fields: [payPeriodId], references: [id])
+  punches         Punch[]
+  segments        WorkSegment[]
+  exceptions      Exception[]
+  overtimeBuckets OvertimeBucket[]
+
+  @@unique([employeeId, payPeriodId])
+  @@map("timesheets")
+}
+
+/// Immutable. Never UPDATE or DELETE. Corrections create linked records.
+model Punch {
+  id           String      @id @default(cuid())
+  employeeId   String
+  timesheetId  String
+  punchType    PunchType
+  punchTime    DateTime
+  roundedTime  DateTime
+  source       PunchSource @default(WEB)
+  stateBefore  PunchState
+  stateAfter   PunchState
+  isApproved   Boolean     @default(true)
+  approvedById String?
+  approvedAt   DateTime?
+  note         String?
+
+  /// ID of the punch this record corrects (null if original)
+  correctsId    String? @unique
+  /// ID of the correction that supersedes this record (null if current)
+  correctedById String?
+
+  createdAt DateTime @default(now())
+
+  employee    Employee    @relation(fields: [employeeId], references: [id])
+  timesheet   Timesheet   @relation(fields: [timesheetId], references: [id])
+  corrects    Punch?      @relation("PunchCorrection", fields: [correctsId], references: [id])
+  correctedBy Punch?      @relation("PunchCorrection")
+
+  @@map("punches")
+}
+
+model WorkSegment {
+  id              String      @id @default(cuid())
+  timesheetId     String
+  segmentType     SegmentType
+  startTime       DateTime
+  endTime         DateTime
+  durationMinutes Int
+  segmentDate     DateTime    @db.Date
+  isPaid          Boolean
+  payBucket       PayBucket
+  isSplit         Boolean     @default(false)
+  createdAt       DateTime    @default(now())
+
+  timesheet Timesheet @relation(fields: [timesheetId], references: [id])
+
+  @@map("work_segments")
+}
+
+model Exception {
+  id            String        @id @default(cuid())
+  timesheetId   String
+  exceptionType ExceptionType
+  description   String
+  occurredAt    DateTime
+  resolvedAt    DateTime?
+  resolvedById  String?
+  resolution    String?
+  createdAt     DateTime      @default(now())
+
+  timesheet Timesheet @relation(fields: [timesheetId], references: [id])
+
+  @@map("exceptions")
+}

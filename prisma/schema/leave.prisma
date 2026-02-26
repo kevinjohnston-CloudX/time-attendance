@@ -1,0 +1,82 @@
+model LeaveType {
+  id                  String        @id @default(cuid())
+  name                String
+  category            LeaveCategory
+  accrualRateMinutes  Int           @default(0) // minutes accrued per pay period
+  maxBalanceMinutes   Int?          // null = no cap
+  carryOverMinutes    Int           @default(0)
+  requiresApproval    Boolean       @default(true)
+  isPaid              Boolean       @default(true)
+  isActive            Boolean       @default(true)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  balances     LeaveBalance[]
+  requests     LeaveRequest[]
+  accrualLedger LeaveAccrualLedger[]
+
+  @@map("leave_types")
+}
+
+model LeaveBalance {
+  id                  String   @id @default(cuid())
+  employeeId          String
+  leaveTypeId         String
+  balanceMinutes      Int      @default(0)
+  usedMinutes         Int      @default(0)
+  accrualYear         Int
+  /// Annual PTO days this employee is entitled to. Null = use LeaveType.accrualRateMinutes.
+  annualDaysEntitled  Int?
+  updatedAt           DateTime @updatedAt
+
+  employee  Employee  @relation(fields: [employeeId], references: [id])
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  @@unique([employeeId, leaveTypeId, accrualYear])
+  @@map("leave_balances")
+}
+
+model LeaveRequest {
+  id           String             @id @default(cuid())
+  employeeId   String
+  leaveTypeId  String
+  status       LeaveRequestStatus @default(DRAFT)
+  startDate    DateTime           @db.Date
+  endDate      DateTime           @db.Date
+  durationMinutes Int
+  note         String?
+  submittedAt  DateTime?
+  reviewedAt   DateTime?
+  reviewedById String?
+  reviewNote   String?
+  postedAt     DateTime?
+  cancelledAt  DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  employee  Employee  @relation(fields: [employeeId], references: [id])
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+  ledgerEntries LeaveAccrualLedger[]
+
+  @@map("leave_requests")
+}
+
+/// Immutable ledger — append-only, never UPDATE or DELETE.
+model LeaveAccrualLedger {
+  id             String        @id @default(cuid())
+  employeeId     String
+  leaveTypeId    String
+  action         AccrualAction
+  deltaMinutes   Int           // positive = credit, negative = debit
+  balanceAfter   Int
+  leaveRequestId String?
+  payPeriodEnd   DateTime?     @db.Date
+  note           String?
+  createdAt      DateTime      @default(now())
+  createdById    String?
+
+  leaveType    LeaveType    @relation(fields: [leaveTypeId], references: [id])
+  leaveRequest LeaveRequest? @relation(fields: [leaveRequestId], references: [id])
+
+  @@map("leave_accrual_ledger")
+}

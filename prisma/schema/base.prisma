@@ -1,0 +1,124 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["typedSql"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  EMPLOYEE
+  SUPERVISOR
+  PAYROLL_ADMIN
+  HR_ADMIN
+  SYSTEM_ADMIN
+}
+
+enum PunchType {
+  CLOCK_IN
+  CLOCK_OUT
+  MEAL_START
+  MEAL_END
+  BREAK_START
+  BREAK_END
+}
+
+enum PunchState {
+  OUT
+  WORK
+  MEAL
+  BREAK
+}
+
+enum PunchSource {
+  WEB
+  KIOSK
+  MOBILE
+  MANUAL
+  SYSTEM
+}
+
+enum SegmentType {
+  WORK
+  MEAL
+  BREAK
+}
+
+enum TimesheetStatus {
+  OPEN
+  SUBMITTED
+  SUP_APPROVED
+  PAYROLL_APPROVED
+  LOCKED
+}
+
+enum PayPeriodStatus {
+  OPEN
+  READY
+  LOCKED
+}
+
+enum LeaveRequestStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  POSTED
+}
+
+enum LeaveCategory {
+  PTO
+  SICK
+  HOLIDAY
+  FMLA
+  BEREAVEMENT
+  JURY_DUTY
+  MILITARY
+  UNPAID
+}
+
+enum PayBucket {
+  REG
+  OT
+  DT
+  PTO
+  SICK
+  HOLIDAY
+  FMLA
+  BEREAVEMENT
+  JURY_DUTY
+  MILITARY
+  UNPAID
+}
+
+enum AccrualAction {
+  ACCRUAL
+  USAGE
+  ADJUSTMENT
+  CARRY_OVER
+  FORFEITURE
+}
+
+enum ExceptionType {
+  MISSING_PUNCH
+  LONG_SHIFT
+  SHORT_BREAK
+  MISSED_MEAL
+  UNSCHEDULED_OT
+  CONSECUTIVE_DAYS
+}
+
+enum AuditEntityType {
+  USER
+  EMPLOYEE
+  PUNCH
+  TIMESHEET
+  PAY_PERIOD
+  LEAVE_REQUEST
+  LEAVE_BALANCE
+  RULE_SET
+  DOCUMENT
+  ADP_SYNC
+}
