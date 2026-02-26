@@ -8,10 +8,11 @@ import {
   PUNCH_STATE_LABEL,
   PUNCH_TYPE_LABEL,
   getAvailablePunchTypes,
-} from "@/lib/state-machines/punch-state";
-import type { PunchState, PunchType } from "@prisma/client";
+  type PunchStateValue,
+  type PunchTypeValue,
+} from "@/lib/state-machines/labels";
 
-const STATE_COLORS: Record<PunchState, string> = {
+const STATE_COLORS: Record<PunchStateValue, string> = {
   OUT: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
   WORK: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
   MEAL: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
@@ -19,18 +20,18 @@ const STATE_COLORS: Record<PunchState, string> = {
 };
 
 interface PunchClockProps {
-  initialState: PunchState;
+  initialState: PunchStateValue;
 }
 
 export function PunchClock({ initialState }: PunchClockProps) {
   const now = useCurrentTime();
-  const [currentState, setCurrentState] = useState<PunchState>(initialState);
+  const [currentState, setCurrentState] = useState<PunchStateValue>(initialState);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const available = getAvailablePunchTypes(currentState);
 
-  function handlePunch(punchType: PunchType) {
+  function handlePunch(punchType: PunchTypeValue) {
     setError(null);
     startTransition(async () => {
       const result = await recordPunch({ punchType });
@@ -38,7 +39,7 @@ export function PunchClock({ initialState }: PunchClockProps) {
         setError(result.error);
         return;
       }
-      setCurrentState(result.data.stateAfter as PunchState);
+      setCurrentState(result.data.stateAfter as PunchStateValue);
     });
   }
 

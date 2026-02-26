@@ -3,10 +3,9 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { requestMissedPunch } from "@/actions/punch.actions";
-import { PUNCH_TYPE_LABEL } from "@/lib/state-machines/punch-state";
-import type { PunchType } from "@prisma/client";
+import { PUNCH_TYPE_LABEL, type PunchTypeValue } from "@/lib/state-machines/labels";
 
-const PUNCH_TYPES: PunchType[] = [
+const PUNCH_TYPES: PunchTypeValue[] = [
   "CLOCK_IN",
   "CLOCK_OUT",
   "MEAL_START",
@@ -24,7 +23,7 @@ export default function MissedPunchPage() {
     e.preventDefault();
     setError(null);
     const fd = new FormData(e.currentTarget);
-    const punchType = fd.get("punchType") as PunchType;
+    const punchType = fd.get("punchType") as PunchTypeValue;
     const punchTime = fd.get("punchTime") as string;
     const note = fd.get("note") as string;
 

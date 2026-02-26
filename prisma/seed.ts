@@ -240,8 +240,8 @@ async function main() {
       });
 
       // Build punches and segments for this timesheet
-      const allPunches: Parameters<typeof db.punch.createMany>[0]["data"] = [];
-      const allSegments: Parameters<typeof db.workSegment.createMany>[0]["data"] = [];
+      const allPunches: NonNullable<Parameters<typeof db.punch.createMany>[0]>["data"] = [];
+      const allSegments: NonNullable<Parameters<typeof db.workSegment.createMany>[0]>["data"] = [];
       let totalRegMins = 0, totalOtMins = 0, totalDtMins = 0;
 
       for (const day of seededDays) {
