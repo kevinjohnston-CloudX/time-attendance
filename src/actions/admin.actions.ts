@@ -29,8 +29,10 @@ import {
   type UpdateRuleSetInput,
   setAnnualLeaveDaysSchema,
   adjustLeaveBalanceSchema,
+  csvEmployeeRowSchema,
   type SetAnnualLeaveDaysInput,
   type AdjustLeaveBalanceInput,
+  type CsvEmployeeRow,
 } from "@/lib/validators/admin.schema";
 
 // ─── Reference data (used by forms) ──────────────────────────────────────────
@@ -511,5 +513,157 @@ export const getHoursReport = withRBAC(
     }
 
     return { payPeriod, timesheets, ptoByEmployee };
+  }
+);
+
+// ─── Bulk CSV employee import ───────────────────────────────────────────────
+
+export const bulkCreateEmployees = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async ({ employeeId: actorId }, input: { rows: CsvEmployeeRow[] }) => {
+    // 1. Validate every row with Zod
+    const rowErrors: { row: number; message: string }[] = [];
+    const parsed: CsvEmployeeRow[] = [];
+
+    for (let i = 0; i < input.rows.length; i++) {
+      const result = csvEmployeeRowSchema.safeParse(input.rows[i]);
+      if (!result.success) {
+        const msgs = result.error.issues.map((iss) => iss.message).join("; ");
+        rowErrors.push({ row: i + 2, message: msgs }); // +2 for 1-indexed + header
+      } else {
+        parsed.push(result.data);
+      }
+    }
+
+    if (rowErrors.length > 0) {
+      return { created: 0, errors: rowErrors };
+    }
+
+    // 2. Build name→ID lookup maps (case-insensitive)
+    const [sites, departments, ruleSets, existingEmployees] = await Promise.all([
+      db.site.findMany({ where: { isActive: true } }),
+      db.department.findMany({ where: { isActive: true } }),
+      db.ruleSet.findMany(),
+      db.employee.findMany({ select: { id: true, employeeCode: true } }),
+    ]);
+
+    const siteMap = new Map(sites.map((s) => [s.name.toLowerCase(), s.id]));
+    const deptMap = new Map(departments.map((d) => [d.name.toLowerCase(), d.id]));
+    const ruleSetMap = new Map(ruleSets.map((r) => [r.name.toLowerCase(), r.id]));
+    const existingCodeMap = new Map(existingEmployees.map((e) => [e.employeeCode, e.id]));
+
+    // 3. Resolve references and check for issues
+    type ResolvedRow = CsvEmployeeRow & {
+      siteId: string;
+      departmentId: string;
+      ruleSetId: string;
+    };
+    const resolved: ResolvedRow[] = [];
+
+    const seenUsernames = new Set<string>();
+    const seenCodes = new Set<string>();
+
+    for (let i = 0; i < parsed.length; i++) {
+      const r = parsed[i];
+      const errors: string[] = [];
+
+      const siteId = siteMap.get(r.site.toLowerCase());
+      if (!siteId) errors.push(`Site "${r.site}" not found`);
+
+      const departmentId = deptMap.get(r.department.toLowerCase());
+      if (!departmentId) errors.push(`Department "${r.department}" not found`);
+
+      const ruleSetId = ruleSetMap.get(r.ruleSet.toLowerCase());
+      if (!ruleSetId) errors.push(`Rule set "${r.ruleSet}" not found`);
+
+      if (seenUsernames.has(r.username.toLowerCase())) {
+        errors.push(`Duplicate username "${r.username}" in CSV`);
+      }
+      seenUsernames.add(r.username.toLowerCase());
+
+      if (seenCodes.has(r.employeeCode)) {
+        errors.push(`Duplicate employee code "${r.employeeCode}" in CSV`);
+      }
+      seenCodes.add(r.employeeCode);
+
+      if (errors.length > 0) {
+        rowErrors.push({ row: i + 2, message: errors.join("; ") });
+      } else {
+        resolved.push({ ...r, siteId: siteId!, departmentId: departmentId!, ruleSetId: ruleSetId! });
+      }
+    }
+
+    if (rowErrors.length > 0) {
+      return { created: 0, errors: rowErrors };
+    }
+
+    // 4. Create in transaction (two-pass for supervisor resolution)
+    try {
+      const created = await db.$transaction(async (tx) => {
+        // Pass 1: create users + employees
+        const codeToEmpId = new Map(existingCodeMap);
+
+        for (const r of resolved) {
+          const passwordHash = await bcrypt.hash(r.password, 12);
+
+          const user = await tx.user.create({
+            data: {
+              name: r.name,
+              email: r.email || null,
+              username: r.username,
+              passwordHash,
+            },
+          });
+
+          const emp = await tx.employee.create({
+            data: {
+              userId: user.id,
+              employeeCode: r.employeeCode,
+              role: r.role,
+              siteId: r.siteId,
+              departmentId: r.departmentId,
+              ruleSetId: r.ruleSetId,
+              hireDate: parseISO(r.hireDate),
+              supervisorId: null,
+            },
+          });
+
+          codeToEmpId.set(r.employeeCode, emp.id);
+        }
+
+        // Pass 2: set supervisor relationships
+        for (const r of resolved) {
+          if (r.supervisorCode) {
+            const supId = codeToEmpId.get(r.supervisorCode);
+            if (!supId) {
+              throw new Error(
+                `Supervisor code "${r.supervisorCode}" not found for employee "${r.employeeCode}"`
+              );
+            }
+            const empId = codeToEmpId.get(r.employeeCode)!;
+            await tx.employee.update({
+              where: { id: empId },
+              data: { supervisorId: supId },
+            });
+          }
+        }
+
+        return resolved.length;
+      });
+
+      await writeAuditLog({
+        actorId,
+        entityType: "EMPLOYEE",
+        entityId: "BULK_IMPORT",
+        action: "EMPLOYEES_BULK_CREATED",
+        changes: { after: { count: created, codes: resolved.map((r) => r.employeeCode) } },
+      });
+
+      revalidatePath("/admin/employees");
+      return { created, errors: [] };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error during import";
+      return { created: 0, errors: [{ row: 0, message }] };
+    }
   }
 );

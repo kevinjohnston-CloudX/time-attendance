@@ -127,5 +127,21 @@ export const adjustLeaveBalanceSchema = z.object({
   note: z.string().min(1, "A reason is required"),
 });
 
+export const csvEmployeeRowSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  employeeCode: z.string().min(1, "Employee code is required"),
+  email: z.string().email().optional().or(z.literal("")).transform((v) => v || undefined),
+  role: z.enum(ROLES).default("EMPLOYEE"),
+  site: z.string().min(1, "Site is required"),
+  department: z.string().min(1, "Department is required"),
+  ruleSet: z.string().min(1, "Rule set is required"),
+  hireDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be yyyy-MM-dd"),
+  supervisorCode: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
+});
+
+export type CsvEmployeeRow = z.infer<typeof csvEmployeeRowSchema>;
+
 export type SetAnnualLeaveDaysInput = z.infer<typeof setAnnualLeaveDaysSchema>;
 export type AdjustLeaveBalanceInput = z.infer<typeof adjustLeaveBalanceSchema>;

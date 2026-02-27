@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { getEmployees, getAdminRefData } from "@/actions/admin.actions";
 import { CreateEmployeeForm } from "@/components/admin/create-employee-form";
+import { CsvUploadForm } from "@/components/admin/csv-upload-form";
 import { EmployeesTable } from "@/components/admin/employees-table";
 
 export default async function EmployeesPage() {
@@ -32,12 +33,19 @@ export default async function EmployeesPage() {
             Employees
           </h1>
         </div>
-        <CreateEmployeeForm
-          sites={sites}
-          departments={departments}
-          ruleSets={ruleSets}
-          employees={allEmps}
-        />
+        <div className="flex items-center gap-3">
+          <CsvUploadForm
+            sites={sites.map((s) => s.name)}
+            departments={departments.map((d) => d.name)}
+            ruleSets={ruleSets.map((r) => r.name)}
+          />
+          <CreateEmployeeForm
+            sites={sites}
+            departments={departments}
+            ruleSets={ruleSets}
+            employees={allEmps}
+          />
+        </div>
       </div>
 
       <EmployeesTable employees={employees} />
