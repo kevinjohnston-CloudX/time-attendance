@@ -1,11 +1,10 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { db } from "@/lib/db";
 import { getHoursReport } from "@/actions/admin.actions";
-import { formatMinutes, minutesToHoursDecimal } from "@/lib/utils/duration";
 import { format } from "date-fns";
+import { HoursReportTable, type ReportRow } from "@/components/reports/hours-report-table";
 
 export default async function ReportsPage({
   searchParams,
@@ -24,6 +23,34 @@ export default async function ReportsPage({
   const selectedId = sp.payPeriodId ?? payPeriods[0]?.id;
 
   const reportResult = selectedId ? await getHoursReport({ payPeriodId: selectedId }) : null;
+
+  // Pre-compute rows for client component
+  let rows: ReportRow[] = [];
+  let periodLabel = "";
+
+  if (reportResult?.success) {
+    const { payPeriod, timesheets, ptoByEmployee } = reportResult.data;
+    periodLabel = `${format(payPeriod.startDate, "MMM d")} – ${format(payPeriod.endDate, "MMM d, yyyy")}`;
+
+    rows = timesheets.map((ts) => {
+      const reg = ts.overtimeBuckets.find((b) => b.bucket === "REG")?.totalMinutes ?? 0;
+      const ot = ts.overtimeBuckets.find((b) => b.bucket === "OT")?.totalMinutes ?? 0;
+      const dt = ts.overtimeBuckets.find((b) => b.bucket === "DT")?.totalMinutes ?? 0;
+      const pto = ptoByEmployee[ts.employeeId] ?? 0;
+
+      return {
+        employeeId: ts.employeeId,
+        name: ts.employee.user?.name ?? ts.employeeId,
+        department: ts.employee.department.name,
+        regMinutes: reg,
+        otMinutes: ot,
+        dtMinutes: dt,
+        ptoMinutes: pto,
+        totalMinutes: reg + ot + dt,
+        status: ts.status,
+      };
+    });
+  }
 
   return (
     <div>
@@ -51,112 +78,7 @@ export default async function ReportsPage({
       </form>
 
       {reportResult?.success && (
-        <>
-          <div className="mt-6 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-              Hours Summary —{" "}
-              {format(reportResult.data.payPeriod.startDate, "MMM d")} –{" "}
-              {format(reportResult.data.payPeriod.endDate, "MMM d, yyyy")}
-            </h2>
-            <Link
-              href={`/reports?payPeriodId=${selectedId}&export=1`}
-              className="text-xs text-blue-600 hover:underline dark:text-blue-400"
-            >
-              Export CSV
-            </Link>
-          </div>
-
-          <div className="mt-3 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-            <table className="w-full text-sm">
-              <thead className="bg-zinc-50 dark:bg-zinc-900">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium text-zinc-500">Employee</th>
-                  <th className="px-4 py-3 text-left font-medium text-zinc-500">Department</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-500">REG</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-500">OT</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-500">DT</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-500">Total</th>
-                  <th className="px-4 py-3 text-left font-medium text-zinc-500">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-950">
-                {reportResult.data.timesheets.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-zinc-400">
-                      No timesheets for this pay period.
-                    </td>
-                  </tr>
-                )}
-                {reportResult.data.timesheets.map((ts) => {
-                  const reg = ts.overtimeBuckets.find((b) => b.bucket === "REG")?.totalMinutes ?? 0;
-                  const ot = ts.overtimeBuckets.find((b) => b.bucket === "OT")?.totalMinutes ?? 0;
-                  const dt = ts.overtimeBuckets.find((b) => b.bucket === "DT")?.totalMinutes ?? 0;
-                  const total = reg + ot + dt;
-
-                  return (
-                    <tr key={ts.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/40">
-                      <td className="px-4 py-3 font-medium text-zinc-900 dark:text-white">
-                        {ts.employee.user?.name ?? ts.employeeId}
-                      </td>
-                      <td className="px-4 py-3 text-zinc-500">
-                        {ts.employee.department.name}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
-                        {minutesToHoursDecimal(reg)}
-                      </td>
-                      <td className={`px-4 py-3 text-right tabular-nums ${ot > 0 ? "font-medium text-amber-600" : "text-zinc-400"}`}>
-                        {minutesToHoursDecimal(ot)}
-                      </td>
-                      <td className={`px-4 py-3 text-right tabular-nums ${dt > 0 ? "font-medium text-red-600" : "text-zinc-400"}`}>
-                        {minutesToHoursDecimal(dt)}
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-zinc-900 dark:text-white">
-                        {minutesToHoursDecimal(total)}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-zinc-400">
-                        {ts.status}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              {/* Totals row */}
-              {reportResult.data.timesheets.length > 0 && (() => {
-                const totals = reportResult.data.timesheets.reduce(
-                  (acc, ts) => {
-                    acc.reg += ts.overtimeBuckets.find((b) => b.bucket === "REG")?.totalMinutes ?? 0;
-                    acc.ot += ts.overtimeBuckets.find((b) => b.bucket === "OT")?.totalMinutes ?? 0;
-                    acc.dt += ts.overtimeBuckets.find((b) => b.bucket === "DT")?.totalMinutes ?? 0;
-                    return acc;
-                  },
-                  { reg: 0, ot: 0, dt: 0 }
-                );
-                return (
-                  <tfoot className="border-t border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-                    <tr>
-                      <td colSpan={2} className="px-4 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                        Totals ({reportResult.data.timesheets.length} employees)
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-zinc-900 dark:text-white">
-                        {minutesToHoursDecimal(totals.reg)}
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-amber-600">
-                        {minutesToHoursDecimal(totals.ot)}
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-red-600">
-                        {minutesToHoursDecimal(totals.dt)}
-                      </td>
-                      <td className="px-4 py-3 text-right font-bold tabular-nums text-zinc-900 dark:text-white">
-                        {minutesToHoursDecimal(totals.reg + totals.ot + totals.dt)}
-                      </td>
-                      <td />
-                    </tr>
-                  </tfoot>
-                );
-              })()}
-            </table>
-          </div>
-        </>
+        <HoursReportTable rows={rows} periodLabel={periodLabel} />
       )}
     </div>
   );

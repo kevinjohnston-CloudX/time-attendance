@@ -487,15 +487,29 @@ export const getHoursReport = withRBAC(
       where: { id: input.payPeriodId },
     });
 
-    const timesheets = await db.timesheet.findMany({
-      where: { payPeriodId: input.payPeriodId },
-      include: {
-        employee: { include: { user: true, department: true, site: true } },
-        overtimeBuckets: true,
-      },
-      orderBy: { employee: { user: { name: "asc" } } },
-    });
+    const [timesheets, ptoBalances] = await Promise.all([
+      db.timesheet.findMany({
+        where: { payPeriodId: input.payPeriodId },
+        include: {
+          employee: { include: { user: true, department: true, site: true } },
+          overtimeBuckets: true,
+        },
+        orderBy: { employee: { user: { name: "asc" } } },
+      }),
+      db.leaveBalance.findMany({
+        where: {
+          leaveType: { category: "PTO" },
+          accrualYear: payPeriod.startDate.getFullYear(),
+        },
+      }),
+    ]);
 
-    return { payPeriod, timesheets };
+    const ptoByEmployee: Record<string, number> = {};
+    for (const bal of ptoBalances) {
+      ptoByEmployee[bal.employeeId] =
+        (ptoByEmployee[bal.employeeId] ?? 0) + bal.balanceMinutes;
+    }
+
+    return { payPeriod, timesheets, ptoByEmployee };
   }
 );
