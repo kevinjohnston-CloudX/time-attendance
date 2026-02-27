@@ -126,7 +126,9 @@ export async function rebuildSegments(
   // Rebuild segments in a transaction, then apply OT engine separately
   // (applyOvertime needs the newly inserted segments to be readable).
   await db.$transaction([
-    db.workSegment.deleteMany({ where: { timesheetId } }),
+    db.workSegment.deleteMany({
+      where: { timesheetId, segmentType: { in: ["WORK", "MEAL", "BREAK"] } },
+    }),
     ...(segments.length > 0
       ? [db.workSegment.createMany({ data: segments })]
       : []),

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { getPayPeriods } from "@/actions/pay-period.actions";
-import { PAY_PERIOD_STATUS_LABEL } from "@/lib/state-machines/pay-period-state";
+import { PAY_PERIOD_STATUS_LABEL } from "@/lib/state-machines/labels";
 import { format } from "date-fns";
 
 const STATUS_BADGE: Record<string, string> = {
@@ -24,9 +24,17 @@ export default async function PayPeriodsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
-        Pay Periods
-      </h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
+          Pay Periods
+        </h1>
+        <Link
+          href="/payroll/timecards"
+          className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+        >
+          View Timecards
+        </Link>
+      </div>
 
       <div className="mt-6 flex flex-col gap-3">
         {payPeriods.length === 0 && (

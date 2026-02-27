@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { validateLeaveTransition } from "@/lib/state-machines/leave-state";
 import { postLeaveUsage } from "@/lib/engines/accrual-engine";
+import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
 import { writeAuditLog } from "@/lib/audit/logger";
 import {
   requestLeaveSchema,
@@ -140,7 +141,11 @@ export const cancelLeaveRequest = withRBAC(
       changes: { before: request.status, after: transition.newStatus },
     });
 
+    await syncLeaveSegments(leaveRequestId);
+
     revalidatePath("/leave");
+    revalidatePath("/payroll/timecards");
+    revalidatePath("/time/timesheet");
     return updated;
   }
 );
@@ -178,8 +183,12 @@ export const approveLeaveRequest = withRBAC(
       changes: { before: request.status, after: transition.newStatus },
     });
 
+    await syncLeaveSegments(leaveRequestId);
+
     revalidatePath("/supervisor/leave");
     revalidatePath("/leave");
+    revalidatePath("/payroll/timecards");
+    revalidatePath("/time/timesheet");
     return updated;
   }
 );
@@ -215,8 +224,12 @@ export const rejectLeaveRequest = withRBAC(
       changes: { before: request.status, after: transition.newStatus },
     });
 
+    await syncLeaveSegments(leaveRequestId);
+
     revalidatePath("/supervisor/leave");
     revalidatePath("/leave");
+    revalidatePath("/payroll/timecards");
+    revalidatePath("/time/timesheet");
     return updated;
   }
 );
@@ -254,6 +267,7 @@ export const postLeaveRequest = withRBAC(
 
     revalidatePath("/supervisor/leave");
     revalidatePath("/leave");
+    revalidatePath("/payroll/timecards");
     return { leaveRequestId };
   }
 );

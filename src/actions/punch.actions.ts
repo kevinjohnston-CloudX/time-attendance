@@ -1,11 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
+import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
+import { createCorrectionPunch } from "@/lib/utils/punch-correction";
 import { applyRounding } from "@/lib/utils/date";
 import {
   validateTransition,
@@ -19,7 +20,6 @@ import {
   type RequestMissedPunchInput,
   type CorrectPunchInput,
 } from "@/lib/validators/punch.schema";
-import type { ActionResult } from "@/types/api";
 import type { Punch, PunchState } from "@prisma/client";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -43,26 +43,13 @@ async function findOpenPayPeriod() {
   });
 }
 
-async function findOrCreateTimesheet(
-  employeeId: string,
-  payPeriodId: string
-) {
-  const existing = await db.timesheet.findUnique({
-    where: { employeeId_payPeriodId: { employeeId, payPeriodId } },
-  });
-  if (existing) return existing;
-  return db.timesheet.create({ data: { employeeId, payPeriodId } });
-}
 
 // ─── recordPunch ─────────────────────────────────────────────────────────────
 
 export const recordPunch = withRBAC(
   "PUNCH_OWN",
   async ({ employeeId }, input: RecordPunchInput): Promise<Punch> => {
-    const parsed = recordPunchSchema.safeParse(input);
-    if (!parsed.success) throw new Error(parsed.error.issues[0].message);
-
-    const { punchType, note } = parsed.data;
+    const { punchType, note } = recordPunchSchema.parse(input);
 
     const employee = await db.employee.findUniqueOrThrow({
       where: { id: employeeId },
@@ -128,10 +115,8 @@ export const requestMissedPunch = withRBAC(
     { employeeId },
     input: RequestMissedPunchInput
   ): Promise<Punch> => {
-    const parsed = requestMissedPunchSchema.safeParse(input);
-    if (!parsed.success) throw new Error(parsed.error.issues[0].message);
-
-    const { punchType, punchTime: punchTimeStr, note } = parsed.data;
+    const { punchType, punchTime: punchTimeStr, note } =
+      requestMissedPunchSchema.parse(input);
     const punchTime = new Date(punchTimeStr);
 
     const employee = await db.employee.findUniqueOrThrow({
@@ -195,12 +180,10 @@ export const requestMissedPunch = withRBAC(
 export const approveMissedPunch = withRBAC(
   "PUNCH_EDIT_TEAM",
   async ({ employeeId: supervisorId }, input: { punchId: string }): Promise<Punch> => {
-    const parsed = approveMissedPunchSchema.safeParse(input);
-    if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+    const { punchId } = approveMissedPunchSchema.parse(input);
 
-    const session = await auth();
     const punch = await db.punch.findUniqueOrThrow({
-      where: { id: parsed.data.punchId },
+      where: { id: punchId },
     });
 
     if (punch.isApproved) throw new Error("Punch is already approved.");
@@ -210,7 +193,7 @@ export const approveMissedPunch = withRBAC(
         where: { id: punch.id },
         data: {
           isApproved: true,
-          approvedById: session?.user?.employeeId,
+          approvedById: supervisorId,
           approvedAt: new Date(),
         },
       });
@@ -257,66 +240,26 @@ export const correctPunch = withRBAC(
     { employeeId: supervisorId },
     input: CorrectPunchInput
   ): Promise<Punch> => {
-    const parsed = correctPunchSchema.safeParse(input);
-    if (!parsed.success) throw new Error(parsed.error.issues[0].message);
-
-    const { originalPunchId, newPunchTime: newPunchTimeStr, reason } = parsed.data;
+    const { originalPunchId, newPunchTime: newPunchTimeStr, reason } =
+      correctPunchSchema.parse(input);
     const newPunchTime = new Date(newPunchTimeStr);
 
-    const original = await db.punch.findUniqueOrThrow({
-      where: { id: originalPunchId },
-      include: { employee: { include: { ruleSet: true } } },
-    });
-
-    if (original.correctedById) throw new Error("Punch has already been corrected.");
-
-    const roundedTime = applyRounding(
-      newPunchTime,
-      original.employee.ruleSet.punchRoundingMinutes
+    const { correction, timesheetId, ruleSet } = await db.$transaction(
+      async (tx) =>
+        createCorrectionPunch(tx, {
+          originalPunchId,
+          newPunchTime,
+          reason,
+          supervisorId,
+        })
     );
 
-    const correction = await db.$transaction(async (tx) => {
-      // Create correction punch linked to original
-      const c = await tx.punch.create({
-        data: {
-          employeeId: original.employeeId,
-          timesheetId: original.timesheetId,
-          punchType: original.punchType,
-          punchTime: newPunchTime,
-          roundedTime,
-          source: "MANUAL",
-          stateBefore: original.stateBefore,
-          stateAfter: original.stateAfter,
-          isApproved: true,
-          approvedById: supervisorId,
-          approvedAt: new Date(),
-          note: reason,
-          correctsId: original.id,
-        },
-      });
-      // Mark original as superseded
-      await tx.punch.update({
-        where: { id: original.id },
-        data: { correctedById: c.id },
-      });
-      await writeAuditLog({
-        actorId: supervisorId,
-        action: "PUNCH_CORRECTED",
-        entityType: "PUNCH",
-        entityId: c.id,
-        changes: {
-          before: { punchTime: original.punchTime },
-          after: { punchTime: newPunchTime, reason },
-        },
-      });
-      return c;
-    });
-
-    await rebuildSegments(correction.timesheetId, original.employee.ruleSet);
+    await rebuildSegments(timesheetId, ruleSet);
 
     revalidatePath("/time/history");
     revalidatePath("/supervisor");
-    revalidatePath(`/time/timesheet/${correction.timesheetId}`);
+    revalidatePath("/payroll/timecards");
+    revalidatePath(`/time/timesheet/${timesheetId}`);
     return correction;
   }
 );

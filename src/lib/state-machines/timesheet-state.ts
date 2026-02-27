@@ -47,10 +47,3 @@ export function validateTimesheetTransition(
   return { valid: true, newStatus };
 }
 
-export const TIMESHEET_STATUS_LABEL: Record<TimesheetStatus, string> = {
-  OPEN: "Open",
-  SUBMITTED: "Submitted",
-  SUP_APPROVED: "Supervisor Approved",
-  PAYROLL_APPROVED: "Payroll Approved",
-  LOCKED: "Locked",
-};

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { TIMESHEET_STATUS_LABEL } from "@/lib/state-machines/timesheet-state";
+import { TIMESHEET_STATUS_LABEL } from "@/lib/state-machines/labels";
 import { formatMinutes } from "@/lib/utils/duration";
 import { format } from "date-fns";
 

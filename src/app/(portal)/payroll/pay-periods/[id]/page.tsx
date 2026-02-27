@@ -5,8 +5,7 @@ import { hasPermission } from "@/lib/rbac/permissions";
 import { db } from "@/lib/db";
 import { getPayPeriodDetail } from "@/actions/pay-period.actions";
 import { getAdpConfig } from "@/lib/integrations/adp/client";
-import { PAY_PERIOD_STATUS_LABEL } from "@/lib/state-machines/pay-period-state";
-import { TIMESHEET_STATUS_LABEL } from "@/lib/state-machines/timesheet-state";
+import { PAY_PERIOD_STATUS_LABEL, TIMESHEET_STATUS_LABEL } from "@/lib/state-machines/labels";
 import { PayPeriodActions } from "@/components/payroll/pay-period-actions";
 import { formatMinutes } from "@/lib/utils/duration";
 import { format } from "date-fns";
@@ -153,9 +152,10 @@ export default async function PayPeriodDetailPage({
             const hasExceptions = ts.exceptions.length > 0;
 
             return (
-              <div
+              <Link
                 key={ts.id}
-                className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+                href={`/payroll/timecards?payPeriodId=${payPeriod.id}&employeeId=${ts.employeeId}`}
+                className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white p-4 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800/60"
               >
                 <div className="flex items-center gap-3">
                   {isApproved && !hasExceptions ? (
@@ -181,7 +181,7 @@ export default async function PayPeriodDetailPage({
                 >
                   {TIMESHEET_STATUS_LABEL[ts.status]}
                 </span>
-              </div>
+              </Link>
             );
           })}
         </div>

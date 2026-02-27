@@ -43,6 +43,7 @@ enum SegmentType {
   WORK
   MEAL
   BREAK
+  LEAVE
 }
 
 enum TimesheetStatus {

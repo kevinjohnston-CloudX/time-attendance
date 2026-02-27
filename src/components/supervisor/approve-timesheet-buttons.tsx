@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { approveTimesheet, rejectTimesheet } from "@/actions/timesheet.actions";
 
 interface Props {
@@ -11,6 +11,7 @@ interface Props {
 
 export function ApproveTimesheetButtons({ timesheetId, status, isPayroll }: Props) {
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   const canApprove = isPayroll ? status === "SUP_APPROVED" : status === "SUBMITTED";
   const canReject = status === "SUBMITTED" || status === "SUP_APPROVED";
@@ -18,23 +19,26 @@ export function ApproveTimesheetButtons({ timesheetId, status, isPayroll }: Prop
   if (!canApprove && !canReject) return null;
 
   function handleApprove() {
+    setError(null);
     startTransition(async () => {
       const result = await approveTimesheet({ timesheetId });
-      if (!result.success) alert(result.error);
+      if (!result.success) setError(result.error);
     });
   }
 
   function handleReject() {
     const note = prompt("Reason for rejection:");
     if (!note) return;
+    setError(null);
     startTransition(async () => {
       const result = await rejectTimesheet({ timesheetId, note });
-      if (!result.success) alert(result.error);
+      if (!result.success) setError(result.error);
     });
   }
 
   return (
     <div className="flex items-center gap-2">
+      {error && <p className="text-sm text-red-500">{error}</p>}
       {canReject && (
         <button
           onClick={handleReject}

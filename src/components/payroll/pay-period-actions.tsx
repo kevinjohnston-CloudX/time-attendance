@@ -22,6 +22,7 @@ interface Props {
 
 export function PayPeriodActions({ payPeriodId, status, isReady, adpConfigured, payrollRun }: Props) {
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const [pushResult, setPushResult] = useState<{
     pushed: number;
     skipped: number;
@@ -30,26 +31,29 @@ export function PayPeriodActions({ payPeriodId, status, isReady, adpConfigured, 
   const [pushError, setPushError] = useState<string | null>(null);
 
   function handleMarkReady() {
+    setError(null);
     startTransition(async () => {
       const result = await markPayPeriodReady({ payPeriodId });
-      if (!result.success) alert(result.error);
+      if (!result.success) setError(result.error);
     });
   }
 
   function handleLock() {
     if (!confirm("Lock this pay period? All approved timesheets will be locked.")) return;
+    setError(null);
     startTransition(async () => {
       const result = await lockPayPeriod({ payPeriodId });
-      if (!result.success) alert(result.error);
+      if (!result.success) setError(result.error);
     });
   }
 
   function handleReopen() {
     const reason = prompt("Reason for reopening:");
     if (!reason) return;
+    setError(null);
     startTransition(async () => {
       const result = await reopenPayPeriod({ payPeriodId, reason });
-      if (!result.success) alert(result.error);
+      if (!result.success) setError(result.error);
     });
   }
 
@@ -72,6 +76,7 @@ export function PayPeriodActions({ payPeriodId, status, isReady, adpConfigured, 
 
     return (
       <div className="flex flex-col items-end gap-2">
+        {error && <p className="text-sm text-red-500">{error}</p>}
         <div className="flex items-center gap-3">
           <button
             onClick={handleReopen}
@@ -132,7 +137,9 @@ export function PayPeriodActions({ payPeriodId, status, isReady, adpConfigured, 
   }
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex flex-col items-end gap-2">
+      {error && <p className="text-sm text-red-500">{error}</p>}
+      <div className="flex items-center gap-3">
       {status === "OPEN" && (
         <button
           onClick={handleMarkReady}
@@ -160,6 +167,7 @@ export function PayPeriodActions({ payPeriodId, status, isReady, adpConfigured, 
           </button>
         </>
       )}
+      </div>
     </div>
   );
 }

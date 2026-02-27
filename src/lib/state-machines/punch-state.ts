@@ -40,18 +40,3 @@ export function getAvailablePunchTypes(state: PunchState): PunchType[] {
   return Object.keys(TRANSITIONS[state] ?? {}) as PunchType[];
 }
 
-export const PUNCH_STATE_LABEL: Record<PunchState, string> = {
-  OUT: "Clocked Out",
-  WORK: "Working",
-  MEAL: "Meal Break",
-  BREAK: "On Break",
-};
-
-export const PUNCH_TYPE_LABEL: Record<PunchType, string> = {
-  CLOCK_IN: "Clock In",
-  CLOCK_OUT: "Clock Out",
-  MEAL_START: "Start Meal",
-  MEAL_END: "End Meal",
-  BREAK_START: "Start Break",
-  BREAK_END: "End Break",
-};

@@ -3,11 +3,11 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { format, eachDayOfInterval } from "date-fns";
-import { TIMESHEET_STATUS_LABEL } from "@/lib/state-machines/timesheet-state";
-import { PUNCH_TYPE_LABEL } from "@/lib/state-machines/punch-state";
+import { TIMESHEET_STATUS_LABEL, PUNCH_TYPE_LABEL } from "@/lib/state-machines/labels";
 import { SegmentTimeline } from "@/components/time/segment-timeline";
 import { formatMinutes } from "@/lib/utils/duration";
 import { SubmitTimesheetButton } from "@/components/time/submit-timesheet-button";
+import { parseUtcDate } from "@/lib/utils/date";
 import type { WorkSegment, Punch } from "@prisma/client";
 
 export default async function TimesheetDetailPage({
@@ -35,12 +35,6 @@ export default async function TimesheetDetailPage({
 
   if (!timesheet) notFound();
   if (timesheet.employeeId !== session.user.employeeId) redirect("/dashboard");
-
-  // Date-only values from PostgreSQL arrive as UTC midnight Date objects.
-  // Convert to local midnight so format() and getDay() use the intended calendar date.
-  function parseUtcDate(d: Date): Date {
-    return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-  }
 
   const days = eachDayOfInterval({
     start: parseUtcDate(timesheet.payPeriod.startDate),

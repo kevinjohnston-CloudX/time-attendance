@@ -21,11 +21,10 @@ import type { Timesheet } from "@prisma/client";
 export const recalculateSegments = withRBAC(
   "TIMESHEET_SUBMIT_OWN",
   async ({ employeeId }, input: TimesheetIdInput): Promise<void> => {
-    const parsed = timesheetIdSchema.safeParse(input);
-    if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+    const { timesheetId } = timesheetIdSchema.parse(input);
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
-      where: { id: parsed.data.timesheetId },
+      where: { id: timesheetId },
       include: { employee: { include: { ruleSet: true } } },
     });
 
@@ -42,11 +41,10 @@ export const recalculateSegments = withRBAC(
 export const submitTimesheet = withRBAC(
   "TIMESHEET_SUBMIT_OWN",
   async ({ employeeId }, input: TimesheetIdInput): Promise<Timesheet> => {
-    const parsed = timesheetIdSchema.safeParse(input);
-    if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+    const { timesheetId } = timesheetIdSchema.parse(input);
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
-      where: { id: parsed.data.timesheetId },
+      where: { id: timesheetId },
     });
 
     if (timesheet.employeeId !== employeeId)
@@ -89,11 +87,10 @@ export const submitTimesheet = withRBAC(
 export const approveTimesheet = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
   async ({ employeeId: supervisorId }, input: TimesheetIdInput): Promise<Timesheet> => {
-    const parsed = timesheetIdSchema.safeParse(input);
-    if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+    const { timesheetId } = timesheetIdSchema.parse(input);
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
-      where: { id: parsed.data.timesheetId },
+      where: { id: timesheetId },
     });
 
     const transition = validateTimesheetTransition(timesheet.status, "SUP_APPROVE");
@@ -119,6 +116,7 @@ export const approveTimesheet = withRBAC(
     });
 
     revalidatePath("/supervisor/timesheets");
+    revalidatePath("/payroll/timecards");
     revalidatePath(`/time/timesheet/${timesheet.id}`);
     return updated;
   }
@@ -129,10 +127,8 @@ export const approveTimesheet = withRBAC(
 export const rejectTimesheet = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
   async ({ employeeId: reviewerId }, input: RejectTimesheetInput): Promise<Timesheet> => {
-    const parsed = rejectTimesheetSchema.safeParse(input);
-    if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+    const { timesheetId, note } = rejectTimesheetSchema.parse(input);
 
-    const { timesheetId, note } = parsed.data;
     const timesheet = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
     });
@@ -164,6 +160,7 @@ export const rejectTimesheet = withRBAC(
     });
 
     revalidatePath("/supervisor/timesheets");
+    revalidatePath("/payroll/timecards");
     revalidatePath(`/time/timesheet/${timesheet.id}`);
     return updated;
   }
@@ -174,11 +171,10 @@ export const rejectTimesheet = withRBAC(
 export const payrollApproveTimesheet = withRBAC(
   "TIMESHEET_APPROVE_ANY",
   async ({ employeeId: payrollId }, input: TimesheetIdInput): Promise<Timesheet> => {
-    const parsed = timesheetIdSchema.safeParse(input);
-    if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+    const { timesheetId } = timesheetIdSchema.parse(input);
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
-      where: { id: parsed.data.timesheetId },
+      where: { id: timesheetId },
     });
 
     const transition = validateTimesheetTransition(timesheet.status, "PAYROLL_APPROVE");
@@ -204,6 +200,7 @@ export const payrollApproveTimesheet = withRBAC(
     });
 
     revalidatePath("/payroll");
+    revalidatePath("/payroll/timecards");
     revalidatePath(`/time/timesheet/${timesheet.id}`);
     return updated;
   }

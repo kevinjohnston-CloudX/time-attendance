@@ -1,5 +1,5 @@
 import { format } from "date-fns";
-import { PUNCH_TYPE_LABEL } from "@/lib/state-machines/punch-state";
+import { PUNCH_TYPE_LABEL } from "@/lib/state-machines/labels";
 import type { Punch, PunchSource } from "@prisma/client";
 
 const SOURCE_LABEL: Record<PunchSource, string> = {

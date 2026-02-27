@@ -3,7 +3,6 @@
 import bcrypt from "bcryptjs";
 import { parseISO } from "date-fns";
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
@@ -28,6 +27,10 @@ import {
   type UpdateLeaveTypeInput,
   type RuleSetInput,
   type UpdateRuleSetInput,
+  setAnnualLeaveDaysSchema,
+  adjustLeaveBalanceSchema,
+  type SetAnnualLeaveDaysInput,
+  type AdjustLeaveBalanceInput,
 } from "@/lib/validators/admin.schema";
 
 // ─── Reference data (used by forms) ──────────────────────────────────────────
@@ -376,18 +379,10 @@ export const getEmployeeLeaveBalances = withRBAC(
   }
 );
 
-const setAnnualLeaveDaysSchema = z.object({
-  employeeId: z.string().min(1),
-  leaveTypeId: z.string().min(1),
-  year: z.number().int(),
-  /** null = clear override, fall back to leave type global rate */
-  annualDays: z.number().int().min(0).nullable(),
-});
-
 /** Set (or clear) the annual PTO days for an employee. */
 export const setAnnualLeaveDays = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId }, input: z.infer<typeof setAnnualLeaveDaysSchema>) => {
+  async ({ employeeId: actorId }, input: SetAnnualLeaveDaysInput) => {
     const { employeeId, leaveTypeId, year, annualDays } =
       setAnnualLeaveDaysSchema.parse(input);
 
@@ -409,18 +404,10 @@ export const setAnnualLeaveDays = withRBAC(
   }
 );
 
-const adjustLeaveBalanceSchema = z.object({
-  employeeId: z.string().min(1),
-  leaveTypeId: z.string().min(1),
-  year: z.number().int(),
-  newBalanceMinutes: z.number().int().min(0),
-  note: z.string().min(1, "A reason is required"),
-});
-
 /** Admin sets a leave balance directly; writes an immutable ADJUSTMENT ledger entry. */
 export const adjustLeaveBalance = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId }, input: z.infer<typeof adjustLeaveBalanceSchema>) => {
+  async ({ employeeId: actorId }, input: AdjustLeaveBalanceInput) => {
     const { employeeId, leaveTypeId, year, newBalanceMinutes, note } =
       adjustLeaveBalanceSchema.parse(input);
 

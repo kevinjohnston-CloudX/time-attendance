@@ -10,17 +10,21 @@ interface Props {
 export function ResolveExceptionForm({ exceptionId }: Props) {
   const [note, setNote] = useState("");
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!note.trim()) return;
+    setError(null);
     startTransition(async () => {
       const result = await resolveException({ exceptionId, resolution: note });
-      if (!result.success) alert(result.error);
+      if (!result.success) setError(result.error);
     });
   }
 
   return (
+    <div>
+      {error && <p className="mb-1 text-sm text-red-500">{error}</p>}
     <form onSubmit={handleSubmit} className="mt-2 flex items-center gap-2">
       <input
         value={note}
@@ -36,5 +40,6 @@ export function ResolveExceptionForm({ exceptionId }: Props) {
         {isPending ? "Saving…" : "Resolve"}
       </button>
     </form>
+    </div>
   );
 }

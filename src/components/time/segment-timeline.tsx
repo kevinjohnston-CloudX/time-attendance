@@ -2,10 +2,11 @@ import type { WorkSegment } from "@prisma/client";
 import { format } from "date-fns";
 import { formatMinutes } from "@/lib/utils/duration";
 
-const SEGMENT_COLORS = {
+const SEGMENT_COLORS: Record<string, string> = {
   WORK: "bg-green-500",
   MEAL: "bg-amber-400",
   BREAK: "bg-blue-400",
+  LEAVE: "bg-purple-400",
 };
 
 // Timeline shows 5am – midnight (19 hours = 1140 min)

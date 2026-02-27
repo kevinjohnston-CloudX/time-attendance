@@ -16,3 +16,12 @@ export function applyRounding(time: Date, roundingMinutes: number): Date {
 export function today(): Date {
   return startOfDay(new Date());
 }
+
+/**
+ * PostgreSQL date-only columns arrive as UTC midnight Date objects.
+ * Convert to local midnight so format() and getDay() use the intended calendar date.
+ */
+export function parseUtcDate(d: Date | string): Date {
+  const date = typeof d === "string" ? new Date(d) : d;
+  return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}

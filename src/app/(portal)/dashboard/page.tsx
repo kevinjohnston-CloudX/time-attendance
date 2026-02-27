@@ -2,10 +2,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { format } from "date-fns";
 import { formatMinutes } from "@/lib/utils/duration";
-
-function parseUtcDate(d: Date): Date {
-  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-}
+import { parseUtcDate } from "@/lib/utils/date";
 
 export default async function DashboardPage() {
   const session = await auth();

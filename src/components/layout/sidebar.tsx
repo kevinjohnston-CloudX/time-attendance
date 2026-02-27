@@ -50,6 +50,12 @@ const navItems: NavItem[] = [
     icon: DollarSign,
     roles: ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"],
   },
+  {
+    label: "Timecards",
+    href: "/payroll/timecards",
+    icon: ClipboardList,
+    roles: ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"],
+  },
   // Payroll+ reports
   {
     label: "Reports",
@@ -93,7 +99,16 @@ export function Sidebar({ role, userName }: SidebarProps) {
           {visibleItems.map((item) => {
             const isActive =
               pathname === item.href ||
-              (item.href !== "/dashboard" && pathname.startsWith(item.href));
+              (item.href !== "/dashboard" &&
+                pathname.startsWith(item.href) &&
+                !visibleItems.some(
+                  (other) =>
+                    other.href !== item.href &&
+                    other.href.length > item.href.length &&
+                    other.href.startsWith(item.href) &&
+                    (pathname === other.href ||
+                      pathname.startsWith(other.href))
+                ));
             return (
               <li key={item.href}>
                 <Link

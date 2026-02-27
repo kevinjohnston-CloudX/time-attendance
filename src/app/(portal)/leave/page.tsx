@@ -6,7 +6,7 @@ import { getMyLeaveRequests, getMyLeaveBalances } from "@/actions/leave.actions"
 import {
   LEAVE_STATUS_LABEL,
   LEAVE_STATUS_BADGE,
-} from "@/lib/state-machines/leave-state";
+} from "@/lib/state-machines/labels";
 import { formatMinutes } from "@/lib/utils/duration";
 import { format } from "date-fns";
 import { Plus } from "lucide-react";

@@ -57,6 +57,7 @@ model LeaveRequest {
   employee  Employee  @relation(fields: [employeeId], references: [id])
   leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
   ledgerEntries LeaveAccrualLedger[]
+  segments      WorkSegment[]
 
   @@map("leave_requests")
 }

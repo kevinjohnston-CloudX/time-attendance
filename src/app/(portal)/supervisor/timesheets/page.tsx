@@ -3,7 +3,7 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { getTeamTimesheets } from "@/actions/supervisor.actions";
-import { TIMESHEET_STATUS_LABEL } from "@/lib/state-machines/timesheet-state";
+import { TIMESHEET_STATUS_LABEL } from "@/lib/state-machines/labels";
 import { ApproveTimesheetButtons } from "@/components/supervisor/approve-timesheet-buttons";
 import { formatMinutes } from "@/lib/utils/duration";
 import { format } from "date-fns";

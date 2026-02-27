@@ -3,7 +3,7 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { db } from "@/lib/db";
-import { Users, AlertCircle, ClipboardList, CalendarDays } from "lucide-react";
+import { Users, AlertCircle, ClipboardList, CalendarDays, CalendarCheck } from "lucide-react";
 
 export default async function SupervisorDashboardPage() {
   const session = await auth();
@@ -15,7 +15,10 @@ export default async function SupervisorDashboardPage() {
     session.user.role
   );
 
-  const [pendingTimesheets, openExceptions, pendingLeave] = await Promise.all([
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const [pendingTimesheets, openExceptions, pendingLeave, upcomingLeave] = await Promise.all([
     db.timesheet.count({
       where: isPayroll
         ? { status: "SUP_APPROVED" }
@@ -32,6 +35,13 @@ export default async function SupervisorDashboardPage() {
     db.leaveRequest.count({
       where: {
         status: "PENDING",
+        ...(isPayroll ? {} : { employee: { supervisorId: employeeId } }),
+      },
+    }),
+    db.leaveRequest.count({
+      where: {
+        status: { in: ["APPROVED", "POSTED"] },
+        endDate: { gte: today },
         ...(isPayroll ? {} : { employee: { supervisorId: employeeId } }),
       },
     }),
@@ -59,6 +69,13 @@ export default async function SupervisorDashboardPage() {
       icon: CalendarDays,
       urgency: pendingLeave > 0,
     },
+    {
+      label: "Upcoming Leave",
+      count: upcomingLeave,
+      href: "/supervisor/leave",
+      icon: CalendarCheck,
+      urgency: false,
+    },
   ];
 
   return (
@@ -70,7 +87,7 @@ export default async function SupervisorDashboardPage() {
         </h1>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((card) => (
           <Link
             key={card.href}

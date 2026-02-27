@@ -9,13 +9,15 @@ interface Props {
 
 export function LeaveApprovalButtons({ leaveRequestId }: Props) {
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
 
   function handleApprove() {
+    setError(null);
     startTransition(async () => {
       const result = await approveLeaveRequest({ leaveRequestId });
-      if (!result.success) alert(result.error);
+      if (!result.success) setError(result.error);
     });
   }
 
@@ -25,15 +27,17 @@ export function LeaveApprovalButtons({ leaveRequestId }: Props) {
       return;
     }
     if (!rejectNote.trim()) return;
+    setError(null);
     startTransition(async () => {
       const result = await rejectLeaveRequest({ leaveRequestId, reviewNote: rejectNote });
-      if (!result.success) alert(result.error);
+      if (!result.success) setError(result.error);
     });
   }
 
   if (rejectMode) {
     return (
       <div className="flex items-center gap-2">
+        {error && <p className="text-sm text-red-500">{error}</p>}
         <input
           autoFocus
           value={rejectNote}
@@ -60,6 +64,7 @@ export function LeaveApprovalButtons({ leaveRequestId }: Props) {
 
   return (
     <div className="flex items-center gap-2">
+      {error && <p className="text-sm text-red-500">{error}</p>}
       <button
         onClick={() => setRejectMode(true)}
         disabled={isPending}

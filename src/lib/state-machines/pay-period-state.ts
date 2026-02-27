@@ -36,8 +36,3 @@ export function validatePayPeriodTransition(
   return { valid: true, newStatus };
 }
 
-export const PAY_PERIOD_STATUS_LABEL: Record<PayPeriodStatus, string> = {
-  OPEN: "Open",
-  READY: "Ready for Lock",
-  LOCKED: "Locked",
-};
