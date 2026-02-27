@@ -22,6 +22,14 @@ export const approveMissedPunchSchema = z.object({
   punchId: z.string().cuid(),
 });
 
+export const timeclockPunchSchema = z.object({
+  employeeCode: z.string().min(1),
+  punchType: z.nativeEnum(PunchType),
+  punchTime: z.string().datetime({ offset: true }),
+  note: z.string().max(500).optional(),
+});
+
+export type TimeclockPunchInput = z.infer<typeof timeclockPunchSchema>;
 export type RecordPunchInput = z.infer<typeof recordPunchSchema>;
 export type RequestMissedPunchInput = z.infer<typeof requestMissedPunchSchema>;
 export type CorrectPunchInput = z.infer<typeof correctPunchSchema>;

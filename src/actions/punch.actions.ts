@@ -8,6 +8,7 @@ import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { createCorrectionPunch } from "@/lib/utils/punch-correction";
 import { applyRounding } from "@/lib/utils/date";
+import { getCurrentPunchState, findOpenPayPeriod } from "@/lib/utils/punch-helpers";
 import {
   validateTransition,
 } from "@/lib/state-machines/punch-state";
@@ -20,28 +21,7 @@ import {
   type RequestMissedPunchInput,
   type CorrectPunchInput,
 } from "@/lib/validators/punch.schema";
-import type { Punch, PunchState } from "@prisma/client";
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-async function getCurrentPunchState(employeeId: string): Promise<PunchState> {
-  const last = await db.punch.findFirst({
-    where: { employeeId, isApproved: true, correctedById: null },
-    orderBy: { roundedTime: "desc" },
-  });
-  return last?.stateAfter ?? "OUT";
-}
-
-async function findOpenPayPeriod() {
-  const now = new Date();
-  return db.payPeriod.findFirst({
-    where: {
-      startDate: { lte: now },
-      endDate: { gte: now },
-      status: "OPEN",
-    },
-  });
-}
+import type { Punch } from "@prisma/client";
 
 
 // ─── recordPunch ─────────────────────────────────────────────────────────────
