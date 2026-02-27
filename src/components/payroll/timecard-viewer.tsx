@@ -140,6 +140,7 @@ export function TimecardViewer({
   // Rejection form
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Reset state when employee changes
   useEffect(() => {
@@ -244,13 +245,14 @@ export function TimecardViewer({
 
   function handleApprove() {
     if (!timecard) return;
+    setActionError(null);
     startTransition(async () => {
       const action =
         timecard.status === "SUP_APPROVED"
           ? payrollApproveTimesheet
           : approveTimesheet;
       const result = await action({ timesheetId: timecard.timesheetId });
-      if (!result.success) alert(result.error);
+      if (!result.success) setActionError(result.error);
       else router.refresh();
     });
   }
@@ -258,13 +260,14 @@ export function TimecardViewer({
   function handleReject(e: React.FormEvent) {
     e.preventDefault();
     if (!timecard) return;
+    setActionError(null);
     startTransition(async () => {
       const result = await rejectTimesheet({
         timesheetId: timecard.timesheetId,
         note: rejectNote,
       });
       if (!result.success) {
-        alert(result.error);
+        setActionError(result.error);
         return;
       }
       setShowRejectForm(false);
@@ -307,7 +310,7 @@ export function TimecardViewer({
       {/* ── Split pane ───────────────────────────────────────────────── */}
       <div className="grid h-[calc(100vh-14rem)] grid-cols-[260px_1fr]">
         {/* ── Left: employee list ─────────────────────────────────────── */}
-        <div className="flex flex-col border-r border-zinc-200 dark:border-zinc-800">
+        <div className="flex min-h-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
           <div className="border-b border-zinc-200 p-2.5 dark:border-zinc-800">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
@@ -368,7 +371,7 @@ export function TimecardViewer({
         </div>
 
         {/* ── Right: timecard detail ──────────────────────────────────── */}
-        <div className="flex flex-col overflow-hidden bg-white dark:bg-zinc-950">
+        <div className="flex min-h-0 flex-col overflow-hidden bg-white dark:bg-zinc-950">
           {!timecard || !days ? (
             <div className="flex flex-1 items-center justify-center">
               <p className="text-sm text-zinc-400">
@@ -411,6 +414,7 @@ export function TimecardViewer({
 
                 {/* Approval / Reject */}
                 <div className="flex items-center gap-2">
+                  {actionError && <p className="text-xs text-red-500">{actionError}</p>}
                   {showRejectForm ? (
                     <form
                       onSubmit={handleReject}
