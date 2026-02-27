@@ -36,6 +36,7 @@ export default function LoginPage() {
   return (
     <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-zinc-800 p-8 shadow-lg">
       <div className="mb-8 text-center">
+        <img src="/logo.jpg" alt="Logo" className="mx-auto mb-3 h-12 w-12 rounded object-contain" />
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
           Time &amp; Attendance
         </h1>

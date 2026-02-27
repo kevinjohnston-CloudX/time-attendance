@@ -87,7 +87,8 @@ export function Sidebar({ role, userName }: SidebarProps) {
   return (
     <aside className="flex h-screen w-56 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
       {/* Logo */}
-      <div className="flex h-16 items-center border-b border-zinc-200 px-4 dark:border-zinc-800">
+      <div className="flex h-16 items-center gap-2 border-b border-zinc-200 px-4 dark:border-zinc-800">
+        <img src="/logo.jpg" alt="Logo" className="h-8 w-8 rounded object-contain" />
         <span className="text-sm font-bold text-zinc-900 dark:text-white">
           Time &amp; Attendance
         </span>
