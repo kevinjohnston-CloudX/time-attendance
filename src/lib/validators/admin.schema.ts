@@ -42,6 +42,8 @@ export const updateEmployeeSchema = z.object({
   departmentId: z.string().min(1).optional(),
   ruleSetId: z.string().min(1).optional(),
   isActive: z.boolean().optional(),
+  wmsId: z.string().optional().or(z.literal("")).transform((v) => v || null),
+  adpWorkerId: z.string().optional().or(z.literal("")).transform((v) => v || null),
 });
 
 export const siteSchema = z.object({

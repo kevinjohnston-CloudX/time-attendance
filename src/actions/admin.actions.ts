@@ -139,7 +139,7 @@ export const createEmployee = withRBAC(
 export const updateEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ employeeId: actorId }, input: UpdateEmployeeInput) => {
-    const { employeeId, name, role, supervisorId, siteId, departmentId, ruleSetId, isActive } =
+    const { employeeId, name, role, supervisorId, siteId, departmentId, ruleSetId, isActive, wmsId, adpWorkerId } =
       updateEmployeeSchema.parse(input);
 
     const current = await db.employee.findUniqueOrThrow({
@@ -160,6 +160,8 @@ export const updateEmployee = withRBAC(
           ...(departmentId !== undefined && { departmentId }),
           ...(ruleSetId !== undefined && { ruleSetId }),
           ...(isActive !== undefined && { isActive }),
+          ...(wmsId !== undefined && { wmsId }),
+          ...(adpWorkerId !== undefined && { adpWorkerId }),
         },
       });
     });

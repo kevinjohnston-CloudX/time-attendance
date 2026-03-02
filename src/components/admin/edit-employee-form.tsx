@@ -60,6 +60,8 @@ export function EditEmployeeForm({
         ruleSetId: fd.get("ruleSetId") as string,
         supervisorId: (fd.get("supervisorId") as string) || null,
         isActive: fd.get("isActive") === "true",
+        wmsId: fd.get("wmsId") as string,
+        adpWorkerId: fd.get("adpWorkerId") as string,
       });
 
       if (!result.success) {
@@ -174,6 +176,30 @@ export function EditEmployeeForm({
                 <option key={e.id} value={e.id}>{e.user.name}</option>
               ))}
           </select>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            Badge ID (WMS)
+          </label>
+          <input
+            name="wmsId"
+            defaultValue={employee.wmsId ?? ""}
+            placeholder="QR code badge ID"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            ADP Worker ID
+          </label>
+          <input
+            name="adpWorkerId"
+            defaultValue={employee.adpWorkerId ?? ""}
+            placeholder="ADP Workforce Now ID"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+          />
         </div>
 
         <div>
