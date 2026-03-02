@@ -13,7 +13,7 @@ const saveBtnCls = "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-
 const cancelBtnCls = "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
 const sectionHdrCls = "col-span-full mb-0.5 border-b border-zinc-200 pb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-700";
 
-type RSFields = Omit<RuleSet, "id" | "createdAt" | "updatedAt" | "employees" | "isActive"> & { isActive?: boolean };
+type RSFields = Omit<RuleSet, "id" | "tenantId" | "createdAt" | "updatedAt" | "employees" | "isActive"> & { isActive?: boolean };
 type OtPreset = Pick<RSFields, "dailyOtMinutes" | "dailyDtMinutes" | "weeklyOtMinutes" | "consecutiveDayOtDay">;
 
 // ─── State OT Presets ─────────────────────────────────────────────────────────

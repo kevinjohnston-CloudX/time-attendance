@@ -39,17 +39,18 @@ import {
 
 export const getAdminRefData = withRBAC(
   "EMPLOYEE_MANAGE",
-  async (_actor, _input: void) => {
+  async ({ tenantId }, _input: void) => {
+    const t = tenantId ?? undefined;
     const [sites, departments, ruleSets, employees] = await Promise.all([
-      db.site.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+      db.site.findMany({ where: { isActive: true, tenantId: t }, orderBy: { name: "asc" } }),
       db.department.findMany({
-        where: { isActive: true },
+        where: { isActive: true, tenantId: t },
         orderBy: { name: "asc" },
         include: { site: true },
       }),
-      db.ruleSet.findMany({ orderBy: { name: "asc" } }),
+      db.ruleSet.findMany({ where: { tenantId: t }, orderBy: { name: "asc" } }),
       db.employee.findMany({
-        where: { isActive: true },
+        where: { isActive: true, tenantId: t },
         include: { user: true },
         orderBy: { user: { name: "asc" } },
       }),
@@ -62,8 +63,9 @@ export const getAdminRefData = withRBAC(
 
 export const getEmployees = withRBAC(
   "EMPLOYEE_MANAGE",
-  async (_actor, _input: void) => {
+  async ({ tenantId }, _input: void) => {
     return db.employee.findMany({
+      where: { tenantId: tenantId ?? undefined },
       include: {
         user: true,
         site: true,
@@ -94,7 +96,8 @@ export const getEmployeeById = withRBAC(
 
 export const createEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId }, input: CreateEmployeeInput) => {
+  async ({ employeeId: actorId, tenantId }, input: CreateEmployeeInput) => {
+    if (!tenantId) throw new Error("Tenant context required");
     const parsed = createEmployeeSchema.parse(input);
 
     const passwordHash = await bcrypt.hash(parsed.password, 12);
@@ -112,6 +115,7 @@ export const createEmployee = withRBAC(
       return tx.employee.create({
         data: {
           userId: user.id,
+          tenantId,
           employeeCode: parsed.employeeCode,
           role: parsed.role,
           siteId: parsed.siteId,
@@ -124,6 +128,7 @@ export const createEmployee = withRBAC(
     });
 
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "EMPLOYEE",
       entityId: employee.id,
@@ -138,7 +143,7 @@ export const createEmployee = withRBAC(
 
 export const updateEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId }, input: UpdateEmployeeInput) => {
+  async ({ employeeId: actorId, tenantId }, input: UpdateEmployeeInput) => {
     const {
       employeeId, name, role, supervisorId, siteId, departmentId, ruleSetId, isActive, wmsId, adpWorkerId,
       jobTitle, terminationReason, payType, payRate,
@@ -190,6 +195,7 @@ export const updateEmployee = withRBAC(
     });
 
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "EMPLOYEE",
       entityId: employeeId,
@@ -205,16 +211,18 @@ export const updateEmployee = withRBAC(
 
 // ─── Sites ────────────────────────────────────────────────────────────────────
 
-export const getSites = withRBAC("SITE_MANAGE", async (_actor, _input: void) => {
-  return db.site.findMany({ orderBy: { name: "asc" } });
+export const getSites = withRBAC("SITE_MANAGE", async ({ tenantId }, _input: void) => {
+  return db.site.findMany({ where: { tenantId: tenantId ?? undefined }, orderBy: { name: "asc" } });
 });
 
 export const createSite = withRBAC(
   "SITE_MANAGE",
-  async ({ employeeId: actorId }, input: SiteInput) => {
+  async ({ employeeId: actorId, tenantId }, input: SiteInput) => {
+    if (!tenantId) throw new Error("Tenant context required");
     const parsed = siteSchema.parse(input);
-    const site = await db.site.create({ data: parsed });
+    const site = await db.site.create({ data: { ...parsed, tenantId } });
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "EMPLOYEE",
       entityId: site.id,
@@ -228,13 +236,14 @@ export const createSite = withRBAC(
 
 export const updateSite = withRBAC(
   "SITE_MANAGE",
-  async ({ employeeId: actorId }, input: UpdateSiteInput) => {
+  async ({ employeeId: actorId, tenantId }, input: UpdateSiteInput) => {
     const { siteId, isActive, ...rest } = updateSiteSchema.parse(input);
     const updated = await db.site.update({
       where: { id: siteId },
       data: { ...rest, ...(isActive !== undefined && { isActive }) },
     });
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "EMPLOYEE",
       entityId: siteId,
@@ -249,8 +258,9 @@ export const updateSite = withRBAC(
 
 export const getDepartments = withRBAC(
   "SITE_MANAGE",
-  async (_actor, _input: void) => {
+  async ({ tenantId }, _input: void) => {
     return db.department.findMany({
+      where: { tenantId: tenantId ?? undefined },
       include: { site: true },
       orderBy: { name: "asc" },
     });
@@ -259,10 +269,12 @@ export const getDepartments = withRBAC(
 
 export const createDepartment = withRBAC(
   "SITE_MANAGE",
-  async ({ employeeId: actorId }, input: DepartmentInput) => {
+  async ({ employeeId: actorId, tenantId }, input: DepartmentInput) => {
+    if (!tenantId) throw new Error("Tenant context required");
     const parsed = departmentSchema.parse(input);
-    const dept = await db.department.create({ data: parsed });
+    const dept = await db.department.create({ data: { ...parsed, tenantId } });
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "EMPLOYEE",
       entityId: dept.id,
@@ -276,13 +288,14 @@ export const createDepartment = withRBAC(
 
 export const updateDepartment = withRBAC(
   "SITE_MANAGE",
-  async ({ employeeId: actorId }, input: UpdateDepartmentInput) => {
+  async ({ employeeId: actorId, tenantId }, input: UpdateDepartmentInput) => {
     const { departmentId, isActive, ...rest } = updateDepartmentSchema.parse(input);
     const updated = await db.department.update({
       where: { id: departmentId },
       data: { ...rest, ...(isActive !== undefined && { isActive }) },
     });
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "EMPLOYEE",
       entityId: departmentId,
@@ -297,17 +310,19 @@ export const updateDepartment = withRBAC(
 
 export const getLeaveTypesAdmin = withRBAC(
   "RULES_MANAGE",
-  async (_actor, _input: void) => {
-    return db.leaveType.findMany({ orderBy: { name: "asc" } });
+  async ({ tenantId }, _input: void) => {
+    return db.leaveType.findMany({ where: { tenantId: tenantId ?? undefined }, orderBy: { name: "asc" } });
   }
 );
 
 export const createLeaveType = withRBAC(
   "RULES_MANAGE",
-  async ({ employeeId: actorId }, input: LeaveTypeInput) => {
+  async ({ employeeId: actorId, tenantId }, input: LeaveTypeInput) => {
+    if (!tenantId) throw new Error("Tenant context required");
     const parsed = leaveTypeSchema.parse(input);
-    const lt = await db.leaveType.create({ data: parsed });
+    const lt = await db.leaveType.create({ data: { ...parsed, tenantId } });
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "RULE_SET",
       entityId: lt.id,
@@ -321,13 +336,14 @@ export const createLeaveType = withRBAC(
 
 export const updateLeaveType = withRBAC(
   "RULES_MANAGE",
-  async ({ employeeId: actorId }, input: UpdateLeaveTypeInput) => {
+  async ({ employeeId: actorId, tenantId }, input: UpdateLeaveTypeInput) => {
     const { leaveTypeId, isActive, ...rest } = updateLeaveTypeSchema.parse(input);
     const updated = await db.leaveType.update({
       where: { id: leaveTypeId },
       data: { ...rest, ...(isActive !== undefined && { isActive }) },
     });
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "RULE_SET",
       entityId: leaveTypeId,
@@ -342,17 +358,19 @@ export const updateLeaveType = withRBAC(
 
 export const getRuleSets = withRBAC(
   "RULES_MANAGE",
-  async (_actor, _input: void) => {
-    return db.ruleSet.findMany({ orderBy: { name: "asc" } });
+  async ({ tenantId }, _input: void) => {
+    return db.ruleSet.findMany({ where: { tenantId: tenantId ?? undefined }, orderBy: { name: "asc" } });
   }
 );
 
 export const createRuleSet = withRBAC(
   "RULES_MANAGE",
-  async ({ employeeId: actorId }, input: RuleSetInput) => {
+  async ({ employeeId: actorId, tenantId }, input: RuleSetInput) => {
+    if (!tenantId) throw new Error("Tenant context required");
     const parsed = ruleSetSchema.parse(input);
-    const rs = await db.ruleSet.create({ data: parsed });
+    const rs = await db.ruleSet.create({ data: { ...parsed, tenantId } });
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "RULE_SET",
       entityId: rs.id,
@@ -366,10 +384,11 @@ export const createRuleSet = withRBAC(
 
 export const updateRuleSet = withRBAC(
   "RULES_MANAGE",
-  async ({ employeeId: actorId }, input: UpdateRuleSetInput) => {
+  async ({ employeeId: actorId, tenantId }, input: UpdateRuleSetInput) => {
     const { ruleSetId, ...rest } = updateRuleSetSchema.parse(input);
     const updated = await db.ruleSet.update({ where: { id: ruleSetId }, data: rest });
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "RULE_SET",
       entityId: ruleSetId,
@@ -382,7 +401,7 @@ export const updateRuleSet = withRBAC(
 
 export const deleteRuleSet = withRBAC(
   "RULES_MANAGE",
-  async ({ employeeId: actorId }, input: { ruleSetId: string }) => {
+  async ({ employeeId: actorId, tenantId }, input: { ruleSetId: string }) => {
     const rs = await db.ruleSet.findUniqueOrThrow({
       where: { id: input.ruleSetId },
       include: { _count: { select: { employees: true } } },
@@ -394,6 +413,7 @@ export const deleteRuleSet = withRBAC(
       );
     await db.ruleSet.delete({ where: { id: input.ruleSetId } });
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "RULE_SET",
       entityId: input.ruleSetId,
@@ -409,10 +429,10 @@ export const deleteRuleSet = withRBAC(
 /** All active leave types merged with this employee's balances for a given year. */
 export const getEmployeeLeaveBalances = withRBAC(
   "EMPLOYEE_MANAGE",
-  async (_actor, input: { employeeId: string; year?: number }) => {
+  async ({ tenantId }, input: { employeeId: string; year?: number }) => {
     const year = input.year ?? new Date().getFullYear();
     const [leaveTypes, balances] = await Promise.all([
-      db.leaveType.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+      db.leaveType.findMany({ where: { isActive: true, tenantId: tenantId ?? undefined }, orderBy: { name: "asc" } }),
       db.leaveBalance.findMany({ where: { employeeId: input.employeeId, accrualYear: year } }),
     ]);
     return leaveTypes.map((lt) => {
@@ -433,7 +453,7 @@ export const getEmployeeLeaveBalances = withRBAC(
 /** Set (or clear) the annual PTO days for an employee. */
 export const setAnnualLeaveDays = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId }, input: SetAnnualLeaveDaysInput) => {
+  async ({ employeeId: actorId, tenantId }, input: SetAnnualLeaveDaysInput) => {
     const { employeeId, leaveTypeId, year, annualDays } =
       setAnnualLeaveDaysSchema.parse(input);
 
@@ -444,6 +464,7 @@ export const setAnnualLeaveDays = withRBAC(
     });
 
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "EMPLOYEE",
       entityId: employeeId,
@@ -458,7 +479,7 @@ export const setAnnualLeaveDays = withRBAC(
 /** Admin sets a leave balance directly; writes an immutable ADJUSTMENT ledger entry. */
 export const adjustLeaveBalance = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId }, input: AdjustLeaveBalanceInput) => {
+  async ({ employeeId: actorId, tenantId }, input: AdjustLeaveBalanceInput) => {
     const { employeeId, leaveTypeId, year, newBalanceMinutes, note } =
       adjustLeaveBalanceSchema.parse(input);
 
@@ -489,6 +510,7 @@ export const adjustLeaveBalance = withRBAC(
     ]);
 
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "EMPLOYEE",
       entityId: employeeId,
@@ -507,21 +529,28 @@ export const adjustLeaveBalance = withRBAC(
 
 export const getAuditLogs = withRBAC(
   "AUDIT_VIEW",
-  async (_actor, input: { page?: number; entityType?: string } = {}) => {
+  async ({ tenantId }, input: { page?: number; entityType?: string } = {}) => {
     const page = input.page ?? 1;
     const take = 50;
     const skip = (page - 1) * take;
+    const tenantFilter = tenantId ? { tenantId } : {};
 
     const [logs, total] = await Promise.all([
       db.auditLog.findMany({
-        where: input.entityType ? { entityType: input.entityType as never } : undefined,
+        where: {
+          ...tenantFilter,
+          ...(input.entityType ? { entityType: input.entityType as never } : {}),
+        },
         include: { actor: { include: { user: true } } },
         orderBy: { createdAt: "desc" },
         take,
         skip,
       }),
       db.auditLog.count({
-        where: input.entityType ? { entityType: input.entityType as never } : undefined,
+        where: {
+          ...tenantFilter,
+          ...(input.entityType ? { entityType: input.entityType as never } : {}),
+        },
       }),
     ]);
 
@@ -569,7 +598,8 @@ export const getHoursReport = withRBAC(
 
 export const bulkCreateEmployees = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId }, input: { rows: CsvEmployeeRow[] }) => {
+  async ({ employeeId: actorId, tenantId }, input: { rows: CsvEmployeeRow[] }) => {
+    if (!tenantId) throw new Error("Tenant context required");
     // 1. Validate every row with Zod
     const rowErrors: { row: number; message: string }[] = [];
     const parsed: CsvEmployeeRow[] = [];
@@ -590,10 +620,10 @@ export const bulkCreateEmployees = withRBAC(
 
     // 2. Build name→ID lookup maps (case-insensitive)
     const [sites, departments, ruleSets, existingEmployees] = await Promise.all([
-      db.site.findMany({ where: { isActive: true } }),
-      db.department.findMany({ where: { isActive: true } }),
-      db.ruleSet.findMany(),
-      db.employee.findMany({ select: { id: true, employeeCode: true } }),
+      db.site.findMany({ where: { isActive: true, tenantId } }),
+      db.department.findMany({ where: { isActive: true, tenantId } }),
+      db.ruleSet.findMany({ where: { tenantId } }),
+      db.employee.findMany({ where: { tenantId }, select: { id: true, employeeCode: true } }),
     ]);
 
     const siteMap = new Map(sites.map((s) => [s.name.toLowerCase(), s.id]));
@@ -667,6 +697,7 @@ export const bulkCreateEmployees = withRBAC(
           const emp = await tx.employee.create({
             data: {
               userId: user.id,
+              tenantId,
               employeeCode: r.employeeCode,
               role: r.role,
               siteId: r.siteId,
@@ -701,6 +732,7 @@ export const bulkCreateEmployees = withRBAC(
       });
 
       await writeAuditLog({
+        tenantId,
         actorId,
         entityType: "EMPLOYEE",
         entityId: "BULK_IMPORT",

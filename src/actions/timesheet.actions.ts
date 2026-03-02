@@ -41,7 +41,7 @@ export const recalculateSegments = withRBAC(
 
 export const submitTimesheet = withRBAC(
   "TIMESHEET_SUBMIT_OWN",
-  async ({ employeeId }, input: TimesheetIdInput): Promise<Timesheet> => {
+  async ({ employeeId, tenantId }, input: TimesheetIdInput): Promise<Timesheet> => {
     const { timesheetId } = timesheetIdSchema.parse(input);
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
@@ -68,6 +68,7 @@ export const submitTimesheet = withRBAC(
         data: { status: transition.newStatus, submittedAt: new Date() },
       });
       await writeAuditLog({
+        tenantId,
         actorId: employeeId,
         action: "TIMESHEET_SUBMITTED",
         entityType: "TIMESHEET",
@@ -87,7 +88,7 @@ export const submitTimesheet = withRBAC(
 
 export const approveTimesheet = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
-  async ({ employeeId: supervisorId }, input: TimesheetIdInput): Promise<Timesheet> => {
+  async ({ employeeId: supervisorId, tenantId }, input: TimesheetIdInput): Promise<Timesheet> => {
     const { timesheetId } = timesheetIdSchema.parse(input);
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
@@ -107,6 +108,7 @@ export const approveTimesheet = withRBAC(
         },
       });
       await writeAuditLog({
+        tenantId,
         actorId: supervisorId,
         action: "TIMESHEET_SUP_APPROVED",
         entityType: "TIMESHEET",
@@ -127,7 +129,7 @@ export const approveTimesheet = withRBAC(
 
 export const rejectTimesheet = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
-  async ({ employeeId: reviewerId }, input: RejectTimesheetInput): Promise<Timesheet> => {
+  async ({ employeeId: reviewerId, tenantId }, input: RejectTimesheetInput): Promise<Timesheet> => {
     const { timesheetId, note } = rejectTimesheetSchema.parse(input);
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
@@ -151,6 +153,7 @@ export const rejectTimesheet = withRBAC(
         },
       });
       await writeAuditLog({
+        tenantId,
         actorId: reviewerId,
         action: "TIMESHEET_REJECTED",
         entityType: "TIMESHEET",
@@ -171,7 +174,7 @@ export const rejectTimesheet = withRBAC(
 
 export const payrollApproveTimesheet = withRBAC(
   "TIMESHEET_APPROVE_ANY",
-  async ({ employeeId: payrollId }, input: TimesheetIdInput): Promise<Timesheet> => {
+  async ({ employeeId: payrollId, tenantId }, input: TimesheetIdInput): Promise<Timesheet> => {
     const { timesheetId } = timesheetIdSchema.parse(input);
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
@@ -191,6 +194,7 @@ export const payrollApproveTimesheet = withRBAC(
         },
       });
       await writeAuditLog({
+        tenantId,
         actorId: payrollId,
         action: "TIMESHEET_PAYROLL_APPROVED",
         entityType: "TIMESHEET",
@@ -217,7 +221,7 @@ const mealWaiverSchema = z.object({
 
 export const toggleMealWaiver = withRBAC(
   "PAY_PERIOD_MANAGE",
-  async ({ employeeId: actorId }, input: unknown): Promise<{ success: boolean; waived: boolean }> => {
+  async ({ employeeId: actorId, tenantId }, input: unknown): Promise<{ success: boolean; waived: boolean }> => {
     const { timesheetId, segmentDate, reason } = mealWaiverSchema.parse(input);
 
     const dateObj = new Date(segmentDate + "T00:00:00.000Z");
@@ -230,6 +234,7 @@ export const toggleMealWaiver = withRBAC(
       await db.$transaction(async (tx) => {
         await tx.mealWaiver.delete({ where: { id: existing.id } });
         await writeAuditLog({
+          tenantId,
           actorId,
           action: "MEAL_WAIVER_REMOVED",
           entityType: "TIMESHEET",
@@ -243,6 +248,7 @@ export const toggleMealWaiver = withRBAC(
           data: { timesheetId, segmentDate: dateObj, reason: reason ?? "" },
         });
         await writeAuditLog({
+          tenantId,
           actorId,
           action: "MEAL_WAIVER_ADDED",
           entityType: "TIMESHEET",

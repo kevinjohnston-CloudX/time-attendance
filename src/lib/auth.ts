@@ -31,12 +31,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
         if (!valid) return null;
 
+        if (user.isSuperAdmin) {
+          return {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: "SUPER_ADMIN",
+            employeeId: undefined,
+            tenantId: null,
+          };
+        }
+
         return {
           id: user.id,
           name: user.name,
           email: user.email,
           role: user.employee?.role ?? "EMPLOYEE",
           employeeId: user.employee?.id ?? undefined,
+          tenantId: user.employee?.tenantId ?? null,
         };
       },
     }),

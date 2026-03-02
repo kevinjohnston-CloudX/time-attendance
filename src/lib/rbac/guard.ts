@@ -10,14 +10,14 @@ type ActionResult<T> =
  * Wraps a Server Action with RBAC enforcement.
  *
  * @example
- * export const myAction = withRBAC("PUNCH_EDIT_ANY", async ({ employeeId, role }, input) => {
+ * export const myAction = withRBAC("PUNCH_EDIT_ANY", async ({ employeeId, role, tenantId }, input) => {
  *   // ...
  * });
  */
 export function withRBAC<TInput, TOutput>(
   permission: Permission,
   handler: (
-    ctx: { employeeId: string; role: Role },
+    ctx: { employeeId: string; role: Role; tenantId: string | null },
     input: TInput
   ) => Promise<TOutput>
 ) {
@@ -37,6 +37,7 @@ export function withRBAC<TInput, TOutput>(
         {
           employeeId: session.user.employeeId ?? "",
           role: session.user.role as Role,
+          tenantId: session.user.tenantId ?? null,
         },
         input
       );

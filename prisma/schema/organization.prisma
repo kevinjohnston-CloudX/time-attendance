@@ -1,5 +1,25 @@
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sites       Site[]
+  departments Department[]
+  employees   Employee[]
+  ruleSets    RuleSet[]
+  payPeriods  PayPeriod[]
+  leaveTypes  LeaveType[]
+  auditLogs   AuditLog[]
+
+  @@map("tenants")
+}
+
 model Site {
   id        String   @id @default(cuid())
+  tenantId  String
   name      String
   timezone  String   @default("America/New_York")
   address   String?
@@ -7,6 +27,7 @@ model Site {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  tenant      Tenant     @relation(fields: [tenantId], references: [id])
   departments Department[]
   employees   Employee[]
 
@@ -15,12 +36,14 @@ model Site {
 
 model Department {
   id        String   @id @default(cuid())
+  tenantId  String
   name      String
   siteId    String
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
   site      Site       @relation(fields: [siteId], references: [id])
   employees Employee[]
 
@@ -29,8 +52,9 @@ model Department {
 
 model Employee {
   id           String   @id @default(cuid())
+  tenantId     String
   userId       String   @unique
-  employeeCode String   @unique
+  employeeCode String
   adpWorkerId  String?  @unique  /// ADP Workforce Now worker ID for sync
   wmsId        String?  @unique  /// Warehouse Management System badge ID (QR code)
   role         Role     @default(EMPLOYEE)
@@ -73,6 +97,7 @@ model Employee {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  tenant       Tenant       @relation(fields: [tenantId], references: [id])
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   supervisor   Employee?    @relation("EmployeeSupervisor", fields: [supervisorId], references: [id])
   subordinates Employee[]   @relation("EmployeeSupervisor")
@@ -86,6 +111,7 @@ model Employee {
   documents    Document[]
   auditLogs    AuditLog[]
 
+  @@unique([tenantId, employeeCode])
   @@map("employees")
 }
 

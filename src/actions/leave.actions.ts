@@ -34,9 +34,9 @@ export const getMyLeaveRequests = withRBAC(
 /** List active leave types (for the request form drop-down). */
 export const getLeaveTypes = withRBAC(
   "LEAVE_REQUEST_OWN",
-  async (_actor, _input: void) => {
+  async ({ tenantId }, _input: void) => {
     return db.leaveType.findMany({
-      where: { isActive: true },
+      where: { isActive: true, tenantId: tenantId ?? undefined },
       orderBy: { name: "asc" },
     });
   }
@@ -81,7 +81,7 @@ export const createLeaveRequest = withRBAC(
 /** Submit a DRAFT leave request for approval. */
 export const submitLeaveRequest = withRBAC(
   "LEAVE_REQUEST_OWN",
-  async ({ employeeId }, input: LeaveRequestIdInput) => {
+  async ({ employeeId, tenantId }, input: LeaveRequestIdInput) => {
     const { leaveRequestId } = leaveRequestIdSchema.parse(input);
 
     const request = await db.leaveRequest.findUniqueOrThrow({
@@ -100,6 +100,7 @@ export const submitLeaveRequest = withRBAC(
     });
 
     await writeAuditLog({
+      tenantId,
       actorId: employeeId,
       entityType: "LEAVE_REQUEST",
       entityId: leaveRequestId,
@@ -115,7 +116,7 @@ export const submitLeaveRequest = withRBAC(
 /** Cancel a leave request (employee self-cancel: DRAFT/PENDING/APPROVED → CANCELLED). */
 export const cancelLeaveRequest = withRBAC(
   "LEAVE_REQUEST_OWN",
-  async ({ employeeId }, input: LeaveRequestIdInput) => {
+  async ({ employeeId, tenantId }, input: LeaveRequestIdInput) => {
     const { leaveRequestId } = leaveRequestIdSchema.parse(input);
 
     const request = await db.leaveRequest.findUniqueOrThrow({
@@ -134,6 +135,7 @@ export const cancelLeaveRequest = withRBAC(
     });
 
     await writeAuditLog({
+      tenantId,
       actorId: employeeId,
       entityType: "LEAVE_REQUEST",
       entityId: leaveRequestId,
@@ -155,7 +157,7 @@ export const cancelLeaveRequest = withRBAC(
 /** Approve a PENDING leave request. */
 export const approveLeaveRequest = withRBAC(
   "LEAVE_APPROVE_TEAM",
-  async ({ employeeId: reviewerId }, input: ReviewLeaveInput) => {
+  async ({ employeeId: reviewerId, tenantId }, input: ReviewLeaveInput) => {
     const { leaveRequestId, reviewNote } = reviewLeaveSchema.parse(input);
 
     const request = await db.leaveRequest.findUniqueOrThrow({
@@ -176,6 +178,7 @@ export const approveLeaveRequest = withRBAC(
     });
 
     await writeAuditLog({
+      tenantId,
       actorId: reviewerId,
       entityType: "LEAVE_REQUEST",
       entityId: leaveRequestId,
@@ -196,7 +199,7 @@ export const approveLeaveRequest = withRBAC(
 /** Reject a PENDING or APPROVED leave request. */
 export const rejectLeaveRequest = withRBAC(
   "LEAVE_APPROVE_TEAM",
-  async ({ employeeId: reviewerId }, input: ReviewLeaveInput) => {
+  async ({ employeeId: reviewerId, tenantId }, input: ReviewLeaveInput) => {
     const { leaveRequestId, reviewNote } = reviewLeaveSchema.parse(input);
 
     const request = await db.leaveRequest.findUniqueOrThrow({
@@ -217,6 +220,7 @@ export const rejectLeaveRequest = withRBAC(
     });
 
     await writeAuditLog({
+      tenantId,
       actorId: reviewerId,
       entityType: "LEAVE_REQUEST",
       entityId: leaveRequestId,
@@ -240,7 +244,7 @@ export const rejectLeaveRequest = withRBAC(
  */
 export const postLeaveRequest = withRBAC(
   "LEAVE_APPROVE_ANY",
-  async ({ employeeId: actorId }, input: LeaveRequestIdInput) => {
+  async ({ employeeId: actorId, tenantId }, input: LeaveRequestIdInput) => {
     const { leaveRequestId } = leaveRequestIdSchema.parse(input);
 
     const request = await db.leaveRequest.findUniqueOrThrow({
@@ -258,6 +262,7 @@ export const postLeaveRequest = withRBAC(
     await postLeaveUsage(leaveRequestId);
 
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "LEAVE_REQUEST",
       entityId: leaveRequestId,

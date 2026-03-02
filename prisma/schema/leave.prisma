@@ -1,5 +1,6 @@
 model LeaveType {
   id                  String        @id @default(cuid())
+  tenantId            String
   name                String
   category            LeaveCategory
   accrualRateMinutes  Int           @default(0) // minutes accrued per pay period
@@ -11,8 +12,9 @@ model LeaveType {
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
-  balances     LeaveBalance[]
-  requests     LeaveRequest[]
+  tenant        Tenant              @relation(fields: [tenantId], references: [id])
+  balances      LeaveBalance[]
+  requests      LeaveRequest[]
   accrualLedger LeaveAccrualLedger[]
 
   @@map("leave_types")

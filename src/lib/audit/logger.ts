@@ -2,18 +2,20 @@ import { db } from "@/lib/db";
 import { Prisma, type AuditEntityType } from "@prisma/client";
 
 interface AuditParams {
-  actorId?: string; // employeeId; omit for system actions
+  tenantId?: string | null;
+  actorId?: string | null; // employeeId; null/omit for system or super-admin actions
   action: string;
   entityType: AuditEntityType;
   entityId: string;
-  changes?: { before?: unknown; after?: unknown };
+  changes?: { before?: unknown; after?: unknown } | null;
   ipAddress?: string;
 }
 
 export async function writeAuditLog(params: AuditParams): Promise<void> {
   await db.auditLog.create({
     data: {
-      actorId: params.actorId,
+      tenantId: params.tenantId ?? undefined,
+      actorId: params.actorId ?? undefined,
       action: params.action,
       entityType: params.entityType,
       entityId: params.entityId,

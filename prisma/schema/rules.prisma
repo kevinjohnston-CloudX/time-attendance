@@ -1,6 +1,7 @@
 model RuleSet {
-  id   String @id @default(cuid())
-  name String @unique
+  id       String @id @default(cuid())
+  tenantId String
+  name     String
 
   // Overtime thresholds
   dailyOtMinutes      Int @default(480)  // 8 hours
@@ -28,7 +29,9 @@ model RuleSet {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
   employees Employee[]
 
+  @@unique([tenantId, name])
   @@map("rule_sets")
 }

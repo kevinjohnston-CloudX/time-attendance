@@ -6,6 +6,7 @@ model User {
   image         String?
   username      String    @unique
   passwordHash  String?
+  isSuperAdmin  Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

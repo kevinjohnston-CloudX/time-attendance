@@ -28,7 +28,7 @@ import type { Punch } from "@prisma/client";
 
 export const recordPunch = withRBAC(
   "PUNCH_OWN",
-  async ({ employeeId }, input: RecordPunchInput): Promise<Punch> => {
+  async ({ employeeId, tenantId }, input: RecordPunchInput): Promise<Punch> => {
     const { punchType, note } = recordPunchSchema.parse(input);
 
     const employee = await db.employee.findUniqueOrThrow({
@@ -36,7 +36,7 @@ export const recordPunch = withRBAC(
       include: { ruleSet: true },
     });
 
-    const payPeriod = await findOpenPayPeriod();
+    const payPeriod = await findOpenPayPeriod(tenantId);
     if (!payPeriod) throw new Error("No active pay period. Contact payroll.");
 
     const timesheet = await findOrCreateTimesheet(employeeId, payPeriod.id);
@@ -69,6 +69,7 @@ export const recordPunch = withRBAC(
         },
       });
       await writeAuditLog({
+        tenantId,
         actorId: employeeId,
         action: "PUNCH_RECORDED",
         entityType: "PUNCH",
@@ -92,7 +93,7 @@ export const recordPunch = withRBAC(
 export const requestMissedPunch = withRBAC(
   "PUNCH_OWN",
   async (
-    { employeeId },
+    { employeeId, tenantId },
     input: RequestMissedPunchInput
   ): Promise<Punch> => {
     const { punchType, punchTime: punchTimeStr, note } =
@@ -104,7 +105,7 @@ export const requestMissedPunch = withRBAC(
       include: { ruleSet: true },
     });
 
-    const payPeriod = await findOpenPayPeriod();
+    const payPeriod = await findOpenPayPeriod(tenantId);
     if (!payPeriod) throw new Error("No active pay period. Contact payroll.");
 
     const timesheet = await findOrCreateTimesheet(employeeId, payPeriod.id);
@@ -139,6 +140,7 @@ export const requestMissedPunch = withRBAC(
         },
       });
       await writeAuditLog({
+        tenantId,
         actorId: employeeId,
         action: "MISSED_PUNCH_REQUESTED",
         entityType: "PUNCH",
@@ -159,7 +161,7 @@ export const requestMissedPunch = withRBAC(
 
 export const approveMissedPunch = withRBAC(
   "PUNCH_EDIT_TEAM",
-  async ({ employeeId: supervisorId }, input: { punchId: string }): Promise<Punch> => {
+  async ({ employeeId: supervisorId, tenantId }, input: { punchId: string }): Promise<Punch> => {
     const { punchId } = approveMissedPunchSchema.parse(input);
 
     const punch = await db.punch.findUniqueOrThrow({
@@ -191,6 +193,7 @@ export const approveMissedPunch = withRBAC(
         },
       });
       await writeAuditLog({
+        tenantId,
         actorId: supervisorId,
         action: "MISSED_PUNCH_APPROVED",
         entityType: "PUNCH",
@@ -217,7 +220,7 @@ export const approveMissedPunch = withRBAC(
 export const correctPunch = withRBAC(
   "PUNCH_EDIT_TEAM",
   async (
-    { employeeId: supervisorId },
+    { employeeId: supervisorId, tenantId: _tenantId },
     input: CorrectPunchInput
   ): Promise<Punch> => {
     const { originalPunchId, newPunchTime: newPunchTimeStr, reason } =

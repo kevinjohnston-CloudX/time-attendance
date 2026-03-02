@@ -1,15 +1,17 @@
 model PayPeriod {
   id        String          @id @default(cuid())
+  tenantId  String
   startDate DateTime
   endDate   DateTime
   status    PayPeriodStatus @default(OPEN)
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 
-  timesheets  Timesheet[]
-  payrollRun  PayrollRun?
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  timesheets Timesheet[]
+  payrollRun PayrollRun?
 
-  @@unique([startDate, endDate])
+  @@unique([tenantId, startDate, endDate])
   @@map("pay_periods")
 }
 

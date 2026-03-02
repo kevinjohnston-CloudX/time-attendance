@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 4. Find open pay period
-  const payPeriod = await findOpenPayPeriod();
+  const payPeriod = await findOpenPayPeriod(employee.tenantId);
   if (!payPeriod) {
     return NextResponse.json(
       { success: false, error: "No active pay period" },

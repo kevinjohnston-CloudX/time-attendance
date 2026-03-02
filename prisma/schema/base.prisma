@@ -13,6 +13,7 @@ enum Role {
   PAYROLL_ADMIN
   HR_ADMIN
   SYSTEM_ADMIN
+  SUPER_ADMIN
 }
 
 enum PunchType {

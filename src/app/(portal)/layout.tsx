@@ -9,6 +9,7 @@ export default async function PortalLayout({
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+  if (session.user.role === "SUPER_ADMIN") redirect("/super-admin");
 
   return (
     <div className="flex h-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950">

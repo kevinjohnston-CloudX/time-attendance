@@ -67,6 +67,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "SITE_MANAGE",
   ],
   SYSTEM_ADMIN: [...PERMISSIONS],
+  SUPER_ADMIN: [...PERMISSIONS],
 };
 
 export function getPermissions(role: Role): Permission[] {

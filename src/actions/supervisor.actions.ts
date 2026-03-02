@@ -29,13 +29,14 @@ const PAYROLL_ROLES: Role[] = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"];
  */
 export const getTeamTimesheets = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
-  async ({ employeeId, role }, _input: void) => {
+  async ({ employeeId, role, tenantId }, _input: void) => {
     const isPayroll = PAYROLL_ROLES.includes(role);
+    const t = tenantId ?? undefined;
 
     return db.timesheet.findMany({
       where: isPayroll
-        ? { status: "SUP_APPROVED" }
-        : { employee: { supervisorId: employeeId }, status: "SUBMITTED" },
+        ? { status: "SUP_APPROVED", employee: { tenantId: t } }
+        : { employee: { supervisorId: employeeId, tenantId: t }, status: "SUBMITTED" },
       include: {
         employee: { include: { user: true } },
         payPeriod: true,
@@ -85,15 +86,16 @@ export const getTimesheetForReview = withRBAC(
 /** All unresolved exceptions for the supervisor's team (or all if payroll+). */
 export const getTeamExceptions = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
-  async ({ employeeId, role }, _input: void) => {
+  async ({ employeeId, role, tenantId }, _input: void) => {
     const isPayroll = PAYROLL_ROLES.includes(role);
+    const t = tenantId ?? undefined;
 
     return db.exception.findMany({
       where: {
         resolvedAt: null,
         ...(isPayroll
-          ? {}
-          : { timesheet: { employee: { supervisorId: employeeId } } }),
+          ? { timesheet: { employee: { tenantId: t } } }
+          : { timesheet: { employee: { supervisorId: employeeId, tenantId: t } } }),
       },
       include: {
         timesheet: {
@@ -114,7 +116,7 @@ export const getTeamExceptions = withRBAC(
 
 export const resolveException = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
-  async ({ employeeId }, input: ResolveExceptionInput) => {
+  async ({ employeeId, tenantId }, input: ResolveExceptionInput) => {
     const { exceptionId, resolution } = resolveExceptionSchema.parse(input);
 
     const exception = await db.exception.findUniqueOrThrow({
@@ -131,6 +133,7 @@ export const resolveException = withRBAC(
     });
 
     await writeAuditLog({
+      tenantId,
       actorId: employeeId,
       entityType: "TIMESHEET",
       entityId: exception.timesheetId,
@@ -152,7 +155,7 @@ const STATE_AFTER: Record<string, PunchState> = {
 /** Supervisor adds a missing punch directly, auto-resolving the exception. */
 export const addMissingPunchForEmployee = withRBAC(
   "PUNCH_EDIT_TEAM",
-  async ({ employeeId: supervisorId }, input: AddMissingPunchInput) => {
+  async ({ employeeId: supervisorId, tenantId }, input: AddMissingPunchInput) => {
     const { timesheetId, exceptionId, punchType, punchTime: punchTimeStr, reason } =
       addMissingPunchSchema.parse(input);
     const punchTime = new Date(punchTimeStr);
@@ -186,6 +189,7 @@ export const addMissingPunchForEmployee = withRBAC(
         data: { resolvedAt: new Date(), resolvedById: supervisorId, resolution: reason },
       });
       await writeAuditLog({
+        tenantId,
         actorId: supervisorId,
         action: "PUNCH_ADDED",
         entityType: "PUNCH",
@@ -237,15 +241,16 @@ export const correctPunchAndResolve = withRBAC(
  */
 export const getTeamLeaveRequests = withRBAC(
   "LEAVE_APPROVE_TEAM",
-  async ({ employeeId, role }, _input: void) => {
+  async ({ employeeId, role, tenantId }, _input: void) => {
     const isPayroll = PAYROLL_ROLES.includes(role);
+    const t = tenantId ?? undefined;
 
     return db.leaveRequest.findMany({
       where: {
         status: "PENDING",
         ...(isPayroll
-          ? {}
-          : { employee: { supervisorId: employeeId } }),
+          ? { employee: { tenantId: t } }
+          : { employee: { supervisorId: employeeId, tenantId: t } }),
       },
       include: {
         employee: { include: { user: true } },
@@ -264,8 +269,9 @@ export const getTeamLeaveRequests = withRBAC(
  */
 export const getUpcomingTeamLeave = withRBAC(
   "LEAVE_APPROVE_TEAM",
-  async ({ employeeId, role }, _input: void) => {
+  async ({ employeeId, role, tenantId }, _input: void) => {
     const isPayroll = PAYROLL_ROLES.includes(role);
+    const t = tenantId ?? undefined;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -274,8 +280,8 @@ export const getUpcomingTeamLeave = withRBAC(
         status: { in: ["APPROVED", "POSTED"] },
         endDate: { gte: today },
         ...(isPayroll
-          ? {}
-          : { employee: { supervisorId: employeeId } }),
+          ? { employee: { tenantId: t } }
+          : { employee: { supervisorId: employeeId, tenantId: t } }),
       },
       include: {
         employee: { include: { user: true } },

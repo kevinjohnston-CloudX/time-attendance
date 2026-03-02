@@ -4,6 +4,7 @@ export const ROLES = [
   "PAYROLL_ADMIN",
   "HR_ADMIN",
   "SYSTEM_ADMIN",
+  "SUPER_ADMIN",
 ] as const;
 
 export type Role = (typeof ROLES)[number];
@@ -15,6 +16,7 @@ export const ROLE_RANK: Record<Role, number> = {
   PAYROLL_ADMIN: 2,
   HR_ADMIN: 3,
   SYSTEM_ADMIN: 4,
+  SUPER_ADMIN: 5,
 };
 
 export function isValidRole(value: unknown): value is Role {

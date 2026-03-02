@@ -18,19 +18,20 @@ import {
 /** Check whether ADP env vars are configured and return last sync info. */
 export const getAdpSyncStatus = withRBAC(
   "EMPLOYEE_MANAGE",
-  async () => {
+  async ({ tenantId }) => {
     const config = getAdpConfig();
+    const t = tenantId ?? undefined;
 
     // Find most recent ADP sync audit log
     const lastSync = await db.auditLog.findFirst({
-      where: { entityType: "ADP_SYNC" },
+      where: { entityType: "ADP_SYNC", tenantId: t },
       orderBy: { createdAt: "desc" },
       select: { createdAt: true, changes: true },
     });
 
     // Count ADP-linked employees
     const adpEmployeeCount = await db.employee.count({
-      where: { adpWorkerId: { not: null } },
+      where: { adpWorkerId: { not: null }, tenantId: t },
     });
 
     return {
@@ -84,7 +85,8 @@ interface SyncResult {
 /** Fetch all workers from ADP and upsert into the database. */
 export const syncAdpEmployees = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId }, input: SyncInput) => {
+  async ({ employeeId: actorId, tenantId }, input: SyncInput) => {
+    if (!tenantId) throw new Error("Tenant context required");
     const config = getAdpConfig();
     if (!config) throw new Error("ADP is not configured. Set ADP environment variables.");
 
@@ -101,7 +103,7 @@ export const syncAdpEmployees = withRBAC(
 
     // Load existing ADP-linked employees for matching
     const existingEmployees = await db.employee.findMany({
-      where: { adpWorkerId: { not: null } },
+      where: { adpWorkerId: { not: null }, tenantId },
       include: { user: true },
     });
     const byAdpId = new Map(
@@ -188,6 +190,7 @@ export const syncAdpEmployees = withRBAC(
             await tx.employee.create({
               data: {
                 userId: user.id,
+                tenantId,
                 employeeCode: mapped.employeeCode,
                 adpWorkerId: mapped.adpWorkerId,
                 role: "EMPLOYEE",
@@ -216,6 +219,7 @@ export const syncAdpEmployees = withRBAC(
 
     // Write a summary audit log
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "ADP_SYNC",
       entityId: "sync",
@@ -247,7 +251,7 @@ interface PayrollPushResult {
 /** Push locked pay period hours to ADP Payroll Data Input API. */
 export const pushPayrollToAdp = withRBAC(
   "PAY_PERIOD_MANAGE",
-  async ({ employeeId: actorId }, input: { payPeriodId: string }) => {
+  async ({ employeeId: actorId, tenantId }, input: { payPeriodId: string }) => {
     const config = getAdpConfig();
     if (!config) throw new Error("ADP is not configured. Set ADP environment variables.");
 
@@ -348,6 +352,7 @@ export const pushPayrollToAdp = withRBAC(
     });
 
     await writeAuditLog({
+      tenantId,
       actorId,
       entityType: "ADP_SYNC",
       entityId: input.payPeriodId,

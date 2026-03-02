@@ -9,10 +9,11 @@ export async function getCurrentPunchState(employeeId: string): Promise<PunchSta
   return last?.stateAfter ?? "OUT";
 }
 
-export async function findOpenPayPeriod() {
+export async function findOpenPayPeriod(tenantId: string | null) {
   const now = new Date();
   return db.payPeriod.findFirst({
     where: {
+      ...(tenantId && { tenantId }),
       startDate: { lte: now },
       endDate: { gte: now },
       status: "OPEN",

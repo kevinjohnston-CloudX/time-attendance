@@ -14,8 +14,9 @@ import { postAccruals } from "@/lib/engines/accrual-engine";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export const getPayPeriods = withRBAC("PAY_PERIOD_MANAGE", async (_actor, _input: void) => {
+export const getPayPeriods = withRBAC("PAY_PERIOD_MANAGE", async ({ tenantId }, _input: void) => {
   return db.payPeriod.findMany({
+    where: { tenantId: tenantId ?? undefined },
     orderBy: { startDate: "desc" },
     include: {
       timesheets: {
@@ -85,6 +86,7 @@ export const markPayPeriodReady = withRBAC(
     });
 
     await writeAuditLog({
+      tenantId: actor.tenantId,
       actorId: actor.employeeId,
       entityType: "PAY_PERIOD",
       entityId: payPeriodId,
@@ -126,6 +128,7 @@ export const lockPayPeriod = withRBAC(
     ]);
 
     await writeAuditLog({
+      tenantId: actor.tenantId,
       actorId: actor.employeeId,
       entityType: "PAY_PERIOD",
       entityId: payPeriodId,
@@ -172,6 +175,7 @@ export const reopenPayPeriod = withRBAC(
     });
 
     await writeAuditLog({
+      tenantId: actor.tenantId,
       actorId: actor.employeeId,
       entityType: "PAY_PERIOD",
       entityId: payPeriodId,
