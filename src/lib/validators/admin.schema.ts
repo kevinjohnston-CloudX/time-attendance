@@ -33,7 +33,7 @@ export const createEmployeeSchema = z.object({
   supervisorId: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
 });
 
-const nullableStr = z.string().optional().or(z.literal("")).transform((v) => v || null);
+const nullableStr = z.string().nullable().optional().transform((v) => v || null);
 
 export const updateEmployeeSchema = z.object({
   employeeId: z.string().min(1),
