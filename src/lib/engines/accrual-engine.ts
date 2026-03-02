@@ -28,8 +28,8 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
   const ppy = periodsPerYear(payPeriod.startDate, payPeriod.endDate);
 
   const [employees, leaveTypes] = await Promise.all([
-    db.employee.findMany({ where: { isActive: true }, select: { id: true } }),
-    db.leaveType.findMany({ where: { isActive: true } }),
+    db.employee.findMany({ where: { isActive: true, tenantId: payPeriod.tenantId }, select: { id: true } }),
+    db.leaveType.findMany({ where: { isActive: true, tenantId: payPeriod.tenantId } }),
   ]);
 
   for (const employee of employees) {
