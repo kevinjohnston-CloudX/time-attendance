@@ -218,7 +218,18 @@ function applyAutoMealDeduction(
   }
 
   return [
-    ...segments.filter((s) => !toRemove.has(s)),
+    ...segments
+      .filter((s) => !toRemove.has(s))
+      .map((s) => {
+        // On a waived day, convert any real MEAL segment to paid WORK time
+        if (
+          s.segmentType === "MEAL" &&
+          waivedDates.has(format(s.segmentDate, "yyyy-MM-dd"))
+        ) {
+          return { ...s, segmentType: "WORK" as SegmentType, isPaid: true, payBucket: "REG" as PayBucket };
+        }
+        return s;
+      }),
     ...toAdd,
     ...extra,
   ];
