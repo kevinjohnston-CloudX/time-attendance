@@ -13,7 +13,7 @@ const saveBtnCls = "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-
 const cancelBtnCls = "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
 const sectionHdrCls = "col-span-full mb-0.5 border-b border-zinc-200 pb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-700";
 
-type RSFields = Omit<RuleSet, "id" | "createdAt" | "updatedAt" | "employees">;
+type RSFields = Omit<RuleSet, "id" | "createdAt" | "updatedAt" | "employees" | "isActive"> & { isActive?: boolean };
 type OtPreset = Pick<RSFields, "dailyOtMinutes" | "dailyDtMinutes" | "weeklyOtMinutes" | "consecutiveDayOtDay">;
 
 // ─── State OT Presets ─────────────────────────────────────────────────────────
@@ -68,6 +68,7 @@ function parseForm(fd: FormData): RSFields {
     shortBreaksPerDay: Number(fd.get("shortBreaksPerDay")),
     longShiftMinutes: Number(fd.get("longShiftHours")) * 60,
     isDefault: fd.get("isDefault") === "true",
+    isActive: fd.get("isActive") !== "false",
   };
 }
 
@@ -273,6 +274,16 @@ function RuleSetFields({ rs }: { rs?: RuleSet }) {
             <option value="true">Yes — assign to new employees by default</option>
           </select>
         </div>
+
+        {rs && (
+          <div className="col-span-2">
+            <label className="mb-1 block text-xs text-zinc-500">Status</label>
+            <select name="isActive" defaultValue={rs.isActive ? "true" : "false"} className={inputCls}>
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </select>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -335,10 +346,15 @@ export function RuleSetsManager({ ruleSets }: Props) {
             <div key={rs.id} className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="font-medium text-zinc-900 dark:text-white">{rs.name}</span>
+                  <span className={`font-medium ${rs.isActive ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"}`}>{rs.name}</span>
                   {rs.isDefault && (
                     <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                       Default
+                    </span>
+                  )}
+                  {!rs.isActive && (
+                    <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                      Inactive
                     </span>
                   )}
                 </div>

@@ -100,6 +100,7 @@ export const ruleSetSchema = z.object({
 
 export const updateRuleSetSchema = ruleSetSchema.extend({
   ruleSetId: z.string().min(1),
+  isActive: z.boolean().optional(),
 });
 
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
