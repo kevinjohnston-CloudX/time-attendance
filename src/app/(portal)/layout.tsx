@@ -3,10 +3,8 @@ import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Sidebar } from "@/components/layout/sidebar";
-import {
-  exitTenant,
-  SUPER_ADMIN_TENANT_COOKIE,
-} from "@/actions/super-admin.actions";
+import { exitTenant } from "@/actions/super-admin.actions";
+import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 
 export default async function PortalLayout({
   children,

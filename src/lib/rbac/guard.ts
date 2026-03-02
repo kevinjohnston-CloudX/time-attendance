@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
-import { SUPER_ADMIN_TENANT_COOKIE } from "@/actions/super-admin.actions";
+import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { hasPermission, type Permission } from "./permissions";
 import type { Role } from "./roles";
 

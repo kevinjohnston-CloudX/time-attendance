@@ -7,8 +7,7 @@ import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createTenantSchema, type CreateTenantInput } from "@/lib/validators/super-admin.schema";
-
-export const SUPER_ADMIN_TENANT_COOKIE = "super_admin_tenant_id";
+import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 
 type ActionResult<T> = { success: true; data: T } | { success: false; error: string };
 
