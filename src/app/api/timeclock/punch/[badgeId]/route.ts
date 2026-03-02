@@ -14,6 +14,45 @@ function unauthorized() {
 }
 
 /**
+ * Parse a naive datetime string (no timezone offset) as if it were in the
+ * given IANA timezone (e.g. "America/New_York"), then return a UTC Date.
+ *
+ * Strategy: ask Intl what UTC offset applies to that local time in that zone,
+ * then subtract the offset to get UTC.
+ */
+function parseLocalDateTime(naiveDateStr: string, timezone: string): Date {
+  // Append a fake Z so Date.parse gives us a number to work with
+  const asUtc = new Date(naiveDateStr.replace(" ", "T") + "Z");
+  if (isNaN(asUtc.getTime())) {
+    throw new Error(`Invalid ScanDateTime: ${naiveDateStr}`);
+  }
+
+  // Find what UTC offset (in minutes) the timezone uses at that moment
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  }).formatToParts(asUtc);
+
+  const get = (type: string) =>
+    parseInt(parts.find((p) => p.type === type)?.value ?? "0", 10);
+
+  const localYear = get("year");
+  const localMonth = get("month") - 1;
+  const localDay = get("day");
+  let localHour = get("hour");
+  const localMinute = get("minute");
+  const localSecond = get("second");
+  if (localHour === 24) localHour = 0;
+
+  const localAsUtcMs = Date.UTC(localYear, localMonth, localDay, localHour, localMinute, localSecond);
+  const offsetMs = asUtc.getTime() - localAsUtcMs;
+
+  return new Date(asUtc.getTime() + offsetMs);
+}
+
+/**
  * Auto-determine punch type from the current state and the employee's rule set.
  *
  * NJ-style (autoDeductMeal = true):  CLOCK_IN / CLOCK_OUT  (2 punches/day)
@@ -96,7 +135,7 @@ export async function POST(
   // 4. Look up employee by wmsId (badge QR code)
   const employee = await db.employee.findUnique({
     where: { wmsId: badgeId },
-    include: { ruleSet: true },
+    include: { ruleSet: true, site: true },
   });
 
   if (!employee) {
@@ -149,8 +188,16 @@ export async function POST(
     );
   }
 
-  // 9. Parse scan time and apply rounding
-  const punchTime = new Date(ScanDateTime);
+  // 9. Parse scan time in the site's local timezone, then apply rounding
+  let punchTime: Date;
+  try {
+    punchTime = parseLocalDateTime(ScanDateTime, employee.site.timezone);
+  } catch {
+    return NextResponse.json(
+      { success: false, error: `Invalid ScanDateTime: ${ScanDateTime}` },
+      { status: 400 }
+    );
+  }
   const roundedTime = applyRounding(punchTime, employee.ruleSet.punchRoundingMinutes);
 
   // 10. Create punch + audit log in transaction
