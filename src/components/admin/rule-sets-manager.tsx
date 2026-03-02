@@ -2,7 +2,7 @@
 
 import { Fragment, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createRuleSet, updateRuleSet } from "@/actions/admin.actions";
+import { createRuleSet, updateRuleSet, deleteRuleSet } from "@/actions/admin.actions";
 import type { RuleSet } from "@prisma/client";
 
 interface Props { ruleSets: RuleSet[] }
@@ -297,6 +297,7 @@ export function RuleSetsManager({ ruleSets }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   function handleCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -305,6 +306,16 @@ export function RuleSetsManager({ ruleSets }: Props) {
       const result = await createRuleSet(parseForm(new FormData(e.currentTarget)));
       if (!result.success) { setError(result.error); return; }
       setShowCreate(false);
+      router.refresh();
+    });
+  }
+
+  function handleDelete(ruleSetId: string) {
+    setError(null);
+    startTransition(async () => {
+      const result = await deleteRuleSet({ ruleSetId });
+      if (!result.success) { setError(result.error); setConfirmDeleteId(null); return; }
+      setConfirmDeleteId(null);
       router.refresh();
     });
   }
@@ -358,9 +369,40 @@ export function RuleSetsManager({ ruleSets }: Props) {
                     </span>
                   )}
                 </div>
-                <button onClick={() => setEditingId(rs.id)} className="text-xs text-blue-600 hover:underline dark:text-blue-400">
-                  Edit
-                </button>
+                <div className="flex items-center gap-3">
+                  {confirmDeleteId === rs.id ? (
+                    <>
+                      <span className="text-xs text-zinc-500">Delete?</span>
+                      <button
+                        onClick={() => handleDelete(rs.id)}
+                        disabled={isPending}
+                        className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50 dark:text-red-400"
+                      >
+                        {isPending ? "Deleting…" : "Yes, delete"}
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="text-xs text-zinc-500 hover:underline"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => setEditingId(rs.id)} className="text-xs text-blue-600 hover:underline dark:text-blue-400">
+                        Edit
+                      </button>
+                      {!rs.isDefault && (
+                        <button
+                          onClick={() => setConfirmDeleteId(rs.id)}
+                          className="text-xs text-red-500 hover:underline dark:text-red-400"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
               <p className="mt-1 text-xs text-zinc-400">
                 Daily OT: {fmtMins(rs.dailyOtMinutes)} · Daily DT: {fmtMins(rs.dailyDtMinutes)} ·

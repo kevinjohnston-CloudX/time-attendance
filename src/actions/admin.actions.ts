@@ -357,6 +357,30 @@ export const updateRuleSet = withRBAC(
   }
 );
 
+export const deleteRuleSet = withRBAC(
+  "RULES_MANAGE",
+  async ({ employeeId: actorId }, input: { ruleSetId: string }) => {
+    const rs = await db.ruleSet.findUniqueOrThrow({
+      where: { id: input.ruleSetId },
+      include: { _count: { select: { employees: true } } },
+    });
+    if (rs.isDefault) throw new Error("Cannot delete the default rule set.");
+    if (rs._count.employees > 0)
+      throw new Error(
+        `Cannot delete — ${rs._count.employees} employee(s) are assigned to this rule set. Reassign them first.`
+      );
+    await db.ruleSet.delete({ where: { id: input.ruleSetId } });
+    await writeAuditLog({
+      actorId,
+      entityType: "RULE_SET",
+      entityId: input.ruleSetId,
+      action: "RULE_SET_DELETED",
+      changes: { before: { name: rs.name } },
+    });
+    revalidatePath("/admin/rules");
+  }
+);
+
 // ─── Employee Leave Balances ───────────────────────────────────────────────────
 
 /** All active leave types merged with this employee's balances for a given year. */
