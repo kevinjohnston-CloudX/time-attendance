@@ -28,7 +28,9 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees }: 
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 
-  const [selectedSiteId, setSelectedSiteId] = useState(sites[0]?.id ?? "");
+  const [selectedSiteId, setSelectedSiteId] = useState(
+    () => sites.find((s) => departments.some((d) => d.siteId === s.id))?.id ?? sites[0]?.id ?? ""
+  );
   const filteredDepts = departments.filter((d) => d.siteId === selectedSiteId);
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
