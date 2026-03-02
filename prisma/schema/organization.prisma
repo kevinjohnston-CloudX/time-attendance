@@ -32,6 +32,7 @@ model Employee {
   userId       String   @unique
   employeeCode String   @unique
   adpWorkerId  String?  @unique  /// ADP Workforce Now worker ID for sync
+  wmsId        String?  @unique  /// Warehouse Management System badge ID (QR code)
   role         Role     @default(EMPLOYEE)
   supervisorId String?
   siteId       String
