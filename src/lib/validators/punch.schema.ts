@@ -23,6 +23,7 @@ export const approveMissedPunchSchema = z.object({
 });
 
 export const timeclockScanSchema = z.object({
+  EmployeeCode: z.string().min(1, "EmployeeCode is required"),
   ScanId: z.number().optional(),
   Warehouse: z.number().optional(),
   DepartmentName: z.string().optional(),

@@ -16,18 +16,13 @@ function unauthorized() {
 /**
  * Parse a naive datetime string (no timezone offset) as if it were in the
  * given IANA timezone (e.g. "America/New_York"), then return a UTC Date.
- *
- * Strategy: ask Intl what UTC offset applies to that local time in that zone,
- * then subtract the offset to get UTC.
  */
 function parseLocalDateTime(naiveDateStr: string, timezone: string): Date {
-  // Append a fake Z so Date.parse gives us a number to work with
   const asUtc = new Date(naiveDateStr.replace(" ", "T") + "Z");
   if (isNaN(asUtc.getTime())) {
     throw new Error(`Invalid ScanDateTime: ${naiveDateStr}`);
   }
 
-  // Find what UTC offset (in minutes) the timezone uses at that moment
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
     year: "numeric", month: "2-digit", day: "2-digit",
@@ -73,7 +68,6 @@ async function detectPunchType(
       return "BREAK_END";
     case "WORK": {
       if (!autoDeductMeal) {
-        // CA-style: check if employee already had a meal segment today
         const mealToday = await db.punch.findFirst({
           where: {
             employeeId,
@@ -90,10 +84,7 @@ async function detectPunchType(
   }
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ badgeId: string }> }
-) {
+export async function POST(req: NextRequest) {
   // 1. Authenticate via shared secret
   const apiKey = req.headers.get("x-api-key");
   const expectedKey = process.env.TIMECLOCK_API_KEY;
@@ -101,16 +92,7 @@ export async function POST(
     return unauthorized();
   }
 
-  // 2. Get badge ID from URL path
-  const { badgeId } = await params;
-  if (!badgeId) {
-    return NextResponse.json(
-      { success: false, error: "Badge ID is required in URL path" },
-      { status: 400 }
-    );
-  }
-
-  // 3. Parse and validate body
+  // 2. Parse and validate body
   let body: unknown;
   try {
     body = await req.json();
@@ -130,17 +112,17 @@ export async function POST(
     );
   }
 
-  const { ScanDateTime, DeviceName } = parsed.data;
+  const { EmployeeCode, ScanDateTime, DeviceName } = parsed.data;
 
-  // 4. Look up employee by wmsId (badge QR code)
+  // 3. Look up employee by wmsId (badge QR code)
   const employee = await db.employee.findUnique({
-    where: { wmsId: badgeId },
+    where: { wmsId: EmployeeCode },
     include: { ruleSet: true, site: true },
   });
 
   if (!employee) {
     return NextResponse.json(
-      { success: false, error: `Badge ID "${badgeId}" not found` },
+      { success: false, error: `Badge ID "${EmployeeCode}" not found` },
       { status: 404 }
     );
   }
@@ -152,7 +134,7 @@ export async function POST(
     );
   }
 
-  // 5. Find open pay period
+  // 4. Find open pay period
   const payPeriod = await findOpenPayPeriod();
   if (!payPeriod) {
     return NextResponse.json(
@@ -161,7 +143,7 @@ export async function POST(
     );
   }
 
-  // 6. Find or create timesheet
+  // 5. Find or create timesheet
   const timesheet = await findOrCreateTimesheet(employee.id, payPeriod.id);
   if (timesheet.status === "LOCKED") {
     return NextResponse.json(
@@ -170,7 +152,7 @@ export async function POST(
     );
   }
 
-  // 7. Get current state and auto-detect punch type
+  // 6. Get current state and auto-detect punch type
   const stateBefore = await getCurrentPunchState(employee.id);
   const punchType = await detectPunchType(
     employee.id,
@@ -179,7 +161,7 @@ export async function POST(
     employee.ruleSet.autoDeductMeal
   );
 
-  // 8. Validate state transition
+  // 7. Validate state transition
   const transition = validateTransition(stateBefore, punchType);
   if (!transition.valid) {
     return NextResponse.json(
@@ -188,7 +170,7 @@ export async function POST(
     );
   }
 
-  // 9. Parse scan time in the site's local timezone, then apply rounding
+  // 8. Parse scan time in the site's local timezone, then apply rounding
   let punchTime: Date;
   try {
     punchTime = parseLocalDateTime(ScanDateTime, employee.site.timezone);
@@ -200,7 +182,7 @@ export async function POST(
   }
   const roundedTime = applyRounding(punchTime, employee.ruleSet.punchRoundingMinutes);
 
-  // 10. Create punch + audit log in transaction
+  // 9. Create punch + audit log in transaction
   try {
     const punch = await db.$transaction(async (tx) => {
       const p = await tx.punch.create({
@@ -234,7 +216,7 @@ export async function POST(
       return p;
     });
 
-    // 11. Rebuild segments
+    // 10. Rebuild segments
     await rebuildSegments(punch.timesheetId, employee.ruleSet);
 
     return NextResponse.json({
