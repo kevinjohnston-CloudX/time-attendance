@@ -41,8 +41,37 @@ model Employee {
   isActive     Boolean  @default(true)
   hireDate     DateTime
   terminatedAt DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+
+  // Work info
+  jobTitle          String?
+  terminationReason String?
+
+  // Pay
+  payType  String?          // "HOURLY" | "SALARY"
+  payRate  Decimal?  @db.Decimal(10, 4)
+
+  // Personal
+  ssn           String?
+  phone         String?
+  phone2        String?
+  gender        String?
+  maritalStatus String?
+
+  // Emergency contact
+  emergencyContact      String?
+  emergencyPhone        String?
+  emergencyRelationship String?
+
+  // Address
+  address1 String?
+  address2 String?
+  city     String?
+  state    String?
+  country  String?
+  zipCode  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   supervisor   Employee?    @relation("EmployeeSupervisor", fields: [supervisorId], references: [id])

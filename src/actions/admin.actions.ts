@@ -139,8 +139,13 @@ export const createEmployee = withRBAC(
 export const updateEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ employeeId: actorId }, input: UpdateEmployeeInput) => {
-    const { employeeId, name, role, supervisorId, siteId, departmentId, ruleSetId, isActive, wmsId, adpWorkerId } =
-      updateEmployeeSchema.parse(input);
+    const {
+      employeeId, name, role, supervisorId, siteId, departmentId, ruleSetId, isActive, wmsId, adpWorkerId,
+      jobTitle, terminationReason, payType, payRate,
+      ssn, phone, phone2, gender, maritalStatus,
+      emergencyContact, emergencyPhone, emergencyRelationship,
+      address1, address2, city, state, country, zipCode,
+    } = updateEmployeeSchema.parse(input);
 
     const current = await db.employee.findUniqueOrThrow({
       where: { id: employeeId },
@@ -162,6 +167,24 @@ export const updateEmployee = withRBAC(
           ...(isActive !== undefined && { isActive }),
           ...(wmsId !== undefined && { wmsId }),
           ...(adpWorkerId !== undefined && { adpWorkerId }),
+          ...(jobTitle !== undefined && { jobTitle }),
+          ...(terminationReason !== undefined && { terminationReason }),
+          ...(payType !== undefined && { payType }),
+          ...(payRate !== undefined && { payRate }),
+          ...(ssn !== undefined && { ssn }),
+          ...(phone !== undefined && { phone }),
+          ...(phone2 !== undefined && { phone2 }),
+          ...(gender !== undefined && { gender }),
+          ...(maritalStatus !== undefined && { maritalStatus }),
+          ...(emergencyContact !== undefined && { emergencyContact }),
+          ...(emergencyPhone !== undefined && { emergencyPhone }),
+          ...(emergencyRelationship !== undefined && { emergencyRelationship }),
+          ...(address1 !== undefined && { address1 }),
+          ...(address2 !== undefined && { address2 }),
+          ...(city !== undefined && { city }),
+          ...(state !== undefined && { state }),
+          ...(country !== undefined && { country }),
+          ...(zipCode !== undefined && { zipCode }),
         },
       });
     });

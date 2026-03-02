@@ -33,6 +33,8 @@ export const createEmployeeSchema = z.object({
   supervisorId: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
 });
 
+const nullableStr = z.string().optional().or(z.literal("")).transform((v) => v || null);
+
 export const updateEmployeeSchema = z.object({
   employeeId: z.string().min(1),
   name: z.string().min(1).optional(),
@@ -42,8 +44,31 @@ export const updateEmployeeSchema = z.object({
   departmentId: z.string().min(1).optional(),
   ruleSetId: z.string().min(1).optional(),
   isActive: z.boolean().optional(),
-  wmsId: z.string().optional().or(z.literal("")).transform((v) => v || null),
-  adpWorkerId: z.string().optional().or(z.literal("")).transform((v) => v || null),
+  wmsId: nullableStr,
+  adpWorkerId: nullableStr,
+  // Work info
+  jobTitle: nullableStr,
+  terminationReason: nullableStr,
+  // Pay
+  payType: z.enum(["HOURLY", "SALARY"]).nullable().optional(),
+  payRate: z.number().positive().nullable().optional(),
+  // Personal
+  ssn: nullableStr,
+  phone: nullableStr,
+  phone2: nullableStr,
+  gender: nullableStr,
+  maritalStatus: nullableStr,
+  // Emergency contact
+  emergencyContact: nullableStr,
+  emergencyPhone: nullableStr,
+  emergencyRelationship: nullableStr,
+  // Address
+  address1: nullableStr,
+  address2: nullableStr,
+  city: nullableStr,
+  state: nullableStr,
+  country: nullableStr,
+  zipCode: nullableStr,
 });
 
 export const siteSchema = z.object({
