@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getTenantBySlug, toggleTenantActive } from "@/actions/super-admin.actions";
+import { getTenantBySlug, toggleTenantActive, enterTenant } from "@/actions/super-admin.actions";
 import { format } from "date-fns";
 
 export default async function TenantDetailPage({
@@ -16,6 +16,11 @@ export default async function TenantDetailPage({
   async function handleToggle() {
     "use server";
     await toggleTenantActive(tenant.id);
+  }
+
+  async function handleEnter() {
+    "use server";
+    await enterTenant(tenant.id);
   }
 
   return (
@@ -42,14 +47,24 @@ export default async function TenantDetailPage({
             </span>
           </p>
         </div>
-        <form action={handleToggle}>
-          <button
-            type="submit"
-            className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:border-zinc-500 hover:text-white"
-          >
-            {tenant.isActive ? "Deactivate" : "Activate"}
-          </button>
-        </form>
+        <div className="flex gap-2">
+          <form action={handleEnter}>
+            <button
+              type="submit"
+              className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-100"
+            >
+              Manage Portal →
+            </button>
+          </form>
+          <form action={handleToggle}>
+            <button
+              type="submit"
+              className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:border-zinc-500 hover:text-white"
+            >
+              {tenant.isActive ? "Deactivate" : "Activate"}
+            </button>
+          </form>
+        </div>
       </div>
 
       <div className="mt-8 grid grid-cols-3 gap-4">

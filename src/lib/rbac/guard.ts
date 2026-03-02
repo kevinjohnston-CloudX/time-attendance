@@ -1,4 +1,6 @@
+import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
+import { SUPER_ADMIN_TENANT_COOKIE } from "@/actions/super-admin.actions";
 import { hasPermission, type Permission } from "./permissions";
 import type { Role } from "./roles";
 
@@ -33,11 +35,18 @@ export function withRBAC<TInput, TOutput>(
     }
 
     try {
+      let tenantId = session.user.tenantId ?? null;
+      if (session.user.role === "SUPER_ADMIN") {
+        const cookieStore = await cookies();
+        const override = cookieStore.get(SUPER_ADMIN_TENANT_COOKIE)?.value;
+        if (override) tenantId = override;
+      }
+
       const data = await handler(
         {
           employeeId: session.user.employeeId ?? "",
           role: session.user.role as Role,
-          tenantId: session.user.tenantId ?? null,
+          tenantId,
         },
         input
       );

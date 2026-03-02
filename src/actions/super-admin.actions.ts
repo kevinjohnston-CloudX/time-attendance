@@ -2,9 +2,13 @@
 
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createTenantSchema, type CreateTenantInput } from "@/lib/validators/super-admin.schema";
+
+export const SUPER_ADMIN_TENANT_COOKIE = "super_admin_tenant_id";
 
 type ActionResult<T> = { success: true; data: T } | { success: false; error: string };
 
@@ -131,6 +135,25 @@ export async function createTenant(
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "INTERNAL_ERROR" };
   }
+}
+
+export async function enterTenant(tenantId: string): Promise<never> {
+  await requireSuperAdmin();
+  const cookieStore = await cookies();
+  cookieStore.set(SUPER_ADMIN_TENANT_COOKIE, tenantId, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: 60 * 60 * 8, // 8 hours
+  });
+  redirect("/dashboard");
+}
+
+export async function exitTenant(): Promise<never> {
+  await requireSuperAdmin();
+  const cookieStore = await cookies();
+  cookieStore.delete(SUPER_ADMIN_TENANT_COOKIE);
+  redirect("/super-admin/tenants");
 }
 
 export async function toggleTenantActive(
