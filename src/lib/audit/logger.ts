@@ -15,7 +15,7 @@ export async function writeAuditLog(params: AuditParams): Promise<void> {
   await db.auditLog.create({
     data: {
       tenantId: params.tenantId ?? undefined,
-      actorId: params.actorId ?? undefined,
+      actorId: params.actorId || undefined,
       action: params.action,
       entityType: params.entityType,
       entityId: params.entityId,
