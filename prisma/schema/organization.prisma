@@ -3,6 +3,11 @@ model Tenant {
   name      String
   slug      String   @unique
   isActive  Boolean  @default(true)
+
+  // Pay period configuration
+  payFrequency        PayFrequency @default(BIWEEKLY)
+  payPeriodAnchorDate DateTime?    // A known pay-period start date; all periods calculated from this
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

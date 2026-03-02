@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
-import { Users, Building2, FolderOpen, Calendar, Settings, FileText, RefreshCw } from "lucide-react";
+import { Users, Building2, FolderOpen, Calendar, Settings, FileText, RefreshCw, SlidersHorizontal } from "lucide-react";
 
 const adminCards = [
   { label: "Employees", href: "/admin/employees", icon: Users, perm: "EMPLOYEE_MANAGE" },
@@ -12,6 +12,7 @@ const adminCards = [
   { label: "Rule Sets", href: "/admin/rules", icon: Settings, perm: "RULES_MANAGE" },
   { label: "ADP Sync", href: "/admin/adp", icon: RefreshCw, perm: "EMPLOYEE_MANAGE" },
   { label: "Audit Log", href: "/admin/audit", icon: FileText, perm: "AUDIT_VIEW" },
+  { label: "Company Settings", href: "/admin/settings", icon: SlidersHorizontal, perm: "PAY_PERIOD_MANAGE" },
 ] as const;
 
 export default async function AdminPage() {

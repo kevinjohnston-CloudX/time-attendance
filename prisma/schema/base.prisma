@@ -112,6 +112,13 @@ enum ExceptionType {
   CONSECUTIVE_DAYS
 }
 
+enum PayFrequency {
+  WEEKLY
+  BIWEEKLY
+  SEMIMONTHLY
+  MONTHLY
+}
+
 enum AuditEntityType {
   USER
   EMPLOYEE
