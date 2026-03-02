@@ -135,6 +135,14 @@ function applyAutoMealDeduction(
   for (const [dayKey, workSegs] of byDay) {
     if (waivedDates.has(dayKey)) continue;
 
+    // If the employee already punched a real meal, no synthetic deduction needed
+    const hasRealMeal = segments.some(
+      (s) =>
+        s.segmentType === "MEAL" &&
+        format(s.segmentDate, "yyyy-MM-dd") === dayKey
+    );
+    if (hasRealMeal) continue;
+
     const totalWork = workSegs.reduce((s, seg) => s + seg.durationMinutes, 0);
     if (totalWork <= ruleSet.mealBreakAfterMinutes) continue;
 
