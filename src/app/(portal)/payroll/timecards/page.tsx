@@ -86,6 +86,11 @@ export default async function TimecardsPage({
             : null,
           department: { name: timecard.employee.department.name },
           employeeCode: timecard.employee.employeeCode,
+          ruleSet: {
+            autoDeductMeal: timecard.employee.ruleSet.autoDeductMeal,
+            mealBreakMinutes: timecard.employee.ruleSet.mealBreakMinutes,
+            mealBreakAfterMinutes: timecard.employee.ruleSet.mealBreakAfterMinutes,
+          },
         },
         punches: timecard.punches.map((p) => ({
           id: p.id,
@@ -106,6 +111,7 @@ export default async function TimecardsPage({
           bucket: b.bucket,
           totalMinutes: b.totalMinutes,
         })),
+        mealWaivers: timecard.mealWaivers,
       }
     : null;
 

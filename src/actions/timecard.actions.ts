@@ -49,11 +49,23 @@ export const getTimecardDetail = withRBAC(
       .object({ timesheetId: z.string() })
       .parse(input);
 
-    return db.timesheet.findUniqueOrThrow({
+    const ts = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
       include: {
         payPeriod: true,
-        employee: { include: { user: true, department: true } },
+        employee: {
+          include: {
+            user: true,
+            department: true,
+            ruleSet: {
+              select: {
+                autoDeductMeal: true,
+                mealBreakMinutes: true,
+                mealBreakAfterMinutes: true,
+              },
+            },
+          },
+        },
         punches: {
           where: { isApproved: true, correctedById: null },
           orderBy: { roundedTime: "asc" },
@@ -61,7 +73,17 @@ export const getTimecardDetail = withRBAC(
         segments: { orderBy: { startTime: "asc" } },
         overtimeBuckets: true,
         exceptions: { where: { resolvedAt: null } },
+        mealWaivers: true,
       },
     });
+
+    return {
+      ...ts,
+      mealWaivers: ts.mealWaivers.map((w) => ({
+        id: w.id,
+        segmentDate: w.segmentDate.toISOString().slice(0, 10),
+        reason: w.reason,
+      })),
+    };
   }
 );

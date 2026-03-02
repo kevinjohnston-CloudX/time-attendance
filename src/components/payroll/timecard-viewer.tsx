@@ -21,6 +21,7 @@ import {
   approveTimesheet,
   payrollApproveTimesheet,
   rejectTimesheet,
+  toggleMealWaiver,
 } from "@/actions/timesheet.actions";
 import { Search, ChevronRight, Pencil } from "lucide-react";
 
@@ -74,10 +75,12 @@ type TimecardDetail = {
     user: { name: string | null } | null;
     department: { name: string };
     employeeCode: string;
+    ruleSet: { autoDeductMeal: boolean; mealBreakMinutes: number; mealBreakAfterMinutes: number };
   };
   punches: TimecardPunch[];
   segments: TimecardSegment[];
   overtimeBuckets: TimecardBucket[];
+  mealWaivers: { id: string; segmentDate: string; reason: string }[];
 };
 
 interface TimecardViewerProps {
@@ -142,6 +145,11 @@ export function TimecardViewer({
   const [rejectNote, setRejectNote] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // Meal waiver
+  const [waiverDay, setWaiverDay] = useState<string | null>(null);
+  const [waiverReason, setWaiverReason] = useState("");
+  const [waiverError, setWaiverError] = useState<string | null>(null);
+
   // Reset state when employee changes
   useEffect(() => {
     setExpandedDays(new Set());
@@ -149,6 +157,9 @@ export function TimecardViewer({
     setEditError(null);
     setShowRejectForm(false);
     setRejectNote("");
+    setWaiverDay(null);
+    setWaiverReason("");
+    setWaiverError(null);
   }, [timecard?.timesheetId]);
 
   const canEdit =
@@ -272,6 +283,25 @@ export function TimecardViewer({
       }
       setShowRejectForm(false);
       setRejectNote("");
+      router.refresh();
+    });
+  }
+
+  function handleToggleWaiver(segmentDate: string, isCurrentlyWaived: boolean) {
+    if (!timecard) return;
+    setWaiverError(null);
+    startTransition(async () => {
+      const result = await toggleMealWaiver({
+        timesheetId: timecard.timesheetId,
+        segmentDate,
+        reason: isCurrentlyWaived ? "" : waiverReason,
+      });
+      if (!result.success) {
+        setWaiverError((result as { success: false; error: string }).error);
+        return;
+      }
+      setWaiverDay(null);
+      setWaiverReason("");
       router.refresh();
     });
   }
@@ -769,6 +799,82 @@ export function TimecardViewer({
                                     )
                                   )}
                                 </div>
+
+                                {/* ── Meal waiver section (NJ auto-deduct only) ── */}
+                                {(() => {
+                                  if (!timecard.employee.ruleSet.autoDeductMeal) return null;
+                                  const dayStr = format(day, "yyyy-MM-dd");
+                                  const rawWorkMins = daySegments
+                                    .filter((s) => s.segmentType === "WORK")
+                                    .reduce((a, s) => a + s.durationMinutes, 0);
+                                  const mealSeg = daySegments.find((s) => s.segmentType === "MEAL");
+                                  const totalWorkForThreshold = rawWorkMins + (mealSeg?.durationMinutes ?? 0);
+                                  if (totalWorkForThreshold <= timecard.employee.ruleSet.mealBreakAfterMinutes) return null;
+
+                                  const waiver = timecard.mealWaivers.find((w) => w.segmentDate === dayStr);
+                                  const isWaiverDay = waiverDay === dayStr;
+
+                                  return (
+                                    <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-zinc-200 pt-2 dark:border-zinc-700">
+                                      <span className="text-xs text-zinc-500">Meal deduction:</span>
+                                      {waiver ? (
+                                        <>
+                                          <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                                            Waived — {waiver.reason}
+                                          </span>
+                                          {canEdit && (
+                                            <button
+                                              type="button"
+                                              disabled={isPending}
+                                              onClick={() => handleToggleWaiver(dayStr, true)}
+                                              className="text-xs text-zinc-400 underline hover:text-red-500 disabled:opacity-50"
+                                            >
+                                              {isPending ? "Removing…" : "Remove waiver"}
+                                            </button>
+                                          )}
+                                        </>
+                                      ) : isWaiverDay ? (
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            value={waiverReason}
+                                            onChange={(e) => setWaiverReason(e.target.value)}
+                                            placeholder="Reason (e.g. no lunch taken)…"
+                                            autoFocus
+                                            className="w-56 rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                                          />
+                                          <button
+                                            type="button"
+                                            disabled={isPending || !waiverReason.trim()}
+                                            onClick={() => handleToggleWaiver(dayStr, false)}
+                                            className="rounded bg-amber-500 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+                                          >
+                                            {isPending ? "Saving…" : "Confirm waiver"}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => { setWaiverDay(null); setWaiverReason(""); }}
+                                            className="text-xs text-zinc-400 hover:text-zinc-600"
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        canEdit && (
+                                          <button
+                                            type="button"
+                                            onClick={() => { setWaiverDay(dayStr); setWaiverReason(""); }}
+                                            className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 hover:bg-amber-50 hover:text-amber-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-amber-900/20 dark:hover:text-amber-300"
+                                          >
+                                            Waive meal
+                                          </button>
+                                        )
+                                      )}
+                                      {waiverError && isWaiverDay && (
+                                        <span className="text-xs text-red-500">{waiverError}</span>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </td>
                             </tr>
                           )}

@@ -14,6 +14,7 @@ import {
   type TimesheetIdInput,
   type RejectTimesheetInput,
 } from "@/lib/validators/timesheet.schema";
+import { z } from "zod";
 import type { Timesheet } from "@prisma/client";
 
 // ─── recalculateSegments ──────────────────────────────────────────────────────
@@ -203,5 +204,61 @@ export const payrollApproveTimesheet = withRBAC(
     revalidatePath("/payroll/timecards");
     revalidatePath(`/time/timesheet/${timesheet.id}`);
     return updated;
+  }
+);
+
+// ─── toggleMealWaiver ─────────────────────────────────────────────────────────
+
+const mealWaiverSchema = z.object({
+  timesheetId: z.string().cuid(),
+  segmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be yyyy-MM-dd"),
+  reason: z.string().max(500).optional(),
+});
+
+export const toggleMealWaiver = withRBAC(
+  "PAY_PERIOD_MANAGE",
+  async ({ employeeId: actorId }, input: unknown): Promise<{ success: boolean; waived: boolean }> => {
+    const { timesheetId, segmentDate, reason } = mealWaiverSchema.parse(input);
+
+    const dateObj = new Date(segmentDate + "T00:00:00.000Z");
+
+    const existing = await db.mealWaiver.findUnique({
+      where: { timesheetId_segmentDate: { timesheetId, segmentDate: dateObj } },
+    });
+
+    if (existing) {
+      await db.$transaction(async (tx) => {
+        await tx.mealWaiver.delete({ where: { id: existing.id } });
+        await writeAuditLog({
+          actorId,
+          action: "MEAL_WAIVER_REMOVED",
+          entityType: "TIMESHEET",
+          entityId: timesheetId,
+          changes: { before: { segmentDate, reason: existing.reason }, after: null },
+        });
+      });
+    } else {
+      await db.$transaction(async (tx) => {
+        await tx.mealWaiver.create({
+          data: { timesheetId, segmentDate: dateObj, reason: reason ?? "" },
+        });
+        await writeAuditLog({
+          actorId,
+          action: "MEAL_WAIVER_ADDED",
+          entityType: "TIMESHEET",
+          entityId: timesheetId,
+          changes: { before: null, after: { segmentDate, reason } },
+        });
+      });
+    }
+
+    const timesheet = await db.timesheet.findUniqueOrThrow({
+      where: { id: timesheetId },
+      include: { employee: { include: { ruleSet: true } } },
+    });
+    await rebuildSegments(timesheetId, timesheet.employee.ruleSet);
+    revalidatePath("/payroll/timecards");
+
+    return { success: true, waived: !existing };
   }
 );
