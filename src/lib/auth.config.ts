@@ -15,7 +15,9 @@ export const authConfig = {
       const isOnSuperAdmin = nextUrl.pathname.startsWith("/super-admin");
       const isOnPortal = !nextUrl.pathname.startsWith("/login") &&
         !nextUrl.pathname.startsWith("/forgot-password") &&
-        !nextUrl.pathname.startsWith("/api/auth");
+        !nextUrl.pathname.startsWith("/api/auth") &&
+        !nextUrl.pathname.startsWith("/api/timeclock") &&
+        !nextUrl.pathname.startsWith("/api/cron");
 
       // Super-admin routes: require SUPER_ADMIN role
       if (isOnSuperAdmin) {
