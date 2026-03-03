@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { format, eachDayOfInterval, parseISO } from "date-fns";
+import { format, eachDayOfInterval, parseISO, isToday } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
 import {
@@ -508,42 +508,31 @@ export function TimecardViewer({
               {/* ── Scrollable timecard table + summary ──────────────── */}
               <div className="flex-1 overflow-y-auto">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900">
+                  <thead className="sticky top-0 border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
                     <tr>
-                      <th className="w-6 px-1 py-2" />
-                      <th className="px-3 py-2 text-left font-medium text-zinc-500">
-                        Date
-                      </th>
-                      <th className="px-3 py-2 text-left font-medium text-zinc-500">
-                        Day
-                      </th>
-                      <th className="px-3 py-2 text-left font-medium text-zinc-500">
-                        In
-                      </th>
-                      <th className="px-3 py-2 text-left font-medium text-zinc-500">
-                        Out
-                      </th>
-                      <th className="px-3 py-2 text-right font-medium text-zinc-500">
-                        Reg
-                      </th>
-                      <th className="px-3 py-2 text-right font-medium text-zinc-500">
-                        OT
-                      </th>
-                      <th className="px-3 py-2 text-right font-medium text-zinc-500">
-                        DT
-                      </th>
-                      <th className="px-3 py-2 text-right font-medium text-zinc-500">
-                        Total
-                      </th>
+                      <th className="w-7 pl-2 pr-0 py-2.5" />
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Date</th>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Day</th>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">In</th>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Out</th>
+                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">Reg</th>
+                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">OT</th>
+                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">DT</th>
+                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">Total</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  <tbody>
                     {days.map((day) => {
                       const dayKey = day.toISOString();
                       const dayPunches = punchesForDay(day);
                       const daySegments = segmentsForDay(day);
                       const isWeekend = [0, 6].includes(day.getDay());
                       const isExpanded = expandedDays.has(dayKey);
+                      const isTodayRow = isToday(day);
+                      // Show a week separator before each Monday (except the very first row)
+                      const isMonday = day.getDay() === 1;
+                      const isFirstDay = days[0].toISOString() === dayKey;
+                      const showWeekSeparator = isMonday && !isFirstDay;
 
                       const buckets: Record<string, number> = {};
                       for (const seg of daySegments) {
@@ -587,13 +576,24 @@ export function TimecardViewer({
 
                       return (
                         <>
+                          {/* Week separator */}
+                          {showWeekSeparator && (
+                            <tr key={`${dayKey}-sep`} aria-hidden>
+                              <td colSpan={9} className="h-0 border-t-2 border-zinc-200 dark:border-zinc-700 p-0" />
+                            </tr>
+                          )}
+
                           {/* Day summary row */}
                           <tr
                             key={dayKey}
-                            className={`${
-                              isWeekend
-                                ? "bg-zinc-50/60 dark:bg-zinc-900/30"
-                                : ""
+                            className={`border-b border-zinc-100 dark:border-zinc-800/60 transition-colors ${
+                              isTodayRow
+                                ? "bg-blue-50/60 dark:bg-blue-950/20"
+                                : isWeekend
+                                  ? "bg-zinc-50/70 dark:bg-zinc-900/40"
+                                  : hasActivity
+                                    ? "hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                                    : "hover:bg-zinc-50/50 dark:hover:bg-zinc-900/20"
                             } ${hasPunches ? "cursor-pointer" : ""}`}
                             onClick={
                               hasPunches
@@ -601,28 +601,43 @@ export function TimecardViewer({
                                 : undefined
                             }
                           >
-                            <td className="px-1 py-1.5 text-center">
-                              {hasPunches && (
+                            {/* Expand chevron / activity indicator */}
+                            <td className="w-7 pl-2 pr-0 text-center">
+                              {hasPunches ? (
                                 <ChevronRight
                                   className={`inline h-3.5 w-3.5 text-zinc-400 transition-transform ${
                                     isExpanded ? "rotate-90" : ""
                                   }`}
                                 />
-                              )}
+                              ) : isTodayRow ? (
+                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-400" />
+                              ) : null}
                             </td>
-                            <td className="px-3 py-1.5 text-zinc-700 dark:text-zinc-300">
+
+                            {/* Date */}
+                            <td className={`px-3 py-2.5 text-sm font-medium tabular-nums ${
+                              isTodayRow
+                                ? "text-blue-700 dark:text-blue-400"
+                                : isWeekend
+                                  ? "text-zinc-400 dark:text-zinc-500"
+                                  : "text-zinc-700 dark:text-zinc-300"
+                            }`}>
                               {format(day, "MM/dd")}
                             </td>
-                            <td
-                              className={`px-3 py-1.5 ${
-                                isWeekend
-                                  ? "text-zinc-400"
-                                  : "text-zinc-700 dark:text-zinc-300"
-                              }`}
-                            >
+
+                            {/* Day name */}
+                            <td className={`px-3 py-2.5 text-sm ${
+                              isTodayRow
+                                ? "font-semibold text-blue-700 dark:text-blue-400"
+                                : isWeekend
+                                  ? "text-zinc-400 dark:text-zinc-500"
+                                  : "text-zinc-500 dark:text-zinc-400"
+                            }`}>
                               {format(day, "EEE")}
                             </td>
-                            <td className="px-3 py-1.5 font-mono text-xs text-zinc-700 dark:text-zinc-300">
+
+                            {/* In time */}
+                            <td className="px-3 py-2.5 font-mono text-sm text-zinc-700 dark:text-zinc-300">
                               {firstIn ? (
                                 <button
                                   type="button"
@@ -633,31 +648,23 @@ export function TimecardViewer({
                                   disabled={!canEdit}
                                   className={
                                     canEdit
-                                      ? "rounded px-1 py-0.5 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                                      ? "rounded px-1 py-0.5 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
                                       : ""
                                   }
                                 >
-                                  {format(
-                                    parseISO(firstIn.roundedTime),
-                                    "h:mm a"
-                                  )}
+                                  {format(parseISO(firstIn.roundedTime), "h:mm a")}
                                 </button>
                               ) : uniqueLeave.length > 0 ? (
-                                uniqueLeave
-                                  .map(
-                                    (b) =>
-                                      PAY_BUCKET_LABEL[
-                                        b as PayBucketValue
-                                      ] ?? b
-                                  )
-                                  .join(", ")
+                                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+                                  {uniqueLeave.map((b) => PAY_BUCKET_LABEL[b as PayBucketValue] ?? b).join(", ")}
+                                </span>
                               ) : hasActivity ? (
-                                "—"
-                              ) : (
-                                ""
-                              )}
+                                <span className="text-zinc-400">—</span>
+                              ) : null}
                             </td>
-                            <td className="px-3 py-1.5 font-mono text-xs text-zinc-700 dark:text-zinc-300">
+
+                            {/* Out time */}
+                            <td className="px-3 py-2.5 font-mono text-sm text-zinc-700 dark:text-zinc-300">
                               {lastOut ? (
                                 <button
                                   type="button"
@@ -668,44 +675,47 @@ export function TimecardViewer({
                                   disabled={!canEdit}
                                   className={
                                     canEdit
-                                      ? "rounded px-1 py-0.5 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                                      ? "rounded px-1 py-0.5 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
                                       : ""
                                   }
                                 >
-                                  {format(
-                                    parseISO(lastOut.roundedTime),
-                                    "h:mm a"
-                                  )}
+                                  {format(parseISO(lastOut.roundedTime), "h:mm a")}
                                 </button>
-                              ) : (
-                                ""
-                              )}
+                              ) : null}
                             </td>
-                            <td className="px-3 py-1.5 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
-                              {reg > 0 ? minutesToHoursDecimal(reg) : ""}
+
+                            {/* Reg */}
+                            <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
+                              reg > 0 ? "text-zinc-700 dark:text-zinc-300" : "text-zinc-300 dark:text-zinc-700"
+                            }`}>
+                              {reg > 0 ? minutesToHoursDecimal(reg) : "—"}
                             </td>
-                            <td
-                              className={`px-3 py-1.5 text-right tabular-nums ${
-                                ot > 0
-                                  ? "font-medium text-amber-600 dark:text-amber-400"
-                                  : "text-zinc-400"
-                              }`}
-                            >
-                              {ot > 0 ? minutesToHoursDecimal(ot) : ""}
+
+                            {/* OT */}
+                            <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
+                              ot > 0
+                                ? "font-semibold text-amber-600 dark:text-amber-400"
+                                : "text-zinc-300 dark:text-zinc-700"
+                            }`}>
+                              {ot > 0 ? minutesToHoursDecimal(ot) : "—"}
                             </td>
-                            <td
-                              className={`px-3 py-1.5 text-right tabular-nums ${
-                                dt > 0
-                                  ? "font-medium text-red-600 dark:text-red-400"
-                                  : "text-zinc-400"
-                              }`}
-                            >
-                              {dt > 0 ? minutesToHoursDecimal(dt) : ""}
+
+                            {/* DT */}
+                            <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
+                              dt > 0
+                                ? "font-semibold text-red-600 dark:text-red-400"
+                                : "text-zinc-300 dark:text-zinc-700"
+                            }`}>
+                              {dt > 0 ? minutesToHoursDecimal(dt) : "—"}
                             </td>
-                            <td className="px-3 py-1.5 text-right font-medium tabular-nums text-zinc-900 dark:text-white">
-                              {dailyTotal > 0
-                                ? minutesToHoursDecimal(dailyTotal)
-                                : ""}
+
+                            {/* Total */}
+                            <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
+                              dailyTotal > 0
+                                ? "font-bold text-zinc-900 dark:text-white"
+                                : "text-zinc-300 dark:text-zinc-700"
+                            }`}>
+                              {dailyTotal > 0 ? minutesToHoursDecimal(dailyTotal) : "—"}
                             </td>
                           </tr>
 
