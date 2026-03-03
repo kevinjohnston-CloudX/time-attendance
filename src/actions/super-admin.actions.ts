@@ -110,7 +110,7 @@ export async function createTenant(
 
       const passwordHash = await bcrypt.hash(parsed.adminPassword, 12);
       const user = await tx.user.create({
-        data: { name: parsed.adminName, username: parsed.adminUsername, passwordHash },
+        data: { name: parsed.adminName, username: parsed.adminUsername.toLowerCase(), passwordHash },
       });
 
       await tx.employee.create({

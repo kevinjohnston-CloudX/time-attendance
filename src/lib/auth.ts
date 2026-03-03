@@ -22,7 +22,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!parsed.success) return null;
 
         const user = await db.user.findUnique({
-          where: { username: parsed.data.username },
+          where: { username: parsed.data.username.toLowerCase() },
           include: { employee: true },
         });
 

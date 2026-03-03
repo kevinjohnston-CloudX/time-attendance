@@ -107,7 +107,7 @@ export const createEmployee = withRBAC(
         data: {
           name: parsed.name,
           email: parsed.email || null,
-          username: parsed.username,
+          username: parsed.username.toLowerCase(),
           passwordHash,
         },
       });
@@ -689,7 +689,7 @@ export const bulkCreateEmployees = withRBAC(
             data: {
               name: r.name,
               email: r.email || null,
-              username: r.username,
+              username: r.username.toLowerCase(),
               passwordHash,
             },
           });
