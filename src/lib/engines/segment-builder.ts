@@ -1,6 +1,7 @@
-import { startOfDay, addDays, format } from "date-fns";
+import { format } from "date-fns";
 import { db } from "@/lib/db";
 import { applyOvertime } from "@/lib/engines/overtime-engine";
+import { startOfDayInTz, nextMidnightInTz } from "@/lib/utils/date";
 import type { Punch, RuleSet, PayBucket, SegmentType } from "@prisma/client";
 
 type ActiveState = "WORK" | "MEAL" | "BREAK";
@@ -31,17 +32,19 @@ function payBucketFor(state: ActiveState): PayBucket {
 }
 
 /**
- * Build one or more SegmentInputs from a time range, splitting at every midnight.
- * Recursive — handles shifts crossing multiple midnights.
+ * Build one or more SegmentInputs from a time range, splitting at every local midnight.
+ * Uses the employee's site timezone so splits happen at the correct wall-clock midnight,
+ * not UTC midnight. Recursive — handles shifts crossing multiple midnights.
  */
 function buildSegmentSpan(
   timesheetId: string,
   start: Date,
   end: Date,
   state: ActiveState,
-  isSplit: boolean
+  isSplit: boolean,
+  timezone: string
 ): SegmentInput[] {
-  const nextMidnight = addDays(startOfDay(start), 1);
+  const nextMidnight = nextMidnightInTz(start, timezone);
 
   if (end <= nextMidnight) {
     const durationMinutes = Math.round(
@@ -55,7 +58,7 @@ function buildSegmentSpan(
         startTime: start,
         endTime: end,
         durationMinutes,
-        segmentDate: startOfDay(start),
+        segmentDate: startOfDayInTz(start, timezone),
         isPaid: isPaidSegment(state),
         payBucket: payBucketFor(state),
         isSplit,
@@ -65,8 +68,8 @@ function buildSegmentSpan(
 
   // Crosses midnight — split and recurse
   return [
-    ...buildSegmentSpan(timesheetId, start, nextMidnight, state, true),
-    ...buildSegmentSpan(timesheetId, nextMidnight, end, state, true),
+    ...buildSegmentSpan(timesheetId, start, nextMidnight, state, true, timezone),
+    ...buildSegmentSpan(timesheetId, nextMidnight, end, state, true, timezone),
   ];
 }
 
@@ -76,7 +79,8 @@ function buildSegmentSpan(
  */
 export function computeSegments(
   timesheetId: string,
-  punches: Punch[]
+  punches: Punch[],
+  timezone: string
 ): SegmentInput[] {
   const segments: SegmentInput[] = [];
   let openStart: Date | null = null;
@@ -86,7 +90,7 @@ export function computeSegments(
     // Close the previous segment at this punch's rounded time
     if (openState && openStart) {
       segments.push(
-        ...buildSegmentSpan(timesheetId, openStart, punch.roundedTime, openState, false)
+        ...buildSegmentSpan(timesheetId, openStart, punch.roundedTime, openState, false, timezone)
       );
       openStart = null;
       openState = null;
@@ -246,12 +250,19 @@ export async function rebuildSegments(
   timesheetId: string,
   ruleSet: RuleSet
 ): Promise<void> {
+  // Fetch the employee's site timezone so segment dates use the correct calendar day.
+  const timesheet = await db.timesheet.findUniqueOrThrow({
+    where: { id: timesheetId },
+    select: { employee: { select: { site: { select: { timezone: true } } } } },
+  });
+  const timezone = timesheet.employee.site?.timezone ?? "UTC";
+
   const punches = await db.punch.findMany({
     where: { timesheetId, isApproved: true, correctedById: null },
     orderBy: { roundedTime: "asc" },
   });
 
-  const rawSegments = computeSegments(timesheetId, punches);
+  const rawSegments = computeSegments(timesheetId, punches, timezone);
 
   let segments = rawSegments;
   if (ruleSet.autoDeductMeal) {
