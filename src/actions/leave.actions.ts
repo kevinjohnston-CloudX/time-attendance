@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { parseISO, getYear } from "date-fns";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { validateLeaveTransition } from "@/lib/state-machines/leave-state";
@@ -9,7 +8,14 @@ import { postLeaveUsage } from "@/lib/engines/accrual-engine";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
 import { writeAuditLog } from "@/lib/audit/logger";
 import {
-  requestLeaveSchema,
+  getLeaveRequestsCore,
+  getLeaveTypesCore,
+  getLeaveBalancesCore,
+  createLeaveRequestCore,
+  submitLeaveRequestCore,
+  cancelLeaveRequestCore,
+} from "@/lib/services/leave.service";
+import {
   leaveRequestIdSchema,
   reviewLeaveSchema,
   type RequestLeaveInput,
@@ -23,11 +29,7 @@ import {
 export const getMyLeaveRequests = withRBAC(
   "LEAVE_REQUEST_OWN",
   async ({ employeeId }, _input: void) => {
-    return db.leaveRequest.findMany({
-      where: { employeeId },
-      include: { leaveType: true },
-      orderBy: { startDate: "desc" },
-    });
+    return getLeaveRequestsCore(employeeId);
   }
 );
 
@@ -35,10 +37,7 @@ export const getMyLeaveRequests = withRBAC(
 export const getLeaveTypes = withRBAC(
   "LEAVE_REQUEST_OWN",
   async ({ tenantId }, _input: void) => {
-    return db.leaveType.findMany({
-      where: { isActive: true, tenantId: tenantId ?? undefined },
-      orderBy: { name: "asc" },
-    });
+    return getLeaveTypesCore(tenantId);
   }
 );
 
@@ -46,11 +45,7 @@ export const getLeaveTypes = withRBAC(
 export const getMyLeaveBalances = withRBAC(
   "LEAVE_REQUEST_OWN",
   async ({ employeeId }, _input: void) => {
-    const year = getYear(new Date());
-    return db.leaveBalance.findMany({
-      where: { employeeId, accrualYear: year },
-      include: { leaveType: true },
-    });
+    return getLeaveBalancesCore(employeeId);
   }
 );
 
@@ -58,21 +53,7 @@ export const getMyLeaveBalances = withRBAC(
 export const createLeaveRequest = withRBAC(
   "LEAVE_REQUEST_OWN",
   async ({ employeeId }, input: RequestLeaveInput) => {
-    const { leaveTypeId, startDate, endDate, durationMinutes, note } =
-      requestLeaveSchema.parse(input);
-
-    const request = await db.leaveRequest.create({
-      data: {
-        employeeId,
-        leaveTypeId,
-        startDate: parseISO(startDate),
-        endDate: parseISO(endDate),
-        durationMinutes,
-        note,
-        status: "DRAFT",
-      },
-    });
-
+    const request = await createLeaveRequestCore(employeeId, input);
     revalidatePath("/leave");
     return request;
   }
@@ -83,31 +64,7 @@ export const submitLeaveRequest = withRBAC(
   "LEAVE_REQUEST_OWN",
   async ({ employeeId, tenantId }, input: LeaveRequestIdInput) => {
     const { leaveRequestId } = leaveRequestIdSchema.parse(input);
-
-    const request = await db.leaveRequest.findUniqueOrThrow({
-      where: { id: leaveRequestId },
-    });
-
-    if (request.employeeId !== employeeId)
-      throw new Error("Cannot submit another employee's leave request");
-
-    const transition = validateLeaveTransition(request.status, "SUBMIT");
-    if (!transition.valid) throw new Error(transition.error);
-
-    const updated = await db.leaveRequest.update({
-      where: { id: leaveRequestId },
-      data: { status: transition.newStatus, submittedAt: new Date() },
-    });
-
-    await writeAuditLog({
-      tenantId,
-      actorId: employeeId,
-      entityType: "LEAVE_REQUEST",
-      entityId: leaveRequestId,
-      action: "SUBMITTED",
-      changes: { before: request.status, after: transition.newStatus },
-    });
-
+    const updated = await submitLeaveRequestCore(employeeId, tenantId, leaveRequestId);
     revalidatePath("/leave");
     return updated;
   }
@@ -118,33 +75,7 @@ export const cancelLeaveRequest = withRBAC(
   "LEAVE_REQUEST_OWN",
   async ({ employeeId, tenantId }, input: LeaveRequestIdInput) => {
     const { leaveRequestId } = leaveRequestIdSchema.parse(input);
-
-    const request = await db.leaveRequest.findUniqueOrThrow({
-      where: { id: leaveRequestId },
-    });
-
-    if (request.employeeId !== employeeId)
-      throw new Error("Cannot cancel another employee's leave request");
-
-    const transition = validateLeaveTransition(request.status, "CANCEL");
-    if (!transition.valid) throw new Error(transition.error);
-
-    const updated = await db.leaveRequest.update({
-      where: { id: leaveRequestId },
-      data: { status: transition.newStatus, cancelledAt: new Date() },
-    });
-
-    await writeAuditLog({
-      tenantId,
-      actorId: employeeId,
-      entityType: "LEAVE_REQUEST",
-      entityId: leaveRequestId,
-      action: "CANCELLED",
-      changes: { before: request.status, after: transition.newStatus },
-    });
-
-    await syncLeaveSegments(leaveRequestId);
-
+    const updated = await cancelLeaveRequestCore(employeeId, tenantId, leaveRequestId);
     revalidatePath("/leave");
     revalidatePath("/payroll/timecards");
     revalidatePath("/time/timesheet");

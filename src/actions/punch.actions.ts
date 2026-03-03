@@ -8,12 +8,9 @@ import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { createCorrectionPunch } from "@/lib/utils/punch-correction";
 import { applyRounding } from "@/lib/utils/date";
-import { getCurrentPunchState, findOpenPayPeriod } from "@/lib/utils/punch-helpers";
+import { findOpenPayPeriod } from "@/lib/utils/punch-helpers";
+import { recordPunchCore } from "@/lib/services/punch.service";
 import {
-  validateTransition,
-} from "@/lib/state-machines/punch-state";
-import {
-  recordPunchSchema,
   requestMissedPunchSchema,
   correctPunchSchema,
   approveMissedPunchSchema,
@@ -29,57 +26,10 @@ import type { Punch } from "@prisma/client";
 export const recordPunch = withRBAC(
   "PUNCH_OWN",
   async ({ employeeId, tenantId }, input: RecordPunchInput): Promise<Punch> => {
-    const { punchType, note } = recordPunchSchema.parse(input);
-
-    const employee = await db.employee.findUniqueOrThrow({
-      where: { id: employeeId },
-      include: { ruleSet: true },
-    });
-
-    const payPeriod = await findOpenPayPeriod(tenantId);
-    if (!payPeriod) throw new Error("No active pay period. Contact payroll.");
-
-    const timesheet = await findOrCreateTimesheet(employeeId, payPeriod.id);
-    if (timesheet.status === "LOCKED")
-      throw new Error("Timesheet is locked for this pay period.");
-
-    const stateBefore = await getCurrentPunchState(employeeId);
-    const transition = validateTransition(stateBefore, punchType);
-    if (!transition.valid) throw new Error(transition.error);
-
-    const punchTime = new Date();
-    const roundedTime = applyRounding(
-      punchTime,
-      employee.ruleSet.punchRoundingMinutes
+    const punch = await recordPunchCore(
+      { employeeId, tenantId, source: "WEB" },
+      input,
     );
-
-    const punch = await db.$transaction(async (tx) => {
-      const p = await tx.punch.create({
-        data: {
-          employeeId,
-          timesheetId: timesheet.id,
-          punchType,
-          punchTime,
-          roundedTime,
-          source: "WEB",
-          stateBefore,
-          stateAfter: transition.newState,
-          isApproved: true,
-          note,
-        },
-      });
-      await writeAuditLog({
-        tenantId,
-        actorId: employeeId,
-        action: "PUNCH_RECORDED",
-        entityType: "PUNCH",
-        entityId: p.id,
-        changes: { after: { punchType, stateAfter: transition.newState } },
-      });
-      return p;
-    });
-
-    await rebuildSegments(punch.timesheetId, employee.ruleSet);
 
     revalidatePath("/time/punch");
     revalidatePath("/time/history");
