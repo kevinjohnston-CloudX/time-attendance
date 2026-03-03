@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/generate-pay-periods",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}

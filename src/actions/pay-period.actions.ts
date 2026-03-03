@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { addDays, differenceInDays, startOfMonth, endOfMonth } from "date-fns";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { validatePayPeriodTransition } from "@/lib/state-machines/pay-period-state";
@@ -11,47 +10,9 @@ import {
   reopenPayPeriodSchema,
 } from "@/lib/validators/pay-period.schema";
 import { writeAuditLog } from "@/lib/audit/logger";
-import { postAccruals } from "@/lib/engines/accrual-engine";
+import { postAccruals, postLeaveUsage } from "@/lib/engines/accrual-engine";
+import { getPeriodContaining, generatePeriodsForTenant } from "@/lib/pay-period-utils";
 import type { PayFrequency } from "@prisma/client";
-
-// ─── Pay-period date helpers ──────────────────────────────────────────────────
-
-/**
- * Given a frequency + anchor, return the pay period that contains `date`.
- * For SEMIMONTHLY / MONTHLY the anchor is unused (calendar-based).
- */
-function getPeriodContaining(
-  frequency: PayFrequency,
-  anchor: Date,
-  date: Date
-): { startDate: Date; endDate: Date } {
-  switch (frequency) {
-    case "WEEKLY": {
-      const n = Math.floor(differenceInDays(date, anchor) / 7);
-      const start = addDays(anchor, n * 7);
-      return { startDate: start, endDate: addDays(start, 6) };
-    }
-    case "BIWEEKLY": {
-      const n = Math.floor(differenceInDays(date, anchor) / 14);
-      const start = addDays(anchor, n * 14);
-      return { startDate: start, endDate: addDays(start, 13) };
-    }
-    case "SEMIMONTHLY": {
-      if (date.getDate() <= 15) {
-        return {
-          startDate: new Date(date.getFullYear(), date.getMonth(), 1),
-          endDate: new Date(date.getFullYear(), date.getMonth(), 15),
-        };
-      }
-      return {
-        startDate: new Date(date.getFullYear(), date.getMonth(), 16),
-        endDate: endOfMonth(date),
-      };
-    }
-    case "MONTHLY":
-      return { startDate: startOfMonth(date), endDate: endOfMonth(date) };
-  }
-}
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -143,7 +104,9 @@ export const markPayPeriodReady = withRBAC(
 
 /**
  * READY → LOCKED.
- * Also transitions all PAYROLL_APPROVED timesheets to LOCKED.
+ * Also transitions all PAYROLL_APPROVED timesheets to LOCKED,
+ * posts per-period accruals, and auto-posts any APPROVED leave requests
+ * that overlap this pay period.
  */
 export const lockPayPeriod = withRBAC(
   "PAY_PERIOD_MANAGE",
@@ -152,6 +115,7 @@ export const lockPayPeriod = withRBAC(
 
     const payPeriod = await db.payPeriod.findUniqueOrThrow({
       where: { id: payPeriodId },
+      select: { status: true, startDate: true, endDate: true, tenantId: true },
     });
 
     const transition = validatePayPeriodTransition(payPeriod.status, "LOCK");
@@ -178,8 +142,13 @@ export const lockPayPeriod = withRBAC(
     });
 
     // Post per-pay-period accruals for all active employees.
-    // Run after the transaction so timesheets are already locked.
     await postAccruals(payPeriodId);
+
+    // Auto-post all APPROVED leave requests that overlap this period.
+    await autoPostApprovedLeave(
+      { id: payPeriodId, startDate: payPeriod.startDate, endDate: payPeriod.endDate, tenantId: payPeriod.tenantId },
+      actor.employeeId ?? null
+    );
 
     revalidatePath("/payroll/pay-periods");
     revalidatePath(`/payroll/pay-periods/${payPeriodId}`);
@@ -260,47 +229,61 @@ export const updateTenantSettings = withRBAC(
 
 export const generateNextPayPeriod = withRBAC(
   "PAY_PERIOD_MANAGE",
-  async ({ tenantId, employeeId }, _input: void) => {
+  async ({ tenantId }, _input: void) => {
     if (!tenantId) throw new Error("No tenant context");
 
     const tenant = await db.tenant.findUniqueOrThrow({
       where: { id: tenantId },
-      select: { payFrequency: true, payPeriodAnchorDate: true },
+      select: { payPeriodAnchorDate: true },
     });
 
     if (!tenant.payPeriodAnchorDate) {
       throw new Error("Configure a pay period anchor date in Company Settings first");
     }
 
-    const anchor = tenant.payPeriodAnchorDate;
-    const last = await db.payPeriod.findFirst({
-      where: { tenantId },
-      orderBy: { endDate: "desc" },
-    });
-
-    const referenceDate = last ? addDays(last.endDate, 1) : new Date();
-    const { startDate, endDate } = getPeriodContaining(tenant.payFrequency, anchor, referenceDate);
-
-    const existing = await db.payPeriod.findFirst({
-      where: { tenantId, startDate, endDate },
-    });
-    if (existing) throw new Error("That pay period already exists");
-
-    const period = await db.payPeriod.create({
-      data: { tenantId, startDate, endDate, status: "OPEN" },
-    });
-
-    await writeAuditLog({
-      tenantId,
-      actorId: employeeId,
-      entityType: "PAY_PERIOD",
-      entityId: period.id,
-      action: "CREATE",
-      changes: { after: { startDate, endDate, frequency: tenant.payFrequency } },
-    });
+    const created = await generatePeriodsForTenant(tenantId, 1);
+    if (created === 0) throw new Error("That pay period already exists");
 
     revalidatePath("/payroll/pay-periods");
     revalidatePath("/admin/settings");
-    return period;
   }
 );
+
+// ─── Internal helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Auto-post all APPROVED leave requests that overlap the given pay period.
+ * Called when a pay period is locked.
+ */
+async function autoPostApprovedLeave(
+  payPeriod: { id: string; startDate: Date; endDate: Date; tenantId: string },
+  actorId: string | null
+) {
+  const requests = await db.leaveRequest.findMany({
+    where: {
+      status: "APPROVED",
+      employee: { tenantId: payPeriod.tenantId },
+      startDate: { lte: payPeriod.endDate },
+      endDate: { gte: payPeriod.startDate },
+    },
+    select: { id: true },
+  });
+
+  for (const req of requests) {
+    await db.leaveRequest.update({
+      where: { id: req.id },
+      data: { status: "POSTED", postedAt: new Date() },
+    });
+
+    await postLeaveUsage(req.id);
+
+    await writeAuditLog({
+      tenantId: payPeriod.tenantId,
+      actorId,
+      entityType: "LEAVE_REQUEST",
+      entityId: req.id,
+      action: "POSTED",
+      changes: { before: "APPROVED", after: { status: "POSTED", source: "AUTO_LOCK", payPeriodId: payPeriod.id } },
+    });
+  }
+}
