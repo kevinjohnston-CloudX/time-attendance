@@ -15,6 +15,7 @@ import {
   ClipboardList,
   AlertCircle,
 } from "lucide-react";
+import { ThemeToggle } from "./theme-toggle";
 
 type NavItem = {
   label: string;
@@ -136,6 +137,7 @@ export function Sidebar({ role, userName }: SidebarProps) {
             {userName}
           </p>
         )}
+        <ThemeToggle />
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
