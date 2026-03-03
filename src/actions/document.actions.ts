@@ -87,7 +87,7 @@ export async function uploadDocument(
           title,
           fileUrl: storagePath,
           fileType: file.type,
-          uploadedBy: actorId ?? "system",
+          uploadedBy: session.user.name ?? session.user.email ?? "System",
         },
         select: { id: true },
       });
@@ -172,9 +172,6 @@ export const deleteDocument = withRBAC(
 
     // Tenant-scope guard
     if (doc.employee.tenantId !== tenantId) throw new Error("FORBIDDEN");
-
-    // Only the uploader may delete
-    if (doc.uploadedBy !== actorId) throw new Error("Only the uploader can delete this document.");
 
     // DB delete first, then storage (orphaned file is lower risk than phantom DB record)
     await db.document.delete({ where: { id: documentId } });

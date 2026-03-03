@@ -1,16 +1,16 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { format } from "date-fns";
 import { FileText, Download } from "lucide-react";
+import Link from "next/link";
 import {
   getAllDocuments,
   getMyDocuments,
   getEmployeesForDocumentUpload,
 } from "@/actions/document.actions";
 import { UploadDocumentForm } from "@/components/documents/upload-document-form";
-import { DeleteDocumentButton } from "@/components/documents/delete-document-button";
+import { AdminDocumentsTable } from "@/components/documents/admin-documents-table";
 import { mimeToLabel } from "@/lib/validators/document.schema";
 
 export default async function DocumentsPage() {
@@ -19,6 +19,7 @@ export default async function DocumentsPage() {
 
   const canViewAny = hasPermission(session.user.role, "DOCUMENT_VIEW_ANY");
   const canViewOwn = hasPermission(session.user.role, "DOCUMENT_VIEW_OWN");
+  const canUpload = hasPermission(session.user.role, "DOCUMENT_UPLOAD");
 
   if (!canViewAny && !canViewOwn) redirect("/dashboard");
 
@@ -31,63 +32,21 @@ export default async function DocumentsPage() {
     if (!docsResult.success) redirect("/dashboard");
     const docs = docsResult.data;
     const employees = employeesResult.success ? employeesResult.data : [];
-    const actorId = session.user.employeeId ?? null;
 
     return (
       <div>
-        <div className="flex items-start justify-between">
+        <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Documents</h1>
-          {employees.length > 0 && <UploadDocumentForm employees={employees} />}
+          {canUpload && employees.length > 0 && (
+            <UploadDocumentForm employees={employees} />
+          )}
         </div>
 
         <div className="mt-6">
           {docs.length === 0 ? (
             <EmptyState message="No documents uploaded yet." />
           ) : (
-            <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-              <table className="w-full text-sm">
-                <thead className="bg-zinc-50 dark:bg-zinc-800/60">
-                  <tr>
-                    <Th>Employee</Th>
-                    <Th>Title</Th>
-                    <Th>Type</Th>
-                    <Th>Uploaded</Th>
-                    <Th>Uploaded By</Th>
-                    <Th><span className="sr-only">Actions</span></Th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-900">
-                  {docs.map((doc) => (
-                    <tr key={doc.id}>
-                      <Td>{doc.employee.user.name ?? "—"}</Td>
-                      <Td>{doc.title}</Td>
-                      <Td>
-                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                          {mimeToLabel(doc.fileType)}
-                        </span>
-                      </Td>
-                      <Td>{format(doc.uploadedAt, "MMM d, yyyy")}</Td>
-                      <Td className="text-zinc-500">{doc.uploadedBy}</Td>
-                      <Td>
-                        <div className="flex items-center justify-end gap-3">
-                          <Link
-                            href={`/api/documents/${doc.id}`}
-                            target="_blank"
-                            title="Download"
-                            className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
-                          >
-                            <Download className="h-4 w-4" />
-                          </Link>
-                          {doc.uploadedBy === actorId && (
-                            <DeleteDocumentButton documentId={doc.id} />
-                          )}
-                        </div>
-                      </Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <AdminDocumentsTable docs={docs} canDelete={canUpload} />
           )}
         </div>
       </div>
