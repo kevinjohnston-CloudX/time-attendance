@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import type { DataSourceDefinition, ReportResult } from "./index";
-import { buildWhereClause, buildOrderBy, type FieldMap } from "../query-builder";
+import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 
 const fieldMap: FieldMap = {
@@ -129,6 +129,9 @@ export const hoursSummarySource: DataSourceDefinition = {
       };
     });
 
+    // In-memory sort for computed columns (regMinutes, otMinutes, etc.)
+    const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
+
     // Select only requested columns
     const visibleColumns = hoursSummarySource.columns.filter((c) =>
       config.columns.includes(c.id)
@@ -140,8 +143,8 @@ export const hoursSummarySource: DataSourceDefinition = {
         label: c.label,
         type: c.type,
       })),
-      rows,
-      totalRows: rows.length,
+      rows: sortedRows,
+      totalRows: sortedRows.length,
     };
   },
 };

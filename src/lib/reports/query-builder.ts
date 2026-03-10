@@ -123,17 +123,52 @@ function coerceScalar(
 
 /**
  * Builds Prisma `orderBy` from sort definitions.
+ * Skips computed fields not in the fieldMap (those are sorted in-memory after query).
  */
 export function buildOrderBy(
   sortBy: SortDef[],
   fieldMap: FieldMap
 ): Record<string, unknown>[] {
-  return sortBy.map((sort) => {
+  const orders: Record<string, unknown>[] = [];
+  for (const sort of sortBy) {
     const entry = fieldMap[sort.field];
-    if (!entry) {
-      throw new Error(`Unknown sort field: ${sort.field}`);
-    }
+    if (!entry) continue; // computed field — handled by sortRowsInMemory
     const parts = entry.prismaPath.split(".");
-    return nestPath(parts, sort.direction);
+    orders.push(nestPath(parts, sort.direction));
+  }
+  return orders;
+}
+
+/**
+ * In-memory sort for computed fields not in the fieldMap.
+ * Call this after building rows to apply sorts on derived columns.
+ */
+export function sortRowsInMemory(
+  rows: Record<string, unknown>[],
+  sortBy: SortDef[],
+  fieldMap: FieldMap
+): Record<string, unknown>[] {
+  // Only sort by fields NOT in the fieldMap (computed fields)
+  const computedSorts = sortBy.filter((s) => !fieldMap[s.field]);
+  if (computedSorts.length === 0) return rows;
+
+  return [...rows].sort((a, b) => {
+    for (const sort of computedSorts) {
+      const aVal = a[sort.field];
+      const bVal = b[sort.field];
+      const dir = sort.direction === "desc" ? -1 : 1;
+
+      if (aVal == null && bVal == null) continue;
+      if (aVal == null) return dir;
+      if (bVal == null) return -dir;
+
+      if (typeof aVal === "number" && typeof bVal === "number") {
+        if (aVal !== bVal) return (aVal - bVal) * dir;
+      } else {
+        const cmp = String(aVal).localeCompare(String(bVal));
+        if (cmp !== 0) return cmp * dir;
+      }
+    }
+    return 0;
   });
 }

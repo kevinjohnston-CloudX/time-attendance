@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import type { DataSourceDefinition, ReportResult } from "./index";
-import { buildWhereClause, type FieldMap } from "../query-builder";
+import { buildWhereClause, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 
 const fieldMap: FieldMap = {
@@ -79,14 +79,17 @@ export const leaveBalanceSource: DataSourceDefinition = {
       remainingMinutes: b.balanceMinutes - b.usedMinutes,
     }));
 
+    // In-memory sort for computed columns (balanceMinutes, usedMinutes, remainingMinutes)
+    const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
+
     const visibleColumns = leaveBalanceSource.columns.filter((c) =>
       config.columns.includes(c.id)
     );
 
     return {
       columns: visibleColumns.map((c) => ({ id: c.id, label: c.label, type: c.type })),
-      rows,
-      totalRows: rows.length,
+      rows: sortedRows,
+      totalRows: sortedRows.length,
     };
   },
 };

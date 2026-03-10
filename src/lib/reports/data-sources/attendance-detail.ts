@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import type { DataSourceDefinition, ReportResult } from "./index";
-import { buildWhereClause, buildOrderBy, type FieldMap } from "../query-builder";
+import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { format } from "date-fns";
 
@@ -97,14 +97,17 @@ export const attendanceDetailSource: DataSourceDefinition = {
       isPaid: seg.isPaid,
     }));
 
+    // In-memory sort for computed columns (date, startTime, endTime, etc.)
+    const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
+
     const visibleColumns = attendanceDetailSource.columns.filter((c) =>
       config.columns.includes(c.id)
     );
 
     return {
       columns: visibleColumns.map((c) => ({ id: c.id, label: c.label, type: c.type })),
-      rows,
-      totalRows: rows.length,
+      rows: sortedRows,
+      totalRows: sortedRows.length,
     };
   },
 };
