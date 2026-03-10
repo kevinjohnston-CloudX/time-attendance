@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/generate-pay-periods",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/run-scheduled-reports",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

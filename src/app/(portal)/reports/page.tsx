@@ -1,85 +1,43 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
-import { db } from "@/lib/db";
-import { getHoursReport } from "@/actions/admin.actions";
-import { format } from "date-fns";
-import { HoursReportTable, type ReportRow } from "@/components/reports/hours-report-table";
+import { getMyReports, getMyFolders } from "@/actions/report.actions";
+import { Plus, FileText } from "lucide-react";
+import { ReportsDashboard } from "@/components/reports/reports-dashboard";
 
-export default async function ReportsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ payPeriodId?: string }>;
-}) {
-  const sp = await searchParams;
+export default async function ReportsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "PAY_PERIOD_MANAGE")) redirect("/dashboard");
+  if (!hasPermission(session.user.role, "REPORT_MANAGE")) redirect("/dashboard");
 
-  const payPeriods = await db.payPeriod.findMany({
-    orderBy: { startDate: "desc" },
-  });
+  const [reportsResult, foldersResult] = await Promise.all([
+    getMyReports(undefined as never),
+    getMyFolders(undefined as never),
+  ]);
 
-  const selectedId = sp.payPeriodId ?? payPeriods[0]?.id;
+  const reports = reportsResult.success
+    ? reportsResult.data
+    : { owned: [], shared: [], tenantWide: [] };
 
-  const reportResult = selectedId ? await getHoursReport({ payPeriodId: selectedId }) : null;
-
-  // Pre-compute rows for client component
-  let rows: ReportRow[] = [];
-  let periodLabel = "";
-
-  if (reportResult?.success) {
-    const { payPeriod, timesheets, ptoByEmployee } = reportResult.data;
-    periodLabel = `${format(payPeriod.startDate, "MMM d")} – ${format(payPeriod.endDate, "MMM d, yyyy")}`;
-
-    rows = timesheets.map((ts) => {
-      const reg = ts.overtimeBuckets.find((b) => b.bucket === "REG")?.totalMinutes ?? 0;
-      const ot = ts.overtimeBuckets.find((b) => b.bucket === "OT")?.totalMinutes ?? 0;
-      const dt = ts.overtimeBuckets.find((b) => b.bucket === "DT")?.totalMinutes ?? 0;
-      const pto = ptoByEmployee[ts.employeeId] ?? 0;
-
-      return {
-        employeeId: ts.employeeId,
-        name: ts.employee.user?.name ?? ts.employeeId,
-        department: ts.employee.department.name,
-        regMinutes: reg,
-        otMinutes: ot,
-        dtMinutes: dt,
-        ptoMinutes: pto,
-        totalMinutes: reg + ot + dt,
-        status: ts.status,
-      };
-    });
-  }
+  const folders = foldersResult.success ? foldersResult.data : [];
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Reports</h1>
-
-      {/* Period selector */}
-      <form method="GET" className="mt-4 flex items-center gap-3">
-        <select
-          name="payPeriodId"
-          defaultValue={selectedId}
-          className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
+          Reports
+        </h1>
+        <Link
+          href="/reports/new"
+          className="flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
         >
-          {payPeriods.map((pp) => (
-            <option key={pp.id} value={pp.id}>
-              {format(pp.startDate, "MMM d")} – {format(pp.endDate, "MMM d, yyyy")} ({pp.status})
-            </option>
-          ))}
-        </select>
-        <button
-          type="submit"
-          className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900"
-        >
-          Load
-        </button>
-      </form>
+          <Plus className="h-4 w-4" />
+          New Report
+        </Link>
+      </div>
 
-      {reportResult?.success && (
-        <HoursReportTable rows={rows} periodLabel={periodLabel} />
-      )}
+      <ReportsDashboard reports={reports} folders={folders} />
     </div>
   );
 }

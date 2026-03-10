@@ -24,6 +24,9 @@ export const PERMISSIONS = [
   "DOCUMENT_UPLOAD",
   "DOCUMENT_VIEW_ANY",
   "DOCUMENT_VIEW_OWN",
+  // Reports
+  "REPORT_MANAGE",
+  "REPORT_SCHEDULE",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -55,6 +58,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "AUDIT_VIEW",
     "DOCUMENT_UPLOAD",
     "DOCUMENT_VIEW_ANY",
+    "REPORT_MANAGE",
+    "REPORT_SCHEDULE",
   ],
   HR_ADMIN: [
     "PUNCH_OWN",
@@ -74,6 +79,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "SITE_MANAGE",
     "DOCUMENT_UPLOAD",
     "DOCUMENT_VIEW_ANY",
+    "REPORT_MANAGE",
+    "REPORT_SCHEDULE",
   ],
   SYSTEM_ADMIN: [...PERMISSIONS],
   SUPER_ADMIN: [...PERMISSIONS],

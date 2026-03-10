@@ -1,0 +1,97 @@
+model ReportDefinition {
+  id          String  @id @default(cuid())
+  tenantId    String
+  ownerId     String
+  name        String
+  description String?
+  folderId    String?
+
+  dataSource String // HOURS_SUMMARY | ATTENDANCE_DETAIL | LEAVE_SUMMARY | LEAVE_BALANCE | PUNCH_AUDIT | EXCEPTION_REPORT
+  config     Json   // { columns, filters, groupBy, sortBy, dateRange, limit }
+
+  isTemplate Boolean @default(false)
+  visibility String  @default("PRIVATE") // PRIVATE | SHARED | TENANT
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  owner     User          @relation("ReportOwner", fields: [ownerId], references: [id])
+  folder    ReportFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  shares    ReportShare[]
+  schedules ReportSchedule[]
+  runs      ReportRun[]
+
+  @@index([tenantId, ownerId])
+  @@map("report_definitions")
+}
+
+model ReportFolder {
+  id       String  @id @default(cuid())
+  tenantId String
+  ownerId  String
+  name     String
+  parentId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent   ReportFolder?      @relation("FolderNesting", fields: [parentId], references: [id], onDelete: Cascade)
+  children ReportFolder[]     @relation("FolderNesting")
+  reports  ReportDefinition[]
+
+  @@unique([tenantId, ownerId, name, parentId])
+  @@map("report_folders")
+}
+
+model ReportShare {
+  id         String  @id @default(cuid())
+  reportId   String
+  sharedWith String
+  canEdit    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  report ReportDefinition @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  user   User             @relation("SharedReports", fields: [sharedWith], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, sharedWith])
+  @@map("report_shares")
+}
+
+model ReportSchedule {
+  id         String    @id @default(cuid())
+  reportId   String
+  cronExpr   String
+  timezone   String    @default("America/New_York")
+  format     String    @default("CSV") // CSV | PDF | XLSX
+  recipients Json      // string[] of email addresses
+  isActive   Boolean   @default(true)
+  lastRunAt  DateTime?
+  nextRunAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  report ReportDefinition @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("report_schedules")
+}
+
+model ReportRun {
+  id          String    @id @default(cuid())
+  reportId    String
+  status      String    @default("PENDING") // PENDING | RUNNING | COMPLETED | FAILED
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  rowCount    Int?
+  fileUrl     String?
+  error       String?
+  triggeredBy String    // MANUAL | SCHEDULE
+  userId      String?
+
+  report ReportDefinition @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, startedAt])
+  @@map("report_runs")
+}

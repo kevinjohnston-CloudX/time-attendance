@@ -130,4 +130,5 @@ enum AuditEntityType {
   RULE_SET
   DOCUMENT
   ADP_SYNC
+  REPORT
 }
