@@ -214,7 +214,7 @@ export const getReport = withRBAC(
 
 export const runReport = withRBAC(
   "REPORT_MANAGE",
-  async ({ tenantId }, input: { reportId?: string; dataSource?: string; config?: unknown }): Promise<ReportResult> => {
+  async ({ tenantId }, input: { reportId?: string; dataSource?: string; config?: unknown; dateRangeOverride?: unknown }): Promise<ReportResult> => {
     if (!tenantId) throw new Error("Tenant context required");
     const session = await getSessionUserId();
 
@@ -228,6 +228,12 @@ export const runReport = withRBAC(
       });
       dataSourceId = report.dataSource as DataSourceId;
       config = reportConfigSchema.parse(report.config);
+
+      // Allow overriding the date range at run time
+      if (input.dateRangeOverride) {
+        const { dateRangeSchema } = await import("@/lib/validators/report.schema");
+        config = { ...config, dateRange: dateRangeSchema.parse(input.dateRangeOverride) };
+      }
     } else if (input.dataSource && input.config) {
       // Run ad-hoc (preview)
       dataSourceId = input.dataSource as DataSourceId;

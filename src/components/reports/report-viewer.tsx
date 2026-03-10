@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ResultsTable } from "./report-results/results-table";
+import { DateRangePicker } from "./report-builder/date-range-picker";
 import { ShareDialog } from "./report-list/share-dialog";
 import { ScheduleForm } from "./schedule-form";
 import { runReport, deleteReport, duplicateReport } from "@/actions/report.actions";
 import type { ReportResult } from "@/lib/reports/data-sources";
+import type { DateRange } from "@/lib/validators/report.schema";
 import {
   Play,
   Download,
@@ -41,6 +43,10 @@ interface ReportData {
   runs: { id: string; status: string; startedAt: string | Date; rowCount: number | null }[];
 }
 
+interface FilterOptions {
+  payPeriods: { id: string; startDate: string | Date; endDate: string | Date; status: string }[];
+}
+
 const btnPrimary =
   "rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
 const btnSecondary =
@@ -48,12 +54,22 @@ const btnSecondary =
 const btnDanger =
   "rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30";
 
+function getSavedDateRange(config: unknown): DateRange | null {
+  if (!config || typeof config !== "object") return null;
+  const c = config as Record<string, unknown>;
+  if (c.dateRange && typeof c.dateRange === "object") {
+    return c.dateRange as DateRange;
+  }
+  return null;
+}
+
 export function ReportViewer({
   report,
+  filterOptions,
   tenantUsers,
 }: {
   report: ReportData;
-  filterOptions: unknown;
+  filterOptions: FilterOptions | null;
   tenantUsers?: { id: string; name: string | null; email: string | null }[];
 }) {
   const router = useRouter();
@@ -63,10 +79,22 @@ export function ReportViewer({
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showScheduleForm, setShowScheduleForm] = useState(false);
 
+  // Initialize date range from saved config, or default to most recent pay period
+  const savedDateRange = getSavedDateRange(report.config);
+  const defaultDateRange: DateRange = savedDateRange
+    ?? (filterOptions?.payPeriods[0]
+      ? { type: "payPeriod" as const, payPeriodId: filterOptions.payPeriods[0].id }
+      : { type: "relative" as const, relativeDays: 30 });
+
+  const [dateRange, setDateRange] = useState<DateRange>(defaultDateRange);
+
   async function handleRun() {
     setIsRunning(true);
     setError(null);
-    const res = await runReport({ reportId: report.id });
+    const res = await runReport({
+      reportId: report.id,
+      dateRangeOverride: dateRange,
+    });
     if (res.success) {
       setResult(res.data);
     } else {
@@ -172,16 +200,8 @@ export function ReportViewer({
             </div>
           </div>
 
-          {/* Actions */}
+          {/* Actions (non-run) */}
           <div className="flex flex-shrink-0 gap-2">
-            <button
-              onClick={handleRun}
-              disabled={isRunning}
-              className={btnPrimary + " flex items-center gap-1.5"}
-            >
-              <Play className="h-4 w-4" />
-              {isRunning ? "Running..." : "Run"}
-            </button>
             {result && (
               <>
                 <button
@@ -239,6 +259,30 @@ export function ReportViewer({
         </div>
       </div>
 
+      {/* Date Range + Run */}
+      <div className="mb-6 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+        <div className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          Select date range and run
+        </div>
+        <div className="flex items-end gap-4">
+          <div className="min-w-0 flex-1">
+            <DateRangePicker
+              value={dateRange}
+              onChange={setDateRange}
+              payPeriods={filterOptions?.payPeriods ?? []}
+            />
+          </div>
+          <button
+            onClick={handleRun}
+            disabled={isRunning}
+            className={btnPrimary + " flex flex-shrink-0 items-center gap-1.5"}
+          >
+            <Play className="h-4 w-4" />
+            {isRunning ? "Running..." : "Run Report"}
+          </button>
+        </div>
+      </div>
+
       {/* Shared with */}
       {report.shares.length > 0 && (
         <div className="mb-4 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
@@ -265,7 +309,7 @@ export function ReportViewer({
       ) : (
         <div className="rounded-lg border border-dashed border-zinc-300 p-12 text-center dark:border-zinc-700">
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            Click <strong>Run</strong> to execute this report.
+            Choose a date range above and click <strong>Run Report</strong>.
           </p>
         </div>
       )}
