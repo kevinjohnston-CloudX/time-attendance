@@ -1,0 +1,31 @@
+model CustomRole {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  rank        Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant          @relation(fields: [tenantId], references: [id])
+  permissions RolePermission[]
+  employees   Employee[]
+
+  @@unique([tenantId, name])
+  @@map("custom_roles")
+}
+
+model RolePermission {
+  id           String @id @default(cuid())
+  customRoleId String
+  resource     String // "punch" | "timesheet" | "leave" | "payroll" | "employee" | "rules" | "site" | "document" | "report" | "audit" | "role"
+  action       String // "read" | "write" | "execute"
+  scope        String // "own" | "team" | "all"
+
+  customRole CustomRole @relation(fields: [customRoleId], references: [id], onDelete: Cascade)
+
+  @@unique([customRoleId, resource, action, scope])
+  @@map("role_permissions")
+}

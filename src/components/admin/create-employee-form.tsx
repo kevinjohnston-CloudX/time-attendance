@@ -7,22 +7,17 @@ import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
 
 type EmployeeWithUser = Employee & { user: User };
 
+type RoleOption = { id: string; name: string };
+
 interface Props {
   sites: Site[];
   departments: (Department & { site: Site })[];
   ruleSets: RuleSet[];
   employees: EmployeeWithUser[];
+  customRoles?: RoleOption[];
 }
 
-const ROLES = [
-  { value: "EMPLOYEE", label: "Employee" },
-  { value: "SUPERVISOR", label: "Supervisor" },
-  { value: "PAYROLL_ADMIN", label: "Payroll Admin" },
-  { value: "HR_ADMIN", label: "HR Admin" },
-  { value: "SYSTEM_ADMIN", label: "System Admin" },
-] as const;
-
-export function CreateEmployeeForm({ sites, departments, ruleSets, employees }: Props) {
+export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +41,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees }: 
         password: fd.get("password") as string,
         employeeCode: fd.get("employeeCode") as string,
         role: fd.get("role") as "EMPLOYEE",
+        customRoleId: (fd.get("customRoleId") as string) || undefined,
         siteId: fd.get("siteId") as string,
         departmentId: fd.get("departmentId") as string,
         ruleSetId: fd.get("ruleSetId") as string,
@@ -95,11 +91,21 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees }: 
         <Field label="Email (optional)" name="email" type="email" />
         <Field label="Hire Date" name="hireDate" type="date" required />
 
-        <SelectField label="Role" name="role">
-          {ROLES.map((r) => (
-            <option key={r.value} value={r.value}>{r.label}</option>
-          ))}
-        </SelectField>
+        {customRoles && customRoles.length > 0 ? (
+          <SelectField label="Role" name="customRoleId">
+            {customRoles.map((r) => (
+              <option key={r.id} value={r.id}>{r.name}</option>
+            ))}
+          </SelectField>
+        ) : (
+          <SelectField label="Role" name="role">
+            <option value="EMPLOYEE">Employee</option>
+            <option value="SUPERVISOR">Supervisor</option>
+            <option value="PAYROLL_ADMIN">Payroll Admin</option>
+            <option value="HR_ADMIN">HR Admin</option>
+            <option value="SYSTEM_ADMIN">System Admin</option>
+          </SelectField>
+        )}
 
         <SelectField
           label="Site"

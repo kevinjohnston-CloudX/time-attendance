@@ -2,10 +2,11 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
-import { Users, Building2, FolderOpen, Calendar, Settings, FileText, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { Users, Building2, FolderOpen, Calendar, Settings, FileText, RefreshCw, SlidersHorizontal, Shield } from "lucide-react";
 
 const adminCards = [
   { label: "Employees", href: "/admin/employees", icon: Users, perm: "EMPLOYEE_MANAGE" },
+  { label: "Roles", href: "/admin/roles", icon: Shield, perm: "ROLE_MANAGE" },
   { label: "Sites", href: "/admin/sites", icon: Building2, perm: "SITE_MANAGE" },
   { label: "Departments", href: "/admin/departments", icon: FolderOpen, perm: "SITE_MANAGE" },
   { label: "Leave Types", href: "/admin/leave-types", icon: Calendar, perm: "RULES_MANAGE" },

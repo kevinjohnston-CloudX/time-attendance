@@ -41,7 +41,7 @@ export const getAdminRefData = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ tenantId }, _input: void) => {
     const t = tenantId ?? undefined;
-    const [sites, departments, ruleSets, employees] = await Promise.all([
+    const [sites, departments, ruleSets, employees, customRoles] = await Promise.all([
       db.site.findMany({ where: { isActive: true, tenantId: t }, orderBy: { name: "asc" } }),
       db.department.findMany({
         where: { isActive: true, tenantId: t },
@@ -54,8 +54,13 @@ export const getAdminRefData = withRBAC(
         include: { user: true },
         orderBy: { user: { name: "asc" } },
       }),
+      db.customRole.findMany({
+        where: { tenantId: t, isActive: true },
+        select: { id: true, name: true },
+        orderBy: { rank: "asc" },
+      }),
     ]);
-    return { sites, departments, ruleSets, employees };
+    return { sites, departments, ruleSets, employees, customRoles };
   }
 );
 
@@ -118,6 +123,7 @@ export const createEmployee = withRBAC(
           tenantId,
           employeeCode: parsed.employeeCode,
           role: parsed.role,
+          customRoleId: parsed.customRoleId ?? null,
           siteId: parsed.siteId,
           departmentId: parsed.departmentId,
           ruleSetId: parsed.ruleSetId,
@@ -145,7 +151,7 @@ export const updateEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateEmployeeInput) => {
     const {
-      employeeId, name, role, supervisorId, siteId, departmentId, ruleSetId, isActive, wmsId, adpWorkerId,
+      employeeId, name, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, isActive, wmsId, adpWorkerId,
       jobTitle, terminationReason, payType, payRate,
       ssn, phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
@@ -165,6 +171,7 @@ export const updateEmployee = withRBAC(
         where: { id: employeeId },
         data: {
           ...(role !== undefined && { role }),
+          ...(customRoleId !== undefined && { customRoleId }),
           ...(supervisorId !== undefined && { supervisorId }),
           ...(siteId !== undefined && { siteId }),
           ...(departmentId !== undefined && { departmentId }),

@@ -5,6 +5,9 @@ import { db } from "@/lib/db";
 import { Sidebar } from "@/components/layout/sidebar";
 import { exitTenant } from "@/actions/super-admin.actions";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
+import { getAllPermissions } from "@/lib/rbac/permission-resolver";
+import { getPermissions } from "@/lib/rbac/permissions";
+import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 
 export default async function PortalLayout({
   children,
@@ -16,6 +19,31 @@ export default async function PortalLayout({
 
   let tenantBannerName: string | null = null;
   let sidebarRole = session.user.role ?? "EMPLOYEE";
+
+  // Build permission list for sidebar filtering
+  let userPermissions: string[] = [];
+  if (session.user.role === "SUPER_ADMIN") {
+    // SUPER_ADMIN gets all permissions
+    userPermissions = Object.keys(LEGACY_MAP);
+  } else if (session.user.customRoleId) {
+    // DB-backed custom role
+    const perms = await getAllPermissions(session.user.customRoleId);
+    // Convert permission tuples to legacy permission strings for sidebar
+    const legacyPerms = new Set<string>();
+    for (const [key, tuple] of Object.entries(LEGACY_MAP)) {
+      const match = perms.some(
+        (p) =>
+          p.resource === tuple.resource &&
+          p.action === tuple.action &&
+          (p.scope === tuple.scope || p.scope === "all" || (p.scope === "team" && tuple.scope === "own"))
+      );
+      if (match) legacyPerms.add(key);
+    }
+    userPermissions = Array.from(legacyPerms);
+  } else {
+    // Fallback to legacy enum role
+    userPermissions = getPermissions(sidebarRole as Parameters<typeof getPermissions>[0]);
+  }
 
   if (session.user.role === "SUPER_ADMIN") {
     const cookieStore = await cookies();
@@ -53,7 +81,7 @@ export default async function PortalLayout({
         </div>
       )}
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar role={sidebarRole} userName={session.user.name} />
+        <Sidebar role={sidebarRole} userName={session.user.name} permissions={userPermissions} />
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-6xl px-6 py-8">{children}</div>
         </main>

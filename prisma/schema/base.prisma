@@ -131,4 +131,5 @@ enum AuditEntityType {
   DOCUMENT
   ADP_SYNC
   REPORT
+  ROLE
 }

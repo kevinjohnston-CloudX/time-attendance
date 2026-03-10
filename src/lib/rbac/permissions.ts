@@ -27,6 +27,8 @@ export const PERMISSIONS = [
   // Reports
   "REPORT_MANAGE",
   "REPORT_SCHEDULE",
+  // Role management
+  "ROLE_MANAGE",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -84,7 +86,7 @@ const rolePermissions: Record<Role, Permission[]> = {
   ],
   SYSTEM_ADMIN: [...PERMISSIONS],
   SUPER_ADMIN: [...PERMISSIONS],
-};
+} satisfies Record<Role, Permission[]>;
 
 export function getPermissions(role: Role): Permission[] {
   return rolePermissions[role] ?? [];

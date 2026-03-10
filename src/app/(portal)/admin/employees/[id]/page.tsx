@@ -31,7 +31,7 @@ export default async function EditEmployeePage({
   if (!refResult.success) redirect("/admin/employees");
 
   const employee = empResult.data;
-  const { sites, departments, ruleSets, employees } = refResult.data;
+  const { sites, departments, ruleSets, employees, customRoles } = refResult.data;
   const balances = leaveTypes.map((lt) => {
     const bal = leaveBalanceRows.find((b) => b.leaveTypeId === lt.id);
     return {
@@ -72,6 +72,7 @@ export default async function EditEmployeePage({
         departments={departments}
         ruleSets={ruleSets}
         employees={employees}
+        customRoles={customRoles}
       />
 
       {/* Leave Balances */}

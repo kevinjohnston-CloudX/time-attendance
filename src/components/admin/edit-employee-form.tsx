@@ -14,21 +14,16 @@ type EmployeeWithRelations = Employee & {
   supervisor: (Employee & { user: User }) | null;
 };
 
+type RoleOption = { id: string; name: string };
+
 interface Props {
   employee: EmployeeWithRelations;
   sites: Site[];
   departments: (Department & { site: Site })[];
   ruleSets: RuleSet[];
   employees: (Employee & { user: User })[];
+  customRoles?: RoleOption[];
 }
-
-const ROLES = [
-  { value: "EMPLOYEE", label: "Employee" },
-  { value: "SUPERVISOR", label: "Supervisor" },
-  { value: "PAYROLL_ADMIN", label: "Payroll Admin" },
-  { value: "HR_ADMIN", label: "HR Admin" },
-  { value: "SYSTEM_ADMIN", label: "System Admin" },
-];
 
 const inputCls =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
@@ -36,7 +31,7 @@ const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-
 
 type Tab = "general" | "personal" | "pay";
 
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees }: Props) {
+export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +63,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
     save({
       name: fd.get("name") as string,
       role: fd.get("role") as string,
+      customRoleId: (fd.get("customRoleId") as string) || undefined,
       siteId: fd.get("siteId") as string,
       departmentId: fd.get("departmentId") as string,
       ruleSetId: fd.get("ruleSetId") as string,
@@ -160,9 +156,19 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
 
             <div>
               <label className={labelCls}>Role</label>
-              <select name="role" defaultValue={employee.role} className={inputCls}>
-                {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
+              {customRoles && customRoles.length > 0 ? (
+                <select name="customRoleId" defaultValue={employee.customRoleId ?? ""} className={inputCls}>
+                  {customRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              ) : (
+                <select name="role" defaultValue={employee.role} className={inputCls}>
+                  <option value="EMPLOYEE">Employee</option>
+                  <option value="SUPERVISOR">Supervisor</option>
+                  <option value="PAYROLL_ADMIN">Payroll Admin</option>
+                  <option value="HR_ADMIN">HR Admin</option>
+                  <option value="SYSTEM_ADMIN">System Admin</option>
+                </select>
+              )}
             </div>
 
             <div>

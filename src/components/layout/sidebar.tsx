@@ -21,7 +21,8 @@ type NavItem = {
   label: string;
   href: string;
   icon: React.ElementType;
-  roles?: string[];
+  /** Legacy permission string required to see this item */
+  permission?: string;
 };
 
 const navItems: NavItem[] = [
@@ -32,58 +33,35 @@ const navItems: NavItem[] = [
   { label: "My Leave", href: "/leave", icon: CalendarDays },
   { label: "Documents", href: "/documents", icon: FileText },
   // Supervisor+
-  {
-    label: "My Team",
-    href: "/supervisor",
-    icon: Users,
-    roles: ["SUPERVISOR", "PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"],
-  },
-  {
-    label: "Exceptions",
-    href: "/supervisor/exceptions",
-    icon: AlertCircle,
-    roles: ["SUPERVISOR", "PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"],
-  },
+  { label: "My Team", href: "/supervisor", icon: Users, permission: "PUNCH_VIEW_TEAM" },
+  { label: "Exceptions", href: "/supervisor/exceptions", icon: AlertCircle, permission: "PUNCH_VIEW_TEAM" },
   // Payroll+
-  {
-    label: "Payroll",
-    href: "/payroll",
-    icon: DollarSign,
-    roles: ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"],
-  },
-  {
-    label: "Timecards",
-    href: "/payroll/timecards",
-    icon: ClipboardList,
-    roles: ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"],
-  },
-  // Payroll+ reports
-  {
-    label: "Reports",
-    href: "/reports",
-    icon: FileText,
-    roles: ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"],
-  },
-  // Admin+
-  {
-    label: "Admin",
-    href: "/admin",
-    icon: Settings,
-    roles: ["HR_ADMIN", "SYSTEM_ADMIN"],
-  },
+  { label: "Payroll", href: "/payroll", icon: DollarSign, permission: "PAY_PERIOD_MANAGE" },
+  { label: "Timecards", href: "/payroll/timecards", icon: ClipboardList, permission: "PAY_PERIOD_MANAGE" },
+  // Reports
+  { label: "Reports", href: "/reports", icon: FileText, permission: "REPORT_MANAGE" },
+  // Admin
+  { label: "Admin", href: "/admin", icon: Settings, permission: "EMPLOYEE_MANAGE" },
 ];
 
 interface SidebarProps {
   role: string;
   userName?: string | null;
+  permissions?: string[];
 }
 
-export function Sidebar({ role, userName }: SidebarProps) {
+export function Sidebar({ role, userName, permissions }: SidebarProps) {
   const pathname = usePathname();
 
-  const visibleItems = navItems.filter(
-    (item) => !item.roles || item.roles.includes(role)
-  );
+  const visibleItems = navItems.filter((item) => {
+    if (!item.permission) return true;
+    // Use permissions array if available (custom role system)
+    if (permissions && permissions.length > 0) {
+      return permissions.includes(item.permission);
+    }
+    // Fallback: no permissions passed (shouldn't happen, but safety)
+    return false;
+  });
 
   return (
     <aside className="flex h-screen w-56 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">

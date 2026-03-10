@@ -49,6 +49,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           role: user.employee?.role ?? "EMPLOYEE",
           employeeId: user.employee?.id ?? undefined,
           tenantId: user.employee?.tenantId ?? null,
+          customRoleId: user.employee?.customRoleId ?? undefined,
         };
       },
     }),

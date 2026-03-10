@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { hasPermission, type Permission } from "./permissions";
+import { hasPermissionByLegacy } from "./permission-resolver";
 import type { Role } from "./roles";
 
 type ActionResult<T> =
@@ -10,6 +11,9 @@ type ActionResult<T> =
 
 /**
  * Wraps a Server Action with RBAC enforcement.
+ *
+ * Uses customRoleId (DB-backed) when available, falls back to legacy
+ * enum-based role check for backward compatibility.
  *
  * @example
  * export const myAction = withRBAC("PUNCH_EDIT_ANY", async ({ employeeId, role, tenantId }, input) => {
@@ -30,13 +34,28 @@ export function withRBAC<TInput, TOutput>(
       return { success: false, error: "UNAUTHENTICATED" };
     }
 
-    if (!hasPermission(session.user.role, permission)) {
-      return { success: false, error: "FORBIDDEN" };
+    // SUPER_ADMIN always bypasses permission checks
+    const isSuperAdmin = session.user.role === "SUPER_ADMIN";
+
+    if (!isSuperAdmin) {
+      // Try custom role first (DB-backed), fall back to legacy enum check
+      const customRoleId = session.user.customRoleId;
+      let allowed = false;
+
+      if (customRoleId) {
+        allowed = await hasPermissionByLegacy(customRoleId, permission);
+      } else {
+        allowed = hasPermission(session.user.role, permission);
+      }
+
+      if (!allowed) {
+        return { success: false, error: "FORBIDDEN" };
+      }
     }
 
     try {
       let tenantId = session.user.tenantId ?? null;
-      if (session.user.role === "SUPER_ADMIN") {
+      if (isSuperAdmin) {
         const cookieStore = await cookies();
         const override = cookieStore.get(SUPER_ADMIN_TENANT_COOKIE)?.value;
         if (override) tenantId = override;

@@ -44,6 +44,7 @@ export const authConfig = {
         token.role = (user as { role?: string }).role;
         token.employeeId = (user as { employeeId?: string }).employeeId;
         token.tenantId = (user as { tenantId?: string | null }).tenantId;
+        token.customRoleId = (user as { customRoleId?: string }).customRoleId;
       }
       return token;
     },
@@ -53,6 +54,7 @@ export const authConfig = {
         session.user.role = token.role as string;
         session.user.employeeId = token.employeeId as string | undefined;
         session.user.tenantId = token.tenantId as string | null | undefined;
+        session.user.customRoleId = token.customRoleId as string | undefined;
       }
       return session;
     },
