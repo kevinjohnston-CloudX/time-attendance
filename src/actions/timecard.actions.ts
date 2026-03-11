@@ -70,7 +70,17 @@ export const getTimecardDetail = withRBAC(
           where: { isApproved: true, correctedById: null },
           orderBy: { roundedTime: "asc" },
         },
-        segments: { orderBy: { startTime: "asc" } },
+        segments: {
+          orderBy: { startTime: "asc" },
+          include: {
+            leaveRequest: {
+              select: {
+                id: true,
+                leaveType: { select: { name: true, category: true } },
+              },
+            },
+          },
+        },
         overtimeBuckets: true,
         exceptions: { where: { resolvedAt: null } },
         mealWaivers: true,

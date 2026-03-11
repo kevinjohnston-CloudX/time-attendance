@@ -23,7 +23,12 @@ import {
   rejectTimesheet,
   toggleMealWaiver,
 } from "@/actions/timesheet.actions";
-import { Search, ChevronRight, Pencil } from "lucide-react";
+import {
+  removePayrollLeaveEntry,
+  getLeaveTypesForTimecard,
+} from "@/actions/timecard-entry.actions";
+import { AddTimecardEntry } from "@/components/payroll/add-timecard-entry";
+import { Search, ChevronRight, Pencil, Plus, X } from "lucide-react";
 
 // ─── Serialized prop types (dates as ISO strings) ────────────────────────────
 
@@ -58,6 +63,17 @@ type TimecardSegment = {
   durationMinutes: number;
   segmentDate: string;
   payBucket: string;
+  isPaid: boolean;
+  leaveRequest?: {
+    id: string;
+    leaveType: { name: string; category: string };
+  } | null;
+};
+
+type LeaveTypeOption = {
+  id: string;
+  name: string;
+  category: string;
   isPaid: boolean;
 };
 
@@ -150,6 +166,10 @@ export function TimecardViewer({
   const [waiverReason, setWaiverReason] = useState("");
   const [waiverError, setWaiverError] = useState<string | null>(null);
 
+  // Add entry
+  const [addEntryDay, setAddEntryDay] = useState<string | null>(null);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
+
   // Reset state when employee changes
   useEffect(() => {
     setExpandedDays(new Set());
@@ -160,6 +180,7 @@ export function TimecardViewer({
     setWaiverDay(null);
     setWaiverReason("");
     setWaiverError(null);
+    setAddEntryDay(null);
   }, [timecard?.timesheetId]);
 
   const canEdit =
@@ -233,6 +254,24 @@ export function TimecardViewer({
   function cancelEditing() {
     setEditingPunchId(null);
     setEditError(null);
+  }
+
+  async function handleOpenAddEntry(dayStr: string) {
+    setAddEntryDay(dayStr);
+    // Fetch leave types lazily once
+    if (leaveTypes.length === 0) {
+      const result = await getLeaveTypesForTimecard({});
+      if (result.success && result.data) {
+        setLeaveTypes(result.data as LeaveTypeOption[]);
+      }
+    }
+  }
+
+  function handleRemoveLeave(leaveRequestId: string) {
+    startTransition(async () => {
+      await removePayrollLeaveEntry({ leaveRequestId });
+      router.refresh();
+    });
   }
 
   function handleCorrectPunch(e: React.FormEvent) {
@@ -556,23 +595,12 @@ export function TimecardViewer({
                       const firstIn = clockIns[0];
                       const lastOut = clockOuts[clockOuts.length - 1];
 
-                      const leaveBuckets = daySegments
-                        .filter(
-                          (s) =>
-                            s.payBucket !== "REG" &&
-                            s.payBucket !== "OT" &&
-                            s.payBucket !== "DT" &&
-                            s.payBucket !== "UNPAID" &&
-                            s.segmentType !== "WORK" &&
-                            s.segmentType !== "MEAL" &&
-                            s.segmentType !== "BREAK"
-                        )
-                        .map((s) => s.payBucket);
-                      const uniqueLeave = [...new Set(leaveBuckets)];
+                      const leaveSegments = daySegments.filter(
+                        (s) => s.segmentType === "LEAVE"
+                      );
 
                       const hasActivity =
                         dayPunches.length > 0 || daySegments.length > 0;
-                      const hasPunches = dayPunches.length > 0;
 
                       return (
                         <>
@@ -594,16 +622,16 @@ export function TimecardViewer({
                                   : hasActivity
                                     ? "hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
                                     : "hover:bg-zinc-50/50 dark:hover:bg-zinc-900/20"
-                            } ${hasPunches ? "cursor-pointer" : ""}`}
+                            } ${hasActivity ? "cursor-pointer" : ""}`}
                             onClick={
-                              hasPunches
+                              hasActivity
                                 ? () => toggleDay(dayKey)
                                 : undefined
                             }
                           >
                             {/* Expand chevron / activity indicator */}
                             <td className="w-7 pl-2 pr-0 text-center">
-                              {hasPunches ? (
+                              {hasActivity ? (
                                 <ChevronRight
                                   className={`inline h-3.5 w-3.5 text-zinc-400 transition-transform ${
                                     isExpanded ? "rotate-90" : ""
@@ -622,7 +650,22 @@ export function TimecardViewer({
                                   ? "text-zinc-400 dark:text-zinc-500"
                                   : "text-zinc-700 dark:text-zinc-300"
                             }`}>
-                              {format(day, "MM/dd")}
+                              <span className="inline-flex items-center gap-1">
+                                {format(day, "MM/dd")}
+                                {canEdit && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenAddEntry(format(day, "yyyy-MM-dd"));
+                                    }}
+                                    title="Add time or leave"
+                                    className="rounded p-0.5 text-zinc-300 hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </span>
                             </td>
 
                             {/* Day name */}
@@ -654,9 +697,16 @@ export function TimecardViewer({
                                 >
                                   {format(parseISO(firstIn.roundedTime), "h:mm a")}
                                 </button>
-                              ) : uniqueLeave.length > 0 ? (
-                                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
-                                  {uniqueLeave.map((b) => PAY_BUCKET_LABEL[b as PayBucketValue] ?? b).join(", ")}
+                              ) : leaveSegments.length > 0 ? (
+                                <span className="flex flex-wrap gap-1">
+                                  {leaveSegments.map((seg) => (
+                                    <span
+                                      key={seg.id}
+                                      className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
+                                    >
+                                      {seg.leaveRequest?.leaveType.name ?? PAY_BUCKET_LABEL[seg.payBucket as PayBucketValue] ?? seg.payBucket}
+                                    </span>
+                                  ))}
                                 </span>
                               ) : hasActivity ? (
                                 <span className="text-zinc-400">—</span>
@@ -719,8 +769,26 @@ export function TimecardViewer({
                             </td>
                           </tr>
 
+                          {/* Add entry form row */}
+                          {addEntryDay === format(day, "yyyy-MM-dd") && (
+                            <tr key={`${dayKey}-add`}>
+                              <td colSpan={9} className="px-4 py-2">
+                                <AddTimecardEntry
+                                  timesheetId={timecard.timesheetId}
+                                  date={format(day, "yyyy-MM-dd")}
+                                  leaveTypes={leaveTypes}
+                                  onClose={() => setAddEntryDay(null)}
+                                  onSuccess={() => {
+                                    setAddEntryDay(null);
+                                    router.refresh();
+                                  }}
+                                />
+                              </td>
+                            </tr>
+                          )}
+
                           {/* Expanded punch detail row */}
-                          {isExpanded && hasPunches && (
+                          {isExpanded && hasActivity && (
                             <tr
                               key={`${dayKey}-detail`}
                               className="bg-zinc-50/80 dark:bg-zinc-900/40"
@@ -809,6 +877,34 @@ export function TimecardViewer({
                                     )
                                   )}
                                 </div>
+
+                                {/* ── Leave segments ─────────────────────────── */}
+                                {leaveSegments.length > 0 && (
+                                  <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-zinc-200 pt-2 dark:border-zinc-700">
+                                    <span className="text-xs text-zinc-500">Leave:</span>
+                                    {leaveSegments.map((seg) => (
+                                      <span
+                                        key={seg.id}
+                                        className="inline-flex items-center gap-1 rounded-full bg-violet-100 pl-2 pr-1 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
+                                      >
+                                        {seg.leaveRequest?.leaveType.name ?? PAY_BUCKET_LABEL[seg.payBucket as PayBucketValue] ?? seg.payBucket}
+                                        {" "}
+                                        ({minutesToHoursDecimal(seg.durationMinutes)}h)
+                                        {canEdit && seg.leaveRequest?.id && (
+                                          <button
+                                            type="button"
+                                            disabled={isPending}
+                                            onClick={() => handleRemoveLeave(seg.leaveRequest!.id)}
+                                            className="ml-0.5 rounded-full p-0.5 hover:bg-violet-200 dark:hover:bg-violet-800 disabled:opacity-50"
+                                            title="Remove this leave entry"
+                                          >
+                                            <X className="h-2.5 w-2.5" />
+                                          </button>
+                                        )}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
 
                                 {/* ── Meal waiver section (NJ auto-deduct only) ── */}
                                 {(() => {
