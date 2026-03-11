@@ -1,0 +1,63 @@
+model PtoPolicy {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  isDefault   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant       Tenant                      @relation(fields: [tenantId], references: [id])
+  bands        PtoPolicyBand[]
+  siteLinks    SitePtoPolicy[]
+  empOverrides EmployeePtoPolicyOverride[]
+
+  @@unique([tenantId, name])
+  @@map("pto_policies")
+}
+
+model PtoPolicyBand {
+  id              String @id @default(cuid())
+  ptoPolicyId     String
+  leaveTypeId     String
+  minTenureMonths Int    // inclusive lower bound (0 = from hire date)
+  maxTenureMonths Int?   // exclusive upper bound (null = open-ended top tier)
+  annualDays      Int    // days/year at this tenure level
+
+  ptoPolicy PtoPolicy @relation(fields: [ptoPolicyId], references: [id], onDelete: Cascade)
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  @@unique([ptoPolicyId, leaveTypeId, minTenureMonths])
+  @@map("pto_policy_bands")
+}
+
+// Site's default policy per leave type
+model SitePtoPolicy {
+  id          String @id @default(cuid())
+  siteId      String
+  leaveTypeId String
+  ptoPolicyId String
+
+  site      Site      @relation(fields: [siteId], references: [id])
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+  ptoPolicy PtoPolicy @relation(fields: [ptoPolicyId], references: [id])
+
+  @@unique([siteId, leaveTypeId])
+  @@map("site_pto_policies")
+}
+
+// Per-employee override (supersedes site default)
+model EmployeePtoPolicyOverride {
+  id          String @id @default(cuid())
+  employeeId  String
+  leaveTypeId String
+  ptoPolicyId String
+
+  employee  Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+  ptoPolicy PtoPolicy @relation(fields: [ptoPolicyId], references: [id])
+
+  @@unique([employeeId, leaveTypeId])
+  @@map("employee_pto_policy_overrides")
+}

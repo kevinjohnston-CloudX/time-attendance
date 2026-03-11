@@ -3,8 +3,10 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { getEmployeeById, getAdminRefData } from "@/actions/admin.actions";
+import { getEmployeePtoPolicyOverrides, getPtoPolicies, getSitePtoPolicies } from "@/actions/pto-policy.actions";
 import { EditEmployeeForm } from "@/components/admin/edit-employee-form";
 import { LeaveBalancesPanel } from "@/components/admin/leave-balances-panel";
+import { EmployeePtoPolicyPanel } from "@/components/admin/employee-pto-policy-panel";
 import { db } from "@/lib/db";
 import { format } from "date-fns";
 
@@ -44,6 +46,29 @@ export default async function EditEmployeePage({
       year,
     };
   });
+
+  // PTO policy data
+  const [overridesResult, ptoPoliciesResult, siteAssignmentsResult] = await Promise.all([
+    getEmployeePtoPolicyOverrides({ employeeId: id }),
+    getPtoPolicies(),
+    getSitePtoPolicies({ siteId: employee.siteId }),
+  ]);
+
+  const ptoPolicies = ptoPoliciesResult.success
+    ? ptoPoliciesResult.data.filter((p) => p.isActive).map((p) => ({ id: p.id, name: p.name }))
+    : [];
+
+  const overrides = overridesResult.success
+    ? overridesResult.data.map((o) => ({ leaveTypeId: o.leaveTypeId, ptoPolicyId: o.ptoPolicyId }))
+    : [];
+
+  const siteAssignments = siteAssignmentsResult.success
+    ? siteAssignmentsResult.data.map((a) => ({
+        leaveTypeId: a.leaveTypeId,
+        ptoPolicyId: a.ptoPolicyId,
+        policyName: a.ptoPolicy.name,
+      }))
+    : [];
 
   return (
     <div className="max-w-2xl">
@@ -85,6 +110,23 @@ export default async function EditEmployeePage({
             employeeId={employee.id}
             balances={balances}
             year={year}
+          />
+        </div>
+      </div>
+
+      {/* PTO Policy Overrides */}
+      <div className="mt-8">
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-white">PTO Policy Overrides</h2>
+        <p className="mt-0.5 text-sm text-zinc-500">
+          Override the site&apos;s default accrual policy for this employee.
+        </p>
+        <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <EmployeePtoPolicyPanel
+            employeeId={employee.id}
+            leaveTypes={leaveTypes.map((lt) => ({ id: lt.id, name: lt.name, category: lt.category as string }))}
+            policies={ptoPolicies}
+            overrides={overrides}
+            siteAssignments={siteAssignments}
           />
         </div>
       </div>

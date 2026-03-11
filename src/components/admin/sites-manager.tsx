@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createSite, updateSite } from "@/actions/admin.actions";
 import type { Site } from "@prisma/client";
 
@@ -98,6 +99,9 @@ export function SitesManager({ sites }: Props) {
                 <span className={`rounded-full px-2 py-0.5 text-xs ${site.isActive ? "bg-green-100 text-green-700" : "bg-zinc-100 text-zinc-500"}`}>
                   {site.isActive ? "Active" : "Inactive"}
                 </span>
+                <Link href={`/admin/sites/${site.id}`} className="text-xs text-violet-600 hover:underline dark:text-violet-400">
+                  PTO Rules
+                </Link>
                 <button onClick={() => setEditingId(site.id)} className="text-xs text-blue-600 hover:underline dark:text-blue-400">
                   Edit
                 </button>

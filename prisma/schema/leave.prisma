@@ -16,6 +16,9 @@ model LeaveType {
   balances      LeaveBalance[]
   requests      LeaveRequest[]
   accrualLedger LeaveAccrualLedger[]
+  ptoPolicyBands      PtoPolicyBand[]
+  sitePtoPolicies     SitePtoPolicy[]
+  employeeOverrides   EmployeePtoPolicyOverride[]
 
   @@map("leave_types")
 }

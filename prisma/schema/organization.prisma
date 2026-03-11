@@ -20,6 +20,7 @@ model Tenant {
   auditLogs   AuditLog[]
   reports     ReportDefinition[]
   customRoles CustomRole[]
+  ptoPolicies PtoPolicy[]
 
   @@map("tenants")
 }
@@ -37,6 +38,7 @@ model Site {
   tenant      Tenant     @relation(fields: [tenantId], references: [id])
   departments Department[]
   employees   Employee[]
+  ptoPolicies SitePtoPolicy[]
 
   @@map("sites")
 }
@@ -115,10 +117,11 @@ model Employee {
   ruleSet      RuleSet      @relation(fields: [ruleSetId], references: [id])
   punches      Punch[]
   timesheets   Timesheet[]
-  leaveBalances LeaveBalance[]
-  leaveRequests LeaveRequest[]
-  documents    Document[]
-  auditLogs    AuditLog[]
+  leaveBalances    LeaveBalance[]
+  leaveRequests    LeaveRequest[]
+  documents        Document[]
+  auditLogs        AuditLog[]
+  ptoPolicyOverrides EmployeePtoPolicyOverride[]
 
   @@unique([tenantId, employeeCode])
   @@map("employees")

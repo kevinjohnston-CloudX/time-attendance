@@ -132,4 +132,5 @@ enum AuditEntityType {
   ADP_SYNC
   REPORT
   ROLE
+  PTO_POLICY
 }
