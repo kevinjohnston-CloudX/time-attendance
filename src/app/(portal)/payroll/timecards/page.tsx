@@ -7,6 +7,7 @@ import {
   getTimecardEmployeeList,
   getTimecardDetail,
 } from "@/actions/timecard.actions";
+import { getPayCodes } from "@/actions/pay-code.actions";
 import { TimecardViewer } from "@/components/payroll/timecard-viewer";
 
 export default async function TimecardsPage({
@@ -19,6 +20,15 @@ export default async function TimecardsPage({
   if (!session?.user) redirect("/login");
   if (!hasPermission(session.user.role, "PAY_PERIOD_MANAGE"))
     redirect("/dashboard");
+
+  // Fetch tenant pay frequency
+  const tenant = session.user.tenantId
+    ? await db.tenant.findUnique({
+        where: { id: session.user.tenantId },
+        select: { payFrequency: true },
+      })
+    : null;
+  const payFrequency = tenant?.payFrequency ?? "BIWEEKLY";
 
   const payPeriods = await db.payPeriod.findMany({
     orderBy: { startDate: "desc" },
@@ -53,6 +63,10 @@ export default async function TimecardsPage({
         ?.timesheetId ?? null)
     : null;
 
+  // Fetch pay codes for the tenant
+  const payCodesResult = await getPayCodes({});
+  const payCodes = payCodesResult.success ? payCodesResult.data : [];
+
   let timecard = null;
   if (selectedTimesheetId) {
     const result = await getTimecardDetail({
@@ -76,6 +90,11 @@ export default async function TimecardsPage({
         timesheetId: timecard.id,
         status: timecard.status,
         exceptionCount: timecard.exceptions.length,
+        exceptions: timecard.exceptions.map((e) => ({
+          id: e.id,
+          exceptionType: e.exceptionType,
+          occurredAt: e.occurredAt.toISOString(),
+        })),
         payPeriod: {
           startDate: timecard.payPeriod.startDate.toISOString(),
           endDate: timecard.payPeriod.endDate.toISOString(),
@@ -86,6 +105,10 @@ export default async function TimecardsPage({
             : null,
           department: { name: timecard.employee.department.name },
           employeeCode: timecard.employee.employeeCode,
+          payRate: timecard.employee.payRate
+            ? Number(timecard.employee.payRate)
+            : null,
+          payType: timecard.employee.payType,
           ruleSet: {
             autoDeductMeal: timecard.employee.ruleSet.autoDeductMeal,
             mealBreakMinutes: timecard.employee.ruleSet.mealBreakMinutes,
@@ -106,12 +129,19 @@ export default async function TimecardsPage({
           segmentDate: s.segmentDate.toISOString(),
           payBucket: s.payBucket,
           isPaid: s.isPaid,
+          leaveRequest: s.leaveRequest
+            ? { id: s.leaveRequest.id, leaveType: s.leaveRequest.leaveType }
+            : null,
+          payCode: s.payCode
+            ? { id: s.payCode.id, code: s.payCode.code, label: s.payCode.label }
+            : null,
         })),
         overtimeBuckets: timecard.overtimeBuckets.map((b) => ({
           bucket: b.bucket,
           totalMinutes: b.totalMinutes,
         })),
         mealWaivers: timecard.mealWaivers,
+        notes: timecard.notes,
       }
     : null;
 
@@ -140,6 +170,12 @@ export default async function TimecardsPage({
         employees={employees}
         selectedEmployeeId={selectedEmployeeId}
         timecard={serializedTimecard}
+        payFrequency={payFrequency}
+        payCodes={payCodes.map((pc) => ({
+          id: pc.id,
+          code: pc.code,
+          label: pc.label,
+        }))}
       />
     </div>
   );

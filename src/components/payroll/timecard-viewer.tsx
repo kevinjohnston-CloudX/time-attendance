@@ -1,8 +1,20 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { format, eachDayOfInterval, parseISO, isToday } from "date-fns";
+import {
+  format,
+  eachDayOfInterval,
+  parseISO,
+  isToday,
+  startOfMonth,
+  endOfMonth,
+  startOfWeek,
+  endOfWeek,
+  addMonths,
+  isSameMonth,
+  isSameDay,
+} from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
 import {
@@ -26,9 +38,21 @@ import {
 import {
   removePayrollLeaveEntry,
   getLeaveTypesForTimecard,
+  saveTimesheetNote,
 } from "@/actions/timecard-entry.actions";
+import { setSegmentPayCode } from "@/actions/pay-code.actions";
 import { AddTimecardEntry } from "@/components/payroll/add-timecard-entry";
-import { Search, ChevronRight, Pencil, Plus, X } from "lucide-react";
+import {
+  Search,
+  ChevronRight,
+  ChevronLeft,
+  Pencil,
+  Plus,
+  X,
+  Calendar,
+  UserCircle,
+  StickyNote,
+} from "lucide-react";
 
 // ─── Serialized prop types (dates as ISO strings) ────────────────────────────
 
@@ -39,7 +63,9 @@ type EmployeeListItem = {
   employeeCode: string;
   department: string;
   status: string;
+  isActive: boolean;
   totalMinutes: number;
+  exceptionTypes: string[];
 };
 
 type PayPeriodOption = {
@@ -68,6 +94,24 @@ type TimecardSegment = {
     id: string;
     leaveType: { name: string; category: string };
   } | null;
+  payCode?: {
+    id: string;
+    code: number;
+    label: string;
+  } | null;
+};
+
+type PayCodeOption = {
+  id: string;
+  code: number;
+  label: string;
+};
+
+type TimesheetNoteItem = {
+  id: string;
+  noteDate: string;
+  note: string;
+  createdById: string;
 };
 
 type LeaveTypeOption = {
@@ -82,21 +126,40 @@ type TimecardBucket = {
   totalMinutes: number;
 };
 
+type TimecardException = {
+  id: string;
+  exceptionType: string;
+  occurredAt: string;
+};
+
 type TimecardDetail = {
   timesheetId: string;
   status: string;
   exceptionCount: number;
+  exceptions: TimecardException[];
   payPeriod: { startDate: string; endDate: string };
   employee: {
     user: { name: string | null } | null;
     department: { name: string };
     employeeCode: string;
+    payRate: number | null;
+    payType: string | null;
     ruleSet: { autoDeductMeal: boolean; mealBreakMinutes: number; mealBreakAfterMinutes: number };
   };
   punches: TimecardPunch[];
   segments: TimecardSegment[];
   overtimeBuckets: TimecardBucket[];
   mealWaivers: { id: string; segmentDate: string; reason: string }[];
+  notes: TimesheetNoteItem[];
+};
+
+type PayFrequencyValue = "WEEKLY" | "BIWEEKLY" | "SEMIMONTHLY" | "MONTHLY";
+
+const PAY_FREQUENCY_LABEL: Record<PayFrequencyValue, string> = {
+  WEEKLY: "Weekly",
+  BIWEEKLY: "Biweekly",
+  SEMIMONTHLY: "Semimonthly",
+  MONTHLY: "Monthly",
 };
 
 interface TimecardViewerProps {
@@ -105,6 +168,8 @@ interface TimecardViewerProps {
   employees: EmployeeListItem[];
   selectedEmployeeId: string | null;
   timecard: TimecardDetail | null;
+  payFrequency: string;
+  payCodes: PayCodeOption[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -134,6 +199,91 @@ const STATUS_BADGE: Record<string, string> = {
   REJECTED: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
 };
 
+// ─── Summary Row Helper ─────────────────────────────────────────────────────
+
+function SummaryRow({
+  label,
+  reg,
+  ot,
+  dt,
+  total,
+  rate,
+  isBold,
+  className,
+}: {
+  label: string;
+  reg: number;
+  ot: number;
+  dt: number;
+  total: number;
+  rate: number | null;
+  isBold?: boolean;
+  className?: string;
+}) {
+  const fmt = (m: number) => minutesToHoursDecimal(m);
+  const fmtMoney = (v: number) => `$${v.toFixed(2)}`;
+  const regPay = rate ? (reg / 60) * rate : 0;
+  const otPay = rate ? (ot / 60) * rate * 1.5 : 0;
+  const dtPay = rate ? (dt / 60) * rate * 2 : 0;
+  const totalPay = regPay + otPay + dtPay;
+
+  const base = isBold
+    ? "border-t-2 border-zinc-300 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900"
+    : "";
+  const text = isBold
+    ? "font-bold text-zinc-900 dark:text-white"
+    : className ?? "text-zinc-700 dark:text-zinc-300";
+
+  return (
+    <tr className={base}>
+      <td className={`px-4 py-1.5 ${text}`}>{label}</td>
+      <td className={`px-3 py-1.5 text-right tabular-nums ${text}`}>
+        {reg > 0 ? fmt(reg) : "—"}
+      </td>
+      <td
+        className={`px-3 py-1.5 text-right tabular-nums ${
+          ot > 0
+            ? "font-semibold text-amber-600 dark:text-amber-400"
+            : text
+        }`}
+      >
+        {ot > 0 ? fmt(ot) : "—"}
+      </td>
+      <td
+        className={`px-3 py-1.5 text-right tabular-nums ${
+          dt > 0
+            ? "font-semibold text-red-600 dark:text-red-400"
+            : text
+        }`}
+      >
+        {dt > 0 ? fmt(dt) : "—"}
+      </td>
+      <td className={`px-3 py-1.5 text-right tabular-nums ${isBold ? text : "font-semibold text-zinc-900 dark:text-white"}`}>
+        {fmt(total)}
+      </td>
+      {rate !== null && (
+        <>
+          <td className={`px-3 py-1.5 text-right tabular-nums ${text}`}>
+            {fmtMoney(rate)}
+          </td>
+          <td className={`px-3 py-1.5 text-right tabular-nums ${text}`}>
+            {regPay > 0 ? fmtMoney(regPay) : "—"}
+          </td>
+          <td className={`px-3 py-1.5 text-right tabular-nums ${text}`}>
+            {otPay > 0 ? fmtMoney(otPay) : "—"}
+          </td>
+          <td className={`px-3 py-1.5 text-right tabular-nums ${text}`}>
+            {dtPay > 0 ? fmtMoney(dtPay) : "—"}
+          </td>
+          <td className={`px-3 py-1.5 text-right tabular-nums ${isBold ? text : "font-semibold text-zinc-900 dark:text-white"}`}>
+            {fmtMoney(totalPay)}
+          </td>
+        </>
+      )}
+    </tr>
+  );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function TimecardViewer({
@@ -142,10 +292,86 @@ export function TimecardViewer({
   employees,
   selectedEmployeeId,
   timecard,
+  payFrequency,
+  payCodes,
 }: TimecardViewerProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [activeOnly, setActiveOnly] = useState(true);
   const [isPending, startTransition] = useTransition();
+
+  // ── Pay period navigation helpers ─────────────────────────────────────
+  const sortedPeriods = [...payPeriods].sort(
+    (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+  );
+  const currentIndex = sortedPeriods.findIndex(
+    (pp) => pp.id === selectedPayPeriodId
+  );
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex < sortedPeriods.length - 1;
+
+  // Find "current" pay period (the one containing today)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const currentPeriod = sortedPeriods.find((pp) => {
+    const start = parseUtcDate(pp.startDate);
+    const end = parseUtcDate(pp.endDate);
+    return today >= start && today <= end;
+  });
+  const currentPeriodIndex = currentPeriod
+    ? sortedPeriods.indexOf(currentPeriod)
+    : -1;
+  const lastPeriod =
+    currentPeriodIndex > 0 ? sortedPeriods[currentPeriodIndex - 1] : null;
+  const nextPeriod =
+    currentPeriodIndex >= 0 &&
+    currentPeriodIndex < sortedPeriods.length - 1
+      ? sortedPeriods[currentPeriodIndex + 1]
+      : null;
+
+  // Find the pay period that contains a given date
+  function findPeriodForDate(date: Date): PayPeriodOption | undefined {
+    return sortedPeriods.find((pp) => {
+      const start = parseUtcDate(pp.startDate);
+      const end = parseUtcDate(pp.endDate);
+      return date >= start && date <= end;
+    });
+  }
+
+  function handleCalendarDateSelect(date: Date) {
+    const period = findPeriodForDate(date);
+    if (period) {
+      navigate(period.id);
+      setShowCalendar(false);
+    }
+  }
+
+  // Determine which quick-select label applies to the current selection
+  function getQuickSelectValue(): string {
+    if (currentPeriod && selectedPayPeriodId === currentPeriod.id)
+      return "current";
+    if (lastPeriod && selectedPayPeriodId === lastPeriod.id) return "last";
+    if (nextPeriod && selectedPayPeriodId === nextPeriod.id) return "next";
+    return selectedPayPeriodId;
+  }
+
+  // Calendar picker
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
+  const calendarRef = useRef<HTMLDivElement>(null);
+
+  // Close calendar when clicking outside
+  useEffect(() => {
+    if (!showCalendar) return;
+    function handleClick(e: MouseEvent) {
+      if (calendarRef.current && !calendarRef.current.contains(e.target as Node)) {
+        setShowCalendar(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showCalendar]);
 
   // Expandable rows
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
@@ -170,6 +396,18 @@ export function TimecardViewer({
   const [addEntryDay, setAddEntryDay] = useState<string | null>(null);
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
 
+  // Notes
+  const [noteDay, setNoteDay] = useState<string | null>(null);
+  const [noteText, setNoteText] = useState("");
+
+  // Summary
+  const [summaryGroupBy, setSummaryGroupBy] = useState<
+    "total" | "week" | "paycode"
+  >("total");
+
+  // Employee pay rate for summary calculations
+  const rate = timecard?.employee.payRate ?? null;
+
   // Reset state when employee changes
   useEffect(() => {
     setExpandedDays(new Set());
@@ -181,6 +419,8 @@ export function TimecardViewer({
     setWaiverReason("");
     setWaiverError(null);
     setAddEntryDay(null);
+    setNoteDay(null);
+    setNoteText("");
   }, [timecard?.timesheetId]);
 
   const canEdit =
@@ -189,12 +429,31 @@ export function TimecardViewer({
     timecard.status !== "PAYROLL_APPROVED";
 
   const filteredEmployees = employees.filter((emp) => {
+    // Text search
     const q = search.toLowerCase();
-    return (
+    const matchesSearch =
       emp.name.toLowerCase().includes(q) ||
       emp.employeeCode.toLowerCase().includes(q) ||
-      emp.department.toLowerCase().includes(q)
-    );
+      emp.department.toLowerCase().includes(q);
+    if (!matchesSearch) return false;
+
+    // Active only filter
+    if (activeOnly && !emp.isActive) return false;
+
+    // Status / exception filter
+    if (statusFilter === "ALL") return true;
+    if (statusFilter === "ALL_EXCLUDING_OPEN") return emp.status !== "OPEN";
+    // Status-based filters
+    const statusFilters = [
+      "OPEN",
+      "SUBMITTED",
+      "SUP_APPROVED",
+      "PAYROLL_APPROVED",
+      "LOCKED",
+    ];
+    if (statusFilters.includes(statusFilter)) return emp.status === statusFilter;
+    // Exception-based filters
+    return emp.exceptionTypes.includes(statusFilter);
   });
 
   function navigate(payPeriodId: string, employeeId?: string | null) {
@@ -345,6 +604,41 @@ export function TimecardViewer({
     });
   }
 
+  function handlePayCodeChange(segmentId: string, payCodeId: string) {
+    startTransition(async () => {
+      await setSegmentPayCode({
+        segmentId,
+        payCodeId: payCodeId || null,
+      });
+      router.refresh();
+    });
+  }
+
+  function handleOpenNote(dayStr: string) {
+    const existing = timecard?.notes.find((n) => n.noteDate === dayStr);
+    setNoteDay(dayStr);
+    setNoteText(existing?.note ?? "");
+  }
+
+  function handleSaveNote() {
+    if (!timecard || !noteDay) return;
+    startTransition(async () => {
+      await saveTimesheetNote({
+        timesheetId: timecard.timesheetId,
+        noteDate: noteDay,
+        note: noteText,
+      });
+      setNoteDay(null);
+      setNoteText("");
+      router.refresh();
+    });
+  }
+
+  // Column count for colSpan on expanded rows
+  // Base: chevron + date + notes-icon + in + out + reg + ot + dt + total = 9
+  // +1 if pay codes column exists
+  const colCount = 9 + (payCodes.length > 0 ? 1 : 0);
+
   const canApprove =
     timecard &&
     (timecard.status === "SUBMITTED" || timecard.status === "SUP_APPROVED");
@@ -354,23 +648,215 @@ export function TimecardViewer({
 
   return (
     <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-      {/* ── Top bar: pay period selector ─────────────────────────────── */}
-      <div className="flex items-center gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-        <label className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
-          Pay Period
-        </label>
+      {/* ── Top bar: pay period filter bar ─────────────────────────── */}
+      <div className="flex items-center gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900">
+        {/* Pay frequency indicator */}
+        <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+          {PAY_FREQUENCY_LABEL[payFrequency as PayFrequencyValue] ??
+            payFrequency}
+        </span>
+
+        {/* Quick-select dropdown */}
         <select
-          value={selectedPayPeriodId}
-          onChange={(e) => navigate(e.target.value)}
+          value={getQuickSelectValue()}
+          onChange={(e) => {
+            const val = e.target.value;
+            if (val === "current" && currentPeriod)
+              navigate(currentPeriod.id);
+            else if (val === "last" && lastPeriod)
+              navigate(lastPeriod.id);
+            else if (val === "next" && nextPeriod)
+              navigate(nextPeriod.id);
+            else navigate(val);
+          }}
           className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
         >
-          {payPeriods.map((pp) => (
-            <option key={pp.id} value={pp.id}>
-              {format(parseUtcDate(pp.startDate), "MMM d")} –{" "}
-              {format(parseUtcDate(pp.endDate), "MMM d, yyyy")}
-            </option>
-          ))}
+          {currentPeriod && (
+            <option value="current">Current Pay Period</option>
+          )}
+          {lastPeriod && (
+            <option value="last">Last Pay Period</option>
+          )}
+          {nextPeriod && (
+            <option value="next">Next Pay Period</option>
+          )}
+          <optgroup label="All Pay Periods">
+            {sortedPeriods
+              .slice()
+              .reverse()
+              .map((pp) => (
+                <option key={pp.id} value={pp.id}>
+                  {format(parseUtcDate(pp.startDate), "MM/dd/yyyy")} –{" "}
+                  {format(parseUtcDate(pp.endDate), "MM/dd/yyyy")}
+                </option>
+              ))}
+          </optgroup>
         </select>
+
+        {/* Previous / Next arrows with date display */}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            disabled={!hasPrev}
+            onClick={() =>
+              hasPrev && navigate(sortedPeriods[currentIndex - 1].id)
+            }
+            className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+            title="Previous pay period"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="min-w-[260px] text-center text-sm font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
+            {(() => {
+              const sel = sortedPeriods[currentIndex];
+              if (!sel) return "—";
+              const s = parseUtcDate(sel.startDate);
+              const e = parseUtcDate(sel.endDate);
+              return `${format(s, "MM/dd/yyyy")} (${format(s, "EEE")}) – ${format(e, "MM/dd/yyyy")} (${format(e, "EEE")})`;
+            })()}
+          </span>
+          <button
+            type="button"
+            disabled={!hasNext}
+            onClick={() =>
+              hasNext && navigate(sortedPeriods[currentIndex + 1].id)
+            }
+            className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+            title="Next pay period"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Calendar picker */}
+        <div className="relative" ref={calendarRef}>
+          <button
+            type="button"
+            onClick={() => {
+              if (!showCalendar) {
+                // Open calendar on the month of the selected pay period
+                const sel = sortedPeriods[currentIndex];
+                if (sel) setCalendarMonth(parseUtcDate(sel.startDate));
+              }
+              setShowCalendar(!showCalendar);
+            }}
+            className="rounded p-1.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+            title="Pick a date"
+          >
+            <Calendar className="h-4 w-4" />
+          </button>
+          {showCalendar && (
+            <div className="absolute left-0 top-full z-50 mt-1 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+              {/* Month navigation */}
+              <div className="mb-2 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setCalendarMonth((m) => addMonths(m, -1))}
+                  className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                  {format(calendarMonth, "MMMM yyyy")}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCalendarMonth((m) => addMonths(m, 1))}
+                  className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+              {/* Day-of-week headers */}
+              <div className="grid grid-cols-7 gap-0">
+                {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+                  <div
+                    key={d}
+                    className="py-1 text-center text-xs font-medium text-zinc-400"
+                  >
+                    {d}
+                  </div>
+                ))}
+                {/* Calendar days */}
+                {(() => {
+                  const monthStart = startOfMonth(calendarMonth);
+                  const monthEnd = endOfMonth(calendarMonth);
+                  const calStart = startOfWeek(monthStart);
+                  const calEnd = endOfWeek(monthEnd);
+                  const calDays = eachDayOfInterval({
+                    start: calStart,
+                    end: calEnd,
+                  });
+                  const selPeriod = sortedPeriods[currentIndex];
+                  const selStart = selPeriod
+                    ? parseUtcDate(selPeriod.startDate)
+                    : null;
+                  const selEnd = selPeriod
+                    ? parseUtcDate(selPeriod.endDate)
+                    : null;
+
+                  return calDays.map((d) => {
+                    const inMonth = isSameMonth(d, calendarMonth);
+                    const isNow = isSameDay(d, new Date());
+                    const inSelected =
+                      selStart && selEnd && d >= selStart && d <= selEnd;
+                    const hasPeriod = !!findPeriodForDate(d);
+
+                    return (
+                      <button
+                        key={d.toISOString()}
+                        type="button"
+                        disabled={!hasPeriod}
+                        onClick={() => handleCalendarDateSelect(d)}
+                        className={`h-7 w-7 rounded text-xs transition-colors ${
+                          !inMonth
+                            ? "text-zinc-300 dark:text-zinc-600"
+                            : inSelected
+                              ? "bg-blue-100 font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                              : "text-zinc-700 dark:text-zinc-300"
+                        } ${
+                          isNow && !inSelected
+                            ? "ring-1 ring-blue-400"
+                            : ""
+                        } ${
+                          hasPeriod && inMonth
+                            ? "hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                            : ""
+                        } disabled:cursor-default disabled:opacity-40`}
+                      >
+                        {d.getDate()}
+                      </button>
+                    );
+                  });
+                })()}
+              </div>
+              {/* Footer buttons */}
+              <div className="mt-2 flex items-center justify-between border-t border-zinc-100 pt-2 dark:border-zinc-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const todayPeriod = findPeriodForDate(new Date());
+                    if (todayPeriod) {
+                      navigate(todayPeriod.id);
+                      setShowCalendar(false);
+                    }
+                  }}
+                  className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCalendar(false)}
+                  className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         <span className="ml-auto text-xs text-zinc-400">
           {employees.length} employee{employees.length !== 1 && "s"}
         </span>
@@ -380,7 +866,7 @@ export function TimecardViewer({
       <div className="grid h-[calc(100vh-14rem)] grid-cols-[260px_1fr]">
         {/* ── Left: employee list ─────────────────────────────────────── */}
         <div className="flex min-h-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
-          <div className="border-b border-zinc-200 p-2.5 dark:border-zinc-800">
+          <div className="space-y-2 border-b border-zinc-200 p-2.5 dark:border-zinc-800">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
               <input
@@ -391,6 +877,40 @@ export function TimecardViewer({
                 className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
               />
             </div>
+            {/* Status / Exception filter */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+            >
+              <optgroup label="Status">
+                <option value="ALL">All Timesheets</option>
+                <option value="ALL_EXCLUDING_OPEN">Excluding Open</option>
+                <option value="OPEN">Open</option>
+                <option value="SUBMITTED">Submitted</option>
+                <option value="SUP_APPROVED">Supervisor Approved</option>
+                <option value="PAYROLL_APPROVED">Payroll Approved</option>
+                <option value="LOCKED">Locked</option>
+              </optgroup>
+              <optgroup label="Exceptions">
+                <option value="MISSING_PUNCH">Missing Punch</option>
+                <option value="LONG_SHIFT">Long Shift</option>
+                <option value="SHORT_BREAK">Short Break</option>
+                <option value="MISSED_MEAL">Missed Meal</option>
+                <option value="UNSCHEDULED_OT">Unscheduled OT</option>
+                <option value="CONSECUTIVE_DAYS">Consecutive Days</option>
+              </optgroup>
+            </select>
+            {/* Active only toggle */}
+            <label className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+              <input
+                type="checkbox"
+                checked={activeOnly}
+                onChange={(e) => setActiveOnly(e.target.checked)}
+                className="rounded border-zinc-300 dark:border-zinc-600"
+              />
+              Active only
+            </label>
           </div>
 
           <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-950">
@@ -455,10 +975,26 @@ export function TimecardViewer({
               <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
                 <div className="flex items-center gap-3">
                   <div>
-                    <h2 className="text-base font-bold text-zinc-900 dark:text-white">
-                      {timecard.employee.user?.name ??
-                        timecard.employee.employeeCode}
-                    </h2>
+                    <div className="flex items-center gap-1.5">
+                      <h2 className="text-base font-bold text-zinc-900 dark:text-white">
+                        {timecard.employee.user?.name ??
+                          timecard.employee.employeeCode}
+                      </h2>
+                      {selectedEmployeeId && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            router.push(
+                              `/admin/employees/${selectedEmployeeId}`
+                            )
+                          }
+                          title="Go to employee profile"
+                          className="rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-blue-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-blue-400"
+                        >
+                          <UserCircle className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
                     <p className="text-xs text-zinc-500">
                       {timecard.employee.employeeCode} ·{" "}
                       {timecard.employee.department.name}
@@ -551,7 +1087,10 @@ export function TimecardViewer({
                     <tr>
                       <th className="w-7 pl-2 pr-0 py-2.5" />
                       <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Date</th>
-                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Day</th>
+                      {payCodes.length > 0 && (
+                        <th className="px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Code</th>
+                      )}
+                      <th className="w-7 px-1 py-2.5" />
                       <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">In</th>
                       <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Out</th>
                       <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">Reg</th>
@@ -602,12 +1141,37 @@ export function TimecardViewer({
                       const hasActivity =
                         dayPunches.length > 0 || daySegments.length > 0;
 
+                      // Exception-based highlighting
+                      const dayStr = format(day, "yyyy-MM-dd");
+                      const dayExceptions = timecard
+                        ? timecard.exceptions.filter(
+                            (e) =>
+                              format(
+                                parseISO(e.occurredAt),
+                                "yyyy-MM-dd"
+                              ) === dayStr
+                          )
+                        : [];
+                      const hasMissingPunch = dayExceptions.some(
+                        (e) => e.exceptionType === "MISSING_PUNCH"
+                      );
+                      // Consider a day "absent" if it's a weekday, not today,
+                      // past, has no punches and no leave segments
+                      const isPast = day < today;
+                      const isAbsent =
+                        !isWeekend &&
+                        !isTodayRow &&
+                        isPast &&
+                        dayPunches.length === 0 &&
+                        leaveSegments.length === 0 &&
+                        daySegments.length === 0;
+
                       return (
                         <>
                           {/* Week separator */}
                           {showWeekSeparator && (
                             <tr key={`${dayKey}-sep`} aria-hidden>
-                              <td colSpan={9} className="h-0 border-t-2 border-zinc-200 dark:border-zinc-700 p-0" />
+                              <td colSpan={colCount} className="h-0 border-t-2 border-zinc-200 dark:border-zinc-700 p-0" />
                             </tr>
                           )}
 
@@ -615,13 +1179,17 @@ export function TimecardViewer({
                           <tr
                             key={dayKey}
                             className={`border-b border-zinc-100 dark:border-zinc-800/60 transition-colors ${
-                              isTodayRow
-                                ? "bg-blue-50/60 dark:bg-blue-950/20"
-                                : isWeekend
-                                  ? "bg-zinc-50/70 dark:bg-zinc-900/40"
-                                  : hasActivity
-                                    ? "hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
-                                    : "hover:bg-zinc-50/50 dark:hover:bg-zinc-900/20"
+                              isAbsent
+                                ? "bg-red-900 text-white dark:bg-red-950"
+                                : hasMissingPunch
+                                  ? "bg-amber-50 dark:bg-amber-950/30"
+                                  : isTodayRow
+                                    ? "bg-blue-50/60 dark:bg-blue-950/20"
+                                    : isWeekend
+                                      ? "bg-zinc-50/70 dark:bg-zinc-900/40"
+                                      : hasActivity
+                                        ? "hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                                        : "hover:bg-zinc-50/50 dark:hover:bg-zinc-900/20"
                             } ${hasActivity ? "cursor-pointer" : ""}`}
                             onClick={
                               hasActivity
@@ -642,16 +1210,21 @@ export function TimecardViewer({
                               ) : null}
                             </td>
 
-                            {/* Date */}
+                            {/* Date (EEE MM/dd/yyyy) */}
                             <td className={`px-3 py-2.5 text-sm font-medium tabular-nums ${
-                              isTodayRow
-                                ? "text-blue-700 dark:text-blue-400"
-                                : isWeekend
-                                  ? "text-zinc-400 dark:text-zinc-500"
-                                  : "text-zinc-700 dark:text-zinc-300"
+                              isAbsent
+                                ? "text-white"
+                                : isTodayRow
+                                  ? "text-blue-700 dark:text-blue-400"
+                                  : isWeekend
+                                    ? "text-zinc-400 dark:text-zinc-500"
+                                    : "text-zinc-700 dark:text-zinc-300"
                             }`}>
                               <span className="inline-flex items-center gap-1">
-                                {format(day, "MM/dd")}
+                                <span className={`${isWeekend ? "" : "font-semibold"} mr-0.5`}>
+                                  {format(day, "EEE")}
+                                </span>
+                                {format(day, "MM/dd/yyyy")}
                                 {canEdit && (
                                   <button
                                     type="button"
@@ -668,20 +1241,76 @@ export function TimecardViewer({
                               </span>
                             </td>
 
-                            {/* Day name */}
-                            <td className={`px-3 py-2.5 text-sm ${
-                              isTodayRow
-                                ? "font-semibold text-blue-700 dark:text-blue-400"
-                                : isWeekend
-                                  ? "text-zinc-400 dark:text-zinc-500"
-                                  : "text-zinc-500 dark:text-zinc-400"
-                            }`}>
-                              {format(day, "EEE")}
+                            {/* Pay code */}
+                            {payCodes.length > 0 && (
+                              <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
+                                {(() => {
+                                  // Find the primary work segment for this day to get/set pay code
+                                  const workSeg = daySegments.find(
+                                    (s) => s.segmentType === "WORK" || s.segmentType === "LEAVE"
+                                  );
+                                  if (!workSeg) return null;
+                                  return canEdit ? (
+                                    <select
+                                      value={workSeg.payCode?.id ?? ""}
+                                      onChange={(e) =>
+                                        handlePayCodeChange(workSeg.id, e.target.value)
+                                      }
+                                      className="w-24 rounded border border-zinc-200 bg-white px-1 py-0.5 text-xs text-zinc-700 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                                    >
+                                      <option value="">—</option>
+                                      {payCodes.map((pc) => (
+                                        <option key={pc.id} value={pc.id}>
+                                          {pc.code}[{pc.label}]
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : workSeg.payCode ? (
+                                    <span className="text-xs text-zinc-500">
+                                      {workSeg.payCode.code}[{workSeg.payCode.label}]
+                                    </span>
+                                  ) : null;
+                                })()}
+                              </td>
+                            )}
+
+                            {/* Notes icon */}
+                            <td className="w-7 px-1 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                              {(() => {
+                                const dayStr = format(day, "yyyy-MM-dd");
+                                const existingNote = timecard?.notes.find(
+                                  (n) => n.noteDate === dayStr
+                                );
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenNote(dayStr)}
+                                    title={existingNote ? existingNote.note : "Add note"}
+                                    className={`rounded p-0.5 ${
+                                      existingNote
+                                        ? "text-amber-500 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20"
+                                        : "text-zinc-300 hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+                                    }`}
+                                  >
+                                    <StickyNote className="h-3.5 w-3.5" />
+                                  </button>
+                                );
+                              })()}
                             </td>
 
                             {/* In time */}
-                            <td className="px-3 py-2.5 font-mono text-sm text-zinc-700 dark:text-zinc-300">
-                              {firstIn ? (
+                            <td className={`px-3 py-2.5 font-mono text-sm ${
+                              isAbsent
+                                ? "text-white/80"
+                                : hasMissingPunch
+                                  ? "text-amber-700 dark:text-amber-400"
+                                  : "text-zinc-700 dark:text-zinc-300"
+                            }`}>
+                              {isAbsent ? (
+                                <span className="font-sans text-xs font-semibold">
+                                  Absent
+                                </span>
+                              ) : firstIn ? (
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -736,43 +1365,53 @@ export function TimecardViewer({
 
                             {/* Reg */}
                             <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
-                              reg > 0 ? "text-zinc-700 dark:text-zinc-300" : "text-zinc-300 dark:text-zinc-700"
+                              isAbsent
+                                ? "text-white/60"
+                                : reg > 0
+                                  ? "text-zinc-700 dark:text-zinc-300"
+                                  : "text-zinc-300 dark:text-zinc-700"
                             }`}>
-                              {reg > 0 ? minutesToHoursDecimal(reg) : "—"}
+                              {isAbsent ? "0.00" : reg > 0 ? minutesToHoursDecimal(reg) : "—"}
                             </td>
 
                             {/* OT */}
                             <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
-                              ot > 0
-                                ? "font-semibold text-amber-600 dark:text-amber-400"
-                                : "text-zinc-300 dark:text-zinc-700"
+                              isAbsent
+                                ? "text-white/60"
+                                : ot > 0
+                                  ? "font-semibold text-amber-600 dark:text-amber-400"
+                                  : "text-zinc-300 dark:text-zinc-700"
                             }`}>
                               {ot > 0 ? minutesToHoursDecimal(ot) : "—"}
                             </td>
 
                             {/* DT */}
                             <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
-                              dt > 0
-                                ? "font-semibold text-red-600 dark:text-red-400"
-                                : "text-zinc-300 dark:text-zinc-700"
+                              isAbsent
+                                ? "text-white/60"
+                                : dt > 0
+                                  ? "font-semibold text-red-600 dark:text-red-400"
+                                  : "text-zinc-300 dark:text-zinc-700"
                             }`}>
                               {dt > 0 ? minutesToHoursDecimal(dt) : "—"}
                             </td>
 
                             {/* Total */}
                             <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
-                              dailyTotal > 0
-                                ? "font-bold text-zinc-900 dark:text-white"
-                                : "text-zinc-300 dark:text-zinc-700"
+                              isAbsent
+                                ? "font-bold text-white"
+                                : dailyTotal > 0
+                                  ? "font-bold text-zinc-900 dark:text-white"
+                                  : "text-zinc-300 dark:text-zinc-700"
                             }`}>
-                              {dailyTotal > 0 ? minutesToHoursDecimal(dailyTotal) : "—"}
+                              {isAbsent ? "0.00" : dailyTotal > 0 ? minutesToHoursDecimal(dailyTotal) : "—"}
                             </td>
                           </tr>
 
                           {/* Add entry form row */}
                           {addEntryDay === format(day, "yyyy-MM-dd") && (
                             <tr key={`${dayKey}-add`}>
-                              <td colSpan={9} className="px-4 py-2">
+                              <td colSpan={colCount} className="px-4 py-2">
                                 <AddTimecardEntry
                                   timesheetId={timecard.timesheetId}
                                   date={format(day, "yyyy-MM-dd")}
@@ -787,13 +1426,59 @@ export function TimecardViewer({
                             </tr>
                           )}
 
+                          {/* Note edit row */}
+                          {noteDay === format(day, "yyyy-MM-dd") && (
+                            <tr key={`${dayKey}-note`}>
+                              <td colSpan={colCount} className="px-5 py-2">
+                                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 dark:border-amber-800 dark:bg-amber-950/30">
+                                  <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                                  <div className="flex-1">
+                                    <textarea
+                                      value={noteText}
+                                      onChange={(e) => setNoteText(e.target.value)}
+                                      placeholder="Add a note for this date…"
+                                      rows={2}
+                                      autoFocus
+                                      className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                                    />
+                                    <div className="mt-1.5 flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={handleSaveNote}
+                                        disabled={isPending}
+                                        className="rounded bg-amber-500 px-3 py-1 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+                                      >
+                                        {isPending ? "Saving…" : "Save Note"}
+                                      </button>
+                                      {noteText.trim() === "" && timecard?.notes.find((n) => n.noteDate === noteDay) && (
+                                        <span className="text-xs text-zinc-400">
+                                          Saving empty will delete the note
+                                        </span>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setNoteDay(null);
+                                          setNoteText("");
+                                        }}
+                                        className="text-xs text-zinc-500 hover:text-zinc-700"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+
                           {/* Expanded punch detail row */}
                           {isExpanded && hasActivity && (
                             <tr
                               key={`${dayKey}-detail`}
                               className="bg-zinc-50/80 dark:bg-zinc-900/40"
                             >
-                              <td colSpan={9} className="px-5 py-2">
+                              <td colSpan={colCount} className="px-5 py-2">
                                 <div className="flex flex-wrap items-start gap-2">
                                   {dayPunches.map((punch) =>
                                     editingPunchId === punch.id ? (
@@ -990,67 +1675,290 @@ export function TimecardViewer({
                   </tbody>
                 </table>
 
-                {/* ── Summary by pay bucket ──────────────────────────── */}
-                <div className="border-t border-zinc-200 dark:border-zinc-800">
-                  <table className="w-full text-sm">
-                    <thead className="bg-zinc-50 dark:bg-zinc-900">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-medium text-zinc-500">
-                          Summary
-                        </th>
-                        <th className="px-4 py-2 text-right font-medium text-zinc-500">
-                          Hours
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                      {(() => {
-                        const bucketMap = Object.fromEntries(
-                          timecard.overtimeBuckets.map((b) => [
-                            b.bucket,
-                            b.totalMinutes,
-                          ])
-                        );
-                        const visible = ALL_PAY_BUCKETS.filter(
-                          (b) =>
-                            b.key === "REG" || (bucketMap[b.key] ?? 0) > 0
-                        );
-                        const grandTotal = Object.values(bucketMap).reduce(
-                          (a, b) => a + b,
-                          0
-                        );
+                {/* ── Color Legend ──────────────────────────────────── */}
+                <div className="flex flex-wrap items-center gap-4 border-t border-zinc-200 px-4 py-2 dark:border-zinc-800">
+                  <span className="text-xs font-medium text-zinc-400">Legend:</span>
+                  <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <span className="inline-block h-3 w-3 rounded border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30" />
+                    Missed Punch
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <span className="inline-block h-3 w-3 rounded bg-red-900 dark:bg-red-950" />
+                    Absent
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <span className="inline-block h-3 w-3 rounded border border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/20" />
+                    Today
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <span className="inline-block h-3 w-3 rounded border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900/40" />
+                    Weekend
+                  </span>
+                </div>
 
-                        return (
-                          <>
-                            {visible.map((b) => (
-                              <tr key={b.key}>
-                                <td
-                                  className={`px-4 py-1.5 font-medium ${b.color}`}
-                                >
-                                  {b.label}
-                                </td>
-                                <td
-                                  className={`px-4 py-1.5 text-right tabular-nums ${b.color}`}
-                                >
-                                  {minutesToHoursDecimal(
-                                    bucketMap[b.key] ?? 0
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                            <tr className="border-t-2 border-zinc-300 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
-                              <td className="px-4 py-2 font-bold text-zinc-900 dark:text-white">
-                                Total
-                              </td>
-                              <td className="px-4 py-2 text-right font-bold tabular-nums text-zinc-900 dark:text-white">
-                                {minutesToHoursDecimal(grandTotal)}
-                              </td>
-                            </tr>
-                          </>
-                        );
-                      })()}
-                    </tbody>
-                  </table>
+                {/* ── Summary with Group By ──────────────────────────── */}
+                <div className="border-t border-zinc-200 dark:border-zinc-800">
+                  {/* Summary header with Group By selector */}
+                  <div className="flex items-center justify-between bg-zinc-50 px-4 py-2 dark:bg-zinc-900">
+                    <span className="text-sm font-medium text-zinc-500">
+                      Timesheet Summary
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-zinc-400">Group By</label>
+                      <select
+                        value={summaryGroupBy}
+                        onChange={(e) =>
+                          setSummaryGroupBy(
+                            e.target.value as "total" | "week" | "paycode"
+                          )
+                        }
+                        className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                      >
+                        <option value="total">Total</option>
+                        <option value="week">Week</option>
+                        {payCodes.length > 0 && (
+                          <option value="paycode">Pay Code</option>
+                        )}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Summary table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="border-b border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/50">
+                        <tr>
+                          <th className="px-4 py-1.5 text-left text-xs font-medium text-zinc-500">
+                            {summaryGroupBy === "week"
+                              ? "Week"
+                              : summaryGroupBy === "paycode"
+                                ? "Pay Code"
+                                : "Category"}
+                          </th>
+                          <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
+                            Reg Hrs
+                          </th>
+                          <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
+                            OT
+                          </th>
+                          <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
+                            DT
+                          </th>
+                          <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
+                            Total Hrs
+                          </th>
+                          {rate !== null && (
+                            <>
+                              <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
+                                Rate
+                              </th>
+                              <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
+                                Reg Pay
+                              </th>
+                              <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
+                                OT Pay
+                              </th>
+                              <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
+                                DT Pay
+                              </th>
+                              <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
+                                Total Pay
+                              </th>
+                            </>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                        {(() => {
+                          const bucketMap: Record<string, number> =
+                            Object.fromEntries(
+                              timecard.overtimeBuckets.map((b) => [
+                                b.bucket,
+                                b.totalMinutes,
+                              ])
+                            );
+
+                          if (summaryGroupBy === "total") {
+                            const reg = bucketMap["REG"] ?? 0;
+                            const ot = bucketMap["OT"] ?? 0;
+                            const dt = bucketMap["DT"] ?? 0;
+                            const total = Object.values(bucketMap).reduce(
+                              (a, b) => a + b,
+                              0
+                            );
+                            // Also show non-REG/OT/DT buckets
+                            const otherBuckets = ALL_PAY_BUCKETS.filter(
+                              (b) =>
+                                !["REG", "OT", "DT"].includes(b.key) &&
+                                (bucketMap[b.key] ?? 0) > 0
+                            );
+
+                            return (
+                              <>
+                                {otherBuckets.map((b) => (
+                                  <SummaryRow
+                                    key={b.key}
+                                    label={b.label}
+                                    reg={0}
+                                    ot={0}
+                                    dt={0}
+                                    total={bucketMap[b.key] ?? 0}
+                                    rate={rate}
+                                    className={b.color}
+                                  />
+                                ))}
+                                <SummaryRow
+                                  label="Totals"
+                                  reg={reg}
+                                  ot={ot}
+                                  dt={dt}
+                                  total={total}
+                                  rate={rate}
+                                  isBold
+                                />
+                              </>
+                            );
+                          }
+
+                          if (summaryGroupBy === "week") {
+                            // Split by week within the pay period
+                            const ppStart = parseUtcDate(
+                              timecard.payPeriod.startDate
+                            );
+                            const ppEnd = parseUtcDate(
+                              timecard.payPeriod.endDate
+                            );
+                            const weeks: {
+                              label: string;
+                              start: Date;
+                              end: Date;
+                            }[] = [];
+                            let wStart = ppStart;
+                            while (wStart <= ppEnd) {
+                              const wEnd = new Date(
+                                Math.min(
+                                  wStart.getTime() + 6 * 86400000,
+                                  ppEnd.getTime()
+                                )
+                              );
+                              weeks.push({
+                                label: `${format(wStart, "MM/dd/yyyy")} – ${format(wEnd, "MM/dd/yyyy")}`,
+                                start: wStart,
+                                end: wEnd,
+                              });
+                              wStart = new Date(wEnd.getTime() + 86400000);
+                            }
+
+                            let grandReg = 0,
+                              grandOt = 0,
+                              grandDt = 0,
+                              grandTotal = 0;
+
+                            return (
+                              <>
+                                {weeks.map((week) => {
+                                  const weekSegs = timecard.segments.filter(
+                                    (s) => {
+                                      const sd = parseUtcDate(s.segmentDate);
+                                      return sd >= week.start && sd <= week.end;
+                                    }
+                                  );
+                                  const weekBuckets: Record<string, number> =
+                                    {};
+                                  for (const s of weekSegs) {
+                                    if (s.isPaid) {
+                                      weekBuckets[s.payBucket] =
+                                        (weekBuckets[s.payBucket] ?? 0) +
+                                        s.durationMinutes;
+                                    }
+                                  }
+                                  const reg = weekBuckets["REG"] ?? 0;
+                                  const ot = weekBuckets["OT"] ?? 0;
+                                  const dt = weekBuckets["DT"] ?? 0;
+                                  const total = Object.values(
+                                    weekBuckets
+                                  ).reduce((a, b) => a + b, 0);
+                                  grandReg += reg;
+                                  grandOt += ot;
+                                  grandDt += dt;
+                                  grandTotal += total;
+                                  return (
+                                    <SummaryRow
+                                      key={week.label}
+                                      label={week.label}
+                                      reg={reg}
+                                      ot={ot}
+                                      dt={dt}
+                                      total={total}
+                                      rate={rate}
+                                    />
+                                  );
+                                })}
+                                <SummaryRow
+                                  label="Totals"
+                                  reg={grandReg}
+                                  ot={grandOt}
+                                  dt={grandDt}
+                                  total={grandTotal}
+                                  rate={rate}
+                                  isBold
+                                />
+                              </>
+                            );
+                          }
+
+                          // Pay code grouping
+                          const byCode: Record<
+                            string,
+                            { label: string; minutes: number }
+                          > = {};
+                          for (const seg of timecard.segments) {
+                            if (!seg.isPaid) continue;
+                            const key =
+                              seg.payCode
+                                ? `${seg.payCode.code}[${seg.payCode.label}]`
+                                : PAY_BUCKET_LABEL[
+                                    seg.payBucket as PayBucketValue
+                                  ] ?? seg.payBucket;
+                            byCode[key] = byCode[key] ?? {
+                              label: key,
+                              minutes: 0,
+                            };
+                            byCode[key].minutes += seg.durationMinutes;
+                          }
+                          const grandTotal = Object.values(byCode).reduce(
+                            (a, b) => a + b.minutes,
+                            0
+                          );
+
+                          return (
+                            <>
+                              {Object.values(byCode).map((entry) => (
+                                <SummaryRow
+                                  key={entry.label}
+                                  label={entry.label}
+                                  reg={0}
+                                  ot={0}
+                                  dt={0}
+                                  total={entry.minutes}
+                                  rate={rate}
+                                />
+                              ))}
+                              <SummaryRow
+                                label="Totals"
+                                reg={0}
+                                ot={0}
+                                dt={0}
+                                total={grandTotal}
+                                rate={rate}
+                                isBold
+                              />
+                            </>
+                          );
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             </>

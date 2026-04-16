@@ -21,6 +21,10 @@ export const getTimecardEmployeeList = withRBAC(
           },
         },
         overtimeBuckets: true,
+        exceptions: {
+          where: { resolvedAt: null },
+          select: { exceptionType: true },
+        },
       },
       orderBy: { employee: { user: { name: "asc" } } },
     });
@@ -32,10 +36,14 @@ export const getTimecardEmployeeList = withRBAC(
       employeeCode: ts.employee.employeeCode,
       department: ts.employee.department.name,
       status: ts.status,
+      isActive: ts.employee.isActive,
       totalMinutes: ts.overtimeBuckets.reduce(
         (sum, b) => sum + b.totalMinutes,
         0
       ),
+      exceptionTypes: [
+        ...new Set(ts.exceptions.map((e) => e.exceptionType)),
+      ],
     }));
   }
 );
@@ -79,11 +87,18 @@ export const getTimecardDetail = withRBAC(
                 leaveType: { select: { name: true, category: true } },
               },
             },
+            payCode: {
+              select: { id: true, code: true, label: true },
+            },
           },
         },
         overtimeBuckets: true,
-        exceptions: { where: { resolvedAt: null } },
+        exceptions: {
+          where: { resolvedAt: null },
+          select: { id: true, exceptionType: true, occurredAt: true, description: true },
+        },
         mealWaivers: true,
+        notes: true,
       },
     });
 
@@ -93,6 +108,12 @@ export const getTimecardDetail = withRBAC(
         id: w.id,
         segmentDate: w.segmentDate.toISOString().slice(0, 10),
         reason: w.reason,
+      })),
+      notes: ts.notes.map((n) => ({
+        id: n.id,
+        noteDate: n.noteDate.toISOString().slice(0, 10),
+        note: n.note,
+        createdById: n.createdById,
       })),
     };
   }

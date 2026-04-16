@@ -21,6 +21,7 @@ model Tenant {
   reports     ReportDefinition[]
   customRoles CustomRole[]
   ptoPolicies PtoPolicy[]
+  payCodes    PayCode[]
 
   @@map("tenants")
 }

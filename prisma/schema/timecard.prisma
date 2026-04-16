@@ -1,0 +1,36 @@
+/// Tenant-scoped lookup table mapping numeric codes to labels.
+/// Examples: 0 = Regular Hours, 5 = PTO, 42 = NJ Sick
+model PayCode {
+  id       String @id @default(cuid())
+  tenantId String
+  code     Int    /// Numeric code (e.g. 0, 1, 5, 42)
+  label    String /// Human-readable label (e.g. "Regular Hours")
+  /// Maps to the PayBucket enum for overtime/payroll classification
+  payBucket PayBucket?
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id])
+  segments WorkSegment[]
+
+  @@unique([tenantId, code])
+  @@map("pay_codes")
+}
+
+/// Notes attached to specific dates on a timesheet.
+model TimesheetNote {
+  id          String   @id @default(cuid())
+  timesheetId String
+  noteDate    DateTime @db.Date
+  note        String
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  timesheet Timesheet @relation(fields: [timesheetId], references: [id])
+
+  @@unique([timesheetId, noteDate])
+  @@map("timesheet_notes")
+}

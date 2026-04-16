@@ -11,6 +11,7 @@ import {
   manualPunchPairSchema,
   payrollLeaveEntrySchema,
 } from "@/lib/validators/timecard-entry.schema";
+import { z } from "zod";
 import type { LeaveType } from "@prisma/client";
 
 // ─── Get leave types for timecard entry modal ─────────────────────────────────
@@ -219,6 +220,52 @@ export const removePayrollLeaveEntry = withRBAC(
     });
 
     await syncLeaveSegments(leaveRequestId);
+    revalidatePath("/payroll/timecards");
+  }
+);
+
+// ─── Save or update a timesheet note for a specific date ─────────────────────
+
+const saveTimesheetNoteSchema = z.object({
+  timesheetId: z.string(),
+  noteDate: z.string(), // yyyy-MM-dd
+  note: z.string(),
+});
+
+export const saveTimesheetNote = withRBAC(
+  "PAY_PERIOD_MANAGE",
+  async (ctx, input: z.infer<typeof saveTimesheetNoteSchema>) => {
+    const { timesheetId, noteDate, note } = saveTimesheetNoteSchema.parse(input);
+    const createdById = ctx.employeeId;
+
+    if (!note.trim()) {
+      // Delete the note if empty
+      await db.timesheetNote.deleteMany({
+        where: {
+          timesheetId,
+          noteDate: new Date(noteDate + "T00:00:00Z"),
+        },
+      });
+    } else {
+      await db.timesheetNote.upsert({
+        where: {
+          timesheetId_noteDate: {
+            timesheetId,
+            noteDate: new Date(noteDate + "T00:00:00Z"),
+          },
+        },
+        create: {
+          timesheetId,
+          noteDate: new Date(noteDate + "T00:00:00Z"),
+          note: note.trim(),
+          createdById,
+        },
+        update: {
+          note: note.trim(),
+        },
+      });
+    }
+
     revalidatePath("/payroll/timecards");
   }
 );

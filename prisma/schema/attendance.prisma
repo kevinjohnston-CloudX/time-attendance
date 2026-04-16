@@ -39,6 +39,7 @@ model Timesheet {
   exceptions      Exception[]
   overtimeBuckets OvertimeBucket[]
   mealWaivers     MealWaiver[]
+  notes           TimesheetNote[]
 
   @@unique([employeeId, payPeriodId])
   @@map("timesheets")
@@ -87,10 +88,12 @@ model WorkSegment {
   payBucket       PayBucket
   isSplit         Boolean     @default(false)
   leaveRequestId  String?
+  payCodeId       String?
   createdAt       DateTime    @default(now())
 
   timesheet    Timesheet     @relation(fields: [timesheetId], references: [id])
   leaveRequest LeaveRequest? @relation(fields: [leaveRequestId], references: [id])
+  payCode      PayCode?      @relation(fields: [payCodeId], references: [id])
 
   @@map("work_segments")
 }
