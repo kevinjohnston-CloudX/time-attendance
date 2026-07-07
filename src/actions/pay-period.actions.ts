@@ -216,7 +216,9 @@ export const updateTenantSettings = withRBAC(
   "PAY_PERIOD_MANAGE",
   async ({ tenantId }, input: { payFrequency: PayFrequency; payPeriodAnchorDate: string }) => {
     if (!tenantId) throw new Error("No tenant context");
-    const anchor = new Date(input.payPeriodAnchorDate);
+    // Append T12:00:00 so the date string is parsed as local noon, not UTC midnight.
+    // Parsing a bare "YYYY-MM-DD" as UTC midnight shifts it back one day for US timezones.
+    const anchor = new Date(input.payPeriodAnchorDate + "T12:00:00");
     if (isNaN(anchor.getTime())) throw new Error("Invalid anchor date");
     const updated = await db.tenant.update({
       where: { id: tenantId },

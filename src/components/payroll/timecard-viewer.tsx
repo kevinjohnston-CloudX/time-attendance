@@ -40,8 +40,9 @@ import {
   getLeaveTypesForTimecard,
   saveTimesheetNote,
 } from "@/actions/timecard-entry.actions";
-import { setSegmentPayCode } from "@/actions/pay-code.actions";
+import { setSegmentPayCode, setSegmentPayBucket, setAbsentDayPayBucket } from "@/actions/pay-code.actions";
 import { AddTimecardEntry } from "@/components/payroll/add-timecard-entry";
+import { SegmentTimeline } from "@/components/time/segment-timeline";
 import {
   Search,
   ChevronRight,
@@ -89,6 +90,7 @@ type TimecardSegment = {
   durationMinutes: number;
   segmentDate: string;
   payBucket: string;
+  payBucketOverride: string | null;
   isPaid: boolean;
   leaveRequest?: {
     id: string;
@@ -170,6 +172,8 @@ interface TimecardViewerProps {
   timecard: TimecardDetail | null;
   payFrequency: string;
   payCodes: PayCodeOption[];
+  customStart?: string | null;
+  customEnd?: string | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -294,6 +298,8 @@ export function TimecardViewer({
   timecard,
   payFrequency,
   payCodes,
+  customStart,
+  customEnd,
 }: TimecardViewerProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -340,10 +346,24 @@ export function TimecardViewer({
   }
 
   function handleCalendarDateSelect(date: Date) {
-    const period = findPeriodForDate(date);
-    if (period) {
-      navigate(period.id);
-      setShowCalendar(false);
+    if (!rangeStart || rangeEnd) {
+      // Start a new selection
+      setRangeStart(date);
+      setRangeEnd(null);
+      setHoverDate(null);
+    } else if (isSameDay(date, rangeStart)) {
+      // Single-day range — treat same day click as a one-day range
+      setRangeEnd(date);
+      navigateCustomRange(rangeStart, date);
+    } else if (date < rangeStart) {
+      // Clicked before start — restart
+      setRangeStart(date);
+      setRangeEnd(null);
+      setHoverDate(null);
+    } else {
+      // Valid end date — complete selection
+      setRangeEnd(date);
+      navigateCustomRange(rangeStart, date);
     }
   }
 
@@ -359,6 +379,9 @@ export function TimecardViewer({
   // Calendar picker
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
+  const [rangeStart, setRangeStart] = useState<Date | null>(null);
+  const [rangeEnd, setRangeEnd] = useState<Date | null>(null);
+  const [hoverDate, setHoverDate] = useState<Date | null>(null);
   const calendarRef = useRef<HTMLDivElement>(null);
 
   // Close calendar when clicking outside
@@ -462,12 +485,23 @@ export function TimecardViewer({
     router.push(`/payroll/timecards?${params.toString()}`);
   }
 
-  // Build daily data from timecard
+  function navigateCustomRange(start: Date, end: Date) {
+    const params = new URLSearchParams();
+    params.set("customStart", format(start, "yyyy-MM-dd"));
+    params.set("customEnd", format(end, "yyyy-MM-dd"));
+    if (selectedEmployeeId) params.set("employeeId", selectedEmployeeId);
+    router.push(`/payroll/timecards?${params.toString()}`);
+    setShowCalendar(false);
+  }
+
+  // Build daily data from timecard — use custom range if provided, else full pay period
+  const customStartDate = customStart ? new Date(customStart + "T12:00:00") : null;
+  const customEndDate = customEnd ? new Date(customEnd + "T12:00:00") : null;
   const days =
     timecard &&
     eachDayOfInterval({
-      start: parseUtcDate(timecard.payPeriod.startDate),
-      end: parseUtcDate(timecard.payPeriod.endDate),
+      start: customStartDate ?? parseUtcDate(timecard.payPeriod.startDate),
+      end: customEndDate ?? parseUtcDate(timecard.payPeriod.endDate),
     });
 
   function segmentsForDay(day: Date): TimecardSegment[] {
@@ -614,6 +648,20 @@ export function TimecardViewer({
     });
   }
 
+  function handlePayBucketChange(segmentId: string, payBucket: string) {
+    startTransition(async () => {
+      await setSegmentPayBucket({ segmentId, payBucket });
+      router.refresh();
+    });
+  }
+
+  function handleAbsentPayBucketChange(timesheetId: string, segmentDate: string, payBucket: string) {
+    startTransition(async () => {
+      await setAbsentDayPayBucket({ timesheetId, segmentDate, payBucket: payBucket || null });
+      router.refresh();
+    });
+  }
+
   function handleOpenNote(dayStr: string) {
     const existing = timecard?.notes.find((n) => n.noteDate === dayStr);
     setNoteDay(dayStr);
@@ -635,9 +683,9 @@ export function TimecardViewer({
   }
 
   // Column count for colSpan on expanded rows
-  // Base: chevron + date + notes-icon + in + out + reg + ot + dt + total = 9
-  // +1 if pay codes column exists
-  const colCount = 9 + (payCodes.length > 0 ? 1 : 0);
+  // Base: chevron + date + notes-icon + in + out + paycode + reg + ot + dt + total = 10
+  // +1 if pay codes (DB entity) column exists
+  const colCount = 10 + (payCodes.length > 0 ? 1 : 0);
 
   const canApprove =
     timecard &&
@@ -734,9 +782,13 @@ export function TimecardViewer({
             type="button"
             onClick={() => {
               if (!showCalendar) {
-                // Open calendar on the month of the selected pay period
-                const sel = sortedPeriods[currentIndex];
-                if (sel) setCalendarMonth(parseUtcDate(sel.startDate));
+                setRangeStart(customStart ? new Date(customStart + "T12:00:00") : null);
+                setRangeEnd(customEnd ? new Date(customEnd + "T12:00:00") : null);
+                setHoverDate(null);
+                const initDate = customStart
+                  ? new Date(customStart + "T12:00:00")
+                  : (sortedPeriods[currentIndex] ? parseUtcDate(sortedPeriods[currentIndex].startDate) : new Date());
+                setCalendarMonth(initDate);
               }
               setShowCalendar(!showCalendar);
             }}
@@ -746,7 +798,7 @@ export function TimecardViewer({
             <Calendar className="h-4 w-4" />
           </button>
           {showCalendar && (
-            <div className="absolute left-0 top-full z-50 mt-1 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+            <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
               {/* Month navigation */}
               <div className="mb-2 flex items-center justify-between">
                 <button
@@ -787,42 +839,42 @@ export function TimecardViewer({
                     start: calStart,
                     end: calEnd,
                   });
-                  const selPeriod = sortedPeriods[currentIndex];
-                  const selStart = selPeriod
-                    ? parseUtcDate(selPeriod.startDate)
-                    : null;
-                  const selEnd = selPeriod
-                    ? parseUtcDate(selPeriod.endDate)
-                    : null;
+                  const effectiveEnd = rangeEnd ?? hoverDate;
 
                   return calDays.map((d) => {
                     const inMonth = isSameMonth(d, calendarMonth);
                     const isNow = isSameDay(d, new Date());
-                    const inSelected =
-                      selStart && selEnd && d >= selStart && d <= selEnd;
-                    const hasPeriod = !!findPeriodForDate(d);
+                    const isStart = !!rangeStart && isSameDay(d, rangeStart);
+                    const isEnd = !!rangeEnd && isSameDay(d, rangeEnd);
+                    const isEndpoint = isStart || isEnd;
+                    const inRange =
+                      !!rangeStart &&
+                      !!effectiveEnd &&
+                      d > rangeStart &&
+                      d < effectiveEnd;
 
                     return (
                       <button
                         key={d.toISOString()}
                         type="button"
-                        disabled={!hasPeriod}
                         onClick={() => handleCalendarDateSelect(d)}
+                        onMouseEnter={() => rangeStart && !rangeEnd && setHoverDate(d)}
+                        onMouseLeave={() => rangeStart && !rangeEnd && setHoverDate(null)}
                         className={`h-7 w-7 rounded text-xs transition-colors ${
-                          !inMonth
-                            ? "text-zinc-300 dark:text-zinc-600"
-                            : inSelected
-                              ? "bg-blue-100 font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                              : "text-zinc-700 dark:text-zinc-300"
+                          isEndpoint
+                            ? "bg-blue-600 font-semibold text-white"
+                            : inRange
+                              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                              : !inMonth
+                                ? "text-zinc-300 dark:text-zinc-600"
+                                : "text-zinc-700 dark:text-zinc-300"
                         } ${
-                          isNow && !inSelected
+                          isNow && !isEndpoint && !inRange
                             ? "ring-1 ring-blue-400"
                             : ""
                         } ${
-                          hasPeriod && inMonth
-                            ? "hover:bg-zinc-100 dark:hover:bg-zinc-700"
-                            : ""
-                        } disabled:cursor-default disabled:opacity-40`}
+                          !isEndpoint ? "hover:bg-zinc-100 dark:hover:bg-zinc-700" : ""
+                        }`}
                       >
                         {d.getDate()}
                       </button>
@@ -832,26 +884,35 @@ export function TimecardViewer({
               </div>
               {/* Footer buttons */}
               <div className="mt-2 flex items-center justify-between border-t border-zinc-100 pt-2 dark:border-zinc-700">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const todayPeriod = findPeriodForDate(new Date());
-                    if (todayPeriod) {
-                      navigate(todayPeriod.id);
+                <span className="text-xs text-zinc-400">
+                  {rangeStart && !rangeEnd ? "Select end date" : "Select start date"}
+                </span>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRangeStart(null);
+                      setRangeEnd(null);
+                      setHoverDate(null);
+                      const params = new URLSearchParams();
+                      if (selectedEmployeeId) params.set("employeeId", selectedEmployeeId);
+                      const fallbackId = sortedPeriods[currentIndex]?.id;
+                      if (fallbackId) params.set("payPeriodId", fallbackId);
+                      router.push(`/payroll/timecards?${params.toString()}`);
                       setShowCalendar(false);
-                    }
-                  }}
-                  className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
-                >
-                  Today
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowCalendar(false)}
-                  className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                >
-                  Close
-                </button>
+                    }}
+                    className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCalendar(false)}
+                    className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1083,20 +1144,21 @@ export function TimecardViewer({
               {/* ── Scrollable timecard table + summary ──────────────── */}
               <div className="flex-1 overflow-y-auto">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
+                  <thead className="sticky top-0 border-b border-zinc-200 bg-[#2492c7] dark:border-zinc-700">
                     <tr>
                       <th className="w-7 pl-2 pr-0 py-2.5" />
-                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Date</th>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">Date</th>
                       {payCodes.length > 0 && (
-                        <th className="px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Code</th>
+                        <th className="px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">Code</th>
                       )}
                       <th className="w-7 px-1 py-2.5" />
-                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">In</th>
-                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Out</th>
-                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">Reg</th>
-                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">OT</th>
-                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">DT</th>
-                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">Total</th>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">In</th>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">Out</th>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">Pay Code</th>
+                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-white">Reg</th>
+                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-white">OT</th>
+                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-white">DT</th>
+                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-white">Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1114,8 +1176,8 @@ export function TimecardViewer({
 
                       const buckets: Record<string, number> = {};
                       for (const seg of daySegments) {
-                        buckets[seg.payBucket] =
-                          (buckets[seg.payBucket] ?? 0) + seg.durationMinutes;
+                        const eb = seg.payBucketOverride ?? seg.payBucket;
+                        buckets[eb] = (buckets[eb] ?? 0) + seg.durationMinutes;
                       }
 
                       const reg = buckets["REG"] ?? 0;
@@ -1171,16 +1233,16 @@ export function TimecardViewer({
                           {/* Week separator */}
                           {showWeekSeparator && (
                             <tr key={`${dayKey}-sep`} aria-hidden>
-                              <td colSpan={colCount} className="h-0 border-t-2 border-zinc-200 dark:border-zinc-700 p-0" />
+                              <td colSpan={colCount} className="h-0 border-t-2 border-zinc-300 dark:border-zinc-600 p-0" />
                             </tr>
                           )}
 
                           {/* Day summary row */}
                           <tr
                             key={dayKey}
-                            className={`border-b border-zinc-100 dark:border-zinc-800/60 transition-colors ${
+                            className={`border-b border-zinc-200 dark:border-zinc-700 transition-colors ${
                               isAbsent
-                                ? "bg-red-900 text-white dark:bg-red-950"
+                                ? "bg-red-100 dark:bg-red-950/40"
                                 : hasMissingPunch
                                   ? "bg-amber-50 dark:bg-amber-950/30"
                                   : isTodayRow
@@ -1213,7 +1275,7 @@ export function TimecardViewer({
                             {/* Date (EEE MM/dd/yyyy) */}
                             <td className={`px-3 py-2.5 text-sm font-medium tabular-nums ${
                               isAbsent
-                                ? "text-white"
+                                ? "text-red-800 dark:text-red-300"
                                 : isTodayRow
                                   ? "text-blue-700 dark:text-blue-400"
                                   : isWeekend
@@ -1289,10 +1351,10 @@ export function TimecardViewer({
                                     className={`rounded p-0.5 ${
                                       existingNote
                                         ? "text-amber-500 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20"
-                                        : "text-zinc-300 hover:bg-zinc-100 hover:text-zinc-500 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+                                        : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
                                     }`}
                                   >
-                                    <StickyNote className="h-3.5 w-3.5" />
+                                    <StickyNote className="h-4 w-4" />
                                   </button>
                                 );
                               })()}
@@ -1301,7 +1363,7 @@ export function TimecardViewer({
                             {/* In time */}
                             <td className={`px-3 py-2.5 font-mono text-sm ${
                               isAbsent
-                                ? "text-white/80"
+                                ? "text-red-700 dark:text-red-400"
                                 : hasMissingPunch
                                   ? "text-amber-700 dark:text-amber-400"
                                   : "text-zinc-700 dark:text-zinc-300"
@@ -1363,10 +1425,72 @@ export function TimecardViewer({
                               ) : null}
                             </td>
 
+                            {/* Pay Code bucket dropdown */}
+                            <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
+                              {(() => {
+                                if (isAbsent && timecard) {
+                                  const dayStr = format(day, "yyyy-MM-dd");
+                                  return canEdit ? (
+                                    <select
+                                      value=""
+                                      onChange={(e) =>
+                                        handleAbsentPayBucketChange(timecard.timesheetId, dayStr, e.target.value)
+                                      }
+                                      className="w-28 rounded border border-red-300 bg-white px-1 py-0.5 text-xs text-red-800 focus:outline-none dark:border-red-800 dark:bg-zinc-900 dark:text-red-300"
+                                    >
+                                      <option value="">—</option>
+                                      {ALL_PAY_BUCKETS.filter((b) => !["REG", "OT", "DT"].includes(b.key)).map((bucket) => (
+                                        <option key={bucket.key} value={bucket.key}>
+                                          {bucket.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : null;
+                                }
+                                const isAbsentMarker = (s: { segmentType: string; durationMinutes: number }) =>
+                                  s.segmentType === "LEAVE" && s.durationMinutes === 0;
+                                const workSeg = daySegments.find(
+                                  (s) => s.segmentType === "WORK" || isAbsentMarker(s)
+                                );
+                                if (!workSeg) return null;
+                                const isMarker = isAbsentMarker(workSeg);
+                                const dayStr = format(day, "yyyy-MM-dd");
+                                // Absent markers: selection lives in payBucket; work segments: override lives in payBucketOverride
+                                const dropdownValue = isMarker ? workSeg.payBucket : (workSeg.payBucketOverride ?? "");
+                                const manualBuckets = ALL_PAY_BUCKETS.filter((b) => !["REG", "OT", "DT"].includes(b.key));
+                                return canEdit ? (
+                                  <select
+                                    value={dropdownValue}
+                                    onChange={(e) => {
+                                      if (isMarker && timecard) {
+                                        handleAbsentPayBucketChange(timecard.timesheetId, dayStr, e.target.value);
+                                      } else {
+                                        handlePayBucketChange(workSeg.id, e.target.value);
+                                      }
+                                    }}
+                                    className="w-28 rounded border border-zinc-200 bg-white px-1 py-0.5 text-xs text-zinc-700 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                                  >
+                                    <option value="">—</option>
+                                    {manualBuckets.map((bucket) => (
+                                      <option key={bucket.key} value={bucket.key}>
+                                        {bucket.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <span className="text-xs text-zinc-500">
+                                    {dropdownValue
+                                      ? (PAY_BUCKET_LABEL[dropdownValue as PayBucketValue] ?? dropdownValue)
+                                      : "—"}
+                                  </span>
+                                );
+                              })()}
+                            </td>
+
                             {/* Reg */}
                             <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
                               isAbsent
-                                ? "text-white/60"
+                                ? "text-red-400 dark:text-red-700"
                                 : reg > 0
                                   ? "text-zinc-700 dark:text-zinc-300"
                                   : "text-zinc-300 dark:text-zinc-700"
@@ -1377,7 +1501,7 @@ export function TimecardViewer({
                             {/* OT */}
                             <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
                               isAbsent
-                                ? "text-white/60"
+                                ? "text-red-400 dark:text-red-700"
                                 : ot > 0
                                   ? "font-semibold text-amber-600 dark:text-amber-400"
                                   : "text-zinc-300 dark:text-zinc-700"
@@ -1388,7 +1512,7 @@ export function TimecardViewer({
                             {/* DT */}
                             <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
                               isAbsent
-                                ? "text-white/60"
+                                ? "text-red-400 dark:text-red-700"
                                 : dt > 0
                                   ? "font-semibold text-red-600 dark:text-red-400"
                                   : "text-zinc-300 dark:text-zinc-700"
@@ -1399,7 +1523,7 @@ export function TimecardViewer({
                             {/* Total */}
                             <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
                               isAbsent
-                                ? "font-bold text-white"
+                                ? "font-bold text-red-800 dark:text-red-300"
                                 : dailyTotal > 0
                                   ? "font-bold text-zinc-900 dark:text-white"
                                   : "text-zinc-300 dark:text-zinc-700"
@@ -1476,9 +1600,22 @@ export function TimecardViewer({
                           {isExpanded && hasActivity && (
                             <tr
                               key={`${dayKey}-detail`}
-                              className="bg-zinc-50/80 dark:bg-zinc-900/40"
+                              className="border-b border-zinc-200 bg-zinc-50/80 dark:border-zinc-700 dark:bg-zinc-900/40"
                             >
                               <td colSpan={colCount} className="px-5 py-2">
+                                {daySegments.length > 0 && (
+                                  <div className="mb-2">
+                                    <SegmentTimeline
+                                      segments={daySegments.map((s) => ({
+                                        ...s,
+                                        startTime: parseISO(s.startTime),
+                                        endTime: parseISO(s.endTime),
+                                        segmentDate: parseISO(s.segmentDate),
+                                      })) as unknown as WorkSegment[]}
+                                      date={day}
+                                    />
+                                  </div>
+                                )}
                                 <div className="flex flex-wrap items-start gap-2">
                                   {dayPunches.map((punch) =>
                                     editingPunchId === punch.id ? (
@@ -1683,7 +1820,7 @@ export function TimecardViewer({
                     Missed Punch
                   </span>
                   <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                    <span className="inline-block h-3 w-3 rounded bg-red-900 dark:bg-red-950" />
+                    <span className="inline-block h-3 w-3 rounded border border-red-300 bg-red-100 dark:border-red-800 dark:bg-red-950/40" />
                     Absent
                   </span>
                   <span className="flex items-center gap-1.5 text-xs text-zinc-500">
@@ -1867,8 +2004,9 @@ export function TimecardViewer({
                                     {};
                                   for (const s of weekSegs) {
                                     if (s.isPaid) {
-                                      weekBuckets[s.payBucket] =
-                                        (weekBuckets[s.payBucket] ?? 0) +
+                                      const eb = s.payBucketOverride ?? s.payBucket;
+                                      weekBuckets[eb] =
+                                        (weekBuckets[eb] ?? 0) +
                                         s.durationMinutes;
                                     }
                                   }
@@ -1914,12 +2052,11 @@ export function TimecardViewer({
                           > = {};
                           for (const seg of timecard.segments) {
                             if (!seg.isPaid) continue;
+                            const eb = seg.payBucketOverride ?? seg.payBucket;
                             const key =
                               seg.payCode
                                 ? `${seg.payCode.code}[${seg.payCode.label}]`
-                                : PAY_BUCKET_LABEL[
-                                    seg.payBucket as PayBucketValue
-                                  ] ?? seg.payBucket;
+                                : PAY_BUCKET_LABEL[eb as PayBucketValue] ?? eb;
                             byCode[key] = byCode[key] ?? {
                               label: key,
                               minutes: 0,

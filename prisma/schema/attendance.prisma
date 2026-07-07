@@ -85,10 +85,11 @@ model WorkSegment {
   durationMinutes Int
   segmentDate     DateTime    @db.Date
   isPaid          Boolean
-  payBucket       PayBucket
-  isSplit         Boolean     @default(false)
-  leaveRequestId  String?
-  payCodeId       String?
+  payBucket         PayBucket
+  payBucketOverride PayBucket?
+  isSplit           Boolean     @default(false)
+  leaveRequestId    String?
+  payCodeId         String?
   createdAt       DateTime    @default(now())
 
   timesheet    Timesheet     @relation(fields: [timesheetId], references: [id])

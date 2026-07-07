@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useRef, useState, useEffect } from "react";
 import { signOut } from "next-auth/react";
 import {
   LayoutDashboard,
@@ -14,6 +15,14 @@ import {
   LogOut,
   ClipboardList,
   AlertCircle,
+  Building2,
+  FolderOpen,
+  Calendar,
+  RefreshCw,
+  SlidersHorizontal,
+  Shield,
+  CalendarClock,
+  ChevronRight,
 } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -21,7 +30,6 @@ type NavItem = {
   label: string;
   href: string;
   icon: React.ElementType;
-  /** Legacy permission string required to see this item */
   permission?: string;
 };
 
@@ -40,8 +48,19 @@ const navItems: NavItem[] = [
   { label: "Timecards", href: "/payroll/timecards", icon: ClipboardList, permission: "PAY_PERIOD_MANAGE" },
   // Reports
   { label: "Reports", href: "/reports", icon: FileText, permission: "REPORT_MANAGE" },
-  // Admin
-  { label: "Admin", href: "/admin", icon: Settings, permission: "EMPLOYEE_MANAGE" },
+];
+
+const adminItems: NavItem[] = [
+  { label: "Employees", href: "/admin/employees", icon: Users, permission: "EMPLOYEE_MANAGE" },
+  { label: "Roles", href: "/admin/roles", icon: Shield, permission: "ROLE_MANAGE" },
+  { label: "Sites", href: "/admin/sites", icon: Building2, permission: "SITE_MANAGE" },
+  { label: "Departments", href: "/admin/departments", icon: FolderOpen, permission: "SITE_MANAGE" },
+  { label: "Leave Types", href: "/admin/leave-types", icon: Calendar, permission: "RULES_MANAGE" },
+  { label: "PTO Policies", href: "/admin/pto-policies", icon: CalendarClock, permission: "RULES_MANAGE" },
+  { label: "Rule Sets", href: "/admin/rules", icon: Settings, permission: "RULES_MANAGE" },
+  { label: "ADP Sync", href: "/admin/adp", icon: RefreshCw, permission: "EMPLOYEE_MANAGE" },
+  { label: "Audit Log", href: "/admin/audit", icon: FileText, permission: "AUDIT_VIEW" },
+  { label: "Company Settings", href: "/admin/settings", icon: SlidersHorizontal, permission: "PAY_PERIOD_MANAGE" },
 ];
 
 interface SidebarProps {
@@ -52,25 +71,48 @@ interface SidebarProps {
 
 export function Sidebar({ role, userName, permissions }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [showAdminPopup, setShowAdminPopup] = useState(false);
+  const [popupTop, setPopupTop] = useState(0);
+  const adminBtnRef = useRef<HTMLButtonElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
 
-  const visibleItems = navItems.filter((item) => {
-    if (!item.permission) return true;
-    // Use permissions array if available (custom role system)
-    if (permissions && permissions.length > 0) {
-      return permissions.includes(item.permission);
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      const target = e.target as Node;
+      if (
+        adminBtnRef.current && !adminBtnRef.current.contains(target) &&
+        popupRef.current && !popupRef.current.contains(target)
+      ) {
+        setShowAdminPopup(false);
+      }
     }
-    // Fallback: no permissions passed (shouldn't happen, but safety)
+    if (showAdminPopup) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showAdminPopup]);
+
+  // Close popup on route change
+  useEffect(() => {
+    setShowAdminPopup(false);
+  }, [pathname]);
+
+  function hasPermission(perm?: string) {
+    if (!perm) return true;
+    if (permissions && permissions.length > 0) return permissions.includes(perm);
     return false;
-  });
+  }
+
+  const visibleItems = navItems.filter((item) => hasPermission(item.permission));
+  const visibleAdminItems = adminItems.filter((item) => hasPermission(item.permission));
+  const isAdminActive = pathname.startsWith("/admin");
 
   return (
     <aside className="flex h-screen w-56 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
       {/* Logo */}
-      <div className="flex h-16 items-center gap-2 border-b border-zinc-200 px-4 dark:border-zinc-800">
-        <img src="/logo.jpg" alt="Logo" className="h-8 w-8 rounded object-contain" />
-        <span className="text-sm font-bold text-zinc-900 dark:text-white">
-          Time &amp; Attendance
-        </span>
+      <div className="flex h-24 items-center border-b border-zinc-200 bg-zinc-400 px-4 dark:border-zinc-800 dark:bg-transparent">
+        <img src="/cloudx-logo.png" alt="CloudX Systems" className="w-full object-contain" />
       </div>
 
       {/* Nav */}
@@ -86,8 +128,7 @@ export function Sidebar({ role, userName, permissions }: SidebarProps) {
                     other.href !== item.href &&
                     other.href.length > item.href.length &&
                     other.href.startsWith(item.href) &&
-                    (pathname === other.href ||
-                      pathname.startsWith(other.href))
+                    (pathname === other.href || pathname.startsWith(other.href))
                 ));
             return (
               <li key={item.href}>
@@ -105,6 +146,61 @@ export function Sidebar({ role, userName, permissions }: SidebarProps) {
               </li>
             );
           })}
+
+          {/* Admin popup trigger */}
+          {visibleAdminItems.length > 0 && (
+            <li>
+              <button
+                ref={adminBtnRef}
+                type="button"
+                onClick={() => {
+                  if (adminBtnRef.current) {
+                    setPopupTop(adminBtnRef.current.getBoundingClientRect().top);
+                  }
+                  setShowAdminPopup((v) => !v);
+                }}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  isAdminActive || showAdminPopup
+                    ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-white"
+                    : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
+                }`}
+              >
+                <Settings className="h-4 w-4 shrink-0" />
+                <span className="flex-1 text-left">Admin</span>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+              </button>
+
+              {showAdminPopup && (
+                <div
+                  ref={popupRef}
+                  style={{ top: popupTop, left: 232 }}
+                  className="fixed z-50 w-52 rounded-xl border border-zinc-200 bg-white py-1.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+                >
+                  <p className="px-3 pb-1.5 pt-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                    Admin
+                  </p>
+                  {visibleAdminItems.map((item) => (
+                    <button
+                      key={item.href}
+                      type="button"
+                      onClick={() => {
+                        setShowAdminPopup(false);
+                        router.push(item.href);
+                      }}
+                      className={`flex w-full items-center gap-2.5 px-3 py-2 text-sm transition-colors ${
+                        pathname.startsWith(item.href)
+                          ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-white"
+                          : "text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
+                      }`}
+                    >
+                      <item.icon className="h-4 w-4 shrink-0 text-zinc-400" />
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </li>
+          )}
         </ul>
       </nav>
 

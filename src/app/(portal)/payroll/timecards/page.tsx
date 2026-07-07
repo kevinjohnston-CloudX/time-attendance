@@ -13,7 +13,7 @@ import { TimecardViewer } from "@/components/payroll/timecard-viewer";
 export default async function TimecardsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ payPeriodId?: string; employeeId?: string }>;
+  searchParams: Promise<{ payPeriodId?: string; employeeId?: string; customStart?: string; customEnd?: string }>;
 }) {
   const sp = await searchParams;
   const session = await auth();
@@ -45,7 +45,22 @@ export default async function TimecardsPage({
     );
   }
 
-  const selectedPayPeriodId = sp.payPeriodId ?? payPeriods[0].id;
+  const today = new Date();
+  const currentPayPeriod = payPeriods.find(
+    (pp) => today >= pp.startDate && today <= pp.endDate
+  );
+
+  // Determine which pay period to load — explicit param, custom range start, or current/first
+  let selectedPayPeriodId: string;
+  if (sp.payPeriodId) {
+    selectedPayPeriodId = sp.payPeriodId;
+  } else if (sp.customStart) {
+    const customDate = new Date(sp.customStart + "T12:00:00");
+    const pp = payPeriods.find((p) => customDate >= p.startDate && customDate <= p.endDate);
+    selectedPayPeriodId = pp?.id ?? (currentPayPeriod?.id ?? payPeriods[0].id);
+  } else {
+    selectedPayPeriodId = currentPayPeriod?.id ?? payPeriods[0].id;
+  }
 
   const employeeResult = await getTimecardEmployeeList({
     payPeriodId: selectedPayPeriodId,
@@ -128,6 +143,7 @@ export default async function TimecardsPage({
           durationMinutes: s.durationMinutes,
           segmentDate: s.segmentDate.toISOString(),
           payBucket: s.payBucket,
+          payBucketOverride: s.payBucketOverride ?? null,
           isPaid: s.isPaid,
           leaveRequest: s.leaveRequest
             ? { id: s.leaveRequest.id, leaveType: s.leaveRequest.leaveType }
@@ -171,6 +187,8 @@ export default async function TimecardsPage({
         selectedEmployeeId={selectedEmployeeId}
         timecard={serializedTimecard}
         payFrequency={payFrequency}
+        customStart={sp.customStart ?? null}
+        customEnd={sp.customEnd ?? null}
         payCodes={payCodes.map((pc) => ({
           id: pc.id,
           code: pc.code,

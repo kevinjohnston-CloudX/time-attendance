@@ -83,7 +83,7 @@ export default async function PortalLayout({
       <div className="flex flex-1 overflow-hidden">
         <Sidebar role={sidebarRole} userName={session.user.name} permissions={userPermissions} />
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-6xl px-6 py-8">{children}</div>
+          <div className="px-6 py-8">{children}</div>
         </main>
       </div>
     </div>
