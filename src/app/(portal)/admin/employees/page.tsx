@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getEmployees, getAdminRefData } from "@/actions/admin.actions";
 import { CreateEmployeeForm } from "@/components/admin/create-employee-form";
 import { CsvUploadForm } from "@/components/admin/csv-upload-form";
@@ -10,7 +10,7 @@ import { EmployeesTable } from "@/components/admin/employees-table";
 export default async function EmployeesPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "EMPLOYEE_MANAGE")) redirect("/admin");
+  if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
 
   const [employeesResult, refDataResult] = await Promise.all([
     getEmployees(),

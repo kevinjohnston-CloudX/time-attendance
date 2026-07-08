@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getPtoPolicies } from "@/actions/pto-policy.actions";
 import { db } from "@/lib/db";
 import { PtoPoliciesManager } from "@/components/admin/pto-policies-manager";
@@ -8,7 +8,7 @@ import { PtoPoliciesManager } from "@/components/admin/pto-policies-manager";
 export default async function PtoPoliciesPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "RULES_MANAGE")) redirect("/admin");
+  if (!await userHasPermission(session.user, "RULES_MANAGE")) redirect("/admin");
 
   const [policiesResult, leaveTypes] = await Promise.all([
     getPtoPolicies(),

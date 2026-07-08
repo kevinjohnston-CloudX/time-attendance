@@ -1,14 +1,14 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getLeaveTypes } from "@/actions/leave.actions";
 import { RequestLeaveForm } from "@/components/leave/request-leave-form";
 
 export default async function RequestLeavePage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "LEAVE_REQUEST_OWN")) redirect("/dashboard");
+  if (!await userHasPermission(session.user, "LEAVE_REQUEST_OWN")) redirect("/dashboard");
 
   const result = await getLeaveTypes();
   if (!result.success || result.data.length === 0) redirect("/leave");

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { format, addDays } from "date-fns";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import {
   getTenantSettings,
   updateTenantSettings,
@@ -20,7 +20,7 @@ const FREQ_LABELS: Record<PayFrequency, string> = {
 export default async function CompanySettingsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "PAY_PERIOD_MANAGE")) redirect("/admin");
+  if (!await userHasPermission(session.user, "PAY_PERIOD_MANAGE")) redirect("/admin");
 
   const result = await getTenantSettings();
   if (!result.success) redirect("/admin");

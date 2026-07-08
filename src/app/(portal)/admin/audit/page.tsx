@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getAuditLogs } from "@/actions/admin.actions";
 import { format } from "date-fns";
 
@@ -13,7 +13,7 @@ export default async function AuditLogPage({
   const sp = await searchParams;
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "AUDIT_VIEW")) redirect("/admin");
+  if (!await userHasPermission(session.user, "AUDIT_VIEW")) redirect("/admin");
 
   const page = Number(sp.page ?? 1);
   const entityType = sp.entityType;

@@ -1,7 +1,7 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import { getPayPeriods, getPayPeriodDetail } from "@/actions/pay-period.actions";
 import { getAdpConfig } from "@/lib/integrations/adp/client";
@@ -34,7 +34,7 @@ export default async function PayPeriodsPage({
 
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "PAY_PERIOD_MANAGE")) redirect("/dashboard");
+  if (!await userHasPermission(session.user, "PAY_PERIOD_MANAGE")) redirect("/dashboard");
 
   const result = await getPayPeriods();
   if (!result.success) redirect("/dashboard");

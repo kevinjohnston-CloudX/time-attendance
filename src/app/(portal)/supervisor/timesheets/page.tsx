@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getTeamTimesheets } from "@/actions/supervisor.actions";
 import { TIMESHEET_STATUS_LABEL } from "@/lib/state-machines/labels";
 import { ApproveTimesheetButtons } from "@/components/supervisor/approve-timesheet-buttons";
@@ -11,7 +11,7 @@ import { format } from "date-fns";
 export default async function TeamTimesheetsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "TIMESHEET_APPROVE_TEAM")) redirect("/dashboard");
+  if (!await userHasPermission(session.user, "TIMESHEET_APPROVE_TEAM")) redirect("/dashboard");
 
   const isPayroll = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"].includes(
     session.user.role

@@ -1,14 +1,14 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getTeamLeaveRequests, getUpcomingTeamLeave } from "@/actions/supervisor.actions";
 import { LeaveTabs } from "@/components/supervisor/leave-tabs";
 
 export default async function SupervisorLeavePage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "LEAVE_APPROVE_TEAM")) redirect("/dashboard");
+  if (!await userHasPermission(session.user, "LEAVE_APPROVE_TEAM")) redirect("/dashboard");
 
   const [pendingResult, upcomingResult] = await Promise.all([
     getTeamLeaveRequests(),

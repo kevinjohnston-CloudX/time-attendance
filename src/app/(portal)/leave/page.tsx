@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getMyLeaveRequests, getMyLeaveBalances } from "@/actions/leave.actions";
 import {
   LEAVE_STATUS_LABEL,
@@ -14,7 +14,7 @@ import { Plus } from "lucide-react";
 export default async function MyLeavePage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "LEAVE_REQUEST_OWN")) redirect("/dashboard");
+  if (!await userHasPermission(session.user, "LEAVE_REQUEST_OWN")) redirect("/dashboard");
 
   const [requestsResult, balancesResult] = await Promise.all([
     getMyLeaveRequests(),

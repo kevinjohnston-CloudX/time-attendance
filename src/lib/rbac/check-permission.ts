@@ -58,3 +58,18 @@ export async function checkPermission(permission: Permission): Promise<boolean> 
   }
   return hasPermission(session.user.role, permission);
 }
+
+/**
+ * Check permission against an already-loaded session user.
+ * Use in page components that already called auth() — avoids a second auth() call.
+ */
+export async function userHasPermission(
+  user: { role: string; customRoleId?: string | null },
+  permission: Permission
+): Promise<boolean> {
+  if (user.role === "SUPER_ADMIN") return true;
+  if (user.customRoleId) {
+    return hasPermissionByLegacy(user.customRoleId, permission);
+  }
+  return hasPermission(user.role, permission);
+}

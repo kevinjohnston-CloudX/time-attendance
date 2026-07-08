@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getAdpSyncStatus } from "@/actions/adp.actions";
 import { getAdminRefData } from "@/actions/admin.actions";
 import { AdpSyncPanel } from "@/components/admin/adp-sync-panel";
@@ -9,7 +9,7 @@ import { AdpSyncPanel } from "@/components/admin/adp-sync-panel";
 export default async function AdpSyncPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "EMPLOYEE_MANAGE")) redirect("/admin");
+  if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
 
   const [statusResult, refResult] = await Promise.all([
     getAdpSyncStatus(undefined as never),

@@ -62,7 +62,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
     const fd = new FormData(e.currentTarget);
     save({
       name: fd.get("name") as string,
-      role: fd.get("role") as string,
+      role: (fd.get("role") as string) || employee.role,
       customRoleId: (fd.get("customRoleId") as string) || undefined,
       siteId: fd.get("siteId") as string,
       departmentId: fd.get("departmentId") as string,

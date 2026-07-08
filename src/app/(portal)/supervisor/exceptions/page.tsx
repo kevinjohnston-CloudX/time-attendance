@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getTeamExceptions } from "@/actions/supervisor.actions";
 import { ExceptionActionPanel } from "@/components/supervisor/exception-action-panel";
 import { format } from "date-fns";
@@ -18,7 +18,7 @@ const EXCEPTION_LABEL: Record<string, string> = {
 export default async function ExceptionsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "TIMESHEET_APPROVE_TEAM")) redirect("/dashboard");
+  if (!await userHasPermission(session.user, "TIMESHEET_APPROVE_TEAM")) redirect("/dashboard");
 
   const result = await getTeamExceptions();
   if (!result.success) redirect("/supervisor");

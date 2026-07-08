@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getReport, getFilterOptions, getTenantUsers } from "@/actions/report.actions";
 import { ReportViewer } from "@/components/reports/report-viewer";
 
@@ -12,7 +12,7 @@ export default async function ReportDetailPage({
   const { id } = await params;
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "REPORT_MANAGE")) redirect("/dashboard");
+  if (!await userHasPermission(session.user, "REPORT_MANAGE")) redirect("/dashboard");
 
   const [reportResult, filterResult, usersResult] = await Promise.all([
     getReport({ id }),

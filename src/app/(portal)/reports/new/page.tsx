@@ -1,13 +1,13 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getDataSourceDefinitions, getFilterOptions } from "@/actions/report.actions";
 import { ReportBuilder } from "@/components/reports/report-builder/report-builder";
 
 export default async function NewReportPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "REPORT_MANAGE")) redirect("/dashboard");
+  if (!await userHasPermission(session.user, "REPORT_MANAGE")) redirect("/dashboard");
 
   const [dsResult, filterResult] = await Promise.all([
     getDataSourceDefinitions(undefined as never),

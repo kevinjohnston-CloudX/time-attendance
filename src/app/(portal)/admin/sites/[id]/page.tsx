@@ -1,7 +1,7 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import { getSitePtoPolicies, getPtoPolicies } from "@/actions/pto-policy.actions";
 import { SitePtoPoliciesPanel } from "@/components/admin/site-pto-policies-panel";
@@ -14,7 +14,7 @@ export default async function SiteDetailPage({
   const { id } = await params;
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "SITE_MANAGE")) redirect("/admin");
+  if (!await userHasPermission(session.user, "SITE_MANAGE")) redirect("/admin");
 
   const [site, leaveTypes, ptoPoliciesResult, siteAssignmentsResult] = await Promise.all([
     db.site.findUnique({ where: { id } }),

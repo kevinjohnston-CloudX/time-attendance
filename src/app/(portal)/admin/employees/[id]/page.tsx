@@ -1,7 +1,7 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getEmployeeById, getAdminRefData } from "@/actions/admin.actions";
 import { getEmployeePtoPolicyOverrides, getPtoPolicies, getSitePtoPolicies } from "@/actions/pto-policy.actions";
 import { EditEmployeeForm } from "@/components/admin/edit-employee-form";
@@ -18,7 +18,7 @@ export default async function EditEmployeePage({
   const { id } = await params;
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "EMPLOYEE_MANAGE")) redirect("/admin");
+  if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
 
   const year = new Date().getFullYear();
 

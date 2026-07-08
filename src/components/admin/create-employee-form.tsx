@@ -40,7 +40,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
         username: fd.get("username") as string,
         password: fd.get("password") as string,
         employeeCode: fd.get("employeeCode") as string,
-        role: fd.get("role") as "EMPLOYEE",
+        role: "EMPLOYEE",
         customRoleId: (fd.get("customRoleId") as string) || undefined,
         siteId: fd.get("siteId") as string,
         departmentId: fd.get("departmentId") as string,
@@ -59,102 +59,106 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
     });
   }
 
-  if (!open) {
-    return (
+  return (
+    <>
       <button
         onClick={() => setOpen(true)}
         className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
       >
         + Add Employee
       </button>
-    );
-  }
 
-  return (
-    <form
-      onSubmit={handleSubmit}
-      className="mt-4 rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
-    >
-      <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">New Employee</h3>
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
+        >
+          <div className="w-full max-w-lg rounded-xl border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+            <h3 className="text-base font-semibold text-zinc-900 dark:text-white">New Employee</h3>
 
-      {error && (
-        <p className="mt-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-          {error}
-        </p>
+            {error && (
+              <p className="mt-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+                {error}
+              </p>
+            )}
+
+            <form onSubmit={handleSubmit}>
+              <div className="mt-4 grid grid-cols-2 gap-4">
+                <Field label="Full Name" name="name" required />
+                <Field label="Employee Code" name="employeeCode" required />
+                <Field label="Username" name="username" required />
+                <Field label="Initial Password" name="password" type="password" required />
+                <Field label="Email (optional)" name="email" type="email" />
+                <Field label="Hire Date" name="hireDate" type="date" required />
+
+                {customRoles && customRoles.length > 0 ? (
+                  <SelectField label="Role" name="customRoleId" required>
+                    <option value="">— Select a role —</option>
+                    {customRoles.map((r) => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </SelectField>
+                ) : (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Role</label>
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400">
+                      No roles configured. Set up roles in <a href="/admin/roles" className="underline">Admin → Roles</a> first.
+                    </p>
+                  </div>
+                )}
+
+                <SelectField
+                  label="Site"
+                  name="siteId"
+                  value={selectedSiteId}
+                  onChange={(v) => setSelectedSiteId(v)}
+                >
+                  {sites.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </SelectField>
+
+                <SelectField label="Department" name="departmentId" required>
+                  {filteredDepts.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </SelectField>
+
+                <SelectField label="Rule Set" name="ruleSetId" required>
+                  {ruleSets.map((rs) => (
+                    <option key={rs.id} value={rs.id}>{rs.name}</option>
+                  ))}
+                </SelectField>
+
+                <SelectField label="Supervisor (optional)" name="supervisorId">
+                  <option value="">— None —</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>{emp.user.name}</option>
+                  ))}
+                </SelectField>
+              </div>
+
+              <div className="mt-6 flex gap-3">
+                <button
+                  type="submit"
+                  disabled={isPending}
+                  className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+                >
+                  {isPending ? "Creating…" : "Create Employee"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
-
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        <Field label="Full Name" name="name" required />
-        <Field label="Employee Code" name="employeeCode" required />
-        <Field label="Username" name="username" required />
-        <Field label="Initial Password" name="password" type="password" required />
-        <Field label="Email (optional)" name="email" type="email" />
-        <Field label="Hire Date" name="hireDate" type="date" required />
-
-        {customRoles && customRoles.length > 0 ? (
-          <SelectField label="Role" name="customRoleId">
-            {customRoles.map((r) => (
-              <option key={r.id} value={r.id}>{r.name}</option>
-            ))}
-          </SelectField>
-        ) : (
-          <SelectField label="Role" name="role">
-            <option value="EMPLOYEE">Employee</option>
-            <option value="SUPERVISOR">Supervisor</option>
-            <option value="PAYROLL_ADMIN">Payroll Admin</option>
-            <option value="HR_ADMIN">HR Admin</option>
-            <option value="SYSTEM_ADMIN">System Admin</option>
-          </SelectField>
-        )}
-
-        <SelectField
-          label="Site"
-          name="siteId"
-          value={selectedSiteId}
-          onChange={(v) => setSelectedSiteId(v)}
-        >
-          {sites.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </SelectField>
-
-        <SelectField label="Department" name="departmentId" required>
-          {filteredDepts.map((d) => (
-            <option key={d.id} value={d.id}>{d.name}</option>
-          ))}
-        </SelectField>
-
-        <SelectField label="Rule Set" name="ruleSetId" required>
-          {ruleSets.map((rs) => (
-            <option key={rs.id} value={rs.id}>{rs.name}</option>
-          ))}
-        </SelectField>
-
-        <SelectField label="Supervisor (optional)" name="supervisorId">
-          <option value="">— None —</option>
-          {employees.map((emp) => (
-            <option key={emp.id} value={emp.id}>{emp.user.name}</option>
-          ))}
-        </SelectField>
-      </div>
-
-      <div className="mt-4 flex gap-3">
-        <button
-          type="submit"
-          disabled={isPending}
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-        >
-          {isPending ? "Creating…" : "Create Employee"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300"
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
+    </>
   );
 }
 

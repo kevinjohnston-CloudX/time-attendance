@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getMyReports, getMyFolders } from "@/actions/report.actions";
 import { Plus, FileText } from "lucide-react";
 import { ReportsDashboard } from "@/components/reports/reports-dashboard";
@@ -9,7 +9,7 @@ import { ReportsDashboard } from "@/components/reports/reports-dashboard";
 export default async function ReportsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "REPORT_MANAGE")) redirect("/dashboard");
+  if (!await userHasPermission(session.user, "REPORT_MANAGE")) redirect("/dashboard");
 
   const [reportsResult, foldersResult] = await Promise.all([
     getMyReports(undefined as never),

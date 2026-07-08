@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import {
   getTimecardEmployeeList,
@@ -18,8 +18,7 @@ export default async function TimecardsPage({
   const sp = await searchParams;
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!hasPermission(session.user.role, "PAY_PERIOD_MANAGE"))
-    redirect("/dashboard");
+  if (!await userHasPermission(session.user, "PAY_PERIOD_MANAGE")) redirect("/dashboard");
 
   // Fetch tenant pay frequency
   const tenant = session.user.tenantId
