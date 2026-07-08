@@ -17,6 +17,7 @@ import {
 } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
+import type { WorkSegment } from "@prisma/client";
 import {
   PAY_BUCKET_LABEL,
   ALL_PAY_BUCKETS,

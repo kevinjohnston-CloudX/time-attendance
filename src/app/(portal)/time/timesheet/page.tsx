@@ -47,15 +47,9 @@ export default async function TimesheetListPage({
     orderBy: { payPeriod: { startDate: "desc" } },
   });
 
-  let detail: Awaited<ReturnType<typeof db.timesheet.findUnique>> & {
-    punches: Punch[];
-    segments: WorkSegment[];
-    exceptions: { id: string }[];
-  } | null = null;
-
-  if (selectedId) {
+  async function getTimesheetDetail(id: string) {
     const found = await db.timesheet.findUnique({
-      where: { id: selectedId },
+      where: { id },
       include: {
         payPeriod: true,
         punches: {
@@ -67,9 +61,13 @@ export default async function TimesheetListPage({
         exceptions: { where: { resolvedAt: null } },
       },
     });
-    if (found && found.employeeId === session.user.employeeId) {
-      detail = found as typeof detail;
-    }
+    return found && found.employeeId === session!.user!.employeeId ? found : null;
+  }
+
+  let detail: Awaited<ReturnType<typeof getTimesheetDetail>> = null;
+
+  if (selectedId) {
+    detail = await getTimesheetDetail(selectedId);
   }
 
   return (

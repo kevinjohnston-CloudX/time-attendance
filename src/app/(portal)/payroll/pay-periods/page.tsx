@@ -41,7 +41,7 @@ export default async function PayPeriodsPage({
   const payPeriods = result.data;
 
   // Fetch detail if a pay period is selected
-  let detail: Awaited<ReturnType<typeof getPayPeriodDetail>>["data"] | null = null;
+  let detail: Extract<Awaited<ReturnType<typeof getPayPeriodDetail>>, { success: true }>["data"] | null = null;
   let payrollRun: { id: string; exportedAt: Date | null; pushedCount: number; skippedCount: number; errorCount: number } | null = null;
 
   if (selectedId) {
