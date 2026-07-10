@@ -32,6 +32,7 @@ export const createEmployeeSchema = z.object({
   ruleSetId: z.string().min(1),
   hireDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be yyyy-MM-dd"),
   supervisorId: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
+  wmsId: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
 });
 
 const nullableStr = z.string().nullable().optional().transform((v) => v || null);
@@ -86,7 +87,7 @@ export const updateSiteSchema = siteSchema.extend({
 
 export const departmentSchema = z.object({
   name: z.string().min(1),
-  siteId: z.string().min(1),
+  siteIds: z.array(z.string().min(1)).min(1),
 });
 
 export const updateDepartmentSchema = departmentSchema.extend({
@@ -169,6 +170,7 @@ export const csvEmployeeRowSchema = z.object({
   ruleSet: z.string().min(1, "Rule set is required"),
   hireDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be yyyy-MM-dd"),
   supervisorCode: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
+  wmsId: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
 });
 
 export type CsvEmployeeRow = z.infer<typeof csvEmployeeRowSchema>;

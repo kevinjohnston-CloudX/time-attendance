@@ -24,6 +24,7 @@ const CSV_HEADERS = [
   "ruleSet",
   "hireDate",
   "supervisorCode",
+  "wmsId",
 ] as const;
 
 function parseCsvLine(line: string): string[] {
@@ -103,6 +104,7 @@ function parseCsv(text: string): { rows: CsvEmployeeRow[]; parseErrors: string[]
       ruleSet: fields[colIndex.ruleSet] ?? "",
       hireDate: fields[colIndex.hireDate] ?? "",
       supervisorCode: fields[colIndex.supervisorCode] ?? "",
+      wmsId: fields[colIndex.wmsId] ?? "",
     } as CsvEmployeeRow);
   }
 
@@ -129,8 +131,8 @@ export function CsvUploadForm({ sites, departments, ruleSets }: Props) {
     const rs = ruleSets[0] ?? "Default";
 
     const header = CSV_HEADERS.join(",");
-    const example1 = `John Smith,jsmith,Temp1234!,EMP001,jsmith@acme.com,EMPLOYEE,${site},${dept},${rs},2024-03-15,`;
-    const example2 = `Jane Doe,jdoe,Temp1234!,EMP002,jdoe@acme.com,SUPERVISOR,${site},${dept},${rs},2023-01-10,EMP001`;
+    const example1 = `John Smith,jsmith,Temp1234!,EMP001,jsmith@acme.com,EMPLOYEE,${site},${dept},${rs},2024-03-15,,B001`;
+    const example2 = `Jane Doe,jdoe,Temp1234!,EMP002,jdoe@acme.com,SUPERVISOR,${site},${dept},${rs},2023-01-10,EMP001,B002`;
     const csv = [header, example1, example2].join("\n");
 
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });

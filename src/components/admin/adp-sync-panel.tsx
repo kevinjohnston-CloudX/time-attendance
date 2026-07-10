@@ -10,7 +10,7 @@ interface Site {
 interface Department {
   id: string;
   name: string;
-  site: { name: string };
+  sites: { site: { name: string } }[];
 }
 interface RuleSet {
   id: string;
@@ -186,7 +186,7 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
               >
                 {departments.map((d) => (
                   <option key={d.id} value={d.id}>
-                    {d.name} ({d.site.name})
+                    {d.name}{d.sites.length > 0 ? ` (${d.sites.map((ds) => ds.site.name).join(", ")})` : ""}
                   </option>
                 ))}
               </select>

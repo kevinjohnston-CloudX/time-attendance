@@ -19,7 +19,7 @@ type RoleOption = { id: string; name: string };
 interface Props {
   employee: EmployeeWithRelations;
   sites: Site[];
-  departments: (Department & { site: Site })[];
+  departments: (Department & { sites: { site: Site }[] })[];
   ruleSets: RuleSet[];
   employees: (Employee & { user: User })[];
   customRoles?: RoleOption[];
@@ -41,7 +41,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
   const [isActive, setIsActive] = useState(employee.isActive);
   const [payType, setPayType] = useState<string>(employee.payType ?? "HOURLY");
 
-  const filteredDepts = departments.filter((d) => d.siteId === selectedSiteId);
+  const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === selectedSiteId));
 
   function save(fields: Record<string, unknown>) {
     setError(null);

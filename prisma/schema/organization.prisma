@@ -36,11 +36,12 @@ model Site {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant      Tenant     @relation(fields: [tenantId], references: [id])
-  departments Department[]
+  tenant      Tenant           @relation(fields: [tenantId], references: [id])
+  departments DepartmentSite[]
   employees   Employee[]
   ptoPolicies SitePtoPolicy[]
 
+  @@unique([tenantId, name])
   @@map("sites")
 }
 
@@ -48,16 +49,26 @@ model Department {
   id        String   @id @default(cuid())
   tenantId  String
   name      String
-  siteId    String
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant    Tenant     @relation(fields: [tenantId], references: [id])
-  site      Site       @relation(fields: [siteId], references: [id])
+  tenant    Tenant           @relation(fields: [tenantId], references: [id])
+  sites     DepartmentSite[]
   employees Employee[]
 
   @@map("departments")
+}
+
+model DepartmentSite {
+  departmentId String
+  siteId       String
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  site       Site       @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@id([departmentId, siteId])
+  @@map("department_sites")
 }
 
 model Employee {

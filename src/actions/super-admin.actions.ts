@@ -101,7 +101,7 @@ export async function createTenant(
       });
 
       const dept = await tx.department.create({
-        data: { name: "General", siteId: site.id, tenantId: t.id },
+        data: { name: "General", tenantId: t.id, sites: { create: [{ siteId: site.id }] } },
       });
 
       const ruleSet = await tx.ruleSet.create({

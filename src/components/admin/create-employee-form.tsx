@@ -11,7 +11,7 @@ type RoleOption = { id: string; name: string };
 
 interface Props {
   sites: Site[];
-  departments: (Department & { site: Site })[];
+  departments: (Department & { sites: { site: Site }[] })[];
   ruleSets: RuleSet[];
   employees: EmployeeWithUser[];
   customRoles?: RoleOption[];
@@ -24,9 +24,9 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
   const [open, setOpen] = useState(false);
 
   const [selectedSiteId, setSelectedSiteId] = useState(
-    () => sites.find((s) => departments.some((d) => d.siteId === s.id))?.id ?? sites[0]?.id ?? ""
+    () => sites.find((s) => departments.some((d) => d.sites.some((ds) => ds.site.id === s.id)))?.id ?? sites[0]?.id ?? ""
   );
-  const filteredDepts = departments.filter((d) => d.siteId === selectedSiteId);
+  const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === selectedSiteId));
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -47,6 +47,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
         ruleSetId: fd.get("ruleSetId") as string,
         hireDate: fd.get("hireDate") as string,
         supervisorId: fd.get("supervisorId") as string,
+        wmsId: fd.get("wmsId") as string,
       });
 
       if (!result.success) {
@@ -86,6 +87,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
               <div className="mt-4 grid grid-cols-2 gap-4">
                 <Field label="Full Name" name="name" required />
                 <Field label="Employee Code" name="employeeCode" required />
+                <Field label="Badge ID (WMS)" name="wmsId" />
                 <Field label="Username" name="username" required />
                 <Field label="Initial Password" name="password" type="password" required />
                 <Field label="Email (optional)" name="email" type="email" />

@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getTeamLeaveRequests, getUpcomingTeamLeave } from "@/actions/supervisor.actions";
@@ -19,21 +18,9 @@ export default async function SupervisorLeavePage() {
   if (!upcomingResult.success) redirect("/supervisor");
 
   return (
-    <div>
-      <Link
-        href="/supervisor"
-        className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white"
-      >
-        &larr; Team Portal
-      </Link>
-      <h1 className="mt-1 text-2xl font-bold text-zinc-900 dark:text-white">
-        Team Leave
-      </h1>
-
-      <LeaveTabs
-        pending={pendingResult.data}
-        upcoming={upcomingResult.data}
-      />
-    </div>
+    <LeaveTabs
+      pending={pendingResult.data}
+      upcoming={upcomingResult.data}
+    />
   );
 }

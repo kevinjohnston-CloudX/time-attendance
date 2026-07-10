@@ -46,7 +46,7 @@ export const getAdminRefData = withRBAC(
       db.department.findMany({
         where: { isActive: true, tenantId: t },
         orderBy: { name: "asc" },
-        include: { site: true },
+        include: { sites: { include: { site: true } } },
       }),
       db.ruleSet.findMany({ where: { tenantId: t }, orderBy: { name: "asc" } }),
       db.employee.findMany({
@@ -129,6 +129,7 @@ export const createEmployee = withRBAC(
           ruleSetId: parsed.ruleSetId,
           hireDate: parseISO(parsed.hireDate),
           supervisorId: parsed.supervisorId ?? null,
+          wmsId: parsed.wmsId ?? null,
         },
       });
     });
@@ -268,7 +269,7 @@ export const getDepartments = withRBAC(
   async ({ tenantId }, _input: void) => {
     return db.department.findMany({
       where: { tenantId: tenantId ?? undefined },
-      include: { site: true },
+      include: { sites: { include: { site: true } } },
       orderBy: { name: "asc" },
     });
   }
@@ -278,8 +279,14 @@ export const createDepartment = withRBAC(
   "SITE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: DepartmentInput) => {
     if (!tenantId) throw new Error("Tenant context required");
-    const parsed = departmentSchema.parse(input);
-    const dept = await db.department.create({ data: { ...parsed, tenantId } });
+    const { name, siteIds } = departmentSchema.parse(input);
+    const dept = await db.department.create({
+      data: {
+        name,
+        tenantId,
+        sites: { create: siteIds.map((siteId) => ({ siteId })) },
+      },
+    });
     await writeAuditLog({
       tenantId,
       actorId,
@@ -296,10 +303,16 @@ export const createDepartment = withRBAC(
 export const updateDepartment = withRBAC(
   "SITE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateDepartmentInput) => {
-    const { departmentId, isActive, ...rest } = updateDepartmentSchema.parse(input);
-    const updated = await db.department.update({
-      where: { id: departmentId },
-      data: { ...rest, ...(isActive !== undefined && { isActive }) },
+    const { departmentId, isActive, siteIds, name } = updateDepartmentSchema.parse(input);
+    await db.$transaction(async (tx) => {
+      await tx.department.update({
+        where: { id: departmentId },
+        data: { name, ...(isActive !== undefined && { isActive }) },
+      });
+      await tx.departmentSite.deleteMany({ where: { departmentId } });
+      await tx.departmentSite.createMany({
+        data: siteIds.map((siteId) => ({ departmentId, siteId })),
+      });
     });
     await writeAuditLog({
       tenantId,
@@ -309,7 +322,7 @@ export const updateDepartment = withRBAC(
       action: "DEPARTMENT_UPDATED",
     });
     revalidatePath("/admin/departments");
-    return updated;
+    return { success: true };
   }
 );
 
@@ -712,6 +725,7 @@ export const bulkCreateEmployees = withRBAC(
               ruleSetId: r.ruleSetId,
               hireDate: parseISO(r.hireDate),
               supervisorId: null,
+              wmsId: r.wmsId ?? null,
             },
           });
 
