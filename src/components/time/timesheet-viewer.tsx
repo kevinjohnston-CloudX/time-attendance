@@ -467,7 +467,7 @@ export function TimesheetViewer({
                 </div>
                 <div className="mt-1 flex items-center justify-between gap-2">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[ts.status] ?? STATUS_BADGE.OPEN}`}>
-                    {TIMESHEET_STATUS_LABEL[ts.status] ?? ts.status}
+                    {(TIMESHEET_STATUS_LABEL as Record<string, string>)[ts.status] ?? ts.status}
                   </span>
                   <span className="text-xs tabular-nums text-zinc-400">
                     {formatMinutes(ts.totalMinutes)}
@@ -503,7 +503,7 @@ export function TimesheetViewer({
                       STATUS_BADGE[detail.status] ?? STATUS_BADGE.OPEN
                     }`}
                   >
-                    {TIMESHEET_STATUS_LABEL[detail.status] ?? detail.status}
+                    {(TIMESHEET_STATUS_LABEL as Record<string, string>)[detail.status] ?? detail.status}
                   </span>
                   {detail.exceptionCount > 0 && (
                     <span className="rounded-full bg-amber-100 px-3 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
@@ -691,7 +691,7 @@ export function TimesheetViewer({
                                     key={p.id}
                                     className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
                                   >
-                                    {PUNCH_TYPE_LABEL[p.punchType]}{" "}
+                                    {(PUNCH_TYPE_LABEL as Record<string, string>)[p.punchType]}{" "}
                                     {format(parseISO(p.roundedTime), "h:mm a")}
                                   </span>
                                 ))}
