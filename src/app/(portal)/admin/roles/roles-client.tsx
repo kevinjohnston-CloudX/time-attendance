@@ -25,10 +25,19 @@ type RoleDetail = {
   _count: { employees: number };
 };
 
+type BuiltinRoleSummary = {
+  key: string;
+  name: string;
+  description: string | null;
+  rank: number;
+  permissionCount: number;
+  employeeCount: number;
+};
+
 const btnPrimary =
   "rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
 
-export function RolesClient({ roles }: { roles: RoleSummary[] }) {
+export function RolesClient({ roles, builtinRoles }: { roles: RoleSummary[]; builtinRoles: BuiltinRoleSummary[] }) {
   const [editingRole, setEditingRole] = useState<RoleDetail | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
@@ -63,6 +72,49 @@ export function RolesClient({ roles }: { roles: RoleSummary[] }) {
             </tr>
           </thead>
           <tbody>
+            {/* ── Built-in roles ── */}
+            <tr className="border-b border-zinc-200 bg-zinc-50/80 dark:border-zinc-700 dark:bg-zinc-800/40">
+              <td colSpan={6} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                Built-in Roles
+              </td>
+            </tr>
+            {builtinRoles.map((role) => (
+              <tr
+                key={role.key}
+                className="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
+              >
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-zinc-400" />
+                    <span className="font-medium text-zinc-900 dark:text-white">{role.name}</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">
+                  {role.description ?? "—"}
+                </td>
+                <td className="px-4 py-3 text-center text-zinc-600 dark:text-zinc-400">
+                  {role.rank}
+                </td>
+                <td className="px-4 py-3 text-center text-zinc-600 dark:text-zinc-400">
+                  {role.employeeCount}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                    <Lock className="h-3 w-3" /> Built-in
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <span className="text-xs text-zinc-400">{role.permissionCount} permissions</span>
+                </td>
+              </tr>
+            ))}
+
+            {/* ── Custom roles ── */}
+            <tr className="border-b border-zinc-200 bg-zinc-50/80 dark:border-zinc-700 dark:bg-zinc-800/40">
+              <td colSpan={6} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                Custom Roles
+              </td>
+            </tr>
             {roles.map((role) => (
               <tr
                 key={role.id}
@@ -109,7 +161,7 @@ export function RolesClient({ roles }: { roles: RoleSummary[] }) {
             {roles.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-zinc-400">
-                  No roles found. Create one to get started.
+                  No custom roles yet. Create one to get started.
                 </td>
               </tr>
             )}

@@ -21,9 +21,7 @@ const LEAVE_CATEGORIES = [
 
 export const createEmployeeSchema = z.object({
   name: z.string().min(1),
-  email: z.string().email().optional().or(z.literal("")).transform((v) => v || undefined),
-  username: z.string().min(3),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  email: z.string().email("A valid email address is required"),
   employeeCode: z.string().min(1),
   role: z.enum(ROLES).default("EMPLOYEE"),
   customRoleId: z.string().optional(),
@@ -40,6 +38,7 @@ const nullableStr = z.string().nullable().optional().transform((v) => v || null)
 export const updateEmployeeSchema = z.object({
   employeeId: z.string().min(1),
   name: z.string().min(1).optional(),
+  email: z.string().email().optional().or(z.literal("")).transform((v) => v || undefined),
   role: z.enum(ROLES).optional(),
   customRoleId: z.string().nullable().optional(),
   supervisorId: z.string().nullable().optional(),
@@ -160,15 +159,24 @@ export const adjustLeaveBalanceSchema = z.object({
 
 export const csvEmployeeRowSchema = z.object({
   name: z.string().min(1, "Name is required"),
-  username: z.string().min(3, "Username must be at least 3 characters"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
   employeeCode: z.string().min(1, "Employee code is required"),
-  email: z.string().email().optional().or(z.literal("")).transform((v) => v || undefined),
+  email: z.string().email("Must be a valid email").optional().or(z.literal("")).transform((v) => v || undefined),
   role: z.enum(ROLES).default("EMPLOYEE"),
   site: z.string().min(1, "Site is required"),
   department: z.string().min(1, "Department is required"),
   ruleSet: z.string().min(1, "Rule set is required"),
-  hireDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be yyyy-MM-dd"),
+  hireDate: z.string()
+    .refine(
+      (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) || /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(v),
+      "Date must be MM/DD/YYYY or YYYY-MM-DD"
+    )
+    .transform((v) => {
+      if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(v)) {
+        const [mm, dd, yyyy] = v.split("/");
+        return `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
+      }
+      return v;
+    }),
   supervisorCode: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
   wmsId: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
 });

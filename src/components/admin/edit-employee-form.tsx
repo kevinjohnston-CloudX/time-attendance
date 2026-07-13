@@ -14,15 +14,12 @@ type EmployeeWithRelations = Employee & {
   supervisor: (Employee & { user: User }) | null;
 };
 
-type RoleOption = { id: string; name: string };
-
 interface Props {
   employee: EmployeeWithRelations;
   sites: Site[];
   departments: (Department & { sites: { site: Site }[] })[];
   ruleSets: RuleSet[];
   employees: (Employee & { user: User })[];
-  customRoles?: RoleOption[];
 }
 
 const inputCls =
@@ -31,7 +28,7 @@ const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-
 
 type Tab = "general" | "personal" | "pay";
 
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles }: Props) {
+export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +59,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
     const fd = new FormData(e.currentTarget);
     save({
       name: fd.get("name") as string,
+      email: fd.get("email") as string,
       role: (fd.get("role") as string) || employee.role,
       customRoleId: (fd.get("customRoleId") as string) || undefined,
       siteId: fd.get("siteId") as string,
@@ -155,20 +153,19 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
             </div>
 
             <div>
+              <label className={labelCls}>Email (Google login)</label>
+              <input name="email" type="email" defaultValue={employee.user.email ?? ""} className={inputCls} />
+            </div>
+
+            <div>
               <label className={labelCls}>Role</label>
-              {customRoles && customRoles.length > 0 ? (
-                <select name="customRoleId" defaultValue={employee.customRoleId ?? ""} className={inputCls}>
-                  {customRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </select>
-              ) : (
-                <select name="role" defaultValue={employee.role} className={inputCls}>
-                  <option value="EMPLOYEE">Employee</option>
-                  <option value="SUPERVISOR">Supervisor</option>
-                  <option value="PAYROLL_ADMIN">Payroll Admin</option>
-                  <option value="HR_ADMIN">HR Admin</option>
-                  <option value="SYSTEM_ADMIN">System Admin</option>
-                </select>
-              )}
+              <select name="role" defaultValue={employee.role} className={inputCls}>
+                <option value="EMPLOYEE">Employee</option>
+                <option value="SUPERVISOR">Supervisor</option>
+                <option value="PAYROLL_ADMIN">Payroll Admin</option>
+                <option value="HR_ADMIN">HR Admin</option>
+                <option value="SYSTEM_ADMIN">System Admin</option>
+              </select>
             </div>
 
             <div>

@@ -153,11 +153,13 @@ export function LeaveTabs({ pending, upcoming }: LeaveTabsProps) {
         </div>
 
         {/* Day-of-week headers */}
-        <div className="mb-1 grid grid-cols-7">
-          {WEEKDAYS.map((d) => (
+        <div className="mb-2 grid grid-cols-7 rounded-lg bg-zinc-800 dark:bg-zinc-600">
+          {WEEKDAYS.map((d, i) => (
             <div
               key={d}
-              className="py-1 text-center text-xs font-medium uppercase tracking-wide text-zinc-400"
+              className={`py-2 text-center text-xs font-semibold uppercase tracking-wide ${
+                i === 0 || i === 6 ? "text-zinc-400 dark:text-zinc-300" : "text-zinc-100 dark:text-white"
+              }`}
             >
               {d}
             </div>
@@ -165,7 +167,7 @@ export function LeaveTabs({ pending, upcoming }: LeaveTabsProps) {
         </div>
 
         {/* Day grid */}
-        <div className="grid grid-cols-7 gap-px overflow-hidden rounded-xl border border-zinc-100 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800">
+        <div className="grid grid-cols-7 gap-1">
           {gridDays.map((day) => {
             const key = format(day, "yyyy-MM-dd");
             const approvedEntries = approvedMap.get(key) ?? [];
@@ -182,10 +184,10 @@ export function LeaveTabs({ pending, upcoming }: LeaveTabsProps) {
             const hasApproved = approvedEntries.length > 0;
             const hasAny = hasPending || hasApproved;
 
-            let bgClass = "bg-white dark:bg-zinc-900";
-            if (hasPending && hasConflict) bgClass = "bg-red-50 dark:bg-red-950/30";
-            else if (hasPending) bgClass = "bg-amber-50 dark:bg-amber-950/30";
-            else if (hasApproved) bgClass = "bg-green-50 dark:bg-green-950/30";
+            let bgClass = "bg-zinc-50 border-zinc-200 dark:bg-zinc-800/50 dark:border-zinc-700";
+            if (hasPending && hasConflict) bgClass = "bg-red-50 border-transparent dark:bg-red-950/30 dark:border-transparent";
+            else if (hasPending) bgClass = "bg-amber-50 border-transparent dark:bg-amber-950/30 dark:border-transparent";
+            else if (hasApproved) bgClass = "bg-green-50 border-transparent dark:bg-green-950/30 dark:border-transparent";
 
             let dateNumColor = inMonth ? "text-zinc-900 dark:text-white" : "text-zinc-300 dark:text-zinc-600";
             if (inMonth && !todayDay) {
@@ -197,7 +199,7 @@ export function LeaveTabs({ pending, upcoming }: LeaveTabsProps) {
             return (
               <div
                 key={key}
-                className={`relative flex min-h-[4.5rem] flex-col p-2 ${bgClass}`}
+                className={`relative flex min-h-[4.5rem] flex-col rounded-lg border p-2 font-medium transition-colors ${bgClass}`}
                 onMouseEnter={
                   hasAny
                     ? (e) => {

@@ -1,6 +1,5 @@
 "use server";
 
-import bcrypt from "bcryptjs";
 import { parseISO } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -77,6 +76,7 @@ export const getEmployees = withRBAC(
         department: true,
         ruleSet: true,
         supervisor: { include: { user: true } },
+        customRole: { select: { id: true, name: true } },
       },
       orderBy: { user: { name: "asc" } },
     });
@@ -105,15 +105,11 @@ export const createEmployee = withRBAC(
     if (!tenantId) throw new Error("Tenant context required");
     const parsed = createEmployeeSchema.parse(input);
 
-    const passwordHash = await bcrypt.hash(parsed.password, 12);
-
     const employee = await db.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
           name: parsed.name,
-          email: parsed.email || null,
-          username: parsed.username.toLowerCase(),
-          passwordHash,
+          email: parsed.email,
         },
       });
 
@@ -152,7 +148,7 @@ export const updateEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateEmployeeInput) => {
     const {
-      employeeId, name, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, isActive, wmsId, adpWorkerId,
+      employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, isActive, wmsId, adpWorkerId,
       jobTitle, terminationReason, payType, payRate,
       ssn, phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
@@ -165,8 +161,11 @@ export const updateEmployee = withRBAC(
     });
 
     await db.$transaction(async (tx) => {
-      if (name !== undefined) {
-        await tx.user.update({ where: { id: current.userId }, data: { name } });
+      if (name !== undefined || email !== undefined) {
+        await tx.user.update({
+          where: { id: current.userId },
+          data: { ...(name !== undefined && { name }), ...(email !== undefined && { email }) },
+        });
       }
       await tx.employee.update({
         where: { id: employeeId },
@@ -659,7 +658,7 @@ export const bulkCreateEmployees = withRBAC(
     };
     const resolved: ResolvedRow[] = [];
 
-    const seenUsernames = new Set<string>();
+    const seenEmails = new Set<string>();
     const seenCodes = new Set<string>();
 
     for (let i = 0; i < parsed.length; i++) {
@@ -675,10 +674,12 @@ export const bulkCreateEmployees = withRBAC(
       const ruleSetId = ruleSetMap.get(r.ruleSet.toLowerCase());
       if (!ruleSetId) errors.push(`Rule set "${r.ruleSet}" not found`);
 
-      if (seenUsernames.has(r.username.toLowerCase())) {
-        errors.push(`Duplicate username "${r.username}" in CSV`);
+      if (r.email) {
+        if (seenEmails.has(r.email.toLowerCase())) {
+          errors.push(`Duplicate email "${r.email}" in CSV`);
+        }
+        seenEmails.add(r.email.toLowerCase());
       }
-      seenUsernames.add(r.username.toLowerCase());
 
       if (seenCodes.has(r.employeeCode)) {
         errors.push(`Duplicate employee code "${r.employeeCode}" in CSV`);
@@ -703,14 +704,10 @@ export const bulkCreateEmployees = withRBAC(
         const codeToEmpId = new Map(existingCodeMap);
 
         for (const r of resolved) {
-          const passwordHash = await bcrypt.hash(r.password, 12);
-
           const user = await tx.user.create({
             data: {
               name: r.name,
-              email: r.email || null,
-              username: r.username.toLowerCase(),
-              passwordHash,
+              ...(r.email && { email: r.email }),
             },
           });
 

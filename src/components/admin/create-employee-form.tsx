@@ -7,17 +7,22 @@ import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
 
 type EmployeeWithUser = Employee & { user: User };
 
-type RoleOption = { id: string; name: string };
+const BUILTIN_ROLES = [
+  { value: "EMPLOYEE",      label: "Employee" },
+  { value: "SUPERVISOR",    label: "Supervisor" },
+  { value: "PAYROLL_ADMIN", label: "Payroll Admin" },
+  { value: "HR_ADMIN",      label: "HR Admin" },
+  { value: "SYSTEM_ADMIN",  label: "System Admin" },
+];
 
 interface Props {
   sites: Site[];
   departments: (Department & { sites: { site: Site }[] })[];
   ruleSets: RuleSet[];
   employees: EmployeeWithUser[];
-  customRoles?: RoleOption[];
 }
 
-export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles }: Props) {
+export function CreateEmployeeForm({ sites, departments, ruleSets, employees }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -37,11 +42,8 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
       const result = await createEmployee({
         name: fd.get("name") as string,
         email: fd.get("email") as string,
-        username: fd.get("username") as string,
-        password: fd.get("password") as string,
         employeeCode: fd.get("employeeCode") as string,
-        role: "EMPLOYEE",
-        customRoleId: (fd.get("customRoleId") as string) || undefined,
+        role: (fd.get("role") as string) || "EMPLOYEE",
         siteId: fd.get("siteId") as string,
         departmentId: fd.get("departmentId") as string,
         ruleSetId: fd.get("ruleSetId") as string,
@@ -86,28 +88,16 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
             <form onSubmit={handleSubmit}>
               <div className="mt-4 grid grid-cols-2 gap-4">
                 <Field label="Full Name" name="name" required />
+                <Field label="Email (Google login)" name="email" type="email" required />
                 <Field label="Employee Code" name="employeeCode" required />
                 <Field label="Badge ID (WMS)" name="wmsId" />
-                <Field label="Username" name="username" required />
-                <Field label="Initial Password" name="password" type="password" required />
-                <Field label="Email (optional)" name="email" type="email" />
                 <Field label="Hire Date" name="hireDate" type="date" required />
 
-                {customRoles && customRoles.length > 0 ? (
-                  <SelectField label="Role" name="customRoleId" required>
-                    <option value="">— Select a role —</option>
-                    {customRoles.map((r) => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
-                    ))}
-                  </SelectField>
-                ) : (
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Role</label>
-                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400">
-                      No roles configured. Set up roles in <a href="/admin/roles" className="underline">Admin → Roles</a> first.
-                    </p>
-                  </div>
-                )}
+                <SelectField label="Role" name="role" required>
+                  {BUILTIN_ROLES.map((r) => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </SelectField>
 
                 <SelectField
                   label="Site"

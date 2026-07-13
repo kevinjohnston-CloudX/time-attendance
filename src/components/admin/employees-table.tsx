@@ -29,33 +29,79 @@ interface Employee {
   user: { name: string | null; email: string | null };
   site: { name: string };
   department: { name: string };
+  customRole: { id: string; name: string } | null;
 }
 
 export function EmployeesTable({ employees }: { employees: Employee[] }) {
   const [query, setQuery] = useState("");
+  const [siteFilter, setSiteFilter] = useState("");
+  const [deptFilter, setDeptFilter] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+
+  const sites = Array.from(new Set(employees.map((e) => e.site.name))).sort();
+  const departments = Array.from(
+    new Set(
+      employees
+        .filter((e) => !siteFilter || e.site.name === siteFilter)
+        .map((e) => e.department.name)
+    )
+  ).sort();
 
   const q = query.toLowerCase().trim();
-  const filtered = q
-    ? employees.filter((emp) =>
+  const filtered = employees.filter((emp) => {
+    if (siteFilter && emp.site.name !== siteFilter) return false;
+    if (deptFilter && emp.department.name !== deptFilter) return false;
+    if (roleFilter && emp.role !== roleFilter) return false;
+    if (q) {
+      return (
         (emp.user.name?.toLowerCase().includes(q)) ||
         (emp.user.email?.toLowerCase().includes(q)) ||
-        emp.employeeCode.toLowerCase().includes(q) ||
-        emp.department.name.toLowerCase().includes(q) ||
-        emp.site.name.toLowerCase().includes(q) ||
-        ROLE_LABEL[emp.role]?.toLowerCase().includes(q)
-      )
-    : employees;
+        emp.employeeCode.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+
+  const isFiltered = !!q || !!siteFilter || !!deptFilter || !!roleFilter;
+
+  const selectClass = "rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300";
 
   return (
     <>
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap items-center gap-2">
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by name, email, code, department, site, or role…"
-          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm placeholder-zinc-400 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-white dark:placeholder-zinc-500"
+          placeholder="Search by name, email, or code…"
+          className="w-64 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm placeholder-zinc-400 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-white dark:placeholder-zinc-500"
         />
+        <select
+          value={siteFilter}
+          onChange={(e) => { setSiteFilter(e.target.value); setDeptFilter(""); }}
+          className={selectClass}
+        >
+          <option value="">All Sites</option>
+          {sites.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select
+          value={deptFilter}
+          onChange={(e) => setDeptFilter(e.target.value)}
+          className={selectClass}
+        >
+          <option value="">All Departments</option>
+          {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value)}
+          className={selectClass}
+        >
+          <option value="">All Roles</option>
+          {Object.entries(ROLE_LABEL).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
       </div>
 
       <div className="mt-3 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
@@ -91,8 +137,8 @@ export function EmployeesTable({ employees }: { employees: Employee[] }) {
                   {emp.employeeCode}
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ROLE_BADGE[emp.role]}`}>
-                    {ROLE_LABEL[emp.role]}
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${emp.customRole ? "bg-indigo-100 text-indigo-700" : ROLE_BADGE[emp.role]}`}>
+                    {emp.customRole ? emp.customRole.name : ROLE_LABEL[emp.role]}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
@@ -125,7 +171,7 @@ export function EmployeesTable({ employees }: { employees: Employee[] }) {
         </table>
       </div>
 
-      {q && (
+      {isFiltered && (
         <p className="mt-2 text-xs text-zinc-400">
           Showing {filtered.length} of {employees.length} employees
         </p>
