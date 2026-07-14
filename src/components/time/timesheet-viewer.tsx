@@ -58,6 +58,7 @@ export interface TimesheetDetailData {
     payBucket: string;
     payBucketOverride: string | null;
     isPaid: boolean;
+    leaveTypeName: string | null;
   }[];
   overtimeBuckets: { bucket: string; totalMinutes: number }[];
   exceptionCount: number;
@@ -94,6 +95,28 @@ const SUMMARY_BUCKETS = [
   { key: "MILITARY",    label: "Military",    color: "text-zinc-500 dark:text-zinc-400" },
   { key: "UNPAID",      label: "Unpaid",      color: "text-zinc-400 dark:text-zinc-500" },
 ];
+
+// ── Summary Row Helper ───────────────────────────────────────────────────────
+
+function SummaryRow({
+  label, reg, ot, dt, total, isBold, className,
+}: {
+  label: string; reg: number; ot: number; dt: number; total: number;
+  isBold?: boolean; className?: string;
+}) {
+  const fmt = minutesToHoursDecimal;
+  const base = isBold ? "border-t-2 border-zinc-300 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900" : "";
+  const text = isBold ? "font-bold text-zinc-900 dark:text-white" : className ?? "text-zinc-700 dark:text-zinc-300";
+  return (
+    <tr className={base}>
+      <td className={`px-4 py-1 ${text}`}>{label}</td>
+      <td className={`px-3 py-1 text-right tabular-nums ${text}`}>{reg > 0 ? fmt(reg) : "—"}</td>
+      <td className={`px-3 py-1 text-right tabular-nums ${ot > 0 ? "font-semibold text-amber-600 dark:text-amber-400" : text}`}>{ot > 0 ? fmt(ot) : "—"}</td>
+      <td className={`px-3 py-1 text-right tabular-nums ${dt > 0 ? "font-semibold text-red-600 dark:text-red-400" : text}`}>{dt > 0 ? fmt(dt) : "—"}</td>
+      <td className={`px-3 py-1 text-right tabular-nums ${isBold ? text : "font-semibold text-zinc-900 dark:text-white"}`}>{total > 0 ? fmt(total) : "—"}</td>
+    </tr>
+  );
+}
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -165,6 +188,7 @@ export function TimesheetViewer({
   );
   const [hoverDate, setHoverDate] = useState<Date | null>(null);
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
+  const [summaryGroupBy, setSummaryGroupBy] = useState<"total" | "week">("total");
   const calendarRef = useRef<HTMLDivElement>(null);
 
   function toggleDay(key: string) {
@@ -258,15 +282,15 @@ export function TimesheetViewer({
 
   return (
     <>
-    <h1 className="mb-4 text-2xl font-bold text-zinc-900 dark:text-white">My Timesheets</h1>
+    <h1 className="mb-3 text-xl font-bold text-zinc-900 dark:text-white">My Timesheets</h1>
     <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
       {/* ── Top bar: pay period selector ──────────────────────────────── */}
-      <div className="flex items-center gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-1.5 dark:border-zinc-800 dark:bg-zinc-900">
         {/* List filter dropdown */}
         <select
           value={listFilter}
           onChange={(e) => setListFilter(e.target.value as typeof listFilter)}
-          className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+          className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
         >
           <option value="current">Current Pay Period</option>
           <option value="last">Last Pay Period</option>
@@ -285,7 +309,7 @@ export function TimesheetViewer({
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="min-w-[280px] text-center text-sm font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
+          <span className="min-w-[220px] text-center text-xs font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
             {(() => {
               const ts = sortedTimesheets[currentIndex];
               if (!ts && customStart && customEnd) {
@@ -436,7 +460,7 @@ export function TimesheetViewer({
       </div>
 
       {/* ── Split pane ───────────────────────────────────────────────────── */}
-      <div className="grid h-[calc(100vh-10rem)] grid-cols-[260px_1fr]">
+      <div className="grid h-[calc(100vh-9.75rem)] grid-cols-[260px_1fr]">
 
         {/* ── Left: pay period list ─────────────────────────────────────── */}
         <div className="flex min-h-0 flex-col overflow-y-auto border-r border-zinc-200 dark:border-zinc-800">
@@ -454,7 +478,7 @@ export function TimesheetViewer({
                 key={ts.payPeriodId}
                 type="button"
                 onClick={() => navigate(ts.payPeriodId)}
-                className={`flex flex-col border-b border-zinc-100 px-4 py-3 text-left transition-colors dark:border-zinc-800/60 ${
+                className={`flex flex-col border-b border-zinc-100 px-3 py-2 text-left transition-colors dark:border-zinc-800/60 ${
                   isSelected
                     ? "bg-blue-50 dark:bg-blue-950/30"
                     : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
@@ -479,7 +503,7 @@ export function TimesheetViewer({
         </div>
 
         {/* ── Right: detail ─────────────────────────────────────────────── */}
-        <div className="min-h-0 overflow-y-auto bg-white px-6 py-5 dark:bg-zinc-950">
+        <div className="min-h-0 overflow-y-auto bg-white pl-5 pr-7 pt-4 pb-0 dark:bg-zinc-950">
         {!detail ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-sm text-zinc-400">
@@ -493,11 +517,11 @@ export function TimesheetViewer({
             {/* Status header + submit */}
             <div className="flex items-start justify-between">
               <div>
-                <h2 className="text-2xl font-bold text-zinc-900 dark:text-white">
+                <h2 className="text-lg font-bold text-zinc-900 dark:text-white">
                   {format(parseUtcDate(detail.payPeriod.startDate), "MMM d")} –{" "}
                   {format(parseUtcDate(detail.payPeriod.endDate), "MMM d, yyyy")}
                 </h2>
-                <div className="mt-1 flex items-center gap-2">
+                <div className="mt-0.5 flex items-center gap-2">
                   <span
                     className={`rounded-full px-3 py-0.5 text-xs font-medium ${
                       STATUS_BADGE[detail.status] ?? STATUS_BADGE.OPEN
@@ -518,14 +542,14 @@ export function TimesheetViewer({
             </div>
 
             {/* Summary tiles */}
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="mt-2 flex flex-wrap gap-2">
               {visibleBuckets.map((b) => (
                 <div
                   key={b.key}
-                  className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+                  className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 dark:border-zinc-800 dark:bg-zinc-900"
                 >
                   <p className="text-xs text-zinc-500">{b.label}</p>
-                  <p className={`mt-1 text-xl font-bold ${b.color}`}>
+                  <p className={`mt-0.5 text-sm font-bold ${b.color}`}>
                     {formatMinutes(bucketMap[b.key] ?? 0)}
                   </p>
                 </div>
@@ -535,16 +559,16 @@ export function TimesheetViewer({
             {/* Daily table */}
             <div className="-mx-6 mt-4 overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="sticky top-0 border-b border-zinc-200 bg-[#2492c7] dark:border-zinc-700">
+                <thead className="sticky top-0 border-b-2 border-zinc-400 bg-zinc-300 dark:border-zinc-500 dark:bg-zinc-700">
                   <tr>
-                    <th className="w-7 pl-2 pr-0 py-2.5" />
-                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">Date</th>
-                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">In</th>
-                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">Out</th>
-                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-white">Reg</th>
-                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-white">OT</th>
-                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-white">DT</th>
-                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-white">Total</th>
+                    <th className="w-7 pl-2 pr-0 py-1.5" />
+                    <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Date</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">In</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Out</th>
+                    <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Reg</th>
+                    <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">OT</th>
+                    <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">DT</th>
+                    <th className="pl-3 pr-8 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Total</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -615,7 +639,7 @@ export function TimesheetViewer({
                               <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-400" />
                             ) : null}
                           </td>
-                          <td className={`px-3 py-2.5 text-sm tabular-nums ${
+                          <td className={`px-3 py-1.5 text-sm tabular-nums ${
                             isAbsent ? "text-red-800 dark:text-red-300"
                             : isTodayRow ? "text-blue-700 dark:text-blue-400"
                             : isWeekend ? "text-zinc-400 dark:text-zinc-500"
@@ -624,7 +648,7 @@ export function TimesheetViewer({
                             <span className={`mr-0.5 ${isWeekend ? "" : "font-semibold"}`}>{format(day, "EEE")}</span>
                             {format(day, "MM/dd/yyyy")}
                           </td>
-                          <td className={`px-3 py-2.5 font-mono text-sm ${
+                          <td className={`px-3 py-1.5 font-mono text-sm ${
                             isAbsent ? "text-red-700 dark:text-red-400" : "text-zinc-700 dark:text-zinc-300"
                           }`}>
                             {isAbsent ? (
@@ -632,36 +656,36 @@ export function TimesheetViewer({
                             ) : firstIn ? (
                               format(parseISO(firstIn.roundedTime), "h:mm a")
                             ) : leaveSegments.length > 0 ? (
-                              <span className="rounded-full bg-violet-100 px-2 py-0.5 font-sans text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
-                                Leave
+                              <span className="-ml-2 rounded-full bg-violet-100 px-2 py-0.5 font-sans text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+                                {leaveSegments[0].leaveTypeName ?? "Leave"}
                               </span>
                             ) : null}
                           </td>
-                          <td className="px-3 py-2.5 font-mono text-sm text-zinc-700 dark:text-zinc-300">
+                          <td className="px-3 py-1.5 font-mono text-sm text-zinc-700 dark:text-zinc-300">
                             {lastOut ? format(parseISO(lastOut.roundedTime), "h:mm a") : null}
                           </td>
-                          <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
+                          <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
                             isAbsent ? "text-red-400 dark:text-red-700"
                             : reg > 0 ? "text-zinc-700 dark:text-zinc-300"
                             : "text-zinc-300 dark:text-zinc-700"
                           }`}>
                             {isAbsent ? "0.00" : reg > 0 ? minutesToHoursDecimal(reg) : "—"}
                           </td>
-                          <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
+                          <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
                             isAbsent ? "text-red-400 dark:text-red-700"
                             : ot > 0 ? "font-semibold text-amber-600 dark:text-amber-400"
                             : "text-zinc-300 dark:text-zinc-700"
                           }`}>
                             {ot > 0 ? minutesToHoursDecimal(ot) : "—"}
                           </td>
-                          <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
+                          <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
                             isAbsent ? "text-red-400 dark:text-red-700"
                             : dt > 0 ? "font-semibold text-red-600 dark:text-red-400"
                             : "text-zinc-300 dark:text-zinc-700"
                           }`}>
                             {dt > 0 ? minutesToHoursDecimal(dt) : "—"}
                           </td>
-                          <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
+                          <td className={`pl-3 pr-8 py-1.5 text-right tabular-nums text-sm ${
                             isAbsent ? "font-bold text-red-800 dark:text-red-300"
                             : dailyTotal > 0 ? "font-bold text-zinc-900 dark:text-white"
                             : "text-zinc-300 dark:text-zinc-700"
@@ -704,6 +728,121 @@ export function TimesheetViewer({
                   })}
                 </tbody>
               </table>
+            </div>
+
+            {/* ── Color Legend ───────────────────────────────────────── */}
+            <div className="flex flex-wrap items-center gap-4 border-t border-zinc-200 px-4 py-2 dark:border-zinc-800">
+              <span className="text-xs font-medium text-zinc-400">Legend:</span>
+              <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                <span className="inline-block h-3 w-3 rounded border border-red-300 bg-red-100 dark:border-red-800 dark:bg-red-950/40" />
+                Absent
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                <span className="inline-block h-3 w-3 rounded border border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/20" />
+                Today
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                <span className="inline-block h-3 w-3 rounded border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900/40" />
+                Weekend
+              </span>
+            </div>
+
+            {/* ── Summary ────────────────────────────────────────────── */}
+            <div className="border-t border-zinc-200 dark:border-zinc-800">
+              <div className="flex items-center justify-between bg-zinc-50 px-4 py-1 dark:bg-zinc-900">
+                <span className="text-xs font-medium text-zinc-500">Timesheet Summary</span>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-zinc-400">Group By</label>
+                  <select
+                    value={summaryGroupBy}
+                    onChange={(e) => setSummaryGroupBy(e.target.value as "total" | "week")}
+                    className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                  >
+                    <option value="total">Total</option>
+                    <option value="week">Week</option>
+                  </select>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="border-b border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/50">
+                    <tr>
+                      <th className="px-4 py-1 text-left text-xs font-medium text-zinc-500">
+                        {summaryGroupBy === "week" ? "Week" : "Category"}
+                      </th>
+                      <th className="px-3 py-1 text-right text-xs font-medium text-zinc-500">Reg Hrs</th>
+                      <th className="px-3 py-1 text-right text-xs font-medium text-zinc-500">OT</th>
+                      <th className="px-3 py-1 text-right text-xs font-medium text-zinc-500">DT</th>
+                      <th className="px-3 py-1 text-right text-xs font-medium text-zinc-500">Total Hrs</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    {(() => {
+                      const bucketMap: Record<string, number> = Object.fromEntries(
+                        detail.overtimeBuckets.map((b) => [b.bucket, b.totalMinutes])
+                      );
+
+                      if (summaryGroupBy === "total") {
+                        const reg = bucketMap["REG"] ?? 0;
+                        const ot = bucketMap["OT"] ?? 0;
+                        const dt = bucketMap["DT"] ?? 0;
+                        const total = Object.values(bucketMap).reduce((a, b) => a + b, 0);
+                        const otherBuckets = SUMMARY_BUCKETS.filter(
+                          (b) => !["REG", "OT", "DT"].includes(b.key) && (bucketMap[b.key] ?? 0) > 0
+                        );
+                        return (
+                          <>
+                            {otherBuckets.map((b) => (
+                              <SummaryRow key={b.key} label={b.label} reg={0} ot={0} dt={0} total={bucketMap[b.key] ?? 0} className={b.color} />
+                            ))}
+                            <SummaryRow label="Totals" reg={reg} ot={ot} dt={dt} total={total} isBold />
+                          </>
+                        );
+                      }
+
+                      // Week grouping
+                      const ppStart = parseUtcDate(detail.payPeriod.startDate);
+                      const ppEnd = parseUtcDate(detail.payPeriod.endDate);
+                      const weeks: { label: string; start: Date; end: Date }[] = [];
+                      let wStart = ppStart;
+                      while (wStart <= ppEnd) {
+                        const wEnd = new Date(Math.min(wStart.getTime() + 6 * 86400000, ppEnd.getTime()));
+                        weeks.push({
+                          label: `${format(wStart, "MM/dd/yyyy")} – ${format(wEnd, "MM/dd/yyyy")}`,
+                          start: wStart,
+                          end: wEnd,
+                        });
+                        wStart = new Date(wEnd.getTime() + 86400000);
+                      }
+                      let grandReg = 0, grandOt = 0, grandDt = 0, grandTotal = 0;
+                      return (
+                        <>
+                          {weeks.map((week) => {
+                            const weekSegs = detail.segments.filter((s) => {
+                              const sd = parseUtcDate(s.segmentDate);
+                              return sd >= week.start && sd <= week.end;
+                            });
+                            const wb: Record<string, number> = {};
+                            for (const s of weekSegs) {
+                              if (s.isPaid) {
+                                const eb = s.payBucketOverride ?? s.payBucket;
+                                wb[eb] = (wb[eb] ?? 0) + s.durationMinutes;
+                              }
+                            }
+                            const reg = wb["REG"] ?? 0;
+                            const ot = wb["OT"] ?? 0;
+                            const dt = wb["DT"] ?? 0;
+                            const total = Object.values(wb).reduce((a, b) => a + b, 0);
+                            grandReg += reg; grandOt += ot; grandDt += dt; grandTotal += total;
+                            return <SummaryRow key={week.label} label={week.label} reg={reg} ot={ot} dt={dt} total={total} />;
+                          })}
+                          <SummaryRow label="Totals" reg={grandReg} ot={grandOt} dt={grandDt} total={grandTotal} isBold />
+                        </>
+                      );
+                    })()}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </>
         )}

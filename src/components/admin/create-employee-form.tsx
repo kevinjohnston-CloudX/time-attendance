@@ -20,9 +20,10 @@ interface Props {
   departments: (Department & { sites: { site: Site }[] })[];
   ruleSets: RuleSet[];
   employees: EmployeeWithUser[];
+  customRoles: { id: string; name: string }[];
 }
 
-export function CreateEmployeeForm({ sites, departments, ruleSets, employees }: Props) {
+export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -39,11 +40,17 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees }: 
     const fd = new FormData(e.currentTarget);
 
     startTransition(async () => {
+      const rawRole = (fd.get("role") as string) || "EMPLOYEE";
+      const isCustom = rawRole.startsWith("custom:");
+      const role = isCustom ? "EMPLOYEE" : rawRole;
+      const customRoleId = isCustom ? rawRole.slice(7) : undefined;
+
       const result = await createEmployee({
         name: fd.get("name") as string,
         email: fd.get("email") as string,
         employeeCode: fd.get("employeeCode") as string,
-        role: (fd.get("role") as string) || "EMPLOYEE",
+        role,
+        customRoleId,
         siteId: fd.get("siteId") as string,
         departmentId: fd.get("departmentId") as string,
         ruleSetId: fd.get("ruleSetId") as string,
@@ -96,6 +103,9 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees }: 
                 <SelectField label="Role" name="role" required>
                   {BUILTIN_ROLES.map((r) => (
                     <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                  {customRoles.map((r) => (
+                    <option key={r.id} value={`custom:${r.id}`}>{r.name}</option>
                   ))}
                 </SelectField>
 

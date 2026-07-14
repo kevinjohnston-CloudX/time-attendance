@@ -20,6 +20,7 @@ interface Props {
   departments: (Department & { sites: { site: Site }[] })[];
   ruleSets: RuleSet[];
   employees: (Employee & { user: User })[];
+  customRoles: { id: string; name: string }[];
 }
 
 const inputCls =
@@ -28,7 +29,7 @@ const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-
 
 type Tab = "general" | "personal" | "pay";
 
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees }: Props) {
+export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -57,11 +58,13 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
   function handleGeneral(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const rawRole = (fd.get("role") as string) || employee.role;
+    const isCustom = rawRole.startsWith("custom:");
     save({
       name: fd.get("name") as string,
       email: fd.get("email") as string,
-      role: (fd.get("role") as string) || employee.role,
-      customRoleId: (fd.get("customRoleId") as string) || undefined,
+      role: isCustom ? "EMPLOYEE" : rawRole,
+      customRoleId: isCustom ? rawRole.slice(7) : null,
       siteId: fd.get("siteId") as string,
       departmentId: fd.get("departmentId") as string,
       ruleSetId: fd.get("ruleSetId") as string,
@@ -78,7 +81,6 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     save({
-      ssn: fd.get("ssn") as string,
       gender: fd.get("gender") as string,
       maritalStatus: fd.get("maritalStatus") as string,
       phone: fd.get("phone") as string,
@@ -159,12 +161,19 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
 
             <div>
               <label className={labelCls}>Role</label>
-              <select name="role" defaultValue={employee.role} className={inputCls}>
+              <select
+                name="role"
+                defaultValue={employee.customRoleId ? `custom:${employee.customRoleId}` : employee.role}
+                className={inputCls}
+              >
                 <option value="EMPLOYEE">Employee</option>
                 <option value="SUPERVISOR">Supervisor</option>
                 <option value="PAYROLL_ADMIN">Payroll Admin</option>
                 <option value="HR_ADMIN">HR Admin</option>
                 <option value="SYSTEM_ADMIN">System Admin</option>
+                {customRoles.map((r) => (
+                  <option key={r.id} value={`custom:${r.id}`}>{r.name}</option>
+                ))}
               </select>
             </div>
 
@@ -261,11 +270,6 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       {activeTab === "personal" && (
         <form onSubmit={handlePersonal} className="mt-5 flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>Social Security Number</label>
-              <input name="ssn" type="password" defaultValue={employee.ssn ?? ""} placeholder="XXX-XX-XXXX" autoComplete="off" className={inputCls} />
-            </div>
-
             <div>
               <label className={labelCls}>Gender</label>
               <input name="gender" defaultValue={employee.gender ?? ""} className={inputCls} />

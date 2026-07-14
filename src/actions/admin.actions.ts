@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
+import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
 import {
   createEmployeeSchema,
   updateEmployeeSchema,
@@ -29,10 +30,20 @@ import {
   setAnnualLeaveDaysSchema,
   adjustLeaveBalanceSchema,
   csvEmployeeRowSchema,
+  ROLES,
   type SetAnnualLeaveDaysInput,
   type AdjustLeaveBalanceInput,
   type CsvEmployeeRow,
 } from "@/lib/validators/admin.schema";
+
+const BUILT_IN_ROLES = new Set<string>(ROLES.map((r) => r.toUpperCase()));
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function serializePayRate<T extends { payRate: unknown }>(emp: T): Omit<T, "payRate"> & { payRate: number | null } {
+  const { payRate, ...rest } = emp;
+  return { ...rest, payRate: payRate != null ? Number(payRate) : null };
+}
 
 // ─── Reference data (used by forms) ──────────────────────────────────────────
 
@@ -59,7 +70,7 @@ export const getAdminRefData = withRBAC(
         orderBy: { rank: "asc" },
       }),
     ]);
-    return { sites, departments, ruleSets, employees, customRoles };
+    return { sites, departments, ruleSets, employees: employees.map(serializePayRate), customRoles };
   }
 );
 
@@ -68,7 +79,7 @@ export const getAdminRefData = withRBAC(
 export const getEmployees = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ tenantId }, _input: void) => {
-    return db.employee.findMany({
+    const employees = await db.employee.findMany({
       where: { tenantId: tenantId ?? undefined },
       include: {
         user: true,
@@ -80,13 +91,17 @@ export const getEmployees = withRBAC(
       },
       orderBy: { user: { name: "asc" } },
     });
+    return employees.map((e) => {
+      const emp = serializePayRate(e);
+      return { ...emp, supervisor: emp.supervisor ? serializePayRate(emp.supervisor) : null };
+    });
   }
 );
 
 export const getEmployeeById = withRBAC(
   "EMPLOYEE_MANAGE",
   async (_actor, input: { employeeId: string }) => {
-    return db.employee.findUniqueOrThrow({
+    const emp = await db.employee.findUniqueOrThrow({
       where: { id: input.employeeId },
       include: {
         user: true,
@@ -96,6 +111,8 @@ export const getEmployeeById = withRBAC(
         supervisor: { include: { user: true } },
       },
     });
+    const serialized = serializePayRate(decryptPiiFields(emp));
+    return { ...serialized, supervisor: serialized.supervisor ? serializePayRate(serialized.supervisor) : null };
   }
 );
 
@@ -150,7 +167,7 @@ export const updateEmployee = withRBAC(
     const {
       employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, isActive, wmsId, adpWorkerId,
       jobTitle, terminationReason, payType, payRate,
-      ssn, phone, phone2, gender, maritalStatus,
+      phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
       address1, address2, city, state, country, zipCode,
     } = updateEmployeeSchema.parse(input);
@@ -167,6 +184,11 @@ export const updateEmployee = withRBAC(
           data: { ...(name !== undefined && { name }), ...(email !== undefined && { email }) },
         });
       }
+      const encPii = encryptPiiFields({
+        phone, phone2, gender, maritalStatus,
+        emergencyContact, emergencyPhone, emergencyRelationship,
+        address1, address2, city, state, country, zipCode,
+      });
       await tx.employee.update({
         where: { id: employeeId },
         data: {
@@ -183,20 +205,19 @@ export const updateEmployee = withRBAC(
           ...(terminationReason !== undefined && { terminationReason }),
           ...(payType !== undefined && { payType }),
           ...(payRate !== undefined && { payRate }),
-          ...(ssn !== undefined && { ssn }),
-          ...(phone !== undefined && { phone }),
-          ...(phone2 !== undefined && { phone2 }),
-          ...(gender !== undefined && { gender }),
-          ...(maritalStatus !== undefined && { maritalStatus }),
-          ...(emergencyContact !== undefined && { emergencyContact }),
-          ...(emergencyPhone !== undefined && { emergencyPhone }),
-          ...(emergencyRelationship !== undefined && { emergencyRelationship }),
-          ...(address1 !== undefined && { address1 }),
-          ...(address2 !== undefined && { address2 }),
-          ...(city !== undefined && { city }),
-          ...(state !== undefined && { state }),
-          ...(country !== undefined && { country }),
-          ...(zipCode !== undefined && { zipCode }),
+          ...(encPii.phone !== undefined && { phone: encPii.phone }),
+          ...(encPii.phone2 !== undefined && { phone2: encPii.phone2 }),
+          ...(encPii.gender !== undefined && { gender: encPii.gender }),
+          ...(encPii.maritalStatus !== undefined && { maritalStatus: encPii.maritalStatus }),
+          ...(encPii.emergencyContact !== undefined && { emergencyContact: encPii.emergencyContact }),
+          ...(encPii.emergencyPhone !== undefined && { emergencyPhone: encPii.emergencyPhone }),
+          ...(encPii.emergencyRelationship !== undefined && { emergencyRelationship: encPii.emergencyRelationship }),
+          ...(encPii.address1 !== undefined && { address1: encPii.address1 }),
+          ...(encPii.address2 !== undefined && { address2: encPii.address2 }),
+          ...(encPii.city !== undefined && { city: encPii.city }),
+          ...(encPii.state !== undefined && { state: encPii.state }),
+          ...(encPii.country !== undefined && { country: encPii.country }),
+          ...(encPii.zipCode !== undefined && { zipCode: encPii.zipCode }),
         },
       });
     });
@@ -638,23 +659,27 @@ export const bulkCreateEmployees = withRBAC(
     }
 
     // 2. Build name→ID lookup maps (case-insensitive)
-    const [sites, departments, ruleSets, existingEmployees] = await Promise.all([
+    const [sites, departments, ruleSets, existingEmployees, customRoles] = await Promise.all([
       db.site.findMany({ where: { isActive: true, tenantId } }),
       db.department.findMany({ where: { isActive: true, tenantId } }),
       db.ruleSet.findMany({ where: { tenantId } }),
       db.employee.findMany({ where: { tenantId }, select: { id: true, employeeCode: true } }),
+      db.customRole.findMany({ where: { tenantId }, select: { id: true, name: true } }),
     ]);
 
     const siteMap = new Map(sites.map((s) => [s.name.toLowerCase(), s.id]));
     const deptMap = new Map(departments.map((d) => [d.name.toLowerCase(), d.id]));
     const ruleSetMap = new Map(ruleSets.map((r) => [r.name.toLowerCase(), r.id]));
     const existingCodeMap = new Map(existingEmployees.map((e) => [e.employeeCode, e.id]));
+    const customRoleMap = new Map(customRoles.map((cr) => [cr.name.toLowerCase(), cr.id]));
 
     // 3. Resolve references and check for issues
     type ResolvedRow = CsvEmployeeRow & {
       siteId: string;
       departmentId: string;
       ruleSetId: string;
+      resolvedRole: string;
+      resolvedCustomRoleId: string | null;
     };
     const resolved: ResolvedRow[] = [];
 
@@ -686,10 +711,36 @@ export const bulkCreateEmployees = withRBAC(
       }
       seenCodes.add(r.employeeCode);
 
+      // Resolve role: customRole column takes precedence, then role column
+      // role column accepts built-in roles (case-insensitive) or custom role names
+      let resolvedRole = "EMPLOYEE";
+      let resolvedCustomRoleId: string | null = null;
+
+      if (r.customRole) {
+        const crId = customRoleMap.get(r.customRole.toLowerCase());
+        if (!crId) {
+          errors.push(`Custom role "${r.customRole}" not found`);
+        } else {
+          resolvedCustomRoleId = crId;
+        }
+      } else if (r.role) {
+        const upper = r.role.toUpperCase();
+        if (BUILT_IN_ROLES.has(upper)) {
+          resolvedRole = upper;
+        } else {
+          const crId = customRoleMap.get(r.role.toLowerCase());
+          if (crId) {
+            resolvedCustomRoleId = crId;
+          } else {
+            errors.push(`Role "${r.role}" is not a valid built-in role or custom role`);
+          }
+        }
+      }
+
       if (errors.length > 0) {
         rowErrors.push({ row: i + 2, message: errors.join("; ") });
       } else {
-        resolved.push({ ...r, siteId: siteId!, departmentId: departmentId!, ruleSetId: ruleSetId! });
+        resolved.push({ ...r, siteId: siteId!, departmentId: departmentId!, ruleSetId: ruleSetId!, resolvedRole, resolvedCustomRoleId });
       }
     }
 
@@ -716,7 +767,9 @@ export const bulkCreateEmployees = withRBAC(
               userId: user.id,
               tenantId,
               employeeCode: r.employeeCode,
-              role: r.role,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              role: (r.resolvedCustomRoleId ? "EMPLOYEE" : r.resolvedRole) as any,
+              customRoleId: r.resolvedCustomRoleId ?? null,
               siteId: r.siteId,
               departmentId: r.departmentId,
               ruleSetId: r.ruleSetId,

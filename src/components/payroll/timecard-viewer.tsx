@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useRef } from "react";
+import React, { useState, useTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   format,
@@ -696,11 +696,11 @@ export function TimecardViewer({
     (timecard.status === "SUBMITTED" || timecard.status === "SUP_APPROVED");
 
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
+    <div className="flex flex-col overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 h-[calc(100vh-8.75rem)]">
       {/* ── Top bar: pay period filter bar ─────────────────────────── */}
-      <div className="flex items-center gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="shrink-0 flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-1.5 dark:border-zinc-800 dark:bg-zinc-900">
         {/* Pay frequency indicator */}
-        <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+        <span className="inline-flex items-center rounded-md bg-blue-100 px-1.5 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
           {PAY_FREQUENCY_LABEL[payFrequency as PayFrequencyValue] ??
             payFrequency}
         </span>
@@ -718,7 +718,7 @@ export function TimecardViewer({
               navigate(nextPeriod.id);
             else navigate(val);
           }}
-          className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+          className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
         >
           {currentPeriod && (
             <option value="current">Current Pay Period</option>
@@ -755,7 +755,7 @@ export function TimecardViewer({
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="min-w-[260px] text-center text-sm font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
+          <span className="min-w-[220px] text-center text-xs font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
             {(() => {
               const sel = sortedPeriods[currentIndex];
               if (!sel) return "—";
@@ -925,10 +925,10 @@ export function TimecardViewer({
       </div>
 
       {/* ── Split pane ───────────────────────────────────────────────── */}
-      <div className="grid h-[calc(100vh-14rem)] grid-cols-[260px_1fr]">
+      <div className="grid grid-cols-[260px_1fr] flex-1 min-h-0">
         {/* ── Left: employee list ─────────────────────────────────────── */}
-        <div className="flex min-h-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
-          <div className="space-y-2 border-b border-zinc-200 p-2.5 dark:border-zinc-800">
+        <div className="flex flex-col min-h-0 border-r border-zinc-200 dark:border-zinc-800">
+          <div className="shrink-0 space-y-2 border-b border-zinc-200 p-2.5 dark:border-zinc-800">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
               <input
@@ -1022,7 +1022,7 @@ export function TimecardViewer({
         </div>
 
         {/* ── Right: timecard detail ──────────────────────────────────── */}
-        <div className="flex min-h-0 flex-col overflow-hidden bg-white dark:bg-zinc-950">
+        <div className="flex flex-col min-h-0 bg-white dark:bg-zinc-950">
           {!timecard || !days ? (
             <div className="flex flex-1 items-center justify-center">
               <p className="text-sm text-zinc-400">
@@ -1034,7 +1034,7 @@ export function TimecardViewer({
           ) : (
             <>
               {/* ── Employee header with status + actions ─────────────── */}
-              <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+              <div className="shrink-0 flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
                 <div className="flex items-center gap-3">
                   <div>
                     <div className="flex items-center gap-1.5">
@@ -1145,21 +1145,21 @@ export function TimecardViewer({
               {/* ── Scrollable timecard table + summary ──────────────── */}
               <div className="flex-1 overflow-y-auto">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 border-b border-zinc-200 bg-[#2492c7] dark:border-zinc-700">
+                  <thead className="sticky top-0 border-b-2 border-zinc-400 bg-zinc-300 dark:border-zinc-500 dark:bg-zinc-700">
                     <tr>
-                      <th className="w-7 pl-2 pr-0 py-2.5" />
-                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">Date</th>
+                      <th className="w-7 pl-2 pr-0 py-1.5" />
+                      <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Date</th>
                       {payCodes.length > 0 && (
-                        <th className="px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">Code</th>
+                        <th className="px-2 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Code</th>
                       )}
-                      <th className="w-7 px-1 py-2.5" />
-                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">In</th>
-                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">Out</th>
-                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-white">Pay Code</th>
-                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-white">Reg</th>
-                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-white">OT</th>
-                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-white">DT</th>
-                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-white">Total</th>
+                      <th className="w-7 px-1 py-1.5" />
+                      <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">In</th>
+                      <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Out</th>
+                      <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Pay Code</th>
+                      <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Reg</th>
+                      <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">OT</th>
+                      <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">DT</th>
+                      <th className="pl-3 pr-8 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1230,17 +1230,16 @@ export function TimecardViewer({
                         daySegments.length === 0;
 
                       return (
-                        <>
+                        <React.Fragment key={dayKey}>
                           {/* Week separator */}
                           {showWeekSeparator && (
-                            <tr key={`${dayKey}-sep`} aria-hidden>
+                            <tr aria-hidden>
                               <td colSpan={colCount} className="h-0 border-t-2 border-zinc-300 dark:border-zinc-600 p-0" />
                             </tr>
                           )}
 
                           {/* Day summary row */}
                           <tr
-                            key={dayKey}
                             className={`border-b border-zinc-200 dark:border-zinc-700 transition-colors ${
                               isAbsent
                                 ? "bg-red-100 dark:bg-red-950/40"
@@ -1274,7 +1273,7 @@ export function TimecardViewer({
                             </td>
 
                             {/* Date (EEE MM/dd/yyyy) */}
-                            <td className={`px-3 py-2.5 text-sm font-medium tabular-nums ${
+                            <td className={`px-3 py-1.5 text-sm font-medium tabular-nums ${
                               isAbsent
                                 ? "text-red-800 dark:text-red-300"
                                 : isTodayRow
@@ -1306,7 +1305,7 @@ export function TimecardViewer({
 
                             {/* Pay code */}
                             {payCodes.length > 0 && (
-                              <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
+                              <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                                 {(() => {
                                   // Find the primary work segment for this day to get/set pay code
                                   const workSeg = daySegments.find(
@@ -1338,7 +1337,7 @@ export function TimecardViewer({
                             )}
 
                             {/* Notes icon */}
-                            <td className="w-7 px-1 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                            <td className="w-7 px-1 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
                               {(() => {
                                 const dayStr = format(day, "yyyy-MM-dd");
                                 const existingNote = timecard?.notes.find(
@@ -1362,7 +1361,7 @@ export function TimecardViewer({
                             </td>
 
                             {/* In time */}
-                            <td className={`px-3 py-2.5 font-mono text-sm ${
+                            <td className={`px-3 py-1.5 font-mono text-sm ${
                               isAbsent
                                 ? "text-red-700 dark:text-red-400"
                                 : hasMissingPunch
@@ -1406,7 +1405,7 @@ export function TimecardViewer({
                             </td>
 
                             {/* Out time */}
-                            <td className="px-3 py-2.5 font-mono text-sm text-zinc-700 dark:text-zinc-300">
+                            <td className="px-3 py-1.5 font-mono text-sm text-zinc-700 dark:text-zinc-300">
                               {lastOut ? (
                                 <button
                                   type="button"
@@ -1427,7 +1426,7 @@ export function TimecardViewer({
                             </td>
 
                             {/* Pay Code bucket dropdown */}
-                            <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
+                            <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                               {(() => {
                                 if (isAbsent && timecard) {
                                   const dayStr = format(day, "yyyy-MM-dd");
@@ -1489,7 +1488,7 @@ export function TimecardViewer({
                             </td>
 
                             {/* Reg */}
-                            <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
+                            <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
                               isAbsent
                                 ? "text-red-400 dark:text-red-700"
                                 : reg > 0
@@ -1500,7 +1499,7 @@ export function TimecardViewer({
                             </td>
 
                             {/* OT */}
-                            <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
+                            <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
                               isAbsent
                                 ? "text-red-400 dark:text-red-700"
                                 : ot > 0
@@ -1511,7 +1510,7 @@ export function TimecardViewer({
                             </td>
 
                             {/* DT */}
-                            <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
+                            <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
                               isAbsent
                                 ? "text-red-400 dark:text-red-700"
                                 : dt > 0
@@ -1522,7 +1521,7 @@ export function TimecardViewer({
                             </td>
 
                             {/* Total */}
-                            <td className={`px-3 py-2.5 text-right tabular-nums text-sm ${
+                            <td className={`pl-3 pr-8 py-1.5 text-right tabular-nums text-sm ${
                               isAbsent
                                 ? "font-bold text-red-800 dark:text-red-300"
                                 : dailyTotal > 0
@@ -1807,11 +1806,13 @@ export function TimecardViewer({
                               </td>
                             </tr>
                           )}
-                        </>
+                        </React.Fragment>
                       );
                     })}
                   </tbody>
                 </table>
+              </div>
+              <div className="shrink-0">
 
                 {/* ── Color Legend ──────────────────────────────────── */}
                 <div className="flex flex-wrap items-center gap-4 border-t border-zinc-200 px-4 py-2 dark:border-zinc-800">
@@ -1837,8 +1838,8 @@ export function TimecardViewer({
                 {/* ── Summary with Group By ──────────────────────────── */}
                 <div className="border-t border-zinc-200 dark:border-zinc-800">
                   {/* Summary header with Group By selector */}
-                  <div className="flex items-center justify-between bg-zinc-50 px-4 py-2 dark:bg-zinc-900">
-                    <span className="text-sm font-medium text-zinc-500">
+                  <div className="flex items-center justify-between bg-zinc-50 px-4 py-1 dark:bg-zinc-900">
+                    <span className="text-xs font-medium text-zinc-500">
                       Timesheet Summary
                     </span>
                     <div className="flex items-center gap-2">
@@ -1850,7 +1851,7 @@ export function TimecardViewer({
                             e.target.value as "total" | "week" | "paycode"
                           )
                         }
-                        className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                        className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
                       >
                         <option value="total">Total</option>
                         <option value="week">Week</option>

@@ -68,7 +68,7 @@ export default async function MyLeavePage() {
           <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
             Current Balances
           </p>
-          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-2 grid grid-flow-col auto-cols-fr gap-2">
             {balances.map((b) => {
               const totalMinutes     = b.balanceMinutes + b.usedMinutes;
               const approvedMinutes  = approvedByType[b.leaveTypeId] ?? 0;
@@ -77,15 +77,15 @@ export default async function MyLeavePage() {
               return (
                 <div
                   key={b.id}
-                  className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900"
+                  className="rounded-xl border border-zinc-200 bg-white p-2.5 dark:border-zinc-800 dark:bg-zinc-900"
                 >
                   <p className="text-xs text-zinc-500 dark:text-zinc-400">
                     Remaining {b.leaveType.name}
                   </p>
-                  <p className="mt-1 text-xl font-bold text-zinc-900 dark:text-white">
+                  <p className="mt-0.5 text-lg font-bold text-zinc-900 dark:text-white">
                     {formatMinutes(remainingMinutes)}
                   </p>
-                  <div className="mt-2 flex flex-col gap-0.5 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+                  <div className="mt-1.5 flex flex-col gap-0.5 border-t border-zinc-100 pt-1.5 dark:border-zinc-800">
                     <p className="text-xs text-zinc-400">
                       Approved: <span className="font-medium text-zinc-600 dark:text-zinc-300">{formatMinutes(approvedMinutes)}</span>
                     </p>

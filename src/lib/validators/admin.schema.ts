@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const ROLES = [
+export const ROLES = [
   "EMPLOYEE",
   "SUPERVISOR",
   "PAYROLL_ADMIN",
@@ -55,7 +55,6 @@ export const updateEmployeeSchema = z.object({
   payType: z.enum(["HOURLY", "SALARY"]).nullable().optional(),
   payRate: z.number().positive().nullable().optional(),
   // Personal
-  ssn: nullableStr,
   phone: nullableStr,
   phone2: nullableStr,
   gender: nullableStr,
@@ -161,7 +160,8 @@ export const csvEmployeeRowSchema = z.object({
   name: z.string().min(1, "Name is required"),
   employeeCode: z.string().min(1, "Employee code is required"),
   email: z.string().email("Must be a valid email").optional().or(z.literal("")).transform((v) => v || undefined),
-  role: z.enum(ROLES).default("EMPLOYEE"),
+  role: z.string().default("EMPLOYEE").transform((v) => v.trim()),
+  customRole: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
   site: z.string().min(1, "Site is required"),
   department: z.string().min(1, "Department is required"),
   ruleSet: z.string().min(1, "Rule set is required"),

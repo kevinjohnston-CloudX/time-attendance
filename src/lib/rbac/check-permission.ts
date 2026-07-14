@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { hasPermission, type Permission } from "./permissions";
+import { hasPermissionByLegacy } from "./permission-resolver";
 
 /**
  * Server-side permission check. Call from Server Components or Server Actions.
@@ -22,7 +23,11 @@ export async function requirePermission(permission: Permission): Promise<{
     };
   }
 
-  if (!hasPermission(session.user.role, permission)) {
+  const customRoleId = session.user.role === "EMPLOYEE" ? (session.user.customRoleId ?? null) : null;
+  const allowed = customRoleId
+    ? await hasPermissionByLegacy(customRoleId, permission)
+    : hasPermission(session.user.role, permission);
+  if (!allowed) {
     throw new Error("FORBIDDEN");
   }
 
@@ -39,6 +44,8 @@ export async function checkPermission(permission: Permission): Promise<boolean> 
   const session = await auth();
   if (!session?.user) return false;
   if (session.user.role === "SUPER_ADMIN") return true;
+  const customRoleId = session.user.role === "EMPLOYEE" ? (session.user.customRoleId ?? null) : null;
+  if (customRoleId) return hasPermissionByLegacy(customRoleId, permission);
   return hasPermission(session.user.role, permission);
 }
 
@@ -51,5 +58,7 @@ export async function userHasPermission(
   permission: Permission
 ): Promise<boolean> {
   if (user.role === "SUPER_ADMIN") return true;
+  const customRoleId = user.role === "EMPLOYEE" ? (user.customRoleId ?? null) : null;
+  if (customRoleId) return hasPermissionByLegacy(customRoleId, permission);
   return hasPermission(user.role, permission);
 }

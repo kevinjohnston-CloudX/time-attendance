@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { hasPermission, type Permission } from "./permissions";
+import { hasPermissionByLegacy } from "./permission-resolver";
 import type { Role } from "./roles";
 
 type ActionResult<T> =
@@ -33,8 +34,13 @@ export function withRBAC<TInput, TOutput>(
 
     const isSuperAdmin = session.user.role === "SUPER_ADMIN";
 
-    if (!isSuperAdmin && !hasPermission(session.user.role, permission)) {
-      return { success: false, error: "FORBIDDEN" };
+    if (!isSuperAdmin) {
+      const rawCustomRoleId = (session.user as { customRoleId?: string | null }).customRoleId ?? null;
+      const customRoleId = session.user.role === "EMPLOYEE" ? rawCustomRoleId : null;
+      const allowed = customRoleId
+        ? await hasPermissionByLegacy(customRoleId, permission)
+        : hasPermission(session.user.role, permission);
+      if (!allowed) return { success: false, error: "FORBIDDEN" };
     }
 
     try {

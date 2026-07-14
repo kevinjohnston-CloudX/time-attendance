@@ -17,6 +17,7 @@ const CSV_HEADERS = [
   "employeeCode",
   "email",
   "role",
+  "customRole",
   "site",
   "department",
   "ruleSet",
@@ -24,6 +25,8 @@ const CSV_HEADERS = [
   "supervisorCode",
   "wmsId",
 ] as const;
+
+const REQUIRED_HEADERS = CSV_HEADERS.filter((h) => h !== "customRole");
 
 function parseCsvLine(line: string): string[] {
   const fields: string[] = [];
@@ -69,8 +72,8 @@ function parseCsv(text: string): { rows: CsvEmployeeRow[]; parseErrors: string[]
   const headerFields = parseCsvLine(lines[0]).map((h) => h.toLowerCase().replace(/\s+/g, ""));
   const parseErrors: string[] = [];
 
-  // Verify required headers
-  const missing = CSV_HEADERS.filter(
+  // Verify required headers (customRole is optional)
+  const missing = REQUIRED_HEADERS.filter(
     (h) => !headerFields.includes(h.toLowerCase())
   );
   if (missing.length > 0) {
@@ -95,6 +98,7 @@ function parseCsv(text: string): { rows: CsvEmployeeRow[]; parseErrors: string[]
       employeeCode: fields[colIndex.employeeCode] ?? "",
       email: fields[colIndex.email] ?? "",
       role: (fields[colIndex.role] ?? "EMPLOYEE") || "EMPLOYEE",
+      customRole: colIndex.customRole >= 0 ? (fields[colIndex.customRole] ?? "") : "",
       site: fields[colIndex.site] ?? "",
       department: fields[colIndex.department] ?? "",
       ruleSet: fields[colIndex.ruleSet] ?? "",
@@ -127,8 +131,8 @@ export function CsvUploadForm({ sites, departments, ruleSets }: Props) {
     const rs = ruleSets[0] ?? "Default";
 
     const header = CSV_HEADERS.join(",");
-    const example1 = `John Smith,EMP001,jsmith@acme.com,EMPLOYEE,${site},${dept},${rs},2024-03-15,,B001`;
-    const example2 = `Jane Doe,EMP002,jdoe@acme.com,SUPERVISOR,${site},${dept},${rs},2023-01-10,EMP001,B002`;
+    const example1 = `John Smith,EMP001,jsmith@acme.com,EMPLOYEE,,${site},${dept},${rs},2024-03-15,,B001`;
+    const example2 = `Jane Doe,EMP002,jdoe@acme.com,EMPLOYEE,MyCustomRole,${site},${dept},${rs},2023-01-10,EMP001,B002`;
     const csv = [header, example1, example2].join("\n");
 
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });

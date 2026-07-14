@@ -59,7 +59,10 @@ export default async function TimesheetPage({
             where: { isApproved: true, correctedById: null },
             orderBy: { roundedTime: "asc" },
           },
-          segments: { orderBy: { startTime: "asc" } },
+          segments: {
+            orderBy: { startTime: "asc" },
+            include: { leaveRequest: { include: { leaveType: { select: { name: true } } } } },
+          },
           overtimeBuckets: true,
           exceptions: { where: { resolvedAt: null } },
         },
@@ -103,6 +106,7 @@ export default async function TimesheetPage({
           payBucket: s.payBucket,
           payBucketOverride: s.payBucketOverride,
           isPaid: s.isPaid,
+          leaveTypeName: s.leaveRequest?.leaveType?.name ?? null,
         })),
         overtimeBuckets: rawDetail.overtimeBuckets.map((b) => ({
           bucket: b.bucket,

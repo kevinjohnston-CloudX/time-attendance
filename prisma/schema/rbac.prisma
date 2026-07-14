@@ -20,9 +20,9 @@ model CustomRole {
 model RolePermission {
   id           String @id @default(cuid())
   customRoleId String
-  resource     String // "punch" | "timesheet" | "leave" | "payroll" | "employee" | "rules" | "site" | "document" | "report" | "audit" | "role"
-  action       String // "read" | "write" | "execute"
-  scope        String // "own" | "team" | "all"
+  resource     String
+  action       String
+  scope        String
 
   customRole CustomRole @relation(fields: [customRoleId], references: [id], onDelete: Cascade)
 

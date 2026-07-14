@@ -97,7 +97,6 @@ model Employee {
   payRate  Decimal?  @db.Decimal(10, 4)
 
   // Personal
-  ssn           String?
   phone         String?
   phone2        String?
   gender        String?

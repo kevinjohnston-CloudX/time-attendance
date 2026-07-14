@@ -39,25 +39,6 @@ export const authConfig = {
       }
       return true;
     },
-    jwt({ token, user }) {
-      if (user) {
-        token.role = (user as { role?: string }).role;
-        token.employeeId = (user as { employeeId?: string }).employeeId;
-        token.tenantId = (user as { tenantId?: string | null }).tenantId;
-        token.customRoleId = (user as { customRoleId?: string }).customRoleId;
-      }
-      return token;
-    },
-    session({ session, token }) {
-      if (token) {
-        if (token.sub) session.user.id = token.sub;
-        session.user.role = token.role as string;
-        session.user.employeeId = token.employeeId as string | undefined;
-        session.user.tenantId = token.tenantId as string | null | undefined;
-        session.user.customRoleId = token.customRoleId as string | undefined;
-      }
-      return session;
-    },
   },
   providers: [],
 } satisfies NextAuthConfig;
