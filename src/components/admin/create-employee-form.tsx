@@ -3,9 +3,9 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createEmployee } from "@/actions/admin.actions";
-import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
+import type { Site, Department, RuleSet } from "@prisma/client";
 
-type EmployeeWithUser = Employee & { user: User };
+type EmployeeOption = { id: string; user: { name: string | null } };
 
 const BUILTIN_ROLES = [
   { value: "EMPLOYEE",      label: "Employee" },
@@ -13,13 +13,15 @@ const BUILTIN_ROLES = [
   { value: "PAYROLL_ADMIN", label: "Payroll Admin" },
   { value: "HR_ADMIN",      label: "HR Admin" },
   { value: "SYSTEM_ADMIN",  label: "System Admin" },
-];
+] as const;
+
+type BuiltinRole = (typeof BUILTIN_ROLES)[number]["value"];
 
 interface Props {
   sites: Site[];
   departments: (Department & { sites: { site: Site }[] })[];
   ruleSets: RuleSet[];
-  employees: EmployeeWithUser[];
+  employees: EmployeeOption[];
   customRoles: { id: string; name: string }[];
 }
 
@@ -42,7 +44,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
     startTransition(async () => {
       const rawRole = (fd.get("role") as string) || "EMPLOYEE";
       const isCustom = rawRole.startsWith("custom:");
-      const role = isCustom ? "EMPLOYEE" : rawRole;
+      const role: BuiltinRole = isCustom ? "EMPLOYEE" : (rawRole as BuiltinRole);
       const customRoleId = isCustom ? rawRole.slice(7) : undefined;
 
       const result = await createEmployee({

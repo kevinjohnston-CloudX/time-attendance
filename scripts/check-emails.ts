@@ -8,7 +8,7 @@ async function main() {
   const db = new PrismaClient({ adapter } as never);
 
   try {
-    const users = await (db as {
+    const users = await (db as unknown as {
       user: {
         findMany: (args: object) => Promise<Array<{
           id: string; name: string | null; username: string | null;

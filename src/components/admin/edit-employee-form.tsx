@@ -6,12 +6,13 @@ import { format } from "date-fns";
 import { updateEmployee } from "@/actions/admin.actions";
 import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
 
-type EmployeeWithRelations = Employee & {
+type EmployeeWithRelations = Omit<Employee, "payRate"> & {
+  payRate: number | null;
   user: User;
   site: Site;
   department: Department;
   ruleSet: RuleSet;
-  supervisor: (Employee & { user: User }) | null;
+  supervisor: (Omit<Employee, "payRate"> & { payRate: number | null; user: User }) | null;
 };
 
 interface Props {
@@ -19,7 +20,7 @@ interface Props {
   sites: Site[];
   departments: (Department & { sites: { site: Site }[] })[];
   ruleSets: RuleSet[];
-  employees: (Employee & { user: User })[];
+  employees: { id: string; user: { name: string | null } }[];
   customRoles: { id: string; name: string }[];
 }
 

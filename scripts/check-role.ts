@@ -8,7 +8,7 @@ async function main() {
   const db = new PrismaClient({ adapter } as never);
 
   try {
-    const employees = await (db as {
+    const employees = await (db as unknown as {
       employee: {
         findMany: (args: object) => Promise<Array<{
           role: string;
