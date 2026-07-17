@@ -31,6 +31,8 @@ export const createEmployeeSchema = z.object({
   hireDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be yyyy-MM-dd"),
   supervisorId: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
   wmsId: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
+  payType: z.enum(["HOURLY", "SALARY"]).nullable().optional(),
+  payRate: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().positive().nullable().optional()),
 });
 
 const nullableStr = z.string().nullable().optional().transform((v) => v || null);
@@ -179,6 +181,14 @@ export const csvEmployeeRowSchema = z.object({
     }),
   supervisorCode: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
   wmsId: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
+  payType: z.preprocess(
+    (v) => (v === "" || v == null ? null : String(v).toUpperCase()),
+    z.enum(["HOURLY", "SALARY"]).nullable().optional()
+  ),
+  payRate: z.preprocess(
+    (v) => (v === "" || v == null ? null : Number(v)),
+    z.number().positive().nullable().optional()
+  ),
 });
 
 export type CsvEmployeeRow = z.infer<typeof csvEmployeeRowSchema>;

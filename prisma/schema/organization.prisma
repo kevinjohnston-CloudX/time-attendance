@@ -22,6 +22,8 @@ model Tenant {
   customRoles CustomRole[]
   ptoPolicies PtoPolicy[]
   payCodes    PayCode[]
+  reasonCodes ReasonCode[]
+  holidays    Holiday[]
 
   @@map("tenants")
 }

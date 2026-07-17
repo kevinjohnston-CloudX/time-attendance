@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function DepartmentsPage() {
+export default function ReasonCodesPage() {
   redirect("/admin/site-settings");
 }

@@ -253,9 +253,17 @@ export async function rebuildSegments(
   // Fetch the employee's site timezone so segment dates use the correct calendar day.
   const timesheet = await db.timesheet.findUniqueOrThrow({
     where: { id: timesheetId },
-    select: { employee: { select: { site: { select: { timezone: true } } } } },
+    select: {
+      employee: {
+        select: {
+          tenantId: true,
+          site: { select: { timezone: true } },
+        },
+      },
+    },
   });
   const timezone = timesheet.employee.site?.timezone ?? "UTC";
+  const tenantId = timesheet.employee.tenantId;
 
   const punches = await db.punch.findMany({
     where: { timesheetId, isApproved: true, correctedById: null },
@@ -286,4 +294,24 @@ export async function rebuildSegments(
 
   // OT engine reads the fresh segments and writes REG/OT/DT buckets.
   await applyOvertime(timesheetId, ruleSet);
+
+  // Auto-assign the tenant's code-0 (Regular Hours) PayCode to REG WORK segments
+  // that don't already have a pay code set.
+  if (tenantId) {
+    const regularPayCode = await db.payCode.findUnique({
+      where: { tenantId_code: { tenantId, code: 0 } },
+      select: { id: true, isActive: true },
+    });
+    if (regularPayCode?.isActive) {
+      await db.workSegment.updateMany({
+        where: {
+          timesheetId,
+          segmentType: "WORK",
+          payBucket: "REG",
+          payCodeId: null,
+        },
+        data: { payCodeId: regularPayCode.id },
+      });
+    }
+  }
 }

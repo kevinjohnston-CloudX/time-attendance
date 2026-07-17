@@ -40,6 +40,7 @@ model Timesheet {
   overtimeBuckets OvertimeBucket[]
   mealWaivers     MealWaiver[]
   notes           TimesheetNote[]
+  dayReasons      TimesheetDayReason[]
 
   @@unique([employeeId, payPeriodId])
   @@map("timesheets")
@@ -126,4 +127,17 @@ model Exception {
   timesheet Timesheet @relation(fields: [timesheetId], references: [id])
 
   @@map("exceptions")
+}
+
+/// Lightweight per-day reason code annotation. Never touches work segments.
+model TimesheetDayReason {
+  timesheetId  String
+  segmentDate  DateTime @db.Date
+  reasonCodeId String
+
+  timesheet  Timesheet  @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+  reasonCode ReasonCode @relation(fields: [reasonCodeId], references: [id])
+
+  @@id([timesheetId, segmentDate])
+  @@map("timesheet_day_reasons")
 }

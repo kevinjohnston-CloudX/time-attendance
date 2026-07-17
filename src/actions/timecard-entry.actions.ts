@@ -9,6 +9,7 @@ import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
 import { applyRounding } from "@/lib/utils/date";
 import {
   manualPunchPairSchema,
+  singleManualPunchSchema,
   payrollLeaveEntrySchema,
 } from "@/lib/validators/timecard-entry.schema";
 import { z } from "zod";
@@ -31,7 +32,7 @@ export const getLeaveTypesForTimecard = withRBAC(
 export const addManualPunchPair = withRBAC(
   "PAY_PERIOD_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: unknown) => {
-    const { timesheetId, inTime, outTime, reason } =
+    const { timesheetId, inTime, outTime, reason, payBucketOverride } =
       manualPunchPairSchema.parse(input);
 
     const inDate = new Date(inTime);
@@ -119,6 +120,88 @@ export const addManualPunchPair = withRBAC(
       });
 
       return punchIn;
+    });
+
+    await rebuildSegments(timesheetId, ruleSet);
+
+    // Apply pay bucket override to every WORK segment produced by this punch pair
+    if (payBucketOverride) {
+      const segs = await db.workSegment.findMany({
+        where: {
+          timesheetId,
+          segmentType: "WORK",
+          startTime: { gte: roundedIn, lt: roundedOut },
+        },
+      });
+      for (const seg of segs) {
+        await db.workSegment.update({
+          where: { id: seg.id },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          data: { payBucketOverride: payBucketOverride as any },
+        });
+      }
+    }
+
+    revalidatePath("/payroll/timecards");
+  }
+);
+
+// ─── Add a single manual punch (IN or OUT) to a timesheet day ───────────────
+
+export const addSingleManualPunch = withRBAC(
+  "PAY_PERIOD_MANAGE",
+  async ({ employeeId: actorId, tenantId }, input: unknown) => {
+    const { timesheetId, punchType, punchTime, reason } =
+      singleManualPunchSchema.parse(input);
+
+    const punchDate = new Date(punchTime);
+
+    const ts = await db.timesheet.findUniqueOrThrow({
+      where: { id: timesheetId },
+      include: { employee: { include: { ruleSet: true } } },
+    });
+
+    if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
+      throw new Error("Cannot modify a locked or approved timesheet.");
+    }
+
+    const ruleSet = ts.employee.ruleSet;
+    const roundedTime = applyRounding(punchDate, ruleSet.punchRoundingMinutes);
+
+    // Reject if another approved punch already lands at the exact same rounded time
+    const conflicting = await db.punch.findFirst({
+      where: { timesheetId, isApproved: true, correctedById: null, roundedTime },
+    });
+    if (conflicting) {
+      throw new Error("A punch already exists at this time.");
+    }
+
+    await db.$transaction(async (tx) => {
+      const p = await tx.punch.create({
+        data: {
+          employeeId: ts.employeeId,
+          timesheetId,
+          punchType,
+          punchTime: punchDate,
+          roundedTime,
+          source: "MANUAL",
+          stateBefore: "OUT",
+          stateAfter: punchType === "CLOCK_IN" ? "WORK" : "OUT",
+          isApproved: true,
+          approvedById: actorId,
+          approvedAt: new Date(),
+          note: reason,
+        },
+      });
+      await writeAuditLog({
+        tenantId: tenantId!,
+        actorId,
+        action: "MANUAL_PUNCH_ADDED",
+        entityType: "TIMESHEET",
+        entityId: timesheetId,
+        changes: { after: { punchType, punchTime, reason, source: "MANUAL" } },
+      });
+      return p;
     });
 
     await rebuildSegments(timesheetId, ruleSet);

@@ -19,6 +19,24 @@ model PayCode {
   @@map("pay_codes")
 }
 
+/// Tenant-scoped lookup table for short reason codes on work segments.
+model ReasonCode {
+  id       String @id @default(cuid())
+  tenantId String
+  code     String  /// Short code (e.g. "LATE", "TRAINING")
+  label    String  /// Human-readable label (e.g. "Late Arrival")
+  color    String? /// Optional hex color for timecard highlighting (e.g. "#f59e0b")
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant     Tenant               @relation(fields: [tenantId], references: [id])
+  dayReasons TimesheetDayReason[]
+
+  @@unique([tenantId, code])
+  @@map("reason_codes")
+}
+
 /// Notes attached to specific dates on a timesheet.
 model TimesheetNote {
   id          String   @id @default(cuid())

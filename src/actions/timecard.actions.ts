@@ -8,11 +8,22 @@ import { z } from "zod";
 
 export const getTimecardEmployeeList = withRBAC(
   "PAY_PERIOD_MANAGE",
-  async (_ctx, input: { payPeriodId: string }) => {
-    const { payPeriodId } = z.object({ payPeriodId: z.string() }).parse(input);
+  async (_ctx, input: { payPeriodId: string; siteId?: string | null; departmentId?: string | null }) => {
+    const { payPeriodId, siteId, departmentId } = z.object({
+      payPeriodId: z.string(),
+      siteId: z.string().nullish(),
+      departmentId: z.string().nullish(),
+    }).parse(input);
+
+    const empFilter: Record<string, unknown> = {};
+    if (siteId) empFilter.siteId = siteId;
+    if (departmentId) empFilter.departmentId = departmentId;
 
     const timesheets = await db.timesheet.findMany({
-      where: { payPeriodId },
+      where: {
+        payPeriodId,
+        ...(Object.keys(empFilter).length > 0 ? { employee: empFilter } : {}),
+      },
       include: {
         employee: {
           include: {
@@ -99,6 +110,9 @@ export const getTimecardDetail = withRBAC(
         },
         mealWaivers: true,
         notes: true,
+        dayReasons: {
+          include: { reasonCode: { select: { id: true, code: true, label: true, color: true } } },
+        },
       },
     });
 

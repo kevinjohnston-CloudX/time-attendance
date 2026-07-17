@@ -10,7 +10,7 @@ const THEMES = [
   { value: "dark",   icon: Moon,    label: "Dark"   },
 ] as const;
 
-export function ThemeToggle() {
+export function ThemeToggle({ iconOnly = false }: { iconOnly?: boolean }) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -21,6 +21,18 @@ export function ThemeToggle() {
   const currentIdx = THEMES.findIndex((t) => t.value === theme);
   const current = THEMES[currentIdx === -1 ? 0 : currentIdx];
   const next = THEMES[(currentIdx + 1) % THEMES.length];
+
+  if (iconOnly) {
+    return (
+      <button
+        onClick={() => setTheme(next.value)}
+        title={`Switch to ${next.label} mode`}
+        className="rounded-lg p-2 text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
+      >
+        <current.icon className="h-4 w-4" />
+      </button>
+    );
+  }
 
   return (
     <button

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function DepartmentsPage() {
+export default function PayCodesPage() {
   redirect("/admin/site-settings");
 }

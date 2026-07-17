@@ -3,13 +3,13 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createLeaveRequest, submitLeaveRequest } from "@/actions/leave.actions";
-import type { LeaveType } from "@prisma/client";
 
 interface Props {
-  leaveTypes: LeaveType[];
+  leaveTypes: { id: string; name: string }[];
+  onSuccess?: () => void;
 }
 
-export function RequestLeaveForm({ leaveTypes }: Props) {
+export function RequestLeaveForm({ leaveTypes, onSuccess }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +49,11 @@ export function RequestLeaveForm({ leaveTypes }: Props) {
         return;
       }
 
-      router.push("/leave");
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        router.push("/leave");
+      }
     });
   }
 

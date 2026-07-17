@@ -1,4 +1,4 @@
-import { redirect, notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
@@ -7,9 +7,11 @@ import { getPayPeriods, getPayPeriodDetail } from "@/actions/pay-period.actions"
 import { getAdpConfig } from "@/lib/integrations/adp/client";
 import { PAY_PERIOD_STATUS_LABEL, TIMESHEET_STATUS_LABEL } from "@/lib/state-machines/labels";
 import { PayPeriodActions } from "@/components/payroll/pay-period-actions";
+import { PayPeriodsFilter } from "@/components/payroll/pay-periods-filter";
 import { formatMinutes } from "@/lib/utils/duration";
 import { format } from "date-fns";
 import { CheckCircle2, AlertCircle, Clock } from "lucide-react";
+import { parseUtcDate } from "@/lib/utils/date";
 
 const PP_BADGE: Record<string, string> = {
   OPEN:   "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
@@ -25,12 +27,18 @@ const TS_BADGE: Record<string, string> = {
   LOCKED:           "bg-zinc-200 text-zinc-500",
 };
 
+type FilterValue = "all" | "current" | "open" | "ready" | "locked" | "ytd";
+
 export default async function PayPeriodsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ id?: string }>;
+  searchParams: Promise<{ id?: string; filter?: string }>;
 }) {
-  const { id: selectedId } = await searchParams;
+  const { id: selectedId, filter } = await searchParams;
+  const currentFilter: FilterValue =
+    filter === "current" || filter === "open" || filter === "ready" || filter === "locked" || filter === "ytd"
+      ? filter
+      : "all";
 
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -38,7 +46,36 @@ export default async function PayPeriodsPage({
 
   const result = await getPayPeriods();
   if (!result.success) redirect("/dashboard");
-  const payPeriods = result.data;
+
+  const allPayPeriods = result.data;
+  const currentYear = new Date().getFullYear();
+
+  // Apply filter for the visible list
+  const payPeriods = allPayPeriods.filter((pp) => {
+    if (currentFilter === "current") {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return parseUtcDate(pp.startDate) <= today && today <= parseUtcDate(pp.endDate);
+    }
+    if (currentFilter === "open") return pp.status === "OPEN";
+    if (currentFilter === "ready") return pp.status === "READY";
+    if (currentFilter === "locked") return pp.status === "LOCKED";
+    if (currentFilter === "ytd") {
+      return (
+        parseUtcDate(pp.startDate).getFullYear() === currentYear ||
+        parseUtcDate(pp.endDate).getFullYear() === currentYear
+      );
+    }
+    return true;
+  });
+
+  // Serialise for client component
+  const serialisedAll = allPayPeriods.map((pp) => ({
+    id: pp.id,
+    startDate: pp.startDate.toISOString(),
+    endDate: pp.endDate.toISOString(),
+    status: pp.status,
+  }));
 
   // Fetch detail if a pay period is selected
   let detail: Extract<Awaited<ReturnType<typeof getPayPeriodDetail>>, { success: true }>["data"] | null = null;
@@ -60,8 +97,8 @@ export default async function PayPeriodsPage({
   return (
     <div className="flex items-start gap-0 -mx-6 -my-8 h-screen">
       {/* ── Left panel: list ─────────────────────────────────── */}
-      <div className="w-72 shrink-0 border-r border-zinc-200 dark:border-zinc-800 sticky top-0 h-screen overflow-y-auto">
-        <div className="px-4 pt-6 pb-3 flex items-center justify-between">
+      <div className="w-72 shrink-0 border-r border-zinc-200 dark:border-zinc-800 sticky top-0 h-screen flex flex-col overflow-hidden">
+        <div className="px-4 pt-6 pb-3 flex items-center justify-between shrink-0">
           <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Pay Periods</h1>
           <Link
             href="/payroll/timecards"
@@ -71,42 +108,51 @@ export default async function PayPeriodsPage({
           </Link>
         </div>
 
-        {payPeriods.length === 0 && (
-          <p className="px-4 py-8 text-center text-sm text-zinc-400">No pay periods found.</p>
-        )}
+        <PayPeriodsFilter
+          allPayPeriods={serialisedAll}
+          selectedId={selectedId}
+          currentFilter={currentFilter}
+        />
 
-        <div className="flex flex-col">
-          {payPeriods.map((pp) => {
-            const total = pp.timesheets.length;
-            const approved = pp.timesheets.filter(
-              (t) => t.status === "PAYROLL_APPROVED" || t.status === "LOCKED"
-            ).length;
-            const isSelected = pp.id === selectedId;
+        {/* Scrollable list */}
+        <div className="flex-1 overflow-y-auto">
+          {payPeriods.length === 0 && (
+            <p className="px-4 py-8 text-center text-sm text-zinc-400">No pay periods found.</p>
+          )}
+          <div className="flex flex-col">
+            {payPeriods.map((pp) => {
+              const total = pp.timesheets.length;
+              const approved = pp.timesheets.filter(
+                (t) => t.status === "PAYROLL_APPROVED" || t.status === "LOCKED"
+              ).length;
+              const isSelected = pp.id === selectedId;
+              const href = `/payroll/pay-periods?id=${pp.id}${currentFilter !== "all" ? `&filter=${currentFilter}` : ""}`;
 
-            return (
-              <Link
-                key={pp.id}
-                href={`/payroll/pay-periods?id=${pp.id}`}
-                className={`flex flex-col border-b border-zinc-100 px-4 py-3 transition-colors dark:border-zinc-800 ${
-                  isSelected
-                    ? "bg-blue-50 dark:bg-blue-950/20 border-l-2 border-l-blue-500"
-                    : "hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">
-                    {format(pp.startDate, "MMM d")} – {format(pp.endDate, "MMM d, yyyy")}
+              return (
+                <Link
+                  key={pp.id}
+                  href={href}
+                  className={`flex flex-col border-b border-zinc-100 px-4 py-3 transition-colors dark:border-zinc-800 ${
+                    isSelected
+                      ? "bg-blue-50 dark:bg-blue-950/20 border-l-2 border-l-blue-500"
+                      : "hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">
+                      {format(pp.startDate, "MMM d")} – {format(pp.endDate, "MMM d, yyyy")}
+                    </p>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${PP_BADGE[pp.status]}`}>
+                      {PAY_PERIOD_STATUS_LABEL[pp.status]}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-zinc-500">
+                    {approved}/{total} approved
                   </p>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${PP_BADGE[pp.status]}`}>
-                    {PAY_PERIOD_STATUS_LABEL[pp.status]}
-                  </span>
-                </div>
-                <p className="mt-0.5 text-xs text-zinc-500">
-                  {approved}/{total} approved
-                </p>
-              </Link>
-            );
-          })}
+                </Link>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -118,7 +164,6 @@ export default async function PayPeriodsPage({
           </div>
         ) : (
           <div>
-            {/* Header */}
             <div className="flex items-start justify-between">
               <div>
                 <h2 className="text-2xl font-bold text-zinc-900 dark:text-white">
@@ -140,7 +185,6 @@ export default async function PayPeriodsPage({
               />
             </div>
 
-            {/* Validation tiles */}
             <div className="mt-6 grid grid-cols-3 gap-4">
               <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
                 <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Total Timesheets</p>
@@ -166,7 +210,6 @@ export default async function PayPeriodsPage({
               </div>
             </div>
 
-            {/* Outstanding issues */}
             {detail.validation.issues.length > 0 && (
               <div className="mt-6">
                 <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Outstanding Issues</h2>
@@ -187,7 +230,6 @@ export default async function PayPeriodsPage({
               </div>
             )}
 
-            {/* Timesheet roster */}
             <div className="mt-6">
               <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Timesheets</h2>
               <div className="mt-2 flex flex-col gap-2">

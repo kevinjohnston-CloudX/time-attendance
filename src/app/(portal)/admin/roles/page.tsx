@@ -5,6 +5,7 @@ import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getRoles } from "@/actions/role.actions";
 import { getPermissions } from "@/lib/rbac/permissions";
 import { ROLES, ROLE_RANK } from "@/lib/rbac/roles";
+import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { db } from "@/lib/db";
 import { RolesClient } from "./roles-client";
 
@@ -44,7 +45,9 @@ export default async function RolesPage() {
     name: BUILTIN_LABELS[key] ?? key,
     description: BUILTIN_DESCRIPTIONS[key] ?? null,
     rank: ROLE_RANK[key],
-    permissionCount: getPermissions(key).length,
+    permissions: getPermissions(key)
+      .map((p) => LEGACY_MAP[p])
+      .filter(Boolean) as { resource: string; action: string; scope: string }[],
     employeeCount: countByRole[key] ?? 0,
   }));
 

@@ -46,15 +46,46 @@ export function startOfDayInTz(utcDate: Date, timezone: string): Date {
  *
  * Example: 2026-03-03T01:25:00Z in America/New_York (EST -5)
  *          → next local midnight is 2026-03-03 00:00 EST = 2026-03-03T05:00:00Z
+ *
+ * Uses formatToParts to avoid parsing locale strings — Node 18+ changed
+ * toLocaleString to use narrow no-break spaces (U+202F) which new Date()
+ * cannot parse, producing Invalid Date and causing infinite recursion in
+ * buildSegmentSpan when end <= NaN is always false.
  */
 export function nextMidnightInTz(utcDate: Date, timezone: string): Date {
   const localDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(utcDate);
   const [y, m, d] = localDateStr.split("-").map(Number);
-  // Construct "next day 00:00:00" as if it were UTC, then apply the timezone offset
-  // to find the actual UTC epoch for that local midnight.
   const nextDayAsIfUtc = new Date(Date.UTC(y, m - 1, d + 1));
-  const localStr = nextDayAsIfUtc.toLocaleString("en-US", { timeZone: timezone });
-  const localDate = new Date(localStr);
-  const offsetMs = nextDayAsIfUtc.getTime() - localDate.getTime();
-  return new Date(nextDayAsIfUtc.getTime() + offsetMs);
+
+  // Use formatToParts for reliable structured output (no locale string parsing).
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(nextDayAsIfUtc);
+
+  const get = (type: string) =>
+    parseInt(parts.find((p) => p.type === type)?.value ?? "0", 10);
+
+  let hours = get("hour");
+  if (hours === 24) hours = 0;
+
+  // Build the UTC timestamp for what the local clock shows at nextDayAsIfUtc.
+  // Then: nextMidnight = 2 * nextDayAsIfUtc - localEquivalent
+  // (same as the original offsetMs trick but without locale string parsing)
+  const localEquivalentMs = Date.UTC(
+    get("year"),
+    get("month") - 1,
+    get("day"),
+    hours,
+    get("minute"),
+    get("second")
+  );
+
+  return new Date(2 * nextDayAsIfUtc.getTime() - localEquivalentMs);
 }

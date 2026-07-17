@@ -1,31 +1,34 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
-import { getMyLeaveRequests, getMyLeaveBalances } from "@/actions/leave.actions";
+import { getMyLeaveRequests, getMyLeaveBalances, getLeaveTypes } from "@/actions/leave.actions";
 import {
   LEAVE_STATUS_LABEL,
   LEAVE_STATUS_BADGE,
 } from "@/lib/state-machines/labels";
 import { formatMinutes } from "@/lib/utils/duration";
 import { format } from "date-fns";
-import { Plus } from "lucide-react";
 import { LeaveCalendar } from "@/components/leave/leave-calendar";
+import { RequestLeaveModal } from "@/components/leave/request-leave-modal";
 
 export default async function MyLeavePage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "LEAVE_REQUEST_OWN")) redirect("/dashboard");
 
-  const [requestsResult, balancesResult] = await Promise.all([
+  const [requestsResult, balancesResult, leaveTypesResult] = await Promise.all([
     getMyLeaveRequests(),
     getMyLeaveBalances(),
+    getLeaveTypes(),
   ]);
 
   if (!requestsResult.success || !balancesResult.success) redirect("/dashboard");
 
   const requests = requestsResult.data;
   const balances = balancesResult.data;
+  const leaveTypes = leaveTypesResult.success
+    ? leaveTypesResult.data.map((lt) => ({ id: lt.id, name: lt.name }))
+    : [];
 
   // Pre-compute approved/pending minutes per leave type
   const approvedByType: Record<string, number> = {};
@@ -53,13 +56,7 @@ export default async function MyLeavePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">My Leave</h1>
-        <Link
-          href="/leave/request"
-          className="flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          <Plus className="h-4 w-4" />
-          Request Leave
-        </Link>
+        <RequestLeaveModal leaveTypes={leaveTypes} />
       </div>
 
       {/* Balances */}

@@ -86,3 +86,19 @@ model LeaveAccrualLedger {
 
   @@map("leave_accrual_ledger")
 }
+
+model Holiday {
+  id           String    @id @default(cuid())
+  tenantId     String
+  name         String
+  date         DateTime  // stored as UTC midnight
+  observedDate DateTime? // optional observed date (e.g. Monday when holiday falls on Sunday)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, date])
+  @@map("holidays")
+}

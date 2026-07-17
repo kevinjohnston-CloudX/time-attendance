@@ -143,6 +143,8 @@ export const createEmployee = withRBAC(
           hireDate: parseISO(parsed.hireDate),
           supervisorId: parsed.supervisorId ?? null,
           wmsId: parsed.wmsId ?? null,
+          payType: parsed.payType ?? null,
+          payRate: parsed.payRate ?? null,
         },
       });
     });
@@ -776,6 +778,8 @@ export const bulkCreateEmployees = withRBAC(
               hireDate: parseISO(r.hireDate),
               supervisorId: null,
               wmsId: r.wmsId ?? null,
+              payType: r.payType ?? null,
+              payRate: r.payRate ?? null,
             },
           });
 

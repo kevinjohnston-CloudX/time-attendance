@@ -222,11 +222,11 @@ export default async function DashboardPage() {
 
       {/* ── Leave Balances ── */}
       {employeeId && allLeaveBalances.length > 0 && (
-        <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
           <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
             Leave Balances — {year}
           </p>
-          <div className="mt-4 flex flex-col gap-3">
+          <div className="mt-3 grid grid-flow-col auto-cols-fr gap-3">
             {allLeaveBalances.map((b) => {
               const typeRequests    = pendingLeaveRequests.filter((r) => r.leaveTypeId === b.leaveTypeId);
               const approvedMinutes = typeRequests
@@ -236,42 +236,41 @@ export default async function DashboardPage() {
                 .filter((r) => r.status === "PENDING")
                 .reduce((sum, r) => sum + r.durationMinutes, 0);
               const totalMinutes     = b.balanceMinutes + b.usedMinutes;
-              // Remaining = total minus posted usage minus approved-not-yet-posted
               const remainingMinutes = totalMinutes - b.usedMinutes - approvedMinutes;
               const hasBreakdown     = b.usedMinutes > 0 || approvedMinutes > 0 || submittedMinutes > 0;
 
               return (
-                <div key={b.id} className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800">
+                <div key={b.id} className="rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800">
                   <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
                     {b.leaveType.name}
                   </p>
 
                   {/* Total / Remaining row */}
-                  <div className="mt-2 flex gap-6">
+                  <div className="mt-1.5 flex gap-4">
                     <div>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400">Total PTO</p>
-                      <p className="text-xl font-bold text-zinc-900 dark:text-white">
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">Total</p>
+                      <p className="text-base font-bold text-zinc-900 dark:text-white">
                         {formatMinutes(totalMinutes)}
                       </p>
-                      <p className="text-xs text-zinc-400">{(totalMinutes / 60 / 8).toFixed(1)} days</p>
+                      <p className="text-xs text-zinc-400">{(totalMinutes / 60 / 8).toFixed(1)}d</p>
                     </div>
                     <div className="w-px self-stretch bg-zinc-200 dark:bg-zinc-700" />
                     <div>
                       <p className="text-xs text-zinc-500 dark:text-zinc-400">Remaining</p>
-                      <p className={`text-xl font-bold ${remainingMinutes < 0 ? "text-red-600 dark:text-red-400" : "text-zinc-900 dark:text-white"}`}>
+                      <p className={`text-base font-bold ${remainingMinutes < 0 ? "text-red-600 dark:text-red-400" : "text-zinc-900 dark:text-white"}`}>
                         {formatMinutes(Math.max(remainingMinutes, 0))}
                       </p>
-                      <p className="text-xs text-zinc-400">{(Math.max(remainingMinutes, 0) / 60 / 8).toFixed(1)} days</p>
+                      <p className="text-xs text-zinc-400">{(Math.max(remainingMinutes, 0) / 60 / 8).toFixed(1)}d</p>
                     </div>
                   </div>
 
                   {/* Breakdown */}
                   {hasBreakdown && (
-                    <div className="mt-3 flex flex-wrap gap-6 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+                    <div className="mt-2 flex flex-wrap gap-3 border-t border-zinc-200 pt-2 dark:border-zinc-700">
                       {b.usedMinutes > 0 && (
                         <div>
                           <p className="text-xs text-zinc-400">Used</p>
-                          <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
+                          <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
                             {formatMinutes(b.usedMinutes)}
                           </p>
                         </div>
@@ -279,15 +278,15 @@ export default async function DashboardPage() {
                       {approvedMinutes > 0 && (
                         <div>
                           <p className="text-xs text-zinc-400">Approved</p>
-                          <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                          <p className="text-xs font-medium text-blue-600 dark:text-blue-400">
                             {formatMinutes(approvedMinutes)}
                           </p>
                         </div>
                       )}
                       {submittedMinutes > 0 && (
                         <div>
-                          <p className="text-xs text-zinc-400">Pending Approval</p>
-                          <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                          <p className="text-xs text-zinc-400">Pending</p>
+                          <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
                             {formatMinutes(submittedMinutes)}
                           </p>
                         </div>

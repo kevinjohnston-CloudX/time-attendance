@@ -284,228 +284,232 @@ export function TimesheetViewer({
     <>
     <h1 className="mb-3 text-xl font-bold text-zinc-900 dark:text-white">My Timesheets</h1>
     <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-      {/* ── Top bar: pay period selector ──────────────────────────────── */}
-      <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-1.5 dark:border-zinc-800 dark:bg-zinc-900">
-        {/* List filter dropdown */}
-        <select
-          value={listFilter}
-          onChange={(e) => setListFilter(e.target.value as typeof listFilter)}
-          className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-        >
-          <option value="current">Current Pay Period</option>
-          <option value="last">Last Pay Period</option>
-          <option value="ytd">Year to Date</option>
-          <option value="all">All Pay Periods</option>
-        </select>
+      {/* ── Split pane ───────────────────────────────────────────────────── */}
+      <div className="grid h-[calc(100vh-6.5rem)] grid-cols-[260px_1fr]">
 
-        {/* Prev / Next arrows + date display */}
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            disabled={!hasPrev}
-            onClick={() => hasPrev && navigate(sortedTimesheets[currentIndex - 1].payPeriodId)}
-            className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-            title="Previous pay period"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <span className="min-w-[220px] text-center text-xs font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
-            {(() => {
-              const ts = sortedTimesheets[currentIndex];
-              if (!ts && customStart && customEnd) {
-                return `${format(new Date(customStart), "MM/dd/yyyy")} – ${format(new Date(customEnd), "MM/dd/yyyy")}`;
-              }
-              if (!ts) return "—";
-              const s = parseUtcDate(ts.payPeriod.startDate);
-              const e = parseUtcDate(ts.payPeriod.endDate);
-              return `${format(s, "MM/dd/yyyy")} (${format(s, "EEE")}) – ${format(e, "MM/dd/yyyy")} (${format(e, "EEE")})`;
-            })()}
-          </span>
-          <button
-            type="button"
-            disabled={!hasNext}
-            onClick={() => hasNext && navigate(sortedTimesheets[currentIndex + 1].payPeriodId)}
-            className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-            title="Next pay period"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
+        {/* ── Left: filters + pay period list ──────────────────────────── */}
+        <div className="flex min-h-0 flex-col border-r-2 border-zinc-300 dark:border-zinc-600">
 
-        {/* Calendar range picker */}
-        <div className="relative" ref={calendarRef}>
-          <button
-            type="button"
-            onClick={() => {
-              if (!showCalendar) {
-                setRangeStart(customStart ? new Date(customStart + "T12:00:00") : null);
-                setRangeEnd(customEnd ? new Date(customEnd + "T12:00:00") : null);
-                setHoverDate(null);
-                const initDate =
-                  customStart
-                    ? new Date(customStart + "T12:00:00")
-                    : sortedTimesheets[currentIndex]
-                    ? parseUtcDate(sortedTimesheets[currentIndex].payPeriod.startDate)
-                    : new Date();
-                setCalendarMonth(initDate);
-              }
-              setShowCalendar((v) => !v);
-            }}
-            className="rounded p-1.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-            title="Pick a date range"
-          >
-            <Calendar className="h-4 w-4" />
-          </button>
+          {/* Filter controls */}
+          <div className="relative shrink-0 space-y-1.5 border-b border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-800 dark:bg-zinc-900">
+            {/* List filter dropdown */}
+            <select
+              value={listFilter}
+              onChange={(e) => setListFilter(e.target.value as typeof listFilter)}
+              className="w-full rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+            >
+              <option value="current">Current Pay Period</option>
+              <option value="last">Last Pay Period</option>
+              <option value="ytd">Year to Date</option>
+              <option value="all">All Pay Periods</option>
+            </select>
 
-          {showCalendar && (
-            <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
-              <div className="mb-2 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setCalendarMonth((m) => addMonths(m, -1))}
-                  className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                  {format(calendarMonth, "MMMM yyyy")}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setCalendarMonth((m) => addMonths(m, 1))}
-                  className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="grid grid-cols-7 gap-0">
-                {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
-                  <div key={d} className="py-1 text-center text-xs font-medium text-zinc-400">
-                    {d}
-                  </div>
-                ))}
+            {/* Prev / Next + calendar */}
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                disabled={!hasPrev}
+                onClick={() => hasPrev && navigate(sortedTimesheets[currentIndex - 1].payPeriodId)}
+                className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                title="Previous pay period"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <span className="flex-1 text-center text-xs font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
                 {(() => {
-                  const calDays = eachDayOfInterval({
-                    start: startOfWeek(startOfMonth(calendarMonth)),
-                    end: endOfWeek(endOfMonth(calendarMonth)),
-                  });
-                  const effectiveEnd = rangeEnd ?? hoverDate;
-                  return calDays.map((d) => {
-                    const inMonth = isSameMonth(d, calendarMonth);
-                    const isNow = isSameDay(d, new Date());
-                    const isStart = !!rangeStart && isSameDay(d, rangeStart);
-                    const isEnd = !!rangeEnd && isSameDay(d, rangeEnd);
-                    const isEndpoint = isStart || isEnd;
-                    const inRange =
-                      !!rangeStart && !!effectiveEnd && d > rangeStart && d < effectiveEnd;
-                    return (
-                      <button
-                        key={d.toISOString()}
-                        type="button"
-                        onClick={() => handleCalendarDateSelect(d)}
-                        onMouseEnter={() => rangeStart && !rangeEnd && setHoverDate(d)}
-                        onMouseLeave={() => rangeStart && !rangeEnd && setHoverDate(null)}
-                        className={`h-7 w-7 rounded text-xs transition-colors ${
-                          isEndpoint
-                            ? "bg-blue-600 font-semibold text-white"
-                            : inRange
-                            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                            : !inMonth
-                            ? "text-zinc-300 dark:text-zinc-600"
-                            : "text-zinc-700 dark:text-zinc-300"
-                        } ${
-                          isNow && !isEndpoint && !inRange ? "ring-1 ring-blue-400" : ""
-                        } ${!isEndpoint ? "hover:bg-zinc-100 dark:hover:bg-zinc-700" : ""}`}
-                      >
-                        {d.getDate()}
-                      </button>
-                    );
-                  });
+                  const ts = sortedTimesheets[currentIndex];
+                  if (!ts && customStart && customEnd) {
+                    return `${format(new Date(customStart), "MMM d")} – ${format(new Date(customEnd), "MMM d, yyyy")}`;
+                  }
+                  if (!ts) return "—";
+                  const s = parseUtcDate(ts.payPeriod.startDate);
+                  const e = parseUtcDate(ts.payPeriod.endDate);
+                  return `${format(s, "MMM d")} – ${format(e, "MMM d, yyyy")}`;
                 })()}
-              </div>
-              <div className="mt-2 flex items-center justify-between border-t border-zinc-100 pt-2 dark:border-zinc-700">
-                <span className="text-xs text-zinc-400">
-                  {rangeStart && !rangeEnd ? "Select end date" : "Select start date"}
-                </span>
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRangeStart(null);
-                      setRangeEnd(null);
+              </span>
+              <button
+                type="button"
+                disabled={!hasNext}
+                onClick={() => hasNext && navigate(sortedTimesheets[currentIndex + 1].payPeriodId)}
+                className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                title="Next pay period"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+
+              {/* Calendar range picker */}
+              <div className="relative" ref={calendarRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!showCalendar) {
+                      setRangeStart(customStart ? new Date(customStart + "T12:00:00") : null);
+                      setRangeEnd(customEnd ? new Date(customEnd + "T12:00:00") : null);
                       setHoverDate(null);
-                      if (currentPeriodTs) navigate(currentPeriodTs.payPeriodId);
-                      setShowCalendar(false);
-                    }}
-                    className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                  >
-                    Clear
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowCalendar(false)}
-                    className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                  >
-                    Close
-                  </button>
-                </div>
+                      const initDate =
+                        customStart
+                          ? new Date(customStart + "T12:00:00")
+                          : sortedTimesheets[currentIndex]
+                          ? parseUtcDate(sortedTimesheets[currentIndex].payPeriod.startDate)
+                          : new Date();
+                      setCalendarMonth(initDate);
+                    }
+                    setShowCalendar((v) => !v);
+                  }}
+                  className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                  title="Pick a date range"
+                >
+                  <Calendar className="h-3.5 w-3.5" />
+                </button>
+
+                {showCalendar && (
+                  <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+                    <div className="mb-2 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setCalendarMonth((m) => addMonths(m, -1))}
+                        className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                        {format(calendarMonth, "MMMM yyyy")}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setCalendarMonth((m) => addMonths(m, 1))}
+                        className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-7 gap-0">
+                      {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+                        <div key={d} className="py-1 text-center text-xs font-medium text-zinc-400">
+                          {d}
+                        </div>
+                      ))}
+                      {(() => {
+                        const calDays = eachDayOfInterval({
+                          start: startOfWeek(startOfMonth(calendarMonth)),
+                          end: endOfWeek(endOfMonth(calendarMonth)),
+                        });
+                        const effectiveEnd = rangeEnd ?? hoverDate;
+                        return calDays.map((d) => {
+                          const inMonth = isSameMonth(d, calendarMonth);
+                          const isNow = isSameDay(d, new Date());
+                          const isStart = !!rangeStart && isSameDay(d, rangeStart);
+                          const isEnd = !!rangeEnd && isSameDay(d, rangeEnd);
+                          const isEndpoint = isStart || isEnd;
+                          const inRange =
+                            !!rangeStart && !!effectiveEnd && d > rangeStart && d < effectiveEnd;
+                          return (
+                            <button
+                              key={d.toISOString()}
+                              type="button"
+                              onClick={() => handleCalendarDateSelect(d)}
+                              onMouseEnter={() => rangeStart && !rangeEnd && setHoverDate(d)}
+                              onMouseLeave={() => rangeStart && !rangeEnd && setHoverDate(null)}
+                              className={`h-7 w-7 rounded text-xs transition-colors ${
+                                isEndpoint
+                                  ? "bg-blue-600 font-semibold text-white"
+                                  : inRange
+                                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                                  : !inMonth
+                                  ? "text-zinc-300 dark:text-zinc-600"
+                                  : "text-zinc-700 dark:text-zinc-300"
+                              } ${
+                                isNow && !isEndpoint && !inRange ? "ring-1 ring-blue-400" : ""
+                              } ${!isEndpoint ? "hover:bg-zinc-100 dark:hover:bg-zinc-700" : ""}`}
+                            >
+                              {d.getDate()}
+                            </button>
+                          );
+                        });
+                      })()}
+                    </div>
+                    <div className="mt-2 flex items-center justify-between border-t border-zinc-100 pt-2 dark:border-zinc-700">
+                      <span className="text-xs text-zinc-400">
+                        {rangeStart && !rangeEnd ? "Select end date" : "Select start date"}
+                      </span>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRangeStart(null);
+                            setRangeEnd(null);
+                            setHoverDate(null);
+                            if (currentPeriodTs) navigate(currentPeriodTs.payPeriodId);
+                            setShowCalendar(false);
+                          }}
+                          className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                        >
+                          Clear
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowCalendar(false)}
+                          className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-          )}
-        </div>
 
-        <span className="ml-auto text-xs text-zinc-400">
-          {visibleTimesheets.length} pay period{visibleTimesheets.length !== 1 ? "s" : ""}
-        </span>
-      </div>
-
-      {/* ── Split pane ───────────────────────────────────────────────────── */}
-      <div className="grid h-[calc(100vh-9.75rem)] grid-cols-[260px_1fr]">
-
-        {/* ── Left: pay period list ─────────────────────────────────────── */}
-        <div className="flex min-h-0 flex-col overflow-y-auto border-r border-zinc-200 dark:border-zinc-800">
-          {visibleTimesheets.length === 0 && (
-            <p className="p-4 text-center text-sm text-zinc-400">
-              {timesheets.length === 0 ? "No timesheets yet." : "No timesheets for this filter."}
+            <p className="text-xs text-zinc-400">
+              {visibleTimesheets.length} pay period{visibleTimesheets.length !== 1 ? "s" : ""}
             </p>
-          )}
-          {[...visibleTimesheets].reverse().map((ts) => {
-            const isSelected = ts.payPeriodId === selectedPayPeriodId;
-            const s = parseUtcDate(ts.payPeriod.startDate);
-            const e = parseUtcDate(ts.payPeriod.endDate);
-            return (
-              <button
-                key={ts.payPeriodId}
-                type="button"
-                onClick={() => navigate(ts.payPeriodId)}
-                className={`flex flex-col border-b border-zinc-100 px-3 py-2 text-left transition-colors dark:border-zinc-800/60 ${
-                  isSelected
-                    ? "bg-blue-50 dark:bg-blue-950/30"
-                    : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className={`truncate text-sm font-semibold ${isSelected ? "text-zinc-900 dark:text-white" : "text-zinc-700 dark:text-zinc-300"}`}>
-                    {format(s, "MMM d")} – {format(e, "MMM d, yyyy")}
-                  </p>
-                </div>
-                <div className="mt-1 flex items-center justify-between gap-2">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[ts.status] ?? STATUS_BADGE.OPEN}`}>
-                    {(TIMESHEET_STATUS_LABEL as Record<string, string>)[ts.status] ?? ts.status}
-                  </span>
-                  <span className="text-xs tabular-nums text-zinc-400">
-                    {formatMinutes(ts.totalMinutes)}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
+          </div>
+
+          {/* Scrollable list */}
+          <div className="flex-1 overflow-y-auto">
+            {visibleTimesheets.length === 0 && (
+              <p className="p-4 text-center text-sm text-zinc-400">
+                {timesheets.length === 0 ? "No timesheets yet." : "No timesheets for this filter."}
+              </p>
+            )}
+            {[...visibleTimesheets].reverse().map((ts) => {
+              const isSelected = ts.payPeriodId === selectedPayPeriodId;
+              const s = parseUtcDate(ts.payPeriod.startDate);
+              const e = parseUtcDate(ts.payPeriod.endDate);
+              return (
+                <button
+                  key={ts.payPeriodId}
+                  type="button"
+                  onClick={() => navigate(ts.payPeriodId)}
+                  className={`flex w-full flex-col border-b border-zinc-100 px-3 py-2 text-left transition-colors dark:border-zinc-800/60 ${
+                    isSelected
+                      ? "bg-blue-50 dark:bg-blue-950/30"
+                      : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className={`truncate text-sm font-semibold ${isSelected ? "text-zinc-900 dark:text-white" : "text-zinc-700 dark:text-zinc-300"}`}>
+                      {format(s, "MMM d")} – {format(e, "MMM d, yyyy")}
+                    </p>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[ts.status] ?? STATUS_BADGE.OPEN}`}>
+                      {(TIMESHEET_STATUS_LABEL as Record<string, string>)[ts.status] ?? ts.status}
+                    </span>
+                    <span className="text-xs tabular-nums text-zinc-400">
+                      {formatMinutes(ts.totalMinutes)}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* ── Right: detail ─────────────────────────────────────────────── */}
-        <div className="min-h-0 overflow-y-auto bg-white pl-5 pr-7 pt-4 pb-0 dark:bg-zinc-950">
+        <div className="flex min-h-0 flex-col bg-white pb-0 dark:bg-zinc-950">
         {!detail ? (
-          <div className="flex h-full items-center justify-center">
+          <div className="flex flex-1 items-center justify-center">
             <p className="text-sm text-zinc-400">
               {timesheets.length === 0
                 ? "No timesheets yet. Timesheets are created automatically when you punch in."
@@ -514,9 +518,11 @@ export function TimesheetViewer({
           </div>
         ) : (
           <>
-            {/* Status header + submit */}
-            <div className="flex items-start justify-between">
-              <div>
+            <div className="min-h-0 flex-1 overflow-y-auto pl-5 pr-7 pt-4">
+            {/* Status header + tiles + submit */}
+            <div className="flex items-start gap-3">
+              {/* Date + badges */}
+              <div className="shrink-0">
                 <h2 className="text-lg font-bold text-zinc-900 dark:text-white">
                   {format(parseUtcDate(detail.payPeriod.startDate), "MMM d")} –{" "}
                   {format(parseUtcDate(detail.payPeriod.endDate), "MMM d, yyyy")}
@@ -536,28 +542,29 @@ export function TimesheetViewer({
                   )}
                 </div>
               </div>
+
+              {/* Tiles */}
+              <div className="flex flex-1 flex-wrap gap-2">
+                {visibleBuckets.map((b) => (
+                  <div
+                    key={b.key}
+                    className="rounded-lg border-2 border-zinc-300 bg-zinc-50 px-3 py-1.5 shadow-sm dark:border-zinc-600 dark:bg-zinc-800"
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{b.label}</p>
+                    <p className={`mt-0.5 text-sm font-bold ${b.color}`}>
+                      {formatMinutes(bucketMap[b.key] ?? 0)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
               {detail.status === "OPEN" && (
                 <SubmitTimesheetButton timesheetId={detail.timesheetId} />
               )}
             </div>
 
-            {/* Summary tiles */}
-            <div className="mt-2 flex flex-wrap gap-2">
-              {visibleBuckets.map((b) => (
-                <div
-                  key={b.key}
-                  className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 dark:border-zinc-800 dark:bg-zinc-900"
-                >
-                  <p className="text-xs text-zinc-500">{b.label}</p>
-                  <p className={`mt-0.5 text-sm font-bold ${b.color}`}>
-                    {formatMinutes(bucketMap[b.key] ?? 0)}
-                  </p>
-                </div>
-              ))}
-            </div>
-
             {/* Daily table */}
-            <div className="-mx-6 mt-4 overflow-x-auto">
+            <div className="-mx-6 mt-4 overflow-x-auto pb-3">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 border-b-2 border-zinc-400 bg-zinc-300 dark:border-zinc-500 dark:bg-zinc-700">
                   <tr>
@@ -730,19 +737,21 @@ export function TimesheetViewer({
               </table>
             </div>
 
+            </div>{/* end scrollable content */}
+
             {/* ── Color Legend ───────────────────────────────────────── */}
-            <div className="flex flex-wrap items-center gap-4 border-t border-zinc-200 px-4 py-2 dark:border-zinc-800">
-              <span className="text-xs font-medium text-zinc-400">Legend:</span>
+            <div className="shrink-0 flex flex-wrap items-center gap-4 border-t-4 border-zinc-400 bg-zinc-200 px-4 py-2 dark:border-zinc-500 dark:bg-zinc-800/80">
+              <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">Legend:</span>
               <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                <span className="inline-block h-3 w-3 rounded border border-red-300 bg-red-100 dark:border-red-800 dark:bg-red-950/40" />
+                <span className="inline-block h-3 w-3 rounded border border-red-500 bg-red-300 dark:border-red-800 dark:bg-red-950/40" />
                 Absent
               </span>
               <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                <span className="inline-block h-3 w-3 rounded border border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/20" />
+                <span className="inline-block h-3 w-3 rounded border border-blue-500 bg-blue-200 dark:border-blue-700 dark:bg-blue-950/20" />
                 Today
               </span>
               <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                <span className="inline-block h-3 w-3 rounded border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900/40" />
+                <span className="inline-block h-3 w-3 rounded border border-zinc-500 bg-zinc-300 dark:border-zinc-700 dark:bg-zinc-900/40" />
                 Weekend
               </span>
             </div>

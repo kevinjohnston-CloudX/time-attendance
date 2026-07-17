@@ -47,6 +47,8 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
       const role: BuiltinRole = isCustom ? "EMPLOYEE" : (rawRole as BuiltinRole);
       const customRoleId = isCustom ? rawRole.slice(7) : undefined;
 
+      const payRateRaw = fd.get("payRate") as string;
+
       const result = await createEmployee({
         name: fd.get("name") as string,
         email: fd.get("email") as string,
@@ -59,6 +61,8 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
         hireDate: fd.get("hireDate") as string,
         supervisorId: fd.get("supervisorId") as string,
         wmsId: fd.get("wmsId") as string,
+        payType: (fd.get("payType") as "HOURLY" | "SALARY" | null) || null,
+        payRate: payRateRaw ? Number(payRateRaw) : null,
       });
 
       if (!result.success) {
@@ -101,6 +105,14 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                 <Field label="Employee Code" name="employeeCode" required />
                 <Field label="Badge ID (WMS)" name="wmsId" />
                 <Field label="Hire Date" name="hireDate" type="date" required />
+
+                <SelectField label="Pay Type (optional)" name="payType">
+                  <option value="">— Not set —</option>
+                  <option value="HOURLY">Hourly</option>
+                  <option value="SALARY">Salary</option>
+                </SelectField>
+
+                <Field label="Pay Rate (optional)" name="payRate" type="number" />
 
                 <SelectField label="Role" name="role" required>
                   {BUILTIN_ROLES.map((r) => (

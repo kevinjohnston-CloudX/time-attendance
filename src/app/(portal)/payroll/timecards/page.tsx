@@ -8,30 +8,54 @@ import {
   getTimecardDetail,
 } from "@/actions/timecard.actions";
 import { getPayCodes } from "@/actions/pay-code.actions";
+import { getReasonCodes } from "@/actions/reason-code.actions";
 import { TimecardViewer } from "@/components/payroll/timecard-viewer";
 
 export default async function TimecardsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ payPeriodId?: string; employeeId?: string; customStart?: string; customEnd?: string }>;
+  searchParams: Promise<{
+    payPeriodId?: string;
+    employeeId?: string;
+    customStart?: string;
+    customEnd?: string;
+    siteId?: string;
+    departmentId?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "PAY_PERIOD_MANAGE")) redirect("/dashboard");
 
-  // Fetch tenant pay frequency
-  const tenant = session.user.tenantId
-    ? await db.tenant.findUnique({
-        where: { id: session.user.tenantId },
-        select: { payFrequency: true },
-      })
-    : null;
-  const payFrequency = tenant?.payFrequency ?? "BIWEEKLY";
+  const t = session.user.tenantId ?? undefined;
 
-  const payPeriods = await db.payPeriod.findMany({
-    orderBy: { startDate: "desc" },
-  });
+  // Fetch tenant pay frequency + pay periods + sites + departments in parallel
+  const [tenant, payPeriods, sites, departments] = await Promise.all([
+    session.user.tenantId
+      ? db.tenant.findUnique({
+          where: { id: session.user.tenantId },
+          select: { payFrequency: true },
+        })
+      : null,
+    db.payPeriod.findMany({ orderBy: { startDate: "desc" } }),
+    db.site.findMany({
+      where: { isActive: true, ...(t ? { tenantId: t } : {}) },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    db.department.findMany({
+      where: {
+        isActive: true,
+        ...(t ? { tenantId: t } : {}),
+        ...(sp.siteId ? { sites: { some: { siteId: sp.siteId } } } : {}),
+      },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
+
+  const payFrequency = tenant?.payFrequency ?? "BIWEEKLY";
 
   if (payPeriods.length === 0) {
     return (
@@ -63,6 +87,8 @@ export default async function TimecardsPage({
 
   const employeeResult = await getTimecardEmployeeList({
     payPeriodId: selectedPayPeriodId,
+    siteId: sp.siteId ?? null,
+    departmentId: sp.departmentId ?? null,
   });
   const employees = employeeResult.success ? employeeResult.data : [];
 
@@ -77,9 +103,13 @@ export default async function TimecardsPage({
         ?.timesheetId ?? null)
     : null;
 
-  // Fetch pay codes for the tenant
-  const payCodesResult = await getPayCodes({});
+  // Fetch pay codes and reason codes for the tenant
+  const [payCodesResult, reasonCodesResult] = await Promise.all([
+    getPayCodes({}),
+    getReasonCodes(),
+  ]);
   const payCodes = payCodesResult.success ? payCodesResult.data : [];
+  const reasonCodes = reasonCodesResult.success ? reasonCodesResult.data : [];
 
   let timecard = null;
   if (selectedTimesheetId) {
@@ -157,6 +187,11 @@ export default async function TimecardsPage({
         })),
         mealWaivers: timecard.mealWaivers,
         notes: timecard.notes,
+        dayReasons: timecard.dayReasons.map((dr) => ({
+          segmentDate: dr.segmentDate.toISOString().slice(0, 10),
+          reasonCodeId: dr.reasonCodeId,
+          reasonCode: dr.reasonCode,
+        })),
       }
     : null;
 
@@ -167,9 +202,6 @@ export default async function TimecardsPage({
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
             Timecards
           </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            View employee timecards by pay period.
-          </p>
         </div>
         <Link
           href="/payroll/pay-periods"
@@ -193,6 +225,16 @@ export default async function TimecardsPage({
           code: pc.code,
           label: pc.label,
         }))}
+        reasonCodes={reasonCodes.map((rc) => ({
+          id: rc.id,
+          code: rc.code,
+          label: rc.label,
+          color: rc.color ?? null,
+        }))}
+        sites={sites}
+        selectedSiteId={sp.siteId ?? null}
+        departments={departments}
+        selectedDepartmentId={sp.departmentId ?? null}
       />
     </div>
   );
