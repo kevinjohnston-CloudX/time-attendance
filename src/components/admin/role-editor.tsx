@@ -4,7 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createRole, updateRole, deleteRole, duplicateRole } from "@/actions/role.actions";
 import { RESOURCES, ACTIONS, SCOPES, type PermissionEntry } from "@/lib/validators/role.schema";
-import { Trash2, Copy, Save, X } from "lucide-react";
+import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
+import { Trash2, Copy, Save, X, CopyCheck } from "lucide-react";
+
+// Only these cells map to an enforced server-side permission check.
+// All others are rendered but non-functional — disable them in the UI.
+const ACTIVE_CELLS = new Set(
+  Object.values(LEGACY_MAP).map((t) => `${t.resource}:${t.action}:${t.scope}`)
+);
 
 const RESOURCE_LABELS: Record<string, string> = {
   punch: "Punches",
@@ -48,6 +55,12 @@ type AllRole = {
   isSystem: boolean;
 };
 
+type BuiltinRoleOption = {
+  key: string;
+  name: string;
+  permissions: { resource: string; action: string; scope: string }[];
+};
+
 const btnPrimary =
   "rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
 const btnSecondary =
@@ -88,9 +101,10 @@ function autoCheckHigherScopes(
   const scopeIdx = SCOPE_ORDER.indexOf(scope as (typeof SCOPE_ORDER)[number]);
 
   if (checked) {
-    // Check this and all lower scopes
+    // Check this and all lower scopes — only if the cell is active
     for (let i = 0; i <= scopeIdx; i++) {
-      next.add(permKey(resource, action, SCOPE_ORDER[i]));
+      const k = permKey(resource, action, SCOPE_ORDER[i]);
+      if (ACTIVE_CELLS.has(k)) next.add(k);
     }
   } else {
     // Uncheck this and all higher scopes
@@ -105,10 +119,12 @@ function autoCheckHigherScopes(
 export function RoleEditor({
   role,
   allRoles,
+  builtinRoles = [],
   onClose,
 }: {
   role?: RoleData;
   allRoles: AllRole[];
+  builtinRoles?: BuiltinRoleOption[];
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -123,18 +139,20 @@ export function RoleEditor({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedBuiltinKey, setSelectedBuiltinKey] = useState("");
+
+  function handleMimicBuiltin() {
+    const source = builtinRoles.find((r) => r.key === selectedBuiltinKey);
+    if (!source) return;
+    if (permSet.size > 0 && !confirm(`Replace all current permissions with those from "${source.name}"?`)) return;
+    setPermSet(buildPermSet(source.permissions as PermissionEntry[]));
+  }
 
   function handleToggle(resource: string, action: string, scope: string) {
     const key = permKey(resource, action, scope);
+    if (!ACTIVE_CELLS.has(key)) return;
     const checked = !permSet.has(key);
     setPermSet(autoCheckHigherScopes(permSet, resource, action, scope, checked));
-  }
-
-  function handleCloneFrom(sourceId: string) {
-    const source = allRoles.find((r) => r.id === sourceId);
-    if (!source) return;
-    // We need to fetch the role's permissions — for now just do nothing if it's the same
-    // Actually, we should pass permissions data with allRoles. For simplicity, we'll keep this as a server action.
   }
 
   async function handleSave() {
@@ -261,6 +279,39 @@ export function RoleEditor({
             />
           </div>
 
+          {/* Mimic built-in role */}
+          {builtinRoles.length > 0 && (
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/40">
+              <p className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Load permissions from a built-in role
+              </p>
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedBuiltinKey}
+                  onChange={(e) => setSelectedBuiltinKey(e.target.value)}
+                  className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                >
+                  <option value="">— Select a built-in role —</option>
+                  {builtinRoles.map((r) => (
+                    <option key={r.key} value={r.key}>{r.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleMimicBuiltin}
+                  disabled={!selectedBuiltinKey}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                >
+                  <CopyCheck className="h-4 w-4" />
+                  Apply
+                </button>
+              </div>
+              <p className="mt-1.5 text-xs text-zinc-400 dark:text-zinc-500">
+                This will replace the current permission selection with the chosen built-in role&apos;s permissions.
+              </p>
+            </div>
+          )}
+
           {/* Permission Matrix */}
           <div>
             <h3 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
@@ -312,6 +363,7 @@ export function RoleEditor({
                         SCOPES.map((scope) => {
                           const key = permKey(resource, action, scope);
                           const checked = permSet.has(key);
+                          const isActive = ACTIVE_CELLS.has(key);
                           return (
                             <td
                               key={`${resource}-${action}-${scope}`}
@@ -319,13 +371,17 @@ export function RoleEditor({
                                 scope === "own"
                                   ? "border-l border-zinc-200 dark:border-zinc-700"
                                   : ""
-                              }`}
+                              } ${!isActive ? "bg-zinc-50 dark:bg-zinc-800/40" : ""}`}
                             >
                               <input
                                 type="checkbox"
                                 checked={checked}
                                 onChange={() => handleToggle(resource, action, scope)}
-                                className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800"
+                                disabled={!isActive}
+                                title={!isActive ? "Not enforced — no server action checks this permission" : undefined}
+                                className={`h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 ${
+                                  !isActive ? "cursor-not-allowed opacity-20" : ""
+                                }`}
                               />
                             </td>
                           );

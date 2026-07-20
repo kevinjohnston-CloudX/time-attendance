@@ -7,6 +7,14 @@
     {
       "path": "/api/cron/run-scheduled-reports",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/detect-missing-punches",
+      "schedule": "5 5 * * *"
+    },
+    {
+      "path": "/api/cron/auto-submit-timesheets",
+      "schedule": "10 5 * * *"
     }
   ]
 }

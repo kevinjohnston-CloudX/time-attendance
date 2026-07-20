@@ -55,6 +55,7 @@ import {
   Calendar,
   UserCircle,
   StickyNote,
+  Check,
 } from "lucide-react";
 
 // ─── Serialized prop types (dates as ISO strings) ────────────────────────────
@@ -375,8 +376,10 @@ export function TimecardViewer({
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [exceptionFilter, setExceptionFilter] = useState("ALL");
   const [activeOnly, setActiveOnly] = useState(true);
   const [isPending, startTransition] = useTransition();
+  const [approvingId, setApprovingId] = useState<string | null>(null);
 
   // ── Pay period navigation helpers ─────────────────────────────────────
   const sortedPeriods = [...payPeriods].sort(
@@ -494,6 +497,16 @@ export function TimecardViewer({
   const [rejectNote, setRejectNote] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
 
+  function handleQuickApprove(emp: EmployeeListItem) {
+    setApprovingId(emp.timesheetId);
+    const action = emp.status === "SUP_APPROVED" ? payrollApproveTimesheet : approveTimesheet;
+    action({ timesheetId: emp.timesheetId }).then((result) => {
+      setApprovingId(null);
+      if (!result.success) setActionError((result as { success: false; error: string }).error);
+      else router.refresh();
+    });
+  }
+
   // Meal waiver
   const [waiverDay, setWaiverDay] = useState<string | null>(null);
   const [waiverReason, setWaiverReason] = useState("");
@@ -547,20 +560,15 @@ export function TimecardViewer({
     // Active only filter
     if (activeOnly && !emp.isActive) return false;
 
-    // Status / exception filter
-    if (statusFilter === "ALL") return true;
-    if (statusFilter === "ALL_EXCLUDING_OPEN") return emp.status !== "OPEN";
-    // Status-based filters
-    const statusFilters = [
-      "OPEN",
-      "SUBMITTED",
-      "SUP_APPROVED",
-      "PAYROLL_APPROVED",
-      "LOCKED",
-    ];
-    if (statusFilters.includes(statusFilter)) return emp.status === statusFilter;
-    // Exception-based filters
-    return emp.exceptionTypes.includes(statusFilter);
+    // Status filter
+    if (statusFilter === "ALL_EXCLUDING_OPEN" && emp.status === "OPEN") return false;
+    if (statusFilter !== "ALL" && statusFilter !== "ALL_EXCLUDING_OPEN" && emp.status !== statusFilter) return false;
+
+    // Exception filter
+    if (exceptionFilter === "ALL_EXCEPTIONS" && emp.exceptionTypes.length === 0) return false;
+    if (exceptionFilter !== "ALL" && exceptionFilter !== "ALL_EXCEPTIONS" && !emp.exceptionTypes.includes(exceptionFilter)) return false;
+
+    return true;
   });
 
   function navigate(
@@ -1223,29 +1231,35 @@ export function TimecardViewer({
                 className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
               />
             </div>
-            {/* Status / Exception filter */}
+            {/* Status filter */}
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
             >
-              <optgroup label="Status">
-                <option value="ALL">All Timesheets</option>
-                <option value="ALL_EXCLUDING_OPEN">Excluding Open</option>
-                <option value="OPEN">Open</option>
-                <option value="SUBMITTED">Submitted</option>
-                <option value="SUP_APPROVED">Supervisor Approved</option>
-                <option value="PAYROLL_APPROVED">Payroll Approved</option>
-                <option value="LOCKED">Locked</option>
-              </optgroup>
-              <optgroup label="Exceptions">
-                <option value="MISSING_PUNCH">Missing Punch</option>
-                <option value="LONG_SHIFT">Long Shift</option>
-                <option value="SHORT_BREAK">Short Break</option>
-                <option value="MISSED_MEAL">Missed Meal</option>
-                <option value="UNSCHEDULED_OT">Unscheduled OT</option>
-                <option value="CONSECUTIVE_DAYS">Consecutive Days</option>
-              </optgroup>
+              <option value="ALL">All Statuses</option>
+              <option value="ALL_EXCLUDING_OPEN">Excluding Open</option>
+              <option value="OPEN">Open</option>
+              <option value="SUBMITTED">Submitted</option>
+              <option value="SUP_APPROVED">Supervisor Approved</option>
+              <option value="PAYROLL_APPROVED">Payroll Approved</option>
+              <option value="LOCKED">Locked</option>
+            </select>
+            {/* Exception filter */}
+            <select
+              value={exceptionFilter}
+              onChange={(e) => setExceptionFilter(e.target.value)}
+              className="w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+            >
+              <option value="ALL">All</option>
+              <option value="ALL_EXCEPTIONS">All Exceptions</option>
+              <option value="MISSING_PUNCH">Missing Punch</option>
+              <option value="LONG_SHIFT">Long Shift</option>
+              <option value="SHORT_BREAK">Short Break</option>
+              <option value="MISSED_MEAL">Missed Meal</option>
+              <option value="UNSCHEDULED_OT">Unscheduled OT</option>
+              <option value="CONSECUTIVE_DAYS">Consecutive Days</option>
+              <option value="ABSENT">Absent</option>
             </select>
             {/* Active only toggle */}
             <label className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
@@ -1267,11 +1281,15 @@ export function TimecardViewer({
             )}
             {filteredEmployees.map((emp) => {
               const isSelected = emp.employeeId === selectedEmployeeId;
+              const canQuickApprove = emp.status === "SUBMITTED" || emp.status === "SUP_APPROVED";
               return (
-                <button
+                <div
                   key={emp.employeeId}
                   onClick={() => navigate(selectedPayPeriodId, emp.employeeId)}
-                  className={`flex w-full flex-col border-b border-zinc-100 px-3 py-2.5 text-left transition-colors dark:border-zinc-800/60 ${
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(selectedPayPeriodId, emp.employeeId); }}
+                  tabIndex={0}
+                  role="button"
+                  className={`flex w-full cursor-pointer flex-col border-b border-zinc-100 px-3 py-2.5 text-left transition-colors dark:border-zinc-800/60 ${
                     isSelected
                       ? "bg-blue-50 dark:bg-blue-950/30"
                       : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
@@ -1287,9 +1305,24 @@ export function TimecardViewer({
                     >
                       {emp.name}
                     </p>
-                    <span className="shrink-0 text-xs tabular-nums text-zinc-400">
-                      {minutesToHoursDecimal(emp.totalMinutes)}h
-                    </span>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <span className="text-xs tabular-nums text-zinc-400">
+                        {minutesToHoursDecimal(emp.totalMinutes)}h
+                      </span>
+                      {canQuickApprove && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleQuickApprove(emp); }}
+                          disabled={approvingId === emp.timesheetId}
+                          title={emp.status === "SUP_APPROVED" ? "Payroll Approve" : "Approve"}
+                          className="rounded bg-green-600 p-0.5 text-white hover:bg-green-700 disabled:opacity-50"
+                        >
+                          {approvingId === emp.timesheetId
+                            ? <span className="block w-3 text-center text-xs leading-none">…</span>
+                            : <Check className="h-3 w-3" />}
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="mt-1 flex items-center justify-between gap-2">
                     <p className="truncate text-xs text-zinc-400">
@@ -1299,7 +1332,7 @@ export function TimecardViewer({
                       {TIMESHEET_STATUS_LABEL[emp.status as TimesheetStatusValue] ?? emp.status}
                     </span>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>

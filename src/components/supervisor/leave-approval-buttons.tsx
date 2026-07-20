@@ -36,28 +36,30 @@ export function LeaveApprovalButtons({ leaveRequestId }: Props) {
 
   if (rejectMode) {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-2">
         {error && <p className="text-sm text-red-500">{error}</p>}
         <input
           autoFocus
           value={rejectNote}
           onChange={(e) => setRejectNote(e.target.value)}
           placeholder="Reason for rejection…"
-          className="w-52 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+          className="w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
         />
-        <button
-          onClick={() => setRejectMode(false)}
-          className="text-sm text-zinc-400 hover:text-zinc-600"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleReject}
-          disabled={isPending || !rejectNote.trim()}
-          className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-        >
-          {isPending ? "Saving…" : "Confirm Reject"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setRejectMode(false)}
+            className="text-sm text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleReject}
+            disabled={isPending || !rejectNote.trim()}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {isPending ? "Saving…" : "Confirm Reject"}
+          </button>
+        </div>
       </div>
     );
   }

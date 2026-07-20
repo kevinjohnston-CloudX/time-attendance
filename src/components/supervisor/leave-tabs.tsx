@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { format, differenceInCalendarDays, eachDayOfInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, isToday } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { LeaveApprovalButtons } from "@/components/supervisor/leave-approval-buttons";
@@ -22,12 +23,27 @@ interface LeaveRequestRow {
 interface LeaveTabsProps {
   pending: LeaveRequestRow[];
   upcoming: LeaveRequestRow[];
+  initialTab?: "pending" | "upcoming";
+  canFilter?: boolean;
+  sites?: { id: string; name: string }[];
+  departments?: { id: string; name: string }[];
+  selectedSiteId?: string;
+  selectedDepartmentId?: string;
 }
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export function LeaveTabs({ pending, upcoming }: LeaveTabsProps) {
-  const [tab, setTab] = useState<"pending" | "upcoming">("pending");
+export function LeaveTabs({ pending, upcoming, initialTab, canFilter, sites = [], departments = [], selectedSiteId, selectedDepartmentId }: LeaveTabsProps) {
+  const router = useRouter();
+  const [tab, setTab] = useState<"pending" | "upcoming">(initialTab ?? "pending");
+
+  function navigate(siteId?: string, departmentId?: string) {
+    const params = new URLSearchParams();
+    if (siteId) params.set("siteId", siteId);
+    if (departmentId) params.set("departmentId", departmentId);
+    params.set("tab", tab);
+    router.push(`/supervisor/leave?${params.toString()}`);
+  }
   const [calMonth, setCalMonth] = useState(() => new Date());
   const [tooltip, setTooltip] = useState<{
     top: number;
@@ -97,6 +113,43 @@ export function LeaveTabs({ pending, upcoming }: LeaveTabsProps) {
           </a>
           <h1 className="mt-1 text-xl font-bold text-zinc-900 dark:text-white">Team Leave</h1>
         </div>
+
+        {/* Site / Department filter — payroll+ only */}
+        {canFilter && (
+          <div className="flex flex-col gap-2 px-4 pb-3">
+            {sites.length > 0 && (
+              <select
+                value={selectedSiteId ?? ""}
+                onChange={(e) => navigate(e.target.value || undefined, undefined)}
+                className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+              >
+                <option value="">All Sites</option>
+                {sites.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            )}
+            <select
+              value={selectedDepartmentId ?? ""}
+              onChange={(e) => navigate(selectedSiteId, e.target.value || undefined)}
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+            >
+              <option value="">All Departments</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+            {(selectedSiteId || selectedDepartmentId) && (
+              <button
+                type="button"
+                onClick={() => navigate()}
+                className="self-start text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Pending / Upcoming toggle */}
         <div className="px-4 pb-3">

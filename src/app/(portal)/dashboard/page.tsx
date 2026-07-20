@@ -4,6 +4,8 @@ import Link from "next/link";
 import { format, differenceInMinutes } from "date-fns";
 import { formatMinutes } from "@/lib/utils/duration";
 import { parseUtcDate } from "@/lib/utils/date";
+import { userHasPermission } from "@/lib/rbac/check-permission";
+import { OverviewPeriodFilter } from "@/components/dashboard/overview-period-filter";
 import { SubmitTimesheetButton } from "@/components/time/submit-timesheet-button";
 import {
   TIMESHEET_STATUS_LABEL,
@@ -25,11 +27,54 @@ const PUNCH_STATE_LABEL: Record<string, string> = {
   OUT:   "Clocked Out",
 };
 
-export default async function DashboardPage() {
+const EXCEPTION_LABEL: Record<string, string> = {
+  MISSING_PUNCH:    "Missing Punch",
+  LONG_SHIFT:       "Long Shift",
+  SHORT_BREAK:      "Short Break",
+  MISSED_MEAL:      "Missed Meal",
+  UNSCHEDULED_OT:   "Unscheduled OT",
+  CONSECUTIVE_DAYS: "Consecutive Days",
+  ABSENT:           "Absent",
+};
+
+const EXCEPTION_BADGE: Record<string, string> = {
+  MISSING_PUNCH:    "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+  LONG_SHIFT:       "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  SHORT_BREAK:      "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  MISSED_MEAL:      "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  UNSCHEDULED_OT:   "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+  CONSECUTIVE_DAYS: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  ABSENT:           "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+};
+
+const LEAVE_STATUS_LABEL: Record<string, string> = {
+  DRAFT:     "Draft",
+  PENDING:   "Pending",
+  APPROVED:  "Approved",
+  REJECTED:  "Rejected",
+  CANCELLED: "Cancelled",
+  POSTED:    "Posted",
+};
+
+const LEAVE_STATUS_BADGE: Record<string, string> = {
+  DRAFT:     "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  PENDING:   "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  APPROVED:  "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+  REJECTED:  "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+  CANCELLED: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  POSTED:    "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+};
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ overviewPeriodId?: string }>;
+}) {
   const session = await auth();
   const employeeId = session?.user?.employeeId ?? null;
   const now = new Date();
   const year = now.getFullYear();
+  const { overviewPeriodId } = (await searchParams) ?? {};
 
   const [payPeriod, lastPunch, allLeaveBalances, pendingLeaveRequests] = await Promise.all([
     db.payPeriod.findFirst({
@@ -72,6 +117,91 @@ export default async function DashboardPage() {
           include: { overtimeBuckets: true },
         })
       : null;
+
+  // ── Payroll overview (PAY_PERIOD_MANAGE only) ────────────────────────────
+  const tenantId = (session?.user as { tenantId?: string } | undefined)?.tenantId;
+  const hasPayrollAccess = session?.user
+    ? await userHasPermission(session.user, "PAY_PERIOD_MANAGE")
+    : false;
+
+  let overviewFilterOptions: { id: string; label: string }[] = [];
+  let selectedOverviewPeriodId = payPeriod?.id ?? "";
+  let exceptionCounts: { exceptionType: string; _count: { _all: number } }[] = [];
+  let leaveStatusCounts: { status: string; _count: { _all: number } }[] = [];
+  let timesheetStatusCounts: { status: string; _count: { _all: number } }[] = [];
+
+  if (hasPayrollAccess && tenantId) {
+    // Fetch neighbouring pay periods for the filter dropdown
+    const [prevPP, nextPP] = await Promise.all([
+      payPeriod
+        ? db.payPeriod.findFirst({
+            where: { tenantId, endDate: { lt: payPeriod.startDate } },
+            orderBy: { endDate: "desc" },
+            select: { id: true, startDate: true, endDate: true },
+          })
+        : null,
+      payPeriod
+        ? db.payPeriod.findFirst({
+            where: { tenantId, startDate: { gt: payPeriod.endDate } },
+            orderBy: { startDate: "asc" },
+            select: { id: true, startDate: true, endDate: true },
+          })
+        : null,
+    ]);
+
+    type PeriodOption = { id: string; startDate: Date; endDate: Date; label: string };
+    const allPeriods: PeriodOption[] = [
+      prevPP && {
+        ...prevPP,
+        label: `${format(parseUtcDate(prevPP.startDate), "MMM d")} – ${format(parseUtcDate(prevPP.endDate), "MMM d")} (Previous)`,
+      },
+      payPeriod && {
+        id: payPeriod.id,
+        startDate: payPeriod.startDate,
+        endDate: payPeriod.endDate,
+        label: `${format(parseUtcDate(payPeriod.startDate), "MMM d")} – ${format(parseUtcDate(payPeriod.endDate), "MMM d")} (Current)`,
+      },
+      nextPP && {
+        ...nextPP,
+        label: `${format(parseUtcDate(nextPP.startDate), "MMM d")} – ${format(parseUtcDate(nextPP.endDate), "MMM d")} (Next)`,
+      },
+    ].filter(Boolean) as PeriodOption[];
+
+    overviewFilterOptions = allPeriods.map(({ id, label }) => ({ id, label }));
+
+    const selectedPeriod =
+      allPeriods.find((p) => p.id === overviewPeriodId) ??
+      allPeriods.find((p) => p.id === payPeriod?.id) ??
+      allPeriods[0];
+
+    selectedOverviewPeriodId = selectedPeriod?.id ?? "";
+
+    if (selectedPeriod) {
+      [exceptionCounts, leaveStatusCounts, timesheetStatusCounts] = await Promise.all([
+        db.exception.groupBy({
+          by: ["exceptionType"],
+          where: {
+            resolvedAt: null,
+            timesheet: { payPeriodId: selectedPeriod.id, employee: { tenantId } },
+          },
+          _count: { _all: true },
+        }),
+        db.leaveRequest.groupBy({
+          by: ["status"],
+          where: {
+            employee: { tenantId },
+            startDate: { gte: selectedPeriod.startDate, lte: selectedPeriod.endDate },
+          },
+          _count: { _all: true },
+        }),
+        db.timesheet.groupBy({
+          by: ["status"],
+          where: { payPeriodId: selectedPeriod.id, employee: { tenantId } },
+          _count: { _all: true },
+        }),
+      ]);
+    }
+  }
 
   // ── Pay period display ────────────────────────────────────────────────────
   const payPeriodValue = payPeriod
@@ -296,6 +426,124 @@ export default async function DashboardPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ── General Overview (payroll only) ── */}
+      {hasPayrollAccess && (
+        <div className="mt-6">
+          <div className="mb-3 flex items-center justify-between gap-4">
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-white">General Overview</h2>
+            {overviewFilterOptions.length > 0 && (
+              <OverviewPeriodFilter
+                options={overviewFilterOptions}
+                selectedId={selectedOverviewPeriodId}
+              />
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+
+            {/* Exceptions by type */}
+            <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="mb-3 text-sm font-medium text-zinc-500 dark:text-zinc-400">Open Exceptions</p>
+              <div className="flex flex-wrap gap-2">
+                {exceptionCounts.length === 0 ? (
+                  <p className="text-sm text-zinc-400">No open exceptions</p>
+                ) : (
+                  exceptionCounts.map((ec) => {
+                    const params = new URLSearchParams({ exceptionType: ec.exceptionType });
+                    if (selectedOverviewPeriodId) params.set("payPeriodId", selectedOverviewPeriodId);
+                    return (
+                      <Link
+                        key={ec.exceptionType}
+                        href={`/supervisor/exceptions?${params.toString()}`}
+                        className="min-w-[100px] rounded-lg border border-zinc-100 bg-zinc-50 p-3 transition-colors hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-zinc-600 dark:hover:bg-zinc-700"
+                      >
+                        <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${EXCEPTION_BADGE[ec.exceptionType] ?? "bg-zinc-100 text-zinc-500"}`}>
+                          {EXCEPTION_LABEL[ec.exceptionType] ?? ec.exceptionType}
+                        </span>
+                        <p className="mt-2 text-2xl font-bold text-zinc-900 dark:text-white">
+                          {ec._count._all}
+                        </p>
+                      </Link>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Time-off requests by status */}
+            <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="mb-3 text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                Time-Off Requests
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {leaveStatusCounts.length === 0 ? (
+                  <p className="text-sm text-zinc-400">No requests</p>
+                ) : (
+                  leaveStatusCounts.map((lc) => {
+                    const leaveHref =
+                      lc.status === "PENDING"
+                        ? "/supervisor/leave?tab=pending"
+                        : lc.status === "APPROVED"
+                        ? "/supervisor/leave?tab=upcoming"
+                        : null;
+                    const tileClass = "min-w-[100px] rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800";
+                    const inner = (
+                      <>
+                        <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${LEAVE_STATUS_BADGE[lc.status] ?? "bg-zinc-100 text-zinc-500"}`}>
+                          {LEAVE_STATUS_LABEL[lc.status] ?? lc.status}
+                        </span>
+                        <p className="mt-2 text-2xl font-bold text-zinc-900 dark:text-white">
+                          {lc._count._all}
+                        </p>
+                      </>
+                    );
+                    return leaveHref ? (
+                      <Link
+                        key={lc.status}
+                        href={leaveHref}
+                        className={`${tileClass} transition-colors hover:border-zinc-300 hover:bg-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-700`}
+                      >
+                        {inner}
+                      </Link>
+                    ) : (
+                      <div key={lc.status} className={tileClass}>
+                        {inner}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Timesheets by status */}
+            <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="mb-3 text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                Timesheets — Open Pay Periods
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {timesheetStatusCounts.length === 0 ? (
+                  <p className="text-sm text-zinc-400">No timesheets in open pay periods</p>
+                ) : (
+                  timesheetStatusCounts.map((tc) => (
+                    <div
+                      key={tc.status}
+                      className="min-w-[100px] rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800"
+                    >
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[tc.status] ?? "bg-zinc-100 text-zinc-500"}`}>
+                        {TIMESHEET_STATUS_LABEL[tc.status as TimesheetStatusValue] ?? tc.status}
+                      </span>
+                      <p className="mt-2 text-2xl font-bold text-zinc-900 dark:text-white">
+                        {tc._count._all}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
           </div>
         </div>
       )}

@@ -86,21 +86,37 @@ export const getTimesheetForReview = withRBAC(
 /** All unresolved exceptions for the supervisor's team (or all if payroll+). */
 export const getTeamExceptions = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
-  async ({ employeeId, role, tenantId }, _input: void) => {
+  async ({ employeeId, role, tenantId }, input: unknown) => {
+    const { siteId, departmentId, exceptionType, payPeriodId } = z.object({
+      siteId: z.string().optional(),
+      departmentId: z.string().optional(),
+      exceptionType: z.string().optional(),
+      payPeriodId: z.string().optional(),
+    }).parse(input ?? {});
+
     const isPayroll = PAYROLL_ROLES.includes(role);
     const t = tenantId ?? undefined;
+
+    const employeeFilter = {
+      tenantId: t,
+      ...(isPayroll ? {} : { supervisorId: employeeId }),
+      ...(siteId ? { siteId } : {}),
+      ...(departmentId ? { departmentId } : {}),
+    };
 
     return db.exception.findMany({
       where: {
         resolvedAt: null,
-        ...(isPayroll
-          ? { timesheet: { employee: { tenantId: t } } }
-          : { timesheet: { employee: { supervisorId: employeeId, tenantId: t } } }),
+        ...(exceptionType ? { exceptionType } : {}),
+        timesheet: {
+          ...(payPeriodId ? { payPeriodId } : {}),
+          employee: employeeFilter,
+        },
       },
       include: {
         timesheet: {
           include: {
-            employee: { include: { user: true } },
+            employee: { include: { user: true, site: true, department: true } },
             payPeriod: true,
             punches: {
               where: { isApproved: true, correctedById: null },
@@ -241,17 +257,21 @@ export const correctPunchAndResolve = withRBAC(
  */
 export const getTeamLeaveRequests = withRBAC(
   "LEAVE_APPROVE_TEAM",
-  async ({ employeeId, role, tenantId }, _input: void) => {
+  async ({ employeeId, role, tenantId }, input: unknown) => {
+    const { siteId, departmentId } = z.object({
+      siteId: z.string().optional(),
+      departmentId: z.string().optional(),
+    }).parse(input ?? {});
+
     const isPayroll = PAYROLL_ROLES.includes(role);
     const t = tenantId ?? undefined;
 
+    const employeeFilter = isPayroll
+      ? { tenantId: t, ...(siteId ? { siteId } : {}), ...(departmentId ? { departmentId } : {}) }
+      : { supervisorId: employeeId, tenantId: t };
+
     return db.leaveRequest.findMany({
-      where: {
-        status: "PENDING",
-        ...(isPayroll
-          ? { employee: { tenantId: t } }
-          : { employee: { supervisorId: employeeId, tenantId: t } }),
-      },
+      where: { status: "PENDING", employee: employeeFilter },
       include: {
         employee: { include: { user: true } },
         leaveType: true,
@@ -269,19 +289,26 @@ export const getTeamLeaveRequests = withRBAC(
  */
 export const getUpcomingTeamLeave = withRBAC(
   "LEAVE_APPROVE_TEAM",
-  async ({ employeeId, role, tenantId }, _input: void) => {
+  async ({ employeeId, role, tenantId }, input: unknown) => {
+    const { siteId, departmentId } = z.object({
+      siteId: z.string().optional(),
+      departmentId: z.string().optional(),
+    }).parse(input ?? {});
+
     const isPayroll = PAYROLL_ROLES.includes(role);
     const t = tenantId ?? undefined;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const employeeFilter = isPayroll
+      ? { tenantId: t, ...(siteId ? { siteId } : {}), ...(departmentId ? { departmentId } : {}) }
+      : { supervisorId: employeeId, tenantId: t };
+
     return db.leaveRequest.findMany({
       where: {
         status: { in: ["APPROVED", "POSTED"] },
         endDate: { gte: today },
-        ...(isPayroll
-          ? { employee: { tenantId: t } }
-          : { employee: { supervisorId: employeeId, tenantId: t } }),
+        employee: employeeFilter,
       },
       include: {
         employee: { include: { user: true } },
