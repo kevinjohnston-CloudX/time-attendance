@@ -336,6 +336,7 @@ export function RolesClient({ roles, builtinRoles }: { roles: RoleSummary[]; bui
         <RoleEditor
           role={editingRole}
           allRoles={roles.map((r) => ({ id: r.id, name: r.name, isSystem: r.isSystem }))}
+          builtinRoles={builtinRoles.filter((r) => r.key !== "SUPER_ADMIN")}
           onClose={() => setEditingRole(null)}
         />
       )}
@@ -344,6 +345,7 @@ export function RolesClient({ roles, builtinRoles }: { roles: RoleSummary[]; bui
       {showCreate && (
         <RoleEditor
           allRoles={roles.map((r) => ({ id: r.id, name: r.name, isSystem: r.isSystem }))}
+          builtinRoles={builtinRoles.filter((r) => r.key !== "SUPER_ADMIN")}
           onClose={() => setShowCreate(false)}
         />
       )}

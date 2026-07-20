@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createPayCode, updatePayCode } from "@/actions/pay-code.actions";
+import { GripVertical } from "lucide-react";
+import { createPayCode, updatePayCode, reorderPayCodes } from "@/actions/pay-code.actions";
 import type { PayCode } from "@prisma/client";
 
 interface Props {
@@ -30,13 +31,7 @@ const saveBtnCls =
 const cancelBtnCls =
   "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
 
-function PayCodeFields({
-  pc,
-  showSortOrder = false,
-}: {
-  pc?: PayCode;
-  showSortOrder?: boolean;
-}) {
+function PayCodeFields({ pc }: { pc?: PayCode }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <div>
@@ -72,18 +67,6 @@ function PayCodeFields({
           ))}
         </select>
       </div>
-      {showSortOrder && (
-        <div>
-          <label className="mb-1 block text-xs text-zinc-500">Sort Order</label>
-          <input
-            name="sortOrder"
-            type="number"
-            min={0}
-            defaultValue={pc?.sortOrder ?? 0}
-            className={inputCls}
-          />
-        </div>
-      )}
     </div>
   );
 }
@@ -95,8 +78,53 @@ export function PayCodesManager({ payCodes }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
+  const [items, setItems] = useState<PayCode[]>(() =>
+    [...payCodes].sort((a, b) => a.sortOrder - b.sortOrder)
+  );
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
-  const visible = showInactive ? payCodes : payCodes.filter((p) => p.isActive);
+  useEffect(() => {
+    setItems([...payCodes].sort((a, b) => a.sortOrder - b.sortOrder));
+  }, [payCodes]);
+
+  const visible = showInactive ? items : items.filter((p) => p.isActive);
+
+  function handleDragStart(id: string) {
+    setDragId(id);
+  }
+
+  function handleDragOver(e: React.DragEvent, id: string) {
+    e.preventDefault();
+    if (id !== dragId) setDragOverId(id);
+  }
+
+  function handleDrop(e: React.DragEvent, targetId: string) {
+    e.preventDefault();
+    if (!dragId || dragId === targetId) {
+      setDragId(null);
+      setDragOverId(null);
+      return;
+    }
+    const arr = [...items];
+    const srcIdx = arr.findIndex((p) => p.id === dragId);
+    const tgtIdx = arr.findIndex((p) => p.id === targetId);
+    const [item] = arr.splice(srcIdx, 1);
+    arr.splice(tgtIdx, 0, item);
+    setItems(arr);
+    setDragId(null);
+    setDragOverId(null);
+    const orderedIds = arr.map((p) => p.id);
+    startTransition(async () => {
+      await reorderPayCodes({ orderedIds });
+      router.refresh();
+    });
+  }
+
+  function handleDragEnd() {
+    setDragId(null);
+    setDragOverId(null);
+  }
 
   function handleCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -117,17 +145,18 @@ export function PayCodesManager({ payCodes }: Props) {
     });
   }
 
-  function handleUpdate(payCodeId: string, e: React.FormEvent<HTMLFormElement>) {
+  function handleUpdate(pc: PayCode, e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const sortOrder = items.findIndex((p) => p.id === pc.id);
     setError(null);
     startTransition(async () => {
       const result = await updatePayCode({
-        payCodeId,
+        payCodeId: pc.id,
         code: Number(fd.get("code")),
         label: fd.get("label") as string,
         payBucket: (fd.get("payBucket") as string) || null,
-        sortOrder: Number(fd.get("sortOrder")),
+        sortOrder,
         isActive: fd.get("isActive") === "true",
       });
       if (!result.success) {
@@ -167,10 +196,10 @@ export function PayCodesManager({ payCodes }: Props) {
           editingId === pc.id ? (
             <form
               key={pc.id}
-              onSubmit={(e) => handleUpdate(pc.id, e)}
+              onSubmit={(e) => handleUpdate(pc, e)}
               className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 dark:border-blue-800/40 dark:bg-blue-900/10"
             >
-              <PayCodeFields pc={pc} showSortOrder />
+              <PayCodeFields pc={pc} />
               <div className="mt-3 grid grid-cols-4 gap-3">
                 <div>
                   <label className="mb-1 block text-xs text-zinc-500">Status</label>
@@ -200,9 +229,21 @@ export function PayCodesManager({ payCodes }: Props) {
           ) : (
             <div
               key={pc.id}
-              className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900"
+              draggable
+              onDragStart={() => handleDragStart(pc.id)}
+              onDragOver={(e) => handleDragOver(e, pc.id)}
+              onDrop={(e) => handleDrop(e, pc.id)}
+              onDragEnd={handleDragEnd}
+              className={`flex items-center justify-between rounded-xl border bg-white px-4 py-3 transition-opacity dark:bg-zinc-900 ${
+                dragId === pc.id ? "opacity-40" : "opacity-100"
+              } ${
+                dragOverId === pc.id
+                  ? "border-blue-400 dark:border-blue-500"
+                  : "border-zinc-200 dark:border-zinc-800"
+              }`}
             >
               <div className="flex items-center gap-3">
+                <GripVertical className="h-4 w-4 shrink-0 cursor-grab text-zinc-400 active:cursor-grabbing dark:text-zinc-500" />
                 <span className="w-10 rounded bg-zinc-100 px-1.5 py-0.5 text-center text-xs font-mono font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
                   {pc.code}
                 </span>

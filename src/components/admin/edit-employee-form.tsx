@@ -22,6 +22,13 @@ interface Props {
   ruleSets: RuleSet[];
   employees: { id: string; user: { name: string | null } }[];
   customRoles: { id: string; name: string }[];
+  shifts: { id: string; name: string; startTime: string; endTime: string }[];
+}
+
+function fmtTime(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${ampm}`;
 }
 
 const inputCls =
@@ -30,7 +37,7 @@ const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-
 
 type Tab = "general" | "personal" | "pay";
 
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles }: Props) {
+export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +76,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       siteId: fd.get("siteId") as string,
       departmentId: fd.get("departmentId") as string,
       ruleSetId: fd.get("ruleSetId") as string,
+      shiftId: (fd.get("shiftId") as string) || null,
       supervisorId: (fd.get("supervisorId") as string) || null,
       isActive: fd.get("isActive") === "true",
       wmsId: fd.get("wmsId") as string,
@@ -201,6 +209,18 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
               <label className={labelCls}>Rule Set</label>
               <select name="ruleSetId" defaultValue={employee.ruleSetId} className={inputCls}>
                 {ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className={labelCls}>Shift</label>
+              <select name="shiftId" defaultValue={employee.shiftId ?? ""} className={inputCls}>
+                <option value="">— None —</option>
+                {shifts.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({fmtTime(s.startTime)} – {fmtTime(s.endTime)})
+                  </option>
+                ))}
               </select>
             </div>
 

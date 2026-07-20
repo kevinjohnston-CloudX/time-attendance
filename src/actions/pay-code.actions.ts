@@ -148,6 +148,27 @@ export const updatePayCode = withRBAC(
   }
 );
 
+// ─── Reorder pay codes ──────────────────────────────────────────────────────
+
+export const reorderPayCodes = withRBAC(
+  "PAY_PERIOD_MANAGE",
+  async (ctx, input: unknown) => {
+    const { orderedIds } = z.object({ orderedIds: z.array(z.string()) }).parse(input);
+    const tenantId = ctx.tenantId!;
+
+    await Promise.all(
+      orderedIds.map((id, index) =>
+        db.payCode.updateMany({
+          where: { id, tenantId },
+          data: { sortOrder: index },
+        })
+      )
+    );
+
+    return { success: true };
+  }
+);
+
 // ─── Set pay code on a work segment ─────────────────────────────────────────
 
 const setSegmentPayCodeSchema = z.object({

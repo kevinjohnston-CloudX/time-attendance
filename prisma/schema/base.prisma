@@ -110,6 +110,7 @@ enum ExceptionType {
   MISSED_MEAL
   UNSCHEDULED_OT
   CONSECUTIVE_DAYS
+  ABSENT
 }
 
 enum PayFrequency {

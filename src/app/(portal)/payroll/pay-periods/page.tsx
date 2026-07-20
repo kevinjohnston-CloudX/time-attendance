@@ -5,13 +5,13 @@ import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import { getPayPeriods, getPayPeriodDetail } from "@/actions/pay-period.actions";
 import { getAdpConfig } from "@/lib/integrations/adp/client";
-import { PAY_PERIOD_STATUS_LABEL, TIMESHEET_STATUS_LABEL } from "@/lib/state-machines/labels";
+import { PAY_PERIOD_STATUS_LABEL } from "@/lib/state-machines/labels";
 import { PayPeriodActions } from "@/components/payroll/pay-period-actions";
 import { PayPeriodsFilter } from "@/components/payroll/pay-periods-filter";
-import { formatMinutes } from "@/lib/utils/duration";
 import { format } from "date-fns";
-import { CheckCircle2, AlertCircle, Clock } from "lucide-react";
 import { parseUtcDate } from "@/lib/utils/date";
+import { PayPeriodTimesheets } from "@/components/payroll/pay-period-timesheets";
+import { PayPeriodDetailFilter } from "@/components/payroll/pay-period-detail-filter";
 
 const PP_BADGE: Record<string, string> = {
   OPEN:   "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
@@ -19,22 +19,14 @@ const PP_BADGE: Record<string, string> = {
   LOCKED: "bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400",
 };
 
-const TS_BADGE: Record<string, string> = {
-  OPEN:             "bg-zinc-100 text-zinc-600",
-  SUBMITTED:        "bg-blue-100 text-blue-700",
-  SUP_APPROVED:     "bg-purple-100 text-purple-700",
-  PAYROLL_APPROVED: "bg-green-100 text-green-700",
-  LOCKED:           "bg-zinc-200 text-zinc-500",
-};
-
 type FilterValue = "all" | "current" | "open" | "ready" | "locked" | "ytd";
 
 export default async function PayPeriodsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ id?: string; filter?: string }>;
+  searchParams: Promise<{ id?: string; filter?: string; siteId?: string; departmentId?: string }>;
 }) {
-  const { id: selectedId, filter } = await searchParams;
+  const { id: selectedId, filter, siteId, departmentId } = await searchParams;
   const currentFilter: FilterValue =
     filter === "current" || filter === "open" || filter === "ready" || filter === "locked" || filter === "ytd"
       ? filter
@@ -44,7 +36,27 @@ export default async function PayPeriodsPage({
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "PAY_PERIOD_MANAGE")) redirect("/dashboard");
 
-  const result = await getPayPeriods();
+  const t = session.user.tenantId ?? undefined;
+
+  const [ppResult, sites, departments] = await Promise.all([
+    getPayPeriods(),
+    db.site.findMany({
+      where: { isActive: true, ...(t ? { tenantId: t } : {}) },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    db.department.findMany({
+      where: {
+        isActive: true,
+        ...(t ? { tenantId: t } : {}),
+        ...(siteId ? { sites: { some: { siteId } } } : {}),
+      },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
+
+  const result = ppResult;
   if (!result.success) redirect("/dashboard");
 
   const allPayPeriods = result.data;
@@ -112,6 +124,8 @@ export default async function PayPeriodsPage({
           allPayPeriods={serialisedAll}
           selectedId={selectedId}
           currentFilter={currentFilter}
+          siteId={siteId}
+          departmentId={departmentId}
         />
 
         {/* Scrollable list */}
@@ -126,7 +140,9 @@ export default async function PayPeriodsPage({
                 (t) => t.status === "PAYROLL_APPROVED" || t.status === "LOCKED"
               ).length;
               const isSelected = pp.id === selectedId;
-              const href = `/payroll/pay-periods?id=${pp.id}${currentFilter !== "all" ? `&filter=${currentFilter}` : ""}`;
+              const siteParam = siteId ? `&siteId=${siteId}` : "";
+              const deptParam = departmentId ? `&departmentId=${departmentId}` : "";
+              const href = `/payroll/pay-periods?id=${pp.id}${currentFilter !== "all" ? `&filter=${currentFilter}` : ""}${siteParam}${deptParam}`;
 
               return (
                 <Link
@@ -210,72 +226,48 @@ export default async function PayPeriodsPage({
               </div>
             </div>
 
-            {detail.validation.issues.length > 0 && (
-              <div className="mt-6">
-                <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Outstanding Issues</h2>
-                <ul className="mt-2 flex flex-col gap-2">
-                  {detail.validation.issues.map((issue, i) => (
-                    <li
-                      key={i}
-                      className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm dark:border-red-800/40 dark:bg-red-900/10"
-                    >
-                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-                      <div>
-                        <span className="font-medium text-zinc-900 dark:text-white">{issue.employeeName}</span>
-                        <span className="ml-2 text-zinc-600 dark:text-zinc-400">— {issue.issue}</span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div className="mt-6">
-              <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Timesheets</h2>
-              <div className="mt-2 flex flex-col gap-2">
-                {detail.payPeriod.timesheets.length === 0 && (
-                  <p className="py-4 text-center text-sm text-zinc-400">No timesheets for this pay period.</p>
-                )}
-                {detail.payPeriod.timesheets.map((ts) => {
-                  const reg = ts.overtimeBuckets.find((b) => b.bucket === "REG")?.totalMinutes ?? 0;
-                  const ot = ts.overtimeBuckets.find((b) => b.bucket === "OT")?.totalMinutes ?? 0;
-                  const dt = ts.overtimeBuckets.find((b) => b.bucket === "DT")?.totalMinutes ?? 0;
-                  const isApproved = ts.status === "PAYROLL_APPROVED" || ts.status === "LOCKED";
-                  const hasExceptions = ts.exceptions.length > 0;
-
-                  return (
-                    <Link
-                      key={ts.id}
-                      href={`/payroll/timecards?payPeriodId=${detail.payPeriod.id}&employeeId=${ts.employeeId}`}
-                      className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white p-4 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800/60"
-                    >
-                      <div className="flex items-center gap-3">
-                        {isApproved && !hasExceptions ? (
-                          <CheckCircle2 className="h-4 w-4 text-green-500" />
-                        ) : hasExceptions ? (
-                          <AlertCircle className="h-4 w-4 text-red-500" />
-                        ) : (
-                          <Clock className="h-4 w-4 text-zinc-400" />
-                        )}
-                        <div>
-                          <p className="font-medium text-zinc-900 dark:text-white">
-                            {ts.employee.user?.name ?? `Employee ${ts.employeeId}`}
-                          </p>
-                          <p className="mt-0.5 text-xs text-zinc-500">
-                            REG {formatMinutes(reg)}
-                            {ot > 0 && <span className="ml-2 text-amber-600">OT {formatMinutes(ot)}</span>}
-                            {dt > 0 && <span className="ml-2 text-red-600">DT {formatMinutes(dt)}</span>}
-                          </p>
-                        </div>
-                      </div>
-                      <span className={`rounded-full px-3 py-1 text-xs font-medium ${TS_BADGE[ts.status]}`}>
-                        {TIMESHEET_STATUS_LABEL[ts.status]}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
+            {(() => {
+              const issuesByTs = new Map<string, string[]>();
+              for (const iss of detail.validation.issues) {
+                const list = issuesByTs.get(iss.timesheetId) ?? [];
+                list.push(iss.issue);
+                issuesByTs.set(iss.timesheetId, list);
+              }
+              const filteredSheets = detail.payPeriod.timesheets.filter((ts) => {
+                if (siteId && ts.employee.siteId !== siteId) return false;
+                if (departmentId && ts.employee.departmentId !== departmentId) return false;
+                return true;
+              });
+              const tileData = filteredSheets.map((ts) => ({
+                id: ts.id,
+                employeeId: ts.employeeId,
+                employeeName: ts.employee.user?.name ?? `Employee ${ts.employeeId}`,
+                status: ts.status,
+                reg: ts.overtimeBuckets.find((b) => b.bucket === "REG")?.totalMinutes ?? 0,
+                ot: ts.overtimeBuckets.find((b) => b.bucket === "OT")?.totalMinutes ?? 0,
+                dt: ts.overtimeBuckets.find((b) => b.bucket === "DT")?.totalMinutes ?? 0,
+                hasExceptions: ts.exceptions.length > 0,
+                issues: issuesByTs.get(ts.id) ?? [],
+              }));
+              return (
+                <div className="mt-6">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Timesheets</h2>
+                    <PayPeriodDetailFilter
+                      payPeriodId={detail.payPeriod.id}
+                      currentFilter={currentFilter}
+                      sites={sites}
+                      departments={departments}
+                      selectedSiteId={siteId}
+                      selectedDepartmentId={departmentId}
+                    />
+                  </div>
+                  <div className="mt-2">
+                    <PayPeriodTimesheets timesheets={tileData} payPeriodId={detail.payPeriod.id} />
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>

@@ -260,6 +260,7 @@ export async function rebuildSegments(
           site: { select: { timezone: true } },
         },
       },
+      payPeriod: { select: { startDate: true, endDate: true } },
     },
   });
   const timezone = timesheet.employee.site?.timezone ?? "UTC";
@@ -311,6 +312,210 @@ export async function rebuildSegments(
           payCodeId: null,
         },
         data: { payCodeId: regularPayCode.id },
+      });
+    }
+  }
+
+  // Sync ABSENT exceptions for past days in the pay period with no activity.
+  await syncAbsentExceptions(
+    timesheetId,
+    timezone,
+    timesheet.payPeriod.startDate,
+    timesheet.payPeriod.endDate,
+    punches
+  );
+
+  // Sync MISSING_PUNCH exceptions for past days where the shift was left open.
+  await syncMissingPunchExceptions(
+    timesheetId,
+    timezone,
+    timesheet.payPeriod.startDate,
+    timesheet.payPeriod.endDate,
+    punches
+  );
+}
+
+/**
+ * Creates ABSENT exceptions for past days in the pay period that have no punch
+ * or leave activity, and auto-resolves open ABSENT exceptions for days that now
+ * have activity.
+ */
+async function syncAbsentExceptions(
+  timesheetId: string,
+  timezone: string,
+  payPeriodStart: Date,
+  payPeriodEnd: Date,
+  punches: Punch[]
+): Promise<void> {
+  // Calendar date strings (YYYY-MM-DD) for the period bounds and today in site timezone.
+  const periodStartStr = format(payPeriodStart, "yyyy-MM-dd");
+  const periodEndStr = format(payPeriodEnd, "yyyy-MM-dd");
+  const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
+
+  // Build set of days that have at least one approved punch (local timezone).
+  const punchedDays = new Set(
+    punches.map((p) =>
+      new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(p.roundedTime)
+    )
+  );
+
+  // Build set of days that have a LEAVE segment (stored as UTC midnight date).
+  const leaveSegs = await db.workSegment.findMany({
+    where: { timesheetId, segmentType: "LEAVE" },
+    select: { segmentDate: true },
+  });
+  const leaveDays = new Set(leaveSegs.map((s) => format(s.segmentDate, "yyyy-MM-dd")));
+
+  // Collect all past calendar days in the pay period that have no activity.
+  const absentDays = new Set<string>();
+  let dateStr = periodStartStr;
+  while (dateStr < todayStr && dateStr <= periodEndStr) {
+    if (!punchedDays.has(dateStr) && !leaveDays.has(dateStr)) {
+      absentDays.add(dateStr);
+    }
+    const d = new Date(dateStr + "T00:00:00.000Z");
+    d.setUTCDate(d.getUTCDate() + 1);
+    dateStr = d.toISOString().slice(0, 10);
+  }
+
+  // Fetch all currently open ABSENT exceptions for this timesheet.
+  const openExceptions = await db.exception.findMany({
+    where: { timesheetId, exceptionType: "ABSENT", resolvedAt: null },
+    select: { id: true, occurredAt: true },
+  });
+  const openByDate = new Map<string, string>(
+    openExceptions.map((e) => [format(e.occurredAt, "yyyy-MM-dd"), e.id])
+  );
+
+  // Create an exception for each absent day that has no open exception yet.
+  for (const ds of absentDays) {
+    if (!openByDate.has(ds)) {
+      const occurredAt = new Date(ds + "T00:00:00.000Z");
+      await db.exception.create({
+        data: {
+          timesheetId,
+          exceptionType: "ABSENT",
+          description: `No activity recorded on ${new Intl.DateTimeFormat("en-US", {
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+          }).format(occurredAt)}`,
+          occurredAt,
+        },
+      });
+    }
+  }
+
+  // Auto-resolve open ABSENT exceptions for days that now have activity.
+  for (const [ds, exId] of openByDate) {
+    if (!absentDays.has(ds)) {
+      await db.exception.update({
+        where: { id: exId },
+        data: {
+          resolvedAt: new Date(),
+          resolution: "Auto-resolved: activity recorded for this day",
+        },
+      });
+    }
+  }
+}
+
+/**
+ * Creates MISSING_PUNCH exceptions for past days where the shift was left open
+ * (employee punched in but never punched out by end of day), and auto-resolves
+ * open MISSING_PUNCH exceptions for days where the shift is now complete.
+ *
+ * A midnight-spanning shift is NOT flagged: if there are subsequent punches after
+ * end-of-day, it means the shift legitimately continued into the next day.
+ */
+async function syncMissingPunchExceptions(
+  timesheetId: string,
+  timezone: string,
+  payPeriodStart: Date,
+  payPeriodEnd: Date,
+  punches: Punch[]
+): Promise<void> {
+  if (punches.length === 0) return;
+
+  const periodStartStr = format(payPeriodStart, "yyyy-MM-dd");
+  const periodEndStr = format(payPeriodEnd, "yyyy-MM-dd");
+  const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
+  const localDateOf = (d: Date) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(d);
+
+  // Group punches by local date, sorted ascending within each day.
+  const punchesByDay = new Map<string, Punch[]>();
+  for (const p of punches) {
+    const ds = localDateOf(p.roundedTime);
+    const list = punchesByDay.get(ds) ?? [];
+    list.push(p);
+    punchesByDay.set(ds, list);
+  }
+  for (const list of punchesByDay.values()) {
+    list.sort((a, b) => a.roundedTime.getTime() - b.roundedTime.getTime());
+  }
+
+  // Find past days where the shift was left open at end-of-day with no subsequent punch.
+  const missingPunchDays = new Set<string>();
+  let dateStr = periodStartStr;
+  while (dateStr < todayStr && dateStr <= periodEndStr) {
+    const dayPunches = punchesByDay.get(dateStr);
+    if (dayPunches && dayPunches.length > 0) {
+      const lastPunch = dayPunches[dayPunches.length - 1];
+      if (lastPunch.stateAfter !== "OUT") {
+        // Shift open at end of day. Only flag if NO subsequent punch exists
+        // (if one does, the shift spans midnight — a normal overnight shift).
+        const endOfDay = nextMidnightInTz(lastPunch.roundedTime, timezone);
+        const spansToNextDay = punches.some((p) => p.roundedTime >= endOfDay);
+        if (!spansToNextDay) {
+          missingPunchDays.add(dateStr);
+        }
+      }
+    }
+    const d = new Date(dateStr + "T00:00:00.000Z");
+    d.setUTCDate(d.getUTCDate() + 1);
+    dateStr = d.toISOString().slice(0, 10);
+  }
+
+  // Fetch existing open auto-generated MISSING_PUNCH exceptions (occurredAt at UTC midnight).
+  // Manual ones (from punch.actions.ts) use the actual punch time, so format() will match
+  // the same date string and correctly de-duplicate.
+  const openExceptions = await db.exception.findMany({
+    where: { timesheetId, exceptionType: "MISSING_PUNCH", resolvedAt: null },
+    select: { id: true, occurredAt: true },
+  });
+  const openByDate = new Map<string, string>(
+    openExceptions.map((e) => [format(e.occurredAt, "yyyy-MM-dd"), e.id])
+  );
+
+  // Create exceptions for missing-punch days with no open exception yet.
+  for (const ds of missingPunchDays) {
+    if (!openByDate.has(ds)) {
+      const occurredAt = new Date(ds + "T00:00:00.000Z");
+      await db.exception.create({
+        data: {
+          timesheetId,
+          exceptionType: "MISSING_PUNCH",
+          description: `Shift on ${new Intl.DateTimeFormat("en-US", {
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+          }).format(occurredAt)} is missing a punch-out`,
+          occurredAt,
+        },
+      });
+    }
+  }
+
+  // Auto-resolve open MISSING_PUNCH exceptions for days where the shift is now complete.
+  for (const [ds, exId] of openByDate) {
+    if (!missingPunchDays.has(ds)) {
+      await db.exception.update({
+        where: { id: exId },
+        data: {
+          resolvedAt: new Date(),
+          resolution: "Auto-resolved: punch sequence completed for this day",
+        },
       });
     }
   }

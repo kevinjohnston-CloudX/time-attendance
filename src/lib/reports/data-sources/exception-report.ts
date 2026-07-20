@@ -43,6 +43,7 @@ export const exceptionReportSource: DataSourceDefinition = {
         { value: "MISSED_MEAL", label: "Missed Meal" },
         { value: "UNSCHEDULED_OT", label: "Unscheduled OT" },
         { value: "CONSECUTIVE_DAYS", label: "Consecutive Days" },
+        { value: "ABSENT", label: "Absent" },
       ] },
   ],
   groupableFields: ["department", "exceptionType"],

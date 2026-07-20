@@ -30,9 +30,11 @@ interface Props {
   allPayPeriods: PayPeriodItem[];
   selectedId: string | undefined;
   currentFilter: FilterValue;
+  siteId?: string;
+  departmentId?: string;
 }
 
-export function PayPeriodsFilter({ allPayPeriods, selectedId, currentFilter }: Props) {
+export function PayPeriodsFilter({ allPayPeriods, selectedId, currentFilter, siteId, departmentId }: Props) {
   const router = useRouter();
   const calendarRef = useRef<HTMLDivElement>(null);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -54,6 +56,8 @@ export function PayPeriodsFilter({ allPayPeriods, selectedId, currentFilter }: P
     const params = new URLSearchParams();
     if (id) params.set("id", id);
     if (value !== "all") params.set("filter", value);
+    if (siteId) params.set("siteId", siteId);
+    if (departmentId) params.set("departmentId", departmentId);
     router.push(`/payroll/pay-periods?${params.toString()}`);
   }
 

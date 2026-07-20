@@ -47,6 +47,7 @@ export const updateEmployeeSchema = z.object({
   siteId: z.string().min(1).optional(),
   departmentId: z.string().min(1).optional(),
   ruleSetId: z.string().min(1).optional(),
+  shiftId: nullableStr,
   isActive: z.boolean().optional(),
   wmsId: nullableStr,
   adpWorkerId: nullableStr,

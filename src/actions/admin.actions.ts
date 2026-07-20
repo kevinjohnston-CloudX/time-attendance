@@ -51,7 +51,7 @@ export const getAdminRefData = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ tenantId }, _input: void) => {
     const t = tenantId ?? undefined;
-    const [sites, departments, ruleSets, employees, customRoles] = await Promise.all([
+    const [sites, departments, ruleSets, employees, customRoles, shifts] = await Promise.all([
       db.site.findMany({ where: { isActive: true, tenantId: t }, orderBy: { name: "asc" } }),
       db.department.findMany({
         where: { isActive: true, tenantId: t },
@@ -69,8 +69,13 @@ export const getAdminRefData = withRBAC(
         select: { id: true, name: true },
         orderBy: { rank: "asc" },
       }),
+      db.shift.findMany({
+        where: { isActive: true, tenantId: t },
+        orderBy: [{ startTime: "asc" }, { name: "asc" }],
+        select: { id: true, name: true, startTime: true, endTime: true },
+      }),
     ]);
-    return { sites, departments, ruleSets, employees: employees.map(serializePayRate), customRoles };
+    return { sites, departments, ruleSets, employees: employees.map(serializePayRate), customRoles, shifts };
   }
 );
 
@@ -167,7 +172,7 @@ export const updateEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateEmployeeInput) => {
     const {
-      employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, isActive, wmsId, adpWorkerId,
+      employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, isActive, wmsId, adpWorkerId,
       jobTitle, terminationReason, payType, payRate,
       phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
@@ -200,6 +205,7 @@ export const updateEmployee = withRBAC(
           ...(siteId !== undefined && { siteId }),
           ...(departmentId !== undefined && { departmentId }),
           ...(ruleSetId !== undefined && { ruleSetId }),
+          ...(shiftId !== undefined && { shiftId }),
           ...(isActive !== undefined && { isActive }),
           ...(wmsId !== undefined && { wmsId }),
           ...(adpWorkerId !== undefined && { adpWorkerId }),

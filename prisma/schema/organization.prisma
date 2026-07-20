@@ -24,6 +24,7 @@ model Tenant {
   payCodes    PayCode[]
   reasonCodes ReasonCode[]
   holidays    Holiday[]
+  shifts      Shift[]
 
   @@map("tenants")
 }
@@ -86,6 +87,7 @@ model Employee {
   siteId       String
   departmentId String
   ruleSetId    String
+  shiftId      String?
   isActive     Boolean  @default(true)
   hireDate     DateTime
   terminatedAt DateTime?
@@ -128,6 +130,7 @@ model Employee {
   site         Site         @relation(fields: [siteId], references: [id])
   department   Department   @relation(fields: [departmentId], references: [id])
   ruleSet      RuleSet      @relation(fields: [ruleSetId], references: [id])
+  shift        Shift?       @relation(fields: [shiftId], references: [id])
   punches      Punch[]
   timesheets   Timesheet[]
   leaveBalances    LeaveBalance[]
@@ -138,6 +141,23 @@ model Employee {
 
   @@unique([tenantId, employeeCode])
   @@map("employees")
+}
+
+model Shift {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  startTime String   /// Time of day in HH:mm format, e.g. "06:00"
+  endTime   String   /// Time of day in HH:mm format, e.g. "14:00"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  employees Employee[]
+
+  @@unique([tenantId, name])
+  @@map("shifts")
 }
 
 model Document {

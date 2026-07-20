@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, FolderOpen, Settings, Palmtree, Calendar, Tag, MessageSquare } from "lucide-react";
+import { Building2, FolderOpen, Settings, Palmtree, Calendar, Tag, MessageSquare, CalendarClock } from "lucide-react";
 import { SitesManager } from "@/components/admin/sites-manager";
 import { DepartmentsManager } from "@/components/admin/departments-manager";
 import { RuleSetsManager } from "@/components/admin/rule-sets-manager";
@@ -9,11 +9,12 @@ import { HolidaysManager } from "@/components/admin/holidays-manager";
 import { LeaveTypesManager } from "@/components/admin/leave-types-manager";
 import { PayCodesManager } from "@/components/admin/pay-codes-manager";
 import { ReasonCodesManager } from "@/components/admin/reason-codes-manager";
+import { PtoPoliciesManager } from "@/components/admin/pto-policies-manager";
 import type { Site, Department, RuleSet, Holiday } from "@prisma/client";
 
 type DepartmentWithSites = Department & { sites: { site: Site }[] };
 
-type Tab = "sites" | "departments" | "rule-sets" | "holidays" | "leave-types" | "pay-codes" | "reason-codes";
+type Tab = "sites" | "departments" | "rule-sets" | "holidays" | "leave-types" | "pay-codes" | "reason-codes" | "pto-policies";
 
 interface TabDef {
   id: Tab;
@@ -33,8 +34,10 @@ const TABS: TabDef[] = [
   { id: "leave-types",   label: "Leave Types",   icon: Calendar,     requires: "rules",   title: "Leave Types" },
   { id: "pay-codes",     label: "Pay Codes",     icon: Tag,          requires: "payroll", title: "Pay Codes",
     description: "Manage numeric pay codes used for payroll export and segment classification." },
-  { id: "reason-codes",  label: "Reason Codes",  icon: MessageSquare, requires: "payroll", title: "Reason Codes",
+  { id: "reason-codes",  label: "Reason Codes",  icon: MessageSquare,  requires: "payroll", title: "Reason Codes",
     description: "Manage reason codes that can be assigned to timecard entries." },
+  { id: "pto-policies",  label: "PTO Policies",  icon: CalendarClock,  requires: "rules",   title: "PTO Policies",
+    description: "Define tenure-based accrual rules per leave type. Assign policies to sites or individual employees." },
 ];
 
 interface Props {
@@ -52,6 +55,8 @@ interface Props {
   payCodes: any[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   reasonCodes: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ptoPolicies: any[];
   hasSiteManage: boolean;
   hasRulesManage: boolean;
   hasPayPeriodManage: boolean;
@@ -65,6 +70,7 @@ export function SiteSettingsClient({
   leaveTypes,
   payCodes,
   reasonCodes,
+  ptoPolicies,
   hasSiteManage,
   hasRulesManage,
   hasPayPeriodManage,
@@ -139,6 +145,9 @@ export function SiteSettingsClient({
             )}
             {activeTab === "reason-codes" && (
               <ReasonCodesManager reasonCodes={reasonCodes} />
+            )}
+            {activeTab === "pto-policies" && (
+              <PtoPoliciesManager policies={ptoPolicies} leaveTypes={leaveTypes} />
             )}
           </>
         )}

@@ -6,6 +6,7 @@ import { getSites, getDepartments, getRuleSets, getLeaveTypesAdmin } from "@/act
 import { getHolidays } from "@/actions/holiday.actions";
 import { getAllPayCodes } from "@/actions/pay-code.actions";
 import { getReasonCodes } from "@/actions/reason-code.actions";
+import { getPtoPolicies } from "@/actions/pto-policy.actions";
 import { SiteSettingsClient } from "./site-settings-client";
 
 export default async function SiteSettingsPage() {
@@ -20,7 +21,7 @@ export default async function SiteSettingsPage() {
 
   if (!hasSiteManage && !hasRulesManage && !hasPayPeriodManage) redirect("/admin");
 
-  const [sitesResult, deptsResult, ruleSetsResult, holidaysResult, leaveTypesResult, payCodesResult, reasonCodesResult] = await Promise.all([
+  const [sitesResult, deptsResult, ruleSetsResult, holidaysResult, leaveTypesResult, payCodesResult, reasonCodesResult, ptoPoliciesResult] = await Promise.all([
     getSites(),
     getDepartments(),
     getRuleSets(),
@@ -28,6 +29,7 @@ export default async function SiteSettingsPage() {
     getLeaveTypesAdmin(),
     getAllPayCodes(),
     getReasonCodes(),
+    getPtoPolicies(),
   ]);
 
   return (
@@ -48,6 +50,7 @@ export default async function SiteSettingsPage() {
         leaveTypes={leaveTypesResult.success ? leaveTypesResult.data : []}
         payCodes={payCodesResult.success ? payCodesResult.data : []}
         reasonCodes={reasonCodesResult.success ? reasonCodesResult.data : []}
+        ptoPolicies={ptoPoliciesResult.success ? ptoPoliciesResult.data : []}
         hasSiteManage={hasSiteManage}
         hasRulesManage={hasRulesManage}
         hasPayPeriodManage={hasPayPeriodManage}
