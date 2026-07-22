@@ -79,7 +79,7 @@ function TimesheetCard({
         </Link>
         <div className="ml-3 flex shrink-0 items-center gap-2">
           <span className={`rounded-full px-3 py-1 text-xs font-medium ${TS_BADGE[ts.status] ?? ""}`}>
-            {TIMESHEET_STATUS_LABEL[ts.status]}
+            {(TIMESHEET_STATUS_LABEL as Record<string, string>)[ts.status] ?? ts.status}
           </span>
           {hasIssues && (
             <button
