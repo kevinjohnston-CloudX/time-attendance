@@ -110,7 +110,7 @@ function parseCsv(text: string): { rows: CsvEmployeeRow[]; parseErrors: string[]
       wmsId: fields[colIndex.wmsId] ?? "",
       payType: colIndex.payType >= 0 ? (fields[colIndex.payType] ?? "") : "",
       payRate: colIndex.payRate >= 0 ? (fields[colIndex.payRate] ?? "") : "",
-    } as CsvEmployeeRow);
+    } as unknown as CsvEmployeeRow);
   }
 
   return { rows, parseErrors };

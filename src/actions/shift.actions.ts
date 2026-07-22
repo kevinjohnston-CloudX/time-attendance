@@ -9,7 +9,7 @@ import type { Shift } from "@prisma/client";
 
 export const getShifts = withRBAC(
   "RULES_MANAGE",
-  async (ctx) => {
+  async (ctx, _input: void) => {
     const tenantId = ctx.tenantId;
     if (!tenantId) return [] as Shift[];
 

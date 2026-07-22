@@ -16,6 +16,7 @@ import {
   type CorrectAndResolveInput,
 } from "@/lib/validators/supervisor.schema";
 import { z } from "zod";
+import { ExceptionType } from "@prisma/client";
 import type { Role } from "@/lib/rbac/roles";
 import type { PunchState, PunchType } from "@prisma/client";
 
@@ -90,7 +91,7 @@ export const getTeamExceptions = withRBAC(
     const { siteId, departmentId, exceptionType, payPeriodId } = z.object({
       siteId: z.string().optional(),
       departmentId: z.string().optional(),
-      exceptionType: z.string().optional(),
+      exceptionType: z.nativeEnum(ExceptionType).optional(),
       payPeriodId: z.string().optional(),
     }).parse(input ?? {});
 
