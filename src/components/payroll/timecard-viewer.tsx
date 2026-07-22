@@ -66,6 +66,8 @@ type EmployeeListItem = {
   name: string;
   employeeCode: string;
   department: string;
+  siteId: string | null;
+  siteName: string | null;
   status: string;
   isActive: boolean;
   totalMinutes: number;
@@ -1279,62 +1281,88 @@ export function TimecardViewer({
                 No employees found.
               </p>
             )}
-            {filteredEmployees.map((emp) => {
-              const isSelected = emp.employeeId === selectedEmployeeId;
-              const canQuickApprove = emp.status === "SUBMITTED" || emp.status === "SUP_APPROVED";
-              return (
-                <div
-                  key={emp.employeeId}
-                  onClick={() => navigate(selectedPayPeriodId, emp.employeeId)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(selectedPayPeriodId, emp.employeeId); }}
-                  tabIndex={0}
-                  role="button"
-                  className={`flex w-full cursor-pointer flex-col border-b border-zinc-100 px-3 py-2.5 text-left transition-colors dark:border-zinc-800/60 ${
-                    isSelected
-                      ? "bg-blue-50 dark:bg-blue-950/30"
-                      : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
-                  }`}
-                >
-                  <div className="flex w-full items-center justify-between gap-2">
-                    <p
-                      className={`truncate text-sm font-medium ${
-                        isSelected
-                          ? "text-zinc-900 dark:text-white"
-                          : "text-zinc-700 dark:text-zinc-300"
-                      }`}
-                    >
-                      {emp.name}
-                    </p>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <span className="text-xs tabular-nums text-zinc-400">
-                        {minutesToHoursDecimal(emp.totalMinutes)}h
-                      </span>
-                      {canQuickApprove && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); handleQuickApprove(emp); }}
-                          disabled={approvingId === emp.timesheetId}
-                          title={emp.status === "SUP_APPROVED" ? "Payroll Approve" : "Approve"}
-                          className="rounded bg-green-600 p-0.5 text-white hover:bg-green-700 disabled:opacity-50"
-                        >
-                          {approvingId === emp.timesheetId
-                            ? <span className="block w-3 text-center text-xs leading-none">…</span>
-                            : <Check className="h-3 w-3" />}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="mt-1 flex items-center justify-between gap-2">
-                    <p className="truncate text-xs text-zinc-400">
-                      {emp.employeeCode} · {emp.department}
-                    </p>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[emp.status] ?? STATUS_BADGE.OPEN}`}>
-                      {TIMESHEET_STATUS_LABEL[emp.status as TimesheetStatusValue] ?? emp.status}
-                    </span>
-                  </div>
-                </div>
+            {(() => {
+              // Group employees by site, preserving alphabetical order within each group
+              const groupMap = new Map<string, { siteName: string; employees: EmployeeListItem[] }>();
+              for (const emp of filteredEmployees) {
+                const key = emp.siteId ?? "__none__";
+                const label = emp.siteName ?? "No Site";
+                if (!groupMap.has(key)) groupMap.set(key, { siteName: label, employees: [] });
+                groupMap.get(key)!.employees.push(emp);
+              }
+              const groups = Array.from(groupMap.values()).sort((a, b) =>
+                a.siteName.localeCompare(b.siteName)
               );
-            })}
+              const showHeaders = groups.length > 1 || (groups.length === 1 && groups[0].siteName !== "No Site");
+
+              return groups.map((group) => (
+                <React.Fragment key={group.siteName}>
+                  {showHeaders && (
+                    <div className="sticky top-0 z-10 border-b border-zinc-200 bg-zinc-100 px-3 py-1.5 dark:border-zinc-700 dark:bg-zinc-800/80">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                        {group.siteName}
+                      </span>
+                    </div>
+                  )}
+                  {group.employees.map((emp) => {
+                    const isSelected = emp.employeeId === selectedEmployeeId;
+                    const canQuickApprove = emp.status === "SUBMITTED" || emp.status === "SUP_APPROVED";
+                    return (
+                      <div
+                        key={emp.employeeId}
+                        onClick={() => navigate(selectedPayPeriodId, emp.employeeId)}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(selectedPayPeriodId, emp.employeeId); }}
+                        tabIndex={0}
+                        role="button"
+                        className={`flex w-full cursor-pointer flex-col border-b border-zinc-100 px-3 py-2.5 text-left transition-colors dark:border-zinc-800/60 ${
+                          isSelected
+                            ? "bg-blue-50 dark:bg-blue-950/30"
+                            : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                        }`}
+                      >
+                        <div className="flex w-full items-center justify-between gap-2">
+                          <p
+                            className={`truncate text-sm font-medium ${
+                              isSelected
+                                ? "text-zinc-900 dark:text-white"
+                                : "text-zinc-700 dark:text-zinc-300"
+                            }`}
+                          >
+                            {emp.name}
+                          </p>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <span className="text-xs tabular-nums text-zinc-400">
+                              {minutesToHoursDecimal(emp.totalMinutes)}h
+                            </span>
+                            {canQuickApprove && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleQuickApprove(emp); }}
+                                disabled={approvingId === emp.timesheetId}
+                                title={emp.status === "SUP_APPROVED" ? "Payroll Approve" : "Approve"}
+                                className="rounded bg-green-600 p-0.5 text-white hover:bg-green-700 disabled:opacity-50"
+                              >
+                                {approvingId === emp.timesheetId
+                                  ? <span className="block w-3 text-center text-xs leading-none">…</span>
+                                  : <Check className="h-3 w-3" />}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between gap-2">
+                          <p className="truncate text-xs text-zinc-400">
+                            {emp.employeeCode} · {emp.department}
+                          </p>
+                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[emp.status] ?? STATUS_BADGE.OPEN}`}>
+                            {TIMESHEET_STATUS_LABEL[emp.status as TimesheetStatusValue] ?? emp.status}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </React.Fragment>
+              ));
+            })()}
           </div>
         </div>
 
@@ -1745,11 +1773,7 @@ export function TimecardViewer({
 
                             {/* In time */}
                             <td className={`px-2 py-1 font-mono text-sm ${
-                              isAbsent
-                                ? "text-red-700 dark:text-red-400"
-                                : hasMissingPunch
-                                  ? "text-amber-700 dark:text-amber-400"
-                                  : "text-zinc-700 dark:text-zinc-300"
+                              isAbsent ? "text-red-700 dark:text-red-400" : "text-zinc-700 dark:text-zinc-300"
                             }`} onClick={(e) => e.stopPropagation()}>
                               {addingPunch?.dayKey === dayKey && addingPunch.pairIndex === 0 && addingPunch.punchType === "CLOCK_IN" ? (
                                 <form onSubmit={handleAddPunch} className="flex flex-col gap-1">
@@ -1834,6 +1858,16 @@ export function TimecardViewer({
                                 >
                                   {format(parseISO(firstIn.roundedTime), "h:mm a")}
                                 </button>
+                              ) : hasMissingPunch && canEdit ? (
+                                <button
+                                  type="button"
+                                  onClick={() => startAddingPunch(dayKey, 0, "CLOCK_IN", day)}
+                                  className="rounded px-1 py-0.5 font-medium text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/30"
+                                >
+                                  Missed
+                                </button>
+                              ) : hasMissingPunch ? (
+                                <span className="font-medium text-amber-600 dark:text-amber-400">Missed</span>
                               ) : canEdit ? (
                                 <button
                                   type="button"
@@ -1932,6 +1966,16 @@ export function TimecardViewer({
                                 >
                                   {format(parseISO(lastOut.roundedTime), "h:mm a")}
                                 </button>
+                              ) : hasMissingPunch && canEdit ? (
+                                <button
+                                  type="button"
+                                  onClick={() => startAddingPunch(dayKey, 0, "CLOCK_OUT", day)}
+                                  className="rounded px-1 py-0.5 font-medium text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/30"
+                                >
+                                  Missed
+                                </button>
+                              ) : hasMissingPunch ? (
+                                <span className="font-medium text-amber-600 dark:text-amber-400">Missed</span>
                               ) : canEdit ? (
                                 <button
                                   type="button"

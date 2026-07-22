@@ -24,16 +24,21 @@ export const getShifts = withRBAC(
 
 const timeSchema = z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:mm");
 
+const workDaysSchema = z
+  .array(z.number().int().min(0).max(6))
+  .default([1, 2, 3, 4, 5]);
+
 const createShiftSchema = z.object({
   name: z.string().min(1).max(100),
   startTime: timeSchema,
   endTime: timeSchema,
+  workDays: workDaysSchema,
 });
 
 export const createShift = withRBAC(
   "RULES_MANAGE",
   async (ctx, input: unknown) => {
-    const { name, startTime, endTime } = createShiftSchema.parse(input);
+    const { name, startTime, endTime, workDays } = createShiftSchema.parse(input);
     const tenantId = ctx.tenantId!;
 
     const existing = await db.shift.findUnique({
@@ -42,7 +47,7 @@ export const createShift = withRBAC(
     if (existing) throw new Error(`A shift named "${name}" already exists.`);
 
     await db.shift.create({
-      data: { tenantId, name, startTime, endTime },
+      data: { tenantId, name, startTime, endTime, workDays },
     });
 
     return { success: true };
@@ -56,13 +61,14 @@ const updateShiftSchema = z.object({
   name: z.string().min(1).max(100),
   startTime: timeSchema,
   endTime: timeSchema,
+  workDays: workDaysSchema,
   isActive: z.boolean(),
 });
 
 export const updateShift = withRBAC(
   "RULES_MANAGE",
   async (ctx, input: unknown) => {
-    const { shiftId, name, startTime, endTime, isActive } = updateShiftSchema.parse(input);
+    const { shiftId, name, startTime, endTime, workDays, isActive } = updateShiftSchema.parse(input);
     const tenantId = ctx.tenantId!;
 
     const conflict = await db.shift.findFirst({
@@ -72,7 +78,7 @@ export const updateShift = withRBAC(
 
     await db.shift.update({
       where: { id: shiftId },
-      data: { name, startTime, endTime, isActive },
+      data: { name, startTime, endTime, workDays, isActive },
     });
 
     return { success: true };

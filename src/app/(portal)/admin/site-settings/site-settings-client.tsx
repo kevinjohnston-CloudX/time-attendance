@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, FolderOpen, Settings, Palmtree, Calendar, Tag, MessageSquare, CalendarClock } from "lucide-react";
+import { Building2, FolderOpen, Settings, Palmtree, Calendar, Tag, MessageSquare, CalendarClock, Clock, ShieldCheck } from "lucide-react";
 import { SitesManager } from "@/components/admin/sites-manager";
 import { DepartmentsManager } from "@/components/admin/departments-manager";
 import { RuleSetsManager } from "@/components/admin/rule-sets-manager";
@@ -10,34 +10,40 @@ import { LeaveTypesManager } from "@/components/admin/leave-types-manager";
 import { PayCodesManager } from "@/components/admin/pay-codes-manager";
 import { ReasonCodesManager } from "@/components/admin/reason-codes-manager";
 import { PtoPoliciesManager } from "@/components/admin/pto-policies-manager";
+import { ShiftsManager } from "@/components/admin/shifts-manager";
+import { RolesClient } from "@/components/admin/roles-client";
 import type { Site, Department, RuleSet, Holiday } from "@prisma/client";
 
 type DepartmentWithSites = Department & { sites: { site: Site }[] };
 
-type Tab = "sites" | "departments" | "rule-sets" | "holidays" | "leave-types" | "pay-codes" | "reason-codes" | "pto-policies";
+type Tab = "sites" | "departments" | "rule-sets" | "holidays" | "leave-types" | "pay-codes" | "reason-codes" | "pto-policies" | "shifts" | "roles";
 
 interface TabDef {
   id: Tab;
   label: string;
   icon: React.ElementType;
-  requires: "site" | "rules" | "payroll";
+  requires: "site" | "rules" | "payroll" | "role";
   title: string;
   description?: string;
 }
 
 const TABS: TabDef[] = [
-  { id: "sites",         label: "Sites",         icon: Building2,    requires: "site",    title: "Sites" },
-  { id: "departments",   label: "Departments",   icon: FolderOpen,   requires: "site",    title: "Departments" },
-  { id: "rule-sets",     label: "Rule Sets",     icon: Settings,     requires: "rules",   title: "Rule Sets" },
-  { id: "holidays",      label: "Holidays",      icon: Palmtree,     requires: "rules",   title: "Holidays",
+  { id: "sites",         label: "Sites",         icon: Building2,     requires: "site",    title: "Sites" },
+  { id: "departments",   label: "Departments",   icon: FolderOpen,    requires: "site",    title: "Departments" },
+  { id: "rule-sets",     label: "Rule Sets",     icon: Settings,      requires: "rules",   title: "Rule Sets" },
+  { id: "shifts",        label: "Shifts",        icon: Clock,         requires: "rules",   title: "Shifts",
+    description: "Define shift types with start and end times to assign to employees." },
+  { id: "holidays",      label: "Holidays",      icon: Palmtree,      requires: "rules",   title: "Holidays",
     description: "Manage company holidays. Holidays can be used when submitting leave requests." },
-  { id: "leave-types",   label: "Leave Types",   icon: Calendar,     requires: "rules",   title: "Leave Types" },
-  { id: "pay-codes",     label: "Pay Codes",     icon: Tag,          requires: "payroll", title: "Pay Codes",
-    description: "Manage numeric pay codes used for payroll export and segment classification." },
-  { id: "reason-codes",  label: "Reason Codes",  icon: MessageSquare,  requires: "payroll", title: "Reason Codes",
-    description: "Manage reason codes that can be assigned to timecard entries." },
-  { id: "pto-policies",  label: "PTO Policies",  icon: CalendarClock,  requires: "rules",   title: "PTO Policies",
+  { id: "leave-types",   label: "Leave Types",   icon: Calendar,      requires: "rules",   title: "Leave Types" },
+  { id: "pto-policies",  label: "PTO Policies",  icon: CalendarClock, requires: "rules",   title: "PTO Policies",
     description: "Define tenure-based accrual rules per leave type. Assign policies to sites or individual employees." },
+  { id: "pay-codes",     label: "Pay Codes",     icon: Tag,           requires: "payroll", title: "Pay Codes",
+    description: "Manage numeric pay codes used for payroll export and segment classification." },
+  { id: "reason-codes",  label: "Reason Codes",  icon: MessageSquare, requires: "payroll", title: "Reason Codes",
+    description: "Manage reason codes that can be assigned to timecard entries." },
+  { id: "roles",         label: "Roles",         icon: ShieldCheck,   requires: "role",    title: "Roles & Permissions",
+    description: "Manage built-in and custom roles. Assign permissions to control access across the system." },
 ];
 
 interface Props {
@@ -57,9 +63,17 @@ interface Props {
   reasonCodes: any[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ptoPolicies: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  shifts: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  roles: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  builtinRoles: any[];
   hasSiteManage: boolean;
   hasRulesManage: boolean;
   hasPayPeriodManage: boolean;
+  hasRoleManage: boolean;
+  initialTab?: string;
 }
 
 export function SiteSettingsClient({
@@ -71,18 +85,29 @@ export function SiteSettingsClient({
   payCodes,
   reasonCodes,
   ptoPolicies,
+  shifts,
+  roles,
+  builtinRoles,
   hasSiteManage,
   hasRulesManage,
   hasPayPeriodManage,
+  hasRoleManage,
+  initialTab,
 }: Props) {
   const visibleTabs = TABS.filter(
     (t) =>
-      (t.requires === "site" && hasSiteManage) ||
-      (t.requires === "rules" && hasRulesManage) ||
-      (t.requires === "payroll" && hasPayPeriodManage)
+      (t.requires === "site"    && hasSiteManage) ||
+      (t.requires === "rules"   && hasRulesManage) ||
+      (t.requires === "payroll" && hasPayPeriodManage) ||
+      (t.requires === "role"    && hasRoleManage)
   );
 
-  const [activeTab, setActiveTab] = useState<Tab>(visibleTabs[0]?.id ?? "sites");
+  const defaultTab =
+    initialTab && visibleTabs.some((t) => t.id === initialTab)
+      ? (initialTab as Tab)
+      : (visibleTabs[0]?.id ?? "sites");
+
+  const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
 
   const current = TABS.find((t) => t.id === activeTab);
 
@@ -134,11 +159,17 @@ export function SiteSettingsClient({
             {activeTab === "rule-sets" && (
               <RuleSetsManager ruleSets={ruleSets as RuleSet[]} />
             )}
+            {activeTab === "shifts" && (
+              <ShiftsManager shifts={shifts} />
+            )}
             {activeTab === "holidays" && (
               <HolidaysManager holidays={holidays as Holiday[]} />
             )}
             {activeTab === "leave-types" && (
               <LeaveTypesManager leaveTypes={leaveTypes} />
+            )}
+            {activeTab === "pto-policies" && (
+              <PtoPoliciesManager policies={ptoPolicies} leaveTypes={leaveTypes} />
             )}
             {activeTab === "pay-codes" && (
               <PayCodesManager payCodes={payCodes} />
@@ -146,8 +177,8 @@ export function SiteSettingsClient({
             {activeTab === "reason-codes" && (
               <ReasonCodesManager reasonCodes={reasonCodes} />
             )}
-            {activeTab === "pto-policies" && (
-              <PtoPoliciesManager policies={ptoPolicies} leaveTypes={leaveTypes} />
+            {activeTab === "roles" && (
+              <RolesClient roles={roles} builtinRoles={builtinRoles} />
             )}
           </>
         )}

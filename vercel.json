@@ -10,11 +10,11 @@
     },
     {
       "path": "/api/cron/detect-missing-punches",
-      "schedule": "5 5 * * *"
+      "schedule": "5 10 * * *"
     },
     {
       "path": "/api/cron/auto-submit-timesheets",
-      "schedule": "10 5 * * *"
+      "schedule": "10 10 * * *"
     }
   ]
 }

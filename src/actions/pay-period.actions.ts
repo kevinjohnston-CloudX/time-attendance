@@ -42,7 +42,7 @@ export const getPayPeriodDetail = withRBAC(
         include: {
           timesheets: {
             include: {
-              employee: { include: { user: true } },
+              employee: { include: { user: true, site: { select: { id: true, name: true } } } },
               overtimeBuckets: true,
               exceptions: { where: { resolvedAt: null } },
             },

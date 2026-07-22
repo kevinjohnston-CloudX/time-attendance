@@ -18,6 +18,16 @@ const cancelBtnCls =
 const dangerBtnCls =
   "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50";
 
+const DAYS = [
+  { label: "Sun", value: 0 },
+  { label: "Mon", value: 1 },
+  { label: "Tue", value: 2 },
+  { label: "Wed", value: 3 },
+  { label: "Thu", value: 4 },
+  { label: "Fri", value: 5 },
+  { label: "Sat", value: 6 },
+];
+
 function formatTime(hhmm: string): string {
   const [h, m] = hhmm.split(":").map(Number);
   const ampm = h >= 12 ? "PM" : "AM";
@@ -25,39 +35,111 @@ function formatTime(hhmm: string): string {
   return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
 }
 
-function ShiftFields({ shift }: { shift?: Shift }) {
+function formatWorkDays(workDays: number[]): string {
+  if (workDays.length === 0) return "No days";
+  if (workDays.length === 7) return "Every day";
+  const sorted = [...workDays].sort((a, b) => a - b);
+  if (
+    sorted.length === 5 &&
+    sorted[0] === 1 &&
+    sorted[4] === 5
+  )
+    return "Mon – Fri";
+  if (
+    sorted.length === 6 &&
+    sorted[0] === 1 &&
+    sorted[5] === 6
+  )
+    return "Mon – Sat";
+  return sorted.map((d) => DAYS[d].label).join(", ");
+}
+
+function DayPicker({
+  defaultDays,
+}: {
+  defaultDays: number[];
+}) {
+  const [selected, setSelected] = useState<number[]>(defaultDays);
+
+  function toggle(day: number) {
+    setSelected((prev) =>
+      prev.includes(day)
+        ? prev.filter((d) => d !== day)
+        : [...prev, day].sort((a, b) => a - b)
+    );
+  }
+
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <div>
-        <label className="mb-1 block text-xs text-zinc-500">Shift Name</label>
-        <input
-          name="name"
-          required
-          defaultValue={shift?.name ?? ""}
-          placeholder="e.g. Morning Shift"
-          className={inputCls}
-        />
+    <div>
+      <label className="mb-1.5 block text-xs text-zinc-500">Work Days</label>
+      <div className="flex flex-wrap gap-1.5">
+        {DAYS.map((day) => {
+          const active = selected.includes(day.value);
+          return (
+            <button
+              key={day.value}
+              type="button"
+              onClick={() => toggle(day.value)}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                active
+                  ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                  : "border border-zinc-300 text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-600 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:text-zinc-300"
+              }`}
+            >
+              {day.label}
+            </button>
+          );
+        })}
       </div>
-      <div>
-        <label className="mb-1 block text-xs text-zinc-500">Start Time</label>
-        <input
-          name="startTime"
-          type="time"
-          required
-          defaultValue={shift?.startTime ?? ""}
-          className={inputCls}
-        />
+      {/* Submit selected days as hidden inputs */}
+      {selected.map((d) => (
+        <input key={d} type="hidden" name="workDays" value={d} />
+      ))}
+    </div>
+  );
+}
+
+function ShiftFields({ shift }: { shift?: Shift }) {
+  const defaultDays =
+    shift?.workDays && shift.workDays.length > 0
+      ? shift.workDays
+      : [1, 2, 3, 4, 5];
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div>
+          <label className="mb-1 block text-xs text-zinc-500">Shift Name</label>
+          <input
+            name="name"
+            required
+            defaultValue={shift?.name ?? ""}
+            placeholder="e.g. Morning Shift"
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-zinc-500">Start Time</label>
+          <input
+            name="startTime"
+            type="time"
+            required
+            defaultValue={shift?.startTime ?? ""}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-zinc-500">End Time</label>
+          <input
+            name="endTime"
+            type="time"
+            required
+            defaultValue={shift?.endTime ?? ""}
+            className={inputCls}
+          />
+        </div>
       </div>
-      <div>
-        <label className="mb-1 block text-xs text-zinc-500">End Time</label>
-        <input
-          name="endTime"
-          type="time"
-          required
-          defaultValue={shift?.endTime ?? ""}
-          className={inputCls}
-        />
-      </div>
+      <DayPicker defaultDays={defaultDays} />
     </div>
   );
 }
@@ -76,12 +158,14 @@ export function ShiftsManager({ shifts }: Props) {
   function handleCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const workDays = fd.getAll("workDays").map(Number);
     setError(null);
     startTransition(async () => {
       const result = await createShift({
         name: fd.get("name") as string,
         startTime: fd.get("startTime") as string,
         endTime: fd.get("endTime") as string,
+        workDays,
       });
       if (!result.success) {
         setError(result.error);
@@ -95,6 +179,7 @@ export function ShiftsManager({ shifts }: Props) {
   function handleUpdate(shift: Shift, e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const workDays = fd.getAll("workDays").map(Number);
     setError(null);
     startTransition(async () => {
       const result = await updateShift({
@@ -102,6 +187,7 @@ export function ShiftsManager({ shifts }: Props) {
         name: fd.get("name") as string,
         startTime: fd.get("startTime") as string,
         endTime: fd.get("endTime") as string,
+        workDays,
         isActive: fd.get("isActive") === "true",
       });
       if (!result.success) {
@@ -227,6 +313,9 @@ export function ShiftsManager({ shifts }: Props) {
                 <p className="font-medium text-zinc-900 dark:text-white">{shift.name}</p>
                 <p className="text-sm text-zinc-500">
                   {formatTime(shift.startTime)} – {formatTime(shift.endTime)}
+                </p>
+                <p className="text-sm text-zinc-400">
+                  {formatWorkDays(shift.workDays)}
                 </p>
               </div>
               <div className="flex items-center gap-3">

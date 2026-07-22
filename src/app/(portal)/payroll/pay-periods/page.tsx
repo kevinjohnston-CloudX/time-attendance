@@ -248,6 +248,8 @@ export default async function PayPeriodsPage({
                 dt: ts.overtimeBuckets.find((b) => b.bucket === "DT")?.totalMinutes ?? 0,
                 hasExceptions: ts.exceptions.length > 0,
                 issues: issuesByTs.get(ts.id) ?? [],
+                siteId: ts.employee.siteId ?? null,
+                siteName: ts.employee.site?.name ?? null,
               }));
               return (
                 <div className="mt-6">

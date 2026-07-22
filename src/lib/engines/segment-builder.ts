@@ -390,7 +390,9 @@ async function syncAbsentExceptions(
   // Create an exception for each absent day that has no open exception yet.
   for (const ds of absentDays) {
     if (!openByDate.has(ds)) {
-      const occurredAt = new Date(ds + "T00:00:00.000Z");
+      // Use noon UTC so the date displays correctly in any timezone (UTC midnight
+      // would appear as the previous evening in negative-offset timezones like EDT).
+      const occurredAt = new Date(ds + "T12:00:00.000Z");
       await db.exception.create({
         data: {
           timesheetId,
@@ -399,6 +401,7 @@ async function syncAbsentExceptions(
             month: "long",
             day: "numeric",
             year: "numeric",
+            timeZone: timezone,
           }).format(occurredAt)}`,
           occurredAt,
         },
@@ -455,21 +458,22 @@ async function syncMissingPunchExceptions(
     list.sort((a, b) => a.roundedTime.getTime() - b.roundedTime.getTime());
   }
 
-  // Find past days where the shift was left open at end-of-day with no subsequent punch.
-  const missingPunchDays = new Set<string>();
+  // Find past days with an incomplete punch sequence.
+  // missingPunchDays maps date string → description of what's missing.
+  const missingPunchDays = new Map<string, string>();
   let dateStr = periodStartStr;
   while (dateStr < todayStr && dateStr <= periodEndStr) {
     const dayPunches = punchesByDay.get(dateStr);
     if (dayPunches && dayPunches.length > 0) {
+      const firstPunch = dayPunches[0];
       const lastPunch = dayPunches[dayPunches.length - 1];
-      if (lastPunch.stateAfter !== "OUT") {
-        // Shift open at end of day. Only flag if NO subsequent punch exists
-        // (if one does, the shift spans midnight — a normal overnight shift).
-        const endOfDay = nextMidnightInTz(lastPunch.roundedTime, timezone);
-        const spansToNextDay = punches.some((p) => p.roundedTime >= endOfDay);
-        if (!spansToNextDay) {
-          missingPunchDays.add(dateStr);
-        }
+      const missingIn = firstPunch.stateBefore !== "OUT";
+      const missingOut = lastPunch.stateAfter !== "OUT";
+      if (missingIn || missingOut) {
+        const what =
+          missingIn && missingOut ? "a punch-in and punch-out" :
+          missingIn ? "a punch-in" : "a punch-out";
+        missingPunchDays.set(dateStr, what);
       }
     }
     const d = new Date(dateStr + "T00:00:00.000Z");
@@ -489,9 +493,11 @@ async function syncMissingPunchExceptions(
   );
 
   // Create exceptions for missing-punch days with no open exception yet.
-  for (const ds of missingPunchDays) {
+  for (const [ds, what] of missingPunchDays) {
     if (!openByDate.has(ds)) {
-      const occurredAt = new Date(ds + "T00:00:00.000Z");
+      // Use noon UTC so the date displays correctly in any timezone (UTC midnight
+      // would appear as the previous evening in negative-offset timezones like EDT).
+      const occurredAt = new Date(ds + "T12:00:00.000Z");
       await db.exception.create({
         data: {
           timesheetId,
@@ -500,10 +506,49 @@ async function syncMissingPunchExceptions(
             month: "long",
             day: "numeric",
             year: "numeric",
-          }).format(occurredAt)} is missing a punch-out`,
+            timeZone: timezone,
+          }).format(occurredAt)} is missing ${what}`,
           occurredAt,
         },
       });
+    }
+  }
+
+  // For days with a missing punch-out the employee's punch state is left as non-OUT,
+  // which causes their next kiosk scan to be mis-detected as CLOCK_OUT instead of CLOCK_IN.
+  // Create a SYSTEM unapproved CLOCK_OUT to reset their state to OUT so the next morning
+  // scan is correctly identified as CLOCK_IN. The unapproved flag ensures it is excluded
+  // from segment and hours calculations until payroll fills in the real time.
+  const employeeId = punches[0]?.employeeId;
+  if (employeeId) {
+    for (const [ds] of missingPunchDays) {
+      const dayPunches = punchesByDay.get(ds)!;
+      const lastPunch = dayPunches[dayPunches.length - 1];
+      if (lastPunch.stateAfter === "OUT") continue; // already OUT — no reset needed
+
+      // End-of-day marker: 23:59:59 UTC (safely after any real punch on a past day)
+      const eodTime = new Date(ds + "T23:59:59.000Z");
+
+      const alreadyExists = await db.punch.findFirst({
+        where: { employeeId, timesheetId, isApproved: false, source: "SYSTEM", punchType: "CLOCK_OUT", roundedTime: eodTime },
+        select: { id: true },
+      });
+      if (!alreadyExists) {
+        await db.punch.create({
+          data: {
+            employeeId,
+            timesheetId,
+            punchType: "CLOCK_OUT",
+            punchTime: eodTime,
+            roundedTime: eodTime,
+            source: "SYSTEM",
+            stateBefore: lastPunch.stateAfter,
+            stateAfter: "OUT",
+            isApproved: false,
+            note: "Auto-generated: missing punch-out — state reset pending payroll correction",
+          },
+        });
+      }
     }
   }
 

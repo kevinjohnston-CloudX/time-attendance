@@ -29,6 +29,7 @@ export const getTimecardEmployeeList = withRBAC(
           include: {
             user: true,
             department: true,
+            site: { select: { id: true, name: true } },
           },
         },
         overtimeBuckets: true,
@@ -46,6 +47,8 @@ export const getTimecardEmployeeList = withRBAC(
       name: ts.employee.user?.name ?? ts.employeeId,
       employeeCode: ts.employee.employeeCode,
       department: ts.employee.department.name,
+      siteId: ts.employee.site?.id ?? null,
+      siteName: ts.employee.site?.name ?? null,
       status: ts.status,
       isActive: ts.employee.isActive,
       totalMinutes: ts.overtimeBuckets.reduce(
