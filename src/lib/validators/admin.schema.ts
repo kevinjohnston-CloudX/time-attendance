@@ -35,7 +35,7 @@ export const createEmployeeSchema = z.object({
   payRate: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().positive().nullable().optional()),
 });
 
-const nullableStr = z.string().nullable().optional().transform((v) => v || null);
+const nullableStr = z.string().nullable().optional().transform((v) => v === undefined ? undefined : (v || null));
 
 export const updateEmployeeSchema = z.object({
   employeeId: z.string().min(1),
@@ -48,6 +48,7 @@ export const updateEmployeeSchema = z.object({
   departmentId: z.string().min(1).optional(),
   ruleSetId: z.string().min(1).optional(),
   shiftId: nullableStr,
+  holidayRuleId: nullableStr,
   isActive: z.boolean().optional(),
   wmsId: nullableStr,
   adpWorkerId: nullableStr,

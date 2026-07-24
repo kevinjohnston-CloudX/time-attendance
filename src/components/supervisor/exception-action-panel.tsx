@@ -19,52 +19,145 @@ interface Props {
   exceptionId: string;
   exceptionType: string;
   timesheetId: string;
+  occurredAt: Date;
   punches: Punch[];
 }
-
-const PUNCH_TYPE_OPTIONS: { value: PunchType; label: string }[] = [
-  { value: "CLOCK_IN", label: "Clock In" },
-  { value: "MEAL_START", label: "Meal Start" },
-  { value: "MEAL_END", label: "Meal End" },
-  { value: "CLOCK_OUT", label: "Clock Out" },
-  { value: "BREAK_START", label: "Break Start" },
-  { value: "BREAK_END", label: "Break End" },
-];
 
 const PUNCH_LABEL: Record<string, string> = {
   CLOCK_IN: "Clock In", MEAL_START: "Meal Start", MEAL_END: "Meal End",
   CLOCK_OUT: "Clock Out", BREAK_START: "Break Start", BREAK_END: "Break End",
 };
 
-function toDatetimeLocal(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+function parseTimeInput(str: string): { hours: number; minutes: number } | null {
+  const s = str.trim().replace(/\s/g, "");
+  if (!s) return null;
+  if (s.includes(":")) {
+    const [hPart, mPart] = s.split(":");
+    const h = parseInt(hPart, 10);
+    const m = parseInt(mPart, 10);
+    if (!isNaN(h) && !isNaN(m) && h >= 1 && h <= 12 && m >= 0 && m < 60) return { hours: h, minutes: m };
+    return null;
+  }
+  if (s.length <= 2) {
+    const h = parseInt(s, 10);
+    if (!isNaN(h) && h >= 1 && h <= 12) return { hours: h, minutes: 0 };
+    return null;
+  }
+  if (s.length === 3 || s.length === 4) {
+    const h = parseInt(s.slice(0, s.length - 2), 10);
+    const m = parseInt(s.slice(-2), 10);
+    if (!isNaN(h) && !isNaN(m) && h >= 1 && h <= 12 && m >= 0 && m < 60) return { hours: h, minutes: m };
+    return null;
+  }
+  return null;
 }
 
-export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, punches }: Props) {
+export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, occurredAt, punches }: Props) {
   const [mode, setMode] = useState<"add" | "correct" | "resolve" | null>(null);
-  const [punchType, setPunchType] = useState<PunchType>("CLOCK_OUT");
-  const [punchTime, setPunchTime] = useState("");
+
+  // Row-style punch editor state (for MISSING_PUNCH add mode)
+  const [rowSide, setRowSide] = useState<"in" | "out" | null>(null);
+  const [editingExistingId, setEditingExistingId] = useState<string | null>(null);
+  const [editTimeStr, setEditTimeStr] = useState("");
+  const [editAmPm, setEditAmPm] = useState<"AM" | "PM">("AM");
+  const [editReason, setEditReason] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+
+  // Correct-a-punch form state (non-MISSING_PUNCH)
   const [selectedPunchId, setSelectedPunchId] = useState(punches[0]?.id ?? "");
-  const [newPunchTime, setNewPunchTime] = useState(punches[0] ? toDatetimeLocal(punches[0].roundedTime) : "");
+  const [newPunchTime, setNewPunchTime] = useState("");
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
+
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   const isMissingPunch = exceptionType === "MISSING_PUNCH";
+  const isAbsent = exceptionType === "ABSENT";
+  const usesPunchRow = isMissingPunch || isAbsent;
 
-  function handleAddPunch(e: React.FormEvent) {
+  // Punches for the exception date
+  const exDateStr = format(occurredAt, "yyyy-MM-dd");
+  const dayPunches = punches.filter(
+    (p) => format(p.roundedTime, "yyyy-MM-dd") === exDateStr
+  );
+  const clockIn = dayPunches.find((p) => p.punchType === "CLOCK_IN") ?? null;
+  const clockOut = dayPunches.find((p) => p.punchType === "CLOCK_OUT") ?? null;
+
+  function startRowEdit(side: "in" | "out", existingPunch: Punch | null) {
+    setRowSide(side);
+    setEditingExistingId(existingPunch?.id ?? null);
+    if (existingPunch) {
+      const d = existingPunch.roundedTime;
+      const h24 = d.getHours();
+      const mins = d.getMinutes();
+      const ampm: "AM" | "PM" = h24 >= 12 ? "PM" : "AM";
+      const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+      setEditTimeStr(`${h12}:${String(mins).padStart(2, "0")}`);
+      setEditAmPm(ampm);
+    } else {
+      setEditTimeStr("");
+      setEditAmPm(side === "in" ? "AM" : "PM");
+    }
+    setEditReason("");
+    setEditError(null);
+  }
+
+  function handleOpenAdd() {
+    setMode("add");
+    if (isAbsent) {
+      // Both punches missing — let user click whichever side they want first
+      setRowSide(null);
+      setEditTimeStr("");
+      setEditReason("");
+      setEditError(null);
+    } else {
+      // MISSING_PUNCH — auto-open the missing side
+      const missingSide = !clockOut ? "out" : !clockIn ? "in" : "out";
+      startRowEdit(missingSide, null);
+    }
+  }
+
+  function handleRowSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
+    const parsed = parseTimeInput(editTimeStr);
+    if (!parsed) {
+      setEditError("Invalid time — enter something like 8:30 or 530");
+      return;
+    }
+    let { hours, minutes } = parsed;
+    if (editAmPm === "PM" && hours !== 12) hours += 12;
+    if (editAmPm === "AM" && hours === 12) hours = 0;
+    const punchDate = new Date(occurredAt);
+    punchDate.setHours(hours, minutes, 0, 0);
+    setEditError(null);
+
     startTransition(async () => {
-      const result = await addMissingPunchForEmployee({
-        timesheetId, exceptionId, punchType,
-        punchTime: new Date(punchTime).toISOString(),
-        reason,
-      });
-      if (!result.success) setError(result.error);
+      let result: { success: boolean; error?: string };
+      if (editingExistingId) {
+        result = await correctPunchAndResolve({
+          originalPunchId: editingExistingId,
+          newPunchTime: punchDate.toISOString(),
+          reason: editReason,
+          exceptionId,
+        });
+      } else {
+        const punchType: PunchType = rowSide === "in" ? "CLOCK_IN" : "CLOCK_OUT";
+        result = await addMissingPunchForEmployee({
+          timesheetId,
+          exceptionId,
+          punchType,
+          punchTime: punchDate.toISOString(),
+          reason: editReason,
+        });
+      }
+      if (!result.success) setEditError(result.error ?? "Failed");
     });
+  }
+
+  function toDatetimeLocal(d: Date): string {
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
   }
 
   function handleCorrectPunch(e: React.FormEvent) {
@@ -76,7 +169,7 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
         newPunchTime: new Date(newPunchTime).toISOString(),
         reason, exceptionId,
       });
-      if (!result.success) setError(result.error);
+      if (!result.success) setError(result.error ?? "Failed");
     });
   }
 
@@ -85,27 +178,84 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
     setError(null);
     startTransition(async () => {
       const result = await resolveException({ exceptionId, resolution: note });
-      if (!result.success) setError(result.error);
+      if (!result.success) setError(result.error ?? "Failed");
     });
+  }
+
+  // Time cell renderer — shows time as clickable button or inline editor
+  function TimeCell({ side, punch }: { side: "in" | "out"; punch: Punch | null }) {
+    const isEditing = mode === "add" && rowSide === side;
+    const label = side === "in" ? "Clock In" : "Clock Out";
+
+    if (isEditing) {
+      return (
+        <div className="flex flex-col gap-1">
+          <div className="flex gap-1">
+            <input
+              value={editTimeStr}
+              onChange={(e) => setEditTimeStr(e.target.value)}
+              placeholder="8:30"
+              autoFocus
+              className="w-14 rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+            />
+            <button
+              type="button"
+              onClick={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
+              className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+            >
+              {editAmPm}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (punch) {
+      return (
+        <button
+          type="button"
+          onClick={() => { setMode("add"); startRowEdit(side, punch); }}
+          className="rounded px-1 py-0.5 text-xs hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
+          title={`Edit ${label}`}
+        >
+          {format(punch.roundedTime, "h:mm a")}
+        </button>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={() => { setMode("add"); startRowEdit(side, null); }}
+        className="rounded px-1 py-0.5 text-xs font-medium text-amber-500 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+        title={`Add ${label}`}
+      >
+        Missed
+      </button>
+    );
   }
 
   return (
     <div className="mt-3 space-y-2">
       {error && <p className="text-sm text-red-500">{error}</p>}
 
-      {/* Action selection */}
+      {/* Action buttons */}
       {mode === null && (
         <div className="flex flex-wrap gap-2">
-          {isMissingPunch ? (
+          {usesPunchRow ? (
             <button
-              onClick={() => setMode("add")}
+              onClick={handleOpenAdd}
               className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
             >
-              Add Missing Punch
+              {isAbsent ? "Add Punches" : "Add Missing Punch"}
             </button>
           ) : (
             <button
-              onClick={() => setMode("correct")}
+              onClick={() => {
+                setMode("correct");
+                const p = punches[0];
+                if (p) setNewPunchTime(toDatetimeLocal(p.roundedTime));
+              }}
               disabled={punches.length === 0}
               className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-40"
             >
@@ -121,53 +271,54 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
         </div>
       )}
 
-      {/* Add missing punch form */}
+      {/* Punch row editor (MISSING_PUNCH add mode) */}
       {mode === "add" && (
-        <form
-          onSubmit={handleAddPunch}
-          className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-900 dark:bg-blue-950/30"
-        >
-          <p className="mb-2 text-sm font-medium text-blue-800 dark:text-blue-300">
-            Add Missing Punch
-          </p>
-          <div className="flex flex-col gap-2">
-            <div className="flex gap-2">
-              <select
-                value={punchType}
-                onChange={(e) => setPunchType(e.target.value as PunchType)}
-                className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-              >
-                {PUNCH_TYPE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-              <input
-                type="datetime-local"
-                value={punchTime}
-                onChange={(e) => setPunchTime(e.target.value)}
-                required
-                className="flex-1 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-              />
-            </div>
+        <form onSubmit={handleRowSubmit} className="rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-zinc-200 dark:border-zinc-700">
+                <th className="px-3 py-1.5 text-left text-xs font-medium text-zinc-500">Date</th>
+                <th className="px-3 py-1.5 text-left text-xs font-medium text-zinc-500">In</th>
+                <th className="px-3 py-1.5 text-left text-xs font-medium text-zinc-500">Out</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">
+                  <span className="font-medium">{format(occurredAt, "EEE")}</span>{" "}
+                  {format(occurredAt, "MM/dd/yyyy")}
+                </td>
+                <td className="px-3 py-2">
+                  <TimeCell side="in" punch={clockIn} />
+                </td>
+                <td className="px-3 py-2">
+                  <TimeCell side="out" punch={clockOut} />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div className="flex flex-col gap-2 border-t border-zinc-200 px-3 py-2 dark:border-zinc-700">
             <input
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Reason / note…"
+              value={editReason}
+              onChange={(e) => setEditReason(e.target.value)}
+              placeholder="Reason…"
               required
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+              className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
             />
+            {editError && <span className="text-xs text-red-500">{editError}</span>}
             <div className="flex gap-2">
               <button
                 type="submit"
-                disabled={isPending || !punchTime || !reason.trim()}
-                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                disabled={isPending || !editTimeStr.trim() || !editReason.trim()}
+                className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                {isPending ? "Saving…" : "Add Punch & Resolve"}
+                {isPending ? "Saving…" : editingExistingId ? "Correct & Resolve" : "Add & Resolve"}
               </button>
               <button
                 type="button"
-                onClick={() => setMode(null)}
-                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400"
+                onClick={() => { setMode(null); setRowSide(null); setEditingExistingId(null); }}
+                className="text-xs text-zinc-500 hover:text-zinc-700"
               >
                 Cancel
               </button>
@@ -176,15 +327,13 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
         </form>
       )}
 
-      {/* Correct existing punch form */}
+      {/* Correct existing punch (non-MISSING_PUNCH) */}
       {mode === "correct" && (
         <form
           onSubmit={handleCorrectPunch}
           className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30"
         >
-          <p className="mb-2 text-sm font-medium text-amber-800 dark:text-amber-300">
-            Correct a Punch
-          </p>
+          <p className="mb-2 text-sm font-medium text-amber-800 dark:text-amber-300">Correct a Punch</p>
           <div className="flex flex-col gap-2">
             <select
               value={selectedPunchId}
@@ -219,18 +368,12 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
               className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
             />
             <div className="flex gap-2">
-              <button
-                type="submit"
-                disabled={isPending || !selectedPunchId || !newPunchTime || !reason.trim()}
-                className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-              >
+              <button type="submit" disabled={isPending || !selectedPunchId || !newPunchTime || !reason.trim()}
+                className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50">
                 {isPending ? "Saving…" : "Correct & Resolve"}
               </button>
-              <button
-                type="button"
-                onClick={() => setMode(null)}
-                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400"
-              >
+              <button type="button" onClick={() => setMode(null)}
+                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400">
                 Cancel
               </button>
             </div>
@@ -238,7 +381,7 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
         </form>
       )}
 
-      {/* Resolve with note only */}
+      {/* Resolve with note */}
       {mode === "resolve" && (
         <form onSubmit={handleResolve} className="flex items-center gap-2">
           <input
@@ -247,18 +390,12 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
             placeholder="Resolution note…"
             className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
           />
-          <button
-            type="submit"
-            disabled={isPending || !note.trim()}
-            className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-900 disabled:opacity-50 dark:bg-zinc-600 dark:hover:bg-zinc-500"
-          >
+          <button type="submit" disabled={isPending || !note.trim()}
+            className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-900 disabled:opacity-50 dark:bg-zinc-600 dark:hover:bg-zinc-500">
             {isPending ? "Saving…" : "Resolve"}
           </button>
-          <button
-            type="button"
-            onClick={() => setMode(null)}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400"
-          >
+          <button type="button" onClick={() => setMode(null)}
+            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400">
             Cancel
           </button>
         </form>

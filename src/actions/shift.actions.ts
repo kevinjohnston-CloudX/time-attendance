@@ -28,17 +28,26 @@ const workDaysSchema = z
   .array(z.number().int().min(0).max(6))
   .default([1, 2, 3, 4, 5]);
 
+const optionalTimeSchema = z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:mm").optional().or(z.literal("")).transform((v) => v || null);
+const toleranceSchema = z.coerce.number().int().min(0).max(120).default(0);
+
 const createShiftSchema = z.object({
   name: z.string().min(1).max(100),
   startTime: timeSchema,
   endTime: timeSchema,
   workDays: workDaysSchema,
+  earlyInMinutes: toleranceSchema,
+  lateInMinutes: toleranceSchema,
+  earlyOutMinutes: toleranceSchema,
+  lateOutMinutes: toleranceSchema,
+  mealBreakStart: optionalTimeSchema,
+  mealBreakEnd: optionalTimeSchema,
 });
 
 export const createShift = withRBAC(
   "RULES_MANAGE",
   async (ctx, input: unknown) => {
-    const { name, startTime, endTime, workDays } = createShiftSchema.parse(input);
+    const { name, startTime, endTime, workDays, earlyInMinutes, lateInMinutes, earlyOutMinutes, lateOutMinutes, mealBreakStart, mealBreakEnd } = createShiftSchema.parse(input);
     const tenantId = ctx.tenantId!;
 
     const existing = await db.shift.findUnique({
@@ -47,7 +56,7 @@ export const createShift = withRBAC(
     if (existing) throw new Error(`A shift named "${name}" already exists.`);
 
     await db.shift.create({
-      data: { tenantId, name, startTime, endTime, workDays },
+      data: { tenantId, name, startTime, endTime, workDays, earlyInMinutes, lateInMinutes, earlyOutMinutes, lateOutMinutes, mealBreakStart, mealBreakEnd },
     });
 
     return { success: true };
@@ -62,13 +71,19 @@ const updateShiftSchema = z.object({
   startTime: timeSchema,
   endTime: timeSchema,
   workDays: workDaysSchema,
+  earlyInMinutes: toleranceSchema,
+  lateInMinutes: toleranceSchema,
+  earlyOutMinutes: toleranceSchema,
+  lateOutMinutes: toleranceSchema,
+  mealBreakStart: optionalTimeSchema,
+  mealBreakEnd: optionalTimeSchema,
   isActive: z.boolean(),
 });
 
 export const updateShift = withRBAC(
   "RULES_MANAGE",
   async (ctx, input: unknown) => {
-    const { shiftId, name, startTime, endTime, workDays, isActive } = updateShiftSchema.parse(input);
+    const { shiftId, name, startTime, endTime, workDays, earlyInMinutes, lateInMinutes, earlyOutMinutes, lateOutMinutes, mealBreakStart, mealBreakEnd, isActive } = updateShiftSchema.parse(input);
     const tenantId = ctx.tenantId!;
 
     const conflict = await db.shift.findFirst({
@@ -78,7 +93,7 @@ export const updateShift = withRBAC(
 
     await db.shift.update({
       where: { id: shiftId },
-      data: { name, startTime, endTime, workDays, isActive },
+      data: { name, startTime, endTime, workDays, earlyInMinutes, lateInMinutes, earlyOutMinutes, lateOutMinutes, mealBreakStart, mealBreakEnd, isActive },
     });
 
     return { success: true };

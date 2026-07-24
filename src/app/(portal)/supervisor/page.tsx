@@ -90,7 +90,7 @@ export default async function SupervisorDashboardPage() {
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((card) => (
           <Link
-            key={card.href}
+            key={card.label}
             href={card.href}
             className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white p-5 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800/60"
           >

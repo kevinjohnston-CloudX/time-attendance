@@ -1,3 +1,46 @@
+enum HolidayCreditMethod {
+  FIXED_HOURS
+  ACTUAL_WORKED
+  SCHEDULED_HOURS
+}
+
+model HolidayRule {
+  id       String @id @default(cuid())
+  tenantId String
+  name     String
+
+  /// How holiday hours are credited to the employee
+  creditMethod     HolidayCreditMethod @default(FIXED_HOURS)
+  /// Minutes to credit when creditMethod = FIXED_HOURS (e.g. 480 = 8 h)
+  creditMinutes    Int                 @default(480)
+  /// Maximum minutes to credit per holiday (0 = no cap)
+  maxCreditMinutes Int                 @default(0)
+  /// PayBucket assigned to the credited time
+  payBucket        PayBucket           @default(HOLIDAY)
+  /// Multiplier × 100 for hours worked on the holiday (200 = 2.0×, 150 = 1.5×)
+  workingPremium   Int                 @default(200)
+
+  /// Employee must have worked the day before the holiday to qualify
+  requireDayBefore Boolean @default(false)
+  /// Employee must have worked the day after the holiday to qualify
+  requireDayAfter  Boolean @default(false)
+  /// Minimum minutes worked in the pay period to qualify (0 = no minimum)
+  minPeriodMinutes Int     @default(0)
+
+  /// Whether credited hours count toward the weekly OT threshold
+  countTowardOt Boolean @default(true)
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  employees Employee[]
+
+  @@unique([tenantId, name])
+  @@map("holiday_rules")
+}
+
 model RuleSet {
   id       String @id @default(cuid())
   tenantId String

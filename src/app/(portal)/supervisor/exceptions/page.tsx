@@ -5,6 +5,7 @@ import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getTeamExceptions } from "@/actions/supervisor.actions";
 import { ExceptionActionPanel } from "@/components/supervisor/exception-action-panel";
 import { ExceptionsFilter } from "@/components/supervisor/exceptions-filter";
+import { ExceptionsEmployeeList } from "@/components/supervisor/exceptions-employee-list";
 import { db } from "@/lib/db";
 import { format } from "date-fns";
 import { ExternalLink } from "lucide-react";
@@ -19,14 +20,15 @@ const EXCEPTION_LABEL: Record<string, string> = {
   ABSENT: "Absent",
 };
 
+
 const EXCEPTION_BADGE: Record<string, string> = {
-  MISSING_PUNCH: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-  LONG_SHIFT:    "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-  SHORT_BREAK:   "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-  MISSED_MEAL:   "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-  UNSCHEDULED_OT:"bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
-  CONSECUTIVE_DAYS:"bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-  ABSENT:        "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  MISSING_PUNCH:    "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+  LONG_SHIFT:       "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  SHORT_BREAK:      "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  MISSED_MEAL:      "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  UNSCHEDULED_OT:   "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+  CONSECUTIVE_DAYS: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  ABSENT:           "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
 };
 
 function buildUrl(siteId?: string, departmentId?: string, employeeId?: string, exceptionType?: string, payPeriodId?: string) {
@@ -147,65 +149,18 @@ export default async function ExceptionsPage({
               Employees ({employeeList.length})
             </p>
           </div>
-          <div className="flex-1 overflow-y-auto">
-            {employeeList.length === 0 ? (
-              <p className="p-4 text-center text-xs text-zinc-400">No exceptions</p>
-            ) : (
-              <>
-                {/* "All" row */}
-                <Link
-                  href={buildUrl(siteId, departmentId, undefined, exceptionType, payPeriodId)}
-                  className={`flex w-full items-center justify-between border-b border-zinc-100 px-3 py-2.5 text-sm transition-colors dark:border-zinc-800/60 ${
-                    !employeeId
-                      ? "bg-blue-50 font-medium text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
-                      : "text-zinc-600 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800/50"
-                  }`}
-                >
-                  All employees
-                  <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-xs font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                    {exceptions.length}
-                  </span>
-                </Link>
-
-                {employeeList.map((emp) => {
-                  const isSelected = emp.employeeId === employeeId;
-                  const count = exceptions.filter(
-                    (ex) => ex.timesheet.employeeId === emp.employeeId
-                  ).length;
-                  return (
-                    <Link
-                      key={emp.employeeId}
-                      href={buildUrl(siteId, departmentId, emp.employeeId, exceptionType, payPeriodId)}
-                      className={`flex w-full flex-col border-b border-zinc-100 px-3 py-2.5 transition-colors dark:border-zinc-800/60 ${
-                        isSelected
-                          ? "bg-blue-50 dark:bg-blue-950/30"
-                          : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className={`truncate text-sm font-medium ${isSelected ? "text-zinc-900 dark:text-white" : "text-zinc-700 dark:text-zinc-300"}`}>
-                          {emp.name}
-                        </p>
-                        <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                          {count}
-                        </span>
-                      </div>
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {emp.exceptionTypes.map((t) => (
-                          <span
-                            key={t}
-                            className={`rounded px-1 py-0.5 text-xs ${EXCEPTION_BADGE[t] ?? "bg-zinc-100 text-zinc-500"}`}
-                          >
-                            {EXCEPTION_LABEL[t] ?? t}
-                          </span>
-                        ))}
-                      </div>
-                    </Link>
-                  );
-                })}
-              </>
-            )}
-          </div>
+          <ExceptionsEmployeeList
+            employees={employeeList.map((emp) => ({
+              ...emp,
+              count: exceptions.filter((ex) => ex.timesheet.employeeId === emp.employeeId).length,
+            }))}
+            totalCount={exceptions.length}
+            selectedEmployeeId={employeeId}
+            siteId={siteId}
+            departmentId={departmentId}
+            exceptionType={exceptionType}
+            payPeriodId={payPeriodId}
+          />
         </div>
 
         {/* Right: exception cards */}
@@ -273,6 +228,7 @@ export default async function ExceptionsPage({
                     exceptionId={ex.id}
                     exceptionType={ex.exceptionType}
                     timesheetId={ex.timesheetId}
+                    occurredAt={ex.occurredAt}
                     punches={ex.timesheet.punches}
                   />
                 </div>

@@ -23,6 +23,7 @@ interface Props {
   employees: { id: string; user: { name: string | null } }[];
   customRoles: { id: string; name: string }[];
   shifts: { id: string; name: string; startTime: string; endTime: string }[];
+  holidayRules: { id: string; name: string }[];
 }
 
 function fmtTime(hhmm: string): string {
@@ -37,7 +38,7 @@ const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-
 
 type Tab = "general" | "personal" | "pay";
 
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts }: Props) {
+export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -75,12 +76,10 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       customRoleId: isCustom ? rawRole.slice(7) : null,
       siteId: fd.get("siteId") as string,
       departmentId: fd.get("departmentId") as string,
-      ruleSetId: fd.get("ruleSetId") as string,
-      shiftId: (fd.get("shiftId") as string) || null,
       supervisorId: (fd.get("supervisorId") as string) || null,
       isActive: fd.get("isActive") === "true",
-      wmsId: fd.get("wmsId") as string,
-      adpWorkerId: fd.get("adpWorkerId") as string,
+      wmsId: (fd.get("wmsId") as string) || employee.wmsId || "",
+      adpWorkerId: (fd.get("adpWorkerId") as string) || employee.adpWorkerId || "",
       jobTitle: fd.get("jobTitle") as string,
       terminationReason: fd.get("terminationReason") as string,
     });
@@ -111,6 +110,9 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
     const fd = new FormData(e.currentTarget);
     const rateStr = fd.get("payRate") as string;
     save({
+      ruleSetId: fd.get("ruleSetId") as string,
+      shiftId: (fd.get("shiftId") as string) || null,
+      holidayRuleId: (fd.get("holidayRuleId") as string) || null,
       payType: fd.get("payType") as string,
       payRate: rateStr ? parseFloat(rateStr) : null,
     });
@@ -202,25 +204,6 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
               <label className={labelCls}>Department</label>
               <select name="departmentId" defaultValue={employee.departmentId} className={inputCls}>
                 {filteredDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className={labelCls}>Rule Set</label>
-              <select name="ruleSetId" defaultValue={employee.ruleSetId} className={inputCls}>
-                {ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className={labelCls}>Shift</label>
-              <select name="shiftId" defaultValue={employee.shiftId ?? ""} className={inputCls}>
-                <option value="">— None —</option>
-                {shifts.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({fmtTime(s.startTime)} – {fmtTime(s.endTime)})
-                  </option>
-                ))}
               </select>
             </div>
 
@@ -384,6 +367,35 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       {activeTab === "pay" && (
         <form onSubmit={handlePay} className="mt-5 flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Rule Set</label>
+              <select name="ruleSetId" defaultValue={employee.ruleSetId} className={inputCls}>
+                {ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className={labelCls}>Shift</label>
+              <select name="shiftId" defaultValue={employee.shiftId ?? ""} className={inputCls}>
+                <option value="">— None —</option>
+                {shifts.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({fmtTime(s.startTime)} – {fmtTime(s.endTime)})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className={labelCls}>Holiday Rule</label>
+              <select name="holidayRuleId" defaultValue={employee.holidayRuleId ?? ""} className={inputCls}>
+                <option value="">— None —</option>
+                {holidayRules.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+
             <div>
               <label className={labelCls}>Pay Type</label>
               <select

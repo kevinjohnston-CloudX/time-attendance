@@ -1,8 +1,10 @@
-import { format } from "date-fns";
+import { format, eachDayOfInterval, isWeekend } from "date-fns";
 import { db } from "@/lib/db";
 import { applyOvertime } from "@/lib/engines/overtime-engine";
 import { startOfDayInTz, nextMidnightInTz } from "@/lib/utils/date";
-import type { Punch, RuleSet, PayBucket, SegmentType } from "@prisma/client";
+import type { Punch, RuleSet, PayBucket, SegmentType, HolidayCreditMethod } from "@prisma/client";
+
+const SALARY_DAILY_MINUTES = 480; // 8 h
 
 type ActiveState = "WORK" | "MEAL" | "BREAK";
 
@@ -246,6 +248,59 @@ function applyAutoMealDeduction(
  *
  * Call this after any punch change (create, approve, correct).
  */
+/**
+ * For salary employees: inserts an 8 h REG WorkSegment for every weekday in the
+ * pay period (up to and including today) that has no existing WORK segment.
+ * Called inside rebuildSegments so credits survive any punch-triggered rebuild.
+ */
+async function ensureSalarySegments(
+  timesheetId: string,
+  periodStart: Date,
+  periodEnd: Date
+): Promise<void> {
+  const today = new Date();
+  today.setUTCHours(23, 59, 59, 999);
+  const rangeEnd = periodEnd < today ? periodEnd : today;
+
+  const workDays = eachDayOfInterval({ start: periodStart, end: rangeEnd }).filter(
+    (d) => !isWeekend(d)
+  );
+  if (workDays.length === 0) return;
+
+  // Find dates that already have a WORK segment from real punches.
+  const existing = await db.workSegment.findMany({
+    where: { timesheetId, segmentType: "WORK" },
+    select: { segmentDate: true },
+  });
+  const coveredDates = new Set(
+    existing.map((s) => format(s.segmentDate, "yyyy-MM-dd"))
+  );
+
+  const toCreate: SegmentInput[] = workDays
+    .filter((d) => !coveredDates.has(format(d, "yyyy-MM-dd")))
+    .map((d) => {
+      const start = new Date(d);
+      start.setUTCHours(0, 0, 0, 0);
+      const end = new Date(d);
+      end.setUTCHours(8, 0, 0, 0);
+      return {
+        timesheetId,
+        segmentType: "WORK" as SegmentType,
+        startTime: start,
+        endTime: end,
+        durationMinutes: SALARY_DAILY_MINUTES,
+        segmentDate: start,
+        isPaid: true,
+        payBucket: "REG" as PayBucket,
+        isSplit: false,
+      };
+    });
+
+  if (toCreate.length > 0) {
+    await db.workSegment.createMany({ data: toCreate });
+  }
+}
+
 export async function rebuildSegments(
   timesheetId: string,
   ruleSet: RuleSet
@@ -257,7 +312,30 @@ export async function rebuildSegments(
       employee: {
         select: {
           tenantId: true,
+          payType: true,
           site: { select: { timezone: true } },
+          shift: {
+            select: {
+              startTime: true,
+              endTime: true,
+              workDays: true,
+              lateInMinutes: true,
+              earlyOutMinutes: true,
+            },
+          },
+          holidayRule: {
+            select: {
+              creditMethod: true,
+              creditMinutes: true,
+              maxCreditMinutes: true,
+              payBucket: true,
+              workingPremium: true,
+              requireDayBefore: true,
+              requireDayAfter: true,
+              minPeriodMinutes: true,
+              countTowardOt: true,
+            },
+          },
         },
       },
       payPeriod: { select: { startDate: true, endDate: true } },
@@ -265,6 +343,7 @@ export async function rebuildSegments(
   });
   const timezone = timesheet.employee.site?.timezone ?? "UTC";
   const tenantId = timesheet.employee.tenantId;
+  const isSalary = timesheet.employee.payType === "SALARY";
 
   const punches = await db.punch.findMany({
     where: { timesheetId, isApproved: true, correctedById: null },
@@ -286,15 +365,39 @@ export async function rebuildSegments(
   // (applyOvertime needs the newly inserted segments to be readable).
   await db.$transaction([
     db.workSegment.deleteMany({
-      where: { timesheetId, segmentType: { in: ["WORK", "MEAL", "BREAK"] } },
+      where: { timesheetId, segmentType: { in: ["WORK", "MEAL", "BREAK", "HOLIDAY"] } },
     }),
     ...(segments.length > 0
       ? [db.workSegment.createMany({ data: segments })]
       : []),
   ]);
 
+  // For salary employees, fill in 8 h REG for any weekday with no real punch segments.
+  if (isSalary) {
+    await ensureSalarySegments(
+      timesheetId,
+      timesheet.payPeriod.startDate,
+      timesheet.payPeriod.endDate
+    );
+  }
+
   // OT engine reads the fresh segments and writes REG/OT/DT buckets.
   await applyOvertime(timesheetId, ruleSet);
+
+  // Holiday credits: delete any stale HOLIDAY bucket, then recompute from rule.
+  await db.overtimeBucket.deleteMany({ where: { timesheetId, bucket: "HOLIDAY" } });
+  if (timesheet.employee.holidayRule && tenantId) {
+    await syncHolidayCredits(
+      timesheetId,
+      timezone,
+      timesheet.payPeriod.startDate,
+      timesheet.payPeriod.endDate,
+      punches,
+      timesheet.employee.holidayRule,
+      tenantId,
+      timesheet.employee.shift ?? null
+    );
+  }
 
   // Auto-assign the tenant's code-0 (Regular Hours) PayCode to REG WORK segments
   // that don't already have a pay code set.
@@ -322,7 +425,8 @@ export async function rebuildSegments(
     timezone,
     timesheet.payPeriod.startDate,
     timesheet.payPeriod.endDate,
-    punches
+    punches,
+    timesheet.employee.shift?.workDays
   );
 
   // Sync MISSING_PUNCH exceptions for past days where the shift was left open.
@@ -333,6 +437,18 @@ export async function rebuildSegments(
     timesheet.payPeriod.endDate,
     punches
   );
+
+  // Sync LATE_IN / EARLY_OUT exceptions when the employee has a shift with tolerance configured.
+  if (timesheet.employee.shift) {
+    await syncPunchToleranceExceptions(
+      timesheetId,
+      timezone,
+      timesheet.payPeriod.startDate,
+      timesheet.payPeriod.endDate,
+      punches,
+      timesheet.employee.shift
+    );
+  }
 }
 
 /**
@@ -345,7 +461,8 @@ async function syncAbsentExceptions(
   timezone: string,
   payPeriodStart: Date,
   payPeriodEnd: Date,
-  punches: Punch[]
+  punches: Punch[],
+  shiftWorkDays?: number[]
 ): Promise<void> {
   // Calendar date strings (YYYY-MM-DD) for the period bounds and today in site timezone.
   const periodStartStr = format(payPeriodStart, "yyyy-MM-dd");
@@ -366,11 +483,20 @@ async function syncAbsentExceptions(
   });
   const leaveDays = new Set(leaveSegs.map((s) => format(s.segmentDate, "yyyy-MM-dd")));
 
+  // Build set of days that have a WORK segment (covers salary auto-credits).
+  const workSegs = await db.workSegment.findMany({
+    where: { timesheetId, segmentType: "WORK" },
+    select: { segmentDate: true },
+  });
+  const workDays = new Set(workSegs.map((s) => format(s.segmentDate, "yyyy-MM-dd")));
+
   // Collect all past calendar days in the pay period that have no activity.
   const absentDays = new Set<string>();
   let dateStr = periodStartStr;
   while (dateStr < todayStr && dateStr <= periodEndStr) {
-    if (!punchedDays.has(dateStr) && !leaveDays.has(dateStr)) {
+    const dow = new Date(dateStr + "T12:00:00.000Z").getUTCDay();
+    const isScheduledDay = !shiftWorkDays || shiftWorkDays.includes(dow);
+    if (isScheduledDay && !punchedDays.has(dateStr) && !leaveDays.has(dateStr) && !workDays.has(dateStr)) {
       absentDays.add(dateStr);
     }
     const d = new Date(dateStr + "T00:00:00.000Z");
@@ -564,4 +690,351 @@ async function syncMissingPunchExceptions(
       });
     }
   }
+}
+
+/**
+ * Creates LATE_IN exceptions when the first clock-in of a shift day is more than
+ * lateInMinutes after the shift start, and EARLY_OUT exceptions when the last
+ * clock-out is more than earlyOutMinutes before the shift end.
+ * Only fires for days matching the shift's workDays. 0 = feature disabled for that field.
+ * Auto-resolves when punches are corrected to fall within tolerance.
+ */
+async function syncPunchToleranceExceptions(
+  timesheetId: string,
+  timezone: string,
+  payPeriodStart: Date,
+  payPeriodEnd: Date,
+  punches: Punch[],
+  shift: {
+    startTime: string;
+    endTime: string;
+    workDays: number[];
+    lateInMinutes: number;
+    earlyOutMinutes: number;
+  }
+): Promise<void> {
+  if (punches.length === 0) return;
+  if (shift.lateInMinutes === 0 && shift.earlyOutMinutes === 0) return;
+
+  const periodStartStr = format(payPeriodStart, "yyyy-MM-dd");
+  const periodEndStr = format(payPeriodEnd, "yyyy-MM-dd");
+  const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
+  const localDateOf = (d: Date) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(d);
+
+  const [shiftStartH, shiftStartM] = shift.startTime.split(":").map(Number);
+  const [shiftEndH, shiftEndM] = shift.endTime.split(":").map(Number);
+  const shiftStartMins = shiftStartH * 60 + shiftStartM;
+  const shiftEndMins = shiftEndH * 60 + shiftEndM;
+
+  const toLocalMins = (d: Date): number => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: timezone,
+    }).formatToParts(d);
+    const h = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+    const m = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+    return h * 60 + m;
+  };
+
+  // Group punches by local date, sorted ascending
+  const punchesByDay = new Map<string, Punch[]>();
+  for (const p of punches) {
+    const ds = localDateOf(p.roundedTime);
+    const list = punchesByDay.get(ds) ?? [];
+    list.push(p);
+    punchesByDay.set(ds, list);
+  }
+  for (const list of punchesByDay.values()) {
+    list.sort((a, b) => a.roundedTime.getTime() - b.roundedTime.getTime());
+  }
+
+  const lateInDays = new Map<string, number>();   // dateStr → minutes late
+  const earlyOutDays = new Map<string, number>(); // dateStr → minutes early
+
+  let dateStr = periodStartStr;
+  while (dateStr < todayStr && dateStr <= periodEndStr) {
+    const dayPunches = punchesByDay.get(dateStr);
+    if (dayPunches && dayPunches.length > 0) {
+      const dow = new Date(dateStr + "T12:00:00.000Z").getUTCDay();
+      if (shift.workDays.includes(dow)) {
+        if (shift.lateInMinutes > 0) {
+          const firstIn = dayPunches.find((p) => p.stateBefore === "OUT");
+          if (firstIn) {
+            const minsLate = toLocalMins(firstIn.roundedTime) - shiftStartMins;
+            if (minsLate > shift.lateInMinutes) {
+              lateInDays.set(dateStr, minsLate);
+            }
+          }
+        }
+        if (shift.earlyOutMinutes > 0) {
+          const lastOut = [...dayPunches].reverse().find((p) => p.stateAfter === "OUT");
+          if (lastOut) {
+            const minsEarly = shiftEndMins - toLocalMins(lastOut.roundedTime);
+            if (minsEarly > shift.earlyOutMinutes) {
+              earlyOutDays.set(dateStr, minsEarly);
+            }
+          }
+        }
+      }
+    }
+    const d = new Date(dateStr + "T00:00:00.000Z");
+    d.setUTCDate(d.getUTCDate() + 1);
+    dateStr = d.toISOString().slice(0, 10);
+  }
+
+  const formatDay = (ds: string) =>
+    new Intl.DateTimeFormat("en-US", {
+      month: "long", day: "numeric", year: "numeric", timeZone: timezone,
+    }).format(new Date(ds + "T12:00:00.000Z"));
+
+  // Sync LATE_IN
+  const openLateIn = await db.exception.findMany({
+    where: { timesheetId, exceptionType: "LATE_IN", resolvedAt: null },
+    select: { id: true, occurredAt: true },
+  });
+  const openLateInByDate = new Map<string, string>(
+    openLateIn.map((e) => [format(e.occurredAt, "yyyy-MM-dd"), e.id])
+  );
+  for (const [ds, mins] of lateInDays) {
+    if (!openLateInByDate.has(ds)) {
+      await db.exception.create({
+        data: {
+          timesheetId,
+          exceptionType: "LATE_IN",
+          description: `Clocked in ${mins} minute${mins !== 1 ? "s" : ""} late on ${formatDay(ds)}`,
+          occurredAt: new Date(ds + "T12:00:00.000Z"),
+        },
+      });
+    }
+  }
+  for (const [ds, exId] of openLateInByDate) {
+    if (!lateInDays.has(ds)) {
+      await db.exception.update({
+        where: { id: exId },
+        data: { resolvedAt: new Date(), resolution: "Auto-resolved: punch-in within tolerance" },
+      });
+    }
+  }
+
+  // Sync EARLY_OUT
+  const openEarlyOut = await db.exception.findMany({
+    where: { timesheetId, exceptionType: "EARLY_OUT", resolvedAt: null },
+    select: { id: true, occurredAt: true },
+  });
+  const openEarlyOutByDate = new Map<string, string>(
+    openEarlyOut.map((e) => [format(e.occurredAt, "yyyy-MM-dd"), e.id])
+  );
+  for (const [ds, mins] of earlyOutDays) {
+    if (!openEarlyOutByDate.has(ds)) {
+      await db.exception.create({
+        data: {
+          timesheetId,
+          exceptionType: "EARLY_OUT",
+          description: `Clocked out ${mins} minute${mins !== 1 ? "s" : ""} early on ${formatDay(ds)}`,
+          occurredAt: new Date(ds + "T12:00:00.000Z"),
+        },
+      });
+    }
+  }
+  for (const [ds, exId] of openEarlyOutByDate) {
+    if (!earlyOutDays.has(ds)) {
+      await db.exception.update({
+        where: { id: exId },
+        data: { resolvedAt: new Date(), resolution: "Auto-resolved: punch-out within tolerance" },
+      });
+    }
+  }
+}
+
+/**
+ * Inserts HOLIDAY-type WorkSegments for each qualifying holiday in the pay period:
+ *  - A credit segment (FIXED / ACTUAL_WORKED / SCHEDULED_HOURS hours at the rule's payBucket)
+ *  - A premium segment for any hours actually worked on the holiday (workingPremium - 100)/100 × worked
+ *
+ * Called after applyOvertime() so HOLIDAY segments are not touched by the OT engine,
+ * and after the HOLIDAY OvertimeBucket has been cleared by the caller.
+ *
+ * NOTE: countTowardOt = true is not yet implemented. Holiday credits currently never
+ * contribute to the weekly OT accumulator regardless of this flag.
+ */
+async function syncHolidayCredits(
+  timesheetId: string,
+  timezone: string,
+  payPeriodStart: Date,
+  payPeriodEnd: Date,
+  punches: Punch[],
+  rule: {
+    creditMethod: HolidayCreditMethod;
+    creditMinutes: number;
+    maxCreditMinutes: number;
+    payBucket: PayBucket;
+    workingPremium: number;
+    requireDayBefore: boolean;
+    requireDayAfter: boolean;
+    minPeriodMinutes: number;
+    countTowardOt: boolean;
+  },
+  tenantId: string,
+  shift: { startTime: string; endTime: string; workDays: number[] } | null
+): Promise<void> {
+  const holidays = await db.holiday.findMany({
+    where: {
+      tenantId,
+      isActive: true,
+      OR: [
+        { date:         { gte: payPeriodStart, lte: payPeriodEnd } },
+        { observedDate: { gte: payPeriodStart, lte: payPeriodEnd } },
+      ],
+    },
+    select: { date: true, observedDate: true },
+  });
+  if (holidays.length === 0) return;
+
+  const periodStartStr = format(payPeriodStart, "yyyy-MM-dd");
+  const periodEndStr   = format(payPeriodEnd,   "yyyy-MM-dd");
+  const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
+  const localDateOf = (d: Date) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(d);
+
+  // Effective holiday dates — use observedDate when set
+  const holidayDates = new Set<string>(
+    holidays.map((h) => format(h.observedDate ?? h.date, "yyyy-MM-dd"))
+  );
+
+  // Paid WORK segments already written by the OT engine
+  const workSegs = await db.workSegment.findMany({
+    where: { timesheetId, segmentType: "WORK", isPaid: true },
+    select: { segmentDate: true, durationMinutes: true },
+  });
+  const workedMinsByDay = new Map<string, number>();
+  for (const seg of workSegs) {
+    const ds = format(seg.segmentDate, "yyyy-MM-dd");
+    workedMinsByDay.set(ds, (workedMinsByDay.get(ds) ?? 0) + seg.durationMinutes);
+  }
+
+  // Minimum period check
+  const totalWorkedMins = [...workedMinsByDay.values()].reduce((a, b) => a + b, 0);
+  if (rule.minPeriodMinutes > 0 && totalWorkedMins < rule.minPeriodMinutes) return;
+
+  // Days with any activity (for requireDayBefore/After checks)
+  const punchedDays = new Set(punches.map((p) => localDateOf(p.roundedTime)));
+  const activityDays = new Set([...punchedDays, ...workedMinsByDay.keys()]);
+
+  // Shift duration for SCHEDULED_HOURS credit (fallback to rule's creditMinutes if no shift)
+  let shiftDurationMins = rule.creditMinutes;
+  if (shift) {
+    const [sh, sm] = shift.startTime.split(":").map(Number);
+    const [eh, em] = shift.endTime.split(":").map(Number);
+    let endMins = eh * 60 + em;
+    const startMins = sh * 60 + sm;
+    if (endMins <= startMins) endMins += 1440; // overnight
+    shiftDurationMins = endMins - startMins;
+  }
+
+  // Walk to the nearest adjacent scheduled work day (skips holidays and non-work days)
+  function adjacentWorkDay(fromDs: string, dir: 1 | -1): string {
+    const d = new Date(fromDs + "T12:00:00.000Z");
+    for (let i = 0; i < 14; i++) {
+      d.setUTCDate(d.getUTCDate() + dir);
+      const ds = d.toISOString().slice(0, 10);
+      const dow = new Date(ds + "T12:00:00.000Z").getUTCDay();
+      const onSchedule = !shift || shift.workDays.includes(dow);
+      if (onSchedule && !holidayDates.has(ds)) return ds;
+    }
+    return "";
+  }
+
+  type HolidaySegInput = {
+    timesheetId: string;
+    segmentType: "HOLIDAY";
+    startTime: Date;
+    endTime: Date;
+    durationMinutes: number;
+    segmentDate: Date;
+    isPaid: boolean;
+    payBucket: PayBucket;
+    isSplit: boolean;
+  };
+
+  const toCreate: HolidaySegInput[] = [];
+
+  for (const ds of holidayDates) {
+    if (ds < periodStartStr || ds > periodEndStr) continue;
+    if (ds >= todayStr) continue;
+
+    // Eligibility: must have worked the day before
+    if (rule.requireDayBefore) {
+      const prev = adjacentWorkDay(ds, -1);
+      if (!prev || !activityDays.has(prev)) continue;
+    }
+
+    // Eligibility: must have worked the day after (only once that day has passed)
+    if (rule.requireDayAfter) {
+      const next = adjacentWorkDay(ds, 1);
+      if (!next || next >= todayStr) continue;
+      if (!activityDays.has(next)) continue;
+    }
+
+    // Credit amount
+    let creditMins: number;
+    if (rule.creditMethod === "ACTUAL_WORKED") {
+      creditMins = workedMinsByDay.get(ds) ?? 0;
+    } else if (rule.creditMethod === "SCHEDULED_HOURS") {
+      creditMins = shiftDurationMins;
+    } else {
+      creditMins = rule.creditMinutes;
+    }
+    if (rule.maxCreditMinutes > 0) creditMins = Math.min(creditMins, rule.maxCreditMinutes);
+    if (creditMins <= 0) continue;
+
+    const segmentDate = new Date(ds + "T00:00:00.000Z");
+    const creditStart = new Date(ds + "T00:00:00.000Z");
+
+    toCreate.push({
+      timesheetId,
+      segmentType: "HOLIDAY",
+      startTime: creditStart,
+      endTime: new Date(creditStart.getTime() + creditMins * 60_000),
+      durationMinutes: creditMins,
+      segmentDate,
+      isPaid: true,
+      payBucket: rule.payBucket,
+      isSplit: false,
+    });
+
+    // Working premium — extra pay for hours actually clocked on the holiday
+    const workedMins = workedMinsByDay.get(ds) ?? 0;
+    if (workedMins > 0 && rule.workingPremium > 100) {
+      const premiumMins = Math.round(workedMins * (rule.workingPremium - 100) / 100);
+      if (premiumMins > 0) {
+        toCreate.push({
+          timesheetId,
+          segmentType: "HOLIDAY",
+          startTime: creditStart,
+          endTime: new Date(creditStart.getTime() + premiumMins * 60_000),
+          durationMinutes: premiumMins,
+          segmentDate,
+          isPaid: true,
+          payBucket: rule.payBucket,
+          isSplit: false,
+        });
+      }
+    }
+  }
+
+  if (toCreate.length === 0) return;
+
+  const totalHolidayMins = toCreate.reduce((a, s) => a + s.durationMinutes, 0);
+
+  await db.$transaction([
+    db.workSegment.createMany({ data: toCreate }),
+    db.overtimeBucket.upsert({
+      where: { timesheetId_bucket: { timesheetId, bucket: "HOLIDAY" } },
+      create: { timesheetId, bucket: "HOLIDAY", totalMinutes: totalHolidayMins },
+      update: { totalMinutes: totalHolidayMins },
+    }),
+  ]);
 }

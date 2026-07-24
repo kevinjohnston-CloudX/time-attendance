@@ -45,6 +45,7 @@ enum SegmentType {
   MEAL
   BREAK
   LEAVE
+  HOLIDAY
 }
 
 enum TimesheetStatus {
@@ -111,6 +112,8 @@ enum ExceptionType {
   UNSCHEDULED_OT
   CONSECUTIVE_DAYS
   ABSENT
+  LATE_IN
+  EARLY_OUT
 }
 
 enum PayFrequency {

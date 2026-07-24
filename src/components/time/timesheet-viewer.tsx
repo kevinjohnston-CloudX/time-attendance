@@ -5,27 +5,24 @@ import { useRouter } from "next/navigation";
 import {
   format,
   eachDayOfInterval,
-  isSameDay,
-  isSameMonth,
   isToday,
-  startOfMonth,
-  endOfMonth,
-  startOfWeek,
-  endOfWeek,
-  addMonths,
   parseISO,
 } from "date-fns";
 import {
   ChevronLeft,
   ChevronRight,
   Calendar,
+  CalendarCheck,
 } from "lucide-react";
+
 import { parseUtcDate } from "@/lib/utils/date";
 import { formatMinutes, minutesToHoursDecimal } from "@/lib/utils/duration";
 import { TIMESHEET_STATUS_LABEL, PUNCH_TYPE_LABEL } from "@/lib/state-machines/labels";
 import { SegmentTimeline } from "@/components/time/segment-timeline";
 import { SubmitTimesheetButton } from "@/components/time/submit-timesheet-button";
 import type { WorkSegment } from "@prisma/client";
+
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -68,8 +65,6 @@ export interface TimesheetViewerProps {
   timesheets: TimesheetListItem[];
   selectedPayPeriodId: string | null;
   detail: TimesheetDetailData | null;
-  customStart?: string;
-  customEnd?: string;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -124,11 +119,8 @@ export function TimesheetViewer({
   timesheets,
   selectedPayPeriodId,
   detail,
-  customStart,
-  customEnd,
 }: TimesheetViewerProps) {
   const router = useRouter();
-  const [listFilter, setListFilter] = useState<"current" | "last" | "ytd" | "all">("all");
 
   // Pay period navigation
   const sortedTimesheets = [...timesheets].sort(
@@ -150,43 +142,27 @@ export function TimesheetViewer({
     const e = parseUtcDate(ts.payPeriod.endDate);
     return s <= todayMidnight && todayMidnight <= e;
   });
-  const currentPeriodIndex = currentPeriodTs
-    ? sortedTimesheets.indexOf(currentPeriodTs)
-    : -1;
-  const lastPeriodTs =
-    currentPeriodIndex > 0
-      ? sortedTimesheets[currentPeriodIndex - 1]
-      : sortedTimesheets[sortedTimesheets.length - 2];
 
-  const currentYear = new Date().getFullYear();
-  const visibleTimesheets =
-    listFilter === "current"
-      ? currentPeriodTs ? [currentPeriodTs] : []
-      : listFilter === "last"
-      ? lastPeriodTs ? [lastPeriodTs] : []
-      : listFilter === "ytd"
-      ? sortedTimesheets.filter(
-          (ts) => parseUtcDate(ts.payPeriod.startDate).getFullYear() === currentYear
-        )
-      : sortedTimesheets;
+  const allMonthKeys = Array.from(new Set(
+    sortedTimesheets.map(ts => format(parseUtcDate(ts.payPeriod.startDate), "yyyy-MM"))
+  )).sort();
+  const monthsWithPeriods = new Set(allMonthKeys);
+  const selectedTs = sortedTimesheets.find(ts => ts.payPeriodId === selectedPayPeriodId);
+  const selectedMonthYear = selectedTs
+    ? format(parseUtcDate(selectedTs.payPeriod.startDate), "yyyy-MM")
+    : null;
+  const visibleTimesheets = selectedMonthYear
+    ? sortedTimesheets.filter(ts =>
+        format(parseUtcDate(ts.payPeriod.startDate), "yyyy-MM") === selectedMonthYear
+      )
+    : sortedTimesheets;
 
-  // Calendar picker state
+  // Picker state
   const [showCalendar, setShowCalendar] = useState(false);
-  const [calendarMonth, setCalendarMonth] = useState(() =>
-    selectedPayPeriodId
-      ? parseUtcDate(
-          sortedTimesheets.find((ts) => ts.payPeriodId === selectedPayPeriodId)
-            ?.payPeriod.startDate ?? new Date().toISOString()
-        )
-      : new Date()
-  );
-  const [rangeStart, setRangeStart] = useState<Date | null>(
-    customStart ? new Date(customStart + "T12:00:00") : null
-  );
-  const [rangeEnd, setRangeEnd] = useState<Date | null>(
-    customEnd ? new Date(customEnd + "T12:00:00") : null
-  );
-  const [hoverDate, setHoverDate] = useState<Date | null>(null);
+  const [pickerYear, setPickerYear] = useState(() => {
+    const ts = sortedTimesheets.find(t => t.payPeriodId === selectedPayPeriodId);
+    return ts ? parseUtcDate(ts.payPeriod.startDate).getFullYear() : new Date().getFullYear();
+  });
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [summaryGroupBy, setSummaryGroupBy] = useState<"total" | "week">("total");
   const calendarRef = useRef<HTMLDivElement>(null);
@@ -213,37 +189,13 @@ export function TimesheetViewer({
     router.push(`/time/timesheet?payPeriodId=${payPeriodId}`);
   }
 
-  // Auto-select the single period when filter is "current" or "last"
-  useEffect(() => {
-    if (listFilter === "current" && currentPeriodTs && selectedPayPeriodId !== currentPeriodTs.payPeriodId) {
-      navigate(currentPeriodTs.payPeriodId);
-    } else if (listFilter === "last" && lastPeriodTs && selectedPayPeriodId !== lastPeriodTs.payPeriodId) {
-      navigate(lastPeriodTs.payPeriodId);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listFilter]);
-
-  function navigateCustomRange(start: Date, end: Date) {
-    const s = format(start, "yyyy-MM-dd");
-    const e = format(end, "yyyy-MM-dd");
-    router.push(`/time/timesheet?customStart=${s}&customEnd=${e}`);
+  function handleMonthSelect(monthIdx: number) {
+    const monthKey = allMonthKeys[monthIdx];
+    const firstTs = sortedTimesheets.find(ts =>
+      format(parseUtcDate(ts.payPeriod.startDate), "yyyy-MM") === monthKey
+    );
+    if (firstTs) navigate(firstTs.payPeriodId);
     setShowCalendar(false);
-  }
-
-  function handleCalendarDateSelect(d: Date) {
-    if (!rangeStart || (rangeStart && rangeEnd)) {
-      setRangeStart(d);
-      setRangeEnd(null);
-      setHoverDate(null);
-    } else {
-      if (d < rangeStart) {
-        setRangeStart(d);
-        setRangeEnd(null);
-      } else {
-        setRangeEnd(d);
-        navigateCustomRange(rangeStart, d);
-      }
-    }
   }
 
   // Detail computations
@@ -292,19 +244,7 @@ export function TimesheetViewer({
 
           {/* Filter controls */}
           <div className="relative shrink-0 space-y-1.5 border-b border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-800 dark:bg-zinc-900">
-            {/* List filter dropdown */}
-            <select
-              value={listFilter}
-              onChange={(e) => setListFilter(e.target.value as typeof listFilter)}
-              className="w-full rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-            >
-              <option value="current">Current Pay Period</option>
-              <option value="last">Last Pay Period</option>
-              <option value="ytd">Year to Date</option>
-              <option value="all">All Pay Periods</option>
-            </select>
-
-            {/* Prev / Next + calendar */}
+            {/* Prev / Next + jump-to-current + month picker */}
             <div className="flex items-center gap-0.5">
               <button
                 type="button"
@@ -318,9 +258,6 @@ export function TimesheetViewer({
               <span className="flex-1 text-center text-xs font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
                 {(() => {
                   const ts = sortedTimesheets[currentIndex];
-                  if (!ts && customStart && customEnd) {
-                    return `${format(new Date(customStart), "MMM d")} – ${format(new Date(customEnd), "MMM d, yyyy")}`;
-                  }
                   if (!ts) return "—";
                   const s = parseUtcDate(ts.payPeriod.startDate);
                   const e = parseUtcDate(ts.payPeriod.endDate);
@@ -337,123 +274,80 @@ export function TimesheetViewer({
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
 
-              {/* Calendar range picker */}
+              {/* Jump to current pay period */}
+              <button
+                type="button"
+                onClick={() => currentPeriodTs && navigate(currentPeriodTs.payPeriodId)}
+                disabled={!currentPeriodTs || selectedPayPeriodId === currentPeriodTs.payPeriodId}
+                title="Jump to current pay period"
+                className="rounded p-1.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:cursor-default disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+              >
+                <CalendarCheck className="h-3.5 w-3.5" />
+              </button>
+
+              {/* Month/year picker */}
               <div className="relative" ref={calendarRef}>
                 <button
                   type="button"
                   onClick={() => {
-                    if (!showCalendar) {
-                      setRangeStart(customStart ? new Date(customStart + "T12:00:00") : null);
-                      setRangeEnd(customEnd ? new Date(customEnd + "T12:00:00") : null);
-                      setHoverDate(null);
-                      const initDate =
-                        customStart
-                          ? new Date(customStart + "T12:00:00")
-                          : sortedTimesheets[currentIndex]
-                          ? parseUtcDate(sortedTimesheets[currentIndex].payPeriod.startDate)
-                          : new Date();
-                      setCalendarMonth(initDate);
+                    if (!showCalendar && selectedTs) {
+                      setPickerYear(parseUtcDate(selectedTs.payPeriod.startDate).getFullYear());
                     }
                     setShowCalendar((v) => !v);
                   }}
                   className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-                  title="Pick a date range"
+                  title="Pick a month"
                 >
                   <Calendar className="h-3.5 w-3.5" />
                 </button>
 
                 {showCalendar && (
-                  <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+                  <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
                     <div className="mb-2 flex items-center justify-between">
                       <button
                         type="button"
-                        onClick={() => setCalendarMonth((m) => addMonths(m, -1))}
+                        onClick={() => setPickerYear((y) => y - 1)}
                         className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
                       >
                         <ChevronLeft className="h-4 w-4" />
                       </button>
                       <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                        {format(calendarMonth, "MMMM yyyy")}
+                        {pickerYear}
                       </span>
                       <button
                         type="button"
-                        onClick={() => setCalendarMonth((m) => addMonths(m, 1))}
+                        onClick={() => setPickerYear((y) => y + 1)}
                         className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
                       >
                         <ChevronRight className="h-4 w-4" />
                       </button>
                     </div>
-                    <div className="grid grid-cols-7 gap-0">
-                      {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
-                        <div key={d} className="py-1 text-center text-xs font-medium text-zinc-400">
-                          {d}
-                        </div>
-                      ))}
-                      {(() => {
-                        const calDays = eachDayOfInterval({
-                          start: startOfWeek(startOfMonth(calendarMonth)),
-                          end: endOfWeek(endOfMonth(calendarMonth)),
-                        });
-                        const effectiveEnd = rangeEnd ?? hoverDate;
-                        return calDays.map((d) => {
-                          const inMonth = isSameMonth(d, calendarMonth);
-                          const isNow = isSameDay(d, new Date());
-                          const isStart = !!rangeStart && isSameDay(d, rangeStart);
-                          const isEnd = !!rangeEnd && isSameDay(d, rangeEnd);
-                          const isEndpoint = isStart || isEnd;
-                          const inRange =
-                            !!rangeStart && !!effectiveEnd && d > rangeStart && d < effectiveEnd;
-                          return (
-                            <button
-                              key={d.toISOString()}
-                              type="button"
-                              onClick={() => handleCalendarDateSelect(d)}
-                              onMouseEnter={() => rangeStart && !rangeEnd && setHoverDate(d)}
-                              onMouseLeave={() => rangeStart && !rangeEnd && setHoverDate(null)}
-                              className={`h-7 w-7 rounded text-xs transition-colors ${
-                                isEndpoint
-                                  ? "bg-blue-600 font-semibold text-white"
-                                  : inRange
-                                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                                  : !inMonth
-                                  ? "text-zinc-300 dark:text-zinc-600"
-                                  : "text-zinc-700 dark:text-zinc-300"
-                              } ${
-                                isNow && !isEndpoint && !inRange ? "ring-1 ring-blue-400" : ""
-                              } ${!isEndpoint ? "hover:bg-zinc-100 dark:hover:bg-zinc-700" : ""}`}
-                            >
-                              {d.getDate()}
-                            </button>
-                          );
-                        });
-                      })()}
-                    </div>
-                    <div className="mt-2 flex items-center justify-between border-t border-zinc-100 pt-2 dark:border-zinc-700">
-                      <span className="text-xs text-zinc-400">
-                        {rangeStart && !rangeEnd ? "Select end date" : "Select start date"}
-                      </span>
-                      <div className="flex gap-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRangeStart(null);
-                            setRangeEnd(null);
-                            setHoverDate(null);
-                            if (currentPeriodTs) navigate(currentPeriodTs.payPeriodId);
-                            setShowCalendar(false);
-                          }}
-                          className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                        >
-                          Clear
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setShowCalendar(false)}
-                          className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                        >
-                          Close
-                        </button>
-                      </div>
+                    <div className="grid grid-cols-3 gap-1">
+                      {MONTHS.map((m, i) => {
+                        const key = `${pickerYear}-${String(i + 1).padStart(2, "0")}`;
+                        const hasPeriods = monthsWithPeriods.has(key);
+                        const isSelected = key === selectedMonthYear;
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            disabled={!hasPeriods}
+                            onClick={() => {
+                              const idx = allMonthKeys.indexOf(key);
+                              if (idx >= 0) handleMonthSelect(idx);
+                            }}
+                            className={`rounded px-1 py-1.5 text-xs font-medium transition-colors ${
+                              isSelected
+                                ? "bg-blue-600 text-white"
+                                : hasPeriods
+                                ? "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                                : "cursor-default text-zinc-300 dark:text-zinc-600"
+                            }`}
+                          >
+                            {m}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

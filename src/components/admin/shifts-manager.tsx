@@ -140,6 +140,57 @@ function ShiftFields({ shift }: { shift?: Shift }) {
         </div>
       </div>
       <DayPicker defaultDays={defaultDays} />
+
+      {/* Punch Tolerance */}
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Punch Tolerance</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            { name: "earlyInMinutes", label: "Early In", default: shift?.earlyInMinutes ?? 0 },
+            { name: "lateInMinutes",  label: "Late In",  default: shift?.lateInMinutes  ?? 0 },
+            { name: "earlyOutMinutes", label: "Early Out", default: shift?.earlyOutMinutes ?? 0 },
+            { name: "lateOutMinutes",  label: "Late Out",  default: shift?.lateOutMinutes  ?? 0 },
+          ].map((f) => (
+            <div key={f.name}>
+              <label className="mb-1 block text-xs text-zinc-500">{f.label} (min)</label>
+              <input
+                name={f.name}
+                type="number"
+                min="0"
+                max="120"
+                defaultValue={f.default}
+                className={inputCls}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Scheduled Meal Break */}
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Scheduled Meal Break</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div>
+            <label className="mb-1 block text-xs text-zinc-500">Break Start</label>
+            <input
+              name="mealBreakStart"
+              type="time"
+              defaultValue={shift?.mealBreakStart ?? ""}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-zinc-500">Break End</label>
+            <input
+              name="mealBreakEnd"
+              type="time"
+              defaultValue={shift?.mealBreakEnd ?? ""}
+              className={inputCls}
+            />
+          </div>
+        </div>
+        <p className="mt-1 text-xs text-zinc-400">Leave blank if no scheduled break.</p>
+      </div>
     </div>
   );
 }
@@ -166,6 +217,12 @@ export function ShiftsManager({ shifts }: Props) {
         startTime: fd.get("startTime") as string,
         endTime: fd.get("endTime") as string,
         workDays,
+        earlyInMinutes: Number(fd.get("earlyInMinutes") ?? 0),
+        lateInMinutes: Number(fd.get("lateInMinutes") ?? 0),
+        earlyOutMinutes: Number(fd.get("earlyOutMinutes") ?? 0),
+        lateOutMinutes: Number(fd.get("lateOutMinutes") ?? 0),
+        mealBreakStart: (fd.get("mealBreakStart") as string) || "",
+        mealBreakEnd: (fd.get("mealBreakEnd") as string) || "",
       });
       if (!result.success) {
         setError(result.error);
@@ -188,6 +245,12 @@ export function ShiftsManager({ shifts }: Props) {
         startTime: fd.get("startTime") as string,
         endTime: fd.get("endTime") as string,
         workDays,
+        earlyInMinutes: Number(fd.get("earlyInMinutes") ?? 0),
+        lateInMinutes: Number(fd.get("lateInMinutes") ?? 0),
+        earlyOutMinutes: Number(fd.get("earlyOutMinutes") ?? 0),
+        lateOutMinutes: Number(fd.get("lateOutMinutes") ?? 0),
+        mealBreakStart: (fd.get("mealBreakStart") as string) || "",
+        mealBreakEnd: (fd.get("mealBreakEnd") as string) || "",
         isActive: fd.get("isActive") === "true",
       });
       if (!result.success) {

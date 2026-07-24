@@ -13,6 +13,8 @@ const EXCEPTION_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "UNSCHEDULED_OT",   label: "Unscheduled OT" },
   { value: "CONSECUTIVE_DAYS", label: "Consecutive Days" },
   { value: "ABSENT",           label: "Absent" },
+  { value: "LATE_IN",          label: "Late In" },
+  { value: "EARLY_OUT",        label: "Early Out" },
 ];
 
 type PayPeriodOption = { id: string; label: string };

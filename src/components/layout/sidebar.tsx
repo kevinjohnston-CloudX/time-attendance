@@ -22,6 +22,7 @@ import {
   ChevronsRight,
   History,
   Layers,
+  ShieldCheck,
 } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -54,7 +55,8 @@ const supervisorItems: NavItem[] = [
 
 const adminItems: NavItem[] = [
   { label: "Employees", href: "/admin/employees", icon: Users, permission: "EMPLOYEE_MANAGE" },
-  { label: "Site Settings", href: "/admin/site-settings", icon: Layers, permission: ["SITE_MANAGE", "RULES_MANAGE", "PAY_PERIOD_MANAGE", "ROLE_MANAGE"] },
+  { label: "Site Settings", href: "/admin/site-settings", icon: Layers, permission: ["SITE_MANAGE", "RULES_MANAGE", "PAY_PERIOD_MANAGE"] },
+  { label: "Roles", href: "/admin/roles", icon: ShieldCheck, permission: "ROLE_MANAGE" },
   { label: "ADP Sync", href: "/admin/adp", icon: RefreshCw, permission: "EMPLOYEE_MANAGE" },
   { label: "Audit Log", href: "/admin/audit", icon: FileText, permission: "AUDIT_VIEW" },
   { label: "Company Settings", href: "/admin/settings", icon: SlidersHorizontal, permission: "PAY_PERIOD_MANAGE" },

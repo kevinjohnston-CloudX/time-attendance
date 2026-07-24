@@ -12,6 +12,8 @@ import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 import { PayPeriodTimesheets } from "@/components/payroll/pay-period-timesheets";
 import { PayPeriodDetailFilter } from "@/components/payroll/pay-period-detail-filter";
+import { PayPeriodDownload } from "@/components/payroll/pay-period-download";
+import { PayPeriodExport } from "@/components/payroll/pay-period-export";
 
 const PP_BADGE: Record<string, string> = {
   OPEN:   "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
@@ -19,18 +21,21 @@ const PP_BADGE: Record<string, string> = {
   LOCKED: "bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400",
 };
 
-type FilterValue = "all" | "current" | "open" | "ready" | "locked" | "ytd";
+type FilterValue = "all" | "current" | "ytd";
+type StatusFilter = "all" | "open" | "ready" | "locked";
 
 export default async function PayPeriodsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ id?: string; filter?: string; siteId?: string; departmentId?: string }>;
+  searchParams: Promise<{ id?: string; filter?: string; status?: string; month?: string; siteId?: string; departmentId?: string }>;
 }) {
-  const { id: selectedId, filter, siteId, departmentId } = await searchParams;
+  const { id: selectedId, filter, status, month, siteId, departmentId } = await searchParams;
   const currentFilter: FilterValue =
-    filter === "current" || filter === "open" || filter === "ready" || filter === "locked" || filter === "ytd"
-      ? filter
-      : "all";
+    filter === "current" || filter === "ytd" ? filter : "all";
+  const statusFilter: StatusFilter =
+    status === "open" || status === "ready" || status === "locked" ? status : "all";
+  // month param: "YYYY-MM" — when set, overrides scope filter for the visible list
+  const monthParam = /^\d{4}-\d{2}$/.test(month ?? "") ? month! : null;
 
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -62,22 +67,45 @@ export default async function PayPeriodsPage({
   const allPayPeriods = result.data;
   const currentYear = new Date().getFullYear();
 
-  // Apply filter for the visible list
+  // Default to the current pay period when none is selected
+  if (!selectedId) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const current = allPayPeriods.find(
+      (pp) => parseUtcDate(pp.startDate) <= today && today <= parseUtcDate(pp.endDate)
+    );
+    if (current) {
+      const siteParam = siteId ? `&siteId=${siteId}` : "";
+      const deptParam = departmentId ? `&departmentId=${departmentId}` : "";
+      redirect(`/payroll/pay-periods?id=${current.id}&filter=current${siteParam}${deptParam}`);
+    }
+  }
+
+  // Apply scope + status filters for the visible list
   const payPeriods = allPayPeriods.filter((pp) => {
-    if (currentFilter === "current") {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return parseUtcDate(pp.startDate) <= today && today <= parseUtcDate(pp.endDate);
+    // Month filter overrides scope when set
+    if (monthParam) {
+      const [y, m] = monthParam.split("-").map(Number);
+      const monthStart = new Date(y, m - 1, 1);
+      const monthEnd = new Date(y, m, 0);
+      if (!(parseUtcDate(pp.startDate) <= monthEnd && parseUtcDate(pp.endDate) >= monthStart)) return false;
+    } else {
+      // Scope filter
+      if (currentFilter === "current") {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (!(parseUtcDate(pp.startDate) <= today && today <= parseUtcDate(pp.endDate))) return false;
+      } else if (currentFilter === "ytd") {
+        if (
+          parseUtcDate(pp.startDate).getFullYear() !== currentYear &&
+          parseUtcDate(pp.endDate).getFullYear() !== currentYear
+        ) return false;
+      }
     }
-    if (currentFilter === "open") return pp.status === "OPEN";
-    if (currentFilter === "ready") return pp.status === "READY";
-    if (currentFilter === "locked") return pp.status === "LOCKED";
-    if (currentFilter === "ytd") {
-      return (
-        parseUtcDate(pp.startDate).getFullYear() === currentYear ||
-        parseUtcDate(pp.endDate).getFullYear() === currentYear
-      );
-    }
+    // Status filter always applies
+    if (statusFilter === "open") return pp.status === "OPEN";
+    if (statusFilter === "ready") return pp.status === "READY";
+    if (statusFilter === "locked") return pp.status === "LOCKED";
     return true;
   });
 
@@ -124,6 +152,8 @@ export default async function PayPeriodsPage({
           allPayPeriods={serialisedAll}
           selectedId={selectedId}
           currentFilter={currentFilter}
+          statusFilter={statusFilter}
+          monthParam={monthParam ?? undefined}
           siteId={siteId}
           departmentId={departmentId}
         />
@@ -142,7 +172,10 @@ export default async function PayPeriodsPage({
               const isSelected = pp.id === selectedId;
               const siteParam = siteId ? `&siteId=${siteId}` : "";
               const deptParam = departmentId ? `&departmentId=${departmentId}` : "";
-              const href = `/payroll/pay-periods?id=${pp.id}${currentFilter !== "all" ? `&filter=${currentFilter}` : ""}${siteParam}${deptParam}`;
+              const monthHref = monthParam ? `&month=${monthParam}` : "";
+              const filterHref = !monthParam && currentFilter !== "all" ? `&filter=${currentFilter}` : "";
+              const statusHref = statusFilter !== "all" ? `&status=${statusFilter}` : "";
+              const href = `/payroll/pay-periods?id=${pp.id}${filterHref}${statusHref}${monthHref}${siteParam}${deptParam}`;
 
               return (
                 <Link
@@ -192,13 +225,24 @@ export default async function PayPeriodsPage({
                   </span>
                 </div>
               </div>
-              <PayPeriodActions
-                payPeriodId={detail.payPeriod.id}
-                status={detail.payPeriod.status}
-                isReady={detail.validation.isReady}
-                adpConfigured={adpConfigured}
-                payrollRun={payrollRun}
-              />
+              <div className="flex items-start gap-2">
+                <PayPeriodExport
+                  payPeriodId={detail.payPeriod.id}
+                  label={`${format(detail.payPeriod.startDate, "MMM d")} – ${format(detail.payPeriod.endDate, "MMM d, yyyy")}`}
+                  sites={sites}
+                />
+                <PayPeriodDownload
+                  payPeriodId={detail.payPeriod.id}
+                  label={`${format(detail.payPeriod.startDate, "MMM d")} – ${format(detail.payPeriod.endDate, "MMM d, yyyy")}`}
+                />
+                <PayPeriodActions
+                  payPeriodId={detail.payPeriod.id}
+                  status={detail.payPeriod.status}
+                  isReady={detail.validation.isReady}
+                  adpConfigured={adpConfigured}
+                  payrollRun={payrollRun}
+                />
+              </div>
             </div>
 
             <div className="mt-6 grid grid-cols-3 gap-4">

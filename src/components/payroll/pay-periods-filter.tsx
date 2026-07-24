@@ -2,22 +2,12 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import {
-  format,
-  eachDayOfInterval,
-  isSameDay,
-  isSameMonth,
-  isToday,
-  startOfMonth,
-  endOfMonth,
-  startOfWeek,
-  endOfWeek,
-  addMonths,
-} from "date-fns";
-import { ChevronLeft, ChevronRight, Calendar } from "lucide-react";
+import { format } from "date-fns";
+import { ChevronLeft, ChevronRight, Calendar, CalendarCheck } from "lucide-react";
 import { parseUtcDate } from "@/lib/utils/date";
 
-type FilterValue = "all" | "current" | "open" | "ready" | "locked" | "ytd";
+type FilterValue = "all" | "current" | "ytd";
+type StatusFilter = "all" | "open" | "ready" | "locked";
 
 interface PayPeriodItem {
   id: string;
@@ -30,18 +20,29 @@ interface Props {
   allPayPeriods: PayPeriodItem[];
   selectedId: string | undefined;
   currentFilter: FilterValue;
+  statusFilter: StatusFilter;
+  monthParam?: string; // "YYYY-MM" — set when browsing by month
   siteId?: string;
   departmentId?: string;
 }
 
-export function PayPeriodsFilter({ allPayPeriods, selectedId, currentFilter, siteId, departmentId }: Props) {
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+export function PayPeriodsFilter({
+  allPayPeriods,
+  selectedId,
+  currentFilter,
+  statusFilter,
+  monthParam,
+  siteId,
+  departmentId,
+}: Props) {
   const router = useRouter();
-  const calendarRef = useRef<HTMLDivElement>(null);
-  const [showCalendar, setShowCalendar] = useState(false);
-  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
-  const [rangeStart, setRangeStart] = useState<Date | null>(null);
-  const [rangeEnd, setRangeEnd] = useState<Date | null>(null);
-  const [hoverDate, setHoverDate] = useState<Date | null>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerYear, setPickerYear] = useState(() =>
+    monthParam ? parseInt(monthParam.slice(0, 4)) : new Date().getFullYear()
+  );
 
   const todayMidnight = new Date();
   todayMidnight.setHours(0, 0, 0, 0);
@@ -52,220 +53,309 @@ export function PayPeriodsFilter({ allPayPeriods, selectedId, currentFilter, sit
 
   const currentYear = new Date().getFullYear();
 
-  function applyFilter(value: FilterValue, id?: string | undefined) {
+  // All unique "YYYY-MM" values that have at least one pay period
+  const allMonthKeys = [
+    ...new Set(
+      sorted.flatMap((pp) => {
+        const keys: string[] = [];
+        const s = parseUtcDate(pp.startDate);
+        const e = parseUtcDate(pp.endDate);
+        // Include all months the period overlaps
+        const cur = new Date(s.getFullYear(), s.getMonth(), 1);
+        const end = new Date(e.getFullYear(), e.getMonth(), 1);
+        while (cur <= end) {
+          keys.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`);
+          cur.setMonth(cur.getMonth() + 1);
+        }
+        return keys;
+      })
+    ),
+  ].sort();
+
+  function applyFilter(scope: FilterValue, id?: string, newStatus?: StatusFilter) {
     const params = new URLSearchParams();
     if (id) params.set("id", id);
-    if (value !== "all") params.set("filter", value);
+    if (scope !== "all") params.set("filter", scope);
+    const resolvedStatus = newStatus ?? statusFilter;
+    if (resolvedStatus !== "all") params.set("status", resolvedStatus);
+    // clear month when changing scope filter
     if (siteId) params.set("siteId", siteId);
     if (departmentId) params.set("departmentId", departmentId);
     router.push(`/payroll/pay-periods?${params.toString()}`);
   }
 
-  // Filtered list used for prev/next navigation
-  const filtered = sorted.filter((pp) => {
+  function jumpToCurrent() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const current = sorted.find((pp) => {
+      const s = parseUtcDate(pp.startDate);
+      const e = parseUtcDate(pp.endDate);
+      return s <= today && today <= e;
+    });
+    if (current) applyFilter("current", current.id, "all");
+  }
+
+  const isOnCurrentPeriod = (() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const current = sorted.find((pp) => {
+      const s = parseUtcDate(pp.startDate);
+      const e = parseUtcDate(pp.endDate);
+      return s <= today && today <= e;
+    });
+    return current?.id === selectedId && currentFilter === "current" && statusFilter === "all" && !monthParam;
+  })();
+
+  // Find the first pay period overlapping a given month
+  function findPayPeriodForMonth(year: number, month: number): PayPeriodItem | undefined {
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month + 1, 0);
+    const startsInMonth = sorted.find((pp) => {
+      const s = parseUtcDate(pp.startDate);
+      return s.getFullYear() === year && s.getMonth() === month;
+    });
+    if (startsInMonth) return startsInMonth;
+    return sorted.find((pp) => {
+      const s = parseUtcDate(pp.startDate);
+      const e = parseUtcDate(pp.endDate);
+      return s <= monthEnd && e >= monthStart;
+    });
+  }
+
+  function handleMonthSelect(month: number) {
+    const key = `${pickerYear}-${String(month + 1).padStart(2, "0")}`;
+    const match = findPayPeriodForMonth(pickerYear, month);
+    const params = new URLSearchParams();
+    params.set("month", key);
+    if (match) params.set("id", match.id);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (siteId) params.set("siteId", siteId);
+    if (departmentId) params.set("departmentId", departmentId);
+    router.push(`/payroll/pay-periods?${params.toString()}`);
+    setShowPicker(false);
+  }
+
+  // Month-mode prev/next: navigate to adjacent month key
+  const monthModeIndex = monthParam ? allMonthKeys.indexOf(monthParam) : -1;
+  const inMonthMode = monthParam != null && monthModeIndex >= 0;
+  const hasPrevMonth = inMonthMode && monthModeIndex > 0;
+  const hasNextMonth = inMonthMode && monthModeIndex < allMonthKeys.length - 1;
+
+  function navigateMonth(delta: -1 | 1) {
+    const newKey = allMonthKeys[monthModeIndex + delta];
+    if (!newKey) return;
+    const [y, m] = newKey.split("-").map(Number);
+    const match = findPayPeriodForMonth(y, m - 1);
+    const params = new URLSearchParams();
+    params.set("month", newKey);
+    if (match) params.set("id", match.id);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (siteId) params.set("siteId", siteId);
+    if (departmentId) params.set("departmentId", departmentId);
+    router.push(`/payroll/pay-periods?${params.toString()}`);
+  }
+
+  // Pay-period-mode prev/next (when not in month mode)
+  const filtered = inMonthMode ? [] : sorted.filter((pp) => {
     if (currentFilter === "current") {
       const s = parseUtcDate(pp.startDate);
       const e = parseUtcDate(pp.endDate);
-      return s <= todayMidnight && todayMidnight <= e;
+      if (!(s <= todayMidnight && todayMidnight <= e)) return false;
+    } else if (currentFilter === "ytd") {
+      if (
+        parseUtcDate(pp.startDate).getFullYear() !== currentYear &&
+        parseUtcDate(pp.endDate).getFullYear() !== currentYear
+      ) return false;
     }
-    if (currentFilter === "open") return pp.status === "OPEN";
-    if (currentFilter === "ready") return pp.status === "READY";
-    if (currentFilter === "locked") return pp.status === "LOCKED";
-    if (currentFilter === "ytd") {
-      return (
-        parseUtcDate(pp.startDate).getFullYear() === currentYear ||
-        parseUtcDate(pp.endDate).getFullYear() === currentYear
-      );
-    }
+    if (statusFilter === "open") return pp.status === "OPEN";
+    if (statusFilter === "ready") return pp.status === "READY";
+    if (statusFilter === "locked") return pp.status === "LOCKED";
     return true;
   });
 
   const currentIndex = filtered.findIndex((pp) => pp.id === selectedId);
-  const hasPrev = currentIndex > 0;
-  const hasNext = currentIndex < filtered.length - 1;
+  const hasPrev = inMonthMode ? hasPrevMonth : currentIndex > 0;
+  const hasNext = inMonthMode ? hasNextMonth : currentIndex < filtered.length - 1;
 
-  const selectedPp = filtered[currentIndex] ?? sorted.find((pp) => pp.id === selectedId);
+  const selectedPp = sorted.find((pp) => pp.id === selectedId);
+
+  // Label: show "Month YYYY" in month mode, date range otherwise
+  const label = (() => {
+    if (inMonthMode && monthParam) {
+      const [y, m] = monthParam.split("-").map(Number);
+      return format(new Date(y, m - 1, 1), "MMMM yyyy");
+    }
+    if (selectedPp) {
+      return `${format(parseUtcDate(selectedPp.startDate), "MMM d")} – ${format(parseUtcDate(selectedPp.endDate), "MMM d, yyyy")}`;
+    }
+    return "—";
+  })();
+
+  // Which months in the picker year have any pay period
+  const monthsWithPeriods = new Set(
+    allMonthKeys
+      .filter((k) => k.startsWith(`${pickerYear}-`))
+      .map((k) => parseInt(k.slice(5, 7)) - 1)
+  );
+
+  const selectedMonthIdx = monthParam
+    ? parseInt(monthParam.slice(5, 7)) - 1
+    : -1;
+  const selectedMonthYear = monthParam ? parseInt(monthParam.slice(0, 4)) : -1;
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (calendarRef.current && !calendarRef.current.contains(e.target as Node)) {
-        setShowCalendar(false);
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setShowPicker(false);
       }
     }
-    if (showCalendar) document.addEventListener("mousedown", handleClickOutside);
+    if (showPicker) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showCalendar]);
-
-  function handleCalendarSelect(d: Date) {
-    if (!rangeStart || (rangeStart && rangeEnd)) {
-      setRangeStart(d);
-      setRangeEnd(null);
-      setHoverDate(null);
-    } else {
-      if (d < rangeStart) {
-        setRangeStart(d);
-        setRangeEnd(null);
-      } else {
-        setRangeEnd(d);
-        // Find the pay period whose range contains this date range
-        const match = sorted.find((pp) => {
-          const s = parseUtcDate(pp.startDate);
-          const e = parseUtcDate(pp.endDate);
-          return s <= d && d <= e;
-        });
-        if (match) {
-          applyFilter(currentFilter, match.id);
-        }
-        setShowCalendar(false);
-      }
-    }
-  }
+  }, [showPicker]);
 
   return (
     <div className="relative shrink-0 space-y-1.5 border-b border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-800 dark:bg-zinc-900">
-      {/* Filter dropdown */}
-      <select
-        value={currentFilter}
-        onChange={(e) => applyFilter(e.target.value as FilterValue, selectedId)}
-        className="w-full rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-      >
-        <option value="all">All Pay Periods</option>
-        <option value="current">Current Pay Period</option>
-        <option value="ytd">Year to Date</option>
-        <option value="open">Open</option>
-        <option value="ready">Ready</option>
-        <option value="locked">Locked</option>
-      </select>
+      {/* Scope + Status filters + Today button */}
+      <div className="flex items-center gap-1.5">
+        <select
+          value={currentFilter}
+          onChange={(e) => applyFilter(e.target.value as FilterValue, selectedId)}
+          className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+        >
+          <option value="all">All</option>
+          <option value="current">Current</option>
+          <option value="ytd">Year to Date</option>
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => applyFilter(currentFilter, selectedId, e.target.value as StatusFilter)}
+          className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+        >
+          <option value="all">All Status</option>
+          <option value="open">Open</option>
+          <option value="ready">Ready</option>
+          <option value="locked">Locked</option>
+        </select>
+        <button
+          type="button"
+          onClick={jumpToCurrent}
+          disabled={isOnCurrentPeriod}
+          title="Jump to current pay period"
+          className="shrink-0 rounded-lg border border-zinc-300 bg-white p-1 text-zinc-500 hover:border-blue-400 hover:text-blue-600 disabled:cursor-default disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-blue-500 dark:hover:text-blue-400"
+        >
+          <CalendarCheck className="h-3.5 w-3.5" />
+        </button>
+      </div>
 
-      {/* Prev / Next + date label + calendar */}
+      {/* Prev / Next + label + month/year picker */}
       <div className="flex items-center gap-0.5">
         <button
           type="button"
           disabled={!hasPrev}
-          onClick={() => hasPrev && applyFilter(currentFilter, filtered[currentIndex - 1].id)}
+          onClick={() => {
+            if (inMonthMode) navigateMonth(-1);
+            else if (currentIndex > 0) applyFilter(currentFilter, filtered[currentIndex - 1].id);
+          }}
           className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-          title="Previous pay period"
+          title={inMonthMode ? "Previous month" : "Previous pay period"}
         >
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
 
         <span className="flex-1 text-center text-xs font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
-          {selectedPp
-            ? `${format(parseUtcDate(selectedPp.startDate), "MMM d")} – ${format(parseUtcDate(selectedPp.endDate), "MMM d, yyyy")}`
-            : "—"}
+          {label}
         </span>
 
         <button
           type="button"
           disabled={!hasNext}
-          onClick={() => hasNext && applyFilter(currentFilter, filtered[currentIndex + 1].id)}
+          onClick={() => {
+            if (inMonthMode) navigateMonth(1);
+            else if (currentIndex < filtered.length - 1) applyFilter(currentFilter, filtered[currentIndex + 1].id);
+          }}
           className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-          title="Next pay period"
+          title={inMonthMode ? "Next month" : "Next pay period"}
         >
           <ChevronRight className="h-3.5 w-3.5" />
         </button>
 
-        {/* Calendar picker */}
-        <div className="relative" ref={calendarRef}>
+        {/* Month/year picker */}
+        <div className="relative" ref={pickerRef}>
           <button
             type="button"
             onClick={() => {
-              if (!showCalendar) {
-                setRangeStart(null);
-                setRangeEnd(null);
-                setHoverDate(null);
-                setCalendarMonth(
-                  selectedPp
-                    ? parseUtcDate(selectedPp.startDate)
-                    : new Date()
+              if (!showPicker) {
+                setPickerYear(
+                  monthParam
+                    ? parseInt(monthParam.slice(0, 4))
+                    : selectedPp
+                      ? parseUtcDate(selectedPp.startDate).getFullYear()
+                      : new Date().getFullYear()
                 );
               }
-              setShowCalendar((v) => !v);
+              setShowPicker((v) => !v);
             }}
-            className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-            title="Pick a pay period by date"
+            className={`rounded p-1 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200 ${
+              inMonthMode
+                ? "text-blue-600 dark:text-blue-400"
+                : "text-zinc-500 dark:text-zinc-400"
+            }`}
+            title="Jump to month"
           >
             <Calendar className="h-3.5 w-3.5" />
           </button>
 
-          {showCalendar && (
-            <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
-              <div className="mb-2 flex items-center justify-between">
+          {showPicker && (
+            <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+              {/* Year navigation */}
+              <div className="mb-2.5 flex items-center justify-between">
                 <button
                   type="button"
-                  onClick={() => setCalendarMonth((m) => addMonths(m, -1))}
+                  onClick={() => setPickerYear((y) => y - 1)}
                   className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
                 <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                  {format(calendarMonth, "MMMM yyyy")}
+                  {pickerYear}
                 </span>
                 <button
                   type="button"
-                  onClick={() => setCalendarMonth((m) => addMonths(m, 1))}
+                  onClick={() => setPickerYear((y) => y + 1)}
                   className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
-              <div className="grid grid-cols-7 gap-0">
-                {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
-                  <div key={d} className="py-1 text-center text-xs font-medium text-zinc-400">
-                    {d}
-                  </div>
-                ))}
-                {(() => {
-                  const calDays = eachDayOfInterval({
-                    start: startOfWeek(startOfMonth(calendarMonth)),
-                    end: endOfWeek(endOfMonth(calendarMonth)),
-                  });
-                  const effectiveEnd = rangeEnd ?? hoverDate;
-                  return calDays.map((d) => {
-                    const inMonth = isSameMonth(d, calendarMonth);
-                    const isStart = rangeStart && isSameDay(d, rangeStart);
-                    const isEnd = effectiveEnd && isSameDay(d, effectiveEnd);
-                    const inRange =
-                      rangeStart &&
-                      effectiveEnd &&
-                      d > rangeStart &&
-                      d < effectiveEnd;
-                    // Highlight if date falls inside a pay period that contains the selected period
-                    const inSelected =
-                      selectedPp &&
-                      d >= parseUtcDate(selectedPp.startDate) &&
-                      d <= parseUtcDate(selectedPp.endDate);
 
-                    return (
-                      <button
-                        key={d.toISOString()}
-                        type="button"
-                        onClick={() => handleCalendarSelect(d)}
-                        onMouseEnter={() => rangeStart && !rangeEnd && setHoverDate(d)}
-                        onMouseLeave={() => setHoverDate(null)}
-                        className={`rounded py-1 text-xs transition-colors
-                          ${!inMonth ? "text-zinc-300 dark:text-zinc-600" : ""}
-                          ${isStart || isEnd ? "bg-blue-600 font-semibold text-white" : ""}
-                          ${inRange ? "bg-blue-100 dark:bg-blue-900/30" : ""}
-                          ${inSelected && !isStart && !isEnd && !inRange ? "bg-zinc-100 dark:bg-zinc-700/50" : ""}
-                          ${isToday(d) && !isStart && !isEnd ? "font-bold text-blue-600 dark:text-blue-400" : ""}
-                          ${inMonth && !isStart && !isEnd ? "hover:bg-zinc-100 dark:hover:bg-zinc-700" : ""}
-                        `}
-                      >
-                        {format(d, "d")}
-                      </button>
-                    );
-                  });
-                })()}
-              </div>
-              <div className="mt-2 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setShowCalendar(false)}
-                  className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                >
-                  Close
-                </button>
+              {/* Month grid */}
+              <div className="grid grid-cols-4 gap-1">
+                {MONTHS.map((label, idx) => {
+                  const hasPeriod = monthsWithPeriods.has(idx);
+                  const isSelected = pickerYear === selectedMonthYear && idx === selectedMonthIdx;
+                  const isCurrentMonth =
+                    pickerYear === new Date().getFullYear() && idx === new Date().getMonth();
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      disabled={!hasPeriod}
+                      onClick={() => handleMonthSelect(idx)}
+                      className={`rounded py-1.5 text-xs font-medium transition-colors
+                        ${isSelected
+                          ? "bg-blue-600 text-white"
+                          : isCurrentMonth && hasPeriod
+                            ? "bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-400 dark:hover:bg-blue-950/50"
+                            : hasPeriod
+                              ? "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                              : "cursor-default text-zinc-300 dark:text-zinc-600"
+                        }
+                      `}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

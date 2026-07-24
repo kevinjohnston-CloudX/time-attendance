@@ -23,8 +23,9 @@ model Tenant {
   ptoPolicies PtoPolicy[]
   payCodes    PayCode[]
   reasonCodes ReasonCode[]
-  holidays    Holiday[]
-  shifts      Shift[]
+  holidays     Holiday[]
+  shifts       Shift[]
+  holidayRules HolidayRule[]
 
   @@map("tenants")
 }
@@ -97,8 +98,9 @@ model Employee {
   terminationReason String?
 
   // Pay
-  payType  String?          // "HOURLY" | "SALARY"
-  payRate  Decimal?  @db.Decimal(10, 4)
+  payType       String?          // "HOURLY" | "SALARY"
+  payRate       Decimal?  @db.Decimal(10, 4)
+  holidayRuleId String?
 
   // Personal
   phone         String?
@@ -131,6 +133,7 @@ model Employee {
   department   Department   @relation(fields: [departmentId], references: [id])
   ruleSet      RuleSet      @relation(fields: [ruleSetId], references: [id])
   shift        Shift?       @relation(fields: [shiftId], references: [id])
+  holidayRule  HolidayRule? @relation(fields: [holidayRuleId], references: [id])
   punches      Punch[]
   timesheets   Timesheet[]
   leaveBalances    LeaveBalance[]
@@ -150,6 +153,17 @@ model Shift {
   startTime String   /// Time of day in HH:mm format, e.g. "06:00"
   endTime   String   /// Time of day in HH:mm format, e.g. "14:00"
   workDays  Int[]    @default(dbgenerated("ARRAY[1,2,3,4,5]::integer[]")) /// 0=Sun 1=Mon … 6=Sat
+
+  // Punch tolerance (minutes, 0 = no grace)
+  earlyInMinutes  Int @default(0) /// Minutes before startTime punch is still treated as on-time
+  lateInMinutes   Int @default(0) /// Minutes after startTime before late exception fires
+  earlyOutMinutes Int @default(0) /// Minutes before endTime punch is still treated as on-time
+  lateOutMinutes  Int @default(0) /// Minutes after endTime before late-out exception fires
+
+  // Scheduled meal break
+  mealBreakStart String? /// HH:mm — scheduled break start time
+  mealBreakEnd   String? /// HH:mm — scheduled break end time
+
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

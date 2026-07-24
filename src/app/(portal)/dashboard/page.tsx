@@ -35,6 +35,8 @@ const EXCEPTION_LABEL: Record<string, string> = {
   UNSCHEDULED_OT:   "Unscheduled OT",
   CONSECUTIVE_DAYS: "Consecutive Days",
   ABSENT:           "Absent",
+  LATE_IN:          "Late In",
+  EARLY_OUT:        "Early Out",
 };
 
 const EXCEPTION_BADGE: Record<string, string> = {
@@ -45,6 +47,8 @@ const EXCEPTION_BADGE: Record<string, string> = {
   UNSCHEDULED_OT:   "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
   CONSECUTIVE_DAYS: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
   ABSENT:           "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  LATE_IN:          "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  EARLY_OUT:        "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
 };
 
 const LEAVE_STATUS_LABEL: Record<string, string> = {

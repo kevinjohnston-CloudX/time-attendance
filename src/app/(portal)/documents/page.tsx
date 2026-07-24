@@ -31,7 +31,9 @@ export default async function DocumentsPage() {
 
     if (!docsResult.success) redirect("/dashboard");
     const docs = docsResult.data;
-    const employees = employeesResult.success ? employeesResult.data : [];
+    const employees = employeesResult.success
+      ? employeesResult.data.map((e) => ({ id: e.id, user: { name: e.user.name } }))
+      : [];
 
     return (
       <div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 
 const ROLE_BADGE: Record<string, string> = {
@@ -33,6 +33,7 @@ interface Employee {
 }
 
 export function EmployeesTable({ employees }: { employees: Employee[] }) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [siteFilter, setSiteFilter] = useState("");
   const [deptFilter, setDeptFilter] = useState("");
@@ -114,19 +115,22 @@ export function EmployeesTable({ employees }: { employees: Employee[] }) {
               <th className="px-4 py-3 text-left font-medium text-zinc-500">Department</th>
               <th className="px-4 py-3 text-left font-medium text-zinc-500">Hire Date</th>
               <th className="px-4 py-3 text-left font-medium text-zinc-500">Status</th>
-              <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-950">
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-zinc-400">
+                <td colSpan={6} className="px-4 py-8 text-center text-zinc-400">
                   {q ? "No employees match your search." : "No employees yet."}
                 </td>
               </tr>
             )}
             {filtered.map((emp) => (
-              <tr key={emp.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/40">
+              <tr
+                key={emp.id}
+                onClick={() => router.push(`/admin/employees/${emp.id}`)}
+                className="cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900/40"
+              >
                 <td className="px-4 py-3 font-medium text-zinc-900 dark:text-white">
                   {emp.user.name}
                   {emp.user.email && (
@@ -156,14 +160,6 @@ export function EmployeesTable({ employees }: { employees: Employee[] }) {
                   }`}>
                     {emp.isActive ? "Active" : "Inactive"}
                   </span>
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <Link
-                    href={`/admin/employees/${emp.id}`}
-                    className="text-xs text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    Edit
-                  </Link>
                 </td>
               </tr>
             ))}

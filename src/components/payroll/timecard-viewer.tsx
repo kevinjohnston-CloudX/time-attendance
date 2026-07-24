@@ -7,14 +7,9 @@ import {
   eachDayOfInterval,
   parseISO,
   isToday,
-  startOfMonth,
-  endOfMonth,
-  startOfWeek,
-  endOfWeek,
-  addMonths,
-  isSameMonth,
-  isSameDay,
 } from "date-fns";
+
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 import { parseUtcDate } from "@/lib/utils/date";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
 import {
@@ -53,6 +48,7 @@ import {
   Plus,
   X,
   Calendar,
+  CalendarCheck,
   UserCircle,
   StickyNote,
   Check,
@@ -401,64 +397,57 @@ export function TimecardViewer({
     const end = parseUtcDate(pp.endDate);
     return today >= start && today <= end;
   });
-  const currentPeriodIndex = currentPeriod
-    ? sortedPeriods.indexOf(currentPeriod)
-    : -1;
-  const lastPeriod =
-    currentPeriodIndex > 0 ? sortedPeriods[currentPeriodIndex - 1] : null;
-  const nextPeriod =
-    currentPeriodIndex >= 0 &&
-    currentPeriodIndex < sortedPeriods.length - 1
-      ? sortedPeriods[currentPeriodIndex + 1]
-      : null;
 
-  // Find the pay period that contains a given date
-  function findPeriodForDate(date: Date): PayPeriodOption | undefined {
-    return sortedPeriods.find((pp) => {
-      const start = parseUtcDate(pp.startDate);
-      const end = parseUtcDate(pp.endDate);
-      return date >= start && date <= end;
-    });
-  }
-
-  function handleCalendarDateSelect(date: Date) {
-    if (!rangeStart || rangeEnd) {
-      // Start a new selection
-      setRangeStart(date);
-      setRangeEnd(null);
-      setHoverDate(null);
-    } else if (isSameDay(date, rangeStart)) {
-      // Single-day range — treat same day click as a one-day range
-      setRangeEnd(date);
-      navigateCustomRange(rangeStart, date);
-    } else if (date < rangeStart) {
-      // Clicked before start — restart
-      setRangeStart(date);
-      setRangeEnd(null);
-      setHoverDate(null);
-    } else {
-      // Valid end date — complete selection
-      setRangeEnd(date);
-      navigateCustomRange(rangeStart, date);
-    }
-  }
-
-  // Determine which quick-select label applies to the current selection
-  function getQuickSelectValue(): string {
-    if (currentPeriod && selectedPayPeriodId === currentPeriod.id)
-      return "current";
-    if (lastPeriod && selectedPayPeriodId === lastPeriod.id) return "last";
-    if (nextPeriod && selectedPayPeriodId === nextPeriod.id) return "next";
-    return selectedPayPeriodId;
-  }
-
-  // Calendar picker
+  // Month/year picker
   const [showCalendar, setShowCalendar] = useState(false);
-  const [calendarMonth, setCalendarMonth] = useState(new Date());
-  const [rangeStart, setRangeStart] = useState<Date | null>(null);
-  const [rangeEnd, setRangeEnd] = useState<Date | null>(null);
-  const [hoverDate, setHoverDate] = useState<Date | null>(null);
+  const [pickerYear, setPickerYear] = useState(() => {
+    const sel = sortedPeriods.find((pp) => pp.id === selectedPayPeriodId);
+    return sel ? parseUtcDate(sel.startDate).getFullYear() : new Date().getFullYear();
+  });
   const calendarRef = useRef<HTMLDivElement>(null);
+
+  // All unique "YYYY-MM" keys that have at least one pay period
+  const allMonthKeys = [...new Set(
+    sortedPeriods.flatMap((pp) => {
+      const keys: string[] = [];
+      const s = parseUtcDate(pp.startDate);
+      const e = parseUtcDate(pp.endDate);
+      const cur = new Date(s.getFullYear(), s.getMonth(), 1);
+      const end = new Date(e.getFullYear(), e.getMonth(), 1);
+      while (cur <= end) {
+        keys.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`);
+        cur.setMonth(cur.getMonth() + 1);
+      }
+      return keys;
+    })
+  )].sort();
+
+  const monthsWithPeriods = new Set(
+    allMonthKeys
+      .filter((k) => k.startsWith(`${pickerYear}-`))
+      .map((k) => parseInt(k.slice(5, 7)) - 1)
+  );
+
+  const selectedPp = sortedPeriods.find((pp) => pp.id === selectedPayPeriodId);
+  const selectedMonthYear = selectedPp ? parseUtcDate(selectedPp.startDate).getFullYear() : -1;
+  const selectedMonthIdx  = selectedPp ? parseUtcDate(selectedPp.startDate).getMonth() : -1;
+
+  function handleMonthSelect(monthIdx: number) {
+    const monthStart = new Date(pickerYear, monthIdx, 1);
+    const monthEnd   = new Date(pickerYear, monthIdx + 1, 0);
+    const match =
+      sortedPeriods.find((pp) => {
+        const s = parseUtcDate(pp.startDate);
+        return s.getFullYear() === pickerYear && s.getMonth() === monthIdx;
+      }) ??
+      sortedPeriods.find((pp) => {
+        const s = parseUtcDate(pp.startDate);
+        const e = parseUtcDate(pp.endDate);
+        return s <= monthEnd && e >= monthStart;
+      });
+    if (match) navigate(match.id);
+    setShowCalendar(false);
+  }
 
   // Close calendar when clicking outside
   useEffect(() => {
@@ -973,42 +962,16 @@ export function TimecardViewer({
             payFrequency}
         </span>
 
-        {/* Quick-select dropdown */}
-        <select
-          value={getQuickSelectValue()}
-          onChange={(e) => {
-            const val = e.target.value;
-            if (val === "current" && currentPeriod)
-              navigate(currentPeriod.id);
-            else if (val === "last" && lastPeriod)
-              navigate(lastPeriod.id);
-            else if (val === "next" && nextPeriod)
-              navigate(nextPeriod.id);
-            else navigate(val);
-          }}
-          className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+        {/* Jump to current pay period */}
+        <button
+          type="button"
+          onClick={() => currentPeriod && navigate(currentPeriod.id)}
+          disabled={!currentPeriod || selectedPayPeriodId === currentPeriod.id}
+          title="Jump to current pay period"
+          className="rounded p-1.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:cursor-default disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
         >
-          {currentPeriod && (
-            <option value="current">Current Pay Period</option>
-          )}
-          {lastPeriod && (
-            <option value="last">Last Pay Period</option>
-          )}
-          {nextPeriod && (
-            <option value="next">Next Pay Period</option>
-          )}
-          <optgroup label="All Pay Periods">
-            {sortedPeriods
-              .slice()
-              .reverse()
-              .map((pp) => (
-                <option key={pp.id} value={pp.id}>
-                  {format(parseUtcDate(pp.startDate), "MM/dd/yyyy")} –{" "}
-                  {format(parseUtcDate(pp.endDate), "MM/dd/yyyy")}
-                </option>
-              ))}
-          </optgroup>
-        </select>
+          <CalendarCheck className="h-4 w-4" />
+        </button>
 
         {/* Previous / Next arrows with date display */}
         <div className="flex items-center gap-1">
@@ -1045,143 +1008,70 @@ export function TimecardViewer({
           </button>
         </div>
 
-        {/* Calendar picker */}
+        {/* Month/year jump picker */}
         <div className="relative" ref={calendarRef}>
           <button
             type="button"
             onClick={() => {
-              if (!showCalendar) {
-                setRangeStart(customStart ? new Date(customStart + "T12:00:00") : null);
-                setRangeEnd(customEnd ? new Date(customEnd + "T12:00:00") : null);
-                setHoverDate(null);
-                const initDate = customStart
-                  ? new Date(customStart + "T12:00:00")
-                  : (sortedPeriods[currentIndex] ? parseUtcDate(sortedPeriods[currentIndex].startDate) : new Date());
-                setCalendarMonth(initDate);
+              if (!showCalendar && selectedPp) {
+                setPickerYear(parseUtcDate(selectedPp.startDate).getFullYear());
               }
-              setShowCalendar(!showCalendar);
+              setShowCalendar((v) => !v);
             }}
             className="rounded p-1.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-            title="Pick a date"
+            title="Jump to month"
           >
             <Calendar className="h-4 w-4" />
           </button>
           {showCalendar && (
-            <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
-              {/* Month navigation */}
-              <div className="mb-2 flex items-center justify-between">
+            <div className="absolute left-0 top-full z-50 mt-1 w-52 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+              {/* Year navigation */}
+              <div className="mb-2.5 flex items-center justify-between">
                 <button
                   type="button"
-                  onClick={() => setCalendarMonth((m) => addMonths(m, -1))}
+                  onClick={() => setPickerYear((y) => y - 1)}
                   className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
                 <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                  {format(calendarMonth, "MMMM yyyy")}
+                  {pickerYear}
                 </span>
                 <button
                   type="button"
-                  onClick={() => setCalendarMonth((m) => addMonths(m, 1))}
+                  onClick={() => setPickerYear((y) => y + 1)}
                   className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
-              {/* Day-of-week headers */}
-              <div className="grid grid-cols-7 gap-0">
-                {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
-                  <div
-                    key={d}
-                    className="py-1 text-center text-xs font-medium text-zinc-400"
-                  >
-                    {d}
-                  </div>
-                ))}
-                {/* Calendar days */}
-                {(() => {
-                  const monthStart = startOfMonth(calendarMonth);
-                  const monthEnd = endOfMonth(calendarMonth);
-                  const calStart = startOfWeek(monthStart);
-                  const calEnd = endOfWeek(monthEnd);
-                  const calDays = eachDayOfInterval({
-                    start: calStart,
-                    end: calEnd,
-                  });
-                  const effectiveEnd = rangeEnd ?? hoverDate;
-
-                  return calDays.map((d) => {
-                    const inMonth = isSameMonth(d, calendarMonth);
-                    const isNow = isSameDay(d, new Date());
-                    const isStart = !!rangeStart && isSameDay(d, rangeStart);
-                    const isEnd = !!rangeEnd && isSameDay(d, rangeEnd);
-                    const isEndpoint = isStart || isEnd;
-                    const inRange =
-                      !!rangeStart &&
-                      !!effectiveEnd &&
-                      d > rangeStart &&
-                      d < effectiveEnd;
-
-                    return (
-                      <button
-                        key={d.toISOString()}
-                        type="button"
-                        onClick={() => handleCalendarDateSelect(d)}
-                        onMouseEnter={() => rangeStart && !rangeEnd && setHoverDate(d)}
-                        onMouseLeave={() => rangeStart && !rangeEnd && setHoverDate(null)}
-                        className={`h-7 w-7 rounded text-xs transition-colors ${
-                          isEndpoint
-                            ? "bg-blue-600 font-semibold text-white"
-                            : inRange
-                              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                              : !inMonth
-                                ? "text-zinc-300 dark:text-zinc-600"
-                                : "text-zinc-700 dark:text-zinc-300"
-                        } ${
-                          isNow && !isEndpoint && !inRange
-                            ? "ring-1 ring-blue-400"
-                            : ""
-                        } ${
-                          !isEndpoint ? "hover:bg-zinc-100 dark:hover:bg-zinc-700" : ""
+              {/* Month grid */}
+              <div className="grid grid-cols-4 gap-1">
+                {MONTHS.map((label, idx) => {
+                  const hasPeriod = monthsWithPeriods.has(idx);
+                  const isSelected = pickerYear === selectedMonthYear && idx === selectedMonthIdx;
+                  const isCurrentMonth =
+                    pickerYear === new Date().getFullYear() && idx === new Date().getMonth();
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      disabled={!hasPeriod}
+                      onClick={() => handleMonthSelect(idx)}
+                      className={`rounded py-1.5 text-xs font-medium transition-colors
+                        ${isSelected
+                          ? "bg-blue-600 text-white"
+                          : isCurrentMonth && hasPeriod
+                            ? "bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-400 dark:hover:bg-blue-950/50"
+                            : hasPeriod
+                              ? "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                              : "cursor-default text-zinc-300 dark:text-zinc-600"
                         }`}
-                      >
-                        {d.getDate()}
-                      </button>
-                    );
-                  });
-                })()}
-              </div>
-              {/* Footer buttons */}
-              <div className="mt-2 flex items-center justify-between border-t border-zinc-100 pt-2 dark:border-zinc-700">
-                <span className="text-xs text-zinc-400">
-                  {rangeStart && !rangeEnd ? "Select end date" : "Select start date"}
-                </span>
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRangeStart(null);
-                      setRangeEnd(null);
-                      setHoverDate(null);
-                      const params = new URLSearchParams();
-                      if (selectedEmployeeId) params.set("employeeId", selectedEmployeeId);
-                      const fallbackId = sortedPeriods[currentIndex]?.id;
-                      if (fallbackId) params.set("payPeriodId", fallbackId);
-                      router.push(`/payroll/timecards?${params.toString()}`);
-                      setShowCalendar(false);
-                    }}
-                    className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                  >
-                    Clear
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowCalendar(false)}
-                    className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                  >
-                    Close
-                  </button>
-                </div>
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1262,6 +1152,8 @@ export function TimecardViewer({
               <option value="UNSCHEDULED_OT">Unscheduled OT</option>
               <option value="CONSECUTIVE_DAYS">Consecutive Days</option>
               <option value="ABSENT">Absent</option>
+              <option value="LATE_IN">Late In</option>
+              <option value="EARLY_OUT">Early Out</option>
             </select>
             {/* Active only toggle */}
             <label className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
@@ -1322,12 +1214,18 @@ export function TimecardViewer({
                       >
                         <div className="flex w-full items-center justify-between gap-2">
                           <p
-                            className={`truncate text-sm font-medium ${
+                            className={`flex min-w-0 items-center gap-1.5 truncate text-sm font-medium ${
                               isSelected
                                 ? "text-zinc-900 dark:text-white"
                                 : "text-zinc-700 dark:text-zinc-300"
                             }`}
                           >
+                            {emp.exceptionTypes.length > 0 && (
+                              <span
+                                title={`${emp.exceptionTypes.length} exception${emp.exceptionTypes.length !== 1 ? "s" : ""}`}
+                                className="inline-block h-2 w-2 shrink-0 rounded-full bg-amber-400 dark:bg-amber-500"
+                              />
+                            )}
                             {emp.name}
                           </p>
                           <div className="flex shrink-0 items-center gap-1.5">
@@ -1402,9 +1300,18 @@ export function TimecardViewer({
                         </button>
                       )}
                     </div>
-                    <p className="text-xs text-zinc-500">
+                    <p className="flex items-center gap-1.5 text-xs text-zinc-500">
                       {timecard.employee.employeeCode} ·{" "}
                       {timecard.employee.department.name}
+                      {timecard.employee.payType && (
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          timecard.employee.payType === "SALARY"
+                            ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                            : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                        }`}>
+                          {timecard.employee.payType === "SALARY" ? "Salary" : "Hourly"}
+                        </span>
+                      )}
                     </p>
                   </div>
                   <span

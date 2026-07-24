@@ -7,9 +7,9 @@ import { TimesheetViewer } from "@/components/time/timesheet-viewer";
 export default async function TimesheetPage({
   searchParams,
 }: {
-  searchParams: Promise<{ payPeriodId?: string; customStart?: string; customEnd?: string }>;
+  searchParams: Promise<{ payPeriodId?: string }>;
 }) {
-  const { payPeriodId, customStart, customEnd } = await searchParams;
+  const { payPeriodId } = await searchParams;
   const session = await auth();
   if (!session?.user?.employeeId) redirect("/dashboard");
 
@@ -29,17 +29,7 @@ export default async function TimesheetPage({
       ? timesheets.find((ts) => ts.payPeriod.id === payPeriodId)
       : undefined;
 
-  if (!selectedTs && customStart && customEnd) {
-    const rangeStart = new Date(customStart);
-    const rangeEnd = new Date(customEnd);
-    selectedTs = timesheets.find((ts) => {
-      const s = parseUtcDate(ts.payPeriod.startDate);
-      const e = parseUtcDate(ts.payPeriod.endDate);
-      return s <= rangeEnd && e >= rangeStart;
-    });
-  }
-
-  if (!selectedTs && !payPeriodId && !customStart) {
+  if (!selectedTs && !payPeriodId) {
     // Default to the pay period containing today, else most recent
     selectedTs =
       timesheets.find((ts) => {
@@ -121,8 +111,6 @@ export default async function TimesheetPage({
       timesheets={serializedTimesheets}
       selectedPayPeriodId={selectedTs?.payPeriod.id ?? null}
       detail={serializedDetail}
-      customStart={customStart}
-      customEnd={customEnd}
     />
   );
 }

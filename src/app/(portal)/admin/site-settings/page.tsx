@@ -8,30 +8,8 @@ import { getAllPayCodes } from "@/actions/pay-code.actions";
 import { getReasonCodes } from "@/actions/reason-code.actions";
 import { getPtoPolicies } from "@/actions/pto-policy.actions";
 import { getShifts } from "@/actions/shift.actions";
-import { getRoles } from "@/actions/role.actions";
-import { getPermissions } from "@/lib/rbac/permissions";
-import { ROLES, ROLE_RANK } from "@/lib/rbac/roles";
-import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
-import { db } from "@/lib/db";
+import { getHolidayRules } from "@/actions/holiday-rule.actions";
 import { SiteSettingsClient } from "./site-settings-client";
-
-const BUILTIN_LABELS: Record<string, string> = {
-  EMPLOYEE:      "Employee",
-  SUPERVISOR:    "Supervisor",
-  PAYROLL_ADMIN: "Payroll Admin",
-  HR_ADMIN:      "HR Admin",
-  SYSTEM_ADMIN:  "System Admin",
-  SUPER_ADMIN:   "Super Admin",
-};
-
-const BUILTIN_DESCRIPTIONS: Record<string, string> = {
-  EMPLOYEE:      "Standard employee — punch, timesheet, and leave access",
-  SUPERVISOR:    "Team management — approve timesheets and leave for direct reports",
-  PAYROLL_ADMIN: "Payroll processing — manage pay periods and approve all timesheets",
-  HR_ADMIN:      "HR management — full employee, site, and approval access",
-  SYSTEM_ADMIN:  "Full access to all system features and settings",
-  SUPER_ADMIN:   "Unrestricted super-administrator",
-};
 
 export default async function SiteSettingsPage({
   searchParams,
@@ -41,22 +19,20 @@ export default async function SiteSettingsPage({
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const [hasSiteManage, hasRulesManage, hasPayPeriodManage, hasRoleManage] = await Promise.all([
+  const [hasSiteManage, hasRulesManage, hasPayPeriodManage] = await Promise.all([
     userHasPermission(session.user, "SITE_MANAGE"),
     userHasPermission(session.user, "RULES_MANAGE"),
     userHasPermission(session.user, "PAY_PERIOD_MANAGE"),
-    userHasPermission(session.user, "ROLE_MANAGE"),
   ]);
 
-  if (!hasSiteManage && !hasRulesManage && !hasPayPeriodManage && !hasRoleManage) redirect("/admin");
+  if (!hasSiteManage && !hasRulesManage && !hasPayPeriodManage) redirect("/admin");
 
   const { tab } = (await searchParams) ?? {};
 
   const [
     sitesResult, deptsResult, ruleSetsResult, holidaysResult,
     leaveTypesResult, payCodesResult, reasonCodesResult, ptoPoliciesResult,
-    shiftsResult,
-    rolesResult, roleCounts,
+    shiftsResult, holidayRulesResult,
   ] = await Promise.all([
     getSites(),
     getDepartments(),
@@ -67,28 +43,8 @@ export default async function SiteSettingsPage({
     getReasonCodes(),
     getPtoPolicies(),
     hasRulesManage ? getShifts() : Promise.resolve({ success: true as const, data: [] }),
-    hasRoleManage ? getRoles() : Promise.resolve({ success: true as const, data: [] }),
-    hasRoleManage
-      ? db.employee.groupBy({ by: ["role"], _count: { _all: true } })
-      : Promise.resolve([]),
+    hasRulesManage ? getHolidayRules() : Promise.resolve({ success: true as const, data: [] }),
   ]);
-
-  const countByRole = Object.fromEntries(
-    (roleCounts as { role: string; _count: { _all: number } }[]).map((r) => [r.role, r._count._all])
-  );
-
-  const builtinRoles = hasRoleManage
-    ? ROLES.map((key) => ({
-        key,
-        name: BUILTIN_LABELS[key] ?? key,
-        description: BUILTIN_DESCRIPTIONS[key] ?? null,
-        rank: ROLE_RANK[key],
-        permissions: getPermissions(key)
-          .map((p) => LEGACY_MAP[p])
-          .filter(Boolean) as { resource: string; action: string; scope: string }[],
-        employeeCount: countByRole[key] ?? 0,
-      }))
-    : [];
 
   return (
     <div>
@@ -110,12 +66,10 @@ export default async function SiteSettingsPage({
         reasonCodes={reasonCodesResult.success ? reasonCodesResult.data : []}
         ptoPolicies={ptoPoliciesResult.success ? ptoPoliciesResult.data : []}
         shifts={shiftsResult.success ? shiftsResult.data : []}
-        roles={rolesResult.success ? (rolesResult as { success: true; data: any[] }).data : []}
-        builtinRoles={builtinRoles}
+        holidayRules={holidayRulesResult.success ? holidayRulesResult.data : []}
         hasSiteManage={hasSiteManage}
         hasRulesManage={hasRulesManage}
         hasPayPeriodManage={hasPayPeriodManage}
-        hasRoleManage={hasRoleManage}
         initialTab={tab}
       />
     </div>
