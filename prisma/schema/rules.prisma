@@ -7,6 +7,7 @@ enum HolidayCreditMethod {
 model HolidayRule {
   id       String @id @default(cuid())
   tenantId String
+  number   Int?
   name     String
 
   /// How holiday hours are credited to the employee
@@ -39,6 +40,22 @@ model HolidayRule {
 
   @@unique([tenantId, name])
   @@map("holiday_rules")
+}
+
+model PayCategory {
+  id          String   @id @default(cuid())
+  tenantId    String
+  number      Int
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  employees Employee[]
+
+  @@unique([tenantId, number])
+  @@map("pay_categories")
 }
 
 model RuleSet {

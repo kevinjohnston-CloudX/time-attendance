@@ -24,6 +24,7 @@ interface Props {
   customRoles: { id: string; name: string }[];
   shifts: { id: string; name: string; startTime: string; endTime: string }[];
   holidayRules: { id: string; name: string }[];
+  payCategories: { id: string; number: number; description: string | null }[];
 }
 
 function fmtTime(hhmm: string): string {
@@ -38,7 +39,7 @@ const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-
 
 type Tab = "general" | "personal" | "pay";
 
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules }: Props) {
+export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +114,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       ruleSetId: fd.get("ruleSetId") as string,
       shiftId: (fd.get("shiftId") as string) || null,
       holidayRuleId: (fd.get("holidayRuleId") as string) || null,
+      payCategoryId: (fd.get("payCategoryId") as string) || null,
       payType: fd.get("payType") as string,
       payRate: rateStr ? parseFloat(rateStr) : null,
     });
@@ -392,6 +394,18 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
                 <option value="">— None —</option>
                 {holidayRules.map((r) => (
                   <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className={labelCls}>Pay Category</label>
+              <select name="payCategoryId" defaultValue={(employee as any).payCategoryId ?? ""} className={inputCls}>
+                <option value="">— None —</option>
+                {payCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.number}{c.description ? ` — ${c.description}` : ""}
+                  </option>
                 ))}
               </select>
             </div>

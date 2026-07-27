@@ -27,6 +27,7 @@ const boolField = z.preprocess(
 );
 
 const ruleSchema = z.object({
+  number:            z.coerce.number().int().min(1).max(99999).optional().nullable(),
   name:              z.string().min(1).max(100),
   creditMethod:      z.enum(["FIXED_HOURS", "ACTUAL_WORKED", "SCHEDULED_HOURS"]).default("FIXED_HOURS"),
   creditHours:       z.coerce.number().min(0).max(24).default(8),
@@ -41,6 +42,7 @@ const ruleSchema = z.object({
 
 function toDbFields(d: z.infer<typeof ruleSchema>) {
   return {
+    number:           d.number ?? null,
     creditMethod:     d.creditMethod,
     creditMinutes:    Math.round(d.creditHours * 60),
     maxCreditMinutes: Math.round(d.maxCreditHours * 60),

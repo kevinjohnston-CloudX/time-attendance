@@ -51,7 +51,7 @@ export const getAdminRefData = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ tenantId }, _input: void) => {
     const t = tenantId ?? undefined;
-    const [sites, departments, ruleSets, employees, customRoles, shifts, holidayRules] = await Promise.all([
+    const [sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories] = await Promise.all([
       db.site.findMany({ where: { isActive: true, tenantId: t }, orderBy: { name: "asc" } }),
       db.department.findMany({
         where: { isActive: true, tenantId: t },
@@ -79,8 +79,13 @@ export const getAdminRefData = withRBAC(
         orderBy: { name: "asc" },
         select: { id: true, name: true },
       }),
+      db.payCategory.findMany({
+        where: { isActive: true, tenantId: t },
+        orderBy: { number: "asc" },
+        select: { id: true, number: true, description: true },
+      }),
     ]);
-    return { sites, departments, ruleSets, employees: employees.map(serializePayRate), customRoles, shifts, holidayRules };
+    return { sites, departments, ruleSets, employees: employees.map(serializePayRate), customRoles, shifts, holidayRules, payCategories };
   }
 );
 
@@ -177,7 +182,7 @@ export const updateEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateEmployeeInput) => {
     const {
-      employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, isActive, wmsId, adpWorkerId,
+      employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, isActive, wmsId, adpWorkerId,
       jobTitle, terminationReason, payType, payRate,
       phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
@@ -212,6 +217,7 @@ export const updateEmployee = withRBAC(
           ...(ruleSetId !== undefined && { ruleSetId }),
           ...(shiftId !== undefined && { shiftId }),
           ...(holidayRuleId !== undefined && { holidayRuleId }),
+          ...(payCategoryId !== undefined && { payCategoryId }),
           ...(isActive !== undefined && { isActive }),
           ...(wmsId !== undefined && { wmsId }),
           ...(adpWorkerId !== undefined && { adpWorkerId }),

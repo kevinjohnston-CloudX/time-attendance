@@ -25,7 +25,8 @@ model Tenant {
   reasonCodes ReasonCode[]
   holidays     Holiday[]
   shifts       Shift[]
-  holidayRules HolidayRule[]
+  holidayRules   HolidayRule[]
+  payCategories  PayCategory[]
 
   @@map("tenants")
 }
@@ -98,9 +99,10 @@ model Employee {
   terminationReason String?
 
   // Pay
-  payType       String?          // "HOURLY" | "SALARY"
-  payRate       Decimal?  @db.Decimal(10, 4)
-  holidayRuleId String?
+  payType        String?          // "HOURLY" | "SALARY"
+  payRate        Decimal?  @db.Decimal(10, 4)
+  holidayRuleId  String?
+  payCategoryId  String?
 
   // Personal
   phone         String?
@@ -134,6 +136,7 @@ model Employee {
   ruleSet      RuleSet      @relation(fields: [ruleSetId], references: [id])
   shift        Shift?       @relation(fields: [shiftId], references: [id])
   holidayRule  HolidayRule? @relation(fields: [holidayRuleId], references: [id])
+  payCategory  PayCategory? @relation(fields: [payCategoryId], references: [id])
   punches      Punch[]
   timesheets   Timesheet[]
   leaveBalances    LeaveBalance[]

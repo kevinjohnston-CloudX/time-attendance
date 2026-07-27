@@ -47,19 +47,36 @@ function HolidayRuleFields({ rule }: { rule?: HolidayRule }) {
   const [creditMethod, setCreditMethod] = useState<string>(
     rule?.creditMethod ?? "FIXED_HOURS"
   );
+  const [premiumEnabled, setPremiumEnabled] = useState<boolean>(
+    rule ? rule.workingPremium > 100 : true
+  );
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Name */}
-      <div>
-        <label className="mb-1 block text-xs text-zinc-500">Rule Name</label>
-        <input
-          name="name"
-          required
-          defaultValue={rule?.name ?? ""}
-          placeholder="e.g. Standard Holiday"
-          className={inputCls}
-        />
+      {/* Number + Name */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+        <div>
+          <label className="mb-1 block text-xs text-zinc-500">Rule Number</label>
+          <input
+            name="number"
+            type="number"
+            min="1"
+            max="99999"
+            defaultValue={rule?.number ?? ""}
+            placeholder="e.g. 10"
+            className={inputCls}
+          />
+        </div>
+        <div className="sm:col-span-3">
+          <label className="mb-1 block text-xs text-zinc-500">Rule Name</label>
+          <input
+            name="name"
+            required
+            defaultValue={rule?.name ?? ""}
+            placeholder="e.g. Standard Holiday"
+            className={inputCls}
+          />
+        </div>
       </div>
 
       {/* Holiday Credit */}
@@ -134,7 +151,17 @@ function HolidayRuleFields({ rule }: { rule?: HolidayRule }) {
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
           Working Premium
         </p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="flex flex-col gap-3">
+          <label className="flex items-center gap-2 cursor-pointer text-sm text-zinc-700 dark:text-zinc-300">
+            <input
+              type="checkbox"
+              checked={premiumEnabled}
+              onChange={(e) => setPremiumEnabled(e.target.checked)}
+              className="rounded"
+            />
+            Pay a premium for hours worked on the holiday
+          </label>
+          {premiumEnabled && (
           <div>
             <label className="mb-1 block text-xs text-zinc-500">
               Multiplier for Hours Worked on Holiday
@@ -144,9 +171,9 @@ function HolidayRuleFields({ rule }: { rule?: HolidayRule }) {
                 name="workingPremium"
                 type="number"
                 step="0.25"
-                min="1.00"
+                min="1.25"
                 max="5.00"
-                defaultValue={rule ? (rule.workingPremium / 100).toFixed(2) : "2.00"}
+                defaultValue={rule && rule.workingPremium > 100 ? (rule.workingPremium / 100).toFixed(2) : "2.00"}
                 className={`${inputCls} max-w-[120px]`}
               />
               <span className="text-sm text-zinc-500">×</span>
@@ -155,6 +182,10 @@ function HolidayRuleFields({ rule }: { rule?: HolidayRule }) {
               e.g. 2.00 = double time for any hours physically worked on the holiday
             </p>
           </div>
+          )}
+          {!premiumEnabled && (
+            <input type="hidden" name="workingPremium" value="1.00" />
+          )}
         </div>
       </div>
 
@@ -164,27 +195,27 @@ function HolidayRuleFields({ rule }: { rule?: HolidayRule }) {
           Eligibility
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div>
-            <label className="mb-1 block text-xs text-zinc-500">Require Day Before</label>
-            <select
-              name="requireDayBefore"
-              defaultValue={rule?.requireDayBefore ? "true" : "false"}
-              className={inputCls}
-            >
-              <option value="false">No requirement</option>
-              <option value="true">Yes — must work day before</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-zinc-500">Require Day After</label>
-            <select
-              name="requireDayAfter"
-              defaultValue={rule?.requireDayAfter ? "true" : "false"}
-              className={inputCls}
-            >
-              <option value="false">No requirement</option>
-              <option value="true">Yes — must work day after</option>
-            </select>
+          <div className="flex flex-col gap-2 pt-1">
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-zinc-700 dark:text-zinc-300">
+              <input
+                type="checkbox"
+                name="requireDayBefore"
+                value="true"
+                defaultChecked={rule?.requireDayBefore ?? false}
+                className="rounded"
+              />
+              Must work day before
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-zinc-700 dark:text-zinc-300">
+              <input
+                type="checkbox"
+                name="requireDayAfter"
+                value="true"
+                defaultChecked={rule?.requireDayAfter ?? false}
+                className="rounded"
+              />
+              Must work day after
+            </label>
           </div>
           <div>
             <label className="mb-1 block text-xs text-zinc-500">
@@ -237,15 +268,17 @@ export function HolidayRulesManager({ rules }: Props) {
   const visible = showInactive ? rules : rules.filter((r) => r.isActive);
 
   function buildPayload(fd: FormData) {
+    const numStr = fd.get("number") as string;
     return {
+      number:           numStr ? Number(numStr) : null,
       name:             fd.get("name") as string,
       creditMethod:     fd.get("creditMethod") as string,
       creditHours:      Number(fd.get("creditHours") ?? 8),
       maxCreditHours:   Number(fd.get("maxCreditHours") ?? 0),
       payBucket:        fd.get("payBucket") as string,
-      workingPremium:   Number(fd.get("workingPremium") ?? 2.0),
-      requireDayBefore: fd.get("requireDayBefore") as string,
-      requireDayAfter:  fd.get("requireDayAfter") as string,
+      workingPremium:   Number(fd.get("workingPremium") ?? 1.0),
+      requireDayBefore: fd.get("requireDayBefore") === "true",
+      requireDayAfter:  fd.get("requireDayAfter") === "true",
       minPeriodHours:   Number(fd.get("minPeriodHours") ?? 0),
       countTowardOt:    fd.get("countTowardOt") as string,
     };
@@ -387,9 +420,14 @@ export function HolidayRulesManager({ rules }: Props) {
               className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900"
             >
               <div className="flex items-center gap-4">
+                {rule.number != null && (
+                  <span className="font-mono text-sm text-zinc-400">{rule.number}</span>
+                )}
                 <p className="font-medium text-zinc-900 dark:text-white">{rule.name}</p>
                 <p className="text-sm text-zinc-500">{formatCredit(rule)}</p>
-                <p className="text-sm text-zinc-400">{formatPremium(rule)}</p>
+                {rule.workingPremium > 100 && (
+                  <p className="text-sm text-zinc-400">{formatPremium(rule)}</p>
+                )}
                 {(rule.requireDayBefore || rule.requireDayAfter) && (
                   <p className="text-xs text-zinc-400">
                     Requires:{" "}

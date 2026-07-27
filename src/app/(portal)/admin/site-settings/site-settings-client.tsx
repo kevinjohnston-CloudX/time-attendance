@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, FolderOpen, Settings, Palmtree, Calendar, Tag, MessageSquare, CalendarClock, Clock, BookOpen, Sliders, ChevronRight } from "lucide-react";
+import { Building2, FolderOpen, Settings, Palmtree, Calendar, Tag, MessageSquare, CalendarClock, Clock, BookOpen, Layers, Sliders, ChevronRight } from "lucide-react";
 import { SitesManager } from "@/components/admin/sites-manager";
 import { DepartmentsManager } from "@/components/admin/departments-manager";
 import { RuleSetsManager } from "@/components/admin/rule-sets-manager";
@@ -12,11 +12,12 @@ import { ReasonCodesManager } from "@/components/admin/reason-codes-manager";
 import { PtoPoliciesManager } from "@/components/admin/pto-policies-manager";
 import { ShiftsManager } from "@/components/admin/shifts-manager";
 import { HolidayRulesManager } from "@/components/admin/holiday-rules-manager";
+import { PayCategoriesManager } from "@/components/admin/pay-categories-manager";
 import type { Site, Department, RuleSet, Holiday } from "@prisma/client";
 
 type DepartmentWithSites = Department & { sites: { site: Site }[] };
 
-type Tab = "sites" | "departments" | "rule-sets" | "holidays" | "holiday-rules" | "leave-types" | "pay-codes" | "reason-codes" | "pto-policies" | "shifts";
+type Tab = "sites" | "departments" | "rule-sets" | "holidays" | "holiday-rules" | "leave-types" | "pay-codes" | "reason-codes" | "pto-policies" | "shifts" | "pay-categories";
 
 interface TabDef {
   id: Tab;
@@ -45,8 +46,10 @@ const TABS: TabDef[] = [
   { id: "rule-sets",     label: "Rule Sets",     icon: Settings,      requires: "rules",   title: "Rule Sets",       group: "employee-settings" },
   { id: "shifts",        label: "Shifts",        icon: Clock,         requires: "rules",   title: "Shifts",          group: "employee-settings",
     description: "Define shift types with start and end times to assign to employees." },
-  { id: "holiday-rules", label: "Holiday Rules", icon: BookOpen,      requires: "rules",   title: "Holiday Rules",   group: "employee-settings",
+  { id: "holiday-rules",    label: "Holiday Rules",    icon: BookOpen, requires: "rules", title: "Holiday Rules",    group: "employee-settings",
     description: "Define how holiday pay is calculated — credit method, working premium, and eligibility requirements." },
+  { id: "pay-categories",   label: "Pay Categories",   icon: Layers,   requires: "rules", title: "Pay Categories",   group: "employee-settings",
+    description: "Define pay category codes and descriptions used to classify employees for payroll." },
   { id: "holidays",      label: "Holidays",      icon: Palmtree,      requires: "rules",   title: "Holidays",
     description: "Manage company holidays. Holidays can be used when submitting leave requests." },
   { id: "leave-types",   label: "Leave Types",   icon: Calendar,      requires: "rules",   title: "Leave Types" },
@@ -79,6 +82,8 @@ interface Props {
   shifts: any[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   holidayRules: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  payCategories: any[];
   hasSiteManage: boolean;
   hasRulesManage: boolean;
   hasPayPeriodManage: boolean;
@@ -96,6 +101,7 @@ export function SiteSettingsClient({
   ptoPolicies,
   shifts,
   holidayRules,
+  payCategories,
   hasSiteManage,
   hasRulesManage,
   hasPayPeriodManage,
@@ -237,6 +243,9 @@ export function SiteSettingsClient({
             )}
             {activeTab === "holiday-rules" && (
               <HolidayRulesManager rules={holidayRules} />
+            )}
+            {activeTab === "pay-categories" && (
+              <PayCategoriesManager categories={payCategories} />
             )}
             {activeTab === "leave-types" && (
               <LeaveTypesManager leaveTypes={leaveTypes} />
