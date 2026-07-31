@@ -145,14 +145,6 @@ export type UpdateLeaveTypeInput = z.infer<typeof updateLeaveTypeSchema>;
 export type RuleSetInput = z.infer<typeof ruleSetSchema>;
 export type UpdateRuleSetInput = z.infer<typeof updateRuleSetSchema>;
 
-export const setAnnualLeaveDaysSchema = z.object({
-  employeeId: z.string().min(1),
-  leaveTypeId: z.string().min(1),
-  year: z.number().int(),
-  /** null = clear override, fall back to leave type global rate */
-  annualDays: z.number().int().min(0).nullable(),
-});
-
 export const adjustLeaveBalanceSchema = z.object({
   employeeId: z.string().min(1),
   leaveTypeId: z.string().min(1),
@@ -196,5 +188,4 @@ export const csvEmployeeRowSchema = z.object({
 
 export type CsvEmployeeRow = z.infer<typeof csvEmployeeRowSchema>;
 
-export type SetAnnualLeaveDaysInput = z.infer<typeof setAnnualLeaveDaysSchema>;
 export type AdjustLeaveBalanceInput = z.infer<typeof adjustLeaveBalanceSchema>;

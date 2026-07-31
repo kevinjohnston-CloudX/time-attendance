@@ -1,6 +1,6 @@
 "use server";
 
-import { parseISO } from "date-fns";
+import { parseISO, addMonths, addYears } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
@@ -27,11 +27,9 @@ import {
   type UpdateLeaveTypeInput,
   type RuleSetInput,
   type UpdateRuleSetInput,
-  setAnnualLeaveDaysSchema,
   adjustLeaveBalanceSchema,
   csvEmployeeRowSchema,
   ROLES,
-  type SetAnnualLeaveDaysInput,
   type AdjustLeaveBalanceInput,
   type CsvEmployeeRow,
 } from "@/lib/validators/admin.schema";
@@ -210,14 +208,14 @@ export const updateEmployee = withRBAC(
         where: { id: employeeId },
         data: {
           ...(role !== undefined && { role }),
-          ...(customRoleId !== undefined && { customRoleId }),
-          ...(supervisorId !== undefined && { supervisorId }),
-          ...(siteId !== undefined && { siteId }),
-          ...(departmentId !== undefined && { departmentId }),
-          ...(ruleSetId !== undefined && { ruleSetId }),
-          ...(shiftId !== undefined && { shiftId }),
-          ...(holidayRuleId !== undefined && { holidayRuleId }),
-          ...(payCategoryId !== undefined && { payCategoryId }),
+          ...(customRoleId !== undefined && { customRole: customRoleId ? { connect: { id: customRoleId } } : { disconnect: true } }),
+          ...(supervisorId !== undefined && { supervisor: supervisorId ? { connect: { id: supervisorId } } : { disconnect: true } }),
+          ...(siteId !== undefined && { site: { connect: { id: siteId } } }),
+          ...(departmentId !== undefined && { department: { connect: { id: departmentId } } }),
+          ...(ruleSetId !== undefined && { ruleSet: { connect: { id: ruleSetId } } }),
+          ...(shiftId !== undefined && { shift: shiftId ? { connect: { id: shiftId } } : { disconnect: true } }),
+          ...(holidayRuleId !== undefined && { holidayRule: holidayRuleId ? { connect: { id: holidayRuleId } } : { disconnect: true } }),
+          ...(payCategoryId !== undefined && { payCategory: payCategoryId ? { connect: { id: payCategoryId } } : { disconnect: true } }),
           ...(isActive !== undefined && { isActive }),
           ...(wmsId !== undefined && { wmsId }),
           ...(adpWorkerId !== undefined && { adpWorkerId }),
@@ -242,18 +240,310 @@ export const updateEmployee = withRBAC(
       });
     });
 
-    await writeAuditLog({
-      tenantId,
-      actorId,
-      entityType: "EMPLOYEE",
-      entityId: employeeId,
-      action: "EMPLOYEE_UPDATED",
-      changes: { before: { role: current.role, isActive: current.isActive } },
+    // Build field-level diff for audit log
+    const decCurrent = decryptPiiFields({
+      phone: current.phone, phone2: current.phone2, gender: current.gender,
+      maritalStatus: current.maritalStatus, emergencyContact: current.emergencyContact,
+      emergencyPhone: current.emergencyPhone, emergencyRelationship: current.emergencyRelationship,
+      address1: current.address1, address2: current.address2, city: current.city,
+      state: current.state, country: current.country, zipCode: current.zipCode,
     });
+
+    const fieldChanges: Array<{ field: string; before: string; after: string }> = [];
+    function diff(label: string, before: string | null | undefined, after: string | null | undefined) {
+      const b = (before?.trim() || null) ?? "—";
+      const a = (after?.trim() || null) ?? "—";
+      if (b !== a) fieldChanges.push({ field: label, before: b, after: a });
+    }
+
+    if (name !== undefined) diff("Full Name", current.user.name, name);
+    if (email !== undefined) diff("Email", current.user.email, email);
+    if (role !== undefined) diff("Role", current.role, role);
+    if (isActive !== undefined) diff("Status", current.isActive ? "Active" : "Inactive", isActive ? "Active" : "Inactive");
+    if (jobTitle !== undefined) diff("Job Title", current.jobTitle, jobTitle);
+    if (wmsId !== undefined) diff("Badge ID (WMS)", current.wmsId, wmsId);
+    if (adpWorkerId !== undefined) diff("ADP Worker ID", current.adpWorkerId, adpWorkerId);
+    if (terminationReason !== undefined) diff("Termination Reason", current.terminationReason, terminationReason);
+    if (payType !== undefined) diff("Pay Type", current.payType, payType);
+    if (payRate !== undefined) {
+      const cur = current.payRate != null ? parseFloat(String(current.payRate)) : null;
+      if (cur !== payRate) diff("Pay Rate", cur != null ? `$${cur.toFixed(2)}` : null, payRate != null ? `$${payRate.toFixed(2)}` : null);
+    }
+    if (phone !== undefined) diff("Phone 1", decCurrent.phone, phone);
+    if (phone2 !== undefined) diff("Phone 2", decCurrent.phone2, phone2);
+    if (gender !== undefined) diff("Gender", decCurrent.gender, gender);
+    if (maritalStatus !== undefined) diff("Marital Status", decCurrent.maritalStatus, maritalStatus);
+    if (emergencyContact !== undefined) diff("Emergency Contact", decCurrent.emergencyContact, emergencyContact);
+    if (emergencyPhone !== undefined) diff("Emergency Phone", decCurrent.emergencyPhone, emergencyPhone);
+    if (emergencyRelationship !== undefined) diff("Emergency Relationship", decCurrent.emergencyRelationship, emergencyRelationship);
+    if (address1 !== undefined) diff("Address Line 1", decCurrent.address1, address1);
+    if (address2 !== undefined) diff("Address Line 2", decCurrent.address2, address2);
+    if (city !== undefined) diff("City", decCurrent.city, city);
+    if (state !== undefined) diff("State", decCurrent.state, state);
+    if (country !== undefined) diff("Country", decCurrent.country, country);
+    if (zipCode !== undefined) diff("Zip Code", decCurrent.zipCode, zipCode);
+
+    // Relation fields — resolve names only when the ID actually changed
+    if (siteId !== undefined && siteId !== current.siteId) {
+      const [from, to] = await Promise.all([
+        db.site.findUnique({ where: { id: current.siteId }, select: { name: true } }),
+        db.site.findUnique({ where: { id: siteId }, select: { name: true } }),
+      ]);
+      diff("Site", from?.name, to?.name);
+    }
+    if (departmentId !== undefined && departmentId !== current.departmentId) {
+      const [from, to] = await Promise.all([
+        db.department.findUnique({ where: { id: current.departmentId }, select: { name: true } }),
+        db.department.findUnique({ where: { id: departmentId }, select: { name: true } }),
+      ]);
+      diff("Department", from?.name, to?.name);
+    }
+    if (ruleSetId !== undefined && ruleSetId !== current.ruleSetId) {
+      const [from, to] = await Promise.all([
+        db.ruleSet.findUnique({ where: { id: current.ruleSetId }, select: { name: true } }),
+        db.ruleSet.findUnique({ where: { id: ruleSetId }, select: { name: true } }),
+      ]);
+      diff("Rule Set", from?.name, to?.name);
+    }
+    if (shiftId !== undefined && shiftId !== current.shiftId) {
+      const [from, to] = await Promise.all([
+        current.shiftId ? db.shift.findUnique({ where: { id: current.shiftId }, select: { name: true } }) : Promise.resolve(null),
+        shiftId ? db.shift.findUnique({ where: { id: shiftId }, select: { name: true } }) : Promise.resolve(null),
+      ]);
+      diff("Shift", from?.name, to?.name);
+    }
+    if (holidayRuleId !== undefined && holidayRuleId !== current.holidayRuleId) {
+      const [from, to] = await Promise.all([
+        current.holidayRuleId ? db.holidayRule.findUnique({ where: { id: current.holidayRuleId }, select: { name: true } }) : Promise.resolve(null),
+        holidayRuleId ? db.holidayRule.findUnique({ where: { id: holidayRuleId }, select: { name: true } }) : Promise.resolve(null),
+      ]);
+      diff("Holiday Rule", from?.name, to?.name);
+    }
+    if (payCategoryId !== undefined && payCategoryId !== current.payCategoryId) {
+      const fmtCat = (c: { number: number; description: string | null } | null) =>
+        c ? `${c.number}${c.description ? ` — ${c.description}` : ""}` : null;
+      const [from, to] = await Promise.all([
+        current.payCategoryId ? db.payCategory.findUnique({ where: { id: current.payCategoryId }, select: { number: true, description: true } }) : Promise.resolve(null),
+        payCategoryId ? db.payCategory.findUnique({ where: { id: payCategoryId }, select: { number: true, description: true } }) : Promise.resolve(null),
+      ]);
+      diff("Pay Category", fmtCat(from), fmtCat(to));
+    }
+    if (supervisorId !== undefined && supervisorId !== current.supervisorId) {
+      const [from, to] = await Promise.all([
+        current.supervisorId ? db.employee.findUnique({ where: { id: current.supervisorId }, include: { user: { select: { name: true } } } }) : Promise.resolve(null),
+        supervisorId ? db.employee.findUnique({ where: { id: supervisorId }, include: { user: { select: { name: true } } } }) : Promise.resolve(null),
+      ]);
+      diff("Supervisor", from?.user.name, to?.user.name);
+    }
+
+    if (fieldChanges.length > 0) {
+      await writeAuditLog({
+        tenantId,
+        actorId,
+        entityType: "EMPLOYEE",
+        entityId: employeeId,
+        action: "EMPLOYEE_UPDATED",
+        changes: { fields: fieldChanges },
+      });
+    }
 
     revalidatePath("/admin/employees");
     revalidatePath(`/admin/employees/${employeeId}`);
     return { employeeId };
+  }
+);
+
+export const getEmployeeAuditLogs = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async (_actor, { employeeId }: { employeeId: string }) => {
+    const logs = await db.auditLog.findMany({
+      where: { entityType: "EMPLOYEE", entityId: employeeId, action: "EMPLOYEE_UPDATED" },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+      include: {
+        actor: { select: { user: { select: { name: true } } } },
+      },
+    });
+    return logs.map((log) => ({
+      id: log.id,
+      createdAt: log.createdAt.toISOString(),
+      actorName: log.actor?.user.name ?? "System",
+      fields: (log.changes as { fields?: Array<{ field: string; before: string; after: string }> } | null)?.fields ?? [],
+    }));
+  }
+);
+
+export const getEmployeeLeaveLog = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async (_actor, { employeeId }: { employeeId: string }) => {
+    // Fetch employee + current policy override in parallel
+    const [employee, override] = await Promise.all([
+      db.employee.findUnique({ where: { id: employeeId }, select: { hireDate: true } }),
+      db.employeePtoPolicyOverride.findUnique({ where: { employeeId }, select: { ptoPolicyId: true } }),
+    ]);
+    if (!employee) return [];
+
+    // Fetch policy (with rules), audit entries, and ledger adjustments in parallel
+    const [policy, policyAuditEntries, adjustments] = await Promise.all([
+      override?.ptoPolicyId
+        ? db.ptoPolicy.findUnique({
+            where: { id: override.ptoPolicyId },
+            select: {
+              name: true,
+              rules: {
+                select: {
+                  leaveTypeId: true,
+                  minTenureMonths: true,
+                  maxTenureMonths: true,
+                  annualHours: true,
+                  earnedHoursPerYear: true,
+                  leaveType: { select: { name: true } },
+                },
+              },
+            },
+          })
+        : Promise.resolve(null),
+      db.auditLog.findMany({
+        where: {
+          entityId: employeeId,
+          action: { in: ["EMPLOYEE_PTO_OVERRIDE_ASSIGNED", "EMPLOYEE_PTO_OVERRIDE_CLEARED"] },
+        },
+        orderBy: { createdAt: "desc" },
+        include: { actor: { select: { user: { select: { name: true } } } } },
+      }),
+      db.leaveAccrualLedger.findMany({
+        where: { employeeId, action: "ADJUSTMENT" },
+        orderBy: { createdAt: "desc" },
+        include: { leaveType: { select: { name: true } } },
+      }),
+    ]);
+
+    // Batch-fetch creator names for adjustment entries
+    const creatorIds = [...new Set(adjustments.map((a) => a.createdById).filter((id): id is string => !!id))];
+    const creatorById = new Map<string, string | null>();
+    if (creatorIds.length > 0) {
+      const creators = await db.employee.findMany({
+        where: { id: { in: creatorIds } },
+        select: { id: true, user: { select: { name: true } } },
+      });
+      for (const c of creators) creatorById.set(c.id, c.user.name);
+    }
+
+    // Policy name lookup for audit entries (policy may have been deleted/renamed)
+    const policyIdSet = new Set<string>();
+    for (const e of policyAuditEntries) {
+      const pid = (e.changes as { after?: { ptoPolicyId?: string } } | null)?.after?.ptoPolicyId;
+      if (pid) policyIdSet.add(pid);
+    }
+    const policyNamesById = new Map<string, string>();
+    if (policyIdSet.size > 0) {
+      const policies = await db.ptoPolicy.findMany({
+        where: { id: { in: [...policyIdSet] } },
+        select: { id: true, name: true },
+      });
+      for (const p of policies) policyNamesById.set(p.id, p.name);
+    }
+
+    type LeaveLogEntry = {
+      id: string;
+      date: string;
+      type: "policy_assigned" | "policy_cleared" | "adjustment" | "tier_change" | "yearly_increase";
+      label: string;
+      detail: string;
+      actorName: string | null;
+    };
+
+    const entries: LeaveLogEntry[] = [];
+
+    // Policy change entries
+    for (const e of policyAuditEntries) {
+      const pid = (e.changes as { after?: { ptoPolicyId?: string } } | null)?.after?.ptoPolicyId;
+      entries.push({
+        id: e.id,
+        date: e.createdAt.toISOString(),
+        type: e.action === "EMPLOYEE_PTO_OVERRIDE_ASSIGNED" ? "policy_assigned" : "policy_cleared",
+        label: e.action === "EMPLOYEE_PTO_OVERRIDE_ASSIGNED" ? "PTO Policy Assigned" : "PTO Policy Removed",
+        detail: pid ? (policyNamesById.get(pid) ?? "Unknown policy") : "Policy removed",
+        actorName: e.actor?.user.name ?? null,
+      });
+    }
+
+    // Manual balance adjustment entries
+    for (const a of adjustments) {
+      const abs = Math.abs(a.deltaMinutes);
+      const h = Math.floor(abs / 60);
+      const m = abs % 60;
+      const sign = a.deltaMinutes >= 0 ? "+" : "-";
+      const fmtDelta = h > 0 && m > 0 ? `${sign}${h}h ${m}m` : h > 0 ? `${sign}${h}h` : `${sign}${m}m`;
+      entries.push({
+        id: a.id,
+        date: a.createdAt.toISOString(),
+        type: "adjustment",
+        label: "Balance Adjusted",
+        detail: `${a.leaveType.name}: ${fmtDelta}${a.note ? ` — ${a.note}` : ""}`,
+        actorName: a.createdById ? (creatorById.get(a.createdById) ?? null) : null,
+      });
+    }
+
+    // Computed tier-change and yearly-increase events from current policy + hire date
+    if (policy) {
+      const today = new Date();
+      const rulesByLeaveType = new Map<string, typeof policy.rules>();
+      for (const rule of policy.rules) {
+        if (!rulesByLeaveType.has(rule.leaveTypeId)) rulesByLeaveType.set(rule.leaveTypeId, []);
+        rulesByLeaveType.get(rule.leaveTypeId)!.push(rule);
+      }
+
+      for (const [leaveTypeId, rules] of rulesByLeaveType) {
+        const ltName = rules[0].leaveType.name;
+        const sortedRules = [...rules].sort((a, b) => a.minTenureMonths - b.minTenureMonths);
+
+        for (const rule of sortedRules) {
+          const tierStartDate = addMonths(employee.hireDate, rule.minTenureMonths);
+          const tierEndDate = rule.maxTenureMonths != null
+            ? addMonths(employee.hireDate, rule.maxTenureMonths)
+            : null;
+
+          // Tier change: only for non-initial tiers that have already started
+          if (rule.minTenureMonths > 0 && tierStartDate <= today) {
+            const tenureYearsAtEntry = Math.floor(rule.minTenureMonths / 12);
+            const rateAtEntry = rule.annualHours + tenureYearsAtEntry * rule.earnedHoursPerYear;
+            entries.push({
+              id: `tier-${leaveTypeId}-${rule.minTenureMonths}`,
+              date: tierStartDate.toISOString(),
+              type: "tier_change",
+              label: "Tier Updated",
+              detail: `${ltName}: ${rateAtEntry}h/yr`,
+              actorName: null,
+            });
+          }
+
+          // Yearly rate increases within this tier
+          if (rule.earnedHoursPerYear > 0) {
+            for (let y = 1; y <= 50; y++) {
+              const anniversaryDate = addYears(employee.hireDate, y);
+              if (anniversaryDate > today) break;
+              // Skip anniversaries that fall on or before tier entry (already reflected in tier_change)
+              if (anniversaryDate <= tierStartDate) continue;
+              if (tierEndDate && anniversaryDate >= tierEndDate) break;
+
+              const prevRate = rule.annualHours + (y - 1) * rule.earnedHoursPerYear;
+              const newRate  = rule.annualHours + y * rule.earnedHoursPerYear;
+              entries.push({
+                id: `yearly-${leaveTypeId}-${rule.minTenureMonths}-${y}`,
+                date: anniversaryDate.toISOString(),
+                type: "yearly_increase",
+                label: "Annual Rate Increased",
+                detail: `${ltName}: ${prevRate}h → ${newRate}h/yr`,
+                actorName: null,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return entries.sort((a, b) => b.date.localeCompare(a.date));
   }
 );
 
@@ -503,36 +793,9 @@ export const getEmployeeLeaveBalances = withRBAC(
         category: lt.category as string,
         balanceMinutes: bal?.balanceMinutes ?? 0,
         usedMinutes: bal?.usedMinutes ?? 0,
-        annualDaysEntitled: bal?.annualDaysEntitled ?? null,
-        year,
+          year,
       };
     });
-  }
-);
-
-/** Set (or clear) the annual PTO days for an employee. */
-export const setAnnualLeaveDays = withRBAC(
-  "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId, tenantId }, input: SetAnnualLeaveDaysInput) => {
-    const { employeeId, leaveTypeId, year, annualDays } =
-      setAnnualLeaveDaysSchema.parse(input);
-
-    await db.leaveBalance.upsert({
-      where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear: year } },
-      update: { annualDaysEntitled: annualDays },
-      create: { employeeId, leaveTypeId, accrualYear: year, balanceMinutes: 0, usedMinutes: 0, annualDaysEntitled: annualDays },
-    });
-
-    await writeAuditLog({
-      tenantId,
-      actorId,
-      entityType: "EMPLOYEE",
-      entityId: employeeId,
-      action: "ANNUAL_LEAVE_SET",
-      changes: { after: { leaveTypeId, annualDays, year } },
-    });
-
-    revalidatePath(`/admin/employees/${employeeId}`);
   }
 );
 

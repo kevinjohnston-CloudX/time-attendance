@@ -4,6 +4,9 @@ import { useTransition, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { updateEmployee } from "@/actions/admin.actions";
+import { LeaveBalancesPanel } from "@/components/admin/leave-balances-panel";
+import { EmployeePtoPolicyPanel } from "@/components/admin/employee-pto-policy-panel";
+import { LeaveHistoryPanel, type LeaveLogEntry } from "@/components/admin/leave-history-panel";
 import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
 
 type EmployeeWithRelations = Omit<Employee, "payRate"> & {
@@ -25,6 +28,27 @@ interface Props {
   shifts: { id: string; name: string; startTime: string; endTime: string }[];
   holidayRules: { id: string; name: string }[];
   payCategories: { id: string; number: number; description: string | null }[];
+  balances: {
+    leaveTypeId: string;
+    leaveTypeName: string;
+    category: string;
+    balanceMinutes: number;
+    usedMinutes: number;
+    accruedMinutes: number;
+    year: number;
+    policyAnnualHours: number | null;
+    policyName: string | null;
+  }[];
+  year: number;
+  ptoPolicies: { id: string; name: string }[];
+  currentPolicyId: string | null;
+  leaveLog: LeaveLogEntry[];
+  logs: Array<{
+    id: string;
+    createdAt: string;
+    actorName: string;
+    fields: Array<{ field: string; before: string; after: string }>;
+  }>;
 }
 
 function fmtTime(hhmm: string): string {
@@ -37,9 +61,9 @@ const inputCls =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
 const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400";
 
-type Tab = "general" | "personal" | "pay";
+type Tab = "general" | "personal" | "pay" | "logs";
 
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories }: Props) {
+export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, balances, year, ptoPolicies, currentPolicyId, leaveLog, logs }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +72,8 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
   const [selectedSiteId, setSelectedSiteId] = useState(employee.siteId);
   const [isActive, setIsActive] = useState(employee.isActive);
   const [payType, setPayType] = useState<string>(employee.payType ?? "HOURLY");
+  const [logField, setLogField] = useState("");
+  const [logDays, setLogDays] = useState(0);
 
   const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === selectedSiteId));
 
@@ -79,8 +105,8 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       departmentId: fd.get("departmentId") as string,
       supervisorId: (fd.get("supervisorId") as string) || null,
       isActive: fd.get("isActive") === "true",
-      wmsId: (fd.get("wmsId") as string) || employee.wmsId || "",
-      adpWorkerId: (fd.get("adpWorkerId") as string) || employee.adpWorkerId || "",
+      wmsId: fd.get("wmsId") as string,
+      adpWorkerId: fd.get("adpWorkerId") as string,
       jobTitle: fd.get("jobTitle") as string,
       terminationReason: fd.get("terminationReason") as string,
     });
@@ -120,10 +146,18 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
     });
   }
 
+  const allLogFieldNames = [...new Set(logs.flatMap((e) => e.fields.map((f) => f.field)))].sort();
+  const logCutoff = logDays > 0 ? new Date(Date.now() - logDays * 24 * 60 * 60 * 1000) : null;
+  const filteredLogs = logs
+    .filter((e) => !logCutoff || new Date(e.createdAt) >= logCutoff)
+    .map((e) => ({ ...e, fields: logField ? e.fields.filter((f) => f.field === logField) : e.fields }))
+    .filter((e) => e.fields.length > 0);
+
   const tabs: { id: Tab; label: string }[] = [
     { id: "general", label: "General" },
     { id: "personal", label: "Personal" },
     { id: "pay", label: "Pay" },
+    { id: "logs", label: "Logs" },
   ];
 
   return (
@@ -367,6 +401,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
 
       {/* ── Pay tab ─────────────────────────────────────────────────────── */}
       {activeTab === "pay" && (
+        <>
         <form onSubmit={handlePay} className="mt-5 flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -448,6 +483,122 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
             </button>
           </div>
         </form>
+
+        {/* PTO Policy */}
+        <div className="mt-8">
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-white">PTO Policy</h2>
+          <p className="mt-0.5 text-sm text-zinc-500">
+            Assign a PTO policy to this employee. Overrides the site default for all leave types the policy covers.
+          </p>
+          <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <EmployeePtoPolicyPanel
+              employeeId={employee.id}
+              policies={ptoPolicies}
+              currentPolicyId={currentPolicyId}
+            />
+          </div>
+        </div>
+
+        {/* Leave Balances */}
+        <div className="mt-8">
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-white">
+            Leave Balances — {year}
+          </h2>
+          <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <LeaveBalancesPanel
+              employeeId={employee.id}
+              balances={balances}
+              year={year}
+            />
+          </div>
+        </div>
+
+        {/* Leave History */}
+        <div className="mt-8">
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-white">Leave History</h2>
+          <p className="mt-0.5 text-sm text-zinc-500">
+            Policy assignments, balance adjustments, and tier / rate changes.
+          </p>
+          <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <LeaveHistoryPanel entries={leaveLog} />
+          </div>
+        </div>
+        </>
+      )}
+
+      {/* ── Logs tab ────────────────────────────────────────────────────── */}
+      {activeTab === "logs" && (
+        <div className="mt-5">
+          {logs.length === 0 ? (
+            <p className="text-sm text-zinc-400">No changes recorded yet.</p>
+          ) : (
+            <>
+              {/* Filters */}
+              <div className="mb-5 flex flex-wrap items-center gap-3">
+                <select
+                  value={logField}
+                  onChange={(e) => setLogField(e.target.value)}
+                  className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                >
+                  <option value="">All fields</option>
+                  {allLogFieldNames.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+
+                <div className="flex overflow-hidden rounded-lg border border-zinc-300 text-sm dark:border-zinc-600">
+                  {([{ label: "All time", days: 0 }, { label: "30 days", days: 30 }, { label: "7 days", days: 7 }] as const).map(({ label, days }) => (
+                    <button
+                      key={days}
+                      type="button"
+                      onClick={() => setLogDays(days)}
+                      className={`px-3 py-1.5 transition-colors ${
+                        logDays === days
+                          ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                          : "bg-white text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {filteredLogs.length === 0 ? (
+                <p className="text-sm text-zinc-400">No entries match the current filters.</p>
+              ) : (
+                <ol className="relative border-l border-zinc-200 dark:border-zinc-700">
+                  {filteredLogs.map((entry) => (
+                    <li key={entry.id} className="mb-6 ml-4">
+                      <div className="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full border-2 border-white bg-zinc-400 dark:border-zinc-900 dark:bg-zinc-500" />
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                        <time className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                          {new Date(entry.createdAt).toLocaleString("en-US", {
+                            month: "short", day: "numeric", year: "numeric",
+                            hour: "numeric", minute: "2-digit", hour12: true,
+                          })}
+                        </time>
+                        <span className="text-xs text-zinc-400">by {entry.actorName}</span>
+                      </div>
+                      <ul className="mt-2 space-y-1">
+                        {entry.fields.map((f, i) => (
+                          <li key={i} className="grid grid-cols-[auto_1fr] gap-x-3 text-sm">
+                            <span className="font-medium text-zinc-600 dark:text-zinc-400 whitespace-nowrap">{f.field}</span>
+                            <span className="text-zinc-500 dark:text-zinc-400">
+                              <span className="line-through text-zinc-400 dark:text-zinc-500">{f.before}</span>
+                              {" → "}
+                              <span className="text-zinc-800 dark:text-zinc-200">{f.after}</span>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </>
+          )}
+        </div>
       )}
     </div>
   );

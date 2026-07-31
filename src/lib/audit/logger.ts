@@ -7,7 +7,7 @@ interface AuditParams {
   action: string;
   entityType: AuditEntityType;
   entityId: string;
-  changes?: { before?: unknown; after?: unknown } | null;
+  changes?: Record<string, unknown> | null;
   ipAddress?: string;
 }
 

@@ -165,6 +165,73 @@ export const approveMissedPunch = withRBAC(
   }
 );
 
+// ─── deletePunch ──────────────────────────────────────────────────────────────
+
+export const deletePunch = withRBAC(
+  "PUNCH_EDIT_TEAM",
+  async ({ employeeId: actorId, tenantId }, input: { punchId: string; reason?: string }): Promise<void> => {
+    const { punchId, reason } = input;
+
+    const original = await db.punch.findUniqueOrThrow({
+      where: { id: punchId },
+      include: { employee: { include: { ruleSet: true } } },
+    });
+
+    if (original.correctedById) {
+      throw new Error("Punch has already been corrected or deleted.");
+    }
+
+    const ts = await db.timesheet.findUniqueOrThrow({ where: { id: original.timesheetId } });
+    if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
+      throw new Error("Cannot modify a locked or approved timesheet.");
+    }
+
+    // Create a tombstone record to satisfy the FK on correctedById, but mark it
+    // isApproved: false so it is excluded from all active-punch queries.
+    const tombstone = await db.$transaction(async (tx) => {
+      const t = await tx.punch.create({
+        data: {
+          employeeId: original.employeeId,
+          timesheetId: original.timesheetId,
+          punchType: original.punchType,
+          punchTime: original.punchTime,
+          roundedTime: original.roundedTime,
+          source: "MANUAL",
+          stateBefore: original.stateBefore,
+          stateAfter: original.stateAfter,
+          isApproved: false,
+          approvedById: actorId,
+          approvedAt: new Date(),
+          note: reason ? `VOID: ${reason}` : "VOID",
+          correctsId: original.id,
+        },
+      });
+      await tx.punch.update({
+        where: { id: original.id },
+        data: { correctedById: t.id },
+      });
+      await writeAuditLog({
+        tenantId: tenantId!,
+        actorId,
+        action: "PUNCH_DELETED",
+        entityType: "PUNCH",
+        entityId: original.id,
+        changes: {
+          before: { punchType: original.punchType, punchTime: original.punchTime },
+          after: { reason: reason ?? "removed" },
+        },
+      });
+      return t;
+    });
+
+    await rebuildSegments(original.timesheetId, original.employee.ruleSet);
+
+    revalidatePath("/time/history");
+    revalidatePath("/payroll/timecards");
+    revalidatePath(`/time/timesheet/${tombstone.timesheetId}`);
+  }
+);
+
 // ─── correctPunch ─────────────────────────────────────────────────────────────
 
 export const correctPunch = withRBAC(

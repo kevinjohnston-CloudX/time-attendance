@@ -19,11 +19,14 @@ interface ReclassifiedSegment {
 
 /**
  * Find dates that are the Nth+ consecutive working day (where N = threshold).
+ * The streak resets at workweek boundaries so that Mon of a new week is
+ * always day 1, even if the employee worked Sun through the prior week.
  * Returns a Set of "yyyy-MM-dd" strings.
  */
 function findConsecutiveOtDates(
   workDates: string[],
-  threshold: number
+  threshold: number,
+  weekStartsOn: 0 | 1 | 2 | 3 | 4 | 5 | 6 = 1
 ): Set<string> {
   if (threshold <= 0) return new Set();
 
@@ -32,12 +35,17 @@ function findConsecutiveOtDates(
   let streak = 1;
 
   for (let i = 1; i < sorted.length; i++) {
-    const prev = new Date(sorted[i - 1]);
-    const curr = new Date(sorted[i]);
+    // Use noon UTC to avoid DST edge cases when computing day gaps.
+    const prev = new Date(sorted[i - 1] + "T12:00:00Z");
+    const curr = new Date(sorted[i] + "T12:00:00Z");
     const dayGap =
       (curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24);
 
-    if (dayGap === 1) {
+    const crossesWeekBoundary =
+      startOfWeek(prev, { weekStartsOn }).getTime() !==
+      startOfWeek(curr, { weekStartsOn }).getTime();
+
+    if (dayGap === 1 && !crossesWeekBoundary) {
       streak++;
     } else {
       streak = 1;
@@ -70,16 +78,16 @@ function calcDayBuckets(
 ): { regMinutes: number; otMinutes: number; dtMinutes: number } {
   const { dailyOtMinutes, dailyDtMinutes } = ruleSet;
 
-  // DT threshold is the same regardless of consecutive-day status.
-  const dtMinutes = Math.max(0, workMinutes - dailyDtMinutes);
-  const belowDt = workMinutes - dtMinutes; // min(workMinutes, dailyDtMinutes)
-
   if (isConsecutiveOtDay) {
-    // On the Nth consecutive day, the first dailyOtMinutes are OT (not REG).
-    const otMinutes = belowDt;
+    // On the Nth consecutive day: no REG, OT up to dailyOtMinutes, DT above.
+    const dtMinutes = Math.max(0, workMinutes - dailyOtMinutes);
+    const otMinutes = workMinutes - dtMinutes;
     return { regMinutes: 0, otMinutes, dtMinutes };
   }
 
+  // Normal day: REG up to dailyOtMinutes, OT up to dailyDtMinutes, DT above.
+  const dtMinutes = Math.max(0, workMinutes - dailyDtMinutes);
+  const belowDt = workMinutes - dtMinutes;
   const otMinutes = Math.max(0, belowDt - dailyOtMinutes);
   const regMinutes = belowDt - otMinutes;
   return { regMinutes, otMinutes, dtMinutes };
@@ -104,7 +112,8 @@ export function computeOvertime(
   const workDates = [...minutesByDate.keys()];
   const consecutiveOtDates = findConsecutiveOtDates(
     workDates,
-    ruleSet.consecutiveDayOtDay
+    ruleSet.consecutiveDayOtDay,
+    1  // Monday week start, consistent with weekly OT grouping
   );
 
   // Per-day breakdown

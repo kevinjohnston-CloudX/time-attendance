@@ -2,6 +2,7 @@ import { parseISO, getYear } from "date-fns";
 import { db } from "@/lib/db";
 import { validateLeaveTransition } from "@/lib/state-machines/leave-state";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
+import { reverseLeaveUsage } from "@/lib/engines/accrual-engine";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { requestLeaveSchema } from "@/lib/validators/leave.schema";
 
@@ -118,6 +119,11 @@ export async function cancelLeaveRequestCore(
     action: "CANCELLED",
     changes: { before: request.status, after: transition.newStatus },
   });
+
+  // If the request was already approved (and thus debited), reverse the balance debit
+  if (request.status === "APPROVED") {
+    await reverseLeaveUsage(leaveRequestId);
+  }
 
   await syncLeaveSegments(leaveRequestId);
 

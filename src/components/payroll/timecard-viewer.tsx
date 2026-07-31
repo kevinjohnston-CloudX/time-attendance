@@ -23,7 +23,7 @@ import {
   type TimesheetStatusValue,
   type PunchTypeValue,
 } from "@/lib/state-machines/labels";
-import { correctPunch } from "@/actions/punch.actions";
+import { correctPunch, deletePunch } from "@/actions/punch.actions";
 import {
   approveTimesheet,
   payrollApproveTimesheet,
@@ -45,6 +45,7 @@ import {
   ChevronRight,
   ChevronLeft,
   Pencil,
+  Trash2,
   Plus,
   X,
   Calendar,
@@ -821,6 +822,19 @@ export function TimecardViewer({
         newPunchTime: newDate.toISOString(),
         reason: editReason,
       });
+      if (!result.success) {
+        setEditError(result.error);
+        return;
+      }
+      setEditingPunchId(null);
+      router.refresh();
+    });
+  }
+
+  function handleDeletePunch(punchId: string) {
+    if (!window.confirm("Remove this punch? This cannot be undone.")) return;
+    startTransition(async () => {
+      const result = await deletePunch({ punchId, reason: "Removed by payroll" });
       if (!result.success) {
         setEditError(result.error);
         return;
@@ -1745,7 +1759,7 @@ export function TimecardViewer({
                                     className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
                                   />
                                   {editError && <span className="text-xs text-red-500">{editError}</span>}
-                                  <div className="flex gap-1">
+                                  <div className="flex items-center gap-1">
                                     <button type="submit" disabled={isPending || !editReason.trim()}
                                       className="rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">
                                       {isPending ? "…" : "Save"}
@@ -1753,6 +1767,15 @@ export function TimecardViewer({
                                     <button type="button" onClick={cancelEditing}
                                       className="text-xs text-zinc-500 hover:text-zinc-700">
                                       Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={isPending}
+                                      onClick={() => handleDeletePunch(firstIn.id)}
+                                      className="ml-auto rounded p-0.5 text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/30"
+                                      title="Remove punch"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
                                     </button>
                                   </div>
                                 </form>
@@ -1853,7 +1876,7 @@ export function TimecardViewer({
                                     className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
                                   />
                                   {editError && <span className="text-xs text-red-500">{editError}</span>}
-                                  <div className="flex gap-1">
+                                  <div className="flex items-center gap-1">
                                     <button type="submit" disabled={isPending || !editReason.trim()}
                                       className="rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">
                                       {isPending ? "…" : "Save"}
@@ -1861,6 +1884,15 @@ export function TimecardViewer({
                                     <button type="button" onClick={cancelEditing}
                                       className="text-xs text-zinc-500 hover:text-zinc-700">
                                       Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={isPending}
+                                      onClick={() => handleDeletePunch(lastOut.id)}
+                                      className="ml-auto rounded p-0.5 text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/30"
+                                      title="Remove punch"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
                                     </button>
                                   </div>
                                 </form>
@@ -1898,44 +1930,52 @@ export function TimecardViewer({
                             <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
                               isAbsent
                                 ? "text-red-400 dark:text-red-700"
-                                : reg > 0
-                                  ? "text-zinc-700 dark:text-zinc-300"
-                                  : "text-zinc-300 dark:text-zinc-700"
+                                : hasMissingPunch
+                                  ? "text-amber-400 dark:text-amber-600"
+                                  : reg > 0
+                                    ? "text-zinc-700 dark:text-zinc-300"
+                                    : "text-zinc-300 dark:text-zinc-700"
                             }`}>
-                              {isAbsent ? "0.00" : reg > 0 ? minutesToHoursDecimal(reg) : "—"}
+                              {isAbsent ? "0.00" : hasMissingPunch ? "—" : reg > 0 ? minutesToHoursDecimal(reg) : "—"}
                             </td>
 
                             {/* OT */}
                             <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
                               isAbsent
                                 ? "text-red-400 dark:text-red-700"
-                                : ot > 0
-                                  ? "font-semibold text-amber-600 dark:text-amber-400"
-                                  : "text-zinc-300 dark:text-zinc-700"
+                                : hasMissingPunch
+                                  ? "text-amber-400 dark:text-amber-600"
+                                  : ot > 0
+                                    ? "font-semibold text-amber-600 dark:text-amber-400"
+                                    : "text-zinc-300 dark:text-zinc-700"
                             }`}>
-                              {ot > 0 ? minutesToHoursDecimal(ot) : "—"}
+                              {hasMissingPunch ? "—" : ot > 0 ? minutesToHoursDecimal(ot) : "—"}
                             </td>
 
                             {/* DT */}
                             <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
                               isAbsent
                                 ? "text-red-400 dark:text-red-700"
-                                : dt > 0
-                                  ? "font-semibold text-red-600 dark:text-red-400"
-                                  : "text-zinc-300 dark:text-zinc-700"
+                                : hasMissingPunch
+                                  ? "text-amber-400 dark:text-amber-600"
+                                  : dt > 0
+                                    ? "font-semibold text-red-600 dark:text-red-400"
+                                    : "text-zinc-300 dark:text-zinc-700"
                             }`}>
-                              {dt > 0 ? minutesToHoursDecimal(dt) : "—"}
+                              {hasMissingPunch ? "—" : dt > 0 ? minutesToHoursDecimal(dt) : "—"}
                             </td>
 
                             {/* Total */}
                             <td className={`pl-3 pr-8 py-1.5 text-right tabular-nums text-sm ${
                               isAbsent
                                 ? "font-bold text-red-800 dark:text-red-300"
-                                : dailyTotal > 0
-                                  ? "font-bold text-zinc-900 dark:text-white"
-                                  : "text-zinc-300 dark:text-zinc-700"
+                                : hasMissingPunch
+                                  ? "font-bold text-amber-500 dark:text-amber-500"
+                                  : dailyTotal > 0
+                                    ? "font-bold text-zinc-900 dark:text-white"
+                                    : "text-zinc-300 dark:text-zinc-700"
                             }`}>
-                              {isAbsent ? "0.00" : dailyTotal > 0 ? minutesToHoursDecimal(dailyTotal) : "—"}
+                              {isAbsent ? "0.00" : hasMissingPunch ? "—" : dailyTotal > 0 ? minutesToHoursDecimal(dailyTotal) : "—"}
                             </td>
                           </tr>
 
@@ -2180,6 +2220,15 @@ export function TimecardViewer({
                                           <button type="button" onClick={cancelEditing}
                                             className="shrink-0 text-xs text-zinc-500 hover:text-zinc-700">
                                             Cancel
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={isPending}
+                                            onClick={() => handleDeletePunch(punch.id)}
+                                            className="shrink-0 ml-auto rounded p-1 text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/30"
+                                            title="Remove punch"
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5" />
                                           </button>
                                           {editError && <span className="text-xs text-red-500">{editError}</span>}
                                         </form>
@@ -2514,11 +2563,30 @@ export function TimecardViewer({
                               ])
                             );
 
+                          // Dates with a MISSING_PUNCH exception — segments on these days
+                          // are excluded from totals since the hours are unreliable.
+                          const missingPunchDates = new Set(
+                            timecard.exceptions
+                              .filter((e) => e.exceptionType === "MISSING_PUNCH")
+                              .map((e) => format(parseISO(e.occurredAt), "yyyy-MM-dd"))
+                          );
+
                           if (summaryGroupBy === "total") {
-                            const reg = bucketMap["REG"] ?? 0;
-                            const ot = bucketMap["OT"] ?? 0;
-                            const dt = bucketMap["DT"] ?? 0;
-                            const total = Object.values(bucketMap).reduce(
+                            // Recompute from segments so missing-punch days are excluded
+                            const filteredBucketMap: Record<string, number> = {};
+                            for (const s of timecard.segments) {
+                              if (!s.isPaid) continue;
+                              const sd = format(parseUtcDate(s.segmentDate), "yyyy-MM-dd");
+                              if (missingPunchDates.has(sd)) continue;
+                              const eb = (s.payBucketOverride && !["REG", "OT", "DT"].includes(s.payBucketOverride))
+                                ? s.payBucketOverride
+                                : s.payBucket;
+                              filteredBucketMap[eb] = (filteredBucketMap[eb] ?? 0) + s.durationMinutes;
+                            }
+                            const reg = filteredBucketMap["REG"] ?? 0;
+                            const ot = filteredBucketMap["OT"] ?? 0;
+                            const dt = filteredBucketMap["DT"] ?? 0;
+                            const total = Object.values(filteredBucketMap).reduce(
                               (a, b) => a + b,
                               0
                             );
@@ -2526,7 +2594,7 @@ export function TimecardViewer({
                             const otherBuckets = ALL_PAY_BUCKETS.filter(
                               (b) =>
                                 !["REG", "OT", "DT"].includes(b.key) &&
-                                (bucketMap[b.key] ?? 0) > 0
+                                (filteredBucketMap[b.key] ?? 0) > 0
                             );
 
                             return (
@@ -2596,7 +2664,8 @@ export function TimecardViewer({
                                   const weekSegs = timecard.segments.filter(
                                     (s) => {
                                       const sd = parseUtcDate(s.segmentDate);
-                                      return sd >= week.start && sd <= week.end;
+                                      return sd >= week.start && sd <= week.end
+                                        && !missingPunchDates.has(format(sd, "yyyy-MM-dd"));
                                     }
                                   );
                                   const weekBuckets: Record<string, number> =

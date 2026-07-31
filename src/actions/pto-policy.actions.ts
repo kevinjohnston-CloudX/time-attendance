@@ -16,17 +16,18 @@ import {
 export const getPtoPolicies = withRBAC(
   "RULES_MANAGE",
   async ({ tenantId }, _input: void) => {
-    return db.ptoPolicy.findMany({
+    const policies = await db.ptoPolicy.findMany({
       where: { tenantId: tenantId! },
       orderBy: { name: "asc" },
       include: {
-        bands: {
-          orderBy: [{ leaveTypeId: "asc" }, { minTenureMonths: "asc" }],
+        rules: {
+          orderBy: { leaveTypeId: "asc" },
           include: { leaveType: { select: { id: true, name: true, category: true } } },
         },
         _count: { select: { siteLinks: true, empOverrides: true } },
       },
     });
+    return policies;
   }
 );
 
@@ -35,11 +36,10 @@ export const getPtoPolicies = withRBAC(
 export const createPtoPolicy = withRBAC(
   "RULES_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: unknown) => {
-    const { name, description, isDefault, bands } = createPtoPolicySchema.parse(input);
+    const { name, description, isDefault, rules } = createPtoPolicySchema.parse(input);
 
     const policy = await db.$transaction(async (tx) => {
       if (isDefault) {
-        // Clear any existing default for this tenant
         await tx.ptoPolicy.updateMany({
           where: { tenantId: tenantId!, isDefault: true },
           data: { isDefault: false },
@@ -52,12 +52,14 @@ export const createPtoPolicy = withRBAC(
           name,
           description,
           isDefault,
-          bands: {
-            create: bands.map((b) => ({
-              leaveTypeId: b.leaveTypeId,
-              minTenureMonths: b.minTenureMonths,
-              maxTenureMonths: b.maxTenureMonths ?? null,
-              annualDays: b.annualDays,
+          rules: {
+            create: rules.map((r) => ({
+              leaveTypeId:      r.leaveTypeId,
+              minTenureMonths:  r.minTenureMonths,
+              maxTenureMonths:  r.maxTenureMonths ?? null,
+              annualHours:        r.annualHours,
+              earnedHoursPerYear: r.earnedHoursPerYear,
+              carryOverHours:     r.carryOverHours ?? null,
             })),
           },
         },
@@ -69,7 +71,7 @@ export const createPtoPolicy = withRBAC(
         action: "PTO_POLICY_CREATED",
         entityType: "PTO_POLICY",
         entityId: p.id,
-        changes: { after: { name, isDefault, bands } },
+        changes: { after: { name, isDefault, rules } },
       });
 
       return p;
@@ -85,7 +87,7 @@ export const createPtoPolicy = withRBAC(
 export const updatePtoPolicy = withRBAC(
   "RULES_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: unknown) => {
-    const { ptoPolicyId, bands, ...fields } = updatePtoPolicySchema.parse(input);
+    const { ptoPolicyId, rules, ...fields } = updatePtoPolicySchema.parse(input);
 
     await db.$transaction(async (tx) => {
       if (fields.isDefault) {
@@ -95,21 +97,20 @@ export const updatePtoPolicy = withRBAC(
         });
       }
 
-      await tx.ptoPolicy.update({
-        where: { id: ptoPolicyId },
-        data: fields,
-      });
+      await tx.ptoPolicy.update({ where: { id: ptoPolicyId }, data: fields });
 
-      if (bands !== undefined) {
-        await tx.ptoPolicyBand.deleteMany({ where: { ptoPolicyId } });
-        if (bands.length > 0) {
-          await tx.ptoPolicyBand.createMany({
-            data: bands.map((b) => ({
+      if (rules !== undefined) {
+        await tx.ptoPolicyRule.deleteMany({ where: { ptoPolicyId } });
+        if (rules.length > 0) {
+          await tx.ptoPolicyRule.createMany({
+            data: rules.map((r) => ({
               ptoPolicyId,
-              leaveTypeId: b.leaveTypeId,
-              minTenureMonths: b.minTenureMonths,
-              maxTenureMonths: b.maxTenureMonths ?? null,
-              annualDays: b.annualDays,
+              leaveTypeId:      r.leaveTypeId,
+              minTenureMonths:  r.minTenureMonths,
+              maxTenureMonths:  r.maxTenureMonths ?? null,
+              annualHours:        r.annualHours,
+              earnedHoursPerYear: r.earnedHoursPerYear,
+              carryOverHours:     r.carryOverHours ?? null,
             })),
           });
         }
@@ -121,7 +122,7 @@ export const updatePtoPolicy = withRBAC(
         action: "PTO_POLICY_UPDATED",
         entityType: "PTO_POLICY",
         entityId: ptoPolicyId,
-        changes: { after: { ...fields, bands } },
+        changes: { after: { ...fields, rules } },
       });
     });
 
@@ -214,17 +215,14 @@ export const assignSitePtoPolicy = withRBAC(
 
 // ─── Get employee PTO policy overrides ───────────────────────────────────────
 
-export const getEmployeePtoPolicyOverrides = withRBAC(
+export const getEmployeePtoPolicyOverride = withRBAC(
   "EMPLOYEE_MANAGE",
   async (_ctx, input: { employeeId: string }) => {
     const { employeeId } = input;
 
-    return db.employeePtoPolicyOverride.findMany({
+    return db.employeePtoPolicyOverride.findUnique({
       where: { employeeId },
-      include: {
-        leaveType: { select: { id: true, name: true, category: true } },
-        ptoPolicy: { select: { id: true, name: true } },
-      },
+      include: { ptoPolicy: { select: { id: true, name: true } } },
     });
   }
 );
@@ -234,18 +232,18 @@ export const getEmployeePtoPolicyOverrides = withRBAC(
 export const assignEmployeePtoPolicyOverride = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: unknown) => {
-    const { employeeId, leaveTypeId, ptoPolicyId } =
+    const { employeeId, ptoPolicyId } =
       assignEmployeePtoPolicyOverrideSchema.parse(input);
 
     await db.$transaction(async (tx) => {
       if (ptoPolicyId) {
         await tx.employeePtoPolicyOverride.upsert({
-          where: { employeeId_leaveTypeId: { employeeId, leaveTypeId } },
-          create: { employeeId, leaveTypeId, ptoPolicyId },
+          where: { employeeId },
+          create: { employeeId, ptoPolicyId },
           update: { ptoPolicyId },
         });
       } else {
-        await tx.employeePtoPolicyOverride.deleteMany({ where: { employeeId, leaveTypeId } });
+        await tx.employeePtoPolicyOverride.deleteMany({ where: { employeeId } });
       }
 
       await writeAuditLog({
@@ -254,7 +252,7 @@ export const assignEmployeePtoPolicyOverride = withRBAC(
         action: ptoPolicyId ? "EMPLOYEE_PTO_OVERRIDE_ASSIGNED" : "EMPLOYEE_PTO_OVERRIDE_CLEARED",
         entityType: "PTO_POLICY",
         entityId: employeeId,
-        changes: { after: { employeeId, leaveTypeId, ptoPolicyId } },
+        changes: { after: { employeeId, ptoPolicyId } },
       });
     });
 

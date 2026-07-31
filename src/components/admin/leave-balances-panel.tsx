@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { adjustLeaveBalance, setAnnualLeaveDays } from "@/actions/admin.actions";
+import { useRouter } from "next/navigation";
+import { adjustLeaveBalance } from "@/actions/admin.actions";
 
 interface BalanceRow {
   leaveTypeId: string;
@@ -9,8 +10,10 @@ interface BalanceRow {
   category: string;
   balanceMinutes: number;
   usedMinutes: number;
-  annualDaysEntitled: number | null;
+  accruedMinutes: number;
   year: number;
+  policyAnnualHours: number | null;
+  policyName: string | null;
 }
 
 interface Props {
@@ -31,35 +34,20 @@ function fmtHours(minutes: number): string {
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
+function fmtHoursPerYear(hours: number): string {
+  return Number.isInteger(hours) ? `${hours}h/yr` : `${hours.toFixed(1)}h/yr`;
+}
+
 function BalanceRow({ row, employeeId }: { row: BalanceRow; employeeId: string }) {
-  const [panel, setPanel] = useState<"days" | "balance" | null>(null);
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-
-  // Annual days form state
-  const [days, setDays] = useState(row.annualDaysEntitled ?? 0);
-
-  // Balance adjustment state
   const [balHours, setBalHours] = useState(Math.floor(row.balanceMinutes / 60));
   const [balMins, setBalMins] = useState(row.balanceMinutes % 60);
   const [note, setNote] = useState("");
 
-  function handleSaveDays(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    startTransition(async () => {
-      const result = await setAnnualLeaveDays({
-        employeeId,
-        leaveTypeId: row.leaveTypeId,
-        year: row.year,
-        annualDays: days > 0 ? days : null,
-      });
-      if (!result.success) { setError(result.error); return; }
-      setPanel(null);
-    });
-  }
-
-  function handleSaveBalance(e: React.FormEvent) {
+  function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     startTransition(async () => {
@@ -71,87 +59,62 @@ function BalanceRow({ row, employeeId }: { row: BalanceRow; employeeId: string }
         note,
       });
       if (!result.success) { setError(result.error); return; }
-      setPanel(null);
+      setOpen(false);
       setNote("");
+      router.refresh();
     });
   }
 
   return (
     <div className="border-b border-zinc-100 py-3 last:border-0 dark:border-zinc-800">
-      {/* Summary */}
       <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-zinc-900 dark:text-white">
-            {row.leaveTypeName}
-          </p>
-          <p className="mt-0.5 text-xs text-zinc-400">
-            Balance: <span className="font-medium text-zinc-600 dark:text-zinc-300">{fmtHours(row.balanceMinutes)}</span>
-            {" · "}Used: {fmtHours(row.usedMinutes)}
-            {row.annualDaysEntitled != null && (
-              <>
-                {" · "}
-                <span className="font-medium text-blue-600 dark:text-blue-400">
-                  {row.annualDaysEntitled} days/year
-                </span>
-              </>
-            )}
-          </p>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-zinc-900 dark:text-white">{row.leaveTypeName}</p>
+          <div className="mt-1.5 grid grid-cols-4 gap-3 pr-2">
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Policy Total</p>
+              <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                {row.policyAnnualHours != null ? fmtHoursPerYear(row.policyAnnualHours) : <span className="text-zinc-400 font-normal text-xs">—</span>}
+              </p>
+              {row.policyName && <p className="text-[10px] text-zinc-400 truncate">{row.policyName}</p>}
+            </div>
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Accrued YTD</p>
+              <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">{fmtHours(row.accruedMinutes)}</p>
+              {row.policyAnnualHours != null && (
+                <p className="text-[10px] text-zinc-400">
+                  of {fmtHoursPerYear(row.policyAnnualHours)}
+                </p>
+              )}
+            </div>
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Used YTD</p>
+              <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">{fmtHours(row.usedMinutes)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Balance</p>
+              <p className={`mt-0.5 text-sm font-semibold ${
+                row.balanceMinutes < 0
+                  ? "text-red-600 dark:text-red-400"
+                  : "text-zinc-700 dark:text-zinc-200"
+              }`}>
+                {fmtHours(row.balanceMinutes)}
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="flex shrink-0 gap-2 text-xs">
+        {!open && (
           <button
-            onClick={() => setPanel(panel === "days" ? null : "days")}
-            className="text-blue-600 hover:underline dark:text-blue-400"
+            onClick={() => { setOpen(true); setError(null); }}
+            className="shrink-0 text-xs text-zinc-500 hover:underline dark:text-zinc-400"
           >
-            {panel === "days" ? "Cancel" : "Set annual days"}
+            Adjust balance
           </button>
-          <span className="text-zinc-300 dark:text-zinc-600">|</span>
-          <button
-            onClick={() => setPanel(panel === "balance" ? null : "balance")}
-            className="text-zinc-500 hover:underline dark:text-zinc-400"
-          >
-            {panel === "balance" ? "Cancel" : "Adjust balance"}
-          </button>
-        </div>
+        )}
       </div>
 
-      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
-
-      {/* Set annual days */}
-      {panel === "days" && (
-        <form onSubmit={handleSaveDays} className="mt-3 rounded-lg border border-blue-200 bg-blue-50/40 p-3 dark:border-blue-800/30 dark:bg-blue-900/10">
-          <p className="mb-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-            Annual {row.leaveTypeName} days for {row.year}
-          </p>
-          <p className="mb-2 text-xs text-zinc-400">
-            The system will spread this evenly across pay periods. Enter 0 to use the leave type default rate.
-          </p>
-          <div className="flex items-end gap-2">
-            <div>
-              <label className="mb-1 block text-xs text-zinc-500">Days per year</label>
-              <input
-                type="number"
-                min={0}
-                max={365}
-                value={days}
-                onChange={(e) => setDays(Number(e.target.value))}
-                className={`w-20 ${inputCls}`}
-              />
-            </div>
-            {days > 0 && (
-              <p className="pb-1.5 text-xs text-zinc-400">
-                = {fmtHours(days * 480)} per year
-              </p>
-            )}
-            <button type="submit" disabled={isPending} className={btnCls}>
-              {isPending ? "Saving…" : "Save"}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* Adjust current balance */}
-      {panel === "balance" && (
-        <form onSubmit={handleSaveBalance} className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+      {open && (
+        <form onSubmit={handleSave} className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
           <p className="mb-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">
             Set current balance for {row.year}
           </p>
@@ -173,10 +136,16 @@ function BalanceRow({ row, employeeId }: { row: BalanceRow; employeeId: string }
               <label className="mb-1 block text-xs text-zinc-500">Reason (required)</label>
               <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Opening balance for 2026" required className={`w-full ${inputCls}`} />
             </div>
-            <button type="submit" disabled={isPending || !note.trim()} className={btnCls}>
-              {isPending ? "Saving…" : "Save"}
-            </button>
+            <div className="flex gap-2">
+              <button type="submit" disabled={isPending || !note.trim()} className={btnCls}>
+                {isPending ? "Saving…" : "Save"}
+              </button>
+              <button type="button" onClick={() => { setOpen(false); setError(null); setNote(""); }} className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-700">
+                Cancel
+              </button>
+            </div>
           </div>
+          {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
         </form>
       )}
     </div>
@@ -195,14 +164,9 @@ export function LeaveBalancesPanel({ employeeId, balances, year }: Props) {
 
   return (
     <div>
-      <p className="mb-1 text-xs text-zinc-400">
-        Set annual days per employee — the system accrues evenly each pay period.
-      </p>
-      <div>
-        {balances.map((row) => (
-          <BalanceRow key={row.leaveTypeId} row={row} employeeId={employeeId} />
-        ))}
-      </div>
+      {balances.map((row) => (
+        <BalanceRow key={row.leaveTypeId} row={row} employeeId={employeeId} />
+      ))}
     </div>
   );
 }

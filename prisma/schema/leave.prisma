@@ -16,9 +16,8 @@ model LeaveType {
   balances      LeaveBalance[]
   requests      LeaveRequest[]
   accrualLedger LeaveAccrualLedger[]
-  ptoPolicyBands      PtoPolicyBand[]
+  ptoPolicyRules      PtoPolicyRule[]
   sitePtoPolicies     SitePtoPolicy[]
-  employeeOverrides   EmployeePtoPolicyOverride[]
 
   @@map("leave_types")
 }
@@ -30,8 +29,6 @@ model LeaveBalance {
   balanceMinutes      Int      @default(0)
   usedMinutes         Int      @default(0)
   accrualYear         Int
-  /// Annual PTO days this employee is entitled to. Null = use LeaveType.accrualRateMinutes.
-  annualDaysEntitled  Int?
   updatedAt           DateTime @updatedAt
 
   employee  Employee  @relation(fields: [employeeId], references: [id])

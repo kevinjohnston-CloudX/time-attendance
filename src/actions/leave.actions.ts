@@ -117,6 +117,8 @@ export const approveLeaveRequest = withRBAC(
       changes: { before: request.status, after: transition.newStatus },
     });
 
+    await postLeaveUsage(leaveRequestId);
+
     await syncLeaveSegments(leaveRequestId);
 
     revalidatePath("/supervisor/leave");

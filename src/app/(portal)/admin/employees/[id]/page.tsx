@@ -2,13 +2,11 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
-import { getEmployeeById, getAdminRefData } from "@/actions/admin.actions";
-import { getEmployeePtoPolicyOverrides, getPtoPolicies, getSitePtoPolicies } from "@/actions/pto-policy.actions";
+import { getEmployeeById, getAdminRefData, getEmployeeAuditLogs, getEmployeeLeaveLog } from "@/actions/admin.actions";
+import { getEmployeePtoPolicyOverride, getPtoPolicies } from "@/actions/pto-policy.actions";
 import { EditEmployeeForm } from "@/components/admin/edit-employee-form";
-import { LeaveBalancesPanel } from "@/components/admin/leave-balances-panel";
-import { EmployeePtoPolicyPanel } from "@/components/admin/employee-pto-policy-panel";
 import { db } from "@/lib/db";
-import { format } from "date-fns";
+import { format, differenceInMonths } from "date-fns";
 
 export default async function EditEmployeePage({
   params,
@@ -22,53 +20,88 @@ export default async function EditEmployeePage({
 
   const year = new Date().getFullYear();
 
-  const [empResult, refResult, leaveTypes, leaveBalanceRows] = await Promise.all([
+  const yearStart = new Date(`${year}-01-01T00:00:00Z`);
+  const yearEnd   = new Date(`${year + 1}-01-01T00:00:00Z`);
+
+  const [empResult, refResult, leaveTypes, leaveBalanceRows, accrualSums, logsResult, leaveLogResult] = await Promise.all([
     getEmployeeById({ employeeId: id }),
     getAdminRefData(),
     db.leaveType.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.leaveBalance.findMany({ where: { employeeId: id, accrualYear: year } }),
+    db.leaveAccrualLedger.groupBy({
+      by: ["leaveTypeId"],
+      where: { employeeId: id, action: "ACCRUAL", payPeriodEnd: { gte: yearStart, lt: yearEnd } },
+      _sum: { deltaMinutes: true },
+    }),
+    getEmployeeAuditLogs({ employeeId: id }),
+    getEmployeeLeaveLog({ employeeId: id }),
   ]);
 
   if (!empResult.success) notFound();
   if (!refResult.success) redirect("/admin/employees");
 
+  const logs = logsResult.success ? logsResult.data : [];
+  const leaveLog = leaveLogResult.success ? leaveLogResult.data : [];
+
   const employee = empResult.data;
   const { sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories } = refResult.data;
-  const balances = leaveTypes.map((lt) => {
-    const bal = leaveBalanceRows.find((b) => b.leaveTypeId === lt.id);
-    return {
-      leaveTypeId: lt.id,
-      leaveTypeName: lt.name,
-      category: lt.category as string,
-      balanceMinutes: bal?.balanceMinutes ?? 0,
-      usedMinutes: bal?.usedMinutes ?? 0,
-      annualDaysEntitled: bal?.annualDaysEntitled ?? null,
-      year,
-    };
-  });
 
   // PTO policy data
-  const [overridesResult, ptoPoliciesResult, siteAssignmentsResult] = await Promise.all([
-    getEmployeePtoPolicyOverrides({ employeeId: id }),
+  const [overrideResult, ptoPoliciesResult] = await Promise.all([
+    getEmployeePtoPolicyOverride({ employeeId: id }),
     getPtoPolicies(),
-    getSitePtoPolicies({ siteId: employee.siteId }),
   ]);
 
   const ptoPolicies = ptoPoliciesResult.success
     ? ptoPoliciesResult.data.filter((p) => p.isActive).map((p) => ({ id: p.id, name: p.name }))
     : [];
 
-  const overrides = overridesResult.success
-    ? overridesResult.data.map((o) => ({ leaveTypeId: o.leaveTypeId, ptoPolicyId: o.ptoPolicyId }))
-    : [];
+  const currentPolicyId = overrideResult.success && overrideResult.data
+    ? overrideResult.data.ptoPolicyId
+    : null;
 
-  const siteAssignments = siteAssignmentsResult.success
-    ? siteAssignmentsResult.data.map((a) => ({
-        leaveTypeId: a.leaveTypeId,
-        ptoPolicyId: a.ptoPolicyId,
-        policyName: a.ptoPolicy.name,
-      }))
-    : [];
+  // Calculate policy-derived accrual rate per leave type for the employee's current tenure
+  const tenureMonths = differenceInMonths(new Date(), employee.hireDate);
+  const assignedPolicy = ptoPoliciesResult.success
+    ? ptoPoliciesResult.data.find((p) => p.id === currentPolicyId) ?? null
+    : null;
+
+  const tenureYears = Math.floor(tenureMonths / 12);
+  const policyRateByLeaveType = new Map<string, { annualHours: number; policyName: string }>();
+  if (assignedPolicy) {
+    for (const lt of leaveTypes) {
+      const tiers = assignedPolicy.rules
+        .filter((r) => r.leaveTypeId === lt.id)
+        .sort((a, b) => a.minTenureMonths - b.minTenureMonths);
+      const match = tiers.find(
+        (t) => t.minTenureMonths <= tenureMonths && (t.maxTenureMonths === null || tenureMonths < t.maxTenureMonths)
+      );
+      if (match) {
+        const effectiveAnnualHours = match.annualHours + tenureYears * match.earnedHoursPerYear;
+        policyRateByLeaveType.set(lt.id, { annualHours: effectiveAnnualHours, policyName: assignedPolicy.name });
+      }
+    }
+  }
+
+  const accrualSumMap = new Map(
+    accrualSums.map((s) => [s.leaveTypeId, s._sum.deltaMinutes ?? 0])
+  );
+
+  const balances = leaveTypes.map((lt) => {
+    const bal = leaveBalanceRows.find((b) => b.leaveTypeId === lt.id);
+    const policyRate = policyRateByLeaveType.get(lt.id) ?? null;
+    return {
+      leaveTypeId: lt.id,
+      leaveTypeName: lt.name,
+      category: lt.category as string,
+      balanceMinutes: bal?.balanceMinutes ?? 0,
+      usedMinutes: bal?.usedMinutes ?? 0,
+      accruedMinutes: accrualSumMap.get(lt.id) ?? 0,
+      year,
+      policyAnnualHours: policyRate?.annualHours ?? null,
+      policyName: policyRate?.policyName ?? null,
+    };
+  });
 
   return (
     <div className="max-w-2xl">
@@ -101,38 +134,14 @@ export default async function EditEmployeePage({
         shifts={shifts}
         holidayRules={holidayRules}
         payCategories={payCategories ?? []}
+        balances={balances}
+        year={year}
+        ptoPolicies={ptoPolicies}
+        currentPolicyId={currentPolicyId}
+        logs={logs}
+        leaveLog={leaveLog}
       />
 
-      {/* Leave Balances */}
-      <div className="mt-8">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-white">
-          Leave Balances — {year}
-        </h2>
-        <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-          <LeaveBalancesPanel
-            employeeId={employee.id}
-            balances={balances}
-            year={year}
-          />
-        </div>
-      </div>
-
-      {/* PTO Policy Overrides */}
-      <div className="mt-8">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-white">PTO Policy Overrides</h2>
-        <p className="mt-0.5 text-sm text-zinc-500">
-          Override the site&apos;s default accrual policy for this employee.
-        </p>
-        <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-          <EmployeePtoPolicyPanel
-            employeeId={employee.id}
-            leaveTypes={leaveTypes.map((lt) => ({ id: lt.id, name: lt.name, category: lt.category as string }))}
-            policies={ptoPolicies}
-            overrides={overrides}
-            siteAssignments={siteAssignments}
-          />
-        </div>
-      </div>
     </div>
   );
 }

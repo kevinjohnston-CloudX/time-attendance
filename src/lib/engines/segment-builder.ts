@@ -49,9 +49,7 @@ function buildSegmentSpan(
   const nextMidnight = nextMidnightInTz(start, timezone);
 
   if (end <= nextMidnight) {
-    const durationMinutes = Math.round(
-      (end.getTime() - start.getTime()) / 60_000
-    );
+    const durationMinutes = (end.getTime() - start.getTime()) / 60_000;
     if (durationMinutes <= 0) return [];
     return [
       {
@@ -79,6 +77,8 @@ function buildSegmentSpan(
  * Pure function: given an ordered list of approved punches,
  * returns the set of WorkSegment rows to insert.
  */
+const truncToMin = (d: Date): Date => new Date(Math.floor(d.getTime() / 60_000) * 60_000);
+
 export function computeSegments(
   timesheetId: string,
   punches: Punch[],
@@ -89,10 +89,22 @@ export function computeSegments(
   let openState: ActiveState | null = null;
 
   for (const punch of punches) {
-    // Close the previous segment at this punch's rounded time
+    const punchMin = truncToMin(punch.roundedTime);
+
+    // Close the previous segment at this punch's truncated minute
     if (openState && openStart) {
+      const openDay = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(openStart);
+      const punchDay = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(punchMin);
+      // If this punch starts a fresh shift (stateBefore=OUT) on a different calendar day,
+      // the previous day had a missing clock-out — cap the segment at midnight so it
+      // doesn't bleed into today's hours.
+      const segmentEnd =
+        openDay !== punchDay && punch.stateBefore === "OUT"
+          ? nextMidnightInTz(openStart, timezone)
+          : punchMin;
+
       segments.push(
-        ...buildSegmentSpan(timesheetId, openStart, punch.roundedTime, openState, false, timezone)
+        ...buildSegmentSpan(timesheetId, openStart, segmentEnd, openState, false, timezone)
       );
       openStart = null;
       openState = null;
@@ -100,7 +112,7 @@ export function computeSegments(
 
     // Open a new segment if entering an active state
     if (punch.stateAfter !== "OUT") {
-      openStart = punch.roundedTime;
+      openStart = punchMin;
       openState = punch.stateAfter as ActiveState;
     }
   }
