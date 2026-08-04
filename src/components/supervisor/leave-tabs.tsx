@@ -48,21 +48,21 @@ export function LeaveTabs({ pending, upcoming, initialTab, canFilter, sites = []
   const [tooltip, setTooltip] = useState<{
     top: number;
     left: number;
-    approved: string[];
-    pending: string[];
+    approved: { name: string; leaveType: string }[];
+    pending: { name: string; leaveType: string }[];
     hasConflict: boolean;
     date: Date;
   } | null>(null);
 
-  // Build date → { name, employeeId } maps
-  type Entry = { name: string; employeeId: string };
+  // Build date → { name, employeeId, leaveType } maps
+  type Entry = { name: string; employeeId: string; leaveType: string };
   const approvedMap = new Map<string, Entry[]>();
   for (const req of upcoming) {
     const days = eachDayOfInterval({ start: new Date(req.startDate), end: new Date(req.endDate) });
     for (const day of days) {
       const key = format(day, "yyyy-MM-dd");
       if (!approvedMap.has(key)) approvedMap.set(key, []);
-      approvedMap.get(key)!.push({ name: req.employee.user?.name ?? "Unknown", employeeId: req.employeeId });
+      approvedMap.get(key)!.push({ name: req.employee.user?.name ?? "Unknown", employeeId: req.employeeId, leaveType: req.leaveType.name });
     }
   }
 
@@ -72,7 +72,7 @@ export function LeaveTabs({ pending, upcoming, initialTab, canFilter, sites = []
     for (const day of days) {
       const key = format(day, "yyyy-MM-dd");
       if (!pendingMap.has(key)) pendingMap.set(key, []);
-      pendingMap.get(key)!.push({ name: req.employee.user?.name ?? "Unknown", employeeId: req.employeeId });
+      pendingMap.get(key)!.push({ name: req.employee.user?.name ?? "Unknown", employeeId: req.employeeId, leaveType: req.leaveType.name });
     }
   }
 
@@ -260,8 +260,8 @@ export function LeaveTabs({ pending, upcoming, initialTab, canFilter, sites = []
                         setTooltip({
                           top: rect.bottom + 6,
                           left: Math.min(rect.left, window.innerWidth - 220),
-                          approved: approvedEntries.map((e) => e.name),
-                          pending: pendingEntries.map((e) => e.name),
+                          approved: approvedEntries.map((e) => ({ name: e.name, leaveType: e.leaveType })),
+                          pending: pendingEntries.map((e) => ({ name: e.name, leaveType: e.leaveType })),
                           hasConflict,
                           date: day,
                         });
@@ -344,8 +344,11 @@ export function LeaveTabs({ pending, upcoming, initialTab, canFilter, sites = []
           {tooltip.approved.length > 0 && (
             <div className="mb-1.5">
               <p className="mb-0.5 text-xs font-medium text-green-700 dark:text-green-400">Approved</p>
-              {tooltip.approved.map((name, i) => (
-                <p key={i} className="text-sm text-zinc-900 dark:text-white">{name}</p>
+              {tooltip.approved.map((e, i) => (
+                <div key={i} className={i > 0 ? "mt-1" : ""}>
+                  <p className="text-sm text-zinc-900 dark:text-white">{e.name}</p>
+                  <p className="text-xs text-zinc-400 dark:text-zinc-500">{e.leaveType}</p>
+                </div>
               ))}
             </div>
           )}
@@ -354,8 +357,11 @@ export function LeaveTabs({ pending, upcoming, initialTab, canFilter, sites = []
               <p className={`mb-0.5 text-xs font-medium ${tooltip.hasConflict ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}>
                 {tooltip.hasConflict ? "Pending (conflict)" : "Pending"}
               </p>
-              {tooltip.pending.map((name, i) => (
-                <p key={i} className="text-sm text-zinc-900 dark:text-white">{name}</p>
+              {tooltip.pending.map((e, i) => (
+                <div key={i} className={i > 0 ? "mt-1" : ""}>
+                  <p className="text-sm text-zinc-900 dark:text-white">{e.name}</p>
+                  <p className="text-xs text-zinc-400 dark:text-zinc-500">{e.leaveType}</p>
+                </div>
               ))}
             </div>
           )}

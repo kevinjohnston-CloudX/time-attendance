@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { adjustLeaveBalance } from "@/actions/admin.actions";
+import { adjustLeaveBalance, resetLeaveBalanceToAccrual } from "@/actions/admin.actions";
 
 interface BalanceRow {
   leaveTypeId: string;
@@ -11,6 +11,8 @@ interface BalanceRow {
   balanceMinutes: number;
   usedMinutes: number;
   accruedMinutes: number;
+  approvedMinutes: number;
+  pendingMinutes: number;
   year: number;
   policyAnnualHours: number | null;
   policyName: string | null;
@@ -42,6 +44,7 @@ function BalanceRow({ row, employeeId }: { row: BalanceRow; employeeId: string }
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [isResetting, startResetTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [balHours, setBalHours] = useState(Math.floor(row.balanceMinutes / 60));
   const [balMins, setBalMins] = useState(row.balanceMinutes % 60);
@@ -65,12 +68,25 @@ function BalanceRow({ row, employeeId }: { row: BalanceRow; employeeId: string }
     });
   }
 
+  function handleReset() {
+    setError(null);
+    startResetTransition(async () => {
+      const result = await resetLeaveBalanceToAccrual({
+        employeeId,
+        leaveTypeId: row.leaveTypeId,
+        year: row.year,
+      });
+      if (!result.success) { setError(result.error); return; }
+      router.refresh();
+    });
+  }
+
   return (
     <div className="border-b border-zinc-100 py-3 last:border-0 dark:border-zinc-800">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-zinc-900 dark:text-white">{row.leaveTypeName}</p>
-          <div className="mt-1.5 grid grid-cols-4 gap-3 pr-2">
+          <div className="mt-1.5 grid grid-cols-5 gap-3 pr-2">
             <div>
               <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Policy Total</p>
               <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
@@ -101,16 +117,50 @@ function BalanceRow({ row, employeeId }: { row: BalanceRow; employeeId: string }
                 {fmtHours(row.balanceMinutes)}
               </p>
             </div>
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Available</p>
+              {(() => {
+                const available = row.balanceMinutes - row.approvedMinutes - row.pendingMinutes;
+                return (
+                  <>
+                    <p className={`mt-0.5 text-sm font-semibold ${
+                      available < 0 ? "text-red-600 dark:text-red-400" : "text-zinc-700 dark:text-zinc-200"
+                    }`}>
+                      {fmtHours(available)}
+                    </p>
+                    {(row.approvedMinutes > 0 || row.pendingMinutes > 0) && (
+                      <p className="text-[10px] text-zinc-400">
+                        {[
+                          row.approvedMinutes > 0 && `${fmtHours(row.approvedMinutes)} appr.`,
+                          row.pendingMinutes > 0 && `${fmtHours(row.pendingMinutes)} pend.`,
+                        ].filter(Boolean).join(" · ")}
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
           </div>
         </div>
         {!open && (
-          <button
-            onClick={() => { setOpen(true); setError(null); }}
-            className="shrink-0 text-xs text-zinc-500 hover:underline dark:text-zinc-400"
-          >
-            Adjust balance
-          </button>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <button
+              onClick={() => { setOpen(true); setError(null); }}
+              className="text-xs text-zinc-500 hover:underline dark:text-zinc-400"
+            >
+              Adjust balance
+            </button>
+            <button
+              onClick={handleReset}
+              disabled={isResetting}
+              className="text-xs text-zinc-400 hover:underline disabled:opacity-50 dark:text-zinc-500"
+              title="Reverse all manual adjustments this year and restore the accrual-calculated balance"
+            >
+              {isResetting ? "Resetting…" : "Reset to accrual"}
+            </button>
+          </div>
         )}
+        {error && !open && <p className="mt-1 text-xs text-red-500">{error}</p>}
       </div>
 
       {open && (

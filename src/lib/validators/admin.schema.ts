@@ -106,6 +106,7 @@ export const leaveTypeSchema = z.object({
   carryOverMinutes: z.number().int().min(0).default(0),
   requiresApproval: z.boolean().default(true),
   isPaid: z.boolean().default(true),
+  externalCode: z.number().int().positive().nullable().optional(),
 });
 
 export const updateLeaveTypeSchema = leaveTypeSchema.extend({

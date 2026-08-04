@@ -88,6 +88,13 @@ function LeaveTypeFields({ lt }: { lt?: LeaveType }) {
           <option value="false">No approval needed</option>
         </select>
       </div>
+      <div className="col-span-2 sm:col-span-1">
+        <label className="mb-1 block text-xs text-zinc-500">API Code <span className="text-zinc-400">(optional — auto-assigned)</span></label>
+        <input name="externalCode" type="number" min={1} step={1}
+          defaultValue={lt?.externalCode ?? ""}
+          placeholder="Auto"
+          className={inputCls} />
+      </div>
     </div>
   );
 }
@@ -111,6 +118,8 @@ export function LeaveTypesManager({ leaveTypes }: Props) {
   function parseForm(fd: FormData) {
     const maxH = fd.get("maxBalance_hours");
     const hasMax = maxH !== "" && maxH !== null;
+    const codeRaw = fd.get("externalCode");
+    const externalCode = codeRaw !== "" && codeRaw !== null ? Number(codeRaw) : null;
     return {
       name: fd.get("name") as string,
       category: fd.get("category") as "PTO",
@@ -119,6 +128,7 @@ export function LeaveTypesManager({ leaveTypes }: Props) {
       carryOverMinutes: toMins(fd, "carryOver"),
       requiresApproval: fd.get("requiresApproval") === "true",
       isPaid: fd.get("isPaid") === "true",
+      externalCode,
     };
   }
 
@@ -159,6 +169,7 @@ export function LeaveTypesManager({ leaveTypes }: Props) {
             <div className="flex items-center justify-between">
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`font-medium ${lt.isActive ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"}`}>{lt.name}</span>
+                {lt.externalCode != null && <span className="rounded px-1.5 py-0.5 text-xs bg-blue-50 text-blue-600 font-mono dark:bg-blue-900/20 dark:text-blue-400">#{lt.externalCode}</span>}
                 <span className="rounded px-1.5 py-0.5 text-xs bg-zinc-100 text-zinc-500 dark:bg-zinc-800">{lt.category}</span>
                 <span className="text-xs text-zinc-400">{lt.isPaid ? "Paid" : "Unpaid"}</span>
                 {lt.maxBalanceMinutes != null && <span className="text-xs text-zinc-400">· Max {formatMinutes(lt.maxBalanceMinutes)}</span>}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { markPayPeriodReady, lockPayPeriod, reopenPayPeriod } from "@/actions/pay-period.actions";
+import { markPayPeriodReady, lockPayPeriod, reopenPayPeriod, submitOpenTimesheets } from "@/actions/pay-period.actions";
 import { pushPayrollToAdp } from "@/actions/adp.actions";
 
 interface PayrollRun {
@@ -16,13 +16,15 @@ interface Props {
   payPeriodId: string;
   status: "OPEN" | "READY" | "LOCKED";
   isReady: boolean;
+  isPast: boolean;
   adpConfigured?: boolean;
   payrollRun?: PayrollRun | null;
 }
 
-export function PayPeriodActions({ payPeriodId, status, isReady, adpConfigured, payrollRun }: Props) {
+export function PayPeriodActions({ payPeriodId, status, isReady, isPast, adpConfigured, payrollRun }: Props) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [submitResult, setSubmitResult] = useState<{ submitted: number } | null>(null);
   const [pushResult, setPushResult] = useState<{
     pushed: number;
     skipped: number;
@@ -54,6 +56,20 @@ export function PayPeriodActions({ payPeriodId, status, isReady, adpConfigured, 
     startTransition(async () => {
       const result = await reopenPayPeriod({ payPeriodId, reason });
       if (!result.success) setError(result.error);
+    });
+  }
+
+  function handleSubmitOpen() {
+    if (!confirm("Move all open timesheets to Pending Supervisor for this pay period?")) return;
+    setError(null);
+    setSubmitResult(null);
+    startTransition(async () => {
+      const result = await submitOpenTimesheets({ payPeriodId });
+      if (!result.success) {
+        setError(result.error);
+        return;
+      }
+      setSubmitResult(result.data);
     });
   }
 
@@ -139,7 +155,23 @@ export function PayPeriodActions({ payPeriodId, status, isReady, adpConfigured, 
   return (
     <div className="flex flex-col items-end gap-2">
       {error && <p className="text-sm text-red-500">{error}</p>}
+      {submitResult && (
+        <p className="text-sm text-green-600 dark:text-green-400">
+          {submitResult.submitted === 0
+            ? "No open timesheets found."
+            : `${submitResult.submitted} timesheet${submitResult.submitted !== 1 ? "s" : ""} moved to pending.`}
+        </p>
+      )}
       <div className="flex items-center gap-3">
+      {status === "OPEN" && isPast && (
+        <button
+          onClick={handleSubmitOpen}
+          disabled={isPending}
+          className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        >
+          {isPending ? "Submitting…" : "Submit Open Timesheets"}
+        </button>
+      )}
       {status === "OPEN" && (
         <button
           onClick={handleMarkReady}

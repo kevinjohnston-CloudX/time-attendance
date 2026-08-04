@@ -4,12 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { RequestLeaveForm } from "./request-leave-form";
+import type { ShiftInfo } from "./leave-day-picker";
 
 interface Props {
   leaveTypes: { id: string; name: string }[];
+  shift: ShiftInfo | null;
 }
 
-export function RequestLeaveModal({ leaveTypes }: Props) {
+export function RequestLeaveModal({ leaveTypes, shift }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -34,7 +36,7 @@ export function RequestLeaveModal({ leaveTypes }: Props) {
           onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
         >
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-zinc-900 dark:text-white">
                 Request Leave
@@ -46,7 +48,7 @@ export function RequestLeaveModal({ leaveTypes }: Props) {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <RequestLeaveForm leaveTypes={leaveTypes} onSuccess={handleSuccess} />
+            <RequestLeaveForm leaveTypes={leaveTypes} shift={shift} onSuccess={handleSuccess} />
           </div>
         </div>
       )}

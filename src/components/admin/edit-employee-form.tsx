@@ -35,6 +35,8 @@ interface Props {
     balanceMinutes: number;
     usedMinutes: number;
     accruedMinutes: number;
+    approvedMinutes: number;
+    pendingMinutes: number;
     year: number;
     policyAnnualHours: number | null;
     policyName: string | null;

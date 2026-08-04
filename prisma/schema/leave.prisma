@@ -8,6 +8,7 @@ model LeaveType {
   carryOverMinutes    Int           @default(0)
   requiresApproval    Boolean       @default(true)
   isPaid              Boolean       @default(true)
+  externalCode        Int?          // numeric code for REST API identification
   isActive            Boolean       @default(true)
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
@@ -19,6 +20,7 @@ model LeaveType {
   ptoPolicyRules      PtoPolicyRule[]
   sitePtoPolicies     SitePtoPolicy[]
 
+  @@unique([tenantId, externalCode])
   @@map("leave_types")
 }
 
@@ -46,6 +48,7 @@ model LeaveRequest {
   startDate    DateTime           @db.Date
   endDate      DateTime           @db.Date
   durationMinutes Int
+  selectedDays Json?              /// [{ date: "YYYY-MM-DD", type: "FULL" | "PARTIAL", leaveFrom?: "HH:mm" }]
   note         String?
   submittedAt  DateTime?
   reviewedAt   DateTime?

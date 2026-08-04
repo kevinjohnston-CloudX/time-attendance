@@ -229,6 +229,47 @@ export const updateTenantSettings = withRBAC(
   }
 );
 
+export const submitOpenTimesheets = withRBAC(
+  "PAY_PERIOD_MANAGE",
+  async ({ tenantId, employeeId }, input: { payPeriodId: string }) => {
+    const { payPeriodId } = payPeriodIdSchema.parse(input);
+
+    const payPeriod = await db.payPeriod.findUniqueOrThrow({
+      where: { id: payPeriodId },
+      select: { endDate: true },
+    });
+
+    if (payPeriod.endDate >= new Date()) {
+      throw new Error("Can only bulk-submit timesheets for past pay periods");
+    }
+
+    const open = await db.timesheet.findMany({
+      where: { payPeriodId, status: "OPEN" },
+      select: { id: true },
+    });
+
+    if (open.length === 0) return { submitted: 0 };
+
+    const now = new Date();
+    await db.timesheet.updateMany({
+      where: { payPeriodId, status: "OPEN" },
+      data: { status: "SUBMITTED", submittedAt: now },
+    });
+
+    await writeAuditLog({
+      tenantId,
+      actorId: employeeId,
+      entityType: "PAY_PERIOD",
+      entityId: payPeriodId,
+      action: "BULK_SUBMIT",
+      changes: { after: { count: open.length, source: "MANUAL_BULK" } },
+    });
+
+    revalidatePath("/payroll/pay-periods");
+    return { submitted: open.length };
+  }
+);
+
 export const generateNextPayPeriod = withRBAC(
   "PAY_PERIOD_MANAGE",
   async ({ tenantId }, _input: void) => {

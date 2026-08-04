@@ -70,11 +70,21 @@ export const submitLeaveRequest = withRBAC(
   }
 );
 
-/** Cancel a leave request (employee self-cancel: DRAFT/PENDING/APPROVED → CANCELLED). */
+/** Cancel a leave request (employee self-cancel: PENDING only — approved requests require supervisor action). */
 export const cancelLeaveRequest = withRBAC(
   "LEAVE_REQUEST_OWN",
   async ({ employeeId, tenantId }, input: LeaveRequestIdInput) => {
     const { leaveRequestId } = leaveRequestIdSchema.parse(input);
+
+    const request = await db.leaveRequest.findUniqueOrThrow({
+      where: { id: leaveRequestId },
+      select: { status: true },
+    });
+
+    if (!["DRAFT", "PENDING"].includes(request.status)) {
+      throw new Error("Only pending leave requests can be cancelled. Contact your supervisor to cancel an approved request.");
+    }
+
     const updated = await cancelLeaveRequestCore(employeeId, tenantId, leaveRequestId);
     revalidatePath("/leave");
     revalidatePath("/payroll/timecards");

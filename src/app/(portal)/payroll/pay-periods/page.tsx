@@ -239,6 +239,7 @@ export default async function PayPeriodsPage({
                   payPeriodId={detail.payPeriod.id}
                   status={detail.payPeriod.status}
                   isReady={detail.validation.isReady}
+                  isPast={parseUtcDate(detail.payPeriod.endDate) < new Date()}
                   adpConfigured={adpConfigured}
                   payrollRun={payrollRun}
                 />

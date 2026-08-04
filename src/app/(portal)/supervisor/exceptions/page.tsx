@@ -68,9 +68,11 @@ export default async function ExceptionsPage({
       select: { id: true, name: true },
     }),
     db.payPeriod.findMany({
-      where: { tenantId },
+      where: {
+        tenantId,
+        timesheets: { some: { exceptions: { some: { resolvedAt: null } } } },
+      },
       orderBy: { startDate: "desc" },
-      take: 8,
       select: { id: true, startDate: true, endDate: true, status: true },
     }),
   ]);

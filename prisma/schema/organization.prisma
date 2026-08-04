@@ -27,6 +27,7 @@ model Tenant {
   shifts       Shift[]
   holidayRules   HolidayRule[]
   payCategories  PayCategory[]
+  apiKeys        ApiKey[]
 
   @@map("tenants")
 }

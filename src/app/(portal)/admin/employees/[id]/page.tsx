@@ -23,7 +23,7 @@ export default async function EditEmployeePage({
   const yearStart = new Date(`${year}-01-01T00:00:00Z`);
   const yearEnd   = new Date(`${year + 1}-01-01T00:00:00Z`);
 
-  const [empResult, refResult, leaveTypes, leaveBalanceRows, accrualSums, logsResult, leaveLogResult] = await Promise.all([
+  const [empResult, refResult, leaveTypes, leaveBalanceRows, accrualSums, approvedRequests, logsResult, leaveLogResult] = await Promise.all([
     getEmployeeById({ employeeId: id }),
     getAdminRefData(),
     db.leaveType.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
@@ -32,6 +32,10 @@ export default async function EditEmployeePage({
       by: ["leaveTypeId"],
       where: { employeeId: id, action: "ACCRUAL", payPeriodEnd: { gte: yearStart, lt: yearEnd } },
       _sum: { deltaMinutes: true },
+    }),
+    db.leaveRequest.findMany({
+      where: { employeeId: id, status: { in: ["APPROVED", "PENDING"] } },
+      select: { leaveTypeId: true, durationMinutes: true, status: true },
     }),
     getEmployeeAuditLogs({ employeeId: id }),
     getEmployeeLeaveLog({ employeeId: id }),
@@ -87,6 +91,16 @@ export default async function EditEmployeePage({
     accrualSums.map((s) => [s.leaveTypeId, s._sum.deltaMinutes ?? 0])
   );
 
+  const approvedMinutesMap = new Map<string, number>();
+  const pendingMinutesMap = new Map<string, number>();
+  for (const r of approvedRequests) {
+    if (r.status === "APPROVED") {
+      approvedMinutesMap.set(r.leaveTypeId, (approvedMinutesMap.get(r.leaveTypeId) ?? 0) + r.durationMinutes);
+    } else {
+      pendingMinutesMap.set(r.leaveTypeId, (pendingMinutesMap.get(r.leaveTypeId) ?? 0) + r.durationMinutes);
+    }
+  }
+
   const balances = leaveTypes.map((lt) => {
     const bal = leaveBalanceRows.find((b) => b.leaveTypeId === lt.id);
     const policyRate = policyRateByLeaveType.get(lt.id) ?? null;
@@ -97,6 +111,8 @@ export default async function EditEmployeePage({
       balanceMinutes: bal?.balanceMinutes ?? 0,
       usedMinutes: bal?.usedMinutes ?? 0,
       accruedMinutes: accrualSumMap.get(lt.id) ?? 0,
+      approvedMinutes: approvedMinutesMap.get(lt.id) ?? 0,
+      pendingMinutes: pendingMinutesMap.get(lt.id) ?? 0,
       year,
       policyAnnualHours: policyRate?.annualHours ?? null,
       policyName: policyRate?.policyName ?? null,

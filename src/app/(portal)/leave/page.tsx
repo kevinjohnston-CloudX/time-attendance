@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getMyLeaveRequests, getMyLeaveBalances, getLeaveTypes } from "@/actions/leave.actions";
+import { db } from "@/lib/db";
 import {
   LEAVE_STATUS_LABEL,
   LEAVE_STATUS_BADGE,
@@ -10,16 +11,21 @@ import { formatMinutes } from "@/lib/utils/duration";
 import { format } from "date-fns";
 import { LeaveCalendar } from "@/components/leave/leave-calendar";
 import { RequestLeaveModal } from "@/components/leave/request-leave-modal";
+import { CancelLeaveButton } from "@/components/leave/cancel-leave-button";
 
 export default async function MyLeavePage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "LEAVE_REQUEST_OWN")) redirect("/dashboard");
 
-  const [requestsResult, balancesResult, leaveTypesResult] = await Promise.all([
+  const [requestsResult, balancesResult, leaveTypesResult, employee] = await Promise.all([
     getMyLeaveRequests(),
     getMyLeaveBalances(),
     getLeaveTypes(),
+    db.employee.findFirst({
+      where: { userId: session.user.id },
+      select: { shift: { select: { startTime: true, endTime: true, workDays: true } } },
+    }),
   ]);
 
   if (!requestsResult.success || !balancesResult.success) redirect("/dashboard");
@@ -56,7 +62,7 @@ export default async function MyLeavePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">My Leave</h1>
-        <RequestLeaveModal leaveTypes={leaveTypes} />
+        <RequestLeaveModal leaveTypes={leaveTypes} shift={employee?.shift ?? null} />
       </div>
 
       {/* Balances */}
@@ -112,7 +118,7 @@ export default async function MyLeavePage() {
                 No leave requests yet.
               </p>
             )}
-            {requests.map((req) => (
+            {requests.filter((req) => req.status !== "CANCELLED").map((req) => (
               <div
                 key={req.id}
                 className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900"
@@ -133,6 +139,11 @@ export default async function MyLeavePage() {
                 <p className="text-xs text-zinc-400">{formatMinutes(req.durationMinutes)}</p>
                 {req.reviewNote && (
                   <p className="mt-1 text-xs text-zinc-400 italic">{req.reviewNote}</p>
+                )}
+                {req.status === "PENDING" && (
+                  <div className="mt-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+                    <CancelLeaveButton leaveRequestId={req.id} />
+                  </div>
                 )}
               </div>
             ))}

@@ -51,6 +51,7 @@ export function LeaveCalendar({ requests, className }: { requests: LeaveRequest[
 
   function getStatusForDay(day: Date): string | null {
     const matching = requests.filter((req) => {
+      if (req.status === "CANCELLED") return false;
       const s = startOfDay(new Date(req.startDate));
       const e = endOfDay(new Date(req.endDate));
       return isWithinInterval(day, { start: s, end: e });

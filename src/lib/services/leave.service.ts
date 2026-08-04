@@ -1,10 +1,11 @@
 import { parseISO, getYear } from "date-fns";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { validateLeaveTransition } from "@/lib/state-machines/leave-state";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
 import { reverseLeaveUsage } from "@/lib/engines/accrual-engine";
 import { writeAuditLog } from "@/lib/audit/logger";
-import { requestLeaveSchema } from "@/lib/validators/leave.schema";
+import { requestLeaveSchema, type DaySelectionInput } from "@/lib/validators/leave.schema";
 
 // ─── Queries ────────────────────────────────────────────────────────────────
 
@@ -37,26 +38,48 @@ export async function createLeaveRequestCore(
   employeeId: string,
   input: {
     leaveTypeId: string;
-    startDate: string;
-    endDate: string;
-    durationMinutes: number;
+    selectedDays: DaySelectionInput[];
     note?: string;
   },
 ) {
-  const { leaveTypeId, startDate, endDate, durationMinutes, note } =
-    requestLeaveSchema.parse(input);
+  const { leaveTypeId, selectedDays, note } = requestLeaveSchema.parse(input);
+
+  const employee = await db.employee.findUniqueOrThrow({
+    where: { id: employeeId },
+    select: { shift: { select: { startTime: true, endTime: true } } },
+  });
+
+  const shiftStartMins = employee.shift ? timeToMins(employee.shift.startTime) : 9 * 60;
+  const shiftEndMins   = employee.shift ? timeToMins(employee.shift.endTime)   : 17 * 60;
+
+  const sorted = [...selectedDays].sort((a, b) => a.date.localeCompare(b.date));
+
+  let durationMinutes = 0;
+  for (const day of sorted) {
+    if (day.type === "FULL") {
+      durationMinutes += shiftEndMins - shiftStartMins;
+    } else {
+      durationMinutes += Math.max(0, shiftEndMins - timeToMins(day.leaveFrom));
+    }
+  }
 
   return db.leaveRequest.create({
     data: {
       employeeId,
       leaveTypeId,
-      startDate: parseISO(startDate),
-      endDate: parseISO(endDate),
+      startDate: parseISO(sorted[0].date),
+      endDate:   parseISO(sorted[sorted.length - 1].date),
       durationMinutes,
+      selectedDays: selectedDays as unknown as Prisma.InputJsonValue,
       note,
       status: "DRAFT",
     },
   });
+}
+
+function timeToMins(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
 }
 
 export async function submitLeaveRequestCore(

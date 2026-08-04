@@ -3,35 +3,33 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createLeaveRequest, submitLeaveRequest } from "@/actions/leave.actions";
+import { LeaveDayPicker, type DaySelection, type ShiftInfo } from "./leave-day-picker";
 
 interface Props {
   leaveTypes: { id: string; name: string }[];
+  shift: ShiftInfo | null;
   onSuccess?: () => void;
 }
 
-export function RequestLeaveForm({ leaveTypes, onSuccess }: Props) {
+export function RequestLeaveForm({ leaveTypes, shift, onSuccess }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-
   const [leaveTypeId, setLeaveTypeId] = useState(leaveTypes[0]?.id ?? "");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [durationMinutes, setDurationMinutes] = useState(480); // 8h default
+  const [selectedDays, setSelectedDays] = useState<DaySelection[]>([]);
   const [note, setNote] = useState("");
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!startDate || !endDate || !leaveTypeId) return;
-
+    if (selectedDays.length === 0) {
+      setError("Select at least one day.");
+      return;
+    }
     setError(null);
     startTransition(async () => {
-      // Create in DRAFT then immediately submit
       const createResult = await createLeaveRequest({
         leaveTypeId,
-        startDate,
-        endDate,
-        durationMinutes,
+        selectedDays,
         note: note || undefined,
       });
 
@@ -58,7 +56,7 @@ export function RequestLeaveForm({ leaveTypes, onSuccess }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
+    <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-5">
       {error && (
         <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
           {error}
@@ -83,73 +81,35 @@ export function RequestLeaveForm({ leaveTypes, onSuccess }: Props) {
         </select>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Start Date
-          </label>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            required
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-          />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            End Date
-          </label>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            required
-            min={startDate}
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-          />
-        </div>
-      </div>
-
       <div>
         <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          Duration (minutes)
+          Select Days
         </label>
-        <input
-          type="number"
-          value={durationMinutes}
-          onChange={(e) => setDurationMinutes(Number(e.target.value))}
-          min={1}
-          required
-          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-        />
-        <p className="mt-1 text-xs text-zinc-400">
-          480 = 8 hours, 240 = 4 hours (half day)
-        </p>
+        <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
+          <LeaveDayPicker value={selectedDays} onChange={setSelectedDays} shift={shift} />
+        </div>
       </div>
 
       <div>
         <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          Note (optional)
+          Note <span className="font-normal text-zinc-400">(optional)</span>
         </label>
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          rows={3}
+          rows={2}
           placeholder="Reason or additional context…"
           className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
         />
       </div>
 
-      <div className="flex gap-3">
-        <button
-          type="submit"
-          disabled={isPending}
-          className="rounded-lg bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          {isPending ? "Submitting…" : "Submit Request"}
-        </button>
-      </div>
+      <button
+        type="submit"
+        disabled={isPending || selectedDays.length === 0}
+        className="rounded-lg bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+      >
+        {isPending ? "Submitting…" : "Submit Request"}
+      </button>
     </form>
   );
 }

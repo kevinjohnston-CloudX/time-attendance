@@ -670,7 +670,16 @@ export const createLeaveType = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: LeaveTypeInput) => {
     if (!tenantId) throw new Error("Tenant context required");
     const parsed = leaveTypeSchema.parse(input);
-    const lt = await db.leaveType.create({ data: { ...parsed, tenantId } });
+    let { externalCode } = parsed;
+    if (externalCode == null) {
+      const max = await db.leaveType.findFirst({
+        where: { tenantId, externalCode: { not: null } },
+        orderBy: { externalCode: "desc" },
+        select: { externalCode: true },
+      });
+      externalCode = (max?.externalCode ?? 0) + 1;
+    }
+    const lt = await db.leaveType.create({ data: { ...parsed, externalCode, tenantId } });
     await writeAuditLog({
       tenantId,
       actorId,
@@ -841,6 +850,69 @@ export const adjustLeaveBalance = withRBAC(
       changes: {
         before: { balanceMinutes: existing.balanceMinutes },
         after: { balanceMinutes: newBalanceMinutes, note },
+      },
+    });
+
+    revalidatePath(`/admin/employees/${employeeId}`);
+  }
+);
+
+/** Reset a leave balance to match YTD accruals (sum of ACCRUAL ledger entries for the year). */
+export const resetLeaveBalanceToAccrual = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async (
+    { employeeId: actorId, tenantId },
+    input: { employeeId: string; leaveTypeId: string; year: number },
+  ) => {
+    const { employeeId, leaveTypeId, year } = input;
+
+    const yearStart = new Date(`${year}-01-01T00:00:00Z`);
+    const yearEnd   = new Date(`${year + 1}-01-01T00:00:00Z`);
+
+    const [existing, accrualSum] = await Promise.all([
+      db.leaveBalance.findUnique({
+        where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear: year } },
+      }),
+      db.leaveAccrualLedger.aggregate({
+        where: { employeeId, leaveTypeId, action: "ACCRUAL", payPeriodEnd: { gte: yearStart, lt: yearEnd } },
+        _sum: { deltaMinutes: true },
+      }),
+    ]);
+
+    if (!existing) throw new Error("No balance record found for this leave type and year.");
+
+    // balanceMinutes is the remaining balance (accrued minus used), so subtract usedMinutes
+    // so the employee's total on the dashboard reconstructs correctly as accruedMinutes.
+    const newBalance = (accrualSum._sum.deltaMinutes ?? 0) - existing.usedMinutes;
+    const delta = newBalance - existing.balanceMinutes;
+
+    await db.$transaction([
+      db.leaveBalance.update({
+        where: { id: existing.id },
+        data: { balanceMinutes: newBalance },
+      }),
+      db.leaveAccrualLedger.create({
+        data: {
+          employeeId,
+          leaveTypeId,
+          action: "ADJUSTMENT",
+          deltaMinutes: delta,
+          balanceAfter: newBalance,
+          note: "Reset to accrual",
+          createdById: actorId,
+        },
+      }),
+    ]);
+
+    await writeAuditLog({
+      tenantId,
+      actorId,
+      entityType: "EMPLOYEE",
+      entityId: employeeId,
+      action: "LEAVE_BALANCE_RESET_TO_ACCRUAL",
+      changes: {
+        before: { balanceMinutes: existing.balanceMinutes },
+        after: { balanceMinutes: newBalance },
       },
     });
 
