@@ -52,6 +52,35 @@ export function startOfDayInTz(utcDate: Date, timezone: string): Date {
  * cannot parse, producing Invalid Date and causing infinite recursion in
  * buildSegmentSpan when end <= NaN is always false.
  */
+/**
+ * Returns the UTC timestamp for 23:59:59 on `dateStr` ("YYYY-MM-DD") in `timezone`.
+ * Used for the auto-close SYSTEM punch so it fires at end-of-day local time
+ * rather than end-of-day UTC.
+ *
+ * Example: dateStr="2026-08-03", timezone="America/New_York" (EDT, UTC-4)
+ *          → 2026-08-03T23:59:59 EDT = 2026-08-04T03:59:59Z
+ */
+export function endOfDayInTz(dateStr: string, timezone: string): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const asIfUtc = new Date(Date.UTC(y, m - 1, d, 23, 59, 59));
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  }).formatToParts(asIfUtc);
+
+  const get = (type: string) =>
+    parseInt(parts.find((p) => p.type === type)?.value ?? "0", 10);
+
+  let hours = get("hour");
+  if (hours === 24) hours = 0;
+
+  const localEquivalentMs = Date.UTC(get("year"), get("month") - 1, get("day"), hours, get("minute"), get("second"));
+  return new Date(2 * asIfUtc.getTime() - localEquivalentMs);
+}
+
 export function nextMidnightInTz(utcDate: Date, timezone: string): Date {
   const localDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(utcDate);
   const [y, m, d] = localDateStr.split("-").map(Number);

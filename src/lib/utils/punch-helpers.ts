@@ -1,15 +1,15 @@
 import { db } from "@/lib/db";
-import type { PunchState } from "@prisma/client";
+import type { PunchSource, PunchState, PunchType } from "@prisma/client";
 
 export async function getCurrentPunchState(employeeId: string): Promise<PunchState> {
   const [lastApproved, lastSystemReset] = await Promise.all([
     db.punch.findFirst({
-      where: { employeeId, isApproved: true, correctedById: null },
+      where: { employeeId, isApproved: true, isRejected: false, correctedById: null },
       orderBy: { roundedTime: "desc" },
       select: { stateAfter: true, roundedTime: true },
     }),
     db.punch.findFirst({
-      where: { employeeId, isApproved: false, source: "SYSTEM" },
+      where: { employeeId, isApproved: false, isRejected: false, source: "SYSTEM" },
       orderBy: { roundedTime: "desc" },
       select: { stateAfter: true, roundedTime: true },
     }),
@@ -23,6 +23,32 @@ export async function getCurrentPunchState(employeeId: string): Promise<PunchSta
   return lastApproved.roundedTime >= lastSystemReset.roundedTime
     ? lastApproved.stateAfter
     : lastSystemReset.stateAfter;
+}
+
+export async function saveRejectedPunch(params: {
+  employeeId: string;
+  timesheetId: string | null;
+  punchType: PunchType;
+  source: PunchSource;
+  stateBefore: PunchState;
+  rejectionReason: string;
+}): Promise<void> {
+  const now = new Date();
+  await db.punch.create({
+    data: {
+      employeeId: params.employeeId,
+      timesheetId: params.timesheetId,
+      punchType: params.punchType,
+      punchTime: now,
+      roundedTime: now,
+      source: params.source,
+      stateBefore: params.stateBefore,
+      stateAfter: params.stateBefore, // state unchanged — punch was rejected
+      isApproved: false,
+      isRejected: true,
+      rejectionReason: params.rejectionReason,
+    },
+  });
 }
 
 export async function findOpenPayPeriod(tenantId: string | null) {

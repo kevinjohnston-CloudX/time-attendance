@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useRef, useState, useEffect, useLayoutEffect } from "react";
+import { useRef, useState, useEffect, useLayoutEffect, useTransition } from "react";
 import { signOut } from "next-auth/react";
 import {
   LayoutDashboard,
@@ -24,7 +24,10 @@ import {
   Layers,
   ShieldCheck,
   KeyRound,
+  Eye,
+  X,
 } from "lucide-react";
+import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { ThemeToggle } from "./theme-toggle";
 
 type NavItem = {
@@ -64,24 +67,68 @@ const adminItems: NavItem[] = [
   { label: "Company Settings", href: "/admin/settings", icon: SlidersHorizontal, permission: "PAY_PERIOD_MANAGE" },
 ];
 
+const VIEW_AS_ROLES = [
+  { value: "EMPLOYEE",      label: "Employee" },
+  { value: "SUPERVISOR",    label: "Supervisor" },
+  { value: "PAYROLL_ADMIN", label: "Payroll Admin" },
+  { value: "HR_ADMIN",      label: "HR Admin" },
+  { value: "SYSTEM_ADMIN",  label: "System Admin" },
+] as const;
+
+const ROLE_LABEL: Record<string, string> = {
+  EMPLOYEE: "Employee",
+  SUPERVISOR: "Supervisor",
+  PAYROLL_ADMIN: "Payroll Admin",
+  HR_ADMIN: "HR Admin",
+  SYSTEM_ADMIN: "System Admin",
+  SUPER_ADMIN: "Super Admin",
+};
+
 interface SidebarProps {
   role: string;
   userName?: string | null;
   permissions?: string[];
+  realRole?: string;
+  viewAsRole?: string | null;
 }
 
-export function Sidebar({ role, userName, permissions }: SidebarProps) {
+export function Sidebar({ role, userName, permissions, realRole, viewAsRole }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [collapsed, setCollapsed] = useState(false);
   const [showAdminPopup, setShowAdminPopup] = useState(false);
   const [showTeamPopup, setShowTeamPopup] = useState(false);
+  const [showRolePicker, setShowRolePicker] = useState(false);
   const [popupTop, setPopupTop] = useState(0);
   const [teamPopupTop, setTeamPopupTop] = useState(0);
   const adminBtnRef = useRef<HTMLButtonElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const teamBtnRef = useRef<HTMLButtonElement>(null);
   const teamPopupRef = useRef<HTMLDivElement>(null);
+  const rolePickerRef = useRef<HTMLDivElement>(null);
+  const canViewAs = realRole === "SYSTEM_ADMIN" || realRole === "SUPER_ADMIN";
+  const availableRoles = VIEW_AS_ROLES.filter((r) =>
+    realRole === "SUPER_ADMIN" ? true : r.value !== "SYSTEM_ADMIN"
+  );
+
+  function handleSetViewAs(roleValue: string) {
+    startTransition(async () => {
+      await setViewAsRole(roleValue);
+      setShowRolePicker(false);
+      router.push("/dashboard");
+      router.refresh();
+    });
+  }
+
+  function handleClearViewAs() {
+    startTransition(async () => {
+      await clearViewAsRole();
+      setShowRolePicker(false);
+      router.push("/dashboard");
+      router.refresh();
+    });
+  }
 
   // Popup left offset depends on sidebar width
   const popupLeft = collapsed ? 64 : 232;
@@ -100,6 +147,9 @@ export function Sidebar({ role, userName, permissions }: SidebarProps) {
         teamPopupRef.current && !teamPopupRef.current.contains(target)
       ) {
         setShowTeamPopup(false);
+      }
+      if (rolePickerRef.current && !rolePickerRef.current.contains(target)) {
+        setShowRolePicker(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -328,46 +378,100 @@ export function Sidebar({ role, userName, permissions }: SidebarProps) {
       {/* User / Logout */}
       <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
         {collapsed ? (
-          /* Collapsed: icon-only column */
           <div className="flex flex-col items-center gap-1">
-            <button
-              title="Expand sidebar"
-              onClick={() => setCollapsed(false)}
-              className="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
-            >
+            <button title="Expand sidebar" onClick={() => setCollapsed(false)}
+              className="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white">
               <ChevronsRight className="h-4 w-4" />
             </button>
             <ThemeToggle iconOnly />
-            <button
-              title="Sign out"
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className="rounded-lg p-2 text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
-            >
+            <button title="Sign out" onClick={() => signOut({ callbackUrl: "/login" })}
+              className="rounded-lg p-2 text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white">
               <LogOut className="h-4 w-4" />
             </button>
           </div>
         ) : (
-          /* Expanded */
           <>
-            <div className="flex items-center justify-between px-2 py-1">
-              {userName && (
-                <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                  {userName}
-                </p>
-              )}
+            {/* View-as banner */}
+            {viewAsRole && (
+              <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-50 px-2 py-1.5 dark:bg-amber-900/20">
+                <div className="flex items-center gap-1.5">
+                  <Eye className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                  <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                    {ROLE_LABEL[viewAsRole] ?? viewAsRole}
+                  </span>
+                </div>
+                <button onClick={handleClearViewAs} disabled={isPending}
+                  title="Return to your role"
+                  className="rounded p-0.5 text-amber-500 hover:bg-amber-100 hover:text-amber-700 disabled:opacity-50 dark:hover:bg-amber-900/40">
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+
+            {/* Username row + role picker trigger */}
+            <div ref={rolePickerRef} className="relative">
               <button
-                title="Collapse sidebar"
-                onClick={() => setCollapsed(true)}
-                className="ml-1 shrink-0 rounded-lg p-1 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                onClick={() => canViewAs && setShowRolePicker((v) => !v)}
+                className={`flex w-full items-center justify-between rounded-lg px-2 py-1 ${
+                  canViewAs ? "cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800" : "cursor-default"
+                }`}
               >
-                <ChevronsLeft className="h-4 w-4" />
+                <div className="min-w-0">
+                  {userName && (
+                    <p className="truncate text-xs font-medium text-zinc-700 dark:text-zinc-300">{userName}</p>
+                  )}
+                  <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                    {ROLE_LABEL[realRole ?? ""] ?? realRole}
+                  </p>
+                </div>
+                {canViewAs && (
+                  <Eye className="ml-1 h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                )}
               </button>
+
+              {/* Role picker popup */}
+              {showRolePicker && (
+                <div className="absolute bottom-full left-0 mb-1 w-full rounded-xl border border-zinc-200 bg-white py-1.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                  <p className="px-3 pb-1 pt-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                    View as
+                  </p>
+                  {availableRoles.map((r) => (
+                    <button
+                      key={r.value}
+                      type="button"
+                      disabled={isPending || r.value === viewAsRole}
+                      onClick={() => handleSetViewAs(r.value)}
+                      className={`flex w-full items-center px-3 py-1.5 text-sm transition-colors disabled:opacity-40 ${
+                        r.value === viewAsRole
+                          ? "bg-blue-50 font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
+                          : "text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
+                      }`}
+                    >
+                      {r.label}
+                      {r.value === viewAsRole && <span className="ml-auto text-xs text-blue-500">active</span>}
+                    </button>
+                  ))}
+                  {viewAsRole && (
+                    <>
+                      <div className="my-1 border-t border-zinc-100 dark:border-zinc-800" />
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        onClick={handleClearViewAs}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Return to {ROLE_LABEL[realRole ?? ""] ?? realRole}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
+
             <ThemeToggle />
-            <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
-            >
+            <button onClick={() => signOut({ callbackUrl: "/login" })}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white">
               <LogOut className="h-4 w-4 shrink-0" />
               Sign Out
             </button>

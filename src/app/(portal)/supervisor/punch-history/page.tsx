@@ -103,6 +103,7 @@ export default async function TeamPunchHistoryPage({
     ? await db.punch.findMany({
         where: {
           employeeId: selectedEmployeeId,
+          isRejected: false,
           punchTime: { gte: rangeStart, lte: rangeEnd },
         },
         orderBy: { punchTime: "asc" },

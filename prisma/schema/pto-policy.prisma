@@ -1,3 +1,32 @@
+enum AccrualPostingFreq {
+  PER_PAY_PERIOD
+  DAILY
+  WEEKLY
+  BI_WEEKLY
+  SEMI_MONTHLY
+  MONTHLY
+  EVERY_2_MONTHS
+  QUARTERLY
+  EVERY_4_MONTHS
+  SEMI_ANNUALLY
+  ANNUALLY
+  ANNUALLY_HIRE
+  ANNUALLY_FIXED
+}
+
+enum AccrualRateMode {
+  YEARLY
+  PER_POSTING
+}
+
+enum ServiceMonthBasis {
+  HIRE_DATE
+  ADJUSTED_HIRE_DATE
+  TITLE_CHANGE_DATE
+  ORIENTATION_DATE
+  USER_DATE_2
+}
+
 model PtoPolicy {
   id          String   @id @default(cuid())
   tenantId    String
@@ -5,6 +34,22 @@ model PtoPolicy {
   description String?
   isDefault   Boolean  @default(false)
   isActive    Boolean  @default(true)
+
+  rateMode           AccrualRateMode     @default(YEARLY)
+  serviceMonthBasis  ServiceMonthBasis   @default(HIRE_DATE)
+
+  posting1Freq  AccrualPostingFreq  @default(PER_PAY_PERIOD)
+  posting1Month Int?
+  posting1Day   Int?
+  dualPosting   Boolean             @default(false)
+  posting2Freq  AccrualPostingFreq?
+  posting2Month Int?
+  posting2Day   Int?
+
+  balanceReset Boolean @default(false)
+  resetMonth   Int?    // 1–12: month on which the annual reset fires
+  resetDay     Int?    // 1–31: day of the month on which the annual reset fires
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -25,8 +70,8 @@ model PtoPolicyRule {
   leaveTypeId     String
   minTenureMonths Int     @default(0)                    // inclusive lower bound (0 = from hire)
   maxTenureMonths Int?                                   // exclusive upper bound; null = open-ended top tier
-  annualHours        Int     @default(0)                 // base yearly PTO entitlement for this tier
-  earnedHoursPerYear Int     @default(0)                 // additional hours earned per complete year of tenure (0 = no longevity bonus)
+  annualHours        Float   @default(0)                 // yearly entitlement (YEARLY mode) or per-posting rate (PER_POSTING mode)
+  earnedHoursPerYear Float   @default(0)                 // additional hours per year of tenure (0 = no longevity bonus)
   carryOverHours     Int?                                // null = unlimited carry-over
 
   ptoPolicy PtoPolicy @relation(fields: [ptoPolicyId], references: [id], onDelete: Cascade)

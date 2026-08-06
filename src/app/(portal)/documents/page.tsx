@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
+import { getEffectiveRole } from "@/lib/rbac/check-permission";
 import { format } from "date-fns";
 import { FileText, Download } from "lucide-react";
 import Link from "next/link";
@@ -17,9 +18,10 @@ export default async function DocumentsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const canViewAny = hasPermission(session.user.role, "DOCUMENT_VIEW_ANY");
-  const canViewOwn = hasPermission(session.user.role, "DOCUMENT_VIEW_OWN");
-  const canUpload = hasPermission(session.user.role, "DOCUMENT_UPLOAD");
+  const effectiveRole = await getEffectiveRole(session.user);
+  const canViewAny = hasPermission(effectiveRole, "DOCUMENT_VIEW_ANY");
+  const canViewOwn = hasPermission(effectiveRole, "DOCUMENT_VIEW_OWN");
+  const canUpload = hasPermission(effectiveRole, "DOCUMENT_UPLOAD");
 
   if (!canViewAny && !canViewOwn) redirect("/dashboard");
 

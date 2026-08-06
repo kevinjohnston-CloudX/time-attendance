@@ -7,6 +7,7 @@ import {
   eachDayOfInterval,
   isToday,
   parseISO,
+  addDays,
 } from "date-fns";
 import {
   ChevronLeft,
@@ -203,7 +204,7 @@ export function TimesheetViewer({
     detail
       ? eachDayOfInterval({
           start: parseUtcDate(detail.payPeriod.startDate),
-          end: parseUtcDate(detail.payPeriod.endDate),
+          end: addDays(parseUtcDate(detail.payPeriod.endDate), -1),
         })
       : [];
 
@@ -260,7 +261,7 @@ export function TimesheetViewer({
                   const ts = sortedTimesheets[currentIndex];
                   if (!ts) return "—";
                   const s = parseUtcDate(ts.payPeriod.startDate);
-                  const e = parseUtcDate(ts.payPeriod.endDate);
+                  const e = addDays(parseUtcDate(ts.payPeriod.endDate), -1);
                   return `${format(s, "MMM d")} – ${format(e, "MMM d, yyyy")}`;
                 })()}
               </span>
@@ -369,7 +370,7 @@ export function TimesheetViewer({
             {[...visibleTimesheets].reverse().map((ts) => {
               const isSelected = ts.payPeriodId === selectedPayPeriodId;
               const s = parseUtcDate(ts.payPeriod.startDate);
-              const e = parseUtcDate(ts.payPeriod.endDate);
+              const e = addDays(parseUtcDate(ts.payPeriod.endDate), -1);
               return (
                 <button
                   key={ts.payPeriodId}
@@ -419,7 +420,7 @@ export function TimesheetViewer({
               <div className="shrink-0">
                 <h2 className="text-lg font-bold text-zinc-900 dark:text-white">
                   {format(parseUtcDate(detail.payPeriod.startDate), "MMM d")} –{" "}
-                  {format(parseUtcDate(detail.payPeriod.endDate), "MMM d, yyyy")}
+                  {format(addDays(parseUtcDate(detail.payPeriod.endDate), -1), "MMM d, yyyy")}
                 </h2>
                 <div className="mt-0.5 flex items-center gap-2">
                   <span
@@ -705,7 +706,7 @@ export function TimesheetViewer({
 
                       // Week grouping
                       const ppStart = parseUtcDate(detail.payPeriod.startDate);
-                      const ppEnd = parseUtcDate(detail.payPeriod.endDate);
+                      const ppEnd = addDays(parseUtcDate(detail.payPeriod.endDate), -1);
                       const weeks: { label: string; start: Date; end: Date }[] = [];
                       let wStart = ppStart;
                       while (wStart <= ppEnd) {

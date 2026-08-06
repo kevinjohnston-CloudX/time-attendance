@@ -39,6 +39,7 @@ export const getAllPayCodes = withRBAC(
 const createPayCodeSchema = z.object({
   code: z.number().int().min(0),
   label: z.string().min(1).max(100),
+  expressCode: z.string().max(4).nullable().optional(),
   payBucket: z.string().nullable().optional(),
   sortOrder: z.number().int().min(0).optional(),
 });
@@ -46,7 +47,7 @@ const createPayCodeSchema = z.object({
 export const createPayCode = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (ctx, input: unknown) => {
-    const { code, label, payBucket, sortOrder } = createPayCodeSchema.parse(input);
+    const { code, label, expressCode, payBucket, sortOrder } = createPayCodeSchema.parse(input);
     const tenantId = ctx.tenantId!;
 
     const existing = await db.payCode.findUnique({
@@ -70,6 +71,7 @@ export const createPayCode = withRBAC(
         tenantId,
         code,
         label,
+        expressCode: expressCode?.trim().toUpperCase() || null,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         payBucket: payBucket ? (payBucket as any) : null,
         sortOrder: nextOrder,
@@ -100,6 +102,7 @@ const updatePayCodeSchema = z.object({
   payCodeId: z.string().min(1),
   code: z.number().int().min(0),
   label: z.string().min(1).max(100),
+  expressCode: z.string().max(4).nullable().optional(),
   payBucket: z.string().nullable().optional(),
   sortOrder: z.number().int().min(0),
   isActive: z.boolean(),
@@ -108,7 +111,7 @@ const updatePayCodeSchema = z.object({
 export const updatePayCode = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (ctx, input: unknown) => {
-    const { payCodeId, code, label, payBucket, sortOrder, isActive } =
+    const { payCodeId, code, label, expressCode, payBucket, sortOrder, isActive } =
       updatePayCodeSchema.parse(input);
     const tenantId = ctx.tenantId!;
 
@@ -124,6 +127,7 @@ export const updatePayCode = withRBAC(
       data: {
         code,
         label,
+        expressCode: expressCode?.trim().toUpperCase() || null,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         payBucket: payBucket ? (payBucket as any) : null,
         sortOrder,

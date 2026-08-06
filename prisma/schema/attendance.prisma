@@ -50,7 +50,7 @@ model Timesheet {
 model Punch {
   id           String      @id @default(cuid())
   employeeId   String
-  timesheetId  String
+  timesheetId  String?     // null for rejected punches that arrived before a pay period existed
   punchType    PunchType
   punchTime    DateTime
   roundedTime  DateTime
@@ -58,6 +58,8 @@ model Punch {
   stateBefore  PunchState
   stateAfter   PunchState
   isApproved   Boolean     @default(true)
+  isRejected   Boolean     @default(false)
+  rejectionReason String?
   approvedById String?
   approvedAt   DateTime?
   note         String?
@@ -70,7 +72,7 @@ model Punch {
   createdAt DateTime @default(now())
 
   employee    Employee    @relation(fields: [employeeId], references: [id])
-  timesheet   Timesheet   @relation(fields: [timesheetId], references: [id])
+  timesheet   Timesheet?  @relation(fields: [timesheetId], references: [id])
   corrects    Punch?      @relation("PunchCorrection", fields: [correctsId], references: [id])
   correctedBy Punch?      @relation("PunchCorrection")
 

@@ -36,7 +36,13 @@ export const getPtoPolicies = withRBAC(
 export const createPtoPolicy = withRBAC(
   "RULES_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: unknown) => {
-    const { name, description, isDefault, rules } = createPtoPolicySchema.parse(input);
+    const {
+      name, description, isDefault, rules,
+      rateMode, serviceMonthBasis,
+      posting1Freq, posting1Month, posting1Day,
+      dualPosting, posting2Freq, posting2Month, posting2Day,
+      balanceReset, resetMonth, resetDay,
+    } = createPtoPolicySchema.parse(input);
 
     const policy = await db.$transaction(async (tx) => {
       if (isDefault) {
@@ -52,6 +58,18 @@ export const createPtoPolicy = withRBAC(
           name,
           description,
           isDefault,
+          rateMode,
+          serviceMonthBasis,
+          posting1Freq,
+          posting1Month: posting1Month ?? null,
+          posting1Day:   posting1Day   ?? null,
+          dualPosting,
+          posting2Freq:  posting2Freq  ?? null,
+          posting2Month: posting2Month ?? null,
+          posting2Day:   posting2Day   ?? null,
+          balanceReset,
+          resetMonth: resetMonth ?? null,
+          resetDay:   resetDay   ?? null,
           rules: {
             create: rules.map((r) => ({
               leaveTypeId:      r.leaveTypeId,
@@ -87,7 +105,14 @@ export const createPtoPolicy = withRBAC(
 export const updatePtoPolicy = withRBAC(
   "RULES_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: unknown) => {
-    const { ptoPolicyId, rules, ...fields } = updatePtoPolicySchema.parse(input);
+    const {
+      ptoPolicyId, rules,
+      rateMode, serviceMonthBasis,
+      posting1Freq, posting1Month, posting1Day,
+      dualPosting, posting2Freq, posting2Month, posting2Day,
+      balanceReset, resetMonth, resetDay,
+      ...fields
+    } = updatePtoPolicySchema.parse(input);
 
     await db.$transaction(async (tx) => {
       if (fields.isDefault) {
@@ -97,7 +122,24 @@ export const updatePtoPolicy = withRBAC(
         });
       }
 
-      await tx.ptoPolicy.update({ where: { id: ptoPolicyId }, data: fields });
+      await tx.ptoPolicy.update({
+        where: { id: ptoPolicyId },
+        data: {
+          ...fields,
+          ...(rateMode           !== undefined && { rateMode }),
+          ...(serviceMonthBasis  !== undefined && { serviceMonthBasis }),
+          ...(posting1Freq       !== undefined && { posting1Freq }),
+          ...(dualPosting   !== undefined && { dualPosting }),
+          posting1Month: posting1Month ?? null,
+          posting1Day:   posting1Day   ?? null,
+          posting2Freq:  posting2Freq  ?? null,
+          posting2Month: posting2Month ?? null,
+          posting2Day:   posting2Day   ?? null,
+          ...(balanceReset !== undefined && { balanceReset }),
+          resetMonth: resetMonth ?? null,
+          resetDay:   resetDay   ?? null,
+        },
+      });
 
       if (rules !== undefined) {
         await tx.ptoPolicyRule.deleteMany({ where: { ptoPolicyId } });

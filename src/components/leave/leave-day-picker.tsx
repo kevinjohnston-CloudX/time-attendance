@@ -22,6 +22,8 @@ export interface ShiftInfo {
   startTime: string; // "HH:mm"
   endTime: string;   // "HH:mm"
   workDays: number[]; // 0=Sun … 6=Sat
+  mealBreakMinutes?: number | null;
+  mealBreakAfterMinutes?: number | null;
 }
 
 interface Props {
@@ -39,10 +41,21 @@ function timeToMins(t: string): number {
 }
 
 function calcDayMinutes(shift: ShiftInfo | null, day: DaySelection): number {
-  const end = shift ? timeToMins(shift.endTime) : 17 * 60;
-  const start = shift ? timeToMins(shift.startTime) : 9 * 60;
-  if (day.type === "FULL") return end - start;
-  return Math.max(0, end - timeToMins(day.leaveFrom));
+  const start          = shift ? timeToMins(shift.startTime) : 9 * 60;
+  const end            = shift ? timeToMins(shift.endTime)   : 17 * 60;
+  const mealMins       = shift?.mealBreakMinutes   ?? 0;
+  const mealAfter      = shift?.mealBreakAfterMinutes ?? 300;
+  const mealStart      = start + mealAfter;
+  const mealEnd        = mealStart + mealMins;
+
+  if (day.type === "FULL") return (end - start) - mealMins;
+
+  const leaveFrom      = timeToMins(day.leaveFrom);
+  const raw            = Math.max(0, end - leaveFrom);
+  const overlapStart   = Math.max(leaveFrom, mealStart);
+  const overlapEnd     = Math.min(end, mealEnd);
+  const overlap        = Math.max(0, overlapEnd - overlapStart);
+  return Math.max(0, raw - overlap);
 }
 
 function fmtMins(mins: number): string {

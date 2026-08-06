@@ -21,6 +21,7 @@ export default async function PunchHistoryPage() {
     ? await db.punch.findMany({
         where: {
           employeeId,
+          isRejected: false,
           timesheet: { payPeriodId: payPeriod.id },
         },
         orderBy: { punchTime: "desc" },

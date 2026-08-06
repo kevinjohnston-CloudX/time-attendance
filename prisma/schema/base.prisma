@@ -102,6 +102,7 @@ enum AccrualAction {
   ADJUSTMENT
   CARRY_OVER
   FORFEITURE
+  BALANCE_RESET
 }
 
 enum ExceptionType {

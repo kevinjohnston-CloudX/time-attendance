@@ -46,20 +46,32 @@ export async function createLeaveRequestCore(
 
   const employee = await db.employee.findUniqueOrThrow({
     where: { id: employeeId },
-    select: { shift: { select: { startTime: true, endTime: true } } },
+    select: {
+      shift: { select: { startTime: true, endTime: true } },
+      ruleSet: { select: { mealBreakMinutes: true, mealBreakAfterMinutes: true } },
+    },
   });
 
-  const shiftStartMins = employee.shift ? timeToMins(employee.shift.startTime) : 9 * 60;
-  const shiftEndMins   = employee.shift ? timeToMins(employee.shift.endTime)   : 17 * 60;
+  const shiftStartMins    = employee.shift ? timeToMins(employee.shift.startTime) : 9 * 60;
+  const shiftEndMins      = employee.shift ? timeToMins(employee.shift.endTime)   : 17 * 60;
+  const mealBreakMins     = employee.ruleSet?.mealBreakMinutes     ?? 0;
+  const mealBreakAfter    = employee.ruleSet?.mealBreakAfterMinutes ?? 300;
+  const mealBreakStart    = shiftStartMins + mealBreakAfter;
+  const mealBreakEnd      = mealBreakStart + mealBreakMins;
 
   const sorted = [...selectedDays].sort((a, b) => a.date.localeCompare(b.date));
 
   let durationMinutes = 0;
   for (const day of sorted) {
     if (day.type === "FULL") {
-      durationMinutes += shiftEndMins - shiftStartMins;
+      durationMinutes += (shiftEndMins - shiftStartMins) - mealBreakMins;
     } else {
-      durationMinutes += Math.max(0, shiftEndMins - timeToMins(day.leaveFrom));
+      const leaveFrom    = timeToMins(day.leaveFrom);
+      const raw          = Math.max(0, shiftEndMins - leaveFrom);
+      const overlapStart = Math.max(leaveFrom, mealBreakStart);
+      const overlapEnd   = Math.min(shiftEndMins, mealBreakEnd);
+      const overlap      = Math.max(0, overlapEnd - overlapStart);
+      durationMinutes   += Math.max(0, raw - overlap);
     }
   }
 

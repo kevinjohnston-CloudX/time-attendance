@@ -4,7 +4,7 @@ import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { applyRounding } from "@/lib/utils/date";
-import { getCurrentPunchState, findOpenPayPeriod } from "@/lib/utils/punch-helpers";
+import { getCurrentPunchState, findOpenPayPeriod, saveRejectedPunch } from "@/lib/utils/punch-helpers";
 import { validateTransition } from "@/lib/state-machines/punch-state";
 import { timeclockScanSchema } from "@/lib/validators/punch.schema";
 import type { PunchType, PunchState } from "@prisma/client";
@@ -137,23 +137,26 @@ export async function POST(req: NextRequest) {
   // 4. Find open pay period
   const payPeriod = await findOpenPayPeriod(employee.tenantId);
   if (!payPeriod) {
+    await saveRejectedPunch({ employeeId: employee.id, timesheetId: null, punchType: "CLOCK_IN", source: "KIOSK", stateBefore: "OUT", rejectionReason: "No active pay period" });
     return NextResponse.json(
       { success: false, error: "No active pay period" },
       { status: 400 }
     );
   }
 
-  // 5. Find or create timesheet
+  // 5. Find or create timesheet + get current state
   const timesheet = await findOrCreateTimesheet(employee.id, payPeriod.id);
+  const stateBefore = await getCurrentPunchState(employee.id);
+
   if (timesheet.status === "LOCKED") {
+    await saveRejectedPunch({ employeeId: employee.id, timesheetId: timesheet.id, punchType: "CLOCK_IN", source: "KIOSK", stateBefore, rejectionReason: "Timesheet is locked for this pay period" });
     return NextResponse.json(
       { success: false, error: "Timesheet is locked for this pay period" },
       { status: 409 }
     );
   }
 
-  // 6. Get current state and auto-detect punch type
-  const stateBefore = await getCurrentPunchState(employee.id);
+  // 6. Auto-detect punch type and validate transition
   const punchType = await detectPunchType(
     employee.id,
     timesheet.id,
@@ -164,6 +167,7 @@ export async function POST(req: NextRequest) {
   // 7. Validate state transition
   const transition = validateTransition(stateBefore, punchType);
   if (!transition.valid) {
+    await saveRejectedPunch({ employeeId: employee.id, timesheetId: timesheet.id, punchType, source: "KIOSK", stateBefore, rejectionReason: transition.error ?? "Invalid state transition" });
     return NextResponse.json(
       { success: false, error: transition.error },
       { status: 409 }
@@ -217,7 +221,7 @@ export async function POST(req: NextRequest) {
     });
 
     // 10. Rebuild segments
-    await rebuildSegments(punch.timesheetId, employee.ruleSet);
+    await rebuildSegments(punch.timesheetId!, employee.ruleSet);
 
     return NextResponse.json({
       success: true,

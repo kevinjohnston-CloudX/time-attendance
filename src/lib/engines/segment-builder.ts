@@ -1,7 +1,7 @@
 import { format, eachDayOfInterval, isWeekend } from "date-fns";
 import { db } from "@/lib/db";
 import { applyOvertime } from "@/lib/engines/overtime-engine";
-import { startOfDayInTz, nextMidnightInTz } from "@/lib/utils/date";
+import { startOfDayInTz, nextMidnightInTz, endOfDayInTz } from "@/lib/utils/date";
 import type { Punch, RuleSet, PayBucket, SegmentType, HolidayCreditMethod } from "@prisma/client";
 
 const SALARY_DAILY_MINUTES = 480; // 8 h
@@ -664,8 +664,8 @@ async function syncMissingPunchExceptions(
       const lastPunch = dayPunches[dayPunches.length - 1];
       if (lastPunch.stateAfter === "OUT") continue; // already OUT — no reset needed
 
-      // End-of-day marker: 23:59:59 UTC (safely after any real punch on a past day)
-      const eodTime = new Date(ds + "T23:59:59.000Z");
+      // End-of-day marker: 23:59:59 Eastern Time (America/New_York)
+      const eodTime = endOfDayInTz(ds, "America/New_York");
 
       const alreadyExists = await db.punch.findFirst({
         where: { employeeId, timesheetId, isApproved: false, source: "SYSTEM", punchType: "CLOCK_OUT", roundedTime: eodTime },

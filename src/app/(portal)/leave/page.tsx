@@ -24,7 +24,10 @@ export default async function MyLeavePage() {
     getLeaveTypes(),
     db.employee.findFirst({
       where: { userId: session.user.id },
-      select: { shift: { select: { startTime: true, endTime: true, workDays: true } } },
+      select: {
+        shift: { select: { startTime: true, endTime: true, workDays: true } },
+        ruleSet: { select: { mealBreakMinutes: true, mealBreakAfterMinutes: true } },
+      },
     }),
   ]);
 
@@ -62,7 +65,7 @@ export default async function MyLeavePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">My Leave</h1>
-        <RequestLeaveModal leaveTypes={leaveTypes} shift={employee?.shift ?? null} />
+        <RequestLeaveModal leaveTypes={leaveTypes} shift={employee?.shift ? { ...employee.shift, ...employee.ruleSet } : null} />
       </div>
 
       {/* Balances */}

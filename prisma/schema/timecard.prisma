@@ -3,8 +3,9 @@
 model PayCode {
   id       String @id @default(cuid())
   tenantId String
-  code     Int    /// Numeric code (e.g. 0, 1, 5, 42)
-  label    String /// Human-readable label (e.g. "Regular Hours")
+  code        Int    /// Numeric code (e.g. 0, 1, 5, 42)
+  label       String /// Human-readable label (e.g. "Regular Hours")
+  expressCode String? /// Up to 4-char code for payroll export (e.g. "WKHR", "PTO")
   /// Maps to the PayBucket enum for overtime/payroll classification
   payBucket PayBucket?
   isActive  Boolean @default(true)
@@ -16,6 +17,7 @@ model PayCode {
   segments WorkSegment[]
 
   @@unique([tenantId, code])
+  @@unique([tenantId, expressCode])
   @@map("pay_codes")
 }
 

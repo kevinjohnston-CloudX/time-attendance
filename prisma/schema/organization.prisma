@@ -92,8 +92,12 @@ model Employee {
   ruleSetId    String
   shiftId      String?
   isActive     Boolean  @default(true)
-  hireDate     DateTime
-  terminatedAt DateTime?
+  hireDate         DateTime
+  adjustedHireDate DateTime?  /// Seniority date override — used when serviceMonthBasis = ADJUSTED_HIRE_DATE
+  titleChangeDate  DateTime?  /// Date of last title/role change
+  orientationDate  DateTime?  /// Orientation / training completion date
+  userDate2        DateTime?  /// Custom configurable date field
+  terminatedAt     DateTime?
 
   // Work info
   jobTitle          String?

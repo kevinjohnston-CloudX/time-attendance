@@ -51,6 +51,10 @@ function PayCodeFields({ pc }: { pc?: PayCode }) {
         <input name="label" required defaultValue={pc?.label ?? ""} placeholder="e.g. PTO" className={inputCls} />
       </div>
       <div>
+        <label className="mb-1 block text-xs text-zinc-500">Express Code</label>
+        <input name="expressCode" maxLength={4} defaultValue={pc?.expressCode ?? ""} placeholder="e.g. WKHR" className={inputCls} style={{ textTransform: "uppercase" }} />
+      </div>
+      <div className="sm:col-span-2">
         <label className="mb-1 block text-xs text-zinc-500">Pay Bucket</label>
         <select name="payBucket" defaultValue={pc?.payBucket ?? ""} className={inputCls}>
           <option value="">— None —</option>
@@ -109,6 +113,7 @@ export function PayCodesManager({ payCodes }: Props) {
       const result = await createPayCode({
         code: Number(fd.get("code")),
         label: fd.get("label") as string,
+        expressCode: (fd.get("expressCode") as string) || null,
         payBucket: (fd.get("payBucket") as string) || null,
       });
       if (!result.success) { setError(result.error); return; }
@@ -127,6 +132,7 @@ export function PayCodesManager({ payCodes }: Props) {
         payCodeId: pc.id,
         code: Number(fd.get("code")),
         label: fd.get("label") as string,
+        expressCode: (fd.get("expressCode") as string) || null,
         payBucket: (fd.get("payBucket") as string) || null,
         sortOrder,
         isActive: fd.get("isActive") === "true",
@@ -170,6 +176,11 @@ export function PayCodesManager({ payCodes }: Props) {
                 {pc.code}
               </span>
               <span className={`font-medium ${pc.isActive ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"}`}>{pc.label}</span>
+              {pc.expressCode && (
+                <span className="rounded bg-blue-50 px-1.5 py-0.5 text-xs font-mono font-medium text-blue-600 dark:bg-blue-900/20 dark:text-blue-400">
+                  {pc.expressCode}
+                </span>
+              )}
               {pc.payBucket && <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">{pc.payBucket}</span>}
             </div>
             <div className="flex items-center gap-2">

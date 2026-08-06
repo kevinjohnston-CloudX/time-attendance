@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Sidebar } from "@/components/layout/sidebar";
 import { exitTenant } from "@/actions/super-admin.actions";
-import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
+import { SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
 import { getPermissions } from "@/lib/rbac/permissions";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 
@@ -17,17 +17,18 @@ export default async function PortalLayout({
   if (!session?.user) redirect("/login");
 
   let tenantBannerName: string | null = null;
-  let sidebarRole = session.user.role ?? "EMPLOYEE";
+  const realRole = session.user.role ?? "EMPLOYEE";
+  let sidebarRole = realRole;
 
   // Build permission list for sidebar filtering — always driven by the enum role
   let userPermissions: string[] = [];
-  if (session.user.role === "SUPER_ADMIN") {
+  if (realRole === "SUPER_ADMIN") {
     userPermissions = Object.keys(LEGACY_MAP);
   } else {
     userPermissions = getPermissions(sidebarRole as Parameters<typeof getPermissions>[0]);
   }
 
-  if (session.user.role === "SUPER_ADMIN") {
+  if (realRole === "SUPER_ADMIN") {
     const cookieStore = await cookies();
     const tenantOverride = cookieStore.get(SUPER_ADMIN_TENANT_COOKIE)?.value;
     if (!tenantOverride) redirect("/super-admin");
@@ -40,6 +41,18 @@ export default async function PortalLayout({
 
     tenantBannerName = tenant.name;
     sidebarRole = "SYSTEM_ADMIN";
+  }
+
+  // View-as role override (SYSTEM_ADMIN and SUPER_ADMIN only)
+  let viewAsRole: string | null = null;
+  if (["SYSTEM_ADMIN", "SUPER_ADMIN"].includes(realRole)) {
+    const cookieStore = await cookies();
+    const cookieVal = cookieStore.get(VIEW_AS_ROLE_COOKIE)?.value;
+    if (cookieVal) {
+      viewAsRole = cookieVal;
+      sidebarRole = viewAsRole;
+      userPermissions = getPermissions(viewAsRole as Parameters<typeof getPermissions>[0]);
+    }
   }
 
   return (
@@ -63,7 +76,7 @@ export default async function PortalLayout({
         </div>
       )}
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar role={sidebarRole} userName={session.user.name} permissions={userPermissions} />
+        <Sidebar role={sidebarRole} userName={session.user.name} permissions={userPermissions} realRole={realRole} viewAsRole={viewAsRole} />
         <main className="flex-1 overflow-y-auto">
           <div className="px-6 py-8">{children}</div>
         </main>

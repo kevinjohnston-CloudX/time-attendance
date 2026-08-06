@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
+import { getEffectiveRole } from "@/lib/rbac/check-permission";
 import { Users, Building2, FolderOpen, Calendar, Settings, FileText, RefreshCw, SlidersHorizontal, CalendarClock } from "lucide-react";
 
 const adminCards = [
@@ -20,8 +21,9 @@ export default async function AdminPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
+  const effectiveRole = await getEffectiveRole(session.user);
   const visibleCards = adminCards.filter((c) =>
-    hasPermission(session.user!.role, c.perm)
+    hasPermission(effectiveRole, c.perm)
   );
 
   if (visibleCards.length === 0) redirect("/dashboard");

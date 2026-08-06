@@ -89,7 +89,7 @@ export async function GET(
 
   } else if (exportFormat === "punches") {
     const punches = await db.punch.findMany({
-      where: { timesheet: { payPeriodId: id }, correctedById: null },
+      where: { timesheet: { payPeriodId: id }, correctedById: null, isRejected: false },
       include: {
         employee: { include: { user: { select: { name: true } } } },
       },

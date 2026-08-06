@@ -132,7 +132,7 @@ export const approveMissedPunch = withRBAC(
       // Resolve the matching MISSING_PUNCH exception
       await tx.exception.updateMany({
         where: {
-          timesheetId: punch.timesheetId,
+          timesheetId: punch.timesheetId!,
           exceptionType: "MISSING_PUNCH",
           resolvedAt: null,
         },
@@ -153,14 +153,14 @@ export const approveMissedPunch = withRBAC(
     });
 
     const ts = await db.timesheet.findUniqueOrThrow({
-      where: { id: updated.timesheetId },
+      where: { id: updated.timesheetId! },
       include: { employee: { include: { ruleSet: true } } },
     });
-    await rebuildSegments(updated.timesheetId, ts.employee.ruleSet);
+    await rebuildSegments(updated.timesheetId!, ts.employee.ruleSet);
 
     revalidatePath("/time/history");
     revalidatePath("/supervisor/exceptions");
-    revalidatePath(`/time/timesheet/${updated.timesheetId}`);
+    revalidatePath(`/time/timesheet/${updated.timesheetId!}`);
     return updated;
   }
 );
@@ -181,7 +181,7 @@ export const deletePunch = withRBAC(
       throw new Error("Punch has already been corrected or deleted.");
     }
 
-    const ts = await db.timesheet.findUniqueOrThrow({ where: { id: original.timesheetId } });
+    const ts = await db.timesheet.findUniqueOrThrow({ where: { id: original.timesheetId! } });
     if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
       throw new Error("Cannot modify a locked or approved timesheet.");
     }
@@ -224,11 +224,11 @@ export const deletePunch = withRBAC(
       return t;
     });
 
-    await rebuildSegments(original.timesheetId, original.employee.ruleSet);
+    await rebuildSegments(original.timesheetId!, original.employee.ruleSet);
 
     revalidatePath("/time/history");
     revalidatePath("/payroll/timecards");
-    revalidatePath(`/time/timesheet/${tombstone.timesheetId}`);
+    revalidatePath(`/time/timesheet/${tombstone.timesheetId!}`);
   }
 );
 

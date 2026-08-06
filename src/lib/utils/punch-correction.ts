@@ -47,7 +47,7 @@ export async function createCorrectionPunch(
   const correction = await tx.punch.create({
     data: {
       employeeId: original.employeeId,
-      timesheetId: original.timesheetId,
+      timesheetId: original.timesheetId!,
       punchType: original.punchType,
       punchTime: newPunchTime,
       roundedTime,
@@ -80,7 +80,7 @@ export async function createCorrectionPunch(
 
   return {
     correction,
-    timesheetId: original.timesheetId,
+    timesheetId: original.timesheetId!,
     ruleSet: original.employee.ruleSet,
   };
 }

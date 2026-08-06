@@ -17,7 +17,7 @@ async function getTodayPunches(employeeId: string) {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   return db.punch.findMany({
-    where: { employeeId, punchTime: { gte: start } },
+    where: { employeeId, isRejected: false, punchTime: { gte: start } },
     orderBy: { punchTime: "asc" },
   });
 }

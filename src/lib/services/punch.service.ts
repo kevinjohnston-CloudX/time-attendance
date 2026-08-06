@@ -6,6 +6,7 @@ import { applyRounding } from "@/lib/utils/date";
 import {
   getCurrentPunchState,
   findOpenPayPeriod,
+  saveRejectedPunch,
 } from "@/lib/utils/punch-helpers";
 import { validateTransition } from "@/lib/state-machines/punch-state";
 import { recordPunchSchema } from "@/lib/validators/punch.schema";
@@ -30,15 +31,24 @@ export async function recordPunchCore(
   });
 
   const payPeriod = await findOpenPayPeriod(tenantId);
-  if (!payPeriod) throw new Error("No active pay period. Contact payroll.");
+  if (!payPeriod) {
+    await saveRejectedPunch({ employeeId, timesheetId: null, punchType, source, stateBefore: "OUT", rejectionReason: "No active pay period" });
+    throw new Error("No active pay period. Contact payroll.");
+  }
 
   const timesheet = await findOrCreateTimesheet(employeeId, payPeriod.id);
-  if (timesheet.status === "LOCKED")
-    throw new Error("Timesheet is locked for this pay period.");
-
   const stateBefore = await getCurrentPunchState(employeeId);
+
+  if (timesheet.status === "LOCKED") {
+    await saveRejectedPunch({ employeeId, timesheetId: timesheet.id, punchType, source, stateBefore, rejectionReason: "Timesheet is locked for this pay period" });
+    throw new Error("Timesheet is locked for this pay period.");
+  }
+
   const transition = validateTransition(stateBefore, punchType);
-  if (!transition.valid) throw new Error(transition.error);
+  if (!transition.valid) {
+    await saveRejectedPunch({ employeeId, timesheetId: timesheet.id, punchType, source, stateBefore, rejectionReason: transition.error ?? "Invalid state transition" });
+    throw new Error(transition.error);
+  }
 
   const punchTime = new Date();
   const roundedTime = applyRounding(
@@ -74,7 +84,7 @@ export async function recordPunchCore(
     return p;
   });
 
-  await rebuildSegments(punch.timesheetId, employee.ruleSet);
+  await rebuildSegments(punch.timesheetId!, employee.ruleSet);
 
   return punch;
 }

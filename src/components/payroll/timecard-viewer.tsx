@@ -7,6 +7,7 @@ import {
   eachDayOfInterval,
   parseISO,
   isToday,
+  addDays,
 } from "date-fns";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -596,7 +597,7 @@ export function TimecardViewer({
   const days = (() => {
     if (!timecard) return null;
     const periodStart = customStartDate ?? parseUtcDate(timecard.payPeriod.startDate);
-    const periodEnd = customEndDate ?? parseUtcDate(timecard.payPeriod.endDate);
+    const periodEnd = customEndDate ?? addDays(parseUtcDate(timecard.payPeriod.endDate), -1);
     // Cap the end at today when today falls inside this pay period (and no custom range is set)
     const todayMidnight = new Date(today);
     const effectiveEnd =
@@ -1005,7 +1006,7 @@ export function TimecardViewer({
               const sel = sortedPeriods[currentIndex];
               if (!sel) return "—";
               const s = parseUtcDate(sel.startDate);
-              const e = parseUtcDate(sel.endDate);
+              const e = addDays(parseUtcDate(sel.endDate), -1);
               return `${format(s, "MM/dd/yyyy")} (${format(s, "EEE")}) – ${format(e, "MM/dd/yyyy")} (${format(e, "EEE")})`;
             })()}
           </span>
@@ -2375,7 +2376,7 @@ export function TimecardViewer({
                                 onChange={(e) => setNewEntryDate(e.target.value)}
                                 required
                                 min={format(parseUtcDate(timecard.payPeriod.startDate), "yyyy-MM-dd")}
-                                max={format(parseUtcDate(timecard.payPeriod.endDate), "yyyy-MM-dd")}
+                                max={format(addDays(parseUtcDate(timecard.payPeriod.endDate), -1), "yyyy-MM-dd")}
                                 className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
                               />
                             </div>
@@ -2629,9 +2630,9 @@ export function TimecardViewer({
                             const ppStart = parseUtcDate(
                               timecard.payPeriod.startDate
                             );
-                            const ppEnd = parseUtcDate(
+                            const ppEnd = addDays(parseUtcDate(
                               timecard.payPeriod.endDate
-                            );
+                            ), -1);
                             const weeks: {
                               label: string;
                               start: Date;
