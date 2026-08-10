@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { adjustLeaveBalance, resetLeaveBalanceToAccrual } from "@/actions/admin.actions";
+import { adjustLeaveBalance, resetLeaveBalanceToAccrual, postAccrualCorrection } from "@/actions/admin.actions";
 
 interface BalanceRow {
   leaveTypeId: string;
@@ -16,6 +16,8 @@ interface BalanceRow {
   year: number;
   policyAnnualHours: number | null;
   policyName: string | null;
+  policyRateMode: string | null;
+  expectedAccrualMinutes: number | null;
 }
 
 interface Props {
@@ -31,16 +33,113 @@ const btnCls =
 
 function fmtHours(minutes: number): string {
   if (minutes === 0) return "0h";
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  const h = Math.floor(Math.abs(minutes) / 60);
+  const m = Math.abs(minutes) % 60;
+  const val = m === 0 ? `${h}h` : `${h}h ${m}m`;
+  return minutes < 0 ? `-${val}` : val;
 }
 
 function fmtHoursPerYear(hours: number): string {
   return Number.isInteger(hours) ? `${hours}h/yr` : `${hours.toFixed(1)}h/yr`;
 }
 
-function BalanceRow({ row, employeeId }: { row: BalanceRow; employeeId: string }) {
+function RecalcSection({ row, employeeId }: { row: BalanceRow; employeeId: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  if (row.expectedAccrualMinutes === null) {
+    return (
+      <p className="mt-1.5 text-[10px] text-zinc-400">
+        Accrual recalculation N/A — driven by pay period postings.
+      </p>
+    );
+  }
+
+  const delta = row.expectedAccrualMinutes - row.accruedMinutes;
+  const onTrack = Math.abs(delta) < 2;
+
+  if (onTrack) {
+    return (
+      <p className="mt-1.5 text-[10px] text-emerald-600 dark:text-emerald-400">
+        ✓ Accrual on track ({fmtHours(row.accruedMinutes)} accrued, {fmtHours(row.expectedAccrualMinutes)} expected)
+      </p>
+    );
+  }
+
+  function handlePost(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    startTransition(async () => {
+      const result = await postAccrualCorrection({
+        employeeId,
+        leaveTypeId: row.leaveTypeId,
+        year: row.year,
+        deltaMinutes: delta,
+        note,
+      });
+      if (!result.success) { setError((result as { success: false; error: string }).error); return; }
+      setOpen(false);
+      setNote("");
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="mt-2">
+      <div className="flex items-center gap-2">
+        <p className="text-[10px] text-amber-600 dark:text-amber-400">
+          Accrual mismatch — expected {fmtHours(row.expectedAccrualMinutes)}, posted {fmtHours(row.accruedMinutes)} ({delta > 0 ? "+" : ""}{fmtHours(delta)})
+        </p>
+        {!open && (
+          <button
+            onClick={() => setOpen(true)}
+            className="shrink-0 text-[10px] text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400"
+          >
+            Post correction
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <form onSubmit={handlePost} className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/40 dark:bg-amber-900/10">
+          <p className="mb-2 text-xs text-amber-700 dark:text-amber-300">
+            This will post an ADJUSTMENT of <strong>{delta > 0 ? "+" : ""}{fmtHours(delta)}</strong> to bring the accrual to {fmtHours(row.expectedAccrualMinutes)}.
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="min-w-52 flex-1">
+              <label className="mb-1 block text-xs text-zinc-500">Reason (required)</label>
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="e.g. Catch-up for missed semi-monthly posting"
+                required
+                className={`w-full ${inputCls}`}
+              />
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" disabled={isPending || !note.trim()} className={btnCls}>
+                {isPending ? "Posting…" : "Post correction"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setOpen(false); setError(null); setNote(""); }}
+                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+          {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
+        </form>
+      )}
+    </div>
+  );
+}
+
+function BalanceRowItem({ row, employeeId }: { row: BalanceRow; employeeId: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -86,61 +185,53 @@ function BalanceRow({ row, employeeId }: { row: BalanceRow; employeeId: string }
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-zinc-900 dark:text-white">{row.leaveTypeName}</p>
-          <div className="mt-1.5 grid grid-cols-5 gap-3 pr-2">
+          <div className="mt-1.5 grid grid-cols-4 gap-3 pr-2">
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Policy Total</p>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                {row.policyRateMode === "PER_POSTING" ? "Per Posting" : "Annual Total"}
+              </p>
               <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
-                {row.policyAnnualHours != null ? fmtHoursPerYear(row.policyAnnualHours) : <span className="text-zinc-400 font-normal text-xs">—</span>}
+                {row.policyAnnualHours != null
+                  ? row.policyRateMode === "PER_POSTING"
+                    ? `${Number.isInteger(row.policyAnnualHours) ? row.policyAnnualHours : row.policyAnnualHours.toFixed(2).replace(/\.?0+$/, "")}h/post`
+                    : fmtHoursPerYear(row.policyAnnualHours)
+                  : <span className="font-normal text-xs text-zinc-400">No policy</span>
+                }
               </p>
-              {row.policyName && <p className="text-[10px] text-zinc-400 truncate">{row.policyName}</p>}
             </div>
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Accrued YTD</p>
-              <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">{fmtHours(row.accruedMinutes)}</p>
-              {row.policyAnnualHours != null && (
-                <p className="text-[10px] text-zinc-400">
-                  of {fmtHoursPerYear(row.policyAnnualHours)}
-                </p>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Accrued</p>
+              <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                {fmtHours(row.accruedMinutes)}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Approved</p>
+              <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                {fmtHours(row.approvedMinutes)}
+              </p>
+              {row.pendingMinutes > 0 && (
+                <p className="text-[10px] text-zinc-400">{fmtHours(row.pendingMinutes)} pend.</p>
               )}
-            </div>
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Used YTD</p>
-              <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">{fmtHours(row.usedMinutes)}</p>
-            </div>
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Balance</p>
-              <p className={`mt-0.5 text-sm font-semibold ${
-                row.balanceMinutes < 0
-                  ? "text-red-600 dark:text-red-400"
-                  : "text-zinc-700 dark:text-zinc-200"
-              }`}>
-                {fmtHours(row.balanceMinutes)}
-              </p>
             </div>
             <div>
               <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Available</p>
               {(() => {
                 const available = row.balanceMinutes - row.approvedMinutes - row.pendingMinutes;
                 return (
-                  <>
-                    <p className={`mt-0.5 text-sm font-semibold ${
-                      available < 0 ? "text-red-600 dark:text-red-400" : "text-zinc-700 dark:text-zinc-200"
-                    }`}>
-                      {fmtHours(available)}
-                    </p>
-                    {(row.approvedMinutes > 0 || row.pendingMinutes > 0) && (
-                      <p className="text-[10px] text-zinc-400">
-                        {[
-                          row.approvedMinutes > 0 && `${fmtHours(row.approvedMinutes)} appr.`,
-                          row.pendingMinutes > 0 && `${fmtHours(row.pendingMinutes)} pend.`,
-                        ].filter(Boolean).join(" · ")}
-                      </p>
-                    )}
-                  </>
+                  <p className={`mt-0.5 text-sm font-semibold ${
+                    available < 0 ? "text-red-600 dark:text-red-400" : "text-zinc-700 dark:text-zinc-200"
+                  }`}>
+                    {fmtHours(available)}
+                  </p>
                 );
               })()}
             </div>
           </div>
+
+          {row.policyName && (
+            <RecalcSection row={row} employeeId={employeeId} />
+          )}
         </div>
         {!open && (
           <div className="flex shrink-0 flex-col items-end gap-1">
@@ -215,7 +306,7 @@ export function LeaveBalancesPanel({ employeeId, balances, year }: Props) {
   return (
     <div>
       {balances.map((row) => (
-        <BalanceRow key={row.leaveTypeId} row={row} employeeId={employeeId} />
+        <BalanceRowItem key={row.leaveTypeId} row={row} employeeId={employeeId} />
       ))}
     </div>
   );

@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { updateEmployee } from "@/actions/admin.actions";
 import { LeaveBalancesPanel } from "@/components/admin/leave-balances-panel";
-import { EmployeePtoPolicyPanel } from "@/components/admin/employee-pto-policy-panel";
 import { LeaveHistoryPanel, type LeaveLogEntry } from "@/components/admin/leave-history-panel";
 import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
 
@@ -40,10 +39,10 @@ interface Props {
     year: number;
     policyAnnualHours: number | null;
     policyName: string | null;
+    policyRateMode: string | null;
+    expectedAccrualMinutes: number | null;
   }[];
   year: number;
-  ptoPolicies: { id: string; name: string }[];
-  currentPolicyId: string | null;
   leaveLog: LeaveLogEntry[];
   logs: Array<{
     id: string;
@@ -65,7 +64,7 @@ const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-
 
 type Tab = "general" | "personal" | "pay" | "logs";
 
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, balances, year, ptoPolicies, currentPolicyId, leaveLog, logs }: Props) {
+export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, balances, year, leaveLog, logs }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -486,26 +485,37 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
           </div>
         </form>
 
-        {/* PTO Policy */}
-        <div className="mt-8">
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-white">PTO Policy</h2>
-          <p className="mt-0.5 text-sm text-zinc-500">
-            Assign a PTO policy to this employee. Overrides the site default for all leave types the policy covers.
-          </p>
-          <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            <EmployeePtoPolicyPanel
-              employeeId={employee.id}
-              policies={ptoPolicies}
-              currentPolicyId={currentPolicyId}
-            />
-          </div>
-        </div>
-
         {/* Leave Balances */}
         <div className="mt-8">
           <h2 className="text-base font-semibold text-zinc-900 dark:text-white">
             Leave Balances — {year}
           </h2>
+
+          {/* Applied policies summary */}
+          {(() => {
+            const policyMap = new Map<string, string[]>();
+            for (const b of balances) {
+              if (!b.policyName) continue;
+              const types = policyMap.get(b.policyName) ?? [];
+              types.push(b.leaveTypeName);
+              policyMap.set(b.policyName, types);
+            }
+            return policyMap.size > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {Array.from(policyMap.entries()).map(([name, types]) => (
+                  <div key={name} className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 dark:border-zinc-700 dark:bg-zinc-800/50">
+                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-200">{name}</span>
+                    <span className="ml-1.5 text-xs text-zinc-400">{types.join(", ")}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-zinc-400">
+                No PTO policies applied — assign policies to this employee&apos;s pay category.
+              </p>
+            );
+          })()}
+
           <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
             <LeaveBalancesPanel
               employeeId={employee.id}

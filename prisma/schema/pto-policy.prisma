@@ -46,17 +46,29 @@ model PtoPolicy {
   posting2Month Int?
   posting2Day   Int?
 
+  postingAnchorDate DateTime? @db.Date  // reference date for fixed-cycle frequencies (e.g. bi-weekly)
+
   balanceReset Boolean @default(false)
   resetMonth   Int?    // 1–12: month on which the annual reset fires
   resetDay     Int?    // 1–31: day of the month on which the annual reset fires
 
+  leaveTypeId String?  // single leave type this policy covers (null = legacy multi-type)
+  leaveType   LeaveType? @relation(fields: [leaveTypeId], references: [id])
+
+  maxDailyHours        Float?   // null = no per-day cap on leave requests
+  allowNegativeBalance Boolean  @default(false)
+  maxNegativeHours     Float?   // null = unlimited borrow when allowNegativeBalance is true
+  carryOverEnabled           Boolean @default(true)  // when false, no carry-over posts at balance reset
+  carryOverRespectMaxBalance Boolean @default(false) // when true, cross-bucket carry-over won't exceed destination's max balance
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  tenant       Tenant                      @relation(fields: [tenantId], references: [id])
-  rules        PtoPolicyRule[]
-  siteLinks    SitePtoPolicy[]
-  empOverrides EmployeePtoPolicyOverride[]
+  tenant        Tenant                      @relation(fields: [tenantId], references: [id])
+  rules         PtoPolicyRule[]
+  siteLinks     SitePtoPolicy[]
+  empOverrides  EmployeePtoPolicyOverride[]
+  categoryLinks PayCategoryPtoPolicy[]
 
   @@unique([tenantId, name])
   @@map("pto_policies")
@@ -72,10 +84,15 @@ model PtoPolicyRule {
   maxTenureMonths Int?                                   // exclusive upper bound; null = open-ended top tier
   annualHours        Float   @default(0)                 // yearly entitlement (YEARLY mode) or per-posting rate (PER_POSTING mode)
   earnedHoursPerYear Float   @default(0)                 // additional hours per year of tenure (0 = no longevity bonus)
-  carryOverHours     Int?                                // null = unlimited carry-over
+  carryOverHours          Int?                           // null = unlimited carry-over
+  carryOverToLeaveTypeId  String?                        // null = carry over into same leave type
+  maxAnnualHours          Float?                         // null = no annual usage cap
+  maxBalanceHours         Float?                         // null = fall back to LeaveType.maxBalanceMinutes
+  payCodeId               String?                        // optional pay code override for this rule
 
-  ptoPolicy PtoPolicy @relation(fields: [ptoPolicyId], references: [id], onDelete: Cascade)
-  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+  ptoPolicy PtoPolicy  @relation(fields: [ptoPolicyId], references: [id], onDelete: Cascade)
+  leaveType LeaveType  @relation(fields: [leaveTypeId], references: [id])
+  payCode   PayCode?   @relation(fields: [payCodeId], references: [id])
 
   @@unique([ptoPolicyId, leaveTypeId, minTenureMonths])
   @@map("pto_policy_rules")

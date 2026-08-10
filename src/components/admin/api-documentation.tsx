@@ -160,9 +160,11 @@ Authorization: Bearer ta_a1b2c3d4...`} />
 
         <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-zinc-400">selectedDays — Partial Day</p>
         <p className="mt-1 text-xs text-zinc-400">
-          Duration is auto-calculated from <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">leaveFrom</code> to the employee&apos;s shift end time.
+          Both <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">leaveFrom</code> and <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">leaveTo</code> are required for partial days.
+          Duration is calculated as the difference between the two times (minus any meal break that falls within the window).
+          Times must be in <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">HH:mm</code> 24-hour format.
         </p>
-        <CodeBlock code={`{ "date": "2026-09-02", "type": "PARTIAL", "leaveFrom": "13:00" }`} />
+        <CodeBlock code={`{ "date": "2026-09-02", "type": "PARTIAL", "leaveFrom": "08:00", "leaveTo": "13:00" }`} />
 
         <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-zinc-400">Example Request — using employeeCode</p>
         <CodeBlock lang="http" code={`POST ${baseUrl}/api/external/pto-requests
@@ -174,7 +176,7 @@ Content-Type: application/json
   "leaveTypeCode": 1,
   "selectedDays": [
     { "date": "2026-09-01", "type": "FULL" },
-    { "date": "2026-09-02", "type": "PARTIAL", "leaveFrom": "13:00" }
+    { "date": "2026-09-02", "type": "PARTIAL", "leaveFrom": "08:00", "leaveTo": "13:00" }
   ],
   "note": "Family appointment"
 }`} />
@@ -189,7 +191,7 @@ Content-Type: application/json
   "leaveTypeCode": 1,
   "selectedDays": [
     { "date": "2026-09-01", "type": "FULL" },
-    { "date": "2026-09-02", "type": "PARTIAL", "leaveFrom": "13:00" }
+    { "date": "2026-09-02", "type": "PARTIAL", "leaveFrom": "08:00", "leaveTo": "13:00" }
   ],
   "note": "Family appointment"
 }`} />

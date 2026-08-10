@@ -5,7 +5,7 @@ const timeStr = z.string().regex(/^\d{2}:\d{2}$/, "Time must be HH:mm");
 
 export const daySelectionSchema = z.discriminatedUnion("type", [
   z.object({ date: dateStr, type: z.literal("FULL") }),
-  z.object({ date: dateStr, type: z.literal("PARTIAL"), leaveFrom: timeStr }),
+  z.object({ date: dateStr, type: z.literal("PARTIAL"), leaveFrom: timeStr, leaveTo: timeStr }),
 ]);
 
 export const requestLeaveSchema = z.object({

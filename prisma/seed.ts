@@ -185,10 +185,10 @@ async function main() {
   console.log("  Passwords: admin=admin123, everyone else=password123");
 
   // ── 6. Leave Types ────────────────────────────────────────────────────────────
-  const ltPTO = await db.leaveType.upsert({ where: { id: "lt-pto" },  update: {}, create: { id: "lt-pto",  name: "PTO",          category: "PTO",      accrualRateMinutes: 160,  maxBalanceMinutes: 12800, carryOverMinutes: 4800 } });
-  const ltSick = await db.leaveType.upsert({ where: { id: "lt-sick" }, update: {}, create: { id: "lt-sick", name: "Sick Leave",    category: "SICK",     accrualRateMinutes: 80,   maxBalanceMinutes: 4800,  carryOverMinutes: 0 } });
-  await db.leaveType.upsert({ where: { id: "lt-hol" },  update: {}, create: { id: "lt-hol",  name: "Holiday",       category: "HOLIDAY",  accrualRateMinutes: 0,    maxBalanceMinutes: null,  carryOverMinutes: 0, requiresApproval: false } });
-  await db.leaveType.upsert({ where: { id: "lt-fmla" }, update: {}, create: { id: "lt-fmla", name: "FMLA",          category: "FMLA",     accrualRateMinutes: 0,    maxBalanceMinutes: null,  carryOverMinutes: 0 } });
+  const ltPTO = await db.leaveType.upsert({ where: { id: "lt-pto" },  update: {}, create: { id: "lt-pto",  name: "PTO",          category: "PTO",      accrualRateMinutes: 160,  maxBalanceMinutes: 12800 } });
+  const ltSick = await db.leaveType.upsert({ where: { id: "lt-sick" }, update: {}, create: { id: "lt-sick", name: "Sick Leave",    category: "SICK",     accrualRateMinutes: 80,   maxBalanceMinutes: 4800 } });
+  await db.leaveType.upsert({ where: { id: "lt-hol" },  update: {}, create: { id: "lt-hol",  name: "Holiday",       category: "HOLIDAY",  accrualRateMinutes: 0,    maxBalanceMinutes: null,  requiresApproval: false } });
+  await db.leaveType.upsert({ where: { id: "lt-fmla" }, update: {}, create: { id: "lt-fmla", name: "FMLA",          category: "FMLA",     accrualRateMinutes: 0,    maxBalanceMinutes: null } });
   console.log("✓ Leave Types: PTO, Sick Leave, Holiday, FMLA");
 
   // Leave balances (current year 2026)

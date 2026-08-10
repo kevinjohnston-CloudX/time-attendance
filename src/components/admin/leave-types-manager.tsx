@@ -80,7 +80,6 @@ function LeaveTypeFields({ lt }: { lt?: LeaveType }) {
         </select>
       </div>
       <HoursInput name="maxBalance"  label="Max balance"         defaultMinutes={lt?.maxBalanceMinutes}     optional />
-      <HoursInput name="carryOver"   label="Year-end carry-over" defaultMinutes={lt?.carryOverMinutes ?? 0} />
       <div className="col-span-2 sm:col-span-1">
         <label className="mb-1 block text-xs text-zinc-500">Approval</label>
         <select name="requiresApproval" defaultValue={lt ? (lt.requiresApproval ? "true" : "false") : "true"} className={inputCls}>
@@ -125,7 +124,6 @@ export function LeaveTypesManager({ leaveTypes }: Props) {
       category: fd.get("category") as "PTO",
       accrualRateMinutes: 0,
       maxBalanceMinutes: hasMax ? toMins(fd, "maxBalance") || null : null,
-      carryOverMinutes: toMins(fd, "carryOver"),
       requiresApproval: fd.get("requiresApproval") === "true",
       isPaid: fd.get("isPaid") === "true",
       externalCode,
@@ -173,7 +171,6 @@ export function LeaveTypesManager({ leaveTypes }: Props) {
                 <span className="rounded px-1.5 py-0.5 text-xs bg-zinc-100 text-zinc-500 dark:bg-zinc-800">{lt.category}</span>
                 <span className="text-xs text-zinc-400">{lt.isPaid ? "Paid" : "Unpaid"}</span>
                 {lt.maxBalanceMinutes != null && <span className="text-xs text-zinc-400">· Max {formatMinutes(lt.maxBalanceMinutes)}</span>}
-                {lt.carryOverMinutes > 0 && <span className="text-xs text-zinc-400">· Carries over {formatMinutes(lt.carryOverMinutes)}</span>}
               </div>
               <div className="flex items-center gap-2">
                 {!lt.isActive && <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">Inactive</span>}

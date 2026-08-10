@@ -16,7 +16,7 @@ import {
 
 export type DaySelection =
   | { date: string; type: "FULL" }
-  | { date: string; type: "PARTIAL"; leaveFrom: string };
+  | { date: string; type: "PARTIAL"; leaveFrom: string; leaveTo: string };
 
 export interface ShiftInfo {
   startTime: string; // "HH:mm"
@@ -51,9 +51,10 @@ function calcDayMinutes(shift: ShiftInfo | null, day: DaySelection): number {
   if (day.type === "FULL") return (end - start) - mealMins;
 
   const leaveFrom      = timeToMins(day.leaveFrom);
-  const raw            = Math.max(0, end - leaveFrom);
+  const leaveTo        = timeToMins(day.leaveTo);
+  const raw            = Math.max(0, leaveTo - leaveFrom);
   const overlapStart   = Math.max(leaveFrom, mealStart);
-  const overlapEnd     = Math.min(end, mealEnd);
+  const overlapEnd     = Math.min(leaveTo, mealEnd);
   const overlap        = Math.max(0, overlapEnd - overlapStart);
   return Math.max(0, raw - overlap);
 }
@@ -114,9 +115,10 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
 
   function setPartial(ds: string) {
     const defaultFrom = shift?.startTime ?? "09:00";
+    const defaultTo   = shift?.endTime   ?? "17:00";
     onChange(
       value.map((d) =>
-        d.date === ds ? { date: ds, type: "PARTIAL", leaveFrom: defaultFrom } : d
+        d.date === ds ? { date: ds, type: "PARTIAL", leaveFrom: defaultFrom, leaveTo: defaultTo } : d
       )
     );
   }
@@ -125,6 +127,14 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
     onChange(
       value.map((d) =>
         d.date === ds && d.type === "PARTIAL" ? { ...d, leaveFrom } : d
+      )
+    );
+  }
+
+  function setLeaveTo(ds: string, leaveTo: string) {
+    onChange(
+      value.map((d) =>
+        d.date === ds && d.type === "PARTIAL" ? { ...d, leaveTo } : d
       )
     );
   }
@@ -261,19 +271,23 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
                   </button>
                 </div>
 
-                {/* Leave-from time input */}
+                {/* Partial time range inputs */}
                 {day.type === "PARTIAL" && (
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-zinc-400">Leave from</span>
+                    <span className="text-xs text-zinc-400">From</span>
                     <input
                       type="time"
                       value={day.leaveFrom}
                       onChange={(e) => setLeaveFrom(day.date, e.target.value)}
                       className="rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs text-zinc-700 focus:outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
                     />
-                    <span className="text-xs text-zinc-400">
-                      → {shift ? fmt12(shift.endTime) : "5:00 PM"}
-                    </span>
+                    <span className="text-xs text-zinc-400">to</span>
+                    <input
+                      type="time"
+                      value={day.leaveTo}
+                      onChange={(e) => setLeaveTo(day.date, e.target.value)}
+                      className="rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs text-zinc-700 focus:outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+                    />
                   </div>
                 )}
 

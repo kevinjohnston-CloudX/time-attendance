@@ -32,6 +32,7 @@ type ServiceMonthBasis =
 type PostingConfig = {
   rateMode:          AccrualRateMode;
   serviceMonthBasis: ServiceMonthBasis;
+  postingAnchorDate: string | null;
   posting1Freq:      AccrualPostingFreq;
   posting1Month: number | null;
   posting1Day:   number | null;
@@ -49,21 +50,23 @@ type Tier = {
   maxTenureMonths: number | null;
   annualHours: number;
   earnedHoursPerYear: number;
-  carryOverHours: number | null;
-};
-
-type LeaveTypeGroup = {
-  leaveTypeId: string;
-  tiers: Tier[];
+  carryOverHours:  number | null;
+  maxAnnualHours:  number | null;
+  maxBalanceHours: number | null;
 };
 
 // Flat rule as stored / sent to server
-type Rule = Tier & { leaveTypeId: string };
+type Rule = Tier & { leaveTypeId: string; carryOverToLeaveTypeId: string | null; payCodeId: string | null };
 
 type RuleFromServer = Rule & {
   id?: string;
+  maxAnnualHours?: number | null;
+  carryOverToLeaveTypeId?: string | null;
+  payCodeId?: string | null;
   leaveType?: { id: string; name: string; category: string };
 };
+
+type PayCodeOption = { id: string; code: number; label: string; expressCode: string | null };
 
 type Policy = {
   id: string;
@@ -71,8 +74,11 @@ type Policy = {
   description: string | null;
   isDefault: boolean;
   isActive: boolean;
+  leaveTypeId: string | null;
+  leaveType: { id: string; name: string; category: string } | null;
   rateMode:          AccrualRateMode;
   serviceMonthBasis: ServiceMonthBasis;
+  postingAnchorDate: Date | string | null;
   posting1Freq:      AccrualPostingFreq;
   posting1Month: number | null;
   posting1Day:   number | null;
@@ -83,51 +89,23 @@ type Policy = {
   balanceReset:  boolean;
   resetMonth:    number | null;
   resetDay:      number | null;
+  maxDailyHours:              number | null;
+  allowNegativeBalance:       boolean;
+  maxNegativeHours:           number | null;
+  carryOverEnabled:           boolean;
+  carryOverRespectMaxBalance: boolean;
   rules: RuleFromServer[];
   _count: { siteLinks: number; empOverrides: number };
 };
 
 type LeaveTypeOption = { id: string; name: string; category: string };
 
-interface Props { policies: Policy[]; leaveTypes: LeaveTypeOption[] }
+interface Props { policies: Policy[]; leaveTypes: LeaveTypeOption[]; payCodes: PayCodeOption[] }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function groupRules(rules: RuleFromServer[]): LeaveTypeGroup[] {
-  const map = new Map<string, Tier[]>();
-  for (const r of rules) {
-    const list = map.get(r.leaveTypeId) ?? [];
-    list.push({
-      minTenureMonths:    r.minTenureMonths,
-      maxTenureMonths:    r.maxTenureMonths,
-      annualHours:        r.annualHours,
-      earnedHoursPerYear: r.earnedHoursPerYear,
-      carryOverHours:     r.carryOverHours,
-    });
-    map.set(r.leaveTypeId, list);
-  }
-  return [...map.entries()].map(([leaveTypeId, tiers]) => ({
-    leaveTypeId,
-    tiers: tiers.sort((a, b) => a.minTenureMonths - b.minTenureMonths),
-  }));
-}
-
-function flattenGroups(groups: LeaveTypeGroup[], rateMode: AccrualRateMode): Rule[] {
-  return groups.flatMap((g) => {
-    if (rateMode === "PER_POSTING") {
-      return g.tiers.map((t, i) => ({
-        leaveTypeId: g.leaveTypeId,
-        ...t,
-        earnedHoursPerYear: 0,
-        maxTenureMonths: i < g.tiers.length - 1 ? g.tiers[i + 1].minTenureMonths : null,
-      }));
-    }
-    return g.tiers.map((t) => ({ leaveTypeId: g.leaveTypeId, ...t }));
-  });
-}
-
 function defaultTier(minTenureMonths = 0): Tier {
-  return { minTenureMonths, maxTenureMonths: null, annualHours: 0, earnedHoursPerYear: 0, carryOverHours: null };
+  return { minTenureMonths, maxTenureMonths: null, annualHours: 0, earnedHoursPerYear: 0, carryOverHours: null, maxAnnualHours: null, maxBalanceHours: null };
 }
 
 const FREQ_LABELS: Record<AccrualPostingFreq, string> = {
@@ -180,7 +158,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
         <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
           <h3 className="text-base font-semibold text-zinc-900 dark:text-white">{title}</h3>
           <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" aria-label="Close">
@@ -267,15 +245,36 @@ function PostingRow({
 
 // ─── Policy form ──────────────────────────────────────────────────────────────
 
-function PolicyForm({ leaveTypes, initial, isPending, onSubmit, onCancel }: {
+function PolicyForm({ leaveTypes, payCodes, initial, isPending, onSubmit, onCancel }: {
   leaveTypes: LeaveTypeOption[];
+  payCodes: PayCodeOption[];
   initial?: Policy;
   isPending: boolean;
   onSubmit: (e: React.FormEvent<HTMLFormElement>, rules: Rule[], posting: PostingConfig) => void;
   onCancel: () => void;
 }) {
-  const [groups, setGroups] = useState<LeaveTypeGroup[]>(
-    () => initial ? groupRules(initial.rules) : []
+  const [leaveTypeId, setLeaveTypeId] = useState<string>(
+    initial?.leaveTypeId ?? initial?.rules?.[0]?.leaveTypeId ?? leaveTypes[0]?.id ?? ""
+  );
+  const [tiers, setTiers] = useState<Tier[]>(() => {
+    if (!initial?.rules?.length) return [defaultTier(0)];
+    return [...initial.rules]
+      .sort((a, b) => a.minTenureMonths - b.minTenureMonths)
+      .map((r) => ({
+        minTenureMonths:    r.minTenureMonths,
+        maxTenureMonths:    r.maxTenureMonths,
+        annualHours:        r.annualHours,
+        earnedHoursPerYear: r.earnedHoursPerYear,
+        carryOverHours:     r.carryOverHours,
+        maxAnnualHours:     r.maxAnnualHours  ?? null,
+        maxBalanceHours:    r.maxBalanceHours ?? null,
+      }));
+  });
+  const [carryOverToLeaveTypeId, setCarryOverToLeaveTypeId] = useState<string | null>(
+    initial?.rules?.[0]?.carryOverToLeaveTypeId ?? null
+  );
+  const [payCodeId, setPayCodeId] = useState<string | null>(
+    initial?.rules?.[0]?.payCodeId ?? null
   );
 
   // Rate mode state
@@ -283,6 +282,9 @@ function PolicyForm({ leaveTypes, initial, isPending, onSubmit, onCancel }: {
 
   // Service month basis state
   const [serviceMonthBasis, setServiceMonthBasis] = useState<ServiceMonthBasis>(initial?.serviceMonthBasis ?? "HIRE_DATE");
+  const [postingAnchorDate, setPostingAnchorDate] = useState<string>(
+    initial?.postingAnchorDate ? new Date(initial.postingAnchorDate).toISOString().slice(0, 10) : ""
+  );
 
   // Posting schedule state
   const [posting1Freq,  setPosting1Freq]  = useState<AccrualPostingFreq>(initial?.posting1Freq  ?? "PER_PAY_PERIOD");
@@ -298,60 +300,40 @@ function PolicyForm({ leaveTypes, initial, isPending, onSubmit, onCancel }: {
   const [resetMonth,   setResetMonth]   = useState<number | "">(initial?.resetMonth ?? "");
   const [resetDay,     setResetDay]     = useState<number | "">(initial?.resetDay   ?? "");
 
-  const usedLeaveTypeIds = new Set(groups.map((g) => g.leaveTypeId));
-  const availableLeaveTypes = leaveTypes.filter((lt) => !usedLeaveTypeIds.has(lt.id));
+  // Borrowing state
+  const [allowNegativeBalance,       setAllowNegativeBalance]       = useState<boolean>(initial?.allowNegativeBalance ?? false);
+  const [maxNegativeHours,           setMaxNegativeHours]           = useState<string>(initial?.maxNegativeHours != null ? String(initial.maxNegativeHours) : "");
+  const [carryOverEnabled,           setCarryOverEnabled]           = useState<boolean>(initial?.carryOverEnabled ?? true);
+  const [carryOverRespectMaxBalance, setCarryOverRespectMaxBalance] = useState<boolean>(initial?.carryOverRespectMaxBalance ?? false);
 
-  // ── Group-level helpers
-  function addLeaveType() {
-    const first = availableLeaveTypes[0];
-    if (!first) return;
-    setGroups((prev) => [...prev, { leaveTypeId: first.id, tiers: [defaultTier(0)] }]);
-  }
-
-  function removeLeaveType(gi: number) {
-    setGroups((prev) => prev.filter((_, i) => i !== gi));
-  }
-
-  function changeLeaveType(gi: number, leaveTypeId: string) {
-    setGroups((prev) => prev.map((g, i) => i === gi ? { ...g, leaveTypeId } : g));
-  }
-
-  // ── Tier-level helpers
-  function addTier(gi: number) {
-    setGroups((prev) => prev.map((g, i) => {
-      if (i !== gi) return g;
-      const last = g.tiers[g.tiers.length - 1];
+  // ── Tier helpers
+  function addTier() {
+    setTiers((prev) => {
+      const last = prev[prev.length - 1];
       if (rateMode === "PER_POSTING") {
-        const nextMin = (last?.minTenureMonths ?? 0) + 12;
-        return { ...g, tiers: [...g.tiers, defaultTier(nextMin)] };
+        return [...prev, defaultTier((last?.minTenureMonths ?? 0) + 12)];
       }
       const closedMax = last?.maxTenureMonths != null ? last.maxTenureMonths : (last?.minTenureMonths ?? 0) + 12;
-      const updatedTiers = last?.maxTenureMonths == null && last != null
-        ? [...g.tiers.slice(0, -1), { ...last, maxTenureMonths: closedMax }]
-        : g.tiers;
-      return { ...g, tiers: [...updatedTiers, defaultTier(closedMax)] };
-    }));
+      const updated = last?.maxTenureMonths == null && last != null
+        ? [...prev.slice(0, -1), { ...last, maxTenureMonths: closedMax }]
+        : prev;
+      return [...updated, defaultTier(closedMax)];
+    });
   }
 
-  function removeTier(gi: number, ti: number) {
-    setGroups((prev) => prev.map((g, i) => {
-      if (i !== gi) return g;
-      const newTiers = g.tiers.filter((_, j) => j !== ti);
-      return newTiers.length === 0 ? null : { ...g, tiers: newTiers };
-    }).filter(Boolean) as LeaveTypeGroup[]);
+  function removeTier(ti: number) {
+    setTiers((prev) => prev.filter((_, i) => i !== ti));
   }
 
-  function updateTier(gi: number, ti: number, field: keyof Tier, value: number | null) {
-    setGroups((prev) => prev.map((g, i) => {
-      if (i !== gi) return g;
-      return { ...g, tiers: g.tiers.map((t, j) => j === ti ? { ...t, [field]: value } : t) };
-    }));
+  function updateTier(ti: number, field: keyof Tier, value: number | null) {
+    setTiers((prev) => prev.map((t, i) => i === ti ? { ...t, [field]: value } : t));
   }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     const posting: PostingConfig = {
       rateMode,
       serviceMonthBasis,
+      postingAnchorDate: postingAnchorDate || null,
       posting1Freq,
       posting1Month: posting1Month !== "" ? posting1Month : null,
       posting1Day:   posting1Day   !== "" ? posting1Day   : null,
@@ -363,7 +345,17 @@ function PolicyForm({ leaveTypes, initial, isPending, onSubmit, onCancel }: {
       resetMonth: balanceReset && resetMonth !== "" ? resetMonth : null,
       resetDay:   balanceReset && resetDay   !== "" ? resetDay   : null,
     };
-    onSubmit(e, flattenGroups(groups, rateMode), posting);
+    const rules: Rule[] = rateMode === "PER_POSTING"
+      ? tiers.map((t, i) => ({
+          leaveTypeId,
+          carryOverToLeaveTypeId,
+          payCodeId,
+          ...t,
+          earnedHoursPerYear: 0,
+          maxTenureMonths: i < tiers.length - 1 ? tiers[i + 1].minTenureMonths : null,
+        }))
+      : tiers.map((t) => ({ leaveTypeId, carryOverToLeaveTypeId, payCodeId, ...t }));
+    onSubmit(e, rules, posting);
   }
 
   return (
@@ -378,6 +370,34 @@ function PolicyForm({ leaveTypes, initial, isPending, onSubmit, onCancel }: {
           <label className={labelCls}>Description <span className="text-zinc-400">(optional)</span></label>
           <input name="description" defaultValue={initial?.description ?? ""} placeholder="Brief description" className={inputCls} />
         </div>
+        <div>
+          <label className={labelCls}>Leave Type</label>
+          <select
+            value={leaveTypeId}
+            onChange={(e) => setLeaveTypeId(e.target.value)}
+            className={inputCls}
+          >
+            {leaveTypes.map((lt) => (
+              <option key={lt.id} value={lt.id}>{lt.name}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls}>Pay Code <span className="text-zinc-400">(optional)</span></label>
+          <select
+            value={payCodeId ?? ""}
+            onChange={(e) => setPayCodeId(e.target.value || null)}
+            className={inputCls}
+          >
+            <option value="">— none —</option>
+            {payCodes.map((pc) => (
+              <option key={pc.id} value={pc.id}>
+                {pc.code} – {pc.label}{pc.expressCode ? ` (${pc.expressCode})` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <input type="hidden" name="leaveTypeId" value={leaveTypeId} />
         <div>
           <label className={labelCls}>Default Policy</label>
           <select name="isDefault" defaultValue={initial?.isDefault ? "true" : "false"} className={inputCls}>
@@ -394,6 +414,17 @@ function PolicyForm({ leaveTypes, initial, isPending, onSubmit, onCancel }: {
             </select>
           </div>
         )}
+        <div>
+          <label className={labelCls}>Max hours per day <span className="text-zinc-400">(optional)</span></label>
+          <input
+            name="maxDailyHours"
+            type="number" min="0.25" max="24" step="0.25"
+            defaultValue={initial?.maxDailyHours ?? ""}
+            placeholder="No limit"
+            className={inputCls}
+          />
+          <p className="mt-1 text-xs text-zinc-400">Leave blank for no limit. Employees requesting more than this on a single day will see an error.</p>
+        </div>
       </div>
 
       {/* Rate Mode toggle */}
@@ -451,6 +482,19 @@ function PolicyForm({ leaveTypes, initial, isPending, onSubmit, onCancel }: {
             onMonthChange={setPosting1Month}
             onDayChange={setPosting1Day}
           />
+
+          <div>
+            <label className={labelCls}>Posting Anchor Date <span className="text-zinc-400">(optional)</span></label>
+            <input
+              type="date"
+              value={postingAnchorDate}
+              onChange={(e) => setPostingAnchorDate(e.target.value)}
+              className={`w-48 ${inputCls}`}
+            />
+            <p className="mt-1 text-xs text-zinc-400">
+              Fixed reference date for bi-weekly or weekly cycles. Leave blank to use a calendar approximation.
+            </p>
+          </div>
 
           <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
             <input
@@ -517,179 +561,250 @@ function PolicyForm({ leaveTypes, initial, isPending, onSubmit, onCancel }: {
             </div>
           </div>
         )}
+        {balanceReset && (
+          <div className="mt-3 space-y-3 pl-1">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+              <input
+                type="checkbox"
+                checked={carryOverEnabled}
+                onChange={(e) => setCarryOverEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-300 accent-zinc-800 dark:border-zinc-600"
+              />
+              Carry unused time forward
+            </label>
+            {carryOverEnabled && (
+              <div className="space-y-2 pl-1">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Carry-over destination</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-400">→</span>
+                  <select
+                    value={carryOverToLeaveTypeId ?? ""}
+                    onChange={(e) => setCarryOverToLeaveTypeId(e.target.value || null)}
+                    className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                  >
+                    <option value="">Same leave type</option>
+                    {leaveTypes.filter((l) => l.id !== leaveTypeId).map((l) => (
+                      <option key={l.id} value={l.id}>{l.name}</option>
+                    ))}
+                  </select>
+                </div>
+                {carryOverToLeaveTypeId && (
+                  <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                    <input
+                      type="checkbox"
+                      checked={carryOverRespectMaxBalance}
+                      onChange={(e) => setCarryOverRespectMaxBalance(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-zinc-300 accent-zinc-800 dark:border-zinc-600"
+                    />
+                    Cap carry-over at destination&apos;s maximum balance
+                  </label>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        <input type="hidden" name="carryOverEnabled"           value={carryOverEnabled           ? "true" : "false"} />
+        <input type="hidden" name="carryOverRespectMaxBalance" value={carryOverRespectMaxBalance ? "true" : "false"} />
         <p className="mt-2 text-xs text-zinc-400">
           When enabled, accrued balances are zeroed on the specified date each year. If an accrual also falls on that date, the reset applies first.
         </p>
       </div>
 
-      {/* Leave type groups */}
+      {/* Borrowing */}
+      <div className="rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-700">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">Borrowing</p>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+          <input
+            type="checkbox"
+            checked={allowNegativeBalance}
+            onChange={(e) => setAllowNegativeBalance(e.target.checked)}
+            className="h-4 w-4 rounded border-zinc-300 accent-zinc-800 dark:border-zinc-600"
+          />
+          Allow employees to borrow against future accruals
+        </label>
+        {allowNegativeBalance && (
+          <div className="mt-3 pl-1">
+            <label className={smLabelCls}>Max Borrow Hours <span className="text-zinc-400 normal-case">(optional)</span></label>
+            <input
+              type="number" min="0.25" max="9999" step="0.25"
+              value={maxNegativeHours}
+              onChange={(e) => setMaxNegativeHours(e.target.value)}
+              placeholder="No limit"
+              className="w-36 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+            />
+          </div>
+        )}
+        <p className="mt-2 text-xs text-zinc-400">
+          When enabled, employees can request leave even if their balance would go negative. The max borrow limit prevents the balance from falling below a set number of hours.
+        </p>
+        <input type="hidden" name="allowNegativeBalance" value={allowNegativeBalance ? "true" : "false"} />
+        <input type="hidden" name="maxNegativeHours" value={allowNegativeBalance ? maxNegativeHours : ""} />
+      </div>
+
+      {/* Accrual Tiers */}
       <div>
         <div className="mb-2 flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Leave Types</p>
-          {availableLeaveTypes.length > 0 && (
-            <button type="button" onClick={addLeaveType} className="flex items-center gap-1 text-xs text-blue-600 hover:underline dark:text-blue-400">
-              <Plus className="h-3 w-3" /> Add leave type
-            </button>
-          )}
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Accrual Tiers</p>
+          <button type="button" onClick={addTier} className="flex items-center gap-1 text-xs text-blue-600 hover:underline dark:text-blue-400">
+            <Plus className="h-3 w-3" /> {rateMode === "PER_POSTING" ? "Add level" : "Add tier"}
+          </button>
         </div>
 
-        {groups.length === 0 && (
-          <p className="rounded-lg border border-dashed border-zinc-300 px-4 py-3 text-sm text-zinc-400 dark:border-zinc-700">
-            No leave types added yet. Click "Add leave type" to configure PTO, Sick, Jury Duty, etc.
-          </p>
-        )}
-
-        <div className="space-y-4">
-          {groups.map((group, gi) => {
-            const leaveTypesForRow = leaveTypes.filter(
-              (lt) => lt.id === group.leaveTypeId || !usedLeaveTypeIds.has(lt.id)
-            );
-            return (
-              <div key={gi} className="rounded-xl border border-zinc-200 dark:border-zinc-700">
-                {/* Leave type header */}
-                <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-2.5 dark:border-zinc-800">
-                  <select
-                    value={group.leaveTypeId}
-                    onChange={(e) => changeLeaveType(gi, e.target.value)}
-                    className="rounded-lg border border-zinc-300 bg-white px-3 py-1 text-sm font-medium focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                  >
-                    {leaveTypesForRow.map((lt) => (
-                      <option key={lt.id} value={lt.id}>{lt.name}</option>
-                    ))}
-                  </select>
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => addTier(gi)} className="flex items-center gap-1 text-xs text-blue-600 hover:underline dark:text-blue-400">
-                      <Plus className="h-3 w-3" /> {rateMode === "PER_POSTING" ? "Add level" : "Add tier"}
-                    </button>
-                    <button type="button" onClick={() => removeLeaveType(gi)} className="text-zinc-400 hover:text-red-500">
-                      <X className="h-4 w-4" />
-                    </button>
+        <div className="rounded-xl border border-zinc-200 dark:border-zinc-700">
+          {rateMode === "PER_POSTING" ? (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/50">
+                    <th className="w-10 px-3 py-2 text-center text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Lvl</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Svc Month</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Accrual Hrs</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Carry-Over</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Max Annual Use</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Max Balance</th>
+                    <th className="w-8" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {tiers.map((tier, ti) => (
+                    <tr key={ti}>
+                      <td className="px-3 py-2 text-center text-xs font-medium text-zinc-400">{ti + 1}</td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="number" min="0" step="1"
+                          value={tier.minTenureMonths}
+                          onChange={(e) => updateTier(ti, "minTenureMonths", parseInt(e.target.value, 10) || 0)}
+                          className="w-16 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="number" min="0" max="9999" step="0.01"
+                          value={tier.annualHours === 0 ? "" : tier.annualHours}
+                          placeholder="0.00"
+                          onChange={(e) => updateTier(ti, "annualHours", e.target.value === "" ? 0 : (parseFloat(e.target.value) || 0))}
+                          className="w-20 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="number" min="0" max="9999" step="1"
+                          value={tier.carryOverHours ?? ""}
+                          placeholder="Unlimited"
+                          onChange={(e) => updateTier(ti, "carryOverHours", e.target.value !== "" ? parseInt(e.target.value, 10) : null)}
+                          className="w-24 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="number" min="0" max="9999" step="0.5"
+                          value={tier.maxAnnualHours ?? ""}
+                          placeholder="No limit"
+                          onChange={(e) => updateTier(ti, "maxAnnualHours", e.target.value !== "" ? parseFloat(e.target.value) : null)}
+                          className="w-24 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="number" min="0" max="9999" step="0.5"
+                          value={tier.maxBalanceHours ?? ""}
+                          placeholder="No limit"
+                          onChange={(e) => updateTier(ti, "maxBalanceHours", e.target.value !== "" ? parseFloat(e.target.value) : null)}
+                          className="w-24 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {tiers.length > 1 && (
+                          <button type="button" onClick={() => removeTier(ti)} className="text-zinc-300 hover:text-red-500 dark:text-zinc-600">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {tiers.map((tier, ti) => (
+                <div key={ti} className="px-4 py-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Tenure</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number" min="0" step="1" value={tier.minTenureMonths}
+                          onChange={(e) => updateTier(ti, "minTenureMonths", parseInt(e.target.value, 10) || 0)}
+                          className="w-14 rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                        />
+                        <span className="text-xs text-zinc-400">–</span>
+                        <input
+                          type="number" min="1" step="1" value={tier.maxTenureMonths ?? ""}
+                          onChange={(e) => updateTier(ti, "maxTenureMonths", e.target.value !== "" ? parseInt(e.target.value, 10) : null)}
+                          placeholder="∞"
+                          className="w-14 rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                        />
+                        <span className="text-xs text-zinc-400">months</span>
+                      </div>
+                    </div>
+                    {tiers.length > 1 && (
+                      <button type="button" onClick={() => removeTier(ti)} className="text-zinc-300 hover:text-red-500 dark:text-zinc-600">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-5 gap-3">
+                    <div>
+                      <label className={smLabelCls}>Annual Hours</label>
+                      <input type="number" min="0" max="9999" step="0.01"
+                        value={tier.annualHours === 0 ? "" : tier.annualHours}
+                        placeholder="0"
+                        onChange={(e) => updateTier(ti, "annualHours", e.target.value === "" ? 0 : (parseFloat(e.target.value) || 0))}
+                        className={smInputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className={smLabelCls}>+ Hrs/Yr Tenure</label>
+                      <input type="number" min="0" max="999" step="0.01"
+                        value={tier.earnedHoursPerYear === 0 ? "" : tier.earnedHoursPerYear}
+                        placeholder="0"
+                        onChange={(e) => updateTier(ti, "earnedHoursPerYear", e.target.value === "" ? 0 : (parseFloat(e.target.value) || 0))}
+                        className={smInputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className={smLabelCls}>Carry-Over Hrs</label>
+                      <input type="number" min="0" max="9999" step="1"
+                        value={tier.carryOverHours ?? ""}
+                        onChange={(e) => updateTier(ti, "carryOverHours", e.target.value !== "" ? parseInt(e.target.value, 10) : null)}
+                        placeholder="Unlimited"
+                        className={smInputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className={smLabelCls}>Max Annual Use</label>
+                      <input type="number" min="0" max="9999" step="0.5"
+                        value={tier.maxAnnualHours ?? ""}
+                        onChange={(e) => updateTier(ti, "maxAnnualHours", e.target.value !== "" ? parseFloat(e.target.value) : null)}
+                        placeholder="No limit"
+                        className={smInputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className={smLabelCls}>Max Balance</label>
+                      <input type="number" min="0" max="9999" step="0.5"
+                        value={tier.maxBalanceHours ?? ""}
+                        onChange={(e) => updateTier(ti, "maxBalanceHours", e.target.value !== "" ? parseFloat(e.target.value) : null)}
+                        placeholder="No limit"
+                        className={smInputCls}
+                      />
+                    </div>
                   </div>
                 </div>
-
-                {/* Tier rows */}
-                {rateMode === "PER_POSTING" ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/50">
-                          <th className="w-10 px-3 py-2 text-center text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Lvl</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Svc Month</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Accrual Hrs</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Carry-Over</th>
-                          <th className="w-8" />
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                        {group.tiers.map((tier, ti) => (
-                          <tr key={ti}>
-                            <td className="px-3 py-2 text-center text-xs font-medium text-zinc-400">{ti + 1}</td>
-                            <td className="px-3 py-2">
-                              <input
-                                type="number" min="0" step="1"
-                                value={tier.minTenureMonths}
-                                onChange={(e) => updateTier(gi, ti, "minTenureMonths", parseInt(e.target.value, 10) || 0)}
-                                className="w-16 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <input
-                                type="number" min="0" max="9999" step="0.01"
-                                value={tier.annualHours === 0 ? "" : tier.annualHours}
-                                placeholder="0.00"
-                                onChange={(e) => updateTier(gi, ti, "annualHours", e.target.value === "" ? 0 : (parseFloat(e.target.value) || 0))}
-                                className="w-20 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <input
-                                type="number" min="0" max="9999" step="1"
-                                value={tier.carryOverHours ?? ""}
-                                placeholder="Unlimited"
-                                onChange={(e) => updateTier(gi, ti, "carryOverHours", e.target.value !== "" ? parseInt(e.target.value, 10) : null)}
-                                className="w-24 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              {group.tiers.length > 1 && (
-                                <button type="button" onClick={() => removeTier(gi, ti)} className="text-zinc-300 hover:text-red-500 dark:text-zinc-600">
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                    {group.tiers.map((tier, ti) => (
-                      <div key={ti} className="px-4 py-3">
-                        {/* Tenure range header */}
-                        <div className="mb-2 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Tenure</span>
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="number" min="0" step="1" value={tier.minTenureMonths}
-                                onChange={(e) => updateTier(gi, ti, "minTenureMonths", parseInt(e.target.value, 10) || 0)}
-                                className="w-14 rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                              />
-                              <span className="text-xs text-zinc-400">–</span>
-                              <input
-                                type="number" min="1" step="1" value={tier.maxTenureMonths ?? ""}
-                                onChange={(e) => updateTier(gi, ti, "maxTenureMonths", e.target.value !== "" ? parseInt(e.target.value, 10) : null)}
-                                placeholder="∞"
-                                className="w-14 rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                              />
-                              <span className="text-xs text-zinc-400">months</span>
-                            </div>
-                          </div>
-                          {group.tiers.length > 1 && (
-                            <button type="button" onClick={() => removeTier(gi, ti)} className="text-zinc-300 hover:text-red-500 dark:text-zinc-600">
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Tier values */}
-                        <div className="grid grid-cols-3 gap-3">
-                          <div>
-                            <label className={smLabelCls}>Annual Hours</label>
-                            <input type="number" min="0" max="9999" step="0.01"
-                              value={tier.annualHours === 0 ? "" : tier.annualHours}
-                              placeholder="0"
-                              onChange={(e) => updateTier(gi, ti, "annualHours", e.target.value === "" ? 0 : (parseFloat(e.target.value) || 0))}
-                              className={smInputCls}
-                            />
-                          </div>
-                          <div>
-                            <label className={smLabelCls}>+ Hrs/Yr Tenure</label>
-                            <input type="number" min="0" max="999" step="0.01"
-                              value={tier.earnedHoursPerYear === 0 ? "" : tier.earnedHoursPerYear}
-                              placeholder="0"
-                              onChange={(e) => updateTier(gi, ti, "earnedHoursPerYear", e.target.value === "" ? 0 : (parseFloat(e.target.value) || 0))}
-                              className={smInputCls}
-                            />
-                          </div>
-                          <div>
-                            <label className={smLabelCls}>Carry-Over Hrs</label>
-                            <input type="number" min="0" max="9999" step="1"
-                              value={tier.carryOverHours ?? ""}
-                              onChange={(e) => updateTier(gi, ti, "carryOverHours", e.target.value !== "" ? parseInt(e.target.value, 10) : null)}
-                              placeholder="Unlimited"
-                              className={smInputCls}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -705,7 +820,7 @@ function PolicyForm({ leaveTypes, initial, isPending, onSubmit, onCancel }: {
 
 // ─── Main manager ─────────────────────────────────────────────────────────────
 
-export function PtoPoliciesManager({ policies, leaveTypes }: Props) {
+export function PtoPoliciesManager({ policies, leaveTypes, payCodes }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -722,11 +837,22 @@ export function PtoPoliciesManager({ policies, leaveTypes }: Props) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     setError(null);
+    const rawMax         = fd.get("maxDailyHours")               as string;
+    const rawNegBal      = fd.get("allowNegativeBalance")        as string;
+    const rawMaxNeg      = fd.get("maxNegativeHours")            as string;
+    const rawCarryOn     = fd.get("carryOverEnabled")            as string;
+    const rawRespectMax  = fd.get("carryOverRespectMaxBalance")  as string;
     startTransition(async () => {
       const result = await createPtoPolicy({
-        name:        fd.get("name") as string,
-        description: (fd.get("description") as string) || undefined,
-        isDefault:   fd.get("isDefault") === "true",
+        name:                       fd.get("name") as string,
+        description:                (fd.get("description") as string) || undefined,
+        isDefault:                  fd.get("isDefault") === "true",
+        leaveTypeId:                fd.get("leaveTypeId") as string,
+        maxDailyHours:              rawMax       !== "" ? parseFloat(rawMax) : null,
+        allowNegativeBalance:       rawNegBal    === "true",
+        maxNegativeHours:           rawMaxNeg    !== "" ? parseFloat(rawMaxNeg) : null,
+        carryOverEnabled:           rawCarryOn   !== "false",
+        carryOverRespectMaxBalance: rawRespectMax === "true",
         rules,
         ...posting,
       });
@@ -740,13 +866,24 @@ export function PtoPoliciesManager({ policies, leaveTypes }: Props) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     setError(null);
+    const rawMax         = fd.get("maxDailyHours")               as string;
+    const rawNegBal      = fd.get("allowNegativeBalance")        as string;
+    const rawMaxNeg      = fd.get("maxNegativeHours")            as string;
+    const rawCarryOn     = fd.get("carryOverEnabled")            as string;
+    const rawRespectMax  = fd.get("carryOverRespectMaxBalance")  as string;
     startTransition(async () => {
       const result = await updatePtoPolicy({
-        ptoPolicyId: policy.id,
-        name:        fd.get("name") as string,
-        description: (fd.get("description") as string) || null,
-        isDefault:   fd.get("isDefault") === "true",
-        isActive:    fd.get("isActive") === "true",
+        ptoPolicyId:                policy.id,
+        name:                       fd.get("name") as string,
+        description:                (fd.get("description") as string) || null,
+        isDefault:                  fd.get("isDefault") === "true",
+        isActive:                   fd.get("isActive") === "true",
+        leaveTypeId:                fd.get("leaveTypeId") as string,
+        maxDailyHours:              rawMax       !== "" ? parseFloat(rawMax) : null,
+        allowNegativeBalance:       rawNegBal    === "true",
+        maxNegativeHours:           rawMaxNeg    !== "" ? parseFloat(rawMaxNeg) : null,
+        carryOverEnabled:           rawCarryOn   !== "false",
+        carryOverRespectMaxBalance: rawRespectMax === "true",
         rules,
         ...posting,
       });
@@ -780,61 +917,135 @@ export function PtoPoliciesManager({ policies, leaveTypes }: Props) {
     return `${mode} · ${freq}${reset}`;
   }
 
-  // Summarise a policy's rules grouped by leave type for tile display
-  function summariseRules(rules: RuleFromServer[]) {
-    const grouped = groupRules(rules);
-    return grouped.map((g) => {
-      const lt = rules.find((r) => r.leaveTypeId === g.leaveTypeId)?.leaveType;
-      return { name: lt?.name ?? g.leaveTypeId, tierCount: g.tiers.length };
+  const [search, setSearch] = useState("");
+  const searchLower = search.trim().toLowerCase();
+
+  const policyGroups: { label: string; policies: Policy[] }[] = (() => {
+    const map = new Map<string, Policy[]>();
+    for (const p of policies) {
+      if (searchLower && !p.name.toLowerCase().includes(searchLower)) continue;
+      const key = p.leaveType?.name ?? "Unassigned";
+      const list = map.get(key) ?? [];
+      list.push(p);
+      map.set(key, list);
+    }
+    return [...map.entries()]
+      .sort(([a], [b]) => {
+        if (a === "Unassigned") return 1;
+        if (b === "Unassigned") return -1;
+        return a.localeCompare(b);
+      })
+      .map(([label, ps]) => ({ label, policies: ps.sort((a, b) => a.name.localeCompare(b.name)) }));
+  })();
+
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const allExpanded = policyGroups.length > 0 && expandedGroups.size === policyGroups.length;
+
+  function toggleGroup(label: string) {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      next.has(label) ? next.delete(label) : next.add(label);
+      return next;
     });
+  }
+
+  function toggleAll() {
+    setExpandedGroups(allExpanded ? new Set() : new Set(policyGroups.map((g) => g.label)));
   }
 
   return (
     <div className="mt-6">
-      <div className="flex flex-col gap-2">
-        {policies.length === 0 && <p className="text-sm text-zinc-400">No PTO policies yet. Add one below.</p>}
-        {policies.map((policy) => {
-          const summary = summariseRules(policy.rules);
-          return (
+      {policies.length === 0 && <p className="text-sm text-zinc-400">No PTO policies yet. Add one below.</p>}
+      {policies.length > 0 && (
+        <div className="mb-3 flex items-center gap-3">
+          <div className="relative flex-1 max-w-xs">
+            <svg className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search policies…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm text-zinc-700 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:placeholder-zinc-500"
+            />
+          </div>
+          {policyGroups.length > 0 && !searchLower && (
             <button
-              key={policy.id}
               type="button"
-              onClick={() => openEdit(policy)}
-              className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
+              onClick={toggleAll}
+              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:bg-zinc-800"
             >
-              <div className="flex items-center justify-between">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`font-medium ${policy.isActive ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"}`}>
-                    {policy.name}
-                  </span>
-                  {policy.isDefault && (
-                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">Default</span>
-                  )}
-                  {!policy.isActive && (
-                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">Inactive</span>
-                  )}
-                </div>
-                <span className="text-xs text-zinc-400">Click to edit →</span>
-              </div>
-              {summary.length > 0 ? (
-                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-zinc-500">
-                  {summary.map((s, i) => (
-                    <span key={i}>
-                      <span className="text-zinc-700 dark:text-zinc-300">{s.name}</span>
-                      {s.tierCount > 1 && <span className="ml-1 text-zinc-400">({s.tierCount} tiers)</span>}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-1 text-xs text-zinc-400">No leave types configured</p>
-              )}
-              <p className="mt-0.5 text-xs text-zinc-400">
-                {postingLabel(policy)}
-                {policy._count.siteLinks + policy._count.empOverrides > 0 && (
-                  <> · {policy._count.siteLinks} site{policy._count.siteLinks !== 1 ? "s" : ""} · {policy._count.empOverrides} override{policy._count.empOverrides !== 1 ? "s" : ""}</>
-                )}
-              </p>
+              {allExpanded ? "Collapse all" : "Expand all"}
             </button>
+          )}
+        </div>
+      )}
+      {searchLower && policyGroups.length === 0 && (
+        <p className="text-sm text-zinc-400">No policies match &ldquo;{search}&rdquo;.</p>
+      )}
+      <div className="flex flex-col gap-3">
+        {policyGroups.map(({ label, policies: groupPolicies }) => {
+          const isOpen = searchLower ? true : expandedGroups.has(label);
+          return (
+            <div key={label}>
+              <button
+                type="button"
+                onClick={() => toggleGroup(label)}
+                className="flex w-full items-center gap-1.5 text-left"
+              >
+                <svg
+                  className={`h-3 w-3 flex-shrink-0 text-zinc-400 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+                <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{label}</span>
+                <span className="text-xs text-zinc-300 dark:text-zinc-600">({groupPolicies.length})</span>
+              </button>
+              {isOpen && (
+                <div className="mt-1.5 flex flex-col gap-2">
+                  {groupPolicies.map((policy) => {
+                    const tierCount = policy.rules.length;
+                    return (
+                      <button
+                        key={policy.id}
+                        type="button"
+                        onClick={() => openEdit(policy)}
+                        className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`font-medium ${policy.isActive ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"}`}>
+                              {policy.name}
+                            </span>
+                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                              policy.isActive
+                                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                            }`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${policy.isActive ? "bg-green-500 dark:bg-green-400" : "bg-zinc-400 dark:bg-zinc-500"}`} />
+                              {policy.isActive ? "Active" : "Inactive"}
+                            </span>
+                            {policy.isDefault && (
+                              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">Default</span>
+                            )}
+                          </div>
+                          <span className="text-xs text-zinc-400">Click to edit →</span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-zinc-400">
+                          {postingLabel(policy)}
+                          {tierCount > 1 && <> · {tierCount} tiers</>}
+                          {policy._count.siteLinks + policy._count.empOverrides > 0 && (
+                            <> · {policy._count.siteLinks} site{policy._count.siteLinks !== 1 ? "s" : ""} · {policy._count.empOverrides} override{policy._count.empOverrides !== 1 ? "s" : ""}</>
+                          )}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
@@ -846,7 +1057,7 @@ export function PtoPoliciesManager({ policies, leaveTypes }: Props) {
       {showCreate && (
         <Modal title="New PTO Policy" onClose={closeCreate}>
           {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
-          <PolicyForm leaveTypes={leaveTypes} isPending={isPending} onSubmit={handleCreate} onCancel={closeCreate} />
+          <PolicyForm leaveTypes={leaveTypes} payCodes={payCodes} isPending={isPending} onSubmit={handleCreate} onCancel={closeCreate} />
         </Modal>
       )}
 
@@ -855,6 +1066,7 @@ export function PtoPoliciesManager({ policies, leaveTypes }: Props) {
           {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
           <PolicyForm
             leaveTypes={leaveTypes}
+            payCodes={payCodes}
             initial={editingPolicy}
             isPending={isPending}
             onSubmit={(e, rules, posting) => handleUpdate(editingPolicy, e, rules, posting)}

@@ -14,7 +14,9 @@ function periodsPerYear(startDate: Date, endDate: Date): number {
  * Returns how many times the given frequency fires within this pay period.
  * 0 = don't post. >1 is possible for DAILY/WEEKLY/BI_WEEKLY (multiple cycles per period).
  * ppStart and ppEndIncl are LOCAL midnight dates (from parseUtcDate).
- * basisDate is the employee's resolved service-month anchor date.
+ * cycleAnchor is the reference date for cycle-based frequencies (BI_WEEKLY, WEEKLY, DAILY, ANNUALLY).
+ *   Comes from ptoPolicy.postingAnchorDate when set; falls back to the employee's hire-basis date.
+ * hireAnchor is always the employee's hire-basis date and is used only for ANNUALLY_HIRE.
  */
 function postingTriggered(
   freq: AccrualPostingFreq,
@@ -22,18 +24,19 @@ function postingTriggered(
   fixedDay: number | null,
   ppStart: Date,
   ppEndIncl: Date,
-  basisDate: Date
+  cycleAnchor: Date,
+  hireAnchor: Date
 ): number {
   /** Days from a to b (positive if b > a). */
   function daysBetween(a: Date, b: Date): number {
     return Math.round((b.getTime() - a.getTime()) / 86_400_000);
   }
 
-  /** Count how many multiples of `interval` fall in [lo, hi] where lo/hi are days-since-basisDate. */
+  /** Count how many multiples of `interval` fall in [lo, hi] where lo/hi are days-since-cycleAnchor. */
   function countCycles(interval: number): number {
-    const daysToEnd = daysBetween(basisDate, ppEndIncl);
+    const daysToEnd = daysBetween(cycleAnchor, ppEndIncl);
     if (daysToEnd < 0) return 0;
-    const daysToStart = daysBetween(basisDate, ppStart);
+    const daysToStart = daysBetween(cycleAnchor, ppStart);
     const lo = Math.max(0, daysToStart);
     const firstFire = Math.ceil(lo / interval) * interval;
     if (firstFire > daysToEnd) return 0;
@@ -93,9 +96,11 @@ function postingTriggered(
 
     case "ANNUALLY":
     case "ANNUALLY_HIRE": {
-      // Annual anniversary of basisDate
+      // ANNUALLY fires on the policy cycle-anchor date each year.
+      // ANNUALLY_HIRE fires on each employee's individual hire-date anniversary.
+      const anchor = freq === "ANNUALLY_HIRE" ? hireAnchor : cycleAnchor;
       for (const year of [ppStart.getFullYear(), ppStart.getFullYear() + 1]) {
-        const anniversary = new Date(year, basisDate.getMonth(), basisDate.getDate());
+        const anniversary = new Date(year, anchor.getMonth(), anchor.getDate());
         if (anniversary >= ppStart && anniversary <= ppEndIncl) return 1;
       }
       return 0;
@@ -170,11 +175,11 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
   const yearStart = new Date(`${accrualYear}-01-01T00:00:00Z`);
   const yearEnd   = new Date(`${accrualYear + 1}-01-01T00:00:00Z`);
 
-  const [employees, leaveTypes, rules, siteLinks, empOverrides] = await Promise.all([
+  const [employees, leaveTypes, rules, siteLinks, empOverrides, catPolicyLinks] = await Promise.all([
     db.employee.findMany({
       where: { isActive: true, tenantId: payPeriod.tenantId },
       select: {
-        id: true, siteId: true, hireDate: true,
+        id: true, siteId: true, payCategoryId: true, hireDate: true,
         adjustedHireDate: true, titleChangeDate: true,
         orientationDate: true, userDate2: true,
       },
@@ -185,19 +190,22 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
       include: {
         ptoPolicy: {
           select: {
-            isDefault:         true,
-            rateMode:          true,
-            serviceMonthBasis: true,
-            posting1Freq:      true,
-            posting1Month:     true,
-            posting1Day:       true,
-            dualPosting:       true,
-            posting2Freq:      true,
-            posting2Month:     true,
-            posting2Day:       true,
-            balanceReset:      true,
-            resetMonth:        true,
-            resetDay:          true,
+            isDefault:                  true,
+            rateMode:                   true,
+            serviceMonthBasis:          true,
+            postingAnchorDate:          true,
+            posting1Freq:               true,
+            posting1Month:              true,
+            posting1Day:                true,
+            dualPosting:                true,
+            posting2Freq:               true,
+            posting2Month:              true,
+            posting2Day:                true,
+            balanceReset:               true,
+            resetMonth:                 true,
+            resetDay:                   true,
+            carryOverEnabled:           true,
+            carryOverRespectMaxBalance: true,
           },
         },
       },
@@ -206,6 +214,10 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
     db.employeePtoPolicyOverride.findMany({
       where: { employee: { tenantId: payPeriod.tenantId } },
       select: { employeeId: true, ptoPolicyId: true },
+    }),
+    db.payCategoryPtoPolicy.findMany({
+      where: { payCategory: { tenantId: payPeriod.tenantId } },
+      include: { ptoPolicy: { select: { id: true, rules: { select: { leaveTypeId: true } } } } },
     }),
   ]);
 
@@ -258,6 +270,14 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
   const empOverrideMap = new Map(
     empOverrides.map((e) => [e.employeeId, e.ptoPolicyId])
   );
+  // payCategoryId:leaveTypeId → ptoPolicyId (first policy in category that covers this leave type)
+  const catPolicyMap = new Map<string, string>();
+  for (const link of catPolicyLinks) {
+    for (const rule of link.ptoPolicy.rules) {
+      const k = `${link.payCategoryId}:${rule.leaveTypeId}`;
+      if (!catPolicyMap.has(k)) catPolicyMap.set(k, link.ptoPolicyId);
+    }
+  }
   // defaultPolicyId per leave type (from the isDefault policy's rules)
   const defaultPolicyByLeaveType = new Map<string, string>();
   for (const r of rules) {
@@ -269,6 +289,7 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
       // Resolve which policy applies, then find the matching tenure tier
       const policyId =
         empOverrideMap.get(employee.id) ??
+        (employee.payCategoryId ? catPolicyMap.get(`${employee.payCategoryId}:${leaveType.id}`) : undefined) ??
         sitePolicyMap.get(`${employee.siteId}:${leaveType.id}`) ??
         defaultPolicyByLeaveType.get(leaveType.id);
       const tiers = policyId ? (ruleMap.get(`${policyId}:${leaveType.id}`) ?? []) : [];
@@ -283,6 +304,12 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
         basis === "USER_DATE_2"        ? (employee.userDate2        ?? employee.hireDate) :
         employee.hireDate;
       const empBasisDate = parseUtcDate(basisRaw);
+      // Cycle anchor: use the policy's postingAnchorDate when set (all employees share the same
+      // cycle phase), otherwise fall back to the individual hire-basis date.
+      const cycleAnchor = pConfig?.postingAnchorDate ? parseUtcDate(pConfig.postingAnchorDate) : empBasisDate;
+
+      // Don't post for periods that end before the employee's basis date.
+      if (ppEndIncl < empBasisDate) continue;
 
       const tenureMonths = differenceInMonths(payPeriod.endDate, basisRaw);
       const rule = tiers.find(
@@ -309,13 +336,13 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
       if (effectiveAnnualHours > 0 && pConfig) {
         const p1count = postingTriggered(
           pConfig.posting1Freq, pConfig.posting1Month, pConfig.posting1Day,
-          ppStart, ppEndIncl, empBasisDate
+          ppStart, ppEndIncl, cycleAnchor, empBasisDate
         );
         const p2count =
           pConfig.dualPosting && pConfig.posting2Freq != null
             ? postingTriggered(
                 pConfig.posting2Freq, pConfig.posting2Month, pConfig.posting2Day,
-                ppStart, ppEndIncl, empBasisDate
+                ppStart, ppEndIncl, cycleAnchor, empBasisDate
               )
             : 0;
 
@@ -355,7 +382,7 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
           },
           select: { balanceMinutes: true },
         });
-        if (prevYear && prevYear.balanceMinutes > 0) {
+        if (prevYear && prevYear.balanceMinutes > 0 && pConfig?.carryOverEnabled !== false) {
           const capMinutes = rule.carryOverHours != null ? rule.carryOverHours * 60 : null;
           openingCarryOver = capMinutes != null
             ? Math.min(prevYear.balanceMinutes, capMinutes)
@@ -396,9 +423,11 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
       let balanceAfterReset = existing.balanceMinutes;
       if (isResetPeriod && !alreadyResetThisYear.has(resetKey)) {
         const coMins = rule?.carryOverHours != null ? rule.carryOverHours * 60 : null;
-        const resetCarryOver = coMins != null
-          ? Math.min(existing.balanceMinutes, coMins)
-          : existing.balanceMinutes; // unlimited carry-over = preserve full balance
+        const resetCarryOver = pConfig?.carryOverEnabled === false
+          ? 0
+          : coMins != null
+            ? Math.min(existing.balanceMinutes, coMins)
+            : existing.balanceMinutes; // unlimited carry-over = preserve full balance
         if (existing.balanceMinutes > 0) {
           await db.$transaction([
             db.leaveBalance.update({ where: { id: existing.id }, data: { balanceMinutes: 0 } }),
@@ -413,19 +442,63 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
           ]);
         }
         if (resetCarryOver > 0) {
-          await db.$transaction([
-            db.leaveBalance.update({ where: { id: existing.id }, data: { balanceMinutes: resetCarryOver } }),
-            db.leaveAccrualLedger.create({
-              data: {
-                employeeId: employee.id, leaveTypeId: leaveType.id,
-                action: "CARRY_OVER",
-                deltaMinutes: resetCarryOver, balanceAfter: resetCarryOver,
-                payPeriodEnd: payPeriod.endDate,
-              },
-            }),
-          ]);
+          const targetLtId = rule?.carryOverToLeaveTypeId ?? null;
+          if (targetLtId && targetLtId !== leaveType.id) {
+            // Carry over into a different leave type bucket
+            const targetBalance = await db.leaveBalance.upsert({
+              where: { employeeId_leaveTypeId_accrualYear: { employeeId: employee.id, leaveTypeId: targetLtId, accrualYear } },
+              update: {},
+              create: { employeeId: employee.id, leaveTypeId: targetLtId, accrualYear, balanceMinutes: 0, usedMinutes: 0 },
+            });
+            // If carryOverRespectMaxBalance, clamp to the destination's max balance
+            let actualCarryOver = resetCarryOver;
+            if (pConfig?.carryOverRespectMaxBalance) {
+              const destPolicyId =
+                empOverrideMap.get(employee.id) ??
+                (employee.payCategoryId ? catPolicyMap.get(`${employee.payCategoryId}:${targetLtId}`) : undefined) ??
+                sitePolicyMap.get(`${employee.siteId}:${targetLtId}`) ??
+                defaultPolicyByLeaveType.get(targetLtId);
+              const destTiers = destPolicyId ? (ruleMap.get(`${destPolicyId}:${targetLtId}`) ?? []) : [];
+              const destRule = destTiers.find(
+                (t) => t.minTenureMonths <= tenureMonths && (t.maxTenureMonths === null || tenureMonths < t.maxTenureMonths)
+              ) ?? null;
+              if (destRule?.maxBalanceHours != null) {
+                const destMaxMins = Math.round(destRule.maxBalanceHours * 60);
+                actualCarryOver = Math.max(0, Math.min(resetCarryOver, destMaxMins - targetBalance.balanceMinutes));
+              }
+            }
+            if (actualCarryOver > 0) {
+              const newTargetBalance = targetBalance.balanceMinutes + actualCarryOver;
+              await db.$transaction([
+                db.leaveBalance.update({ where: { id: targetBalance.id }, data: { balanceMinutes: newTargetBalance } }),
+                db.leaveAccrualLedger.create({
+                  data: {
+                    employeeId: employee.id, leaveTypeId: targetLtId,
+                    action: "CARRY_OVER",
+                    deltaMinutes: actualCarryOver, balanceAfter: newTargetBalance,
+                    payPeriodEnd: payPeriod.endDate,
+                  },
+                }),
+              ]);
+            }
+            balanceAfterReset = 0;
+          } else {
+            await db.$transaction([
+              db.leaveBalance.update({ where: { id: existing.id }, data: { balanceMinutes: resetCarryOver } }),
+              db.leaveAccrualLedger.create({
+                data: {
+                  employeeId: employee.id, leaveTypeId: leaveType.id,
+                  action: "CARRY_OVER",
+                  deltaMinutes: resetCarryOver, balanceAfter: resetCarryOver,
+                  payPeriodEnd: payPeriod.endDate,
+                },
+              }),
+            ]);
+            balanceAfterReset = resetCarryOver;
+          }
+        } else {
+          balanceAfterReset = 0;
         }
-        balanceAfterReset = resetCarryOver;
         alreadyResetThisYear.add(resetKey);
       }
 
@@ -456,7 +529,9 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
 
       // Use post-reset balance as the starting point for this accrual
       const currentBalance = balanceAfterReset;
-      const cap = leaveType.maxBalanceMinutes;
+      const cap = rule?.maxBalanceHours != null
+        ? Math.round(rule.maxBalanceHours * 60)
+        : leaveType.maxBalanceMinutes;
       const newBalance = cap !== null
         ? Math.min(currentBalance + rate, cap)
         : currentBalance + rate;
@@ -503,11 +578,11 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
   const yearStart = new Date(`${accrualYear}-01-01T00:00:00Z`);
   const yearEnd   = new Date(`${accrualYear + 1}-01-01T00:00:00Z`);
 
-  const [employees, leaveTypes, rules, siteLinks, empOverrides] = await Promise.all([
+  const [employees, leaveTypes, rules, siteLinks, empOverrides, catPolicyLinks] = await Promise.all([
     db.employee.findMany({
       where: { isActive: true },
       select: {
-        id: true, siteId: true, tenantId: true, hireDate: true,
+        id: true, siteId: true, tenantId: true, payCategoryId: true, hireDate: true,
         adjustedHireDate: true, titleChangeDate: true,
         orientationDate: true, userDate2: true,
       },
@@ -518,20 +593,23 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
       include: {
         ptoPolicy: {
           select: {
-            tenantId:          true,
-            isDefault:         true,
-            rateMode:          true,
-            serviceMonthBasis: true,
-            posting1Freq:      true,
-            posting1Month:     true,
-            posting1Day:       true,
-            dualPosting:       true,
-            posting2Freq:      true,
-            posting2Month:     true,
-            posting2Day:       true,
-            balanceReset:      true,
-            resetMonth:        true,
-            resetDay:          true,
+            tenantId:                   true,
+            isDefault:                  true,
+            rateMode:                   true,
+            serviceMonthBasis:          true,
+            postingAnchorDate:          true,
+            posting1Freq:               true,
+            posting1Month:              true,
+            posting1Day:                true,
+            dualPosting:                true,
+            posting2Freq:               true,
+            posting2Month:              true,
+            posting2Day:                true,
+            balanceReset:               true,
+            resetMonth:                 true,
+            resetDay:                   true,
+            carryOverEnabled:           true,
+            carryOverRespectMaxBalance: true,
           },
         },
       },
@@ -539,6 +617,9 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
     db.sitePtoPolicy.findMany({}),
     db.employeePtoPolicyOverride.findMany({
       select: { employeeId: true, ptoPolicyId: true },
+    }),
+    db.payCategoryPtoPolicy.findMany({
+      include: { ptoPolicy: { select: { id: true, rules: { select: { leaveTypeId: true } } } } },
     }),
   ]);
 
@@ -604,6 +685,14 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
   const empOverrideMap = new Map(
     empOverrides.map((e) => [e.employeeId, e.ptoPolicyId])
   );
+  // payCategoryId:leaveTypeId → ptoPolicyId (first policy in category that covers this leave type)
+  const catPolicyMap = new Map<string, string>();
+  for (const link of catPolicyLinks) {
+    for (const rule of link.ptoPolicy.rules) {
+      const k = `${link.payCategoryId}:${rule.leaveTypeId}`;
+      if (!catPolicyMap.has(k)) catPolicyMap.set(k, link.ptoPolicyId);
+    }
+  }
   // Default policy scoped per tenant + leave type
   const defaultPolicyMap = new Map<string, string>();
   for (const r of rules) {
@@ -624,6 +713,7 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
 
       const policyId =
         empOverrideMap.get(employee.id) ??
+        (employee.payCategoryId ? catPolicyMap.get(`${employee.payCategoryId}:${leaveType.id}`) : undefined) ??
         sitePolicyMap.get(`${employee.siteId}:${leaveType.id}`) ??
         defaultPolicyMap.get(`${employee.tenantId}:${leaveType.id}`);
 
@@ -642,6 +732,14 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
         basis === "USER_DATE_2"        ? (employee.userDate2        ?? employee.hireDate) :
         employee.hireDate;
       const empBasisDate = parseUtcDate(basisRaw);
+      // Cycle anchor: use the policy's postingAnchorDate when set (all employees share the same
+      // cycle phase), otherwise fall back to the individual hire-basis date.
+      const cycleAnchor = pConfig.postingAnchorDate ? parseUtcDate(pConfig.postingAnchorDate) : empBasisDate;
+
+      // Don't post before the employee's basis date. differenceInMonths returns 0
+      // for any gap < 1 month, so a cycle landing up to 28 days before hire would
+      // incorrectly match the minTenureMonths = 0 tier without this guard.
+      if (ppDay < empBasisDate) continue;
 
       const tenureMonths = differenceInMonths(postingDate, basisRaw);
       const rule = tiers.find(
@@ -673,13 +771,13 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
       if (effectiveAnnualHours > 0) {
         const p1count = postingTriggered(
           pConfig.posting1Freq, pConfig.posting1Month, pConfig.posting1Day,
-          ppDay, ppDay, empBasisDate
+          ppDay, ppDay, cycleAnchor, empBasisDate
         );
         const p2count =
           pConfig.dualPosting && pConfig.posting2Freq != null
             ? postingTriggered(
                 pConfig.posting2Freq, pConfig.posting2Month, pConfig.posting2Day,
-                ppDay, ppDay, empBasisDate
+                ppDay, ppDay, cycleAnchor, empBasisDate
               )
             : 0;
         if (p1count || p2count) {
@@ -713,7 +811,7 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
           },
           select: { balanceMinutes: true },
         });
-        if (prevYear && prevYear.balanceMinutes > 0) {
+        if (prevYear && prevYear.balanceMinutes > 0 && pConfig?.carryOverEnabled !== false) {
           const capMinutes = rule.carryOverHours != null ? rule.carryOverHours * 60 : null;
           openingCarryOver = capMinutes != null
             ? Math.min(prevYear.balanceMinutes, capMinutes)
@@ -752,9 +850,11 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
       let balanceAfterReset = existing.balanceMinutes;
       if (isResetDay && !alreadyResetThisYear.has(resetKey)) {
         const coMins = rule?.carryOverHours != null ? rule.carryOverHours * 60 : null;
-        const resetCarryOver = coMins != null
-          ? Math.min(existing.balanceMinutes, coMins)
-          : existing.balanceMinutes; // unlimited carry-over = preserve full balance
+        const resetCarryOver = pConfig?.carryOverEnabled === false
+          ? 0
+          : coMins != null
+            ? Math.min(existing.balanceMinutes, coMins)
+            : existing.balanceMinutes; // unlimited carry-over = preserve full balance
         if (existing.balanceMinutes > 0) {
           await db.$transaction([
             db.leaveBalance.update({ where: { id: existing.id }, data: { balanceMinutes: 0 } }),
@@ -769,19 +869,63 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
           ]);
         }
         if (resetCarryOver > 0) {
-          await db.$transaction([
-            db.leaveBalance.update({ where: { id: existing.id }, data: { balanceMinutes: resetCarryOver } }),
-            db.leaveAccrualLedger.create({
-              data: {
-                employeeId: employee.id, leaveTypeId: leaveType.id,
-                action: "CARRY_OVER",
-                deltaMinutes: resetCarryOver, balanceAfter: resetCarryOver,
-                payPeriodEnd: postingDate,
-              },
-            }),
-          ]);
+          const targetLtId = rule?.carryOverToLeaveTypeId ?? null;
+          if (targetLtId && targetLtId !== leaveType.id) {
+            // Carry over into a different leave type bucket
+            const targetBalance = await db.leaveBalance.upsert({
+              where: { employeeId_leaveTypeId_accrualYear: { employeeId: employee.id, leaveTypeId: targetLtId, accrualYear } },
+              update: {},
+              create: { employeeId: employee.id, leaveTypeId: targetLtId, accrualYear, balanceMinutes: 0, usedMinutes: 0 },
+            });
+            // If carryOverRespectMaxBalance, clamp to the destination's max balance
+            let actualCarryOver = resetCarryOver;
+            if (pConfig?.carryOverRespectMaxBalance) {
+              const destPolicyId =
+                empOverrideMap.get(employee.id) ??
+                (employee.payCategoryId ? catPolicyMap.get(`${employee.payCategoryId}:${targetLtId}`) : undefined) ??
+                sitePolicyMap.get(`${employee.siteId}:${targetLtId}`) ??
+                defaultPolicyMap.get(`${employee.tenantId}:${targetLtId}`);
+              const destTiers = destPolicyId ? (ruleMap.get(`${destPolicyId}:${targetLtId}`) ?? []) : [];
+              const destRule = destTiers.find(
+                (t) => t.minTenureMonths <= tenureMonths && (t.maxTenureMonths === null || tenureMonths < t.maxTenureMonths)
+              ) ?? null;
+              if (destRule?.maxBalanceHours != null) {
+                const destMaxMins = Math.round(destRule.maxBalanceHours * 60);
+                actualCarryOver = Math.max(0, Math.min(resetCarryOver, destMaxMins - targetBalance.balanceMinutes));
+              }
+            }
+            if (actualCarryOver > 0) {
+              const newTargetBalance = targetBalance.balanceMinutes + actualCarryOver;
+              await db.$transaction([
+                db.leaveBalance.update({ where: { id: targetBalance.id }, data: { balanceMinutes: newTargetBalance } }),
+                db.leaveAccrualLedger.create({
+                  data: {
+                    employeeId: employee.id, leaveTypeId: targetLtId,
+                    action: "CARRY_OVER",
+                    deltaMinutes: actualCarryOver, balanceAfter: newTargetBalance,
+                    payPeriodEnd: postingDate,
+                  },
+                }),
+              ]);
+            }
+            balanceAfterReset = 0;
+          } else {
+            await db.$transaction([
+              db.leaveBalance.update({ where: { id: existing.id }, data: { balanceMinutes: resetCarryOver } }),
+              db.leaveAccrualLedger.create({
+                data: {
+                  employeeId: employee.id, leaveTypeId: leaveType.id,
+                  action: "CARRY_OVER",
+                  deltaMinutes: resetCarryOver, balanceAfter: resetCarryOver,
+                  payPeriodEnd: postingDate,
+                },
+              }),
+            ]);
+            balanceAfterReset = resetCarryOver;
+          }
+        } else {
+          balanceAfterReset = 0;
         }
-        balanceAfterReset = resetCarryOver;
         alreadyResetThisYear.add(resetKey);
       }
 
@@ -802,7 +946,9 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
 
       // Use post-reset balance as the starting point for this accrual
       const currentBalance = balanceAfterReset;
-      const cap = leaveType.maxBalanceMinutes;
+      const cap = rule?.maxBalanceHours != null
+        ? Math.round(rule.maxBalanceHours * 60)
+        : leaveType.maxBalanceMinutes;
       const newBalance = cap !== null
         ? Math.min(currentBalance + rate, cap)
         : currentBalance + rate;

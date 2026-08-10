@@ -29,6 +29,7 @@ import {
   type UpdateRuleSetInput,
   adjustLeaveBalanceSchema,
   csvEmployeeRowSchema,
+  postAccrualCorrectionSchema,
   ROLES,
   type AdjustLeaveBalanceInput,
   type CsvEmployeeRow,
@@ -673,7 +674,7 @@ export const createLeaveType = withRBAC(
     let { externalCode } = parsed;
     if (externalCode == null) {
       const max = await db.leaveType.findFirst({
-        where: { tenantId, externalCode: { not: null } },
+        where: { tenantId, externalCode: { gte: 1 } },
         orderBy: { externalCode: "desc" },
         select: { externalCode: true },
       });
@@ -688,7 +689,7 @@ export const createLeaveType = withRBAC(
       action: "LEAVE_TYPE_CREATED",
       changes: { after: { name: lt.name } },
     });
-    revalidatePath("/admin/leave-types");
+    revalidatePath("/admin/site-settings");
     return lt;
   }
 );
@@ -708,7 +709,7 @@ export const updateLeaveType = withRBAC(
       entityId: leaveTypeId,
       action: "LEAVE_TYPE_UPDATED",
     });
-    revalidatePath("/admin/leave-types");
+    revalidatePath("/admin/site-settings");
     return updated;
   }
 );
@@ -854,6 +855,58 @@ export const adjustLeaveBalance = withRBAC(
     });
 
     revalidatePath(`/admin/employees/${employeeId}`);
+  }
+);
+
+/** Post a delta ADJUSTMENT entry to correct a gap between expected and actual accrual. */
+export const postAccrualCorrection = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async ({ employeeId: actorId, tenantId }, input: unknown) => {
+    const { employeeId, leaveTypeId, year, deltaMinutes, note } = postAccrualCorrectionSchema.parse(input);
+
+    if (deltaMinutes === 0) return { success: true as const };
+
+    const existing = await db.leaveBalance.upsert({
+      where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear: year } },
+      update: {},
+      create: { employeeId, leaveTypeId, accrualYear: year, balanceMinutes: 0, usedMinutes: 0 },
+    });
+
+    const newBalance = existing.balanceMinutes + deltaMinutes;
+
+    await db.$transaction([
+      db.leaveBalance.update({
+        where: { id: existing.id },
+        data: { balanceMinutes: newBalance },
+      }),
+      db.leaveAccrualLedger.create({
+        data: {
+          employeeId,
+          leaveTypeId,
+          action: "ACCRUAL",
+          deltaMinutes,
+          balanceAfter: newBalance,
+          payPeriodEnd: new Date(),
+          note: `Accrual correction: ${note}`,
+          createdById: actorId,
+        },
+      }),
+    ]);
+
+    await writeAuditLog({
+      tenantId,
+      actorId,
+      entityType: "EMPLOYEE",
+      entityId: employeeId,
+      action: "LEAVE_BALANCE_ADJUSTED",
+      changes: {
+        before: { balanceMinutes: existing.balanceMinutes },
+        after:  { balanceMinutes: newBalance, note: `Accrual correction: ${note}` },
+      },
+    });
+
+    revalidatePath(`/admin/employees/${employeeId}`);
+    return { success: true as const };
   }
 );
 

@@ -20,6 +20,7 @@ export const getPtoPolicies = withRBAC(
       where: { tenantId: tenantId! },
       orderBy: { name: "asc" },
       include: {
+        leaveType: { select: { id: true, name: true, category: true } },
         rules: {
           orderBy: { leaveTypeId: "asc" },
           include: { leaveType: { select: { id: true, name: true, category: true } } },
@@ -37,8 +38,8 @@ export const createPtoPolicy = withRBAC(
   "RULES_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: unknown) => {
     const {
-      name, description, isDefault, rules,
-      rateMode, serviceMonthBasis,
+      name, description, isDefault, leaveTypeId, maxDailyHours, allowNegativeBalance, maxNegativeHours, carryOverEnabled, carryOverRespectMaxBalance, rules,
+      rateMode, serviceMonthBasis, postingAnchorDate,
       posting1Freq, posting1Month, posting1Day,
       dualPosting, posting2Freq, posting2Month, posting2Day,
       balanceReset, resetMonth, resetDay,
@@ -58,8 +59,15 @@ export const createPtoPolicy = withRBAC(
           name,
           description,
           isDefault,
+          leaveTypeId:          leaveTypeId ?? null,
+          maxDailyHours:        maxDailyHours ?? null,
+          allowNegativeBalance:       allowNegativeBalance ?? false,
+          maxNegativeHours:           maxNegativeHours ?? null,
+          carryOverEnabled:           carryOverEnabled ?? true,
+          carryOverRespectMaxBalance: carryOverRespectMaxBalance ?? false,
           rateMode,
           serviceMonthBasis,
+          postingAnchorDate: postingAnchorDate ?? null,
           posting1Freq,
           posting1Month: posting1Month ?? null,
           posting1Day:   posting1Day   ?? null,
@@ -72,12 +80,15 @@ export const createPtoPolicy = withRBAC(
           resetDay:   resetDay   ?? null,
           rules: {
             create: rules.map((r) => ({
-              leaveTypeId:      r.leaveTypeId,
-              minTenureMonths:  r.minTenureMonths,
-              maxTenureMonths:  r.maxTenureMonths ?? null,
+              leaveTypeId:        r.leaveTypeId,
+              minTenureMonths:    r.minTenureMonths,
+              maxTenureMonths:    r.maxTenureMonths ?? null,
               annualHours:        r.annualHours,
               earnedHoursPerYear: r.earnedHoursPerYear,
-              carryOverHours:     r.carryOverHours ?? null,
+              carryOverHours:     r.carryOverHours   ?? null,
+              maxAnnualHours:     r.maxAnnualHours   ?? null,
+              maxBalanceHours:    r.maxBalanceHours  ?? null,
+              payCodeId:          r.payCodeId        ?? null,
             })),
           },
         },
@@ -107,10 +118,11 @@ export const updatePtoPolicy = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: unknown) => {
     const {
       ptoPolicyId, rules,
-      rateMode, serviceMonthBasis,
+      rateMode, serviceMonthBasis, postingAnchorDate,
       posting1Freq, posting1Month, posting1Day,
       dualPosting, posting2Freq, posting2Month, posting2Day,
       balanceReset, resetMonth, resetDay,
+      leaveTypeId, maxDailyHours, allowNegativeBalance, maxNegativeHours, carryOverEnabled, carryOverRespectMaxBalance,
       ...fields
     } = updatePtoPolicySchema.parse(input);
 
@@ -126,18 +138,25 @@ export const updatePtoPolicy = withRBAC(
         where: { id: ptoPolicyId },
         data: {
           ...fields,
-          ...(rateMode           !== undefined && { rateMode }),
-          ...(serviceMonthBasis  !== undefined && { serviceMonthBasis }),
-          ...(posting1Freq       !== undefined && { posting1Freq }),
-          ...(dualPosting   !== undefined && { dualPosting }),
+          ...(rateMode              !== undefined && { rateMode }),
+          ...(serviceMonthBasis     !== undefined && { serviceMonthBasis }),
+          ...(postingAnchorDate     !== undefined && { postingAnchorDate: postingAnchorDate ?? null }),
+          ...(posting1Freq          !== undefined && { posting1Freq }),
+          ...(dualPosting           !== undefined && { dualPosting }),
           posting1Month: posting1Month ?? null,
           posting1Day:   posting1Day   ?? null,
           posting2Freq:  posting2Freq  ?? null,
           posting2Month: posting2Month ?? null,
           posting2Day:   posting2Day   ?? null,
           ...(balanceReset !== undefined && { balanceReset }),
-          resetMonth: resetMonth ?? null,
-          resetDay:   resetDay   ?? null,
+          resetMonth:    resetMonth    ?? null,
+          resetDay:      resetDay      ?? null,
+          ...(maxDailyHours        !== undefined && { maxDailyHours:        maxDailyHours ?? null }),
+          ...(leaveTypeId                !== undefined && { leaveTypeId }),
+          ...(allowNegativeBalance       !== undefined && { allowNegativeBalance }),
+          ...(maxNegativeHours           !== undefined && { maxNegativeHours: maxNegativeHours ?? null }),
+          ...(carryOverEnabled           !== undefined && { carryOverEnabled }),
+          ...(carryOverRespectMaxBalance !== undefined && { carryOverRespectMaxBalance }),
         },
       });
 
@@ -147,12 +166,16 @@ export const updatePtoPolicy = withRBAC(
           await tx.ptoPolicyRule.createMany({
             data: rules.map((r) => ({
               ptoPolicyId,
-              leaveTypeId:      r.leaveTypeId,
-              minTenureMonths:  r.minTenureMonths,
-              maxTenureMonths:  r.maxTenureMonths ?? null,
+              leaveTypeId:        r.leaveTypeId,
+              minTenureMonths:    r.minTenureMonths,
+              maxTenureMonths:    r.maxTenureMonths ?? null,
               annualHours:        r.annualHours,
               earnedHoursPerYear: r.earnedHoursPerYear,
-              carryOverHours:     r.carryOverHours ?? null,
+              carryOverHours:         r.carryOverHours         ?? null,
+              carryOverToLeaveTypeId: r.carryOverToLeaveTypeId ?? null,
+              maxAnnualHours:         r.maxAnnualHours         ?? null,
+              maxBalanceHours:        r.maxBalanceHours        ?? null,
+              payCodeId:              r.payCodeId              ?? null,
             })),
           });
         }

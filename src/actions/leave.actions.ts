@@ -14,6 +14,7 @@ import {
   createLeaveRequestCore,
   submitLeaveRequestCore,
   cancelLeaveRequestCore,
+  validateBalanceForApproval,
 } from "@/lib/services/leave.service";
 import {
   leaveRequestIdSchema,
@@ -126,6 +127,8 @@ export const approveLeaveRequest = withRBAC(
       action: "APPROVED",
       changes: { before: request.status, after: transition.newStatus },
     });
+
+    await validateBalanceForApproval(leaveRequestId);
 
     await postLeaveUsage(leaveRequestId);
 

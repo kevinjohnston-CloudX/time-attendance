@@ -103,7 +103,6 @@ export const leaveTypeSchema = z.object({
   category: z.enum(LEAVE_CATEGORIES),
   accrualRateMinutes: z.number().int().min(0).default(0),
   maxBalanceMinutes: z.number().int().positive().nullable().optional(),
-  carryOverMinutes: z.number().int().min(0).default(0),
   requiresApproval: z.boolean().default(true),
   isPaid: z.boolean().default(true),
   externalCode: z.number().int().positive().nullable().optional(),
@@ -190,3 +189,13 @@ export const csvEmployeeRowSchema = z.object({
 export type CsvEmployeeRow = z.infer<typeof csvEmployeeRowSchema>;
 
 export type AdjustLeaveBalanceInput = z.infer<typeof adjustLeaveBalanceSchema>;
+
+export const postAccrualCorrectionSchema = z.object({
+  employeeId:   z.string().min(1),
+  leaveTypeId:  z.string().min(1),
+  year:         z.number().int(),
+  deltaMinutes: z.number().int(),
+  note:         z.string().min(1, "A reason is required"),
+});
+
+export type PostAccrualCorrectionInput = z.infer<typeof postAccrualCorrectionSchema>;

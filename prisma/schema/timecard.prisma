@@ -13,8 +13,9 @@ model PayCode {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant   Tenant        @relation(fields: [tenantId], references: [id])
-  segments WorkSegment[]
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  segments       WorkSegment[]
+  ptoPolicyRules PtoPolicyRule[]
 
   @@unique([tenantId, code])
   @@unique([tenantId, expressCode])

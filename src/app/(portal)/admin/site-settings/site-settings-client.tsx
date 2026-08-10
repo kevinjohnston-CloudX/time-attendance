@@ -245,13 +245,13 @@ export function SiteSettingsClient({
               <HolidayRulesManager rules={holidayRules} />
             )}
             {activeTab === "pay-categories" && (
-              <PayCategoriesManager categories={payCategories} />
+              <PayCategoriesManager categories={payCategories} ptoPolicies={ptoPolicies} />
             )}
             {activeTab === "leave-types" && (
               <LeaveTypesManager leaveTypes={leaveTypes} />
             )}
             {activeTab === "pto-policies" && (
-              <PtoPoliciesManager policies={ptoPolicies} leaveTypes={leaveTypes} />
+              <PtoPoliciesManager policies={ptoPolicies} leaveTypes={leaveTypes} payCodes={payCodes} />
             )}
             {activeTab === "pay-codes" && (
               <PayCodesManager payCodes={payCodes} />

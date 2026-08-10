@@ -51,11 +51,23 @@ model PayCategory {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  tenant    Tenant     @relation(fields: [tenantId], references: [id])
-  employees Employee[]
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id])
+  employees   Employee[]
+  ptoPolicies PayCategoryPtoPolicy[]
 
   @@unique([tenantId, number])
   @@map("pay_categories")
+}
+
+model PayCategoryPtoPolicy {
+  payCategoryId String
+  ptoPolicyId   String
+
+  payCategory PayCategory @relation(fields: [payCategoryId], references: [id], onDelete: Cascade)
+  ptoPolicy   PtoPolicy   @relation(fields: [ptoPolicyId], references: [id], onDelete: Cascade)
+
+  @@id([payCategoryId, ptoPolicyId])
+  @@map("pay_category_pto_policies")
 }
 
 model RuleSet {

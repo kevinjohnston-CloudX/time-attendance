@@ -3,9 +3,22 @@
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createPayCategory, updatePayCategory, deletePayCategory } from "@/actions/pay-category.actions";
-import type { PayCategory } from "@prisma/client";
 
-interface Props { categories: PayCategory[] }
+type PolicyRule = { leaveTypeId: string; leaveType: { id: string; name: string } };
+type PolicyOption = { id: string; name: string; rules: PolicyRule[] };
+
+type CategoryWithPolicies = {
+  id: string;
+  number: number;
+  description: string | null;
+  isActive: boolean;
+  ptoPolicies: Array<{ ptoPolicy: PolicyOption }>;
+};
+
+interface Props {
+  categories: CategoryWithPolicies[];
+  ptoPolicies: PolicyOption[];
+}
 
 const inputCls =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
@@ -16,17 +29,113 @@ const cancelBtnCls =
 const dangerBtnCls =
   "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50";
 
-function CategoryFields({ category }: { category?: PayCategory }) {
+function CategoryFields({ category, defaultNumber }: { category?: CategoryWithPolicies; defaultNumber?: number }) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
         <label className="mb-1 block text-xs text-zinc-500">Category Number</label>
-        <input name="number" type="number" min="1" max="9999" required defaultValue={category?.number ?? ""} placeholder="e.g. 100" className={inputCls} />
+        <input name="number" type="number" min="1" max="9999" required defaultValue={category?.number ?? defaultNumber ?? ""} placeholder="e.g. 100" className={inputCls} />
       </div>
       <div>
         <label className="mb-1 block text-xs text-zinc-500">Description</label>
         <input name="description" maxLength={255} defaultValue={category?.description ?? ""} placeholder="e.g. Full-Time Hourly" className={inputCls} />
       </div>
+    </div>
+  );
+}
+
+// ─── Policy picker sub-component ──────────────────────────────────────────────
+
+function PolicyPicker({
+  assigned,
+  allPolicies,
+  onChange,
+}: {
+  assigned: PolicyOption[];
+  allPolicies: PolicyOption[];
+  onChange: (policies: PolicyOption[]) => void;
+}) {
+  const [pickerId, setPickerId] = useState("");
+  const [overlapError, setOverlapError] = useState<string | null>(null);
+
+  const assignedIds = new Set(assigned.map((p) => p.id));
+  const available = allPolicies.filter((p) => !assignedIds.has(p.id));
+
+  function handleAdd() {
+    if (!pickerId) return;
+    const policy = allPolicies.find((p) => p.id === pickerId);
+    if (!policy) return;
+
+    const existingLeaveTypeIds = new Set(assigned.flatMap((p) => p.rules.map((r) => r.leaveTypeId)));
+    const conflicts = policy.rules
+      .filter((r) => existingLeaveTypeIds.has(r.leaveTypeId))
+      .map((r) => r.leaveType.name);
+
+    if (conflicts.length > 0) {
+      setOverlapError(`Cannot add "${policy.name}" — leave type${conflicts.length > 1 ? "s" : ""} already covered by another policy: ${conflicts.join(", ")}`);
+      return;
+    }
+
+    setOverlapError(null);
+    setPickerId("");
+    onChange([...assigned, policy]);
+  }
+
+  function handleRemove(id: string) {
+    setOverlapError(null);
+    onChange(assigned.filter((p) => p.id !== id));
+  }
+
+  return (
+    <div className="mt-4">
+      <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-zinc-500">PTO Policies</label>
+
+      {assigned.length === 0 && (
+        <p className="mb-2 text-xs text-zinc-400">No policies assigned to this category.</p>
+      )}
+
+      <div className="mb-3 flex flex-col gap-2">
+        {assigned.map((p) => (
+          <div key={p.id} className="flex items-start justify-between rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800/50">
+            <div>
+              <span className="text-sm font-medium text-zinc-900 dark:text-white">{p.name}</span>
+              {p.rules.length > 0 && (
+                <p className="mt-0.5 text-xs text-zinc-400">
+                  {p.rules.map((r) => r.leaveType.name).join(", ")}
+                </p>
+              )}
+            </div>
+            <button type="button" onClick={() => handleRemove(p.id)} className="ml-3 shrink-0 text-xs text-red-500 hover:underline dark:text-red-400">
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {available.length > 0 && (
+        <div className="flex gap-2">
+          <select value={pickerId} onChange={(e) => { setPickerId(e.target.value); setOverlapError(null); }} className={inputCls}>
+            <option value="">— Add a policy —</option>
+            {available.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={!pickerId}
+            className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            Add
+          </button>
+        </div>
+      )}
+
+      {overlapError && (
+        <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-400">
+          {overlapError}
+        </p>
+      )}
     </div>
   );
 }
@@ -62,20 +171,28 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
 // ─── Main manager ─────────────────────────────────────────────────────────────
 
-export function PayCategoriesManager({ categories }: Props) {
+export function PayCategoriesManager({ categories, ptoPolicies }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [editingCat, setEditingCat] = useState<PayCategory | null>(null);
+  const [editingCat, setEditingCat] = useState<CategoryWithPolicies | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
 
+  const [createPolicies, setCreatePolicies] = useState<PolicyOption[]>([]);
+  const [editPolicies, setEditPolicies]   = useState<PolicyOption[]>([]);
+
   const visible = showInactive ? categories : categories.filter((c) => c.isActive);
 
-  function openEdit(cat: PayCategory) { setEditingCat(cat); setConfirmDeleteId(null); setError(null); }
+  function openEdit(cat: CategoryWithPolicies) {
+    setEditingCat(cat);
+    setEditPolicies(cat.ptoPolicies.map((link) => link.ptoPolicy));
+    setConfirmDeleteId(null);
+    setError(null);
+  }
   function closeEdit() { setEditingCat(null); setConfirmDeleteId(null); setError(null); }
-  function openCreate() { setShowCreate(true); setError(null); }
+  function openCreate() { setShowCreate(true); setCreatePolicies([]); setError(null); }
   function closeCreate() { setShowCreate(false); setError(null); }
 
   function handleCreate(e: React.FormEvent<HTMLFormElement>) {
@@ -84,8 +201,9 @@ export function PayCategoriesManager({ categories }: Props) {
     setError(null);
     startTransition(async () => {
       const result = await createPayCategory({
-        number:      fd.get("number"),
-        description: (fd.get("description") as string) || undefined,
+        number:       fd.get("number"),
+        description:  (fd.get("description") as string) || undefined,
+        ptoPolicyIds: createPolicies.map((p) => p.id),
       });
       if (!result.success) { setError(result.error); return; }
       closeCreate();
@@ -93,16 +211,17 @@ export function PayCategoriesManager({ categories }: Props) {
     });
   }
 
-  function handleUpdate(cat: PayCategory, e: React.FormEvent<HTMLFormElement>) {
+  function handleUpdate(cat: CategoryWithPolicies, e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     setError(null);
     startTransition(async () => {
       const result = await updatePayCategory({
-        id:          cat.id,
-        number:      fd.get("number"),
-        description: (fd.get("description") as string) || undefined,
-        isActive:    fd.get("isActive") === "true",
+        id:           cat.id,
+        number:       fd.get("number"),
+        description:  (fd.get("description") as string) || undefined,
+        isActive:     fd.get("isActive") === "true",
+        ptoPolicyIds: editPolicies.map((p) => p.id),
       });
       if (!result.success) { setError(result.error); return; }
       closeEdit();
@@ -150,7 +269,14 @@ export function PayCategoriesManager({ categories }: Props) {
                   <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">Inactive</span>
                 )}
               </div>
-              <span className="text-xs text-zinc-400">Click to edit →</span>
+              <div className="flex items-center gap-3">
+                {cat.ptoPolicies.length > 0 && (
+                  <span className="text-xs text-zinc-400">
+                    {cat.ptoPolicies.length} {cat.ptoPolicies.length === 1 ? "policy" : "policies"}
+                  </span>
+                )}
+                <span className="text-xs text-zinc-400">Click to edit →</span>
+              </div>
             </div>
           </button>
         ))}
@@ -166,12 +292,13 @@ export function PayCategoriesManager({ categories }: Props) {
       {/* Create modal */}
       {showCreate && (
         <Modal title="New Pay Category" onClose={closeCreate}>
-          {error && (
-            <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>
-          )}
           <form onSubmit={handleCreate}>
-            <CategoryFields />
-            <div className="mt-6 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+            <CategoryFields defaultNumber={Math.max(0, ...categories.map((c) => c.number)) + 1} />
+            <PolicyPicker assigned={createPolicies} allPolicies={ptoPolicies} onChange={setCreatePolicies} />
+            {error && (
+              <p className="mt-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>
+            )}
+            <div className="mt-4 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
               <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Creating…" : "Create"}</button>
               <button type="button" onClick={closeCreate} className={cancelBtnCls}>Cancel</button>
             </div>
@@ -182,9 +309,6 @@ export function PayCategoriesManager({ categories }: Props) {
       {/* Edit modal */}
       {editingCat && (
         <Modal title={`Edit: ${editingCat.number}${editingCat.description ? ` — ${editingCat.description}` : ""}`} onClose={closeEdit}>
-          {error && (
-            <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>
-          )}
           <form onSubmit={(e) => handleUpdate(editingCat, e)}>
             <CategoryFields category={editingCat} />
             <div className="mt-3 w-32">
@@ -194,7 +318,11 @@ export function PayCategoriesManager({ categories }: Props) {
                 <option value="false">Inactive</option>
               </select>
             </div>
-            <div className="mt-6 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-700">
+            <PolicyPicker assigned={editPolicies} allPolicies={ptoPolicies} onChange={setEditPolicies} />
+            {error && (
+              <p className="mt-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>
+            )}
+            <div className="mt-4 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-700">
               <div className="flex gap-2">
                 <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Saving…" : "Save changes"}</button>
                 <button type="button" onClick={closeEdit} className={cancelBtnCls}>Cancel</button>
