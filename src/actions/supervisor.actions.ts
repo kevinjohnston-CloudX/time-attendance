@@ -274,7 +274,39 @@ export const getTeamLeaveRequests = withRBAC(
     return db.leaveRequest.findMany({
       where: { status: "PENDING", employee: employeeFilter },
       include: {
-        employee: { include: { user: true } },
+        employee: { select: { user: { select: { name: true } } } },
+        leaveType: true,
+      },
+      orderBy: { submittedAt: "asc" },
+    });
+  }
+);
+
+// ─── HR-pending leave ────────────────────────────────────────────────────────
+
+/**
+ * PENDING_HR leave requests awaiting HR/Payroll approval.
+ * Payroll+ see all; supervisors see their team only.
+ */
+export const getHrPendingLeave = withRBAC(
+  "LEAVE_APPROVE_TEAM",
+  async ({ employeeId, role, tenantId }, input: unknown) => {
+    const { siteId, departmentId } = z.object({
+      siteId: z.string().optional(),
+      departmentId: z.string().optional(),
+    }).parse(input ?? {});
+
+    const isPayroll = PAYROLL_ROLES.includes(role);
+    const t = tenantId ?? undefined;
+
+    const employeeFilter = isPayroll
+      ? { tenantId: t, ...(siteId ? { siteId } : {}), ...(departmentId ? { departmentId } : {}) }
+      : { supervisorId: employeeId, tenantId: t };
+
+    return db.leaveRequest.findMany({
+      where: { status: "PENDING_HR", employee: employeeFilter },
+      include: {
+        employee: { select: { user: { select: { name: true } } } },
         leaveType: true,
       },
       orderBy: { submittedAt: "asc" },
@@ -312,7 +344,7 @@ export const getUpcomingTeamLeave = withRBAC(
         employee: employeeFilter,
       },
       include: {
-        employee: { include: { user: true } },
+        employee: { select: { user: { select: { name: true } } } },
         leaveType: true,
       },
       orderBy: { startDate: "asc" },

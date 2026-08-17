@@ -53,7 +53,7 @@ const TABS: TabDef[] = [
   { id: "holidays",      label: "Holidays",      icon: Palmtree,      requires: "rules",   title: "Holidays",
     description: "Manage company holidays. Holidays can be used when submitting leave requests." },
   { id: "leave-types",   label: "Leave Types",   icon: Calendar,      requires: "rules",   title: "Leave Types" },
-  { id: "pto-policies",  label: "PTO Policies",  icon: CalendarClock, requires: "rules",   title: "PTO Policies",
+  { id: "pto-policies",  label: "Leave Policies",  icon: CalendarClock, requires: "rules",   title: "Leave Policies",
     description: "Define tenure-based accrual rules per leave type. Assign policies to sites or individual employees." },
   { id: "pay-codes",     label: "Pay Codes",     icon: Tag,           requires: "payroll", title: "Pay Codes",
     description: "Manage numeric pay codes used for payroll export and segment classification." },
@@ -245,10 +245,10 @@ export function SiteSettingsClient({
               <HolidayRulesManager rules={holidayRules} />
             )}
             {activeTab === "pay-categories" && (
-              <PayCategoriesManager categories={payCategories} ptoPolicies={ptoPolicies} />
+              <PayCategoriesManager categories={payCategories} ptoPolicies={ptoPolicies} leaveTypes={leaveTypes} />
             )}
             {activeTab === "leave-types" && (
-              <LeaveTypesManager leaveTypes={leaveTypes} />
+              <LeaveTypesManager leaveTypes={leaveTypes} payCodes={payCodes} />
             )}
             {activeTab === "pto-policies" && (
               <PtoPoliciesManager policies={ptoPolicies} leaveTypes={leaveTypes} payCodes={payCodes} />

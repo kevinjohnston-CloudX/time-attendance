@@ -1,8 +1,63 @@
-import { eachDayOfInterval, startOfDay, format, max, min } from "date-fns";
+import { eachDayOfInterval, startOfDay, format, max, min, parseISO } from "date-fns";
+
+// @db.Date fields from Prisma arrive as UTC midnight; in UTC-offset locales,
+// date-fns treats them as the previous evening's local time. Extract YYYY-MM-DD
+// and re-parse as local midnight so day arithmetic is correct.
+function toLocalDay(d: Date): Date {
+  return parseISO(d.toISOString().slice(0, 10));
+}
 import { db } from "@/lib/db";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import type { LeaveCategory, PayBucket } from "@prisma/client";
 import type { TxClient } from "@/types/prisma";
+
+async function resolveLeavePayCodeId(
+  tx: TxClient,
+  payCategoryId: string | null,
+  siteId: string,
+  leaveTypeId: string,
+  tenureMonths: number,
+  leaveTypePayCodeId: string | null | undefined
+): Promise<string | null> {
+  // 1. Pay category policy (highest priority)
+  if (payCategoryId) {
+    const catLinks = await tx.payCategoryPtoPolicy.findMany({
+      where: { payCategoryId },
+      select: { ptoPolicyId: true },
+    });
+    for (const link of catLinks) {
+      const rules = await tx.ptoPolicyRule.findMany({
+        where: { ptoPolicyId: link.ptoPolicyId, leaveTypeId },
+        select: { minTenureMonths: true, maxTenureMonths: true, payCodeId: true },
+        orderBy: { minTenureMonths: "desc" },
+      });
+      const match = rules.find(
+        (r) => tenureMonths >= r.minTenureMonths && (r.maxTenureMonths == null || tenureMonths < r.maxTenureMonths)
+      );
+      if (match?.payCodeId) return match.payCodeId;
+    }
+  }
+
+  // 2. Site policy fallback
+  const sitePolicy = await tx.sitePtoPolicy.findUnique({
+    where: { siteId_leaveTypeId: { siteId, leaveTypeId } },
+    select: { ptoPolicyId: true },
+  });
+  if (sitePolicy) {
+    const rules = await tx.ptoPolicyRule.findMany({
+      where: { ptoPolicyId: sitePolicy.ptoPolicyId, leaveTypeId },
+      select: { minTenureMonths: true, maxTenureMonths: true, payCodeId: true },
+      orderBy: { minTenureMonths: "desc" },
+    });
+    const match = rules.find(
+      (r) => tenureMonths >= r.minTenureMonths && (r.maxTenureMonths == null || tenureMonths < r.maxTenureMonths)
+    );
+    if (match?.payCodeId) return match.payCodeId;
+  }
+
+  // 3. Leave type pay code fallback
+  return leaveTypePayCodeId ?? null;
+}
 
 // LeaveCategory and PayBucket share the same values for leave types
 const CATEGORY_TO_BUCKET: Record<LeaveCategory, PayBucket> = {
@@ -58,20 +113,55 @@ export async function syncLeaveSegments(
 
     if (request.status !== "APPROVED" && request.status !== "POSTED") return;
 
-    // 3. Find all pay periods that overlap the leave date range
-    const payPeriods = await tx.payPeriod.findMany({
+    // Resolve effective pay code: policy rule → leave type fallback
+    const employee = await tx.employee.findUniqueOrThrow({
+      where: { id: request.employeeId },
+      select: { hireDate: true, siteId: true, payCategoryId: true, tenantId: true },
+    });
+    const tenureMonths = Math.floor(
+      (Date.now() - employee.hireDate.getTime()) / (1000 * 60 * 60 * 24 * 30.44)
+    );
+    const effectivePayCodeId = await resolveLeavePayCodeId(
+      tx,
+      employee.payCategoryId,
+      employee.siteId,
+      request.leaveTypeId,
+      tenureMonths,
+      request.leaveType.payCodeId
+    );
+
+    // 3. Find pay periods that overlap the leave date range, preferring ones
+    //    where the employee already has a timesheet (avoids spurious cross-schedule
+    //    segment placement when multiple pay period schedules overlap).
+    const allOverlapping = await tx.payPeriod.findMany({
       where: {
+        tenantId: employee.tenantId,
         startDate: { lte: request.endDate },
         endDate: { gte: request.startDate },
       },
+      orderBy: { startDate: "asc" },
     });
+    if (allOverlapping.length === 0) return;
 
-    if (payPeriods.length === 0) return;
+    // Identify which of those have an existing timesheet for this employee.
+    const existingTimesheets = await tx.timesheet.findMany({
+      where: {
+        employeeId: request.employeeId,
+        payPeriodId: { in: allOverlapping.map((p) => p.id) },
+      },
+      select: { id: true, payPeriodId: true },
+    });
+    const existingPeriodIds = new Set(existingTimesheets.map((t) => t.payPeriodId));
+
+    // Use only periods with an existing timesheet if any exist; otherwise all.
+    const payPeriods = existingPeriodIds.size > 0
+      ? allOverlapping.filter((p) => existingPeriodIds.has(p.id))
+      : allOverlapping;
 
     // 4. Build a map of date → timesheetId (finding or creating timesheets)
     const leaveDays = eachDayOfInterval({
-      start: request.startDate,
-      end: request.endDate,
+      start: toLocalDay(request.startDate),
+      end: toLocalDay(request.endDate),
     });
     const minutesPerDay = Math.round(request.durationMinutes / leaveDays.length);
     const bucket = CATEGORY_TO_BUCKET[request.leaveType.category];
@@ -79,8 +169,8 @@ export async function syncLeaveSegments(
     const timesheetsByDate = new Map<string, string>();
 
     for (const pp of payPeriods) {
-      const overlapStart = max([pp.startDate, request.startDate]);
-      const overlapEnd = min([pp.endDate, request.endDate]);
+      const overlapStart = max([toLocalDay(pp.startDate), toLocalDay(request.startDate)]);
+      const overlapEnd = min([toLocalDay(pp.endDate), toLocalDay(request.endDate)]);
       const overlapDays = eachDayOfInterval({
         start: overlapStart,
         end: overlapEnd,
@@ -119,6 +209,7 @@ export async function syncLeaveSegments(
           payBucket: bucket,
           isSplit: false,
           leaveRequestId: request.id,
+          payCodeId: effectivePayCodeId,
         };
       });
 

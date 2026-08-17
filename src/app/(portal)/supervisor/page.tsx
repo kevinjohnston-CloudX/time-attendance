@@ -18,7 +18,7 @@ export default async function SupervisorDashboardPage() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const [pendingTimesheets, openExceptions, pendingLeave, upcomingLeave] = await Promise.all([
+  const [pendingTimesheets, openExceptions, pendingLeave, hrPendingLeave, upcomingLeave] = await Promise.all([
     db.timesheet.count({
       where: isPayroll
         ? { status: "SUP_APPROVED" }
@@ -35,6 +35,12 @@ export default async function SupervisorDashboardPage() {
     db.leaveRequest.count({
       where: {
         status: "PENDING",
+        ...(isPayroll ? {} : { employee: { supervisorId: employeeId } }),
+      },
+    }),
+    db.leaveRequest.count({
+      where: {
+        status: "PENDING_HR",
         ...(isPayroll ? {} : { employee: { supervisorId: employeeId } }),
       },
     }),
@@ -68,6 +74,13 @@ export default async function SupervisorDashboardPage() {
       href: "/supervisor/leave",
       icon: CalendarDays,
       urgency: pendingLeave > 0,
+    },
+    {
+      label: isPayroll ? "Leave Awaiting HR Approval" : "Leave Pending HR Review",
+      count: hrPendingLeave,
+      href: "/supervisor/leave?tab=hr-pending",
+      icon: CalendarDays,
+      urgency: isPayroll && hrPendingLeave > 0,
     },
     {
       label: "Upcoming Leave",

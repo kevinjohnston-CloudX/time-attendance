@@ -106,10 +106,12 @@ model MealWaiver {
   id          String   @id @default(cuid())
   timesheetId String
   segmentDate DateTime @db.Date
-  reason      String
+  reason      String?
+  createdById String?
   createdAt   DateTime @default(now())
 
   timesheet Timesheet @relation(fields: [timesheetId], references: [id])
+  createdBy Employee? @relation(fields: [createdById], references: [id])
 
   @@unique([timesheetId, segmentDate])
   @@map("meal_waivers")

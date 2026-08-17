@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { authenticateApiKey, unauthorized, badRequest, notFound } from "@/lib/api/auth-external";
 import { daySelectionSchema } from "@/lib/validators/leave.schema";
-import { createLeaveRequestCore } from "@/lib/services/leave.service";
+import { createLeaveRequestCore, submitLeaveRequestCore } from "@/lib/services/leave.service";
 
 const requestSchema = z.object({
   employeeCode: z.string().min(1).optional(),
@@ -57,8 +57,11 @@ export async function POST(req: NextRequest) {
     note,
   });
 
+  // Auto-submit so the request reaches an approver (DRAFT → PENDING)
+  const submitted = await submitLeaveRequestCore(employee.id, auth.tenantId, request.id);
+
   return NextResponse.json(
-    { leaveRequestId: request.id, status: request.status, durationMinutes: request.durationMinutes },
+    { leaveRequestId: submitted.id, status: submitted.status, durationMinutes: submitted.durationMinutes },
     { status: 201 }
   );
 }

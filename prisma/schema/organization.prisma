@@ -148,7 +148,7 @@ model Employee {
   leaveRequests    LeaveRequest[]
   documents        Document[]
   auditLogs        AuditLog[]
-  ptoPolicyOverrides EmployeePtoPolicyOverride[]
+  mealWaiversCreated MealWaiver[]
 
   @@unique([tenantId, employeeCode])
   @@map("employees")

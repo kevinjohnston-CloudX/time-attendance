@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { validateLeaveTransition } from "@/lib/state-machines/leave-state";
-import { postLeaveUsage } from "@/lib/engines/accrual-engine";
+import { postLeaveUsage, reverseLeaveUsage } from "@/lib/engines/accrual-engine";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
 import { writeAuditLog } from "@/lib/audit/logger";
 import {
@@ -96,7 +96,7 @@ export const cancelLeaveRequest = withRBAC(
 
 // ─── Supervisor / HR actions ──────────────────────────────────────────────────
 
-/** Approve a PENDING leave request. */
+/** Supervisor approves a PENDING leave request — moves it to PENDING_HR for HR review. */
 export const approveLeaveRequest = withRBAC(
   "LEAVE_APPROVE_TEAM",
   async ({ employeeId: reviewerId, tenantId }, input: ReviewLeaveInput) => {
@@ -128,17 +128,53 @@ export const approveLeaveRequest = withRBAC(
       changes: { before: request.status, after: transition.newStatus },
     });
 
+    revalidatePath("/supervisor/leave");
+    revalidatePath("/leave");
+    return updated;
+  }
+);
+
+/** HR/Payroll approves a PENDING_HR leave request — finalises approval, debits balance, creates segments. */
+export const hrApproveLeaveRequest = withRBAC(
+  "LEAVE_APPROVE_ANY",
+  async ({ employeeId: reviewerId, tenantId }, input: ReviewLeaveInput) => {
+    const { leaveRequestId, reviewNote } = reviewLeaveSchema.parse(input);
+
+    const request = await db.leaveRequest.findUniqueOrThrow({
+      where: { id: leaveRequestId },
+    });
+
+    const transition = validateLeaveTransition(request.status, "APPROVE");
+    if (!transition.valid) throw new Error(transition.error);
+
+    await db.leaveRequest.update({
+      where: { id: leaveRequestId },
+      data: {
+        status: transition.newStatus,
+        reviewedAt: new Date(),
+        reviewedById: reviewerId,
+        reviewNote,
+      },
+    });
+
+    await writeAuditLog({
+      tenantId,
+      actorId: reviewerId,
+      entityType: "LEAVE_REQUEST",
+      entityId: leaveRequestId,
+      action: "APPROVED",
+      changes: { before: request.status, after: transition.newStatus },
+    });
+
     await validateBalanceForApproval(leaveRequestId);
-
     await postLeaveUsage(leaveRequestId);
-
     await syncLeaveSegments(leaveRequestId);
 
     revalidatePath("/supervisor/leave");
     revalidatePath("/leave");
     revalidatePath("/payroll/timecards");
     revalidatePath("/time/timesheet");
-    return updated;
+    return { success: true as const };
   }
 );
 
@@ -181,6 +217,52 @@ export const rejectLeaveRequest = withRBAC(
     revalidatePath("/payroll/timecards");
     revalidatePath("/time/timesheet");
     return updated;
+  }
+);
+
+/** Reverse an APPROVED leave request back to PENDING, undoing the balance debit. */
+export const reverseLeaveApproval = withRBAC(
+  "LEAVE_APPROVE_TEAM",
+  async ({ employeeId: reviewerId, tenantId }, input: LeaveRequestIdInput) => {
+    const { leaveRequestId } = leaveRequestIdSchema.parse(input);
+
+    const request = await db.leaveRequest.findUniqueOrThrow({
+      where: { id: leaveRequestId },
+    });
+
+    const transition = validateLeaveTransition(request.status, "REVERT");
+    if (!transition.valid) throw new Error(transition.error);
+
+    // Undo the balance debit that was posted on approval
+    await reverseLeaveUsage(leaveRequestId);
+
+    await db.leaveRequest.update({
+      where: { id: leaveRequestId },
+      data: {
+        status: transition.newStatus,
+        reviewedAt: null,
+        reviewedById: null,
+        reviewNote: null,
+      },
+    });
+
+    await writeAuditLog({
+      tenantId,
+      actorId: reviewerId,
+      entityType: "LEAVE_REQUEST",
+      entityId: leaveRequestId,
+      action: "UPDATED",
+      changes: { before: request.status, after: transition.newStatus, note: "Approval reversed to pending" },
+    });
+
+    // Remove leave segments — they should not exist while the request is pending
+    await syncLeaveSegments(leaveRequestId);
+
+    revalidatePath("/supervisor/leave");
+    revalidatePath("/leave");
+    revalidatePath("/payroll/timecards");
+    revalidatePath("/time/timesheet");
+    return { success: true as const };
   }
 );
 

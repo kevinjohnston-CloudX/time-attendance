@@ -66,6 +66,10 @@ export const createPtoPolicySchema = z
     maxNegativeHours:           z.number().positive().max(9999).nullable().optional(),
     carryOverEnabled:           z.boolean().default(true),
     carryOverRespectMaxBalance: z.boolean().default(false),
+    forecastEnabled:          z.boolean().default(false),
+    forecastMode:             z.enum(["MONTHS", "END_OF_YEAR"]).nullable().optional(),
+    forecastMonths:           z.number().int().min(1).max(120).nullable().optional(),
+    forecastApplyToAvailable: z.boolean().default(false),
     rules:                      z.array(ptoPolicyRuleSchema),
   })
   .merge(postingScheduleSchema);
@@ -83,6 +87,10 @@ export const updatePtoPolicySchema = z
     maxNegativeHours:           z.number().positive().max(9999).nullable().optional(),
     carryOverEnabled:           z.boolean().optional(),
     carryOverRespectMaxBalance: z.boolean().optional(),
+    forecastEnabled:          z.boolean().optional(),
+    forecastMode:             z.enum(["MONTHS", "END_OF_YEAR"]).nullable().optional(),
+    forecastMonths:           z.number().int().min(1).max(120).nullable().optional(),
+    forecastApplyToAvailable: z.boolean().optional(),
     rules:                      z.array(ptoPolicyRuleSchema).optional(),
   })
   .merge(postingScheduleSchema.partial());
@@ -93,7 +101,3 @@ export const assignSitePtoPolicySchema = z.object({
   ptoPolicyId: z.string().min(1).nullable(),
 });
 
-export const assignEmployeePtoPolicyOverrideSchema = z.object({
-  employeeId:  z.string().min(1),
-  ptoPolicyId: z.string().min(1).nullable(),
-});

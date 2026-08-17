@@ -16,7 +16,7 @@ import {
 
 export type DaySelection =
   | { date: string; type: "FULL" }
-  | { date: string; type: "PARTIAL"; leaveFrom: string; leaveTo: string };
+  | { date: string; type: "PARTIAL"; minutes: number };
 
 export interface ShiftInfo {
   startTime: string; // "HH:mm"
@@ -41,22 +41,12 @@ function timeToMins(t: string): number {
 }
 
 function calcDayMinutes(shift: ShiftInfo | null, day: DaySelection): number {
-  const start          = shift ? timeToMins(shift.startTime) : 9 * 60;
-  const end            = shift ? timeToMins(shift.endTime)   : 17 * 60;
-  const mealMins       = shift?.mealBreakMinutes   ?? 0;
-  const mealAfter      = shift?.mealBreakAfterMinutes ?? 300;
-  const mealStart      = start + mealAfter;
-  const mealEnd        = mealStart + mealMins;
+  const start    = shift ? timeToMins(shift.startTime) : 9 * 60;
+  const end      = shift ? timeToMins(shift.endTime)   : 17 * 60;
+  const mealMins = shift?.mealBreakMinutes ?? 0;
 
   if (day.type === "FULL") return (end - start) - mealMins;
-
-  const leaveFrom      = timeToMins(day.leaveFrom);
-  const leaveTo        = timeToMins(day.leaveTo);
-  const raw            = Math.max(0, leaveTo - leaveFrom);
-  const overlapStart   = Math.max(leaveFrom, mealStart);
-  const overlapEnd     = Math.min(leaveTo, mealEnd);
-  const overlap        = Math.max(0, overlapEnd - overlapStart);
-  return Math.max(0, raw - overlap);
+  return day.minutes;
 }
 
 function fmtMins(mins: number): string {
@@ -65,12 +55,6 @@ function fmtMins(mins: number): string {
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
-function fmt12(time: string): string {
-  const [h, m] = time.split(":").map(Number);
-  const period = h >= 12 ? "PM" : "AM";
-  const hour = h % 12 || 12;
-  return `${hour}:${String(m).padStart(2, "0")} ${period}`;
-}
 
 export function LeaveDayPicker({ value, onChange, shift }: Props) {
   const today = startOfToday();
@@ -114,27 +98,19 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
   }
 
   function setPartial(ds: string) {
-    const defaultFrom = shift?.startTime ?? "09:00";
-    const defaultTo   = shift?.endTime   ?? "17:00";
+    const fullMins = calcDayMinutes(shift, { date: ds, type: "FULL" });
+    const defaultMins = Math.round(fullMins / 2 / 15) * 15;
     onChange(
       value.map((d) =>
-        d.date === ds ? { date: ds, type: "PARTIAL", leaveFrom: defaultFrom, leaveTo: defaultTo } : d
+        d.date === ds ? { date: ds, type: "PARTIAL", minutes: defaultMins } : d
       )
     );
   }
 
-  function setLeaveFrom(ds: string, leaveFrom: string) {
+  function setMinutes(ds: string, minutes: number) {
     onChange(
       value.map((d) =>
-        d.date === ds && d.type === "PARTIAL" ? { ...d, leaveFrom } : d
-      )
-    );
-  }
-
-  function setLeaveTo(ds: string, leaveTo: string) {
-    onChange(
-      value.map((d) =>
-        d.date === ds && d.type === "PARTIAL" ? { ...d, leaveTo } : d
+        d.date === ds && d.type === "PARTIAL" ? { ...d, minutes } : d
       )
     );
   }
@@ -271,23 +247,35 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
                   </button>
                 </div>
 
-                {/* Partial time range inputs */}
+                {/* Partial hours + minutes inputs */}
                 {day.type === "PARTIAL" && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-zinc-400">From</span>
+                  <div className="flex items-center gap-1">
                     <input
-                      type="time"
-                      value={day.leaveFrom}
-                      onChange={(e) => setLeaveFrom(day.date, e.target.value)}
-                      className="rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs text-zinc-700 focus:outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+                      type="number"
+                      min="0"
+                      max="23"
+                      step="1"
+                      value={Math.floor(day.minutes / 60)}
+                      onChange={(e) => {
+                        const h = Math.max(0, parseInt(e.target.value) || 0);
+                        setMinutes(day.date, h * 60 + (day.minutes % 60));
+                      }}
+                      className="w-12 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs text-zinc-700 focus:outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
                     />
-                    <span className="text-xs text-zinc-400">to</span>
+                    <span className="text-xs text-zinc-400">h</span>
                     <input
-                      type="time"
-                      value={day.leaveTo}
-                      onChange={(e) => setLeaveTo(day.date, e.target.value)}
-                      className="rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs text-zinc-700 focus:outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+                      type="number"
+                      min="0"
+                      max="59"
+                      step="1"
+                      value={day.minutes % 60}
+                      onChange={(e) => {
+                        const m = Math.min(59, Math.max(0, parseInt(e.target.value) || 0));
+                        setMinutes(day.date, Math.floor(day.minutes / 60) * 60 + m);
+                      }}
+                      className="w-12 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs text-zinc-700 focus:outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
                     />
+                    <span className="text-xs text-zinc-400">m</span>
                   </div>
                 )}
 

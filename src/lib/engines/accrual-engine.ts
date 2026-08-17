@@ -175,7 +175,7 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
   const yearStart = new Date(`${accrualYear}-01-01T00:00:00Z`);
   const yearEnd   = new Date(`${accrualYear + 1}-01-01T00:00:00Z`);
 
-  const [employees, leaveTypes, rules, siteLinks, empOverrides, catPolicyLinks] = await Promise.all([
+  const [employees, leaveTypes, rules, siteLinks, catPolicyLinks] = await Promise.all([
     db.employee.findMany({
       where: { isActive: true, tenantId: payPeriod.tenantId },
       select: {
@@ -211,10 +211,6 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
       },
     }),
     db.sitePtoPolicy.findMany({ where: { site: { tenantId: payPeriod.tenantId } } }),
-    db.employeePtoPolicyOverride.findMany({
-      where: { employee: { tenantId: payPeriod.tenantId } },
-      select: { employeeId: true, ptoPolicyId: true },
-    }),
     db.payCategoryPtoPolicy.findMany({
       where: { payCategory: { tenantId: payPeriod.tenantId } },
       include: { ptoPolicy: { select: { id: true, rules: { select: { leaveTypeId: true } } } } },
@@ -267,9 +263,6 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
   const sitePolicyMap = new Map(
     siteLinks.map((s) => [`${s.siteId}:${s.leaveTypeId}`, s.ptoPolicyId])
   );
-  const empOverrideMap = new Map(
-    empOverrides.map((e) => [e.employeeId, e.ptoPolicyId])
-  );
   // payCategoryId:leaveTypeId → ptoPolicyId (first policy in category that covers this leave type)
   const catPolicyMap = new Map<string, string>();
   for (const link of catPolicyLinks) {
@@ -288,7 +281,6 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
     for (const leaveType of leaveTypes) {
       // Resolve which policy applies, then find the matching tenure tier
       const policyId =
-        empOverrideMap.get(employee.id) ??
         (employee.payCategoryId ? catPolicyMap.get(`${employee.payCategoryId}:${leaveType.id}`) : undefined) ??
         sitePolicyMap.get(`${employee.siteId}:${leaveType.id}`) ??
         defaultPolicyByLeaveType.get(leaveType.id);
@@ -454,7 +446,6 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
             let actualCarryOver = resetCarryOver;
             if (pConfig?.carryOverRespectMaxBalance) {
               const destPolicyId =
-                empOverrideMap.get(employee.id) ??
                 (employee.payCategoryId ? catPolicyMap.get(`${employee.payCategoryId}:${targetLtId}`) : undefined) ??
                 sitePolicyMap.get(`${employee.siteId}:${targetLtId}`) ??
                 defaultPolicyByLeaveType.get(targetLtId);
@@ -578,7 +569,7 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
   const yearStart = new Date(`${accrualYear}-01-01T00:00:00Z`);
   const yearEnd   = new Date(`${accrualYear + 1}-01-01T00:00:00Z`);
 
-  const [employees, leaveTypes, rules, siteLinks, empOverrides, catPolicyLinks] = await Promise.all([
+  const [employees, leaveTypes, rules, siteLinks, catPolicyLinks] = await Promise.all([
     db.employee.findMany({
       where: { isActive: true },
       select: {
@@ -615,9 +606,6 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
       },
     }),
     db.sitePtoPolicy.findMany({}),
-    db.employeePtoPolicyOverride.findMany({
-      select: { employeeId: true, ptoPolicyId: true },
-    }),
     db.payCategoryPtoPolicy.findMany({
       include: { ptoPolicy: { select: { id: true, rules: { select: { leaveTypeId: true } } } } },
     }),
@@ -682,9 +670,6 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
   const sitePolicyMap = new Map(
     siteLinks.map((s) => [`${s.siteId}:${s.leaveTypeId}`, s.ptoPolicyId])
   );
-  const empOverrideMap = new Map(
-    empOverrides.map((e) => [e.employeeId, e.ptoPolicyId])
-  );
   // payCategoryId:leaveTypeId → ptoPolicyId (first policy in category that covers this leave type)
   const catPolicyMap = new Map<string, string>();
   for (const link of catPolicyLinks) {
@@ -712,7 +697,6 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
       if (alreadyPostedToday.has(`${employee.id}:${leaveType.id}`)) continue;
 
       const policyId =
-        empOverrideMap.get(employee.id) ??
         (employee.payCategoryId ? catPolicyMap.get(`${employee.payCategoryId}:${leaveType.id}`) : undefined) ??
         sitePolicyMap.get(`${employee.siteId}:${leaveType.id}`) ??
         defaultPolicyMap.get(`${employee.tenantId}:${leaveType.id}`);
@@ -881,7 +865,6 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
             let actualCarryOver = resetCarryOver;
             if (pConfig?.carryOverRespectMaxBalance) {
               const destPolicyId =
-                empOverrideMap.get(employee.id) ??
                 (employee.payCategoryId ? catPolicyMap.get(`${employee.payCategoryId}:${targetLtId}`) : undefined) ??
                 sitePolicyMap.get(`${employee.siteId}:${targetLtId}`) ??
                 defaultPolicyMap.get(`${employee.tenantId}:${targetLtId}`);
@@ -978,6 +961,42 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
       accrualSumMap.set(key, (accrualSumMap.get(key) ?? 0) + actualDelta);
       posted++;
     }
+  }
+
+  // ── EOD balance snapshot ──────────────────────────────────────────────────
+  // Write one EOD_SNAPSHOT entry per employee × leave type that has a balance
+  // record this year. Deduped: skipped if one already exists for today's date.
+  const existingSnapshots = await db.leaveAccrualLedger.findMany({
+    where: {
+      action: "EOD_SNAPSHOT",
+      payPeriodEnd: postingDate,
+      employeeId: { in: employeeIds },
+    },
+    select: { employeeId: true, leaveTypeId: true },
+  });
+  const alreadySnapshotted = new Set(
+    existingSnapshots.map((s) => `${s.employeeId}:${s.leaveTypeId}`)
+  );
+
+  const allBalances = await db.leaveBalance.findMany({
+    where: { accrualYear, employeeId: { in: employeeIds } },
+    select: { employeeId: true, leaveTypeId: true, balanceMinutes: true },
+  });
+
+  const snapshotData = allBalances
+    .filter((b) => !alreadySnapshotted.has(`${b.employeeId}:${b.leaveTypeId}`))
+    .map((b) => ({
+      employeeId: b.employeeId,
+      leaveTypeId: b.leaveTypeId,
+      action: "EOD_SNAPSHOT" as const,
+      deltaMinutes: 0,
+      balanceAfter: b.balanceMinutes,
+      payPeriodEnd: postingDate,
+      note: "Daily Balance Logging",
+    }));
+
+  if (snapshotData.length > 0) {
+    await db.leaveAccrualLedger.createMany({ data: snapshotData });
   }
 
   return { posted };

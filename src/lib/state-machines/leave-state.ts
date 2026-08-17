@@ -4,7 +4,7 @@ type ValidTransition = { valid: true; newStatus: LeaveRequestStatus };
 type InvalidTransition = { valid: false; error: string };
 export type LeaveTransitionResult = ValidTransition | InvalidTransition;
 
-type LeaveEvent = "SUBMIT" | "APPROVE" | "REJECT" | "POST" | "CANCEL";
+type LeaveEvent = "SUBMIT" | "APPROVE" | "REJECT" | "POST" | "CANCEL" | "REVERT";
 
 const TRANSITIONS: Record<
   LeaveRequestStatus,
@@ -15,14 +15,21 @@ const TRANSITIONS: Record<
     CANCEL: LeaveRequestStatus.CANCELLED,
   },
   PENDING: {
+    APPROVE: LeaveRequestStatus.PENDING_HR,
+    REJECT: LeaveRequestStatus.REJECTED,
+    CANCEL: LeaveRequestStatus.CANCELLED,
+  },
+  PENDING_HR: {
     APPROVE: LeaveRequestStatus.APPROVED,
     REJECT: LeaveRequestStatus.REJECTED,
     CANCEL: LeaveRequestStatus.CANCELLED,
+    REVERT: LeaveRequestStatus.PENDING,
   },
   APPROVED: {
     POST: LeaveRequestStatus.POSTED,
     REJECT: LeaveRequestStatus.REJECTED,
     CANCEL: LeaveRequestStatus.CANCELLED,
+    REVERT: LeaveRequestStatus.PENDING_HR,
   },
   REJECTED: {},
   CANCELLED: {},

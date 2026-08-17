@@ -15,7 +15,7 @@ export const requestMissedPunchSchema = z.object({
 export const correctPunchSchema = z.object({
   originalPunchId: z.string().cuid(),
   newPunchTime: z.string().datetime({ offset: true }),
-  reason: z.string().min(1, "A reason is required").max(500),
+  reason: z.string().max(500).optional(),
 });
 
 export const approveMissedPunchSchema = z.object({

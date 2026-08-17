@@ -216,13 +216,12 @@ export const payrollApproveTimesheet = withRBAC(
 const mealWaiverSchema = z.object({
   timesheetId: z.string().cuid(),
   segmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be yyyy-MM-dd"),
-  reason: z.string().max(500).optional(),
 });
 
 export const toggleMealWaiver = withRBAC(
   "PAY_PERIOD_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: unknown): Promise<{ success: boolean; waived: boolean }> => {
-    const { timesheetId, segmentDate, reason } = mealWaiverSchema.parse(input);
+    const { timesheetId, segmentDate } = mealWaiverSchema.parse(input);
 
     const dateObj = new Date(segmentDate + "T00:00:00.000Z");
 
@@ -239,13 +238,13 @@ export const toggleMealWaiver = withRBAC(
           action: "MEAL_WAIVER_REMOVED",
           entityType: "TIMESHEET",
           entityId: timesheetId,
-          changes: { before: { segmentDate, reason: existing.reason }, after: null },
+          changes: { before: { segmentDate, createdById: existing.createdById }, after: null },
         });
       });
     } else {
       await db.$transaction(async (tx) => {
         await tx.mealWaiver.create({
-          data: { timesheetId, segmentDate: dateObj, reason: reason ?? "" },
+          data: { timesheetId, segmentDate: dateObj, createdById: actorId },
         });
         await writeAuditLog({
           tenantId,
@@ -253,7 +252,7 @@ export const toggleMealWaiver = withRBAC(
           action: "MEAL_WAIVER_ADDED",
           entityType: "TIMESHEET",
           entityId: timesheetId,
-          changes: { before: null, after: { segmentDate, reason } },
+          changes: { before: null, after: { segmentDate, createdById: actorId } },
         });
       });
     }

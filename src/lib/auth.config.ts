@@ -18,7 +18,8 @@ export const authConfig = {
         !nextUrl.pathname.startsWith("/api/auth") &&
         !nextUrl.pathname.startsWith("/api/timeclock") &&
         !nextUrl.pathname.startsWith("/api/cron") &&
-        !nextUrl.pathname.startsWith("/api/mobile");
+        !nextUrl.pathname.startsWith("/api/mobile") &&
+        !nextUrl.pathname.startsWith("/api/external");
 
       // Super-admin routes: require SUPER_ADMIN role
       if (isOnSuperAdmin) {

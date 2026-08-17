@@ -61,13 +61,17 @@ model PtoPolicy {
   carryOverEnabled           Boolean @default(true)  // when false, no carry-over posts at balance reset
   carryOverRespectMaxBalance Boolean @default(false) // when true, cross-bucket carry-over won't exceed destination's max balance
 
+  forecastEnabled          Boolean @default(false) // when true, compute projected future accruals
+  forecastMode             String? // "MONTHS" | "END_OF_YEAR"
+  forecastMonths           Int?    // number of months ahead (only when forecastMode = "MONTHS")
+  forecastApplyToAvailable Boolean @default(false) // when true, available balance includes forecasted hours
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   tenant        Tenant                      @relation(fields: [tenantId], references: [id])
   rules         PtoPolicyRule[]
   siteLinks     SitePtoPolicy[]
-  empOverrides  EmployeePtoPolicyOverride[]
   categoryLinks PayCategoryPtoPolicy[]
 
   @@unique([tenantId, name])
@@ -113,14 +117,3 @@ model SitePtoPolicy {
   @@map("site_pto_policies")
 }
 
-// Per-employee override (supersedes site default for all leave types)
-model EmployeePtoPolicyOverride {
-  id          String @id @default(cuid())
-  employeeId  String @unique
-  ptoPolicyId String
-
-  employee  Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  ptoPolicy PtoPolicy @relation(fields: [ptoPolicyId], references: [id])
-
-  @@map("employee_pto_policy_overrides")
-}

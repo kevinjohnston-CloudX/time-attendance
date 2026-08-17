@@ -41,6 +41,10 @@ interface Props {
     policyName: string | null;
     policyRateMode: string | null;
     expectedAccrualMinutes: number | null;
+    forecastedMinutes: number | null;
+    forecastApplyToAvailable: boolean;
+    netAdjustmentMinutes: number | null;
+    accrualTracked: boolean;
   }[];
   year: number;
   leaveLog: LeaveLogEntry[];
@@ -62,7 +66,7 @@ const inputCls =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
 const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400";
 
-type Tab = "general" | "personal" | "pay" | "logs";
+type Tab = "general" | "personal" | "pay" | "leave" | "logs";
 
 export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, balances, year, leaveLog, logs }: Props) {
   const router = useRouter();
@@ -158,6 +162,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
     { id: "general", label: "General" },
     { id: "personal", label: "Personal" },
     { id: "pay", label: "Pay" },
+    { id: "leave", label: "Leave" },
     { id: "logs", label: "Logs" },
   ];
 
@@ -485,8 +490,14 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
           </div>
         </form>
 
+        </>
+      )}
+
+      {/* ── Leave tab ───────────────────────────────────────────────────── */}
+      {activeTab === "leave" && (
+        <>
         {/* Leave Balances */}
-        <div className="mt-8">
+        <div className="mt-5">
           <h2 className="text-base font-semibold text-zinc-900 dark:text-white">
             Leave Balances — {year}
           </h2>
@@ -529,10 +540,13 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
         <div className="mt-8">
           <h2 className="text-base font-semibold text-zinc-900 dark:text-white">Leave History</h2>
           <p className="mt-0.5 text-sm text-zinc-500">
-            Policy assignments, balance adjustments, and tier / rate changes.
+            Accruals, leave requests, and balance adjustments.
           </p>
           <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            <LeaveHistoryPanel entries={leaveLog} />
+            <LeaveHistoryPanel
+              entries={leaveLog}
+              defaultLeaveTypeNames={balances.filter((b) => b.accrualTracked).map((b) => b.leaveTypeName)}
+            />
           </div>
         </div>
         </>

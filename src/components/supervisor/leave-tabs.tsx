@@ -2,9 +2,18 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { format, differenceInCalendarDays, eachDayOfInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, isToday } from "date-fns";
+import { format, parseISO, differenceInCalendarDays, eachDayOfInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, isToday } from "date-fns";
+
+// @db.Date fields arrive from the server as ISO strings at UTC midnight.
+// Extract YYYY-MM-DD and parseISO to get local midnight — avoids timezone day shift.
+function parseLeaveDate(d: Date | string): Date {
+  const s = (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
+  return parseISO(s);
+}
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { LeaveApprovalButtons } from "@/components/supervisor/leave-approval-buttons";
+import { LeaveReverseButton } from "@/components/supervisor/leave-reverse-button";
+import { HrApproveButtons } from "@/components/supervisor/hr-approve-buttons";
 import { LEAVE_STATUS_LABEL, LEAVE_STATUS_BADGE, type LeaveRequestStatusValue } from "@/lib/state-machines/labels";
 
 interface LeaveRequestRow {
@@ -22,9 +31,11 @@ interface LeaveRequestRow {
 
 interface LeaveTabsProps {
   pending: LeaveRequestRow[];
+  hrPending: LeaveRequestRow[];
   upcoming: LeaveRequestRow[];
-  initialTab?: "pending" | "upcoming";
+  initialTab?: "pending" | "hr-pending" | "upcoming";
   canFilter?: boolean;
+  canHrApprove?: boolean;
   sites?: { id: string; name: string }[];
   departments?: { id: string; name: string }[];
   selectedSiteId?: string;
@@ -33,9 +44,9 @@ interface LeaveTabsProps {
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export function LeaveTabs({ pending, upcoming, initialTab, canFilter, sites = [], departments = [], selectedSiteId, selectedDepartmentId }: LeaveTabsProps) {
+export function LeaveTabs({ pending, hrPending, upcoming, initialTab, canFilter, canHrApprove, sites = [], departments = [], selectedSiteId, selectedDepartmentId }: LeaveTabsProps) {
   const router = useRouter();
-  const [tab, setTab] = useState<"pending" | "upcoming">(initialTab ?? "pending");
+  const [tab, setTab] = useState<"pending" | "hr-pending" | "upcoming">(initialTab ?? "pending");
 
   function navigate(siteId?: string, departmentId?: string) {
     const params = new URLSearchParams();
@@ -58,7 +69,7 @@ export function LeaveTabs({ pending, upcoming, initialTab, canFilter, sites = []
   type Entry = { name: string; employeeId: string; leaveType: string };
   const approvedMap = new Map<string, Entry[]>();
   for (const req of upcoming) {
-    const days = eachDayOfInterval({ start: new Date(req.startDate), end: new Date(req.endDate) });
+    const days = eachDayOfInterval({ start: parseLeaveDate(req.startDate), end: parseLeaveDate(req.endDate) });
     for (const day of days) {
       const key = format(day, "yyyy-MM-dd");
       if (!approvedMap.has(key)) approvedMap.set(key, []);
@@ -68,7 +79,7 @@ export function LeaveTabs({ pending, upcoming, initialTab, canFilter, sites = []
 
   const pendingMap = new Map<string, Entry[]>();
   for (const req of pending) {
-    const days = eachDayOfInterval({ start: new Date(req.startDate), end: new Date(req.endDate) });
+    const days = eachDayOfInterval({ start: parseLeaveDate(req.startDate), end: parseLeaveDate(req.endDate) });
     for (const day of days) {
       const key = format(day, "yyyy-MM-dd");
       if (!pendingMap.has(key)) pendingMap.set(key, []);
@@ -79,7 +90,7 @@ export function LeaveTabs({ pending, upcoming, initialTab, canFilter, sites = []
   // Which pending requests overlap with approved leave from a different employee
   const conflictIds = new Set<string>();
   for (const req of pending) {
-    const days = eachDayOfInterval({ start: new Date(req.startDate), end: new Date(req.endDate) });
+    const days = eachDayOfInterval({ start: parseLeaveDate(req.startDate), end: parseLeaveDate(req.endDate) });
     for (const day of days) {
       const key = format(day, "yyyy-MM-dd");
       const approved = approvedMap.get(key) ?? [];
@@ -151,7 +162,7 @@ export function LeaveTabs({ pending, upcoming, initialTab, canFilter, sites = []
           </div>
         )}
 
-        {/* Pending / Upcoming toggle */}
+        {/* Tab toggle */}
         <div className="px-4 pb-3">
           <div className="flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
             <button
@@ -159,6 +170,17 @@ export function LeaveTabs({ pending, upcoming, initialTab, canFilter, sites = []
               className={`${btnBase} ${tab === "pending" ? btnActive : btnInactive}`}
             >
               Pending ({pending.length})
+            </button>
+            <button
+              onClick={() => setTab("hr-pending")}
+              className={`${btnBase} relative ${tab === "hr-pending" ? btnActive : btnInactive}`}
+            >
+              HR Review
+              {hrPending.length > 0 && (
+                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-semibold text-white">
+                  {hrPending.length}
+                </span>
+              )}
             </button>
             <button
               onClick={() => setTab("upcoming")}
@@ -172,6 +194,7 @@ export function LeaveTabs({ pending, upcoming, initialTab, canFilter, sites = []
         {/* List */}
         <div className="flex-1 overflow-y-auto px-4 pb-6 flex flex-col gap-3">
           {tab === "pending" && <PendingList requests={pending} conflictIds={conflictIds} />}
+          {tab === "hr-pending" && <HrPendingList requests={hrPending} canHrApprove={!!canHrApprove} />}
           {tab === "upcoming" && <UpcomingList requests={upcoming} />}
         </div>
       </div>
@@ -388,7 +411,7 @@ function PendingList({ requests, conflictIds }: { requests: LeaveRequestRow[]; c
     <>
       {sorted.map((req) => {
         const days =
-          differenceInCalendarDays(new Date(req.endDate), new Date(req.startDate)) + 1;
+          differenceInCalendarDays(parseLeaveDate(req.endDate), parseLeaveDate(req.startDate)) + 1;
         const hasConflict = conflictIds.has(req.id);
 
         return (
@@ -412,8 +435,8 @@ function PendingList({ requests, conflictIds }: { requests: LeaveRequestRow[]; c
             </div>
             <p className="mt-0.5 text-sm text-zinc-500">
               {req.leaveType.name} &middot;{" "}
-              {format(new Date(req.startDate), "MMM d")} &ndash;{" "}
-              {format(new Date(req.endDate), "MMM d, yyyy")} ({days} day
+              {format(parseLeaveDate(req.startDate), "MMM d")} &ndash;{" "}
+              {format(parseLeaveDate(req.endDate), "MMM d, yyyy")} ({days} day
               {days !== 1 ? "s" : ""})
             </p>
             {req.note && (
@@ -436,6 +459,60 @@ function PendingList({ requests, conflictIds }: { requests: LeaveRequestRow[]; c
   );
 }
 
+function HrPendingList({ requests, canHrApprove }: { requests: LeaveRequestRow[]; canHrApprove: boolean }) {
+  if (requests.length === 0) {
+    return (
+      <p className="py-8 text-center text-sm text-zinc-400">No leave requests awaiting HR review.</p>
+    );
+  }
+
+  const sorted = [...requests].sort((a, b) => {
+    const aDate = a.submittedAt ? new Date(a.submittedAt).getTime() : new Date(a.startDate).getTime();
+    const bDate = b.submittedAt ? new Date(b.submittedAt).getTime() : new Date(b.startDate).getTime();
+    return aDate - bDate;
+  });
+
+  return (
+    <>
+      {sorted.map((req) => {
+        const days = differenceInCalendarDays(parseLeaveDate(req.endDate), parseLeaveDate(req.startDate)) + 1;
+        const hours = (req.durationMinutes / 60).toFixed(1);
+
+        return (
+          <div
+            key={req.id}
+            className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-950/20"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-medium text-zinc-900 dark:text-white">
+                {req.employee.user?.name ?? `Employee ${req.employeeId}`}
+              </p>
+              <span className="shrink-0 inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                Pending HR
+              </span>
+            </div>
+            <p className="mt-0.5 text-sm text-zinc-500">
+              {req.leaveType.name} &middot;{" "}
+              {format(parseLeaveDate(req.startDate), "MMM d")} &ndash;{" "}
+              {format(parseLeaveDate(req.endDate), "MMM d, yyyy")}
+            </p>
+            <p className="text-xs text-zinc-400">
+              {days} day{days !== 1 ? "s" : ""} &middot; {hours}h
+            </p>
+            {req.note && (
+              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">&ldquo;{req.note}&rdquo;</p>
+            )}
+            {canHrApprove
+              ? <HrApproveButtons leaveRequestId={req.id} />
+              : <LeaveReverseButton leaveRequestId={req.id} label="Return to Supervisor Queue" />
+            }
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 function UpcomingList({ requests }: { requests: LeaveRequestRow[] }) {
   if (requests.length === 0) {
     return (
@@ -447,7 +524,7 @@ function UpcomingList({ requests }: { requests: LeaveRequestRow[] }) {
     <>
       {requests.map((req) => {
         const days =
-          differenceInCalendarDays(new Date(req.endDate), new Date(req.startDate)) + 1;
+          differenceInCalendarDays(parseLeaveDate(req.endDate), parseLeaveDate(req.startDate)) + 1;
         const hours = (req.durationMinutes / 60).toFixed(1);
         const status = req.status as LeaveRequestStatusValue;
 
@@ -463,8 +540,8 @@ function UpcomingList({ requests }: { requests: LeaveRequestRow[] }) {
                 </p>
                 <p className="mt-0.5 text-sm text-zinc-500">
                   {req.leaveType.name} &middot;{" "}
-                  {format(new Date(req.startDate), "MMM d")} &ndash;{" "}
-                  {format(new Date(req.endDate), "MMM d, yyyy")}
+                  {format(parseLeaveDate(req.startDate), "MMM d")} &ndash;{" "}
+                  {format(parseLeaveDate(req.endDate), "MMM d, yyyy")}
                 </p>
                 <p className="text-xs text-zinc-400">
                   {days} day{days !== 1 ? "s" : ""} &middot; {hours}h
@@ -478,6 +555,9 @@ function UpcomingList({ requests }: { requests: LeaveRequestRow[] }) {
                 {LEAVE_STATUS_LABEL[status] ?? status}
               </span>
             </div>
+            {status === "APPROVED" && (
+              <LeaveReverseButton leaveRequestId={req.id} />
+            )}
           </div>
         );
       })}

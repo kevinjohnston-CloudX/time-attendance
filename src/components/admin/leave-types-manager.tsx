@@ -6,7 +6,8 @@ import { createLeaveType, updateLeaveType } from "@/actions/admin.actions";
 import { formatMinutes } from "@/lib/utils/duration";
 import type { LeaveType } from "@prisma/client";
 
-interface Props { leaveTypes: LeaveType[] }
+interface PayCodeOption { id: string; code: number; label: string }
+interface Props { leaveTypes: LeaveType[]; payCodes: PayCodeOption[] }
 
 const CATEGORIES = ["PTO","SICK","HOLIDAY","FMLA","BEREAVEMENT","JURY_DUTY","MILITARY","UNPAID"] as const;
 
@@ -58,7 +59,7 @@ function HoursInput({ name, label, defaultMinutes, optional = false }: { name: s
   );
 }
 
-function LeaveTypeFields({ lt }: { lt?: LeaveType }) {
+function LeaveTypeFields({ lt, payCodes }: { lt?: LeaveType & { payCodeId?: string | null }; payCodes: PayCodeOption[] }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <div className="col-span-2 sm:col-span-2">
@@ -94,11 +95,29 @@ function LeaveTypeFields({ lt }: { lt?: LeaveType }) {
           placeholder="Auto"
           className={inputCls} />
       </div>
+      <div className="col-span-2 sm:col-span-2">
+        <label className="mb-1 block text-xs text-zinc-500">Accrual Tracking</label>
+        <select name="accrualTracked" defaultValue={lt ? (lt.accrualTracked ? "true" : "false") : "true"} className={inputCls}>
+          <option value="true">Accrual tracked — balance managed by system</option>
+          <option value="false">Not tracked — informational only</option>
+        </select>
+      </div>
+      {payCodes.length > 0 && (
+        <div className="col-span-2 sm:col-span-2">
+          <label className="mb-1 block text-xs text-zinc-500">Pay Code <span className="text-zinc-400">(for timecard rows)</span></label>
+          <select name="payCodeId" defaultValue={lt?.payCodeId ?? ""} className={inputCls}>
+            <option value="">— None —</option>
+            {payCodes.map((pc) => (
+              <option key={pc.id} value={pc.id}>{pc.code}[{pc.label}]</option>
+            ))}
+          </select>
+        </div>
+      )}
     </div>
   );
 }
 
-export function LeaveTypesManager({ leaveTypes }: Props) {
+export function LeaveTypesManager({ leaveTypes, payCodes }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -119,6 +138,7 @@ export function LeaveTypesManager({ leaveTypes }: Props) {
     const hasMax = maxH !== "" && maxH !== null;
     const codeRaw = fd.get("externalCode");
     const externalCode = codeRaw !== "" && codeRaw !== null ? Number(codeRaw) : null;
+    const payCodeIdRaw = fd.get("payCodeId");
     return {
       name: fd.get("name") as string,
       category: fd.get("category") as "PTO",
@@ -126,7 +146,9 @@ export function LeaveTypesManager({ leaveTypes }: Props) {
       maxBalanceMinutes: hasMax ? toMins(fd, "maxBalance") || null : null,
       requiresApproval: fd.get("requiresApproval") === "true",
       isPaid: fd.get("isPaid") === "true",
+      accrualTracked: fd.get("accrualTracked") !== "false",
       externalCode,
+      payCodeId: payCodeIdRaw && payCodeIdRaw !== "" ? (payCodeIdRaw as string) : null,
     };
   }
 
@@ -190,7 +212,7 @@ export function LeaveTypesManager({ leaveTypes }: Props) {
         <Modal title="New Leave Type" onClose={closeCreate}>
           {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
           <form onSubmit={handleCreate}>
-            <LeaveTypeFields />
+            <LeaveTypeFields payCodes={payCodes} />
             <div className="mt-6 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
               <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Creating…" : "Create"}</button>
               <button type="button" onClick={closeCreate} className={cancelBtnCls}>Cancel</button>
@@ -204,7 +226,7 @@ export function LeaveTypesManager({ leaveTypes }: Props) {
         <Modal title={`Edit: ${editingLt.name}`} onClose={closeEdit}>
           {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
           <form onSubmit={(e) => handleUpdate(editingLt, e)}>
-            <LeaveTypeFields lt={editingLt} />
+            <LeaveTypeFields lt={editingLt} payCodes={payCodes} />
             <div className="mt-3 grid grid-cols-4 gap-3">
               <select name="isActive" defaultValue={editingLt.isActive ? "true" : "false"} className={inputCls}>
                 <option value="true">Active</option>

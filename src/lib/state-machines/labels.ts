@@ -76,6 +76,7 @@ export const PAY_PERIOD_STATUS_LABEL: Record<PayPeriodStatusValue, string> = {
 export type LeaveRequestStatusValue =
   | "DRAFT"
   | "PENDING"
+  | "PENDING_HR"
   | "APPROVED"
   | "REJECTED"
   | "CANCELLED"
@@ -83,7 +84,8 @@ export type LeaveRequestStatusValue =
 
 export const LEAVE_STATUS_LABEL: Record<LeaveRequestStatusValue, string> = {
   DRAFT: "Draft",
-  PENDING: "Pending",
+  PENDING: "Pending Supervisor",
+  PENDING_HR: "Pending HR",
   APPROVED: "Approved",
   REJECTED: "Rejected",
   CANCELLED: "Cancelled",
@@ -93,6 +95,7 @@ export const LEAVE_STATUS_LABEL: Record<LeaveRequestStatusValue, string> = {
 export const LEAVE_STATUS_BADGE: Record<LeaveRequestStatusValue, string> = {
   DRAFT: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
   PENDING: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
+  PENDING_HR: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
   APPROVED: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
   REJECTED: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
   CANCELLED: "bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400",

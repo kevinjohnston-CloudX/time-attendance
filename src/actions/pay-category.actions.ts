@@ -31,15 +31,20 @@ export const getPayCategories = withRBAC(
             },
           },
         },
+        availableLeaveTypes: {
+          select: { leaveTypeId: true },
+        },
       },
     });
   }
 );
 
 const categorySchema = z.object({
-  number:       z.coerce.number().int().min(1).max(9999),
-  description:  z.string().max(255).optional(),
-  ptoPolicyIds: z.array(z.string()).optional(),
+  number:                  z.coerce.number().int().min(1).max(9999),
+  description:             z.string().max(255).optional(),
+  ptoPolicyIds:            z.array(z.string()).optional(),
+  limitLeaveTypes:         z.boolean().optional(),
+  availableLeaveTypeIds:   z.array(z.string()).optional(),
 });
 
 async function checkOverlap(ptoPolicyIds: string[]): Promise<string | null> {
@@ -84,11 +89,16 @@ export const createPayCategory = withRBAC(
     try {
       const category = await db.$transaction(async (tx) => {
         const cat = await tx.payCategory.create({
-          data: { tenantId, number: data.number, description: data.description ?? null },
+          data: { tenantId, number: data.number, description: data.description ?? null, limitLeaveTypes: data.limitLeaveTypes ?? false },
         });
         if (data.ptoPolicyIds?.length) {
           await tx.payCategoryPtoPolicy.createMany({
             data: data.ptoPolicyIds.map((ptoPolicyId) => ({ payCategoryId: cat.id, ptoPolicyId })),
+          });
+        }
+        if (data.limitLeaveTypes && data.availableLeaveTypeIds?.length) {
+          await tx.payCategoryLeaveType.createMany({
+            data: data.availableLeaveTypeIds.map((leaveTypeId) => ({ payCategoryId: cat.id, leaveTypeId })),
           });
         }
         return cat;
@@ -110,11 +120,13 @@ export const updatePayCategory = withRBAC(
     const tenantId = ctx.tenantId;
     if (!tenantId) throw new Error("No tenant");
     const data = z.object({
-      id:           z.string(),
-      number:       z.coerce.number().int().min(1).max(9999),
-      description:  z.string().max(255).optional(),
-      isActive:     z.boolean().optional(),
-      ptoPolicyIds: z.array(z.string()).optional(),
+      id:                    z.string(),
+      number:                z.coerce.number().int().min(1).max(9999),
+      description:           z.string().max(255).optional(),
+      isActive:              z.boolean().optional(),
+      ptoPolicyIds:          z.array(z.string()).optional(),
+      limitLeaveTypes:       z.boolean().optional(),
+      availableLeaveTypeIds: z.array(z.string()).optional(),
     }).parse(input);
 
     const overlapErr = await checkOverlap(data.ptoPolicyIds ?? []);
@@ -124,9 +136,10 @@ export const updatePayCategory = withRBAC(
       await tx.payCategory.update({
         where: { id: data.id, tenantId },
         data: {
-          number:      data.number,
-          description: data.description ?? null,
-          ...(data.isActive !== undefined && { isActive: data.isActive }),
+          number:          data.number,
+          description:     data.description ?? null,
+          ...(data.isActive       !== undefined && { isActive: data.isActive }),
+          ...(data.limitLeaveTypes !== undefined && { limitLeaveTypes: data.limitLeaveTypes }),
         },
       });
       if (data.ptoPolicyIds !== undefined) {
@@ -134,6 +147,15 @@ export const updatePayCategory = withRBAC(
         if (data.ptoPolicyIds.length) {
           await tx.payCategoryPtoPolicy.createMany({
             data: data.ptoPolicyIds.map((ptoPolicyId) => ({ payCategoryId: data.id, ptoPolicyId })),
+          });
+        }
+      }
+      // Always reconcile junction rows when limitLeaveTypes is part of the update
+      if (data.limitLeaveTypes !== undefined) {
+        await tx.payCategoryLeaveType.deleteMany({ where: { payCategoryId: data.id } });
+        if (data.limitLeaveTypes && data.availableLeaveTypeIds?.length) {
+          await tx.payCategoryLeaveType.createMany({
+            data: data.availableLeaveTypeIds.map((leaveTypeId) => ({ payCategoryId: data.id, leaveTypeId })),
           });
         }
       }

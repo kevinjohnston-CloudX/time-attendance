@@ -15,7 +15,7 @@ export const singleManualPunchSchema = z.object({
   timesheetId: z.string().min(1),
   punchType: z.enum(["CLOCK_IN", "CLOCK_OUT"]),
   punchTime: z.string().datetime({ offset: true }),
-  reason: z.string().min(1, "Reason is required").max(500),
+  reason: z.string().max(500).optional(),
 });
 
 export type SingleManualPunchInput = z.infer<typeof singleManualPunchSchema>;

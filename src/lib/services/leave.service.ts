@@ -50,16 +50,6 @@ export async function createLeaveRequestCore(
       shift: { select: { startTime: true, endTime: true } },
       ruleSet: { select: { mealBreakMinutes: true, mealBreakAfterMinutes: true } },
       siteId: true,
-      ptoPolicyOverrides: {
-        select: {
-          ptoPolicy: {
-            select: {
-              maxDailyHours: true,
-              rules: { where: { leaveTypeId }, select: { id: true } },
-            },
-          },
-        },
-      },
       payCategory: {
         select: {
           ptoPolicies: {
@@ -84,17 +74,12 @@ export async function createLeaveRequestCore(
   const mealBreakStart    = shiftStartMins + mealBreakAfter;
   const mealBreakEnd      = mealBreakStart + mealBreakMins;
 
-  // Resolve max daily minutes from policy (override > pay category > site), matching engine priority
+  // Resolve max daily minutes from policy (pay category → site)
   let maxDailyMinutes: number | null = null;
-  const override = employee.ptoPolicyOverrides[0];
-  if (override?.ptoPolicy.rules.length && override.ptoPolicy.maxDailyHours != null) {
-    maxDailyMinutes = Math.round(override.ptoPolicy.maxDailyHours * 60);
-  } else {
-    for (const link of employee.payCategory?.ptoPolicies ?? []) {
-      if (link.ptoPolicy.rules.length && link.ptoPolicy.maxDailyHours != null) {
-        maxDailyMinutes = Math.round(link.ptoPolicy.maxDailyHours * 60);
-        break;
-      }
+  for (const link of employee.payCategory?.ptoPolicies ?? []) {
+    if (link.ptoPolicy.rules.length && link.ptoPolicy.maxDailyHours != null) {
+      maxDailyMinutes = Math.round(link.ptoPolicy.maxDailyHours * 60);
+      break;
     }
   }
   if (maxDailyMinutes === null && employee.siteId) {
@@ -115,13 +100,7 @@ export async function createLeaveRequestCore(
     if (day.type === "FULL") {
       dayMins = (shiftEndMins - shiftStartMins) - mealBreakMins;
     } else {
-      const leaveFrom    = timeToMins(day.leaveFrom);
-      const leaveTo      = timeToMins(day.leaveTo);
-      const raw          = Math.max(0, leaveTo - leaveFrom);
-      const overlapStart = Math.max(leaveFrom, mealBreakStart);
-      const overlapEnd   = Math.min(leaveTo, mealBreakEnd);
-      const overlap      = Math.max(0, overlapEnd - overlapStart);
-      dayMins            = Math.max(0, raw - overlap);
+      dayMins = day.minutes;
     }
     if (maxDailyMinutes !== null && dayMins > maxDailyMinutes) {
       const maxH = Math.floor(maxDailyMinutes / 60);
@@ -188,21 +167,6 @@ export async function validateBalanceForApproval(leaveRequestId: string): Promis
       titleChangeDate:  true,
       orientationDate:  true,
       userDate2:        true,
-      ptoPolicyOverrides: {
-        select: {
-          ptoPolicy: {
-            select: {
-              allowNegativeBalance: true,
-              maxNegativeHours:     true,
-              serviceMonthBasis:    true,
-              rules: {
-                where:  { leaveTypeId },
-                select: { minTenureMonths: true, maxTenureMonths: true, maxAnnualHours: true },
-              },
-            },
-          },
-        },
-      },
       payCategory: {
         select: {
           ptoPolicies: {
@@ -225,18 +189,13 @@ export async function validateBalanceForApproval(leaveRequestId: string): Promis
     },
   });
 
-  // Resolve the applicable policy (override → pay category → site)
+  // Resolve the applicable policy (pay category → site)
   let policy: PolicyForValidation | null = null;
 
-  const override = employee.ptoPolicyOverrides[0];
-  if (override?.ptoPolicy.rules.length) {
-    policy = override.ptoPolicy;
-  } else {
-    for (const link of employee.payCategory?.ptoPolicies ?? []) {
-      if (link.ptoPolicy.rules.length) {
-        policy = link.ptoPolicy;
-        break;
-      }
+  for (const link of employee.payCategory?.ptoPolicies ?? []) {
+    if (link.ptoPolicy.rules.length) {
+      policy = link.ptoPolicy;
+      break;
     }
   }
   if (!policy && employee.siteId) {

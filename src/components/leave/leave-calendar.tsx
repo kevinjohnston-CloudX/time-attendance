@@ -3,31 +3,38 @@
 import { useState } from "react";
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek,
-  eachDayOfInterval, isSameMonth, isToday, format,
+  eachDayOfInterval, isSameMonth, isToday, format, parseISO,
   addMonths, subMonths, isWithinInterval, startOfDay, endOfDay,
 } from "date-fns";
+
+// Dates from the server are YYYY-MM-DD strings. parseISO treats them as local midnight.
+function parseLeaveDate(d: string): Date {
+  return parseISO(d);
+}
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const STATUS_CELL: Record<string, string> = {
-  APPROVED:  "bg-green-200 text-green-900 dark:bg-green-900/50 dark:text-green-200",
-  POSTED:    "bg-emerald-200 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-200",
-  PENDING:   "bg-amber-200 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200",
-  DRAFT:     "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300",
-  REJECTED:  "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
-  CANCELLED: "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-600",
+  APPROVED:   "bg-green-200 text-green-900 dark:bg-green-900/50 dark:text-green-200",
+  POSTED:     "bg-emerald-200 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-200",
+  PENDING:    "bg-amber-200 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200",
+  PENDING_HR: "bg-blue-200 text-blue-900 dark:bg-blue-900/50 dark:text-blue-200",
+  DRAFT:      "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300",
+  REJECTED:   "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+  CANCELLED:  "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-600",
 };
 
 const STATUS_DOT: Record<string, string> = {
-  APPROVED:  "bg-green-500",
-  POSTED:    "bg-emerald-500",
-  PENDING:   "bg-amber-500",
-  DRAFT:     "bg-zinc-400",
-  REJECTED:  "bg-red-400",
-  CANCELLED: "bg-zinc-300",
+  APPROVED:   "bg-green-500",
+  POSTED:     "bg-emerald-500",
+  PENDING:    "bg-amber-500",
+  PENDING_HR: "bg-blue-500",
+  DRAFT:      "bg-zinc-400",
+  REJECTED:   "bg-red-400",
+  CANCELLED:  "bg-zinc-300",
 };
 
 const STATUS_PRIORITY: Record<string, number> = {
-  APPROVED: 1, POSTED: 2, PENDING: 3, DRAFT: 4, REJECTED: 5, CANCELLED: 6,
+  APPROVED: 1, POSTED: 2, PENDING_HR: 3, PENDING: 4, DRAFT: 5, REJECTED: 6, CANCELLED: 7,
 };
 
 type LeaveRequest = {
@@ -52,8 +59,8 @@ export function LeaveCalendar({ requests, className }: { requests: LeaveRequest[
   function getStatusForDay(day: Date): string | null {
     const matching = requests.filter((req) => {
       if (req.status === "CANCELLED") return false;
-      const s = startOfDay(new Date(req.startDate));
-      const e = endOfDay(new Date(req.endDate));
+      const s = startOfDay(parseLeaveDate(req.startDate as string));
+      const e = endOfDay(parseLeaveDate(req.endDate as string));
       return isWithinInterval(day, { start: s, end: e });
     });
     if (matching.length === 0) return null;

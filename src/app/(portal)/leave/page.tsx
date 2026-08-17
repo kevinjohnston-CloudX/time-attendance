@@ -8,7 +8,13 @@ import {
   LEAVE_STATUS_BADGE,
 } from "@/lib/state-machines/labels";
 import { formatMinutes } from "@/lib/utils/duration";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
+
+// @db.Date fields come back as UTC midnight — extract YYYY-MM-DD and parse as local midnight.
+function fmtDate(d: Date | string, fmt: string) {
+  const iso = (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
+  return format(parseISO(iso), fmt);
+}
 import { LeaveCalendar } from "@/components/leave/leave-calendar";
 import { RequestLeaveModal } from "@/components/leave/request-leave-modal";
 import { CancelLeaveButton } from "@/components/leave/cancel-leave-button";
@@ -50,12 +56,13 @@ export default async function MyLeavePage() {
     }
   }
 
-  // Serialize dates for client component
+  // Serialize dates for client component — send as YYYY-MM-DD so the client
+  // can parse them as local midnight (avoids UTC-offset day shift).
   const calendarRequests = requests.map((r) => ({
     id: r.id,
     status: r.status,
-    startDate: r.startDate instanceof Date ? r.startDate.toISOString() : String(r.startDate),
-    endDate:   r.endDate   instanceof Date ? r.endDate.toISOString()   : String(r.endDate),
+    startDate: (r.startDate instanceof Date ? r.startDate.toISOString() : String(r.startDate)).slice(0, 10),
+    endDate:   (r.endDate   instanceof Date ? r.endDate.toISOString()   : String(r.endDate)).slice(0, 10),
     leaveType: { name: r.leaveType.name },
     durationMinutes: r.durationMinutes,
   }));
@@ -137,7 +144,7 @@ export default async function MyLeavePage() {
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                  {format(req.startDate, "MMM d")} – {format(req.endDate, "MMM d, yyyy")}
+                  {fmtDate(req.startDate, "MMM d")} – {fmtDate(req.endDate, "MMM d, yyyy")}
                 </p>
                 <p className="text-xs text-zinc-400">{formatMinutes(req.durationMinutes)}</p>
                 {req.reviewNote && (

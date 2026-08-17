@@ -97,7 +97,11 @@ type TimecardSegment = {
   isPaid: boolean;
   leaveRequest?: {
     id: string;
-    leaveType: { name: string; category: string };
+    leaveType: {
+      name: string;
+      category: string;
+      payCode: { id: string; code: number; label: string } | null;
+    };
   } | null;
   payCode?: {
     id: string;
@@ -124,6 +128,8 @@ type TimesheetNoteItem = {
   noteDate: string;
   note: string;
   createdById: string;
+  createdByName: string | null;
+  createdAt: string;
 };
 
 type LeaveTypeOption = {
@@ -161,7 +167,7 @@ type TimecardDetail = {
   punches: TimecardPunch[];
   segments: TimecardSegment[];
   overtimeBuckets: TimecardBucket[];
-  mealWaivers: { id: string; segmentDate: string; reason: string }[];
+  mealWaivers: { id: string; segmentDate: string; reason: string | null }[];
   notes: TimesheetNoteItem[];
   dayReasons: { segmentDate: string; reasonCodeId: string; reasonCode: { id: string; code: string; label: string; color?: string | null } }[];
 };
@@ -355,6 +361,65 @@ function SummaryRow({
   );
 }
 
+// ─── Inline punch edit cell (Excel-style: blur = save, Escape = cancel) ──────
+
+function InlinePunchEdit({
+  timeStr, amPm, error, isPending,
+  onTimeChange, onAmPmToggle, onBlurSave, onCancel, onDelete,
+}: {
+  timeStr: string; amPm: "AM" | "PM"; error: string | null; isPending: boolean;
+  onTimeChange: (v: string) => void; onAmPmToggle: () => void;
+  onBlurSave: () => void; onCancel: () => void; onDelete?: () => void;
+}) {
+  const deletingRef = useRef(false);
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-1">
+        <input
+          value={timeStr}
+          onChange={(e) => onTimeChange(e.target.value)}
+          onBlur={() => { if (!deletingRef.current) onBlurSave(); deletingRef.current = false; }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+            if (e.key === "Enter")  { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
+          }}
+          autoFocus
+          placeholder="8:30"
+          className="w-16 rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+        />
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onAmPmToggle}
+          className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+        >
+          {amPm}
+        </button>
+        {onDelete && (
+          <button
+            type="button"
+            disabled={isPending}
+            onMouseDown={() => { deletingRef.current = true; }}
+            onClick={() => {
+              if (!window.confirm("Remove this punch? This cannot be undone.")) {
+                deletingRef.current = false;
+                return;
+              }
+              deletingRef.current = false;
+              onDelete();
+            }}
+            className="rounded p-0.5 text-red-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-950/30"
+            title="Remove punch"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+      {error && <span className="text-xs text-red-500">{error}</span>}
+    </div>
+  );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function TimecardViewer({
@@ -482,7 +547,6 @@ export function TimecardViewer({
   const [editTimeStr, setEditTimeStr] = useState("");
   const [editAmPm, setEditAmPm] = useState<"AM" | "PM">("AM");
   const [editOriginalDate, setEditOriginalDate] = useState<Date | null>(null);
-  const [editReason, setEditReason] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
 
   // Rejection form
@@ -501,17 +565,17 @@ export function TimecardViewer({
   }
 
   // Meal waiver
-  const [waiverDay, setWaiverDay] = useState<string | null>(null);
-  const [waiverReason, setWaiverReason] = useState("");
   const [waiverError, setWaiverError] = useState<string | null>(null);
 
   // Add entry
   const [addEntryDay, setAddEntryDay] = useState<string | null>(null);
+  const [showAddEntryModal, setShowAddEntryModal] = useState(false);
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
 
-  // Notes
+  // Notes modal
   const [noteDay, setNoteDay] = useState<string | null>(null);
   const [noteText, setNoteText] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
 
   // Summary
   const [summaryGroupBy, setSummaryGroupBy] = useState<
@@ -528,12 +592,12 @@ export function TimecardViewer({
     setEditError(null);
     setShowRejectForm(false);
     setRejectNote("");
-    setWaiverDay(null);
-    setWaiverReason("");
     setWaiverError(null);
     setAddEntryDay(null);
+    setShowAddEntryModal(false);
     setNoteDay(null);
     setNoteText("");
+    setNoteSaving(false);
   }, [timecard?.timesheetId]);
 
   const canEdit =
@@ -665,7 +729,6 @@ export function TimecardViewer({
     setEditTimeStr(`${h12}:${String(minutes).padStart(2, "0")}`);
     setEditAmPm(ampm);
     setEditOriginalDate(d);
-    setEditReason("");
     setEditError(null);
   }
 
@@ -675,25 +738,36 @@ export function TimecardViewer({
     setEditError(null);
   }
 
-  function startAddingPunch(dayKey: string, pairIndex: number, punchType: "CLOCK_IN" | "CLOCK_OUT", day: Date) {
-    if (!canEdit) return;
-    setAddingPunch({ dayKey, pairIndex, punchType });
-    setEditingPunchId(null);
-    setEditTimeStr("");
-    setEditAmPm(punchType === "CLOCK_IN" ? "AM" : "PM");
-    setEditOriginalDate(day);
-    setEditReason("");
-    setEditError(null);
-  }
-
-  function handleAddPunch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!addingPunch || !editOriginalDate || !timecard) return;
+  function handleCorrectPunchBlur() {
+    if (!editingPunchId || !editOriginalDate) return;
     const parsed = parseTimeInput(editTimeStr);
-    if (!parsed) {
-      setEditError("Invalid time — enter something like 8:30 or 830");
+    if (!parsed) { cancelEditing(); return; }
+    let { hours, minutes } = parsed;
+    if (editAmPm === "PM" && hours !== 12) hours += 12;
+    if (editAmPm === "AM" && hours === 12) hours = 0;
+    if (hours === editOriginalDate.getHours() && minutes === editOriginalDate.getMinutes()) {
+      cancelEditing();
       return;
     }
+    const newDate = new Date(editOriginalDate);
+    newDate.setHours(hours, minutes, 0, 0);
+    setEditError(null);
+    startTransition(async () => {
+      const result = await correctPunch({
+        originalPunchId: editingPunchId,
+        newPunchTime: newDate.toISOString(),
+      });
+      if (!result.success) { setEditError(result.error); return; }
+      setEditingPunchId(null);
+      router.refresh();
+    });
+  }
+
+  function handleAddPunchBlur() {
+    if (!addingPunch || !editOriginalDate || !timecard) return;
+    if (!editTimeStr.trim()) { cancelEditing(); return; }
+    const parsed = parseTimeInput(editTimeStr);
+    if (!parsed) { cancelEditing(); return; }
     let { hours, minutes } = parsed;
     if (editAmPm === "PM" && hours !== 12) hours += 12;
     if (editAmPm === "AM" && hours === 12) hours = 0;
@@ -705,15 +779,30 @@ export function TimecardViewer({
         timesheetId: timecard.timesheetId,
         punchType: addingPunch.punchType,
         punchTime: punchDate.toISOString(),
-        reason: editReason,
       });
-      if (!result.success) {
-        setEditError(result.error ?? "Failed to add punch");
-        return;
-      }
+      if (!result.success) { setEditError(result.error ?? "Failed to add punch"); return; }
       setAddingPunch(null);
       router.refresh();
     });
+  }
+
+  function deletePunchDirect(punchId: string) {
+    startTransition(async () => {
+      const result = await deletePunch({ punchId, reason: "Removed by payroll" });
+      if (!result.success) { setEditError(result.error); return; }
+      setEditingPunchId(null);
+      router.refresh();
+    });
+  }
+
+  function startAddingPunch(dayKey: string, pairIndex: number, punchType: "CLOCK_IN" | "CLOCK_OUT", day: Date) {
+    if (!canEdit) return;
+    setAddingPunch({ dayKey, pairIndex, punchType });
+    setEditingPunchId(null);
+    setEditTimeStr("");
+    setEditAmPm(punchType === "CLOCK_IN" ? "AM" : "PM");
+    setEditOriginalDate(day);
+    setEditError(null);
   }
 
   function handleAddEntry(e: React.FormEvent) {
@@ -781,6 +870,7 @@ export function TimecardViewer({
       setNewEntryPayBucket("");
       setNewEntryReason("");
       setNewEntryError(null);
+      setShowAddEntryModal(false);
       router.refresh();
     });
   }
@@ -799,35 +889,6 @@ export function TimecardViewer({
   function handleRemoveLeave(leaveRequestId: string) {
     startTransition(async () => {
       await removePayrollLeaveEntry({ leaveRequestId });
-      router.refresh();
-    });
-  }
-
-  function handleCorrectPunch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editingPunchId || !editOriginalDate) return;
-    const parsed = parseTimeInput(editTimeStr);
-    if (!parsed) {
-      setEditError("Invalid time — enter something like 8:30 or 830");
-      return;
-    }
-    let { hours, minutes } = parsed;
-    if (editAmPm === "PM" && hours !== 12) hours += 12;
-    if (editAmPm === "AM" && hours === 12) hours = 0;
-    const newDate = new Date(editOriginalDate);
-    newDate.setHours(hours, minutes, 0, 0);
-    setEditError(null);
-    startTransition(async () => {
-      const result = await correctPunch({
-        originalPunchId: editingPunchId,
-        newPunchTime: newDate.toISOString(),
-        reason: editReason,
-      });
-      if (!result.success) {
-        setEditError(result.error);
-        return;
-      }
-      setEditingPunchId(null);
       router.refresh();
     });
   }
@@ -878,21 +939,18 @@ export function TimecardViewer({
     });
   }
 
-  function handleToggleWaiver(segmentDate: string, isCurrentlyWaived: boolean) {
+  function handleToggleWaiver(segmentDate: string) {
     if (!timecard) return;
     setWaiverError(null);
     startTransition(async () => {
       const result = await toggleMealWaiver({
         timesheetId: timecard.timesheetId,
         segmentDate,
-        reason: isCurrentlyWaived ? "" : waiverReason,
       });
       if (!result.success) {
         setWaiverError((result as { success: false; error: string }).error);
         return;
       }
-      setWaiverDay(null);
-      setWaiverReason("");
       router.refresh();
     });
   }
@@ -936,21 +994,21 @@ export function TimecardViewer({
   }
 
   function handleOpenNote(dayStr: string) {
-    const existing = timecard?.notes.find((n) => n.noteDate === dayStr);
     setNoteDay(dayStr);
-    setNoteText(existing?.note ?? "");
+    setNoteText("");
   }
 
   function handleSaveNote() {
-    if (!timecard || !noteDay) return;
+    if (!timecard || !noteDay || !noteText.trim()) return;
+    setNoteSaving(true);
     startTransition(async () => {
       await saveTimesheetNote({
         timesheetId: timecard.timesheetId,
         noteDate: noteDay,
         note: noteText,
       });
-      setNoteDay(null);
       setNoteText("");
+      setNoteSaving(false);
       router.refresh();
     });
   }
@@ -958,7 +1016,7 @@ export function TimecardViewer({
   // Column count for colSpan on expanded rows
   // Base: chevron + date + notes-icon + in + out + reg + ot + dt + total = 9
   // +1 if pay codes column exists, +1 if reason codes column exists
-  const colCount = 9 + (payCodes.length > 0 ? 1 : 0) + (reasonCodes.length > 0 ? 1 : 0);
+  const colCount = 9 + (payCodes.length > 0 ? 1 : 0) + (reasonCodes.length > 0 ? 1 : 0) + (timecard?.employee.ruleSet.autoDeductMeal ? 1 : 0);
 
   const canApprove =
     timecard &&
@@ -1348,6 +1406,19 @@ export function TimecardViewer({
 
                 {/* Approval / Reject */}
                 <div className="flex items-center gap-2">
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewEntryDate(format(new Date(), "yyyy-MM-dd"));
+                        setShowAddEntryModal(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add Entry
+                    </button>
+                  )}
                   {actionError && <p className="text-xs text-red-500">{actionError}</p>}
                   {showRejectForm ? (
                     <form
@@ -1429,6 +1500,9 @@ export function TimecardViewer({
                       <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">OT</th>
                       <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">DT</th>
                       <th className="pl-3 pr-8 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Total</th>
+                      {timecard.employee.ruleSet.autoDeductMeal && (
+                        <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Meal</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -1673,21 +1747,26 @@ export function TimecardViewer({
                             <td className="w-7 px-1 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
                               {(() => {
                                 const dayStr = format(day, "yyyy-MM-dd");
-                                const existingNote = timecard?.notes.find(
+                                const dayNoteCount = timecard?.notes.filter(
                                   (n) => n.noteDate === dayStr
-                                );
+                                ).length ?? 0;
                                 return (
                                   <button
                                     type="button"
                                     onClick={() => handleOpenNote(dayStr)}
-                                    title={existingNote ? existingNote.note : "Add note"}
-                                    className={`rounded p-0.5 ${
-                                      existingNote
+                                    title={dayNoteCount > 0 ? `${dayNoteCount} note${dayNoteCount !== 1 ? "s" : ""}` : "Add note"}
+                                    className={`relative rounded p-0.5 ${
+                                      dayNoteCount > 0
                                         ? "text-amber-500 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20"
                                         : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
                                     }`}
                                   >
                                     <StickyNote className="h-4 w-4" />
+                                    {dayNoteCount > 1 && (
+                                      <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white">
+                                        {dayNoteCount}
+                                      </span>
+                                    )}
                                   </button>
                                 );
                               })()}
@@ -1698,88 +1777,22 @@ export function TimecardViewer({
                               isAbsent ? "text-red-700 dark:text-red-400" : "text-zinc-700 dark:text-zinc-300"
                             }`} onClick={(e) => e.stopPropagation()}>
                               {addingPunch?.dayKey === dayKey && addingPunch.pairIndex === 0 && addingPunch.punchType === "CLOCK_IN" ? (
-                                <form onSubmit={handleAddPunch} className="flex flex-col gap-1">
-                                  <div className="flex gap-1">
-                                    <input
-                                      value={editTimeStr}
-                                      onChange={(e) => setEditTimeStr(e.target.value)}
-                                      placeholder="8:30"
-                                      autoFocus
-                                      className="w-14 rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
-                                      className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                    >
-                                      {editAmPm}
-                                    </button>
-                                  </div>
-                                  <input
-                                    value={editReason}
-                                    onChange={(e) => setEditReason(e.target.value)}
-                                    placeholder="Reason…"
-                                    required
-                                    className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                  />
-                                  {editError && <span className="text-xs text-red-500">{editError}</span>}
-                                  <div className="flex gap-1">
-                                    <button type="submit" disabled={isPending || !editReason.trim()}
-                                      className="rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-                                      {isPending ? "…" : "Add"}
-                                    </button>
-                                    <button type="button" onClick={cancelEditing}
-                                      className="text-xs text-zinc-500 hover:text-zinc-700">
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </form>
+                                <InlinePunchEdit
+                                  timeStr={editTimeStr} amPm={editAmPm} error={editError} isPending={isPending}
+                                  onTimeChange={setEditTimeStr}
+                                  onAmPmToggle={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
+                                  onBlurSave={handleAddPunchBlur}
+                                  onCancel={cancelEditing}
+                                />
                               ) : firstIn && editingPunchId === firstIn.id ? (
-                                <form onSubmit={handleCorrectPunch} className="flex flex-col gap-1">
-                                  <div className="flex gap-1">
-                                    <input
-                                      value={editTimeStr}
-                                      onChange={(e) => setEditTimeStr(e.target.value)}
-                                      placeholder="8:30"
-                                      autoFocus
-                                      className="w-14 rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
-                                      className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                    >
-                                      {editAmPm}
-                                    </button>
-                                  </div>
-                                  <input
-                                    value={editReason}
-                                    onChange={(e) => setEditReason(e.target.value)}
-                                    placeholder="Reason…"
-                                    required
-                                    className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                  />
-                                  {editError && <span className="text-xs text-red-500">{editError}</span>}
-                                  <div className="flex items-center gap-1">
-                                    <button type="submit" disabled={isPending || !editReason.trim()}
-                                      className="rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-                                      {isPending ? "…" : "Save"}
-                                    </button>
-                                    <button type="button" onClick={cancelEditing}
-                                      className="text-xs text-zinc-500 hover:text-zinc-700">
-                                      Cancel
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={isPending}
-                                      onClick={() => handleDeletePunch(firstIn.id)}
-                                      className="ml-auto rounded p-0.5 text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/30"
-                                      title="Remove punch"
-                                    >
-                                      <Trash2 className="h-3 w-3" />
-                                    </button>
-                                  </div>
-                                </form>
+                                <InlinePunchEdit
+                                  timeStr={editTimeStr} amPm={editAmPm} error={editError} isPending={isPending}
+                                  onTimeChange={setEditTimeStr}
+                                  onAmPmToggle={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
+                                  onBlurSave={handleCorrectPunchBlur}
+                                  onCancel={cancelEditing}
+                                  onDelete={() => deletePunchDirect(firstIn.id)}
+                                />
                               ) : firstIn ? (
                                 <button
                                   type="button"
@@ -1815,88 +1828,22 @@ export function TimecardViewer({
                             {/* Out time */}
                             <td className="px-2 py-1 font-mono text-sm text-zinc-700 dark:text-zinc-300" onClick={(e) => e.stopPropagation()}>
                               {addingPunch?.dayKey === dayKey && addingPunch.pairIndex === 0 && addingPunch.punchType === "CLOCK_OUT" ? (
-                                <form onSubmit={handleAddPunch} className="flex flex-col gap-1">
-                                  <div className="flex gap-1">
-                                    <input
-                                      value={editTimeStr}
-                                      onChange={(e) => setEditTimeStr(e.target.value)}
-                                      placeholder="5:00"
-                                      autoFocus
-                                      className="w-14 rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
-                                      className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                    >
-                                      {editAmPm}
-                                    </button>
-                                  </div>
-                                  <input
-                                    value={editReason}
-                                    onChange={(e) => setEditReason(e.target.value)}
-                                    placeholder="Reason…"
-                                    required
-                                    className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                  />
-                                  {editError && <span className="text-xs text-red-500">{editError}</span>}
-                                  <div className="flex gap-1">
-                                    <button type="submit" disabled={isPending || !editReason.trim()}
-                                      className="rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-                                      {isPending ? "…" : "Add"}
-                                    </button>
-                                    <button type="button" onClick={cancelEditing}
-                                      className="text-xs text-zinc-500 hover:text-zinc-700">
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </form>
+                                <InlinePunchEdit
+                                  timeStr={editTimeStr} amPm={editAmPm} error={editError} isPending={isPending}
+                                  onTimeChange={setEditTimeStr}
+                                  onAmPmToggle={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
+                                  onBlurSave={handleAddPunchBlur}
+                                  onCancel={cancelEditing}
+                                />
                               ) : lastOut && editingPunchId === lastOut.id ? (
-                                <form onSubmit={handleCorrectPunch} className="flex flex-col gap-1">
-                                  <div className="flex gap-1">
-                                    <input
-                                      value={editTimeStr}
-                                      onChange={(e) => setEditTimeStr(e.target.value)}
-                                      placeholder="8:30"
-                                      autoFocus
-                                      className="w-14 rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
-                                      className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                    >
-                                      {editAmPm}
-                                    </button>
-                                  </div>
-                                  <input
-                                    value={editReason}
-                                    onChange={(e) => setEditReason(e.target.value)}
-                                    placeholder="Reason…"
-                                    required
-                                    className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                  />
-                                  {editError && <span className="text-xs text-red-500">{editError}</span>}
-                                  <div className="flex items-center gap-1">
-                                    <button type="submit" disabled={isPending || !editReason.trim()}
-                                      className="rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-                                      {isPending ? "…" : "Save"}
-                                    </button>
-                                    <button type="button" onClick={cancelEditing}
-                                      className="text-xs text-zinc-500 hover:text-zinc-700">
-                                      Cancel
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={isPending}
-                                      onClick={() => handleDeletePunch(lastOut.id)}
-                                      className="ml-auto rounded p-0.5 text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/30"
-                                      title="Remove punch"
-                                    >
-                                      <Trash2 className="h-3 w-3" />
-                                    </button>
-                                  </div>
-                                </form>
+                                <InlinePunchEdit
+                                  timeStr={editTimeStr} amPm={editAmPm} error={editError} isPending={isPending}
+                                  onTimeChange={setEditTimeStr}
+                                  onAmPmToggle={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
+                                  onBlurSave={handleCorrectPunchBlur}
+                                  onCancel={cancelEditing}
+                                  onDelete={() => deletePunchDirect(lastOut.id)}
+                                />
                               ) : lastOut ? (
                                 <button
                                   type="button"
@@ -1978,6 +1925,54 @@ export function TimecardViewer({
                             }`}>
                               {isAbsent ? "0.00" : hasMissingPunch ? "—" : dailyTotal > 0 ? minutesToHoursDecimal(dailyTotal) : "—"}
                             </td>
+
+                            {/* Meal waiver cell */}
+                            {timecard.employee.ruleSet.autoDeductMeal && (() => {
+                              const rawWorkMins = daySegments.filter((s) => s.segmentType === "WORK").reduce((a, s) => a + s.durationMinutes, 0);
+                              const mealSeg = daySegments.find((s) => s.segmentType === "MEAL");
+                              const totalWorkForThreshold = rawWorkMins + (mealSeg?.durationMinutes ?? 0);
+                              const waiver = timecard.mealWaivers.find((w) => w.segmentDate === dayStr);
+                              return (
+                                <td className="px-3 py-1 text-left" onClick={(e) => e.stopPropagation()}>
+                                  {totalWorkForThreshold <= timecard.employee.ruleSet.mealBreakAfterMinutes ? (
+                                    <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
+                                  ) : waiver ? (
+                                    <div className="flex items-center gap-1.5">
+                                      {canEdit ? (
+                                        <button
+                                          type="button"
+                                          disabled={isPending}
+                                          onClick={() => handleToggleWaiver(dayStr)}
+                                          title="Click to remove waiver"
+                                          className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-red-100 hover:text-red-600 disabled:opacity-50 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                                        >
+                                          {isPending ? "…" : "Waived"}
+                                        </button>
+                                      ) : (
+                                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                                          Waived
+                                        </span>
+                                      )}
+                                      {waiverError && <span className="text-xs text-red-500">{waiverError}</span>}
+                                    </div>
+                                  ) : canEdit ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        disabled={isPending}
+                                        onClick={() => handleToggleWaiver(dayStr)}
+                                        className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 hover:bg-amber-50 hover:text-amber-700 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-amber-900/20 dark:hover:text-amber-300"
+                                      >
+                                        {isPending ? "…" : "Waive"}
+                                      </button>
+                                      {waiverError && <span className="text-xs text-red-500">{waiverError}</span>}
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
+                                  )}
+                                </td>
+                              );
+                            })()}
                           </tr>
 
                           {/* Continuation rows for additional punch pairs on the same day */}
@@ -2033,31 +2028,22 @@ export function TimecardViewer({
                                 {/* In cell */}
                                 <td className="px-2 py-1 font-mono text-sm text-zinc-700 dark:text-zinc-300" onClick={(e) => e.stopPropagation()}>
                                   {addingPunch?.dayKey === dayKey && addingPunch.pairIndex === pairIdx && addingPunch.punchType === "CLOCK_IN" ? (
-                                    <form onSubmit={handleAddPunch} className="flex flex-col gap-1">
-                                      <div className="flex gap-1">
-                                        <input value={editTimeStr} onChange={(e) => setEditTimeStr(e.target.value)} placeholder="8:30" autoFocus className="w-14 rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" />
-                                        <button type="button" onClick={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")} className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white">{editAmPm}</button>
-                                      </div>
-                                      <input value={editReason} onChange={(e) => setEditReason(e.target.value)} placeholder="Reason…" required className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" />
-                                      {editError && <span className="text-xs text-red-500">{editError}</span>}
-                                      <div className="flex gap-1">
-                                        <button type="submit" disabled={isPending || !editReason.trim()} className="rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">{isPending ? "…" : "Add"}</button>
-                                        <button type="button" onClick={cancelEditing} className="text-xs text-zinc-500 hover:text-zinc-700">Cancel</button>
-                                      </div>
-                                    </form>
+                                    <InlinePunchEdit
+                                      timeStr={editTimeStr} amPm={editAmPm} error={editError} isPending={isPending}
+                                      onTimeChange={setEditTimeStr}
+                                      onAmPmToggle={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
+                                      onBlurSave={handleAddPunchBlur}
+                                      onCancel={cancelEditing}
+                                    />
                                   ) : pairIn && editingPunchId === pairIn.id ? (
-                                    <form onSubmit={handleCorrectPunch} className="flex flex-col gap-1">
-                                      <div className="flex gap-1">
-                                        <input value={editTimeStr} onChange={(e) => setEditTimeStr(e.target.value)} placeholder="8:30" autoFocus className="w-14 rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" />
-                                        <button type="button" onClick={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")} className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white">{editAmPm}</button>
-                                      </div>
-                                      <input value={editReason} onChange={(e) => setEditReason(e.target.value)} placeholder="Reason…" required className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" />
-                                      {editError && <span className="text-xs text-red-500">{editError}</span>}
-                                      <div className="flex gap-1">
-                                        <button type="submit" disabled={isPending || !editReason.trim()} className="rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">{isPending ? "…" : "Save"}</button>
-                                        <button type="button" onClick={cancelEditing} className="text-xs text-zinc-500 hover:text-zinc-700">Cancel</button>
-                                      </div>
-                                    </form>
+                                    <InlinePunchEdit
+                                      timeStr={editTimeStr} amPm={editAmPm} error={editError} isPending={isPending}
+                                      onTimeChange={setEditTimeStr}
+                                      onAmPmToggle={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
+                                      onBlurSave={handleCorrectPunchBlur}
+                                      onCancel={cancelEditing}
+                                      onDelete={() => deletePunchDirect(pairIn.id)}
+                                    />
                                   ) : pairIn ? (
                                     <button type="button" onClick={() => startEditing(pairIn)} disabled={!canEdit} className={canEdit ? "rounded px-1 py-0.5 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950/30 dark:hover:text-blue-300" : ""}>{format(parseISO(pairIn.roundedTime), "h:mm a")}</button>
                                   ) : canEdit ? (
@@ -2069,31 +2055,22 @@ export function TimecardViewer({
                                 {/* Out cell */}
                                 <td className="px-2 py-1 font-mono text-sm text-zinc-700 dark:text-zinc-300" onClick={(e) => e.stopPropagation()}>
                                   {addingPunch?.dayKey === dayKey && addingPunch.pairIndex === pairIdx && addingPunch.punchType === "CLOCK_OUT" ? (
-                                    <form onSubmit={handleAddPunch} className="flex flex-col gap-1">
-                                      <div className="flex gap-1">
-                                        <input value={editTimeStr} onChange={(e) => setEditTimeStr(e.target.value)} placeholder="5:00" autoFocus className="w-14 rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" />
-                                        <button type="button" onClick={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")} className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white">{editAmPm}</button>
-                                      </div>
-                                      <input value={editReason} onChange={(e) => setEditReason(e.target.value)} placeholder="Reason…" required className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" />
-                                      {editError && <span className="text-xs text-red-500">{editError}</span>}
-                                      <div className="flex gap-1">
-                                        <button type="submit" disabled={isPending || !editReason.trim()} className="rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">{isPending ? "…" : "Add"}</button>
-                                        <button type="button" onClick={cancelEditing} className="text-xs text-zinc-500 hover:text-zinc-700">Cancel</button>
-                                      </div>
-                                    </form>
+                                    <InlinePunchEdit
+                                      timeStr={editTimeStr} amPm={editAmPm} error={editError} isPending={isPending}
+                                      onTimeChange={setEditTimeStr}
+                                      onAmPmToggle={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
+                                      onBlurSave={handleAddPunchBlur}
+                                      onCancel={cancelEditing}
+                                    />
                                   ) : pairOut && editingPunchId === pairOut.id ? (
-                                    <form onSubmit={handleCorrectPunch} className="flex flex-col gap-1">
-                                      <div className="flex gap-1">
-                                        <input value={editTimeStr} onChange={(e) => setEditTimeStr(e.target.value)} placeholder="8:30" autoFocus className="w-14 rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" />
-                                        <button type="button" onClick={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")} className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white">{editAmPm}</button>
-                                      </div>
-                                      <input value={editReason} onChange={(e) => setEditReason(e.target.value)} placeholder="Reason…" required className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" />
-                                      {editError && <span className="text-xs text-red-500">{editError}</span>}
-                                      <div className="flex gap-1">
-                                        <button type="submit" disabled={isPending || !editReason.trim()} className="rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">{isPending ? "…" : "Save"}</button>
-                                        <button type="button" onClick={cancelEditing} className="text-xs text-zinc-500 hover:text-zinc-700">Cancel</button>
-                                      </div>
-                                    </form>
+                                    <InlinePunchEdit
+                                      timeStr={editTimeStr} amPm={editAmPm} error={editError} isPending={isPending}
+                                      onTimeChange={setEditTimeStr}
+                                      onAmPmToggle={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
+                                      onBlurSave={handleCorrectPunchBlur}
+                                      onCancel={cancelEditing}
+                                      onDelete={() => deletePunchDirect(pairOut.id)}
+                                    />
                                   ) : pairOut ? (
                                     <button type="button" onClick={() => startEditing(pairOut)} disabled={!canEdit} className={canEdit ? "rounded px-1 py-0.5 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950/30 dark:hover:text-blue-300" : ""}>{format(parseISO(pairOut.roundedTime), "h:mm a")}</button>
                                   ) : canEdit ? (
@@ -2105,9 +2082,60 @@ export function TimecardViewer({
                                 <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
                                 <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
                                 <td className="pl-3 pr-8 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
+                                {timecard.employee.ruleSet.autoDeductMeal && <td />}
                               </tr>
                             );
                           })}
+
+                          {/* Leave rows — one per leave segment, shown only when expanded */}
+                          {isExpanded && leaveSegments.map((seg) => (
+                            <tr key={`${dayKey}-leave-${seg.id}`} className="border-b border-zinc-100 bg-violet-50/30 dark:border-zinc-800 dark:bg-violet-950/10">
+                              <td className="w-7 pl-2 pr-0 py-1.5" />
+                              <td className="px-3 py-1 text-left">
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-100 pl-2 pr-1 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+                                  {seg.leaveRequest?.leaveType.name ?? PAY_BUCKET_LABEL[seg.payBucket as PayBucketValue] ?? seg.payBucket}
+                                  {canEdit && seg.leaveRequest?.id && (
+                                    <button
+                                      type="button"
+                                      disabled={isPending}
+                                      onClick={() => handleRemoveLeave(seg.leaveRequest!.id)}
+                                      className="rounded-full p-0.5 hover:bg-violet-200 disabled:opacity-50 dark:hover:bg-violet-800"
+                                      title="Remove leave entry"
+                                    >
+                                      <X className="h-2.5 w-2.5" />
+                                    </button>
+                                  )}
+                                </span>
+                              </td>
+                              {payCodes.length > 0 && (() => {
+                                const leavePayCode = seg.payCode ?? seg.leaveRequest?.leaveType.payCode ?? null;
+                                return (
+                                  <td className="px-2 py-1">
+                                    {leavePayCode ? (
+                                      <span className="text-xs text-zinc-500">
+                                        {leavePayCode.code}[{leavePayCode.label}]
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
+                                    )}
+                                  </td>
+                                );
+                              })()}
+                              {reasonCodes.length > 0 && <td className="px-2 py-1.5" />}
+                              <td className="w-7 px-1 py-1.5" />
+                              <td className="px-2 py-1 font-mono text-sm text-zinc-300 dark:text-zinc-700">—</td>
+                              <td className="px-2 py-1 font-mono text-sm text-zinc-300 dark:text-zinc-700">—</td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-sm font-medium text-violet-700 dark:text-violet-300">
+                                {minutesToHoursDecimal(seg.durationMinutes)}
+                              </td>
+                              <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
+                              <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
+                              <td className="pl-3 pr-8 py-1.5 text-right tabular-nums text-sm font-bold text-violet-700 dark:text-violet-300">
+                                {minutesToHoursDecimal(seg.durationMinutes)}
+                              </td>
+                              {timecard.employee.ruleSet.autoDeductMeal && <td />}
+                            </tr>
+                          ))}
 
                           {/* Add entry form row */}
                           {addEntryDay === format(day, "yyyy-MM-dd") && (
@@ -2127,54 +2155,9 @@ export function TimecardViewer({
                             </tr>
                           )}
 
-                          {/* Note edit row */}
-                          {noteDay === format(day, "yyyy-MM-dd") && (
-                            <tr key={`${dayKey}-note`}>
-                              <td colSpan={colCount} className="px-5 py-2">
-                                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 dark:border-amber-800 dark:bg-amber-950/30">
-                                  <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-                                  <div className="flex-1">
-                                    <textarea
-                                      value={noteText}
-                                      onChange={(e) => setNoteText(e.target.value)}
-                                      placeholder="Add a note for this date…"
-                                      rows={2}
-                                      autoFocus
-                                      className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                    />
-                                    <div className="mt-1.5 flex items-center gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={handleSaveNote}
-                                        disabled={isPending}
-                                        className="rounded bg-amber-500 px-3 py-1 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
-                                      >
-                                        {isPending ? "Saving…" : "Save Note"}
-                                      </button>
-                                      {noteText.trim() === "" && timecard?.notes.find((n) => n.noteDate === noteDay) && (
-                                        <span className="text-xs text-zinc-400">
-                                          Saving empty will delete the note
-                                        </span>
-                                      )}
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setNoteDay(null);
-                                          setNoteText("");
-                                        }}
-                                        className="text-xs text-zinc-500 hover:text-zinc-700"
-                                      >
-                                        Cancel
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
 
-                          {/* Expanded punch detail row */}
-                          {isExpanded && hasActivity && (
+                          {/* Expanded punch detail row — only when there are actual punches */}
+                          {isExpanded && hasActivity && dayPunches.length > 0 && (
                             <tr
                               key={`${dayKey}-detail`}
                               className="border-b border-zinc-200 bg-zinc-50/80 dark:border-zinc-700 dark:bg-zinc-900/40"
@@ -2185,54 +2168,22 @@ export function TimecardViewer({
                                     .filter((p) => !pairs.some((pr) => pr.inPunch?.id === p.id || pr.outPunch?.id === p.id))
                                     .map((punch) =>
                                       editingPunchId === punch.id ? (
-                                        <form
+                                        <div
                                           key={punch.id}
-                                          onSubmit={handleCorrectPunch}
                                           className="flex w-full items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2 dark:border-blue-900 dark:bg-blue-950/30"
                                         >
                                           <span className="shrink-0 text-xs font-medium text-blue-800 dark:text-blue-300">
                                             {PUNCH_TYPE_LABEL[punch.punchType as PunchTypeValue] ?? punch.punchType}
                                           </span>
-                                          <input
-                                            value={editTimeStr}
-                                            onChange={(e) => setEditTimeStr(e.target.value)}
-                                            placeholder="8:30"
-                                            autoFocus
-                                            className="w-16 rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                                          <InlinePunchEdit
+                                            timeStr={editTimeStr} amPm={editAmPm} error={editError} isPending={isPending}
+                                            onTimeChange={setEditTimeStr}
+                                            onAmPmToggle={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
+                                            onBlurSave={handleCorrectPunchBlur}
+                                            onCancel={cancelEditing}
+                                            onDelete={() => deletePunchDirect(punch.id)}
                                           />
-                                          <button
-                                            type="button"
-                                            onClick={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
-                                            className="shrink-0 rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                          >
-                                            {editAmPm}
-                                          </button>
-                                          <input
-                                            value={editReason}
-                                            onChange={(e) => setEditReason(e.target.value)}
-                                            placeholder="Reason…"
-                                            required
-                                            className="min-w-0 flex-1 rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                          />
-                                          <button type="submit" disabled={isPending || !editReason.trim()}
-                                            className="shrink-0 rounded bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-                                            {isPending ? "Saving…" : "Save"}
-                                          </button>
-                                          <button type="button" onClick={cancelEditing}
-                                            className="shrink-0 text-xs text-zinc-500 hover:text-zinc-700">
-                                            Cancel
-                                          </button>
-                                          <button
-                                            type="button"
-                                            disabled={isPending}
-                                            onClick={() => handleDeletePunch(punch.id)}
-                                            className="shrink-0 ml-auto rounded p-1 text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/30"
-                                            title="Remove punch"
-                                          >
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                          </button>
-                                          {editError && <span className="text-xs text-red-500">{editError}</span>}
-                                        </form>
+                                        </div>
                                       ) : (
                                         <button
                                           key={punch.id}
@@ -2253,109 +2204,7 @@ export function TimecardViewer({
                                     )}
                                 </div>
 
-                                {/* ── Leave segments ─────────────────────────── */}
-                                {leaveSegments.length > 0 && (
-                                  <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-zinc-200 pt-2 dark:border-zinc-700">
-                                    <span className="text-xs text-zinc-500">Leave:</span>
-                                    {leaveSegments.map((seg) => (
-                                      <span
-                                        key={seg.id}
-                                        className="inline-flex items-center gap-1 rounded-full bg-violet-100 pl-2 pr-1 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
-                                      >
-                                        {seg.leaveRequest?.leaveType.name ?? PAY_BUCKET_LABEL[seg.payBucket as PayBucketValue] ?? seg.payBucket}
-                                        {" "}
-                                        ({minutesToHoursDecimal(seg.durationMinutes)}h)
-                                        {canEdit && seg.leaveRequest?.id && (
-                                          <button
-                                            type="button"
-                                            disabled={isPending}
-                                            onClick={() => handleRemoveLeave(seg.leaveRequest!.id)}
-                                            className="ml-0.5 rounded-full p-0.5 hover:bg-violet-200 dark:hover:bg-violet-800 disabled:opacity-50"
-                                            title="Remove this leave entry"
-                                          >
-                                            <X className="h-2.5 w-2.5" />
-                                          </button>
-                                        )}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
 
-                                {/* ── Meal waiver section (NJ auto-deduct only) ── */}
-                                {(() => {
-                                  if (!timecard.employee.ruleSet.autoDeductMeal) return null;
-                                  const dayStr = format(day, "yyyy-MM-dd");
-                                  const rawWorkMins = daySegments
-                                    .filter((s) => s.segmentType === "WORK")
-                                    .reduce((a, s) => a + s.durationMinutes, 0);
-                                  const mealSeg = daySegments.find((s) => s.segmentType === "MEAL");
-                                  const totalWorkForThreshold = rawWorkMins + (mealSeg?.durationMinutes ?? 0);
-                                  if (totalWorkForThreshold <= timecard.employee.ruleSet.mealBreakAfterMinutes) return null;
-
-                                  const waiver = timecard.mealWaivers.find((w) => w.segmentDate === dayStr);
-                                  const isWaiverDay = waiverDay === dayStr;
-
-                                  return (
-                                    <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-zinc-200 pt-2 dark:border-zinc-700">
-                                      <span className="text-xs text-zinc-500">Meal deduction:</span>
-                                      {waiver ? (
-                                        <>
-                                          <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                                            Waived — {waiver.reason}
-                                          </span>
-                                          {canEdit && (
-                                            <button
-                                              type="button"
-                                              disabled={isPending}
-                                              onClick={() => handleToggleWaiver(dayStr, true)}
-                                              className="text-xs text-zinc-400 underline hover:text-red-500 disabled:opacity-50"
-                                            >
-                                              {isPending ? "Removing…" : "Remove waiver"}
-                                            </button>
-                                          )}
-                                        </>
-                                      ) : isWaiverDay ? (
-                                        <div className="flex items-center gap-2">
-                                          <input
-                                            value={waiverReason}
-                                            onChange={(e) => setWaiverReason(e.target.value)}
-                                            placeholder="Reason (e.g. no lunch taken)…"
-                                            autoFocus
-                                            className="w-56 rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                          />
-                                          <button
-                                            type="button"
-                                            disabled={isPending || !waiverReason.trim()}
-                                            onClick={() => handleToggleWaiver(dayStr, false)}
-                                            className="rounded bg-amber-500 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
-                                          >
-                                            {isPending ? "Saving…" : "Confirm waiver"}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => { setWaiverDay(null); setWaiverReason(""); }}
-                                            className="text-xs text-zinc-400 hover:text-zinc-600"
-                                          >
-                                            Cancel
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        canEdit && (
-                                          <button
-                                            type="button"
-                                            onClick={() => { setWaiverDay(dayStr); setWaiverReason(""); }}
-                                            className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 hover:bg-amber-50 hover:text-amber-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-amber-900/20 dark:hover:text-amber-300"
-                                          >
-                                            Waive meal
-                                          </button>
-                                        )
-                                      )}
-                                      {waiverError && isWaiverDay && (
-                                        <span className="text-xs text-red-500">{waiverError}</span>
-                                      )}
-                                    </div>
-                                  );
-                                })()}
                               </td>
                             </tr>
                           )}
@@ -2363,99 +2212,6 @@ export function TimecardViewer({
                       );
                     })}
 
-                    {/* ── Always-visible new entry row ────────────────── */}
-                    {canEdit && timecard && (
-                      <tr className="border-b border-zinc-200 bg-blue-50/40 dark:border-zinc-700 dark:bg-blue-950/10">
-                        <td colSpan={colCount} className="px-4 py-2">
-                          <form onSubmit={handleAddEntry} className="flex flex-wrap items-end gap-2">
-                            <div className="flex flex-col gap-0.5">
-                              <label className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Date</label>
-                              <input
-                                type="date"
-                                value={newEntryDate}
-                                onChange={(e) => setNewEntryDate(e.target.value)}
-                                required
-                                min={format(parseUtcDate(timecard.payPeriod.startDate), "yyyy-MM-dd")}
-                                max={format(addDays(parseUtcDate(timecard.payPeriod.endDate), -1), "yyyy-MM-dd")}
-                                className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                              />
-                            </div>
-                            <div className="flex flex-col gap-0.5">
-                              <label className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">In</label>
-                              <div className="flex gap-1">
-                                <input
-                                  value={newInTimeStr}
-                                  onChange={(e) => setNewInTimeStr(e.target.value)}
-                                  placeholder="8:00"
-                                  className="w-14 rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => setNewInAmPm((p) => p === "AM" ? "PM" : "AM")}
-                                  className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                >
-                                  {newInAmPm}
-                                </button>
-                              </div>
-                            </div>
-                            <div className="flex flex-col gap-0.5">
-                              <label className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Out</label>
-                              <div className="flex gap-1">
-                                <input
-                                  value={newOutTimeStr}
-                                  onChange={(e) => setNewOutTimeStr(e.target.value)}
-                                  placeholder="5:00"
-                                  className="w-14 rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => setNewOutAmPm((p) => p === "AM" ? "PM" : "AM")}
-                                  className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                >
-                                  {newOutAmPm}
-                                </button>
-                              </div>
-                            </div>
-                            <div className="flex flex-col gap-0.5">
-                              <label className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Pay Code</label>
-                              <select
-                                value={newEntryPayBucket}
-                                onChange={(e) => setNewEntryPayBucket(e.target.value)}
-                                className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                              >
-                                <option value="">— Default —</option>
-                                {ALL_PAY_BUCKETS.map((b) => (
-                                  <option key={b.key} value={b.key}>{b.label}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                              <label className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Reason</label>
-                              <input
-                                value={newEntryReason}
-                                onChange={(e) => setNewEntryReason(e.target.value)}
-                                placeholder="Reason for manual entry…"
-                                required
-                                className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                              />
-                            </div>
-                            <div className="flex flex-col gap-0.5">
-                              <label className="text-[10px] font-medium uppercase tracking-wide text-zinc-400 select-none">&nbsp;</label>
-                              <button
-                                type="submit"
-                                disabled={isPending || !newInTimeStr || !newOutTimeStr || !newEntryReason.trim()}
-                                className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
-                              >
-                                {isPending ? "Adding…" : "Add"}
-                              </button>
-                            </div>
-                            {newEntryError && (
-                              <div className="w-full text-xs text-red-500">{newEntryError}</div>
-                            )}
-                          </form>
-                        </td>
-                      </tr>
-                    )}
                   </tbody>
                 </table>
               </div>
@@ -2775,6 +2531,221 @@ export function TimecardViewer({
           )}
         </div>
       </div>
+
+      {/* Notes Modal */}
+      {noteDay && timecard && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => { setNoteDay(null); setNoteText(""); }}
+        >
+          <div
+            className="flex w-full max-w-lg flex-col rounded-xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+            style={{ maxHeight: "80vh" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-700">
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">Notes</h3>
+                <p className="mt-0.5 text-xs text-zinc-500">
+                  {(() => {
+                    try { return format(parseISO(noteDay), "EEE MM/dd/yyyy"); } catch { return noteDay; }
+                  })()}
+                  {" · "}{timecard.employee.user?.name ?? timecard.employee.employeeCode}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setNoteDay(null); setNoteText(""); }}
+                className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Notes list */}
+            <div className="flex-1 overflow-y-auto">
+              {(() => {
+                const dayNotes = timecard.notes.filter((n) => n.noteDate === noteDay);
+                if (dayNotes.length === 0) {
+                  return (
+                    <p className="px-5 py-6 text-center text-sm text-zinc-400">
+                      No notes yet for this date.
+                    </p>
+                  );
+                }
+                return (
+                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    {dayNotes.map((n) => (
+                      <div key={n.id} className="px-5 py-3.5">
+                        <div className="mb-1 flex items-center gap-2 text-xs text-zinc-400">
+                          <span className="font-medium text-zinc-600 dark:text-zinc-300">
+                            {n.createdByName ?? "Unknown"}
+                          </span>
+                          <span>·</span>
+                          <span>
+                            {format(parseISO(n.createdAt), "MM/dd/yyyy h:mm a")}
+                          </span>
+                        </div>
+                        <p className="whitespace-pre-wrap text-sm text-zinc-800 dark:text-zinc-200">
+                          {n.note}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Add note form — only when timesheet is editable */}
+            {canEdit && (
+              <div className="shrink-0 border-t border-zinc-200 bg-zinc-50 px-5 py-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+                <textarea
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  placeholder="Add a note…"
+                  rows={3}
+                  autoFocus
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                />
+                <div className="mt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleSaveNote}
+                    disabled={noteSaving || !noteText.trim()}
+                    className="rounded-lg bg-amber-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-40"
+                  >
+                    {noteSaving ? "Saving…" : "Add Note"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Add Entry Modal */}
+      {showAddEntryModal && canEdit && timecard && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => { setShowAddEntryModal(false); setNewEntryError(null); }}
+        >
+          <div
+            className="w-full max-w-lg rounded-xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-700">
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">Add Time Entry</h3>
+                <p className="mt-0.5 text-xs text-zinc-500">
+                  {timecard.employee.user?.name ?? timecard.employee.employeeCode}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowAddEntryModal(false); setNewEntryError(null); }}
+                className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <form onSubmit={handleAddEntry} className="space-y-4 p-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2 flex flex-col gap-1">
+                  <label className="text-xs font-medium text-zinc-500">Date</label>
+                  <input
+                    type="date"
+                    value={newEntryDate}
+                    onChange={(e) => setNewEntryDate(e.target.value)}
+                    required
+                    min={format(parseUtcDate(timecard.payPeriod.startDate), "yyyy-MM-dd")}
+                    max={format(addDays(parseUtcDate(timecard.payPeriod.endDate), -1), "yyyy-MM-dd")}
+                    className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-zinc-500">In Time</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={newInTimeStr}
+                      onChange={(e) => setNewInTimeStr(e.target.value)}
+                      placeholder="8:00"
+                      className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setNewInAmPm((p) => p === "AM" ? "PM" : "AM")}
+                      className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                    >
+                      {newInAmPm}
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-zinc-500">Out Time</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={newOutTimeStr}
+                      onChange={(e) => setNewOutTimeStr(e.target.value)}
+                      placeholder="5:00"
+                      className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setNewOutAmPm((p) => p === "AM" ? "PM" : "AM")}
+                      className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                    >
+                      {newOutAmPm}
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-zinc-500">Pay Code</label>
+                  <select
+                    value={newEntryPayBucket}
+                    onChange={(e) => setNewEntryPayBucket(e.target.value)}
+                    className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                  >
+                    <option value="">— Default —</option>
+                    {ALL_PAY_BUCKETS.map((b) => (
+                      <option key={b.key} value={b.key}>{b.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-zinc-500">Reason</label>
+                  <input
+                    value={newEntryReason}
+                    onChange={(e) => setNewEntryReason(e.target.value)}
+                    placeholder="Reason for manual entry…"
+                    required
+                    className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                  />
+                </div>
+              </div>
+              {newEntryError && (
+                <p className="text-xs text-red-500">{newEntryError}</p>
+              )}
+              <div className="flex justify-end gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => { setShowAddEntryModal(false); setNewEntryError(null); }}
+                  className="rounded-lg border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPending || !newInTimeStr || !newOutTimeStr || !newEntryReason.trim()}
+                  className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+                >
+                  {isPending ? "Adding…" : "Add Entry"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

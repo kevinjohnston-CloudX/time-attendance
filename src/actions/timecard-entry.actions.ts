@@ -307,7 +307,7 @@ export const removePayrollLeaveEntry = withRBAC(
   }
 );
 
-// ─── Save or update a timesheet note for a specific date ─────────────────────
+// ─── Add a permanent timesheet note for a specific date ──────────────────────
 
 const saveTimesheetNoteSchema = z.object({
   timesheetId: z.string(),
@@ -319,35 +319,25 @@ export const saveTimesheetNote = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (ctx, input: z.infer<typeof saveTimesheetNoteSchema>) => {
     const { timesheetId, noteDate, note } = saveTimesheetNoteSchema.parse(input);
+    if (!note.trim()) return;
+
     const createdById = ctx.employeeId;
 
-    if (!note.trim()) {
-      // Delete the note if empty
-      await db.timesheetNote.deleteMany({
-        where: {
-          timesheetId,
-          noteDate: new Date(noteDate + "T00:00:00Z"),
-        },
-      });
-    } else {
-      await db.timesheetNote.upsert({
-        where: {
-          timesheetId_noteDate: {
-            timesheetId,
-            noteDate: new Date(noteDate + "T00:00:00Z"),
-          },
-        },
-        create: {
-          timesheetId,
-          noteDate: new Date(noteDate + "T00:00:00Z"),
-          note: note.trim(),
-          createdById,
-        },
-        update: {
-          note: note.trim(),
-        },
-      });
-    }
+    const employee = await db.employee.findUnique({
+      where: { id: createdById },
+      select: { user: { select: { name: true } }, employeeCode: true },
+    });
+    const createdByName = employee?.user?.name ?? employee?.employeeCode ?? "Unknown";
+
+    await db.timesheetNote.create({
+      data: {
+        timesheetId,
+        noteDate: new Date(noteDate + "T00:00:00Z"),
+        note: note.trim(),
+        createdById,
+        createdByName,
+      },
+    });
 
     revalidatePath("/payroll/timecards");
   }

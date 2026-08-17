@@ -8,7 +8,6 @@ import {
   createPtoPolicySchema,
   updatePtoPolicySchema,
   assignSitePtoPolicySchema,
-  assignEmployeePtoPolicyOverrideSchema,
 } from "@/lib/validators/pto-policy.schema";
 
 // ─── Get all PTO policies for the tenant ─────────────────────────────────────
@@ -25,7 +24,7 @@ export const getPtoPolicies = withRBAC(
           orderBy: { leaveTypeId: "asc" },
           include: { leaveType: { select: { id: true, name: true, category: true } } },
         },
-        _count: { select: { siteLinks: true, empOverrides: true } },
+        _count: { select: { siteLinks: true } },
       },
     });
     return policies;
@@ -38,7 +37,8 @@ export const createPtoPolicy = withRBAC(
   "RULES_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: unknown) => {
     const {
-      name, description, isDefault, leaveTypeId, maxDailyHours, allowNegativeBalance, maxNegativeHours, carryOverEnabled, carryOverRespectMaxBalance, rules,
+      name, description, isDefault, leaveTypeId, maxDailyHours, allowNegativeBalance, maxNegativeHours, carryOverEnabled, carryOverRespectMaxBalance,
+      forecastEnabled, forecastMode, forecastMonths, forecastApplyToAvailable, rules,
       rateMode, serviceMonthBasis, postingAnchorDate,
       posting1Freq, posting1Month, posting1Day,
       dualPosting, posting2Freq, posting2Month, posting2Day,
@@ -65,6 +65,10 @@ export const createPtoPolicy = withRBAC(
           maxNegativeHours:           maxNegativeHours ?? null,
           carryOverEnabled:           carryOverEnabled ?? true,
           carryOverRespectMaxBalance: carryOverRespectMaxBalance ?? false,
+          forecastEnabled:            forecastEnabled ?? false,
+          forecastMode:               forecastMode ?? null,
+          forecastMonths:             forecastMonths ?? null,
+          forecastApplyToAvailable:   forecastApplyToAvailable ?? false,
           rateMode,
           serviceMonthBasis,
           postingAnchorDate: postingAnchorDate ?? null,
@@ -123,6 +127,7 @@ export const updatePtoPolicy = withRBAC(
       dualPosting, posting2Freq, posting2Month, posting2Day,
       balanceReset, resetMonth, resetDay,
       leaveTypeId, maxDailyHours, allowNegativeBalance, maxNegativeHours, carryOverEnabled, carryOverRespectMaxBalance,
+      forecastEnabled, forecastMode, forecastMonths, forecastApplyToAvailable,
       ...fields
     } = updatePtoPolicySchema.parse(input);
 
@@ -157,6 +162,10 @@ export const updatePtoPolicy = withRBAC(
           ...(maxNegativeHours           !== undefined && { maxNegativeHours: maxNegativeHours ?? null }),
           ...(carryOverEnabled           !== undefined && { carryOverEnabled }),
           ...(carryOverRespectMaxBalance !== undefined && { carryOverRespectMaxBalance }),
+          ...(forecastEnabled            !== undefined && { forecastEnabled }),
+          ...(forecastMode              !== undefined && { forecastMode:   forecastMode ?? null }),
+          ...(forecastMonths            !== undefined && { forecastMonths: forecastMonths ?? null }),
+          ...(forecastApplyToAvailable  !== undefined && { forecastApplyToAvailable }),
         },
       });
 
@@ -204,11 +213,11 @@ export const deletePtoPolicy = withRBAC(
 
     const policy = await db.ptoPolicy.findUniqueOrThrow({
       where: { id: ptoPolicyId },
-      include: { _count: { select: { siteLinks: true, empOverrides: true } } },
+      include: { _count: { select: { siteLinks: true } } },
     });
 
-    if (policy._count.siteLinks + policy._count.empOverrides > 0) {
-      return { success: false as const, error: "This policy is still assigned to sites or employees. Remove those assignments first." };
+    if (policy._count.siteLinks > 0) {
+      return { success: false as const, error: "This policy is still assigned to sites. Remove those assignments first." };
     }
 
     await db.$transaction(async (tx) => {
@@ -278,49 +287,3 @@ export const assignSitePtoPolicy = withRBAC(
   }
 );
 
-// ─── Get employee PTO policy overrides ───────────────────────────────────────
-
-export const getEmployeePtoPolicyOverride = withRBAC(
-  "EMPLOYEE_MANAGE",
-  async (_ctx, input: { employeeId: string }) => {
-    const { employeeId } = input;
-
-    return db.employeePtoPolicyOverride.findUnique({
-      where: { employeeId },
-      include: { ptoPolicy: { select: { id: true, name: true } } },
-    });
-  }
-);
-
-// ─── Assign (or clear) an employee PTO policy override ───────────────────────
-
-export const assignEmployeePtoPolicyOverride = withRBAC(
-  "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId, tenantId }, input: unknown) => {
-    const { employeeId, ptoPolicyId } =
-      assignEmployeePtoPolicyOverrideSchema.parse(input);
-
-    await db.$transaction(async (tx) => {
-      if (ptoPolicyId) {
-        await tx.employeePtoPolicyOverride.upsert({
-          where: { employeeId },
-          create: { employeeId, ptoPolicyId },
-          update: { ptoPolicyId },
-        });
-      } else {
-        await tx.employeePtoPolicyOverride.deleteMany({ where: { employeeId } });
-      }
-
-      await writeAuditLog({
-        tenantId: tenantId!,
-        actorId,
-        action: ptoPolicyId ? "EMPLOYEE_PTO_OVERRIDE_ASSIGNED" : "EMPLOYEE_PTO_OVERRIDE_CLEARED",
-        entityType: "PTO_POLICY",
-        entityId: employeeId,
-        changes: { after: { employeeId, ptoPolicyId } },
-      });
-    });
-
-    revalidatePath(`/admin/employees/${employeeId}`);
-  }
-);

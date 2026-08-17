@@ -16,6 +16,7 @@ model PayCode {
   tenant         Tenant          @relation(fields: [tenantId], references: [id])
   segments       WorkSegment[]
   ptoPolicyRules PtoPolicyRule[]
+  leaveTypes     LeaveType[]
 
   @@unique([tenantId, code])
   @@unique([tenantId, expressCode])
@@ -42,16 +43,16 @@ model ReasonCode {
 
 /// Notes attached to specific dates on a timesheet.
 model TimesheetNote {
-  id          String   @id @default(cuid())
-  timesheetId String
-  noteDate    DateTime @db.Date
-  note        String
-  createdById String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  timesheetId   String
+  noteDate      DateTime @db.Date
+  note          String
+  createdById   String
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   timesheet Timesheet @relation(fields: [timesheetId], references: [id])
 
-  @@unique([timesheetId, noteDate])
   @@map("timesheet_notes")
 }

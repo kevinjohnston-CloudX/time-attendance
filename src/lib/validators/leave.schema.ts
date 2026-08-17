@@ -1,11 +1,14 @@
 import { z } from "zod";
 
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be yyyy-MM-dd");
-const timeStr = z.string().regex(/^\d{2}:\d{2}$/, "Time must be HH:mm");
 
 export const daySelectionSchema = z.discriminatedUnion("type", [
   z.object({ date: dateStr, type: z.literal("FULL") }),
-  z.object({ date: dateStr, type: z.literal("PARTIAL"), leaveFrom: timeStr, leaveTo: timeStr }),
+  z.object({
+    date: dateStr,
+    type: z.literal("PARTIAL"),
+    minutes: z.number().int().positive("Minutes must be positive").max(1440, "Minutes cannot exceed 24 hours"),
+  }),
 ]);
 
 export const requestLeaveSchema = z.object({

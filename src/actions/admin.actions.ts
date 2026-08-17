@@ -1,6 +1,6 @@
 "use server";
 
-import { parseISO, addMonths, addYears } from "date-fns";
+import { parseISO, addMonths, addYears, differenceInMonths } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
@@ -328,6 +328,77 @@ export const updateEmployee = withRBAC(
         payCategoryId ? db.payCategory.findUnique({ where: { id: payCategoryId }, select: { number: true, description: true } }) : Promise.resolve(null),
       ]);
       diff("Pay Category", fmtCat(from), fmtCat(to));
+
+      // Write POLICY_CHANGE ledger entries for each leave type covered by the new category's policies
+      if (payCategoryId) {
+        const newCat = await db.payCategory.findUnique({
+          where: { id: payCategoryId },
+          include: {
+            ptoPolicies: {
+              include: {
+                ptoPolicy: {
+                  select: {
+                    name: true,
+                    rules: {
+                      select: {
+                        leaveTypeId: true,
+                        minTenureMonths: true,
+                        maxTenureMonths: true,
+                        annualHours: true,
+                        earnedHoursPerYear: true,
+                      },
+                      orderBy: { minTenureMonths: "asc" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        if (newCat) {
+          const accrualYear = new Date().getFullYear();
+          const tenureMonths = differenceInMonths(new Date(), current.hireDate);
+          const tenureYears = Math.floor(tenureMonths / 12);
+          const seenLeaveTypeIds = new Set<string>();
+
+          for (const policyLink of newCat.ptoPolicies) {
+            const policy = policyLink.ptoPolicy;
+            const leaveTypeIds = [...new Set(policy.rules.map((r) => r.leaveTypeId))];
+
+            for (const leaveTypeId of leaveTypeIds) {
+              if (seenLeaveTypeIds.has(leaveTypeId)) continue;
+              seenLeaveTypeIds.add(leaveTypeId);
+
+              const tiersForLt = policy.rules.filter((r) => r.leaveTypeId === leaveTypeId);
+              const matchingTier = tiersForLt.find(
+                (t) => t.minTenureMonths <= tenureMonths && (t.maxTenureMonths === null || tenureMonths < t.maxTenureMonths)
+              ) ?? tiersForLt[0];
+
+              const effectiveAnnualHours = matchingTier
+                ? matchingTier.annualHours + tenureYears * matchingTier.earnedHoursPerYear
+                : 0;
+
+              const currentBalance = await db.leaveBalance.findUnique({
+                where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear } },
+                select: { balanceMinutes: true },
+              });
+
+              await db.leaveAccrualLedger.create({
+                data: {
+                  employeeId,
+                  leaveTypeId,
+                  action: "POLICY_CHANGE",
+                  deltaMinutes: Math.round(effectiveAnnualHours * 60),
+                  balanceAfter: currentBalance?.balanceMinutes ?? 0,
+                  note: `Policy changed to ${policy.name}`,
+                  createdById: actorId,
+                },
+              });
+            }
+          }
+        }
+      }
     }
     if (supervisorId !== undefined && supervisorId !== current.supervisorId) {
       const [from, to] = await Promise.all([
@@ -377,174 +448,80 @@ export const getEmployeeAuditLogs = withRBAC(
 export const getEmployeeLeaveLog = withRBAC(
   "EMPLOYEE_MANAGE",
   async (_actor, { employeeId }: { employeeId: string }) => {
-    // Fetch employee + current policy override in parallel
-    const [employee, override] = await Promise.all([
-      db.employee.findUnique({ where: { id: employeeId }, select: { hireDate: true } }),
-      db.employeePtoPolicyOverride.findUnique({ where: { employeeId }, select: { ptoPolicyId: true } }),
-    ]);
-    if (!employee) return [];
-
-    // Fetch policy (with rules), audit entries, and ledger adjustments in parallel
-    const [policy, policyAuditEntries, adjustments] = await Promise.all([
-      override?.ptoPolicyId
-        ? db.ptoPolicy.findUnique({
-            where: { id: override.ptoPolicyId },
-            select: {
-              name: true,
-              rules: {
-                select: {
-                  leaveTypeId: true,
-                  minTenureMonths: true,
-                  maxTenureMonths: true,
-                  annualHours: true,
-                  earnedHoursPerYear: true,
-                  leaveType: { select: { name: true } },
-                },
-              },
-            },
-          })
-        : Promise.resolve(null),
-      db.auditLog.findMany({
-        where: {
-          entityId: employeeId,
-          action: { in: ["EMPLOYEE_PTO_OVERRIDE_ASSIGNED", "EMPLOYEE_PTO_OVERRIDE_CLEARED"] },
-        },
-        orderBy: { createdAt: "desc" },
-        include: { actor: { select: { user: { select: { name: true } } } } },
+    const [employee, ledgerEntries] = await Promise.all([
+      db.employee.findUnique({
+        where: { id: employeeId },
+        select: { user: { select: { name: true } } },
       }),
       db.leaveAccrualLedger.findMany({
-        where: { employeeId, action: "ADJUSTMENT" },
+        where: { employeeId, action: { in: ["ACCRUAL", "USAGE", "ADJUSTMENT", "EOD_SNAPSHOT", "POLICY_CHANGE"] } },
         orderBy: { createdAt: "desc" },
-        include: { leaveType: { select: { name: true } } },
+        take: 500,
+        include: {
+          leaveType: { select: { name: true } },
+          leaveRequest: { select: { note: true, startDate: true, endDate: true } },
+        },
       }),
     ]);
 
-    // Batch-fetch creator names for adjustment entries
-    const creatorIds = [...new Set(adjustments.map((a) => a.createdById).filter((id): id is string => !!id))];
-    const creatorById = new Map<string, string | null>();
+    if (!employee) return [];
+
+    // Batch-fetch creator names for ADJUSTMENT entries
+    const creatorIds = [
+      ...new Set(
+        ledgerEntries
+          .filter((e) => (e.action === "ADJUSTMENT" || e.action === "POLICY_CHANGE") && e.createdById)
+          .map((e) => e.createdById as string)
+      ),
+    ];
+    const creatorById = new Map<string, string>();
     if (creatorIds.length > 0) {
       const creators = await db.employee.findMany({
         where: { id: { in: creatorIds } },
         select: { id: true, user: { select: { name: true } } },
       });
-      for (const c of creators) creatorById.set(c.id, c.user.name);
+      for (const c of creators) creatorById.set(c.id, c.user.name ?? "Unknown");
     }
 
-    // Policy name lookup for audit entries (policy may have been deleted/renamed)
-    const policyIdSet = new Set<string>();
-    for (const e of policyAuditEntries) {
-      const pid = (e.changes as { after?: { ptoPolicyId?: string } } | null)?.after?.ptoPolicyId;
-      if (pid) policyIdSet.add(pid);
-    }
-    const policyNamesById = new Map<string, string>();
-    if (policyIdSet.size > 0) {
-      const policies = await db.ptoPolicy.findMany({
-        where: { id: { in: [...policyIdSet] } },
-        select: { id: true, name: true },
-      });
-      for (const p of policies) policyNamesById.set(p.id, p.name);
-    }
+    return ledgerEntries.map((entry) => {
+      const isAccrualReset = entry.note === "[Accrual Reset]";
 
-    type LeaveLogEntry = {
-      id: string;
-      date: string;
-      type: "policy_assigned" | "policy_cleared" | "adjustment" | "tier_change" | "yearly_increase";
-      label: string;
-      detail: string;
-      actorName: string | null;
-    };
+      const eventType =
+        entry.action === "EOD_SNAPSHOT"  ? "eod_balance" :
+        entry.action === "POLICY_CHANGE" ? "policy_change" :
+        isAccrualReset                   ? "accrual_reset" :
+        entry.action === "ACCRUAL"       ? "accrual" :
+        entry.action === "USAGE"         ? "leave_request" :
+        "balance_adjustment";
 
-    const entries: LeaveLogEntry[] = [];
+      const userName =
+        entry.action === "EOD_SNAPSHOT"  ? "System" :
+        entry.action === "POLICY_CHANGE" ? (entry.createdById ? (creatorById.get(entry.createdById) ?? "Unknown") : "System") :
+        isAccrualReset                   ? (entry.createdById ? (creatorById.get(entry.createdById) ?? "System") : "System") :
+        entry.action === "ACCRUAL"       ? "System" :
+        entry.action === "USAGE"         ? (employee.user.name ?? "Employee") :
+        entry.createdById                ? (creatorById.get(entry.createdById) ?? "Unknown") :
+        "System";
 
-    // Policy change entries
-    for (const e of policyAuditEntries) {
-      const pid = (e.changes as { after?: { ptoPolicyId?: string } } | null)?.after?.ptoPolicyId;
-      entries.push({
-        id: e.id,
-        date: e.createdAt.toISOString(),
-        type: e.action === "EMPLOYEE_PTO_OVERRIDE_ASSIGNED" ? "policy_assigned" : "policy_cleared",
-        label: e.action === "EMPLOYEE_PTO_OVERRIDE_ASSIGNED" ? "PTO Policy Assigned" : "PTO Policy Removed",
-        detail: pid ? (policyNamesById.get(pid) ?? "Unknown policy") : "Policy removed",
-        actorName: e.actor?.user.name ?? null,
-      });
-    }
+      const note =
+        entry.action === "EOD_SNAPSHOT"  ? "Daily Balance Logging" :
+        entry.action === "POLICY_CHANGE" ? (entry.note ?? null) :
+        isAccrualReset                   ? null :
+        entry.action === "USAGE"         ? (entry.leaveRequest?.note ?? null) :
+        entry.action === "ADJUSTMENT"    ? (entry.note ?? null) :
+        null;
 
-    // Manual balance adjustment entries
-    for (const a of adjustments) {
-      const abs = Math.abs(a.deltaMinutes);
-      const h = Math.floor(abs / 60);
-      const m = abs % 60;
-      const sign = a.deltaMinutes >= 0 ? "+" : "-";
-      const fmtDelta = h > 0 && m > 0 ? `${sign}${h}h ${m}m` : h > 0 ? `${sign}${h}h` : `${sign}${m}m`;
-      entries.push({
-        id: a.id,
-        date: a.createdAt.toISOString(),
-        type: "adjustment",
-        label: "Balance Adjusted",
-        detail: `${a.leaveType.name}: ${fmtDelta}${a.note ? ` — ${a.note}` : ""}`,
-        actorName: a.createdById ? (creatorById.get(a.createdById) ?? null) : null,
-      });
-    }
-
-    // Computed tier-change and yearly-increase events from current policy + hire date
-    if (policy) {
-      const today = new Date();
-      const rulesByLeaveType = new Map<string, typeof policy.rules>();
-      for (const rule of policy.rules) {
-        if (!rulesByLeaveType.has(rule.leaveTypeId)) rulesByLeaveType.set(rule.leaveTypeId, []);
-        rulesByLeaveType.get(rule.leaveTypeId)!.push(rule);
-      }
-
-      for (const [leaveTypeId, rules] of rulesByLeaveType) {
-        const ltName = rules[0].leaveType.name;
-        const sortedRules = [...rules].sort((a, b) => a.minTenureMonths - b.minTenureMonths);
-
-        for (const rule of sortedRules) {
-          const tierStartDate = addMonths(employee.hireDate, rule.minTenureMonths);
-          const tierEndDate = rule.maxTenureMonths != null
-            ? addMonths(employee.hireDate, rule.maxTenureMonths)
-            : null;
-
-          // Tier change: only for non-initial tiers that have already started
-          if (rule.minTenureMonths > 0 && tierStartDate <= today) {
-            const tenureYearsAtEntry = Math.floor(rule.minTenureMonths / 12);
-            const rateAtEntry = rule.annualHours + tenureYearsAtEntry * rule.earnedHoursPerYear;
-            entries.push({
-              id: `tier-${leaveTypeId}-${rule.minTenureMonths}`,
-              date: tierStartDate.toISOString(),
-              type: "tier_change",
-              label: "Tier Updated",
-              detail: `${ltName}: ${rateAtEntry}h/yr`,
-              actorName: null,
-            });
-          }
-
-          // Yearly rate increases within this tier
-          if (rule.earnedHoursPerYear > 0) {
-            for (let y = 1; y <= 50; y++) {
-              const anniversaryDate = addYears(employee.hireDate, y);
-              if (anniversaryDate > today) break;
-              // Skip anniversaries that fall on or before tier entry (already reflected in tier_change)
-              if (anniversaryDate <= tierStartDate) continue;
-              if (tierEndDate && anniversaryDate >= tierEndDate) break;
-
-              const prevRate = rule.annualHours + (y - 1) * rule.earnedHoursPerYear;
-              const newRate  = rule.annualHours + y * rule.earnedHoursPerYear;
-              entries.push({
-                id: `yearly-${leaveTypeId}-${rule.minTenureMonths}-${y}`,
-                date: anniversaryDate.toISOString(),
-                type: "yearly_increase",
-                label: "Annual Rate Increased",
-                detail: `${ltName}: ${prevRate}h → ${newRate}h/yr`,
-                actorName: null,
-              });
-            }
-          }
-        }
-      }
-    }
-
-    return entries.sort((a, b) => b.date.localeCompare(a.date));
+      return {
+        id: entry.id,
+        timestamp: entry.createdAt.toISOString(),
+        eventType: eventType as "accrual" | "accrual_reset" | "leave_request" | "balance_adjustment" | "eod_balance" | "policy_change",
+        leaveTypeName: entry.leaveType.name,
+        deltaMinutes: entry.deltaMinutes,
+        balanceAfterMinutes: entry.balanceAfter,
+        note,
+        userName,
+      };
+    });
   }
 );
 
@@ -813,7 +790,7 @@ export const getEmployeeLeaveBalances = withRBAC(
 export const adjustLeaveBalance = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: AdjustLeaveBalanceInput) => {
-    const { employeeId, leaveTypeId, year, newBalanceMinutes, note } =
+    const { employeeId, leaveTypeId, year, mode, enteredMinutes, newBalanceMinutes, note } =
       adjustLeaveBalanceSchema.parse(input);
 
     const existing = await db.leaveBalance.upsert({
@@ -823,6 +800,15 @@ export const adjustLeaveBalance = withRBAC(
     });
 
     const delta = newBalanceMinutes - existing.balanceMinutes;
+
+    const h = Math.floor(enteredMinutes / 60);
+    const m = enteredMinutes % 60;
+    const amtStr = m === 0 ? `${h}h` : `${h}h ${m}m`;
+    const modeLabel =
+      mode === "ADD" ? `Added ${amtStr}` :
+      mode === "SUBTRACT" ? `Subtracted ${amtStr}` :
+      `Set available to ${amtStr}`;
+    const ledgerNote = `[${modeLabel}] ${note}`;
 
     await db.$transaction([
       db.leaveBalance.update({
@@ -836,7 +822,7 @@ export const adjustLeaveBalance = withRBAC(
           action: "ADJUSTMENT",
           deltaMinutes: delta,
           balanceAfter: newBalanceMinutes,
-          note,
+          note: ledgerNote,
           createdById: actorId,
         },
       }),
@@ -850,7 +836,7 @@ export const adjustLeaveBalance = withRBAC(
       action: "LEAVE_BALANCE_ADJUSTED",
       changes: {
         before: { balanceMinutes: existing.balanceMinutes },
-        after: { balanceMinutes: newBalanceMinutes, note },
+        after: { balanceMinutes: newBalanceMinutes, note: ledgerNote },
       },
     });
 
@@ -887,7 +873,7 @@ export const postAccrualCorrection = withRBAC(
           deltaMinutes,
           balanceAfter: newBalance,
           payPeriodEnd: new Date(),
-          note: `Accrual correction: ${note}`,
+          note: "[Accrual Reset]",
           createdById: actorId,
         },
       }),
@@ -951,7 +937,7 @@ export const resetLeaveBalanceToAccrual = withRBAC(
           action: "ADJUSTMENT",
           deltaMinutes: delta,
           balanceAfter: newBalance,
-          note: "Reset to accrual",
+          note: "[Accrual Reset]",
           createdById: actorId,
         },
       }),

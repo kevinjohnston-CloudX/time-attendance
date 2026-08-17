@@ -94,6 +94,10 @@ type Policy = {
   maxNegativeHours:           number | null;
   carryOverEnabled:           boolean;
   carryOverRespectMaxBalance: boolean;
+  forecastEnabled:          boolean;
+  forecastMode:             string | null;
+  forecastMonths:           number | null;
+  forecastApplyToAvailable: boolean;
   rules: RuleFromServer[];
   _count: { siteLinks: number; empOverrides: number };
 };
@@ -305,6 +309,14 @@ function PolicyForm({ leaveTypes, payCodes, initial, isPending, onSubmit, onCanc
   const [maxNegativeHours,           setMaxNegativeHours]           = useState<string>(initial?.maxNegativeHours != null ? String(initial.maxNegativeHours) : "");
   const [carryOverEnabled,           setCarryOverEnabled]           = useState<boolean>(initial?.carryOverEnabled ?? true);
   const [carryOverRespectMaxBalance, setCarryOverRespectMaxBalance] = useState<boolean>(initial?.carryOverRespectMaxBalance ?? false);
+
+  // Forecast state
+  const [forecastEnabled,          setForecastEnabled]          = useState<boolean>(initial?.forecastEnabled ?? false);
+  const [forecastMode,             setForecastMode]             = useState<"MONTHS" | "END_OF_YEAR">(
+    (initial?.forecastMode as "MONTHS" | "END_OF_YEAR" | null) ?? "END_OF_YEAR"
+  );
+  const [forecastMonths,           setForecastMonths]           = useState<string>(initial?.forecastMonths != null ? String(initial.forecastMonths) : "3");
+  const [forecastApplyToAvailable, setForecastApplyToAvailable] = useState<boolean>(initial?.forecastApplyToAvailable ?? false);
 
   // ── Tier helpers
   function addTier() {
@@ -610,6 +622,78 @@ function PolicyForm({ leaveTypes, payCodes, initial, isPending, onSubmit, onCanc
         </p>
       </div>
 
+      {/* Forecasted Hours */}
+      <div className="rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-700">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">Forecasted Hours</p>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+          <input
+            type="checkbox"
+            checked={forecastEnabled}
+            onChange={(e) => setForecastEnabled(e.target.checked)}
+            className="h-4 w-4 rounded border-zinc-300 accent-zinc-800 dark:border-zinc-600"
+          />
+          Compute forecasted hours
+        </label>
+        {forecastEnabled && (
+          <div className="mt-3 space-y-3 pl-1">
+            <div className="space-y-2">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Forecast Horizon</p>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+                <input
+                  type="radio"
+                  name="forecastModeRadio"
+                  checked={forecastMode === "END_OF_YEAR"}
+                  onChange={() => setForecastMode("END_OF_YEAR")}
+                  className="h-4 w-4 accent-zinc-800"
+                />
+                End of calendar year
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="forecastModeRadio"
+                  checked={forecastMode === "MONTHS"}
+                  onChange={() => setForecastMode("MONTHS")}
+                  className="h-4 w-4 accent-zinc-800"
+                />
+                <span className="text-sm text-zinc-600 dark:text-zinc-400">Up to</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="120"
+                  step="1"
+                  value={forecastMonths}
+                  onChange={(e) => { setForecastMode("MONTHS"); setForecastMonths(e.target.value); }}
+                  className="w-16 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                />
+                <span className="text-sm text-zinc-600 dark:text-zinc-400">months</span>
+              </div>
+            </div>
+            <div className="border-t border-zinc-100 pt-3 dark:border-zinc-800">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+                <input
+                  type="checkbox"
+                  checked={forecastApplyToAvailable}
+                  onChange={(e) => setForecastApplyToAvailable(e.target.checked)}
+                  className="h-4 w-4 rounded border-zinc-300 accent-zinc-800 dark:border-zinc-600"
+                />
+                Apply forecasted hours to available balance
+              </label>
+              <p className="mt-1 pl-6 text-xs text-zinc-400">
+                When checked, the employee&apos;s available balance will include projected future accruals. When unchecked, the forecast is computed and displayed but does not affect the available balance.
+              </p>
+            </div>
+          </div>
+        )}
+        <input type="hidden" name="forecastEnabled"          value={forecastEnabled          ? "true" : "false"} />
+        <input type="hidden" name="forecastMode"             value={forecastEnabled ? forecastMode : ""} />
+        <input type="hidden" name="forecastMonths"           value={forecastEnabled && forecastMode === "MONTHS" ? forecastMonths : ""} />
+        <input type="hidden" name="forecastApplyToAvailable" value={forecastApplyToAvailable ? "true" : "false"} />
+        <p className="mt-2 text-xs text-zinc-400">
+          Projects how many hours an employee will earn from today through the selected horizon, respecting their annual cap and current tier.
+        </p>
+      </div>
+
       {/* Borrowing */}
       <div className="rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-700">
         <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">Borrowing</p>
@@ -842,6 +926,10 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes }: Props) {
     const rawMaxNeg      = fd.get("maxNegativeHours")            as string;
     const rawCarryOn     = fd.get("carryOverEnabled")            as string;
     const rawRespectMax  = fd.get("carryOverRespectMaxBalance")  as string;
+    const rawFcEnabled   = fd.get("forecastEnabled")             as string;
+    const rawFcMode      = fd.get("forecastMode")                as string;
+    const rawFcMonths    = fd.get("forecastMonths")              as string;
+    const rawFcApply     = fd.get("forecastApplyToAvailable")    as string;
     startTransition(async () => {
       const result = await createPtoPolicy({
         name:                       fd.get("name") as string,
@@ -853,6 +941,10 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes }: Props) {
         maxNegativeHours:           rawMaxNeg    !== "" ? parseFloat(rawMaxNeg) : null,
         carryOverEnabled:           rawCarryOn   !== "false",
         carryOverRespectMaxBalance: rawRespectMax === "true",
+        forecastEnabled:            rawFcEnabled  === "true",
+        forecastMode:               rawFcMode     !== "" ? rawFcMode as "MONTHS" | "END_OF_YEAR" : null,
+        forecastMonths:             rawFcMonths   !== "" ? parseInt(rawFcMonths, 10) : null,
+        forecastApplyToAvailable:   rawFcApply    === "true",
         rules,
         ...posting,
       });
@@ -871,6 +963,10 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes }: Props) {
     const rawMaxNeg      = fd.get("maxNegativeHours")            as string;
     const rawCarryOn     = fd.get("carryOverEnabled")            as string;
     const rawRespectMax  = fd.get("carryOverRespectMaxBalance")  as string;
+    const rawFcEnabled   = fd.get("forecastEnabled")             as string;
+    const rawFcMode      = fd.get("forecastMode")                as string;
+    const rawFcMonths    = fd.get("forecastMonths")              as string;
+    const rawFcApply     = fd.get("forecastApplyToAvailable")    as string;
     startTransition(async () => {
       const result = await updatePtoPolicy({
         ptoPolicyId:                policy.id,
@@ -884,6 +980,10 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes }: Props) {
         maxNegativeHours:           rawMaxNeg    !== "" ? parseFloat(rawMaxNeg) : null,
         carryOverEnabled:           rawCarryOn   !== "false",
         carryOverRespectMaxBalance: rawRespectMax === "true",
+        forecastEnabled:            rawFcEnabled  === "true",
+        forecastMode:               rawFcMode     !== "" ? rawFcMode as "MONTHS" | "END_OF_YEAR" : null,
+        forecastMonths:             rawFcMonths   !== "" ? parseInt(rawFcMonths, 10) : null,
+        forecastApplyToAvailable:   rawFcApply    === "true",
         rules,
         ...posting,
       });

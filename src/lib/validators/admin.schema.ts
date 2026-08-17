@@ -105,7 +105,9 @@ export const leaveTypeSchema = z.object({
   maxBalanceMinutes: z.number().int().positive().nullable().optional(),
   requiresApproval: z.boolean().default(true),
   isPaid: z.boolean().default(true),
+  accrualTracked: z.boolean().default(true),
   externalCode: z.number().int().positive().nullable().optional(),
+  payCodeId: z.string().cuid().nullable().optional(),
 });
 
 export const updateLeaveTypeSchema = leaveTypeSchema.extend({
@@ -149,7 +151,9 @@ export const adjustLeaveBalanceSchema = z.object({
   employeeId: z.string().min(1),
   leaveTypeId: z.string().min(1),
   year: z.number().int(),
-  newBalanceMinutes: z.number().int().min(0),
+  mode: z.enum(["ADD", "SUBTRACT", "SET_AVAILABLE"]),
+  enteredMinutes: z.number().int().min(0),
+  newBalanceMinutes: z.number().int(),
   note: z.string().min(1, "A reason is required"),
 });
 

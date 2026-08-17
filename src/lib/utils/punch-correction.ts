@@ -6,7 +6,7 @@ import type { TxClient } from "@/types/prisma";
 interface CorrectionInput {
   originalPunchId: string;
   newPunchTime: Date;
-  reason: string;
+  reason?: string;
   supervisorId: string;
 }
 
@@ -57,7 +57,7 @@ export async function createCorrectionPunch(
       isApproved: true,
       approvedById: supervisorId,
       approvedAt: new Date(),
-      note: reason,
+      note: reason ?? null,
       correctsId: original.id,
     },
   });
@@ -74,7 +74,7 @@ export async function createCorrectionPunch(
     entityId: correction.id,
     changes: {
       before: { punchTime: original.punchTime },
-      after: { punchTime: newPunchTime, reason },
+      after: { punchTime: newPunchTime, ...(reason && { reason }) },
     },
   });
 

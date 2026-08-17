@@ -98,7 +98,13 @@ export const getTimecardDetail = withRBAC(
             leaveRequest: {
               select: {
                 id: true,
-                leaveType: { select: { name: true, category: true } },
+                leaveType: {
+                  select: {
+                    name: true,
+                    category: true,
+                    payCode: { select: { id: true, code: true, label: true } },
+                  },
+                },
               },
             },
             payCode: {
@@ -112,7 +118,9 @@ export const getTimecardDetail = withRBAC(
           select: { id: true, exceptionType: true, occurredAt: true, description: true },
         },
         mealWaivers: true,
-        notes: true,
+        notes: {
+          orderBy: { createdAt: "desc" },
+        },
         dayReasons: {
           include: { reasonCode: { select: { id: true, code: true, label: true, color: true } } },
         },
@@ -131,6 +139,8 @@ export const getTimecardDetail = withRBAC(
         noteDate: n.noteDate.toISOString().slice(0, 10),
         note: n.note,
         createdById: n.createdById,
+        createdByName: n.createdByName ?? null,
+        createdAt: n.createdAt.toISOString(),
       })),
     };
   }

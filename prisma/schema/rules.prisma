@@ -43,17 +43,19 @@ model HolidayRule {
 }
 
 model PayCategory {
-  id          String   @id @default(cuid())
-  tenantId    String
-  number      Int
-  description String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                String   @id @default(cuid())
+  tenantId          String
+  number            Int
+  description       String?
+  isActive          Boolean  @default(true)
+  limitLeaveTypes   Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  tenant      Tenant                 @relation(fields: [tenantId], references: [id])
-  employees   Employee[]
-  ptoPolicies PayCategoryPtoPolicy[]
+  tenant              Tenant                    @relation(fields: [tenantId], references: [id])
+  employees           Employee[]
+  ptoPolicies         PayCategoryPtoPolicy[]
+  availableLeaveTypes PayCategoryLeaveType[]
 
   @@unique([tenantId, number])
   @@map("pay_categories")
@@ -68,6 +70,17 @@ model PayCategoryPtoPolicy {
 
   @@id([payCategoryId, ptoPolicyId])
   @@map("pay_category_pto_policies")
+}
+
+model PayCategoryLeaveType {
+  payCategoryId String
+  leaveTypeId   String
+
+  payCategory PayCategory @relation(fields: [payCategoryId], references: [id], onDelete: Cascade)
+  leaveType   LeaveType   @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@id([payCategoryId, leaveTypeId])
+  @@map("pay_category_leave_types")
 }
 
 model RuleSet {

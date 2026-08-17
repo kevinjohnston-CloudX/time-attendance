@@ -43,8 +43,8 @@ export default async function PayPeriodsPage({
 
   const t = session.user.tenantId ?? undefined;
 
-  const [ppResult, sites, departments] = await Promise.all([
-    getPayPeriods(),
+  const ppResult = await getPayPeriods();
+  const [sites, departments] = await Promise.all([
     db.site.findMany({
       where: { isActive: true, ...(t ? { tenantId: t } : {}) },
       orderBy: { name: "asc" },
