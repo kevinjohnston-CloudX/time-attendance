@@ -61,6 +61,13 @@ function PayCodeFields({ pc }: { pc?: PayCode }) {
           {PAY_BUCKETS.map((b) => <option key={b} value={b}>{b}</option>)}
         </select>
       </div>
+      <div className="col-span-2 sm:col-span-4">
+        <label className="mb-1 block text-xs text-zinc-500">Overtime Calculation</label>
+        <select name="countsTowardOt" defaultValue={pc ? (pc.countsTowardOt ? "true" : "false") : "true"} className={inputCls}>
+          <option value="true">Counts toward OT — hours apply to daily and weekly OT thresholds</option>
+          <option value="false">Excluded from OT — hours stay REG regardless of daily or weekly totals</option>
+        </select>
+      </div>
     </div>
   );
 }
@@ -115,6 +122,7 @@ export function PayCodesManager({ payCodes }: Props) {
         label: fd.get("label") as string,
         expressCode: (fd.get("expressCode") as string) || null,
         payBucket: (fd.get("payBucket") as string) || null,
+        countsTowardOt: fd.get("countsTowardOt") !== "false",
       });
       if (!result.success) { setError(result.error); return; }
       closeCreate();
@@ -134,6 +142,7 @@ export function PayCodesManager({ payCodes }: Props) {
         label: fd.get("label") as string,
         expressCode: (fd.get("expressCode") as string) || null,
         payBucket: (fd.get("payBucket") as string) || null,
+        countsTowardOt: fd.get("countsTowardOt") !== "false",
         sortOrder,
         isActive: fd.get("isActive") === "true",
       });
@@ -182,6 +191,7 @@ export function PayCodesManager({ payCodes }: Props) {
                 </span>
               )}
               {pc.payBucket && <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">{pc.payBucket}</span>}
+              {!pc.countsTowardOt && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-600 dark:bg-amber-900/20 dark:text-amber-400">No OT</span>}
             </div>
             <div className="flex items-center gap-2">
               <span className={`rounded-full px-2 py-0.5 text-xs ${pc.isActive ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800"}`}>

@@ -17,20 +17,44 @@ export async function GET(req: NextRequest) {
       endDate: { gte: today },
       status: "OPEN",
     },
-    select: { id: true, tenantId: true },
+    select: { id: true, tenantId: true, ruleSetId: true },
   });
 
   let processed = 0;
 
   for (const period of openPeriods) {
-    const employees = await db.employee.findMany({
-      where: {
-        isActive: true,
-        payType: "SALARY",
-        tenantId: period.tenantId,
-      },
-      select: { id: true, ruleSetId: true },
-    });
+    // For rule-set-specific periods: only process employees on that rule set.
+    // For tenant-level periods (ruleSetId = null): exclude employees whose rule
+    // set has its own period for today (they are handled by that period instead).
+    let employees: { id: string; ruleSetId: string }[];
+
+    if (period.ruleSetId) {
+      employees = await db.employee.findMany({
+        where: { isActive: true, payType: "SALARY", tenantId: period.tenantId, ruleSetId: period.ruleSetId },
+        select: { id: true, ruleSetId: true },
+      });
+    } else {
+      const ruleSetsWithOwnPeriod = await db.payPeriod.findMany({
+        where: {
+          tenantId: period.tenantId,
+          ruleSetId: { not: null },
+          startDate: { lte: today },
+          endDate: { gte: today },
+          status: "OPEN",
+        },
+        select: { ruleSetId: true },
+      });
+      const excludedRuleSetIds = ruleSetsWithOwnPeriod.map((p) => p.ruleSetId!);
+      employees = await db.employee.findMany({
+        where: {
+          isActive: true,
+          payType: "SALARY",
+          tenantId: period.tenantId,
+          ...(excludedRuleSetIds.length > 0 ? { ruleSetId: { notIn: excludedRuleSetIds } } : {}),
+        },
+        select: { id: true, ruleSetId: true },
+      });
+    }
 
     for (const emp of employees) {
       const ruleSet = await db.ruleSet.findUniqueOrThrow({

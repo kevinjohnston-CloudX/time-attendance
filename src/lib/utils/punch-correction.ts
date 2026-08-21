@@ -59,6 +59,7 @@ export async function createCorrectionPunch(
       approvedAt: new Date(),
       note: reason ?? null,
       correctsId: original.id,
+      payCodeId: original.payCodeId ?? null,
     },
   });
 

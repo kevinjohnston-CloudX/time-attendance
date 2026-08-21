@@ -17,10 +17,15 @@ export async function GET(req: NextRequest) {
     const actor = await authenticateMobile(req);
     requirePermission(actor, "PUNCH_OWN");
 
+    const employee = await db.employee.findUnique({
+      where: { id: actor.employeeId },
+      select: { ruleSetId: true },
+    });
+
     const [punchState, payPeriod, lastPunch, leaveBalances] = await Promise.all(
       [
         getCurrentPunchState(actor.employeeId),
-        findOpenPayPeriod(actor.tenantId),
+        findOpenPayPeriod(actor.tenantId, employee?.ruleSetId),
         db.punch.findFirst({
           where: {
             employeeId: actor.employeeId,

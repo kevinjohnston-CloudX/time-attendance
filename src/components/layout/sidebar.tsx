@@ -59,6 +59,7 @@ const supervisorItems: NavItem[] = [
 
 const adminItems: NavItem[] = [
   { label: "Employees", href: "/admin/employees", icon: Users, permission: "EMPLOYEE_MANAGE" },
+  { label: "Accruals", href: "/admin/accruals", icon: CalendarDays, permission: "EMPLOYEE_MANAGE" },
   { label: "Site Settings", href: "/admin/site-settings", icon: Layers, permission: ["SITE_MANAGE", "RULES_MANAGE", "PAY_PERIOD_MANAGE"] },
   { label: "Integrations", href: "/admin/api-keys", icon: KeyRound, permission: "SITE_MANAGE" },
   { label: "Roles", href: "/admin/roles", icon: ShieldCheck, permission: "ROLE_MANAGE" },

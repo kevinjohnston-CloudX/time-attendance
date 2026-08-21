@@ -87,6 +87,7 @@ export default async function DashboardPage({
         endDate:   { gte: now },
         status: "OPEN",
       },
+      select: { id: true, tenantId: true, startDate: true, endDate: true, status: true },
     }),
 
     employeeId

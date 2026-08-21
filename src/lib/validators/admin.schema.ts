@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PayFrequency } from "@prisma/client";
 
 export const ROLES = [
   "EMPLOYEE",
@@ -117,10 +118,24 @@ export const updateLeaveTypeSchema = leaveTypeSchema.extend({
 
 export const ruleSetSchema = z.object({
   name: z.string().min(1),
+  otRateMultiplier: z.number().int().min(100).max(1000).default(150),
+  dtRateMultiplier: z.number().int().min(100).max(1000).default(200),
+  overtimeRequiresAuth: z.boolean().default(false),
+  allowTimesheetOtAuth: z.boolean().default(true),
+  otGraceBeforeShiftMinutes: z.number().int().min(0).default(0),
+  otGraceAfterShiftMinutes: z.number().int().min(0).default(0),
   dailyOtMinutes: z.number().int().min(0).default(480),
   dailyDtMinutes: z.number().int().min(0).default(720),
+  dailyDtMaxMinutes: z.number().int().min(0).default(0),
+  weeklyOtEnabled: z.boolean().default(true),
   weeklyOtMinutes: z.number().int().min(0).default(2400),
+  weeklyDtMinutes: z.number().int().min(0).default(86400),
+  weeklyDtMaxMinutes: z.number().int().min(0).default(0),
+  consecutiveDayOtEnabled: z.boolean().default(false),
   consecutiveDayOtDay: z.number().int().min(1).default(7),
+  consecutiveDayPayCycleOnly: z.boolean().default(true),
+  consecutiveDayOtMaxMinutes: z.number().int().min(0).default(0),
+  consecutiveDayDtMaxMinutes: z.number().int().min(0).default(0),
   punchRoundingMinutes: z.number().int().min(0).default(0),
   mealBreakMinutes: z.number().int().min(0).default(30),
   mealBreakAfterMinutes: z.number().int().min(0).default(300),
@@ -129,6 +144,13 @@ export const ruleSetSchema = z.object({
   shortBreaksPerDay: z.number().int().min(0).default(2),
   longShiftMinutes: z.number().int().min(0).default(720),
   isDefault: z.boolean().default(false),
+  payFrequency: z.nativeEnum(PayFrequency).nullable().optional(),
+  payPeriodAnchorDate: z.string().nullable().optional(), // "YYYY-MM-DD" string, parsed to Date in action
+  weekStartDay: z.number().int().min(0).max(6).default(1),
+  otCycle: z.enum(["WEEKLY", "BIWEEKLY", "CUSTOM"]).nullable().optional(),
+  otCycleDays: z.number().int().min(1).nullable().optional(),
+  otCycleAnchorDate: z.string().nullable().optional(), // "YYYY-MM-DD" string, parsed to Date in action
+  defaultPayCodeId: z.string().nullable().optional(),
 });
 
 export const updateRuleSetSchema = ruleSetSchema.extend({

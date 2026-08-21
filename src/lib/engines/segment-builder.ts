@@ -1,6 +1,7 @@
 import { format, eachDayOfInterval, isWeekend } from "date-fns";
 import { db } from "@/lib/db";
 import { applyOvertime } from "@/lib/engines/overtime-engine";
+import { reconcileLeaveDeductions } from "@/lib/engines/leave-deduction";
 import { startOfDayInTz, nextMidnightInTz, endOfDayInTz } from "@/lib/utils/date";
 import type { Punch, RuleSet, PayBucket, SegmentType, HolidayCreditMethod } from "@prisma/client";
 
@@ -18,6 +19,7 @@ interface SegmentInput {
   isPaid: boolean;
   payBucket: PayBucket;
   isSplit: boolean;
+  payCodeId?: string | null;
 }
 
 /**
@@ -95,17 +97,16 @@ export function computeSegments(
     if (openState && openStart) {
       const openDay = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(openStart);
       const punchDay = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(punchMin);
-      // If this punch starts a fresh shift (stateBefore=OUT) on a different calendar day,
-      // the previous day had a missing clock-out — cap the segment at midnight so it
-      // doesn't bleed into today's hours.
-      const segmentEnd =
-        openDay !== punchDay && punch.stateBefore === "OUT"
-          ? nextMidnightInTz(openStart, timezone)
-          : punchMin;
 
-      segments.push(
-        ...buildSegmentSpan(timesheetId, openStart, segmentEnd, openState, false, timezone)
-      );
+      if (openDay !== punchDay && punch.stateBefore === "OUT") {
+        // Missing clock-out: the previous day had no approved CLOCK_OUT.
+        // Discard the incomplete segment entirely so phantom hours don't
+        // inflate REG/OT totals. The MISSING_PUNCH exception still flags the day.
+      } else {
+        segments.push(
+          ...buildSegmentSpan(timesheetId, openStart, punchMin, openState, false, timezone)
+        );
+      }
       openStart = null;
       openState = null;
     }
@@ -117,8 +118,8 @@ export function computeSegments(
     }
   }
 
-  // If the employee is still clocked in (openState != null), leave no dangling segment.
-  // An in-progress shift will be captured on the next punch.
+  // If the employee is still clocked in at the end of the punch list (same day),
+  // leave no dangling segment — an in-progress shift is captured on the next punch.
 
   return segments;
 }
@@ -268,7 +269,8 @@ function applyAutoMealDeduction(
 async function ensureSalarySegments(
   timesheetId: string,
   periodStart: Date,
-  periodEnd: Date
+  periodEnd: Date,
+  defaultPayCodeId?: string | null
 ): Promise<void> {
   const today = new Date();
   today.setUTCHours(23, 59, 59, 999);
@@ -305,6 +307,7 @@ async function ensureSalarySegments(
         isPaid: true,
         payBucket: "REG" as PayBucket,
         isSplit: false,
+        payCodeId: defaultPayCodeId ?? null,
       };
     });
 
@@ -323,6 +326,7 @@ export async function rebuildSegments(
     select: {
       employee: {
         select: {
+          id: true,
           tenantId: true,
           payType: true,
           site: { select: { timezone: true } },
@@ -373,23 +377,121 @@ export async function rebuildSegments(
     segments = applyAutoMealDeduction(rawSegments, ruleSet, waivedDates);
   }
 
-  // Rebuild segments in a transaction, then apply OT engine separately
-  // (applyOvertime needs the newly inserted segments to be readable).
+  // Apply default pay code to all WORK segments
+  if (ruleSet.defaultPayCodeId) {
+    segments = segments.map((seg) =>
+      seg.segmentType === "WORK" ? { ...seg, payCodeId: ruleSet.defaultPayCodeId } : seg
+    );
+  }
+
+  // Dates that will have fresh WORK segments after this rebuild.
+  const newSegmentDates = new Set(
+    segments
+      .filter((s) => s.segmentType === "WORK")
+      .map((s) => format(s.segmentDate, "yyyy-MM-dd"))
+  );
+
+  // For missed-punch days (no new WORK segment), capture the pay code that was on
+  // the existing WORK segment so we can re-create it as a 0-duration LEAVE marker.
+  // Skip dates that already have a LEAVE marker — they're either manually set or
+  // already preserved from a prior rebuild.
+  const [existingWorkWithPayCode, existingLeaveMarkers] = await Promise.all([
+    db.workSegment.findMany({
+      where: { timesheetId, segmentType: "WORK", payCodeId: { not: null } },
+      select: { segmentDate: true, payCodeId: true },
+    }),
+    db.workSegment.findMany({
+      where: { timesheetId, segmentType: "LEAVE", durationMinutes: 0 },
+      select: { segmentDate: true },
+    }),
+  ]);
+  const existingLeaveDates = new Set(existingLeaveMarkers.map((s) => format(s.segmentDate, "yyyy-MM-dd")));
+  const payCodeMarkers = existingWorkWithPayCode
+    .filter((s) => {
+      const key = format(s.segmentDate, "yyyy-MM-dd");
+      return !newSegmentDates.has(key) && !existingLeaveDates.has(key);
+    })
+    .reduce<Map<string, string>>((acc, s) => {
+      const key = format(s.segmentDate, "yyyy-MM-dd");
+      if (!acc.has(key)) acc.set(key, s.payCodeId!);
+      return acc;
+    }, new Map());
+
+  // For brand-new missed-punch days (first miss — no prior WORK segment and no LEAVE
+  // marker), seed a LEAVE marker from the CLOCK_IN punch's pay code, or fall back to
+  // the tenant's code-0 so the day shows Regular Hours rather than Absent.
+  const todayLocalStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
+  const needsDefault = punches.some((p) => {
+    if (p.punchType !== "CLOCK_IN") return false;
+    const d = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(p.roundedTime);
+    return d < todayLocalStr && !newSegmentDates.has(d) && !existingLeaveDates.has(d) && !payCodeMarkers.has(d);
+  });
+  if (needsDefault && tenantId) {
+    const defaultPayCode = await db.payCode.findUnique({
+      where: { tenantId_code: { tenantId, code: 0 } },
+      select: { id: true, isActive: true },
+    });
+    if (defaultPayCode?.isActive) {
+      for (const punch of punches) {
+        if (punch.punchType !== "CLOCK_IN") continue;
+        const d = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(punch.roundedTime);
+        if (d >= todayLocalStr || newSegmentDates.has(d) || existingLeaveDates.has(d) || payCodeMarkers.has(d)) continue;
+        payCodeMarkers.set(d, punch.payCodeId ?? defaultPayCode.id);
+      }
+    }
+  }
+
+  // Rebuild segments in a transaction. LEAVE markers are intentionally excluded from
+  // the deleteMany so manually-set absent-day pay codes survive. The exception: stale
+  // 0-duration markers for days that now have a real work segment are cleaned up so
+  // the WORK segment takes precedence in the timecard view.
   await db.$transaction([
     db.workSegment.deleteMany({
       where: { timesheetId, segmentType: { in: ["WORK", "MEAL", "BREAK", "HOLIDAY"] } },
     }),
-    ...(segments.length > 0
-      ? [db.workSegment.createMany({ data: segments })]
+    ...(newSegmentDates.size > 0
+      ? [
+          db.workSegment.deleteMany({
+            where: {
+              timesheetId,
+              segmentType: "LEAVE",
+              durationMinutes: 0,
+              segmentDate: { in: Array.from(newSegmentDates).map((s) => new Date(s + "T00:00:00.000Z")) },
+            },
+          }),
+        ]
       : []),
+    ...(segments.length > 0 ? [db.workSegment.createMany({ data: segments })] : []),
   ]);
+
+  // Persist pay codes for missed-punch days as 0-duration LEAVE markers so they
+  // survive future rebuilds (deleteMany never touches LEAVE segments).
+  if (payCodeMarkers.size > 0) {
+    await db.workSegment.createMany({
+      data: Array.from(payCodeMarkers.entries()).map(([dateStr, payCodeId]) => {
+        const date = new Date(dateStr + "T00:00:00.000Z");
+        return {
+          timesheetId,
+          segmentType: "LEAVE" as const,
+          startTime: date,
+          endTime: date,
+          durationMinutes: 0,
+          segmentDate: date,
+          isPaid: false,
+          payBucket: "REG" as const,
+          payCodeId,
+        };
+      }),
+    });
+  }
 
   // For salary employees, fill in 8 h REG for any weekday with no real punch segments.
   if (isSalary) {
     await ensureSalarySegments(
       timesheetId,
       timesheet.payPeriod.startDate,
-      timesheet.payPeriod.endDate
+      timesheet.payPeriod.endDate,
+      ruleSet.defaultPayCodeId
     );
   }
 
@@ -423,12 +525,17 @@ export async function rebuildSegments(
         where: {
           timesheetId,
           segmentType: "WORK",
-          payBucket: "REG",
           payCodeId: null,
         },
         data: { payCodeId: regularPayCode.id },
       });
     }
+  }
+
+  // Re-apply pay codes stored on CLOCK_IN punches and reconcile any leave deductions.
+  // Runs after the code-0 auto-assign so leave-type pay codes correctly override it.
+  if (tenantId && timesheet.employee.id) {
+    await reconcileLeaveDeductions(timesheetId, timesheet.employee.id, tenantId);
   }
 
   // Sync ABSENT exceptions for past days in the pay period with no activity.

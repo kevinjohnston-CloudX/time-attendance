@@ -106,6 +106,7 @@ enum AccrualAction {
   BALANCE_RESET
   EOD_SNAPSHOT
   POLICY_CHANGE
+  TIMECARD_DEDUCTION
 }
 
 enum ExceptionType {

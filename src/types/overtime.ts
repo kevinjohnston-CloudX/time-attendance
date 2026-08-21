@@ -12,5 +12,6 @@ export interface OvertimeResult {
   totalReg: number;
   totalOt: number;
   totalDt: number;
-  weeklyOtConverted: number; // REG minutes converted to OT by weekly threshold
+  weeklyOtConverted: number;
+  weeklyDtConverted: number;
 }

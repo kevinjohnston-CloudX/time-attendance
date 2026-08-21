@@ -4,8 +4,6 @@ import { useTransition, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { updateEmployee } from "@/actions/admin.actions";
-import { LeaveBalancesPanel } from "@/components/admin/leave-balances-panel";
-import { LeaveHistoryPanel, type LeaveLogEntry } from "@/components/admin/leave-history-panel";
 import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
 
 type EmployeeWithRelations = Omit<Employee, "payRate"> & {
@@ -27,27 +25,6 @@ interface Props {
   shifts: { id: string; name: string; startTime: string; endTime: string }[];
   holidayRules: { id: string; name: string }[];
   payCategories: { id: string; number: number; description: string | null }[];
-  balances: {
-    leaveTypeId: string;
-    leaveTypeName: string;
-    category: string;
-    balanceMinutes: number;
-    usedMinutes: number;
-    accruedMinutes: number;
-    approvedMinutes: number;
-    pendingMinutes: number;
-    year: number;
-    policyAnnualHours: number | null;
-    policyName: string | null;
-    policyRateMode: string | null;
-    expectedAccrualMinutes: number | null;
-    forecastedMinutes: number | null;
-    forecastApplyToAvailable: boolean;
-    netAdjustmentMinutes: number | null;
-    accrualTracked: boolean;
-  }[];
-  year: number;
-  leaveLog: LeaveLogEntry[];
   logs: Array<{
     id: string;
     createdAt: string;
@@ -66,9 +43,9 @@ const inputCls =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
 const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400";
 
-type Tab = "general" | "personal" | "pay" | "leave" | "logs";
+type Tab = "general" | "personal" | "pay" | "logs";
 
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, balances, year, leaveLog, logs }: Props) {
+export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, logs }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -162,7 +139,6 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
     { id: "general", label: "General" },
     { id: "personal", label: "Personal" },
     { id: "pay", label: "Pay" },
-    { id: "leave", label: "Leave" },
     { id: "logs", label: "Logs" },
   ];
 
@@ -490,65 +466,6 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
           </div>
         </form>
 
-        </>
-      )}
-
-      {/* ── Leave tab ───────────────────────────────────────────────────── */}
-      {activeTab === "leave" && (
-        <>
-        {/* Leave Balances */}
-        <div className="mt-5">
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-white">
-            Leave Balances — {year}
-          </h2>
-
-          {/* Applied policies summary */}
-          {(() => {
-            const policyMap = new Map<string, string[]>();
-            for (const b of balances) {
-              if (!b.policyName) continue;
-              const types = policyMap.get(b.policyName) ?? [];
-              types.push(b.leaveTypeName);
-              policyMap.set(b.policyName, types);
-            }
-            return policyMap.size > 0 ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {Array.from(policyMap.entries()).map(([name, types]) => (
-                  <div key={name} className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 dark:border-zinc-700 dark:bg-zinc-800/50">
-                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-200">{name}</span>
-                    <span className="ml-1.5 text-xs text-zinc-400">{types.join(", ")}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-2 text-xs text-zinc-400">
-                No PTO policies applied — assign policies to this employee&apos;s pay category.
-              </p>
-            );
-          })()}
-
-          <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            <LeaveBalancesPanel
-              employeeId={employee.id}
-              balances={balances}
-              year={year}
-            />
-          </div>
-        </div>
-
-        {/* Leave History */}
-        <div className="mt-8">
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-white">Leave History</h2>
-          <p className="mt-0.5 text-sm text-zinc-500">
-            Accruals, leave requests, and balance adjustments.
-          </p>
-          <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            <LeaveHistoryPanel
-              entries={leaveLog}
-              defaultLeaveTypeNames={balances.filter((b) => b.accrualTracked).map((b) => b.leaveTypeName)}
-            />
-          </div>
-        </div>
         </>
       )}
 

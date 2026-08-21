@@ -233,7 +233,7 @@ export function SiteSettingsClient({
               />
             )}
             {activeTab === "rule-sets" && (
-              <RuleSetsManager ruleSets={ruleSets as RuleSet[]} />
+              <RuleSetsManager ruleSets={ruleSets as RuleSet[]} payCodes={payCodes} />
             )}
             {activeTab === "shifts" && (
               <ShiftsManager shifts={shifts} />

@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 4. Find open pay period
-  const payPeriod = await findOpenPayPeriod(employee.tenantId);
+  const payPeriod = await findOpenPayPeriod(employee.tenantId, employee.ruleSetId);
   if (!payPeriod) {
     await saveRejectedPunch({ employeeId: employee.id, timesheetId: null, punchType: "CLOCK_IN", source: "KIOSK", stateBefore: "OUT", rejectionReason: "No active pay period" });
     return NextResponse.json(

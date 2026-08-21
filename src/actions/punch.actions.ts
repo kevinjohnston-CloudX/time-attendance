@@ -55,7 +55,7 @@ export const requestMissedPunch = withRBAC(
       include: { ruleSet: true },
     });
 
-    const payPeriod = await findOpenPayPeriod(tenantId);
+    const payPeriod = await findOpenPayPeriod(tenantId, employee.ruleSetId);
     if (!payPeriod) throw new Error("No active pay period. Contact payroll.");
 
     const timesheet = await findOrCreateTimesheet(employeeId, payPeriod.id);

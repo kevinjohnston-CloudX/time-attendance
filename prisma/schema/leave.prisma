@@ -59,12 +59,14 @@ model LeaveRequest {
   reviewedById String?
   reviewNote   String?
   postedAt     DateTime?
-  cancelledAt  DateTime?
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  cancelledAt   DateTime?
+  sourcePunchId String?            @unique
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
 
-  employee  Employee  @relation(fields: [employeeId], references: [id])
-  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+  employee      Employee   @relation(fields: [employeeId], references: [id])
+  leaveType     LeaveType  @relation(fields: [leaveTypeId], references: [id])
+  sourcePunch   Punch?     @relation("SourcePunchLeaveRequest", fields: [sourcePunchId], references: [id])
   ledgerEntries LeaveAccrualLedger[]
   segments      WorkSegment[]
 

@@ -37,6 +37,23 @@ export const recalculateSegments = withRBAC(
   }
 );
 
+// ─── recalculateSegmentsAdmin ─────────────────────────────────────────────────
+
+export const recalculateSegmentsAdmin = withRBAC(
+  "PAY_PERIOD_MANAGE",
+  async (_ctx, input: TimesheetIdInput): Promise<void> => {
+    const { timesheetId } = timesheetIdSchema.parse(input);
+
+    const timesheet = await db.timesheet.findUniqueOrThrow({
+      where: { id: timesheetId },
+      include: { employee: { include: { ruleSet: true } } },
+    });
+
+    await rebuildSegments(timesheet.id, timesheet.employee.ruleSet);
+    revalidatePath("/payroll/timecards");
+  }
+);
+
 // ─── submitTimesheet ──────────────────────────────────────────────────────────
 
 export const submitTimesheet = withRBAC(
@@ -265,5 +282,34 @@ export const toggleMealWaiver = withRBAC(
     revalidatePath("/payroll/timecards");
 
     return { success: true, waived: !existing };
+  }
+);
+
+// ─── authorizeTimecardOt ──────────────────────────────────────────────────────
+
+export const authorizeTimecardOt = withRBAC(
+  "TIMESHEET_APPROVE_TEAM",
+  async ({ employeeId: actorId, tenantId }, input: TimesheetIdInput): Promise<{ success: boolean }> => {
+    const { timesheetId } = timesheetIdSchema.parse(input);
+
+    await db.$transaction(async (tx) => {
+      await tx.timesheet.update({
+        where: { id: timesheetId },
+        data: { otAuthorized: true },
+      });
+      await writeAuditLog({
+        tenantId,
+        actorId,
+        action: "OT_AUTHORIZED",
+        entityType: "TIMESHEET",
+        entityId: timesheetId,
+        changes: { before: { otAuthorized: false }, after: { otAuthorized: true } },
+      });
+    });
+
+    revalidatePath("/supervisor/timesheets");
+    revalidatePath("/payroll/timecards");
+
+    return { success: true };
   }
 );

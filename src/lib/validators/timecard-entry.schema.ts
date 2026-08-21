@@ -7,6 +7,7 @@ export const manualPunchPairSchema = z.object({
   outTime: z.string().datetime({ offset: true }),
   reason: z.string().min(1, "Reason is required").max(500),
   payBucketOverride: z.string().optional(),
+  payCodeId: z.string().optional(),
 });
 
 export type ManualPunchPairInput = z.infer<typeof manualPunchPairSchema>;

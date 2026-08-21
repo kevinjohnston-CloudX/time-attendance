@@ -1,6 +1,7 @@
 model PayPeriod {
   id        String          @id @default(cuid())
   tenantId  String
+  ruleSetId String?         // null = tenant-level (legacy/fallback); non-null = rule-set-specific schedule
   startDate DateTime
   endDate   DateTime
   status    PayPeriodStatus @default(OPEN)
@@ -8,10 +9,13 @@ model PayPeriod {
   updatedAt DateTime        @updatedAt
 
   tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  ruleSet    RuleSet?    @relation(fields: [ruleSetId], references: [id])
   timesheets Timesheet[]
   payrollRun PayrollRun?
 
-  @@unique([tenantId, startDate, endDate])
+  // Uniqueness enforced at application level; indexes for query performance
+  @@index([tenantId, startDate, endDate])
+  @@index([ruleSetId, startDate, endDate])
   @@map("pay_periods")
 }
 
@@ -29,6 +33,7 @@ model Timesheet {
   rejectedAt   DateTime?
   rejectedById String?
   rejectionNote String?
+  otAuthorized Boolean @default(false) // true once a supervisor authorizes the OT hours
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
@@ -63,6 +68,7 @@ model Punch {
   approvedById String?
   approvedAt   DateTime?
   note         String?
+  payCodeId    String?
 
   /// ID of the punch this record corrects (null if original)
   correctsId    String? @unique
@@ -75,6 +81,8 @@ model Punch {
   timesheet   Timesheet?  @relation(fields: [timesheetId], references: [id])
   corrects    Punch?      @relation("PunchCorrection", fields: [correctsId], references: [id])
   correctedBy Punch?      @relation("PunchCorrection")
+  payCode     PayCode?    @relation("PunchPayCode", fields: [payCodeId], references: [id])
+  sourcedLeaveRequest LeaveRequest? @relation("SourcePunchLeaveRequest")
 
   @@map("punches")
 }

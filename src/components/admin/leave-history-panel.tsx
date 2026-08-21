@@ -6,7 +6,7 @@ import { Calendar, ChevronLeft, ChevronRight, ChevronDown, FileDown } from "luci
 export type LeaveLogEntry = {
   id: string;
   timestamp: string;
-  eventType: "accrual" | "accrual_reset" | "leave_request" | "balance_adjustment" | "eod_balance" | "policy_change";
+  eventType: "accrual" | "accrual_reset" | "leave_request" | "balance_adjustment" | "eod_balance" | "policy_change" | "timecard_entry";
   leaveTypeName: string;
   deltaMinutes: number;
   balanceAfterMinutes: number;
@@ -66,6 +66,10 @@ const TYPE_CONFIG = {
     label: "Policy Change",
     badge: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
   },
+  timecard_entry: {
+    label: "Time Card Entry",
+    badge: "bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
+  },
 };
 
 const selectCls =
@@ -120,6 +124,7 @@ export function LeaveHistoryPanel({ entries, defaultLeaveTypeNames = [] }: { ent
     { value: "balance_adjustment", label: "Balance Adjustment" },
     { value: "eod_balance",        label: "EOD Balance" },
     { value: "policy_change",      label: "Policy Change" },
+    { value: "timecard_entry",     label: "Time Card Entry" },
   ];
 
   function toggleType(value: string) {

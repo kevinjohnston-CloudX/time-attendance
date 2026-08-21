@@ -117,6 +117,33 @@ function postingTriggered(
   }
 }
 
+/**
+ * Returns the approximate cycle length in days for a posting frequency.
+ * Used to interpolate daily earned amounts between actual postings.
+ * Returns 0 for PER_PAY_PERIOD (variable interval — no interpolation possible).
+ */
+function freqIntervalDays(freq: AccrualPostingFreq, lastPostingDate: Date): number {
+  switch (freq) {
+    case "DAILY":          return 1;
+    case "WEEKLY":         return 7;
+    case "BI_WEEKLY":      return 14;
+    case "SEMI_MONTHLY":   return 15;
+    case "MONTHLY": {
+      // Actual days in the month of the last posting so the fraction is precise
+      const d = lastPostingDate;
+      return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+    }
+    case "EVERY_2_MONTHS": return 61;
+    case "QUARTERLY":      return 91;
+    case "EVERY_4_MONTHS": return 122;
+    case "SEMI_ANNUALLY":  return 183;
+    case "ANNUALLY":
+    case "ANNUALLY_HIRE":
+    case "ANNUALLY_FIXED": return 365;
+    default:               return 0;
+  }
+}
+
 /** Compute per-posting rate in minutes.
  *  PER_POSTING mode: effectiveHours IS the per-posting amount — no division needed.
  *  YEARLY mode: divide annual total by the appropriate number of postings.
@@ -961,42 +988,6 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
       accrualSumMap.set(key, (accrualSumMap.get(key) ?? 0) + actualDelta);
       posted++;
     }
-  }
-
-  // ── EOD balance snapshot ──────────────────────────────────────────────────
-  // Write one EOD_SNAPSHOT entry per employee × leave type that has a balance
-  // record this year. Deduped: skipped if one already exists for today's date.
-  const existingSnapshots = await db.leaveAccrualLedger.findMany({
-    where: {
-      action: "EOD_SNAPSHOT",
-      payPeriodEnd: postingDate,
-      employeeId: { in: employeeIds },
-    },
-    select: { employeeId: true, leaveTypeId: true },
-  });
-  const alreadySnapshotted = new Set(
-    existingSnapshots.map((s) => `${s.employeeId}:${s.leaveTypeId}`)
-  );
-
-  const allBalances = await db.leaveBalance.findMany({
-    where: { accrualYear, employeeId: { in: employeeIds } },
-    select: { employeeId: true, leaveTypeId: true, balanceMinutes: true },
-  });
-
-  const snapshotData = allBalances
-    .filter((b) => !alreadySnapshotted.has(`${b.employeeId}:${b.leaveTypeId}`))
-    .map((b) => ({
-      employeeId: b.employeeId,
-      leaveTypeId: b.leaveTypeId,
-      action: "EOD_SNAPSHOT" as const,
-      deltaMinutes: 0,
-      balanceAfter: b.balanceMinutes,
-      payPeriodEnd: postingDate,
-      note: "Daily Balance Logging",
-    }));
-
-  if (snapshotData.length > 0) {
-    await db.leaveAccrualLedger.createMany({ data: snapshotData });
   }
 
   return { posted };

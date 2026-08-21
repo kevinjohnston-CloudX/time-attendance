@@ -7,7 +7,8 @@ model PayCode {
   label       String /// Human-readable label (e.g. "Regular Hours")
   expressCode String? /// Up to 4-char code for payroll export (e.g. "WKHR", "PTO")
   /// Maps to the PayBucket enum for overtime/payroll classification
-  payBucket PayBucket?
+  payBucket      PayBucket?
+  countsTowardOt Boolean    @default(true)
   isActive  Boolean @default(true)
   sortOrder Int     @default(0)
   createdAt DateTime @default(now())
@@ -17,6 +18,8 @@ model PayCode {
   segments       WorkSegment[]
   ptoPolicyRules PtoPolicyRule[]
   leaveTypes     LeaveType[]
+  punches        Punch[]         @relation("PunchPayCode")
+  ruleSets       RuleSet[]
 
   @@unique([tenantId, code])
   @@unique([tenantId, expressCode])

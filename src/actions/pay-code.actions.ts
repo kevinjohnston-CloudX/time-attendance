@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
+import { reconcileLeaveDeductions, reconcileSalarySegmentDeduction } from "@/lib/engines/leave-deduction";
 import { z } from "zod";
 
 // ─── List pay codes for tenant ──────────────────────────────────────────────
@@ -41,13 +42,14 @@ const createPayCodeSchema = z.object({
   label: z.string().min(1).max(100),
   expressCode: z.string().max(4).nullable().optional(),
   payBucket: z.string().nullable().optional(),
+  countsTowardOt: z.boolean().optional().default(true),
   sortOrder: z.number().int().min(0).optional(),
 });
 
 export const createPayCode = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (ctx, input: unknown) => {
-    const { code, label, expressCode, payBucket, sortOrder } = createPayCodeSchema.parse(input);
+    const { code, label, expressCode, payBucket, countsTowardOt, sortOrder } = createPayCodeSchema.parse(input);
     const tenantId = ctx.tenantId!;
 
     const existing = await db.payCode.findUnique({
@@ -74,6 +76,7 @@ export const createPayCode = withRBAC(
         expressCode: expressCode?.trim().toUpperCase() || null,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         payBucket: payBucket ? (payBucket as any) : null,
+        countsTowardOt,
         sortOrder: nextOrder,
         isActive: true,
       },
@@ -104,6 +107,7 @@ const updatePayCodeSchema = z.object({
   label: z.string().min(1).max(100),
   expressCode: z.string().max(4).nullable().optional(),
   payBucket: z.string().nullable().optional(),
+  countsTowardOt: z.boolean().optional().default(true),
   sortOrder: z.number().int().min(0),
   isActive: z.boolean(),
 });
@@ -111,7 +115,7 @@ const updatePayCodeSchema = z.object({
 export const updatePayCode = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (ctx, input: unknown) => {
-    const { payCodeId, code, label, expressCode, payBucket, sortOrder, isActive } =
+    const { payCodeId, code, label, expressCode, payBucket, countsTowardOt, sortOrder, isActive } =
       updatePayCodeSchema.parse(input);
     const tenantId = ctx.tenantId!;
 
@@ -130,6 +134,7 @@ export const updatePayCode = withRBAC(
         expressCode: expressCode?.trim().toUpperCase() || null,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         payBucket: payBucket ? (payBucket as any) : null,
+        countsTowardOt,
         sortOrder,
         isActive,
       },
@@ -182,13 +187,53 @@ const setSegmentPayCodeSchema = z.object({
 
 export const setSegmentPayCode = withRBAC(
   "PAY_PERIOD_MANAGE",
-  async (_ctx, input: z.infer<typeof setSegmentPayCodeSchema>) => {
+  async (ctx, input: z.infer<typeof setSegmentPayCodeSchema>) => {
     const { segmentId, payCodeId } = setSegmentPayCodeSchema.parse(input);
 
-    await db.workSegment.update({
+    // Update the segment immediately so the UI reflects the change
+    const segment = await db.workSegment.update({
       where: { id: segmentId },
       data: { payCodeId },
+      select: { timesheetId: true, startTime: true },
     });
+
+    // Write the pay code back to the originating CLOCK_IN punch so it survives
+    // future rebuildSegments calls.
+    const clockIn = await db.punch.findFirst({
+      where: {
+        timesheetId: segment.timesheetId,
+        punchType: "CLOCK_IN",
+        isApproved: true,
+        correctedById: null,
+        roundedTime: { lte: segment.startTime },
+      },
+      orderBy: { roundedTime: "desc" },
+      select: { id: true },
+    });
+    if (clockIn) {
+      await db.punch.update({
+        where: { id: clockIn.id },
+        data: { payCodeId: payCodeId ?? null },
+      });
+    }
+
+    // Reconcile leave balance if a leave-type pay code was assigned or cleared.
+    // If the segment has an originating CLOCK_IN punch, use the punch-based engine.
+    // Otherwise (salary employees with no punches) use the direct segment path.
+    const tenantId = ctx.tenantId;
+    if (tenantId) {
+      const timesheet = await db.timesheet.findUnique({
+        where: { id: segment.timesheetId },
+        select: { employeeId: true },
+      });
+      if (timesheet) {
+        if (clockIn) {
+          await reconcileLeaveDeductions(segment.timesheetId, timesheet.employeeId, tenantId, ctx.employeeId);
+        } else {
+          await reconcileSalarySegmentDeduction(segmentId, payCodeId, timesheet.employeeId, tenantId, ctx.employeeId);
+        }
+      }
+    }
 
     return { success: true };
   }
@@ -297,6 +342,22 @@ export const setAbsentDayPayCode = withRBAC(
           await db.workSegment.delete({ where: { id: existing.id } });
         }
       }
+      // Clear the pay code from any lone CLOCK_IN on this day (no WORK segments yet)
+      const clearDayEnd = new Date(date.getTime() + 24 * 60 * 60 * 1000);
+      const loneClockIn = await db.punch.findFirst({
+        where: {
+          timesheetId,
+          punchType: "CLOCK_IN",
+          isApproved: true,
+          correctedById: null,
+          roundedTime: { gte: date, lt: clearDayEnd },
+          payCodeId: { not: null },
+        },
+        select: { id: true },
+      });
+      if (loneClockIn) {
+        await db.punch.update({ where: { id: loneClockIn.id }, data: { payCodeId: null } });
+      }
       return { success: true };
     }
 
@@ -315,6 +376,26 @@ export const setAbsentDayPayCode = withRBAC(
           payBucket: "REG",
           payCodeId,
         },
+      });
+    }
+
+    // Also propagate to any existing CLOCK_IN on this day that hasn't been paired yet
+    // (handles the case where In time was entered before the pay code was set)
+    const dayEnd = new Date(date.getTime() + 24 * 60 * 60 * 1000);
+    const clockIn = await db.punch.findFirst({
+      where: {
+        timesheetId,
+        punchType: "CLOCK_IN",
+        isApproved: true,
+        correctedById: null,
+        roundedTime: { gte: date, lt: dayEnd },
+      },
+      select: { id: true },
+    });
+    if (clockIn) {
+      await db.punch.update({
+        where: { id: clockIn.id },
+        data: { payCodeId },
       });
     }
 

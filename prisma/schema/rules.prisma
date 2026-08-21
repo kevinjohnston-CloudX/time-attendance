@@ -1,3 +1,9 @@
+enum OtCycle {
+  WEEKLY
+  BIWEEKLY
+  CUSTOM
+}
+
 enum HolidayCreditMethod {
   FIXED_HOURS
   ACTUAL_WORKED
@@ -88,11 +94,29 @@ model RuleSet {
   tenantId String
   name     String
 
+  // Overtime rate multipliers (used at payroll export; 150 = 1.5×, 200 = 2.0×)
+  otRateMultiplier         Int     @default(150)   // OT-1 rate × 100
+  dtRateMultiplier         Int     @default(200)   // OT-2 (DT) rate × 100
+
+  // Overtime authorization
+  overtimeRequiresAuth     Boolean @default(false) // OT must be authorized before payroll
+  allowTimesheetOtAuth     Boolean @default(true)  // supervisors can authorize at timecard level
+  otGraceBeforeShiftMinutes Int    @default(0)     // OT within this window before shift start → REG
+  otGraceAfterShiftMinutes  Int    @default(0)     // OT within this window after shift end → REG
+
   // Overtime thresholds
-  dailyOtMinutes      Int @default(480)  // 8 hours
-  dailyDtMinutes      Int @default(720)  // 12 hours
-  weeklyOtMinutes     Int @default(2400) // 40 hours
-  consecutiveDayOtDay Int @default(7)    // 7th consecutive day triggers OT
+  dailyOtMinutes           Int     @default(480)   // 8 hours; ≥1440 = disabled
+  dailyDtMinutes           Int     @default(720)   // 12 hours cumulative; ≥1440 = disabled
+  dailyDtMaxMinutes        Int     @default(0)     // 0 = no cap on daily DT
+  weeklyOtEnabled          Boolean @default(true)
+  weeklyOtMinutes          Int     @default(2400)  // 40 hours per OT cycle window
+  weeklyDtMinutes          Int     @default(86400) // ≥86400 = disabled
+  weeklyDtMaxMinutes       Int     @default(0)     // 0 = no cap on weekly DT
+  consecutiveDayOtEnabled      Boolean @default(false)
+  consecutiveDayOtDay          Int     @default(7)
+  consecutiveDayPayCycleOnly   Boolean @default(true)   // true = all 7 days must be in one pay cycle
+  consecutiveDayOtMaxMinutes   Int     @default(0)      // 0 = no cap on consecutive day OT
+  consecutiveDayDtMaxMinutes   Int     @default(0)      // 0 = no cap on consecutive day DT
 
   // Punch rounding (minutes, 0 = no rounding)
   punchRoundingMinutes Int @default(0)
@@ -109,13 +133,30 @@ model RuleSet {
   // Exception thresholds
   longShiftMinutes        Int @default(720) // flag if shift > 12h
 
+  // Pay period configuration (optional — falls back to tenant settings when null)
+  payFrequency        PayFrequency? // null = use tenant-level setting
+  payPeriodAnchorDate DateTime?     // null = use tenant-level setting
+
+  // Workweek definition (0=Sun, 1=Mon … 6=Sat) — controls weekly OT boundary
+  weekStartDay        Int           @default(1)
+
+  // Overtime accumulation cycle (defaults to WEEKLY when null)
+  otCycle             OtCycle?
+  otCycleDays         Int?          // used when otCycle = CUSTOM
+  otCycleAnchorDate   DateTime?     // reference date for BIWEEKLY / CUSTOM window alignment
+
+  // Default pay code applied to new timecard rows and salary daily credits
+  defaultPayCodeId    String?
+
   isDefault Boolean  @default(false)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant    Tenant    @relation(fields: [tenantId], references: [id])
-  employees Employee[]
+  tenant         Tenant      @relation(fields: [tenantId], references: [id])
+  employees      Employee[]
+  payPeriods     PayPeriod[]
+  defaultPayCode PayCode?    @relation(fields: [defaultPayCodeId], references: [id])
 
   @@unique([tenantId, name])
   @@map("rule_sets")

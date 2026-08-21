@@ -15,21 +15,81 @@ interface ReclassifiedSegment {
   isSplit: boolean;
 }
 
+// ─── OT window key ───────────────────────────────────────────────────────────
+
+/**
+ * Returns a string key identifying which OT accumulation window a date falls in.
+ * WEEKLY: standard calendar week anchored to ruleSet.weekStartDay.
+ * BIWEEKLY / CUSTOM: fixed-length windows tiled forward from otCycleAnchorDate.
+ */
+function getOtWindowKey(date: Date | string, ruleSet: RuleSet): string {
+  const d = typeof date === "string" ? new Date(date + "T12:00:00Z") : date;
+  const cycle = ruleSet.otCycle ?? "WEEKLY";
+
+  if (cycle === "WEEKLY" || !ruleSet.otCycleAnchorDate) {
+    return format(
+      startOfWeek(d, { weekStartsOn: ruleSet.weekStartDay as 0 | 1 | 2 | 3 | 4 | 5 | 6 }),
+      "yyyy-MM-dd"
+    );
+  }
+
+  const cycleDays = cycle === "BIWEEKLY" ? 14 : (ruleSet.otCycleDays ?? 14);
+  const anchorMs = new Date(ruleSet.otCycleAnchorDate).setHours(12, 0, 0, 0);
+  const daysSinceAnchor = Math.round((d.getTime() - anchorMs) / 86_400_000);
+  return `ot-window-${Math.floor(daysSinceAnchor / cycleDays)}`;
+}
+
+// ─── Pay period key ───────────────────────────────────────────────────────────
+
+/**
+ * Returns a string key identifying which pay period a date falls in,
+ * using the rule set's payFrequency and payPeriodAnchorDate.
+ * Used to enforce consecutiveDayPayCycleOnly boundaries.
+ */
+function getPayPeriodKey(date: Date | string, ruleSet: RuleSet): string {
+  const d = typeof date === "string" ? new Date(date + "T12:00:00Z") : date;
+  const freq = ruleSet.payFrequency ?? "BIWEEKLY";
+
+  if (freq === "WEEKLY") {
+    return format(
+      startOfWeek(d, { weekStartsOn: ruleSet.weekStartDay as 0 | 1 | 2 | 3 | 4 | 5 | 6 }),
+      "yyyy-MM-dd"
+    );
+  }
+
+  if (freq === "BIWEEKLY" && ruleSet.payPeriodAnchorDate) {
+    const anchorMs = new Date(ruleSet.payPeriodAnchorDate).setHours(12, 0, 0, 0);
+    const daysSinceAnchor = Math.round((d.getTime() - anchorMs) / 86_400_000);
+    return `pp-biweekly-${Math.floor(daysSinceAnchor / 14)}`;
+  }
+
+  if (freq === "SEMIMONTHLY") {
+    const year = d.getUTCFullYear();
+    const month = d.getUTCMonth();
+    const half = d.getUTCDate() < 16 ? "A" : "B";
+    return `pp-semi-${year}-${month}-${half}`;
+  }
+
+  // MONTHLY (or BIWEEKLY with no anchor — fall back to month)
+  return `pp-monthly-${d.getUTCFullYear()}-${d.getUTCMonth()}`;
+}
+
 // ─── Pure calculation ─────────────────────────────────────────────────────────
 
 /**
  * Find dates that are the Nth+ consecutive working day (where N = threshold).
- * The streak resets at workweek boundaries so that Mon of a new week is
- * always day 1, even if the employee worked Sun through the prior week.
+ * The streak resets at workweek boundaries. When consecutiveDayPayCycleOnly is
+ * true it also resets at pay period boundaries so all N days stay in one cycle.
  * Returns a Set of "yyyy-MM-dd" strings.
  */
 function findConsecutiveOtDates(
   workDates: string[],
-  threshold: number,
-  weekStartsOn: 0 | 1 | 2 | 3 | 4 | 5 | 6 = 1
+  ruleSet: RuleSet
 ): Set<string> {
+  const threshold = ruleSet.consecutiveDayOtDay;
   if (threshold <= 0) return new Set();
 
+  const weekStartsOn = ruleSet.weekStartDay as 0 | 1 | 2 | 3 | 4 | 5 | 6;
   const sorted = [...new Set(workDates)].sort();
   const otDates = new Set<string>();
   let streak = 1;
@@ -38,14 +98,17 @@ function findConsecutiveOtDates(
     // Use noon UTC to avoid DST edge cases when computing day gaps.
     const prev = new Date(sorted[i - 1] + "T12:00:00Z");
     const curr = new Date(sorted[i] + "T12:00:00Z");
-    const dayGap =
-      (curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24);
+    const dayGap = (curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24);
 
     const crossesWeekBoundary =
       startOfWeek(prev, { weekStartsOn }).getTime() !==
       startOfWeek(curr, { weekStartsOn }).getTime();
 
-    if (dayGap === 1 && !crossesWeekBoundary) {
+    const crossesPayPeriodBoundary =
+      ruleSet.consecutiveDayPayCycleOnly &&
+      getPayPeriodKey(prev, ruleSet) !== getPayPeriodKey(curr, ruleSet);
+
+    if (dayGap === 1 && !crossesWeekBoundary && !crossesPayPeriodBoundary) {
       streak++;
     } else {
       streak = 1;
@@ -76,17 +139,19 @@ function calcDayBuckets(
   ruleSet: RuleSet,
   isConsecutiveOtDay: boolean
 ): { regMinutes: number; otMinutes: number; dtMinutes: number } {
-  const { dailyOtMinutes, dailyDtMinutes } = ruleSet;
+  const { dailyOtMinutes, dailyDtMinutes, dailyDtMaxMinutes } = ruleSet;
+  const capDt = (raw: number) =>
+    dailyDtMaxMinutes > 0 ? Math.min(raw, dailyDtMaxMinutes) : raw;
 
   if (isConsecutiveOtDay) {
-    // On the Nth consecutive day: no REG, OT up to dailyOtMinutes, DT above.
-    const dtMinutes = Math.max(0, workMinutes - dailyOtMinutes);
-    const otMinutes = workMinutes - dtMinutes;
+    let dtMinutes = capDt(Math.max(0, workMinutes - dailyOtMinutes));
+    if (ruleSet.consecutiveDayDtMaxMinutes > 0) dtMinutes = Math.min(dtMinutes, ruleSet.consecutiveDayDtMaxMinutes);
+    let otMinutes = workMinutes - dtMinutes;
+    if (ruleSet.consecutiveDayOtMaxMinutes > 0) otMinutes = Math.min(otMinutes, ruleSet.consecutiveDayOtMaxMinutes);
     return { regMinutes: 0, otMinutes, dtMinutes };
   }
 
-  // Normal day: REG up to dailyOtMinutes, OT up to dailyDtMinutes, DT above.
-  const dtMinutes = Math.max(0, workMinutes - dailyDtMinutes);
+  const dtMinutes = capDt(Math.max(0, workMinutes - dailyDtMinutes));
   const belowDt = workMinutes - dtMinutes;
   const otMinutes = Math.max(0, belowDt - dailyOtMinutes);
   const regMinutes = belowDt - otMinutes;
@@ -110,11 +175,9 @@ export function computeOvertime(
   }
 
   const workDates = [...minutesByDate.keys()];
-  const consecutiveOtDates = findConsecutiveOtDates(
-    workDates,
-    ruleSet.consecutiveDayOtDay,
-    1  // Monday week start, consistent with weekly OT grouping
-  );
+  const consecutiveOtDates = ruleSet.consecutiveDayOtEnabled
+    ? findConsecutiveOtDates(workDates, ruleSet)
+    : new Set<string>();
 
   // Per-day breakdown
   const days: DayBreakdown[] = workDates.sort().map((date) => {
@@ -133,30 +196,55 @@ export function computeOvertime(
   const totalOtFromDaily = days.reduce((a, d) => a + d.otMinutes, 0);
   const totalRegFromDaily = days.reduce((a, d) => a + d.regMinutes, 0);
 
-  // Weekly OT: per calendar week (Mon–Sun), REG beyond the threshold → OT
-  const weeksByKey = new Map<string, DayBreakdown[]>();
+  // OT cycle grouping
+  const windowsByKey = new Map<string, DayBreakdown[]>();
   for (const day of days) {
-    const weekKey = format(
-      startOfWeek(new Date(day.date), { weekStartsOn: 1 }),
-      "yyyy-MM-dd"
-    );
-    const week = weeksByKey.get(weekKey) ?? [];
-    week.push(day);
-    weeksByKey.set(weekKey, week);
+    const key = getOtWindowKey(day.date, ruleSet);
+    const w = windowsByKey.get(key) ?? [];
+    w.push(day);
+    windowsByKey.set(key, w);
   }
 
+  // Weekly OT: REG above weeklyOtMinutes per window → OT
   let weeklyOtConverted = 0;
-  for (const weekDays of weeksByKey.values()) {
-    const weekReg = weekDays.reduce((a, d) => a + d.regMinutes, 0);
-    weeklyOtConverted += Math.max(0, weekReg - ruleSet.weeklyOtMinutes);
+  if (ruleSet.weeklyOtEnabled) {
+    for (const windowDays of windowsByKey.values()) {
+      const windowReg = windowDays.reduce((a, d) => a + d.regMinutes, 0);
+      weeklyOtConverted += Math.max(0, windowReg - ruleSet.weeklyOtMinutes);
+    }
+  }
+
+  // Weekly DT: total work above weeklyDtMinutes per window → DT (minus already-daily-DT)
+  let weeklyDtConverted = 0;
+  if (ruleSet.weeklyDtMinutes < 86400) {
+    for (const windowDays of windowsByKey.values()) {
+      const windowTotal = windowDays.reduce((a, d) => a + d.workMinutes, 0);
+      const windowDailyDt = windowDays.reduce((a, d) => a + d.dtMinutes, 0);
+      const raw = Math.max(0, Math.max(0, windowTotal - ruleSet.weeklyDtMinutes) - windowDailyDt);
+      weeklyDtConverted += ruleSet.weeklyDtMaxMinutes > 0 ? Math.min(raw, ruleSet.weeklyDtMaxMinutes) : raw;
+    }
+  }
+
+  // Grace period: reclassify small daily OT amounts back to REG when total
+  // daily OT is within the combined grace window (before + after shift).
+  // Full shift-aware logic deferred until shift scheduling is built — see memory note.
+  const graceMinutes = (ruleSet.otGraceBeforeShiftMinutes ?? 0) + (ruleSet.otGraceAfterShiftMinutes ?? 0);
+  if (graceMinutes > 0) {
+    for (const day of days) {
+      if (day.otMinutes > 0 && day.otMinutes <= graceMinutes) {
+        day.regMinutes += day.otMinutes;
+        day.otMinutes = 0;
+      }
+    }
   }
 
   return {
     days,
     totalReg: totalRegFromDaily - weeklyOtConverted,
-    totalOt: totalOtFromDaily + weeklyOtConverted,
-    totalDt: totalDtFromDaily,
+    totalOt: totalOtFromDaily + weeklyOtConverted - weeklyDtConverted,
+    totalDt: totalDtFromDaily + weeklyDtConverted,
     weeklyOtConverted,
+    weeklyDtConverted,
   };
 }
 
@@ -245,10 +333,7 @@ function reclassifySegments(
     // Group output indices by calendar week
     const weekGroups = new Map<string, number[]>();
     for (let i = 0; i < output.length; i++) {
-      const weekKey = format(
-        startOfWeek(output[i].segmentDate, { weekStartsOn: 1 }),
-        "yyyy-MM-dd"
-      );
+      const weekKey = getOtWindowKey(output[i].segmentDate, ruleSet);
       const indices = weekGroups.get(weekKey) ?? [];
       indices.push(i);
       weekGroups.set(weekKey, indices);
@@ -257,10 +342,7 @@ function reclassifySegments(
     // Also group DayBreakdowns by week to get per-week REG totals
     const weekRegTotals = new Map<string, number>();
     for (const day of result.days) {
-      const weekKey = format(
-        startOfWeek(new Date(day.date), { weekStartsOn: 1 }),
-        "yyyy-MM-dd"
-      );
+      const weekKey = getOtWindowKey(day.date, ruleSet);
       weekRegTotals.set(
         weekKey,
         (weekRegTotals.get(weekKey) ?? 0) + day.regMinutes
@@ -309,6 +391,50 @@ function reclassifySegments(
     }
   }
 
+  // Phase 3: Weekly DT — convert trailing OT segments to DT per window
+  if (result.weeklyDtConverted > 0) {
+    const windowGroups = new Map<string, number[]>();
+    for (let i = 0; i < output.length; i++) {
+      const key = getOtWindowKey(output[i].segmentDate, ruleSet);
+      const indices = windowGroups.get(key) ?? [];
+      indices.push(i);
+      windowGroups.set(key, indices);
+    }
+
+    const windowStats = new Map<string, { total: number; dailyDt: number }>();
+    for (const day of result.days) {
+      const key = getOtWindowKey(day.date, ruleSet);
+      const prev = windowStats.get(key) ?? { total: 0, dailyDt: 0 };
+      windowStats.set(key, { total: prev.total + day.workMinutes, dailyDt: prev.dailyDt + day.dtMinutes });
+    }
+
+    for (const [key, indices] of windowGroups.entries()) {
+      const stats = windowStats.get(key);
+      if (!stats) continue;
+      const raw = Math.max(0, Math.max(0, stats.total - ruleSet.weeklyDtMinutes) - stats.dailyDt);
+      let remaining = ruleSet.weeklyDtMaxMinutes > 0 ? Math.min(raw, ruleSet.weeklyDtMaxMinutes) : raw;
+      if (remaining <= 0) continue;
+
+      for (let j = indices.length - 1; j >= 0 && remaining > 0; j--) {
+        const i = indices[j];
+        if (output[i].payBucket !== "OT") continue;
+
+        if (output[i].durationMinutes <= remaining) {
+          remaining -= output[i].durationMinutes;
+          output[i].payBucket = "DT";
+        } else {
+          const dtMinutes = remaining;
+          const otMinutes = output[i].durationMinutes - dtMinutes;
+          const splitTime = new Date(output[i].startTime.getTime() + otMinutes * 60_000);
+          const dtPart: ReclassifiedSegment = { ...output[i], startTime: splitTime, durationMinutes: dtMinutes, payBucket: "DT", isSplit: true };
+          output[i] = { ...output[i], endTime: splitTime, durationMinutes: otMinutes, isSplit: true };
+          output.splice(i + 1, 0, dtPart);
+          remaining = 0;
+        }
+      }
+    }
+  }
+
   return output;
 }
 
@@ -318,36 +444,98 @@ function reclassifySegments(
  * Recalculate OvertimeBuckets for a timesheet and reclassify WORK segment
  * payBuckets (splitting at daily OT/DT thresholds and applying weekly OT).
  * Call this after rebuildSegments().
+ *
+ * WORK segments whose originating CLOCK_IN punch carries a pay code with
+ * countsTowardOt = false are excluded from the OT accumulator and remain REG.
+ * Their minutes are added back into the REG bucket total so aggregate hours balance.
  */
 export async function applyOvertime(
   timesheetId: string,
   ruleSet: RuleSet
 ): Promise<OvertimeResult> {
-  const segments = await db.workSegment.findMany({
-    where: { timesheetId },
-  });
+  const [segments, punchesWithCode] = await Promise.all([
+    db.workSegment.findMany({ where: { timesheetId } }),
+    db.punch.findMany({
+      where: { timesheetId, isApproved: true, correctedById: null, payCodeId: { not: null } },
+      orderBy: { roundedTime: "asc" },
+      select: { punchType: true, roundedTime: true, payCodeId: true },
+    }),
+  ]);
 
-  const result = computeOvertime(segments, ruleSet);
-  const reclassified = reclassifySegments(segments, result, ruleSet);
+  // Build exempt time ranges from punches whose pay code excludes OT counting
+  const exemptRanges: Array<{ start: Date; end: Date | null }> = [];
+  if (punchesWithCode.length > 0) {
+    const uniqueIds = [...new Set(punchesWithCode.map((p) => p.payCodeId!))];
+    const exemptCodes = await db.payCode.findMany({
+      where: { id: { in: uniqueIds }, countsTowardOt: false },
+      select: { id: true },
+    });
+    const exemptIdSet = new Set(exemptCodes.map((c) => c.id));
+    if (exemptIdSet.size > 0) {
+      for (let i = 0; i < punchesWithCode.length; i++) {
+        const p = punchesWithCode[i];
+        if (p.punchType !== "CLOCK_IN" || !p.payCodeId || !exemptIdSet.has(p.payCodeId)) continue;
+        const clockOut = punchesWithCode.slice(i + 1).find((pp) => pp.punchType === "CLOCK_OUT") ?? null;
+        exemptRanges.push({ start: p.roundedTime, end: clockOut?.roundedTime ?? null });
+      }
+    }
+  }
+
+  // Separate WORK segments that fall inside an exempt punch pair's window
+  const isExemptSeg = exemptRanges.length === 0
+    ? () => false
+    : (seg: WorkSegment) => {
+        for (const range of exemptRanges) {
+          if (seg.startTime >= range.start && (range.end === null || seg.startTime < range.end)) return true;
+        }
+        return false;
+      };
+
+  const workExempt = segments.filter((s) => s.segmentType === "WORK" && isExemptSeg(s));
+  const otEligible = segments.filter((s) => s.segmentType !== "WORK" || !isExemptSeg(s));
+
+  const result = computeOvertime(otEligible, ruleSet);
+  const reclassified = reclassifySegments(otEligible, result, ruleSet);
+
+  // Exempt segments stay as REG — preserve all fields except payBucket
+  const exemptAsReg: ReclassifiedSegment[] = workExempt.map((seg) => ({
+    timesheetId: seg.timesheetId,
+    segmentType: "WORK" as const,
+    startTime: seg.startTime,
+    endTime: seg.endTime,
+    durationMinutes: seg.durationMinutes,
+    segmentDate: seg.segmentDate,
+    isPaid: seg.isPaid,
+    payBucket: "REG" as PayBucket,
+    isSplit: seg.isSplit,
+  }));
+
+  const exemptMinutes = workExempt.reduce((s, seg) => s + seg.durationMinutes, 0);
+  const allReclassified = [...reclassified, ...exemptAsReg];
+
+  // When OT requires authorization and new OT exists, reset otAuthorized to false
+  // so a supervisor must re-approve after any recalculation.
+  const hasOt = result.totalOt > 0 || result.totalDt > 0;
+  const requiresAuth = ruleSet.overtimeRequiresAuth && hasOt;
 
   await db.$transaction([
-    // Delete existing WORK segments (MEAL/BREAK segments are untouched)
     db.workSegment.deleteMany({ where: { timesheetId, segmentType: "WORK" } }),
-    // Recreate with correct payBuckets
-    ...(reclassified.length > 0
-      ? [db.workSegment.createMany({ data: reclassified })]
+    ...(allReclassified.length > 0
+      ? [db.workSegment.createMany({ data: allReclassified })]
       : []),
-    // Upsert aggregate OT buckets (preserve leave-type buckets)
     db.overtimeBucket.deleteMany({
       where: { timesheetId, bucket: { in: ["REG", "OT", "DT"] } },
     }),
     db.overtimeBucket.createMany({
       data: [
-        { timesheetId, bucket: "REG", totalMinutes: result.totalReg },
+        { timesheetId, bucket: "REG", totalMinutes: result.totalReg + exemptMinutes },
         { timesheetId, bucket: "OT", totalMinutes: result.totalOt },
         { timesheetId, bucket: "DT", totalMinutes: result.totalDt },
       ],
     }),
+    ...(requiresAuth
+      ? [db.timesheet.update({ where: { id: timesheetId }, data: { otAuthorized: false } })]
+      : []),
   ]);
 
   return result;

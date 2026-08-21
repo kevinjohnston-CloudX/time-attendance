@@ -51,11 +51,36 @@ export async function saveRejectedPunch(params: {
   });
 }
 
-export async function findOpenPayPeriod(tenantId: string | null) {
+/**
+ * Resolves the open pay period for an employee.
+ * When the employee's rule set has its own pay period schedule, that period is
+ * returned first. If none is found (e.g. the rule set has no schedule configured
+ * yet), falls back to the tenant-level period (ruleSetId = null).
+ */
+export async function findOpenPayPeriod(
+  tenantId: string | null,
+  ruleSetId?: string | null
+) {
   const now = new Date();
+
+  // Try rule-set-specific period first when ruleSetId is provided
+  if (ruleSetId) {
+    const rsPeriod = await db.payPeriod.findFirst({
+      where: {
+        ruleSetId,
+        startDate: { lte: now },
+        endDate: { gte: now },
+        status: "OPEN",
+      },
+    });
+    if (rsPeriod) return rsPeriod;
+  }
+
+  // Fall back to tenant-level period (legacy / no rule-set schedule configured)
   return db.payPeriod.findFirst({
     where: {
       ...(tenantId && { tenantId }),
+      ruleSetId: null,
       startDate: { lte: now },
       endDate: { gte: now },
       status: "OPEN",

@@ -1,6 +1,7 @@
 "use server";
 
 import { parseISO, addMonths, addYears, differenceInMonths } from "date-fns";
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
@@ -454,12 +455,12 @@ export const getEmployeeLeaveLog = withRBAC(
         select: { user: { select: { name: true } } },
       }),
       db.leaveAccrualLedger.findMany({
-        where: { employeeId, action: { in: ["ACCRUAL", "USAGE", "ADJUSTMENT", "EOD_SNAPSHOT", "POLICY_CHANGE"] } },
+        where: { employeeId, action: { in: ["ACCRUAL", "USAGE", "ADJUSTMENT", "TIMECARD_DEDUCTION", "EOD_SNAPSHOT", "POLICY_CHANGE"] } },
         orderBy: { createdAt: "desc" },
         take: 500,
         include: {
           leaveType: { select: { name: true } },
-          leaveRequest: { select: { note: true, startDate: true, endDate: true } },
+          leaveRequest: { select: { note: true, startDate: true, endDate: true, sourcePunchId: true } },
         },
       }),
     ]);
@@ -470,7 +471,7 @@ export const getEmployeeLeaveLog = withRBAC(
     const creatorIds = [
       ...new Set(
         ledgerEntries
-          .filter((e) => (e.action === "ADJUSTMENT" || e.action === "POLICY_CHANGE") && e.createdById)
+          .filter((e) => (e.action === "ADJUSTMENT" || e.action === "POLICY_CHANGE" || e.action === "TIMECARD_DEDUCTION") && e.createdById)
           .map((e) => e.createdById as string)
       ),
     ];
@@ -486,35 +487,43 @@ export const getEmployeeLeaveLog = withRBAC(
     return ledgerEntries.map((entry) => {
       const isAccrualReset = entry.note === "[Accrual Reset]";
 
+      const isTimecardAdjustment = entry.action === "ADJUSTMENT" &&
+        (!!entry.leaveRequest?.sourcePunchId || entry.note === "Timecard entry");
+
       const eventType =
-        entry.action === "EOD_SNAPSHOT"  ? "eod_balance" :
-        entry.action === "POLICY_CHANGE" ? "policy_change" :
-        isAccrualReset                   ? "accrual_reset" :
-        entry.action === "ACCRUAL"       ? "accrual" :
-        entry.action === "USAGE"         ? "leave_request" :
+        entry.action === "EOD_SNAPSHOT"        ? "eod_balance" :
+        entry.action === "POLICY_CHANGE"       ? "policy_change" :
+        isAccrualReset                          ? "accrual_reset" :
+        entry.action === "ACCRUAL"             ? "accrual" :
+        entry.action === "TIMECARD_DEDUCTION"  ? "timecard_entry" :
+        isTimecardAdjustment                   ? "timecard_entry" :
+        entry.action === "USAGE"               ? "leave_request" :
         "balance_adjustment";
 
       const userName =
-        entry.action === "EOD_SNAPSHOT"  ? "System" :
-        entry.action === "POLICY_CHANGE" ? (entry.createdById ? (creatorById.get(entry.createdById) ?? "Unknown") : "System") :
-        isAccrualReset                   ? (entry.createdById ? (creatorById.get(entry.createdById) ?? "System") : "System") :
-        entry.action === "ACCRUAL"       ? "System" :
-        entry.action === "USAGE"         ? (employee.user.name ?? "Employee") :
-        entry.createdById                ? (creatorById.get(entry.createdById) ?? "Unknown") :
+        entry.action === "EOD_SNAPSHOT"        ? "System" :
+        entry.action === "POLICY_CHANGE"       ? (entry.createdById ? (creatorById.get(entry.createdById) ?? "Unknown") : "System") :
+        isAccrualReset                          ? (entry.createdById ? (creatorById.get(entry.createdById) ?? "System") : "System") :
+        entry.action === "ACCRUAL"             ? "System" :
+        entry.action === "TIMECARD_DEDUCTION"  ? (entry.createdById ? (creatorById.get(entry.createdById) ?? "Unknown") : "System") :
+        isTimecardAdjustment                   ? (entry.createdById ? (creatorById.get(entry.createdById) ?? "Unknown") : "System") :
+        entry.action === "USAGE"               ? (employee.user.name ?? "Employee") :
+        entry.createdById                      ? (creatorById.get(entry.createdById) ?? "Unknown") :
         "System";
 
       const note =
-        entry.action === "EOD_SNAPSHOT"  ? "Daily Balance Logging" :
-        entry.action === "POLICY_CHANGE" ? (entry.note ?? null) :
-        isAccrualReset                   ? null :
-        entry.action === "USAGE"         ? (entry.leaveRequest?.note ?? null) :
-        entry.action === "ADJUSTMENT"    ? (entry.note ?? null) :
+        entry.action === "EOD_SNAPSHOT"        ? "Daily Balance Logging" :
+        entry.action === "POLICY_CHANGE"       ? (entry.note ?? null) :
+        isAccrualReset                          ? null :
+        entry.action === "USAGE"               ? (entry.leaveRequest?.note ?? null) :
+        entry.action === "TIMECARD_DEDUCTION"  ? (entry.note ?? null) :
+        entry.action === "ADJUSTMENT"          ? (entry.note ?? null) :
         null;
 
       return {
         id: entry.id,
         timestamp: entry.createdAt.toISOString(),
-        eventType: eventType as "accrual" | "accrual_reset" | "leave_request" | "balance_adjustment" | "eod_balance" | "policy_change",
+        eventType: eventType as "accrual" | "accrual_reset" | "leave_request" | "balance_adjustment" | "eod_balance" | "policy_change" | "timecard_entry",
         leaveTypeName: entry.leaveType.name,
         deltaMinutes: entry.deltaMinutes,
         balanceAfterMinutes: entry.balanceAfter,
@@ -704,8 +713,10 @@ export const createRuleSet = withRBAC(
   "RULES_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: RuleSetInput) => {
     if (!tenantId) throw new Error("Tenant context required");
-    const parsed = ruleSetSchema.parse(input);
-    const rs = await db.ruleSet.create({ data: { ...parsed, tenantId } });
+    const { payPeriodAnchorDate: anchorStr, otCycleAnchorDate: otAnchorStr, ...parsed } = ruleSetSchema.parse(input);
+    const payPeriodAnchorDate = anchorStr ? new Date(anchorStr + "T12:00:00") : null;
+    const otCycleAnchorDate = otAnchorStr ? new Date(otAnchorStr + "T12:00:00") : null;
+    const rs = await db.ruleSet.create({ data: { ...parsed, payPeriodAnchorDate, otCycleAnchorDate, tenantId } });
     await writeAuditLog({
       tenantId,
       actorId,
@@ -722,8 +733,10 @@ export const createRuleSet = withRBAC(
 export const updateRuleSet = withRBAC(
   "RULES_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateRuleSetInput) => {
-    const { ruleSetId, ...rest } = updateRuleSetSchema.parse(input);
-    const updated = await db.ruleSet.update({ where: { id: ruleSetId }, data: rest });
+    const { ruleSetId, payPeriodAnchorDate: anchorStr, otCycleAnchorDate: otAnchorStr, ...rest } = updateRuleSetSchema.parse(input);
+    const payPeriodAnchorDate = anchorStr ? new Date(anchorStr + "T12:00:00") : null;
+    const otCycleAnchorDate = otAnchorStr ? new Date(otAnchorStr + "T12:00:00") : null;
+    const updated = await db.ruleSet.update({ where: { id: ruleSetId }, data: { ...rest, payPeriodAnchorDate, otCycleAnchorDate } });
     await writeAuditLog({
       tenantId,
       actorId,
@@ -1149,14 +1162,25 @@ export const bulkCreateEmployees = withRBAC(
         const codeToEmpId = new Map(existingCodeMap);
 
         for (const r of resolved) {
-          const user = await tx.user.create({
-            data: {
-              name: r.name,
-              ...(r.email && { email: r.email }),
-            },
-          });
+          let user: Awaited<ReturnType<typeof tx.user.create>>;
+          try {
+            user = await tx.user.create({
+              data: {
+                name: r.name,
+                ...(r.email && { email: r.email }),
+              },
+            });
+          } catch (createErr: unknown) {
+            const msg = createErr instanceof Error ? createErr.message : String(createErr);
+            if (msg.includes("Unique constraint") && r.email) {
+              throw new Error(`Email already in use: "${r.email}" (employee ${r.employeeCode} — ${r.name})`);
+            }
+            throw createErr;
+          }
 
-          const emp = await tx.employee.create({
+          let emp: Awaited<ReturnType<typeof tx.employee.create>>;
+          try {
+            emp = await tx.employee.create({
             data: {
               userId: user.id,
               tenantId,
@@ -1174,6 +1198,16 @@ export const bulkCreateEmployees = withRBAC(
               payRate: r.payRate ?? null,
             },
           });
+          } catch (empErr: unknown) {
+            const msg = empErr instanceof Error ? empErr.message : String(empErr);
+            if (msg.includes("Unique constraint") && msg.includes("wmsId")) {
+              throw new Error(`WMS ID already in use: "${r.wmsId}" (employee ${r.employeeCode} — ${r.name})`);
+            }
+            if (msg.includes("Unique constraint") && msg.includes("employeeCode")) {
+              throw new Error(`Employee code already in use: "${r.employeeCode}" (${r.name})`);
+            }
+            throw empErr;
+          }
 
           codeToEmpId.set(r.employeeCode, emp.id);
         }
@@ -1196,7 +1230,7 @@ export const bulkCreateEmployees = withRBAC(
         }
 
         return resolved.length;
-      });
+      }, { timeout: 120000 });
 
       await writeAuditLog({
         tenantId,
@@ -1213,5 +1247,468 @@ export const bulkCreateEmployees = withRBAC(
       const message = err instanceof Error ? err.message : "Unknown error during import";
       return { created: 0, errors: [{ row: 0, message }] };
     }
+  }
+);
+
+// ─── Manual accrual entry (replaces adjust-balance + clear-manual-adj) ────────
+
+export const postManualAccrualEntry = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async ({ employeeId: actorId, tenantId }, input: unknown) => {
+    const { employeeId, leaveTypeId, year, effectiveDate, accrualMinutes, adjustMinutes, note } =
+      z.object({
+        employeeId: z.string(),
+        leaveTypeId: z.string(),
+        year: z.number().int(),
+        effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        accrualMinutes: z.number().int(),
+        adjustMinutes: z.number().int(),
+        note: z.string().min(1),
+      }).parse(input);
+
+    if (accrualMinutes === 0 && adjustMinutes === 0) {
+      return { success: false as const, error: "Enter a non-zero value for Accrual Hours or Adjust Hours." };
+    }
+
+    const existing = await db.leaveBalance.upsert({
+      where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear: year } },
+      update: {},
+      create: { employeeId, leaveTypeId, accrualYear: year, balanceMinutes: 0, usedMinutes: 0 },
+    });
+
+    const effectiveDateObj = new Date(`${effectiveDate}T00:00:00Z`);
+    const newBalance = existing.balanceMinutes + accrualMinutes + adjustMinutes;
+
+    const ledgerEntries: {
+      employeeId: string; leaveTypeId: string; action: "ACCRUAL" | "ADJUSTMENT";
+      deltaMinutes: number; balanceAfter: number; payPeriodEnd: Date; note: string; createdById: string | null;
+    }[] = [];
+    let running = existing.balanceMinutes;
+
+    if (accrualMinutes !== 0) {
+      running += accrualMinutes;
+      ledgerEntries.push({ employeeId, leaveTypeId, action: "ACCRUAL", deltaMinutes: accrualMinutes, balanceAfter: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
+    }
+    if (adjustMinutes !== 0) {
+      running += adjustMinutes;
+      ledgerEntries.push({ employeeId, leaveTypeId, action: "ADJUSTMENT", deltaMinutes: adjustMinutes, balanceAfter: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
+    }
+
+    await db.$transaction([
+      db.leaveBalance.update({ where: { id: existing.id }, data: { balanceMinutes: newBalance } }),
+      db.leaveAccrualLedger.createMany({ data: ledgerEntries }),
+    ]);
+
+    await writeAuditLog({
+      tenantId,
+      actorId,
+      entityType: "EMPLOYEE",
+      entityId: employeeId,
+      action: "LEAVE_BALANCE_ADJUSTED",
+      changes: {
+        before: { balanceMinutes: existing.balanceMinutes },
+        after:  { balanceMinutes: newBalance, note, accrualMinutes, adjustMinutes },
+      },
+    });
+
+    revalidatePath(`/admin/accruals/${employeeId}`);
+    return { success: true as const };
+  }
+);
+
+// ─── Leave ledger drill-down ──────────────────────────────────────────────────
+
+function enumeratePostingDates(
+  postingFreq: string,
+  cycleAnchor: Date,
+  basisDate: Date,
+  fromExclusive: Date,
+  toInclusive: Date,
+): Date[] {
+  const ms = 86400000;
+  const dates: Date[] = [];
+  function push(dt: Date) { if (dt > fromExclusive && dt <= toInclusive) dates.push(dt); }
+
+  switch (postingFreq) {
+    case "DAILY": {
+      let d = new Date(fromExclusive.getTime() + ms);
+      while (d <= toInclusive) { dates.push(new Date(d)); d = new Date(d.getTime() + ms); }
+      break;
+    }
+    case "WEEKLY":
+    case "BI_WEEKLY": {
+      const period = postingFreq === "WEEKLY" ? 7 : 14;
+      const aDay = Math.floor(cycleAnchor.getTime() / ms);
+      const fDay = Math.floor(fromExclusive.getTime() / ms) + 1;
+      const tDay = Math.floor(toInclusive.getTime() / ms);
+      const firstIdx = Math.ceil((fDay - aDay) / period);
+      for (let i = firstIdx; ; i++) { const day = aDay + i * period; if (day > tDay) break; dates.push(new Date(day * ms)); }
+      break;
+    }
+    case "SEMI_MONTHLY": {
+      for (let y = fromExclusive.getUTCFullYear(); y <= toInclusive.getUTCFullYear(); y++)
+        for (let m = 0; m < 12; m++) { push(new Date(Date.UTC(y, m, 1))); push(new Date(Date.UTC(y, m, 15))); }
+      break;
+    }
+    case "MONTHLY": {
+      for (let y = fromExclusive.getUTCFullYear(); y <= toInclusive.getUTCFullYear(); y++)
+        for (let m = 0; m < 12; m++) push(new Date(Date.UTC(y, m, 1)));
+      break;
+    }
+    case "EVERY_2_MONTHS": {
+      for (let y = fromExclusive.getUTCFullYear(); y <= toInclusive.getUTCFullYear(); y++)
+        for (const m of [0,2,4,6,8,10]) push(new Date(Date.UTC(y, m, 1)));
+      break;
+    }
+    case "QUARTERLY": {
+      for (let y = fromExclusive.getUTCFullYear(); y <= toInclusive.getUTCFullYear(); y++)
+        for (const m of [0,3,6,9]) push(new Date(Date.UTC(y, m, 1)));
+      break;
+    }
+    case "EVERY_4_MONTHS": {
+      for (let y = fromExclusive.getUTCFullYear(); y <= toInclusive.getUTCFullYear(); y++)
+        for (const m of [0,4,8]) push(new Date(Date.UTC(y, m, 1)));
+      break;
+    }
+    case "SEMI_ANNUALLY": {
+      for (let y = fromExclusive.getUTCFullYear(); y <= toInclusive.getUTCFullYear(); y++)
+        { push(new Date(Date.UTC(y, 0, 1))); push(new Date(Date.UTC(y, 6, 1))); }
+      break;
+    }
+    case "ANNUALLY": {
+      for (let y = fromExclusive.getUTCFullYear(); y <= toInclusive.getUTCFullYear(); y++)
+        push(new Date(Date.UTC(y, 0, 1)));
+      break;
+    }
+    case "ANNUALLY_HIRE": {
+      for (let y = fromExclusive.getUTCFullYear(); y <= toInclusive.getUTCFullYear(); y++)
+        push(new Date(Date.UTC(y, basisDate.getUTCMonth(), basisDate.getUTCDate())));
+      break;
+    }
+  }
+  return dates;
+}
+
+function yearlyRatePerPosting(annualHours: number, freq: string): number {
+  const m = annualHours * 60;
+  switch (freq) {
+    case "DAILY":          return Math.round(m / 365);
+    case "WEEKLY":         return Math.round(m / 52);
+    case "BI_WEEKLY":      return Math.round(m / 26);
+    case "SEMI_MONTHLY":   return Math.round(m / 24);
+    case "MONTHLY":        return Math.round(m / 12);
+    case "EVERY_2_MONTHS": return Math.round(m / 6);
+    case "QUARTERLY":      return Math.round(m / 4);
+    case "EVERY_4_MONTHS": return Math.round(m / 3);
+    case "SEMI_ANNUALLY":  return Math.round(m / 2);
+    default:               return Math.round(m);
+  }
+}
+
+function ledgerLabel(action: string): string {
+  switch (action) {
+    case "ACCRUAL":            return "Accrual";
+    case "USAGE":              return "Leave Used";
+    case "ADJUSTMENT":         return "Adjustment";
+    case "CARRY_OVER":         return "Carry Over";
+    case "FORFEITURE":         return "Forfeiture";
+    case "BALANCE_RESET":      return "Balance Reset";
+    case "TIMECARD_DEDUCTION": return "Timecard";
+    case "POLICY_CHANGE":      return "Policy Change";
+    default:                   return action;
+  }
+}
+
+export type LedgerDetailEntry = {
+  id: string;
+  date: string;
+  type: string;
+  label: string;
+  deltaMinutes: number;
+  runningBalance: number;
+  isFuture: boolean;
+  note?: string | null;
+  status?: string;
+};
+
+// ─── Past-year accrual summary (per-leave-type totals for a completed year) ──
+
+export type PastYearRow = {
+  leaveTypeId: string;
+  leaveTypeName: string;
+  accrualTracked: boolean;
+  accruedMinutes: number;
+  carryOverMinutes: number;
+  adjustedMinutes: number;
+  usedMinutes: number;
+  finalBalanceMinutes: number;
+};
+
+export const getAccrualYearSummary = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async (_ctx, input: unknown) => {
+    const { employeeId, year } = z
+      .object({ employeeId: z.string(), year: z.number().int() })
+      .parse(input);
+
+    const yearStart = new Date(`${year}-01-01T00:00:00Z`);
+    const yearEnd   = new Date(`${year + 1}-01-01T00:00:00Z`);
+
+    const [leaveTypes, balances, accrualSums, adjustSums, carryOverSums] = await Promise.all([
+      db.leaveType.findMany({
+        where: { isActive: true },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, accrualTracked: true },
+      }),
+      db.leaveBalance.findMany({ where: { employeeId, accrualYear: year } }),
+      db.leaveAccrualLedger.groupBy({
+        by: ["leaveTypeId"],
+        where: { employeeId, action: "ACCRUAL", payPeriodEnd: { gte: yearStart, lt: yearEnd } },
+        _sum: { deltaMinutes: true },
+      }),
+      db.leaveAccrualLedger.groupBy({
+        by: ["leaveTypeId"],
+        where: { employeeId, action: "ADJUSTMENT", createdAt: { gte: yearStart, lt: yearEnd } },
+        _sum: { deltaMinutes: true },
+      }),
+      db.leaveAccrualLedger.groupBy({
+        by: ["leaveTypeId"],
+        where: { employeeId, action: "CARRY_OVER", createdAt: { gte: yearStart, lt: yearEnd } },
+        _sum: { deltaMinutes: true },
+      }),
+    ]);
+
+    const accrualMap   = new Map(accrualSums.map((s) => [s.leaveTypeId, s._sum.deltaMinutes ?? 0]));
+    const adjustMap    = new Map(adjustSums.map((s) => [s.leaveTypeId, s._sum.deltaMinutes ?? 0]));
+    const carryOverMap = new Map(carryOverSums.map((s) => [s.leaveTypeId, s._sum.deltaMinutes ?? 0]));
+
+    const rows: PastYearRow[] = leaveTypes
+      .map((lt) => {
+        const bal       = balances.find((b) => b.leaveTypeId === lt.id);
+        const accrued   = accrualMap.get(lt.id) ?? 0;
+        const adjusted  = adjustMap.get(lt.id) ?? 0;
+        const carryOver = carryOverMap.get(lt.id) ?? 0;
+        if (!bal && accrued === 0 && adjusted === 0 && carryOver === 0) return null;
+        return {
+          leaveTypeId: lt.id,
+          leaveTypeName: lt.name,
+          accrualTracked: lt.accrualTracked,
+          accruedMinutes: accrued,
+          carryOverMinutes: carryOver,
+          adjustedMinutes: adjusted,
+          usedMinutes: bal?.usedMinutes ?? 0,
+          finalBalanceMinutes: bal?.balanceMinutes ?? 0,
+        };
+      })
+      .filter((r): r is PastYearRow => r !== null);
+
+    return rows;
+  }
+);
+
+export const getLeaveTypeLedgerDetail = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async (_ctx, input: { employeeId: string; leaveTypeId: string; year: number }) => {
+    const { employeeId, leaveTypeId, year } = z.object({
+      employeeId: z.string(),
+      leaveTypeId: z.string(),
+      year: z.number().int(),
+    }).parse(input);
+
+    const yearStart = new Date(`${year}-01-01T00:00:00Z`);
+    const yearEnd   = new Date(`${year + 1}-01-01T00:00:00Z`);
+    const today     = new Date();
+    const ms        = 86400000;
+    const todayUtc  = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+
+    const [openingEntry, yearEntries, futureRequests, allYearTimestamps, employee] = await Promise.all([
+      db.leaveAccrualLedger.findFirst({
+        where: { employeeId, leaveTypeId, createdAt: { lt: yearStart }, action: { not: "EOD_SNAPSHOT" } },
+        orderBy: { createdAt: "desc" },
+        select: { balanceAfter: true },
+      }),
+      db.leaveAccrualLedger.findMany({
+        where: { employeeId, leaveTypeId, createdAt: { gte: yearStart, lt: yearEnd }, action: { not: "EOD_SNAPSHOT" } },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, action: true, deltaMinutes: true, balanceAfter: true, createdAt: true, note: true },
+      }),
+      db.leaveRequest.findMany({
+        where: { employeeId, leaveTypeId, status: { in: ["APPROVED", "PENDING"] }, startDate: { gte: yearStart, lt: yearEnd } },
+        orderBy: { startDate: "asc" },
+        select: { id: true, startDate: true, durationMinutes: true, status: true },
+      }),
+      db.leaveAccrualLedger.findMany({
+        where: { employeeId, leaveTypeId, action: { not: "EOD_SNAPSHOT" } },
+        select: { createdAt: true },
+      }),
+      db.employee.findUniqueOrThrow({
+        where: { id: employeeId },
+        select: {
+          hireDate: true,
+          payCategoryId: true,
+          adjustedHireDate: true,
+          orientationDate: true,
+        },
+      }),
+    ]);
+
+    // Distinct available years (always include current year)
+    const yearSet = new Set(allYearTimestamps.map((e) => e.createdAt.getUTCFullYear()));
+    yearSet.add(today.getUTCFullYear());
+    const availableYears = [...yearSet].sort((a, b) => b - a);
+
+    const openingBalance = openingEntry?.balanceAfter ?? 0;
+
+    // Build historical entries
+    const entries: LedgerDetailEntry[] = yearEntries.map((e) => ({
+      id: e.id,
+      date: e.createdAt.toISOString().slice(0, 10),
+      type: e.action,
+      label: ledgerLabel(e.action),
+      deltaMinutes: e.deltaMinutes,
+      runningBalance: e.balanceAfter,
+      isFuture: false,
+      note: e.note,
+    }));
+
+    // Forecast: only for current or future year
+    if (year >= today.getUTCFullYear() && employee.payCategoryId) {
+      const payCategory = await db.payCategory.findUnique({
+        where: { id: employee.payCategoryId },
+        include: {
+          ptoPolicies: {
+            include: {
+              ptoPolicy: {
+                select: {
+                  rateMode: true,
+                  posting1Freq: true,
+                  serviceMonthBasis: true,
+                  postingAnchorDate: true,
+                  forecastEnabled: true,
+                  forecastMode: true,
+                  forecastMonths: true,
+                  rules: {
+                    select: { leaveTypeId: true, minTenureMonths: true, maxTenureMonths: true, annualHours: true, earnedHoursPerYear: true },
+                    orderBy: { minTenureMonths: "asc" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      for (const link of payCategory?.ptoPolicies ?? []) {
+        const policy = link.ptoPolicy;
+        const rules = policy.rules.filter((r) => r.leaveTypeId === leaveTypeId);
+        if (rules.length === 0 || !policy.forecastEnabled) continue;
+
+        const basisDate =
+          policy.serviceMonthBasis === "ADJUSTED_HIRE_DATE" ? (employee.adjustedHireDate ?? employee.hireDate) :
+          policy.serviceMonthBasis === "ORIENTATION_DATE"   ? (employee.orientationDate ?? employee.hireDate) :
+          employee.hireDate;
+        const cycleAnchor = policy.postingAnchorDate ?? basisDate;
+
+        const forecastFrom = todayUtc;
+        const yearEndDate  = new Date(Date.UTC(year, 11, 31));
+        let forecastTo: Date;
+        if (policy.forecastMode === "MONTHS" && policy.forecastMonths != null) {
+          const candidate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + policy.forecastMonths, today.getUTCDate()));
+          forecastTo = candidate < yearEndDate ? candidate : yearEndDate;
+        } else {
+          forecastTo = yearEndDate;
+        }
+
+        if (forecastFrom >= forecastTo) break;
+
+        const postingDates = policy.posting1Freq === "PER_PAY_PERIOD"
+          ? []
+          : enumeratePostingDates(policy.posting1Freq, cycleAnchor, basisDate, forecastFrom, forecastTo);
+
+        const forecastItems: { date: Date; deltaMinutes: number }[] = [];
+        for (const date of postingDates) {
+          const tenureMonths = differenceInMonths(date, basisDate);
+          const tenureYears  = Math.floor(tenureMonths / 12);
+          const tier = rules.find(
+            (t) => t.minTenureMonths <= tenureMonths && (t.maxTenureMonths === null || tenureMonths < t.maxTenureMonths)
+          );
+          if (!tier) continue;
+          const effectiveHours = tier.annualHours + tenureYears * tier.earnedHoursPerYear;
+          if (effectiveHours <= 0) continue;
+          const rate = policy.rateMode === "PER_POSTING"
+            ? Math.round(effectiveHours * 60)
+            : yearlyRatePerPosting(effectiveHours, policy.posting1Freq);
+          forecastItems.push({ date, deltaMinutes: rate });
+        }
+
+        // Merge future requests + forecast accruals chronologically, compute running balance
+        type FutureItem =
+          | { kind: "leave"; date: Date; id: string; durationMinutes: number; status: string }
+          | { kind: "forecast"; date: Date; deltaMinutes: number };
+
+        const futureItems: FutureItem[] = [
+          ...futureRequests.map((r) => ({ kind: "leave" as const, date: r.startDate, id: r.id, durationMinutes: r.durationMinutes, status: r.status })),
+          ...forecastItems.map((f) => ({ kind: "forecast" as const, date: f.date, deltaMinutes: f.deltaMinutes })),
+        ].sort((a, b) => a.date.getTime() - b.date.getTime());
+
+        let runningBal = yearEntries.length > 0
+          ? yearEntries[yearEntries.length - 1].balanceAfter
+          : openingBalance;
+        let fcIdx = 0;
+
+        for (const item of futureItems) {
+          if (item.kind === "leave") {
+            runningBal -= item.durationMinutes;
+            entries.push({
+              id: item.id,
+              date: item.date.toISOString().slice(0, 10),
+              type: "LEAVE_REQUEST",
+              label: item.status === "APPROVED" ? "Approved Leave" : "Pending Leave",
+              deltaMinutes: -item.durationMinutes,
+              runningBalance: runningBal,
+              isFuture: true,
+              status: item.status,
+            });
+          } else {
+            runningBal += item.deltaMinutes;
+            entries.push({
+              id: `fc-${fcIdx++}`,
+              date: item.date.toISOString().slice(0, 10),
+              type: "FORECAST",
+              label: "Forecasted Accrual",
+              deltaMinutes: item.deltaMinutes,
+              runningBalance: runningBal,
+              isFuture: true,
+            });
+          }
+        }
+
+        break; // use first matching policy
+      }
+    } else {
+      // Past year: just add future-approved requests that fall in the year (shouldn't happen but guard)
+      let runningBal = yearEntries.length > 0 ? yearEntries[yearEntries.length - 1].balanceAfter : openingBalance;
+      for (const r of futureRequests) {
+        runningBal -= r.durationMinutes;
+        entries.push({
+          id: r.id,
+          date: r.startDate.toISOString().slice(0, 10),
+          type: "LEAVE_REQUEST",
+          label: r.status === "APPROVED" ? "Approved Leave" : "Pending Leave",
+          deltaMinutes: -r.durationMinutes,
+          runningBalance: runningBal,
+          isFuture: true,
+          status: r.status,
+        });
+      }
+    }
+
+    // Sort by date (historical then future within same day)
+    entries.sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return Number(a.isFuture) - Number(b.isFuture);
+    });
+
+    return { openingBalance, availableYears, entries };
   }
 );

@@ -32,7 +32,7 @@ export const getLeaveTypesForTimecard = withRBAC(
 export const addManualPunchPair = withRBAC(
   "PAY_PERIOD_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: unknown) => {
-    const { timesheetId, inTime, outTime, reason, payBucketOverride } =
+    const { timesheetId, date: entryDate, inTime, outTime, reason, payCodeId } =
       manualPunchPairSchema.parse(input);
 
     const inDate = new Date(inTime);
@@ -73,6 +73,29 @@ export const addManualPunchPair = withRBAC(
       );
     }
 
+    // If the user didn't pick a pay code, check for an existing absent-day marker
+    // (created via the Code dropdown on a day with no punches). Inherit its pay code
+    // so the deduction fires automatically when hours are added to that day.
+    let effectivePayCodeId = payCodeId ?? null;
+    if (!effectivePayCodeId) {
+      const [ny, nm, nd] = entryDate.split("-").map(Number);
+      const dayStart = new Date(Date.UTC(ny, nm - 1, nd));
+      const dayEnd = new Date(Date.UTC(ny, nm - 1, nd + 1));
+      const absentMarker = await db.workSegment.findFirst({
+        where: {
+          timesheetId,
+          segmentType: "LEAVE",
+          durationMinutes: 0,
+          segmentDate: { gte: dayStart, lt: dayEnd },
+          payCodeId: { not: null },
+        },
+        select: { payCodeId: true },
+      });
+      if (absentMarker?.payCodeId) {
+        effectivePayCodeId = absentMarker.payCodeId;
+      }
+    }
+
     await db.$transaction(async (tx) => {
       const punchIn = await tx.punch.create({
         data: {
@@ -88,6 +111,7 @@ export const addManualPunchPair = withRBAC(
           approvedById: actorId,
           approvedAt: new Date(),
           note: reason,
+          payCodeId: effectivePayCodeId,
         },
       });
 
@@ -124,24 +148,6 @@ export const addManualPunchPair = withRBAC(
 
     await rebuildSegments(timesheetId, ruleSet);
 
-    // Apply pay bucket override to every WORK segment produced by this punch pair
-    if (payBucketOverride) {
-      const segs = await db.workSegment.findMany({
-        where: {
-          timesheetId,
-          segmentType: "WORK",
-          startTime: { gte: roundedIn, lt: roundedOut },
-        },
-      });
-      for (const seg of segs) {
-        await db.workSegment.update({
-          where: { id: seg.id },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          data: { payBucketOverride: payBucketOverride as any },
-        });
-      }
-    }
-
     revalidatePath("/payroll/timecards");
   }
 );
@@ -176,6 +182,24 @@ export const addSingleManualPunch = withRBAC(
       throw new Error("A punch already exists at this time.");
     }
 
+    // For CLOCK_IN punches, inherit pay code from an absent-day marker if one exists
+    let inheritedPayCodeId: string | null = null;
+    if (punchType === "CLOCK_IN") {
+      const dayStart = new Date(Date.UTC(punchDate.getUTCFullYear(), punchDate.getUTCMonth(), punchDate.getUTCDate()));
+      const dayEnd = new Date(Date.UTC(punchDate.getUTCFullYear(), punchDate.getUTCMonth(), punchDate.getUTCDate() + 1));
+      const absentMarker = await db.workSegment.findFirst({
+        where: {
+          timesheetId,
+          segmentType: "LEAVE",
+          durationMinutes: 0,
+          segmentDate: { gte: dayStart, lt: dayEnd },
+          payCodeId: { not: null },
+        },
+        select: { payCodeId: true },
+      });
+      if (absentMarker?.payCodeId) inheritedPayCodeId = absentMarker.payCodeId;
+    }
+
     await db.$transaction(async (tx) => {
       const p = await tx.punch.create({
         data: {
@@ -191,6 +215,7 @@ export const addSingleManualPunch = withRBAC(
           approvedById: actorId,
           approvedAt: new Date(),
           note: reason,
+          payCodeId: inheritedPayCodeId,
         },
       });
       await writeAuditLog({
@@ -307,6 +332,76 @@ export const removePayrollLeaveEntry = withRBAC(
   }
 );
 
+// ─── Delete a manually-added punch pair (HR Admin and above only) ─────────────
+
+export const deleteManualPunchPair = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async ({ employeeId: actorId, tenantId }, input: { punchIds: string[] }) => {
+    const { punchIds } = input;
+    if (!punchIds.length) throw new Error("No punch IDs provided.");
+
+    const punches = await db.punch.findMany({
+      where: { id: { in: punchIds } },
+      include: { employee: { include: { ruleSet: true } } },
+    });
+
+    if (!punches.length) throw new Error("Punches not found.");
+    const timesheetId = punches[0].timesheetId!;
+
+    const ts = await db.timesheet.findUniqueOrThrow({ where: { id: timesheetId } });
+    if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
+      throw new Error("Cannot modify a locked or approved timesheet.");
+    }
+
+    for (const punch of punches) {
+      if (punch.source !== "MANUAL") {
+        throw new Error("Only manually added punches can be deleted this way.");
+      }
+      if (punch.correctedById) {
+        throw new Error("Punch has already been corrected or deleted.");
+      }
+    }
+
+    await db.$transaction(async (tx) => {
+      for (const punch of punches) {
+        const tombstone = await tx.punch.create({
+          data: {
+            employeeId: punch.employeeId,
+            timesheetId: punch.timesheetId,
+            punchType: punch.punchType,
+            punchTime: punch.punchTime,
+            roundedTime: punch.roundedTime,
+            source: "MANUAL",
+            stateBefore: punch.stateBefore,
+            stateAfter: punch.stateAfter,
+            isApproved: false,
+            approvedById: actorId,
+            approvedAt: new Date(),
+            note: "VOID: Manual entry deleted",
+            correctsId: punch.id,
+          },
+        });
+        await tx.punch.update({
+          where: { id: punch.id },
+          data: { correctedById: tombstone.id },
+        });
+      }
+
+      await writeAuditLog({
+        tenantId: tenantId!,
+        actorId,
+        action: "MANUAL_PUNCH_DELETED",
+        entityType: "TIMESHEET",
+        entityId: timesheetId,
+        changes: { before: { punchIds } },
+      });
+    });
+
+    await rebuildSegments(timesheetId, punches[0].employee.ruleSet);
+    revalidatePath("/payroll/timecards");
+  }
+);
+
 // ─── Add a permanent timesheet note for a specific date ──────────────────────
 
 const saveTimesheetNoteSchema = z.object({
@@ -329,10 +424,11 @@ export const saveTimesheetNote = withRBAC(
     });
     const createdByName = employee?.user?.name ?? employee?.employeeCode ?? "Unknown";
 
+    const [ny, nm, nd] = noteDate.split("-").map(Number);
     await db.timesheetNote.create({
       data: {
         timesheetId,
-        noteDate: new Date(noteDate + "T00:00:00Z"),
+        noteDate: new Date(ny, nm - 1, nd), // local midnight avoids timezone shift
         note: note.trim(),
         createdById,
         createdByName,

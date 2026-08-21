@@ -4,8 +4,9 @@ import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import {
-  getTimecardEmployeeList,
-  getTimecardDetail,
+  getActiveEmployeesForTimecards,
+  getEmployeePeriods,
+  getTimecardByEmployeeAndPeriod,
 } from "@/actions/timecard.actions";
 import { getPayCodes } from "@/actions/pay-code.actions";
 import { getReasonCodes } from "@/actions/reason-code.actions";
@@ -15,12 +16,12 @@ export default async function TimecardsPage({
   searchParams,
 }: {
   searchParams: Promise<{
-    payPeriodId?: string;
     employeeId?: string;
-    customStart?: string;
-    customEnd?: string;
+    periodId?: string;
     siteId?: string;
     departmentId?: string;
+    customStart?: string;
+    customEnd?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -30,15 +31,13 @@ export default async function TimecardsPage({
 
   const t = session.user.tenantId ?? undefined;
 
-  // Fetch tenant pay frequency + pay periods + sites + departments in parallel
-  const [tenant, payPeriods, sites, departments] = await Promise.all([
-    session.user.tenantId
-      ? db.tenant.findUnique({
-          where: { id: session.user.tenantId },
-          select: { payFrequency: true },
-        })
-      : null,
-    db.payPeriod.findMany({ orderBy: { startDate: "desc" } }),
+  // Load employees + sites + departments in parallel
+  const [employeesResult, sites, departments] = await Promise.all([
+    getActiveEmployeesForTimecards({
+      siteId: sp.siteId ?? null,
+      departmentId: sp.departmentId ?? null,
+      payPeriodId: sp.periodId ?? null,
+    }),
     db.site.findMany({
       where: { isActive: true, ...(t ? { tenantId: t } : {}) },
       orderBy: { name: "asc" },
@@ -55,55 +54,54 @@ export default async function TimecardsPage({
     }),
   ]);
 
-  const payFrequency = tenant?.payFrequency ?? "BIWEEKLY";
+  const employees = employeesResult.success ? employeesResult.data : [];
 
-  if (payPeriods.length === 0) {
+  if (employees.length === 0) {
     return (
       <div>
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
           Timecards
         </h1>
-        <p className="mt-2 text-sm text-zinc-500">No pay periods found.</p>
+        <p className="mt-2 text-sm text-zinc-500">No active employees found.</p>
       </div>
     );
   }
 
-  const today = new Date();
-  const currentPayPeriod = payPeriods.find(
-    (pp) => today >= pp.startDate && today <= pp.endDate
-  );
+  // Resolve selected employee (URL param or first in list)
+  const selectedEmployeeId = sp.employeeId ?? employees[0].employeeId;
 
-  // Determine which pay period to load — explicit param, custom range start, or current/first
-  let selectedPayPeriodId: string;
-  if (sp.payPeriodId) {
-    selectedPayPeriodId = sp.payPeriodId;
-  } else if (sp.customStart) {
-    const customDate = new Date(sp.customStart + "T12:00:00");
-    const pp = payPeriods.find((p) => customDate >= p.startDate && customDate <= p.endDate);
-    selectedPayPeriodId = pp?.id ?? (currentPayPeriod?.id ?? payPeriods[0].id);
-  } else {
-    selectedPayPeriodId = currentPayPeriod?.id ?? payPeriods[0].id;
+  // Load periods for the selected employee's rule set
+  let periods: { id: string; startDate: string; endDate: string; status: string }[] = [];
+  let payFrequency = "BIWEEKLY";
+  let selectedPeriodId: string | null = sp.periodId ?? null;
+
+  const periodsResult = await getEmployeePeriods({ employeeId: selectedEmployeeId });
+  if (periodsResult.success && periodsResult.data) {
+    periods = periodsResult.data.periods;
+    payFrequency = periodsResult.data.payFrequency;
+
+    if (!selectedPeriodId && periods.length > 0) {
+      const now = new Date();
+      const current = periods.find(
+        (p) => new Date(p.startDate) <= now && new Date(p.endDate) > now
+      );
+      selectedPeriodId = current?.id ?? periods[periods.length - 1].id;
+    }
   }
 
-  const employeeResult = await getTimecardEmployeeList({
-    payPeriodId: selectedPayPeriodId,
-    siteId: sp.siteId ?? null,
-    departmentId: sp.departmentId ?? null,
-  });
-  const employees = employeeResult.success ? employeeResult.data : [];
+  // Load timecard for employee + period (null = no punches yet, not an error)
+  let timecard = null;
+  if (selectedPeriodId) {
+    const result = await getTimecardByEmployeeAndPeriod({
+      employeeId: selectedEmployeeId,
+      periodId: selectedPeriodId,
+    });
+    if (result.success) {
+      timecard = result.data ?? null;
+    }
+  }
 
-  // Auto-select first employee or use URL param
-  const selectedEmployeeId =
-    sp.employeeId ??
-    (employees.length > 0 ? employees[0].employeeId : null);
-
-  // Find the selected employee's timesheet
-  const selectedTimesheetId = selectedEmployeeId
-    ? (employees.find((e) => e.employeeId === selectedEmployeeId)
-        ?.timesheetId ?? null)
-    : null;
-
-  // Fetch pay codes and reason codes for the tenant
+  // Fetch pay codes and reason codes
   const [payCodesResult, reasonCodesResult] = await Promise.all([
     getPayCodes({}),
     getReasonCodes(),
@@ -111,28 +109,12 @@ export default async function TimecardsPage({
   const payCodes = payCodesResult.success ? payCodesResult.data : [];
   const reasonCodes = reasonCodesResult.success ? reasonCodesResult.data : [];
 
-  let timecard = null;
-  if (selectedTimesheetId) {
-    const result = await getTimecardDetail({
-      timesheetId: selectedTimesheetId,
-    });
-    if (result.success) {
-      timecard = result.data;
-    }
-  }
-
-  // Serialize for client component (convert Date objects to ISO strings)
-  const serializedPayPeriods = payPeriods.map((pp) => ({
-    id: pp.id,
-    startDate: pp.startDate.toISOString(),
-    endDate: pp.endDate.toISOString(),
-    status: pp.status,
-  }));
-
+  // Serialize timecard for client component
   const serializedTimecard = timecard
     ? {
         timesheetId: timecard.id,
         status: timecard.status,
+        otAuthorized: timecard.otAuthorized,
         exceptionCount: timecard.exceptions.length,
         exceptions: timecard.exceptions.map((e) => ({
           id: e.id,
@@ -157,12 +139,15 @@ export default async function TimecardsPage({
             autoDeductMeal: timecard.employee.ruleSet.autoDeductMeal,
             mealBreakMinutes: timecard.employee.ruleSet.mealBreakMinutes,
             mealBreakAfterMinutes: timecard.employee.ruleSet.mealBreakAfterMinutes,
+            overtimeRequiresAuth: timecard.employee.ruleSet.overtimeRequiresAuth,
+            allowTimesheetOtAuth: timecard.employee.ruleSet.allowTimesheetOtAuth,
           },
         },
         punches: timecard.punches.map((p) => ({
           id: p.id,
           punchType: p.punchType,
           roundedTime: p.roundedTime.toISOString(),
+          source: p.source,
         })),
         segments: timecard.segments.map((s) => ({
           id: s.id,
@@ -212,12 +197,13 @@ export default async function TimecardsPage({
       </div>
 
       <TimecardViewer
-        payPeriods={serializedPayPeriods}
-        selectedPayPeriodId={selectedPayPeriodId}
+        payPeriods={periods}
+        selectedPeriodId={selectedPeriodId}
         employees={employees}
         selectedEmployeeId={selectedEmployeeId}
         timecard={serializedTimecard}
         payFrequency={payFrequency}
+        userRole={session.user.role ?? "EMPLOYEE"}
         customStart={sp.customStart ?? null}
         customEnd={sp.customEnd ?? null}
         payCodes={payCodes.map((pc) => ({
