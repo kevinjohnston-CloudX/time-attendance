@@ -1966,18 +1966,30 @@ export function TimecardViewer({
                                   // Excludes today — an open clock-in (still working) is not a missed punch.
                                   const isMissedPunchDay = !isTodayRow && dayPunches.length > 0 && daySegments.filter(s => s.segmentType === "WORK").length === 0 && !isMarker;
 
+                                  const absentDropdownClass = (pending: boolean) =>
+                                    `w-24 rounded border px-1 py-0.5 text-xs focus:outline-none ${pending ? "border-amber-400 bg-amber-50/50 text-zinc-700 dark:border-amber-600 dark:bg-amber-950/10 dark:text-zinc-300" : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"}`;
+
                                   if (isAbsent || isMarker || isMissedPunchDay || (isSalaryVirtualDay && daySegments.length === 0)) {
-                                    // Show dropdown with "Absent" as first option
                                     if (canEdit) {
                                       const absentKey = `absent:${dayStr}`;
                                       const absentPending = pendingPayCodes.has(absentKey);
+                                      // Pre-populate missed-punch days with Regular Hours (code 0) so the
+                                      // dropdown doesn't show "Absent" before a recalculate creates the marker.
+                                      const regularId = !isMarker && isMissedPunchDay
+                                        ? (payCodes.find((pc) => pc.code === 0)?.id ?? "")
+                                        : "";
+                                      const currentValue = absentPending
+                                        ? (pendingPayCodes.get(absentKey) ?? "")
+                                        : isMarker
+                                          ? (workSeg.payCode?.id ?? "")
+                                          : regularId;
                                       return (
                                         <select
-                                          value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : (isMarker ? (workSeg.payCode?.id ?? "") : "")}
+                                          value={currentValue}
                                           onChange={(e) =>
                                             handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)
                                           }
-                                          className={`w-24 rounded border px-1 py-0.5 text-xs focus:outline-none ${absentPending ? "border-amber-400 bg-amber-50/50 text-zinc-700 dark:border-amber-600 dark:bg-amber-950/10 dark:text-zinc-300" : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"}`}
+                                          className={absentDropdownClass(absentPending)}
                                         >
                                           <option value="">Absent</option>
                                           {payCodes.map((pc) => (
@@ -1995,7 +2007,36 @@ export function TimecardViewer({
                                     return <span className="text-xs text-red-400 dark:text-red-600">Absent</span>;
                                   }
 
-                                  if (!workSeg) return null;
+                                  // Non-working day (weekend or not scheduled): show blank like REASON column.
+                                  if (isWeekend) {
+                                    return <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>;
+                                  }
+
+                                  // Working day with no segments yet (open punch today, or future day).
+                                  // Show an editable blank dropdown so the user can pre-set the code.
+                                  if (!workSeg) {
+                                    if (canEdit) {
+                                      const absentKey = `absent:${dayStr}`;
+                                      const absentPending = pendingPayCodes.has(absentKey);
+                                      return (
+                                        <select
+                                          value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : ""}
+                                          onChange={(e) =>
+                                            handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)
+                                          }
+                                          className={absentDropdownClass(absentPending)}
+                                        >
+                                          <option value="">—</option>
+                                          {payCodes.map((pc) => (
+                                            <option key={pc.id} value={pc.id}>
+                                              {pc.code}[{pc.label}]
+                                            </option>
+                                          ))}
+                                        </select>
+                                      );
+                                    }
+                                    return null;
+                                  }
 
                                   const workSegPending = pendingPayCodes.has(workSeg.id);
                                   return canEdit ? (
@@ -2379,7 +2420,9 @@ export function TimecardViewer({
                                       <span className="text-xs text-zinc-500">
                                         {pairWorkSeg.payCode.code}[{pairWorkSeg.payCode.label}]
                                       </span>
-                                    ) : null}
+                                    ) : (
+                                      <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
+                                    )}
                                   </td>
                                 )}
                                 {/* Reason code — day-level, shown only on first row; blank cell for continuations */}

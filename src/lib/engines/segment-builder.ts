@@ -402,7 +402,7 @@ export async function rebuildSegments(
     }),
     db.workSegment.findMany({
       where: { timesheetId, segmentType: "LEAVE", durationMinutes: 0 },
-      select: { segmentDate: true },
+      select: { segmentDate: true, id: true, payCodeId: true },
     }),
   ]);
   const existingLeaveDates = new Set(existingLeaveMarkers.map((s) => format(s.segmentDate, "yyyy-MM-dd")));
@@ -483,6 +483,27 @@ export async function rebuildSegments(
         };
       }),
     });
+  }
+
+  // Backfill any existing LEAVE markers that have no payCodeId (created before this
+  // logic existed) so they show Regular Hours rather than "Absent" in the timecard.
+  if (tenantId) {
+    const nullCodeMarkers = existingLeaveMarkers.filter((s) => {
+      const key = format(s.segmentDate, "yyyy-MM-dd");
+      return s.payCodeId === null && !newSegmentDates.has(key);
+    });
+    if (nullCodeMarkers.length > 0) {
+      const regularCode = await db.payCode.findUnique({
+        where: { tenantId_code: { tenantId, code: 0 } },
+        select: { id: true, isActive: true },
+      });
+      if (regularCode?.isActive) {
+        await db.workSegment.updateMany({
+          where: { id: { in: nullCodeMarkers.map((s) => s.id) } },
+          data: { payCodeId: regularCode.id },
+        });
+      }
+    }
   }
 
   // For salary employees, fill in 8 h REG for any weekday with no real punch segments.
