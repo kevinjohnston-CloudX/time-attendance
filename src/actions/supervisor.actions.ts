@@ -6,7 +6,7 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { createCorrectionPunch } from "@/lib/utils/punch-correction";
-import { applyRounding } from "@/lib/utils/date";
+import { computeRoundedTime } from "@/lib/utils/date";
 import {
   resolveExceptionSchema,
   addMissingPunchSchema,
@@ -179,10 +179,19 @@ export const addMissingPunchForEmployee = withRBAC(
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
-      include: { employee: { include: { ruleSet: true } } },
+      include: {
+        employee: {
+          include: {
+            ruleSet: true,
+            shift: { select: { startTime: true, endTime: true, workDays: true } },
+            site: { select: { timezone: true } },
+          },
+        },
+      },
     });
 
-    const roundedTime = applyRounding(punchTime, timesheet.employee.ruleSet.punchRoundingMinutes);
+    const { ruleSet, shift, site } = timesheet.employee;
+    const roundedTime = computeRoundedTime(punchTime, punchType, ruleSet, shift, site?.timezone ?? "UTC");
 
     await db.$transaction(async (tx) => {
       await tx.punch.create({

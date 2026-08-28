@@ -6,7 +6,7 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
-import { applyRounding } from "@/lib/utils/date";
+import { computeRoundedTime } from "@/lib/utils/date";
 import {
   manualPunchPairSchema,
   singleManualPunchSchema,
@@ -46,7 +46,13 @@ export const addManualPunchPair = withRBAC(
     const ts = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
       include: {
-        employee: { include: { ruleSet: true } },
+        employee: {
+          include: {
+            ruleSet: true,
+            shift: { select: { startTime: true, endTime: true, workDays: true } },
+            site: { select: { timezone: true } },
+          },
+        },
       },
     });
 
@@ -54,9 +60,10 @@ export const addManualPunchPair = withRBAC(
       throw new Error("Cannot modify a locked or approved timesheet.");
     }
 
-    const ruleSet = ts.employee.ruleSet;
-    const roundedIn = applyRounding(inDate, ruleSet.punchRoundingMinutes);
-    const roundedOut = applyRounding(outDate, ruleSet.punchRoundingMinutes);
+    const { ruleSet, shift, site } = ts.employee;
+    const tz = site?.timezone ?? "UTC";
+    const roundedIn = computeRoundedTime(inDate, "CLOCK_IN", ruleSet, shift, tz);
+    const roundedOut = computeRoundedTime(outDate, "CLOCK_OUT", ruleSet, shift, tz);
 
     // Check for conflicts with existing approved punches in the time range
     const conflicting = await db.punch.findFirst({
@@ -76,6 +83,7 @@ export const addManualPunchPair = withRBAC(
     // If the user didn't pick a pay code, check for an existing absent-day marker
     // (created via the Code dropdown on a day with no punches). Inherit its pay code
     // so the deduction fires automatically when hours are added to that day.
+    // Fall back to the rule set's default pay code if no marker exists.
     let effectivePayCodeId = payCodeId ?? null;
     if (!effectivePayCodeId) {
       const [ny, nm, nd] = entryDate.split("-").map(Number);
@@ -91,9 +99,7 @@ export const addManualPunchPair = withRBAC(
         },
         select: { payCodeId: true },
       });
-      if (absentMarker?.payCodeId) {
-        effectivePayCodeId = absentMarker.payCodeId;
-      }
+      effectivePayCodeId = absentMarker?.payCodeId ?? ruleSet.defaultPayCodeId ?? null;
     }
 
     await db.$transaction(async (tx) => {
@@ -164,15 +170,23 @@ export const addSingleManualPunch = withRBAC(
 
     const ts = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
-      include: { employee: { include: { ruleSet: true } } },
+      include: {
+        employee: {
+          include: {
+            ruleSet: true,
+            shift: { select: { startTime: true, endTime: true, workDays: true } },
+            site: { select: { timezone: true } },
+          },
+        },
+      },
     });
 
     if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
       throw new Error("Cannot modify a locked or approved timesheet.");
     }
 
-    const ruleSet = ts.employee.ruleSet;
-    const roundedTime = applyRounding(punchDate, ruleSet.punchRoundingMinutes);
+    const { ruleSet, shift, site } = ts.employee;
+    const roundedTime = computeRoundedTime(punchDate, punchType, ruleSet, shift, site?.timezone ?? "UTC");
 
     // Reject if another approved punch already lands at the exact same rounded time
     const conflicting = await db.punch.findFirst({
@@ -182,7 +196,8 @@ export const addSingleManualPunch = withRBAC(
       throw new Error("A punch already exists at this time.");
     }
 
-    // For CLOCK_IN punches, inherit pay code from an absent-day marker if one exists
+    // For CLOCK_IN punches, inherit pay code from an absent-day marker if one exists,
+    // falling back to the rule set's default pay code.
     let inheritedPayCodeId: string | null = null;
     if (punchType === "CLOCK_IN") {
       const dayStart = new Date(Date.UTC(punchDate.getUTCFullYear(), punchDate.getUTCMonth(), punchDate.getUTCDate()));
@@ -197,7 +212,7 @@ export const addSingleManualPunch = withRBAC(
         },
         select: { payCodeId: true },
       });
-      if (absentMarker?.payCodeId) inheritedPayCodeId = absentMarker.payCodeId;
+      inheritedPayCodeId = absentMarker?.payCodeId ?? ruleSet.defaultPayCodeId ?? null;
     }
 
     await db.$transaction(async (tx) => {

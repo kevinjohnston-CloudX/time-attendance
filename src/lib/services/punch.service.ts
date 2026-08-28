@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
-import { applyRounding } from "@/lib/utils/date";
+import { computeRoundedTime } from "@/lib/utils/date";
 import {
   getCurrentPunchState,
   findOpenPayPeriod,
@@ -27,7 +27,11 @@ export async function recordPunchCore(
 
   const employee = await db.employee.findUniqueOrThrow({
     where: { id: employeeId },
-    include: { ruleSet: true },
+    include: {
+      ruleSet: true,
+      shift: { select: { startTime: true, endTime: true, workDays: true } },
+      site: { select: { timezone: true } },
+    },
   });
 
   const payPeriod = await findOpenPayPeriod(tenantId, employee.ruleSetId);
@@ -51,9 +55,12 @@ export async function recordPunchCore(
   }
 
   const punchTime = new Date();
-  const roundedTime = applyRounding(
+  const roundedTime = computeRoundedTime(
     punchTime,
-    employee.ruleSet.punchRoundingMinutes,
+    punchType,
+    employee.ruleSet,
+    employee.shift,
+    employee.site?.timezone ?? "UTC",
   );
 
   const punch = await db.$transaction(async (tx) => {

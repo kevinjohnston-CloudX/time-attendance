@@ -99,6 +99,7 @@ enum PayBucket {
 
 enum AccrualAction {
   ACCRUAL
+  EARNED_ADJUSTMENT
   USAGE
   ADJUSTMENT
   CARRY_OVER

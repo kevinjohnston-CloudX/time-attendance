@@ -12,6 +12,11 @@ export const getHolidays = withRBAC(
     return db.holiday.findMany({
       where: { tenantId },
       orderBy: { date: "asc" },
+      include: {
+        holidayRules: {
+          select: { holidayRuleId: true },
+        },
+      },
     });
   }
 );
@@ -20,12 +25,24 @@ const createHolidaySchema = z.object({
   name: z.string().min(1).max(100),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
   observedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  bypassAfterEligibility: z.preprocess(
+    (v) => (typeof v === "boolean" ? v : v === "true"),
+    z.boolean()
+  ).default(false),
+  ruleIds: z.preprocess(
+    (v) => {
+      if (Array.isArray(v)) return v.filter(Boolean);
+      if (typeof v === "string") return v ? v.split(",").filter(Boolean) : [];
+      return [];
+    },
+    z.array(z.string())
+  ).default([]),
 });
 
 export const createHoliday = withRBAC(
   "RULES_MANAGE",
   async (ctx, input: unknown) => {
-    const { name, date, observedDate } = createHolidaySchema.parse(input);
+    const { name, date, observedDate, bypassAfterEligibility, ruleIds } = createHolidaySchema.parse(input);
     const tenantId = ctx.tenantId!;
 
     const dateObj = new Date(date + "T00:00:00.000Z");
@@ -36,9 +53,22 @@ export const createHoliday = withRBAC(
     });
     if (existing) throw new Error("A holiday already exists on that date.");
 
-    await db.holiday.create({
-      data: { tenantId, name, date: dateObj, observedDate: observedDateObj },
+    const holiday = await db.holiday.create({
+      data: {
+        tenantId,
+        name,
+        date: dateObj,
+        observedDate: observedDateObj,
+        bypassAfterEligibility,
+      },
     });
+
+    if (ruleIds.length > 0) {
+      await db.holidayRuleHoliday.createMany({
+        data: ruleIds.map((holidayRuleId) => ({ holidayRuleId, holidayId: holiday.id })),
+        skipDuplicates: true,
+      });
+    }
 
     return { success: true };
   }
@@ -50,12 +80,24 @@ const updateHolidaySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
   observedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   isActive: z.boolean(),
+  bypassAfterEligibility: z.preprocess(
+    (v) => (typeof v === "boolean" ? v : v === "true"),
+    z.boolean()
+  ).default(false),
+  ruleIds: z.preprocess(
+    (v) => {
+      if (Array.isArray(v)) return v.filter(Boolean);
+      if (typeof v === "string") return v ? v.split(",").filter(Boolean) : [];
+      return [];
+    },
+    z.array(z.string())
+  ).default([]),
 });
 
 export const updateHoliday = withRBAC(
   "RULES_MANAGE",
   async (ctx, input: unknown) => {
-    const { holidayId, name, date, observedDate, isActive } = updateHolidaySchema.parse(input);
+    const { holidayId, name, date, observedDate, isActive, bypassAfterEligibility, ruleIds } = updateHolidaySchema.parse(input);
     const tenantId = ctx.tenantId!;
 
     const dateObj = new Date(date + "T00:00:00.000Z");
@@ -68,8 +110,17 @@ export const updateHoliday = withRBAC(
 
     await db.holiday.update({
       where: { id: holidayId },
-      data: { name, date: dateObj, observedDate: observedDateObj, isActive },
+      data: { name, date: dateObj, observedDate: observedDateObj, isActive, bypassAfterEligibility },
     });
+
+    // Sync rule assignments: delete all then re-create
+    await db.holidayRuleHoliday.deleteMany({ where: { holidayId } });
+    if (ruleIds.length > 0) {
+      await db.holidayRuleHoliday.createMany({
+        data: ruleIds.map((holidayRuleId) => ({ holidayRuleId, holidayId })),
+        skipDuplicates: true,
+      });
+    }
 
     return { success: true };
   }

@@ -1,0 +1,12 @@
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "requireDayBeforeOrAfter"        BOOLEAN      NOT NULL DEFAULT false;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "requireDaysWorkedEnabled"        BOOLEAN      NOT NULL DEFAULT false;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "requireDaysWorkedCount"          INTEGER      NOT NULL DEFAULT 0;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "requireDaysWorkedPeriod"         INTEGER      NOT NULL DEFAULT 0;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "requireDaysWorkedPeriodUnit"     TEXT         NOT NULL DEFAULT 'DAY';
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "requireDaysWorkedMinDailyHours"  DECIMAL(5,2) NOT NULL DEFAULT 0;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "requireScheduledHoursPct"        BOOLEAN      NOT NULL DEFAULT false;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "requireScheduledHoursPctValue"   INTEGER      NOT NULL DEFAULT 50;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "mustNotWorkOnHoliday"            BOOLEAN      NOT NULL DEFAULT false;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "useDynamicSchedules"             BOOLEAN      NOT NULL DEFAULT false;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "excludedWeekDays"                INTEGER[]    NOT NULL DEFAULT '{}';
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "bypassAfterEligibility"          BOOLEAN      NOT NULL DEFAULT false;

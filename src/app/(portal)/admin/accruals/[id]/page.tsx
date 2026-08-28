@@ -32,7 +32,7 @@ export default async function EmployeeAccrualsPage({
       db.leaveBalance.findMany({ where: { employeeId: id, accrualYear: year } }),
       db.leaveAccrualLedger.groupBy({
         by: ["leaveTypeId"],
-        where: { employeeId: id, action: "ACCRUAL", payPeriodEnd: { gte: yearStart, lt: yearEnd } },
+        where: { employeeId: id, action: { in: ["ACCRUAL", "EARNED_ADJUSTMENT"] }, payPeriodEnd: { gte: yearStart, lt: yearEnd } },
         _sum: { deltaMinutes: true },
         _count: { id: true },
       }),
@@ -192,6 +192,10 @@ export default async function EmployeeAccrualsPage({
     const yearEffectiveStart = utcDay(basisDate > yearStart ? basisDate : yearStart);
     if (yearEffectiveStart >= utcDay(today)) return 0;
 
+    // Cap expected at yesterday so a posting due today doesn't inflate the count
+    // before the cron fires, which would produce a false mismatch all day.
+    const expectedCeiling = new Date(utcDay(today).getTime() - ms);
+
     let totalMinutes = 0;
     let countExpected = 0;
 
@@ -202,7 +206,7 @@ export default async function EmployeeAccrualsPage({
         : null;
 
       const segFrom = tierFrom > yearEffectiveStart ? tierFrom : yearEffectiveStart;
-      const segTo   = tierTo ? (tierTo < today ? tierTo : utcDay(today)) : utcDay(today);
+      const segTo   = tierTo ? (tierTo < expectedCeiling ? tierTo : expectedCeiling) : expectedCeiling;
 
       if (segFrom > segTo) continue;
 
@@ -524,7 +528,7 @@ export default async function EmployeeAccrualsPage({
         )}
 
         <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-          <LeaveBalancesPanel employeeId={employee.id} balances={balances} year={year} pastYears={pastYears} />
+          <LeaveBalancesPanel employeeId={employee.id} balances={balances} />
         </div>
       </div>
     </div>

@@ -14,6 +14,9 @@ interface PayPeriodItem {
   startDate: string;
   endDate: string;
   status: string;
+  ruleSetId?: string | null;
+  ruleSetName?: string | null;
+  ruleSetFrequency?: string | null;
 }
 
 interface Props {

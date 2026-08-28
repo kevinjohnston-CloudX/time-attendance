@@ -1,0 +1,9 @@
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "prorateEnabled"             BOOLEAN      NOT NULL DEFAULT false;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "prorateLookbackDays"        INTEGER      NOT NULL DEFAULT 28;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "prorateIncludeCurrentWeek"  BOOLEAN      NOT NULL DEFAULT true;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "prorateUseCustomRange"      BOOLEAN      NOT NULL DEFAULT false;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "prorateAppliedRule"         TEXT         NOT NULL DEFAULT 'AVERAGE_DAILY';
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "prorateThresholdHours"      DECIMAL(7,3) NOT NULL DEFAULT 0;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "prorateMultiplier"          DECIMAL(10,7) NOT NULL DEFAULT 0;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "prorateAverageDailyMaxHours" DECIMAL(7,3) NOT NULL DEFAULT 8;
+ALTER TABLE "holiday_rules" ADD COLUMN IF NOT EXISTS "prorateExcludeOt"           BOOLEAN      NOT NULL DEFAULT false;

@@ -3,7 +3,7 @@
 import { Fragment, useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createRuleSet, updateRuleSet, deleteRuleSet } from "@/actions/admin.actions";
-import type { OtCycle, RuleSet } from "@prisma/client";
+import type { AutoPayMode, OtCycle, RuleSet } from "@prisma/client";
 
 const PAY_FREQUENCIES = [
   { value: "WEEKLY", label: "Weekly (every 7 days)" },
@@ -21,9 +21,23 @@ const cancelBtnCls = "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font
 const dangerBtnCls = "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50";
 const sectionHdrCls = "col-span-full mb-0.5 border-b border-zinc-200 pb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-700";
 
-type RSFields = Omit<RuleSet, "id" | "tenantId" | "createdAt" | "updatedAt" | "employees" | "payPeriods" | "isActive" | "payPeriodAnchorDate" | "otCycleAnchorDate" | "otCycle"> & { isActive?: boolean; payPeriodAnchorDate?: string | null; otCycleAnchorDate?: string | null; otCycle?: OtCycle | null };
+type RSFields = Omit<RuleSet, "id" | "tenantId" | "createdAt" | "updatedAt" | "employees" | "payPeriods" | "isActive" | "payPeriodAnchorDate" | "otCycleAnchorDate" | "otCycle" | "mealPremiumRows"> & { isActive?: boolean; payPeriodAnchorDate?: string | null; otCycleAnchorDate?: string | null; otCycle?: OtCycle | null; mealPremiumRows?: MealPremiumRow[] };
+
+interface MealPremiumRow {
+  applyFromMinutes: number;
+  applyToMinutes: number;
+  minimumMealMinutes: number;
+  payMinutes: number;
+  payCodeId: string | null;
+  payLevel: string;
+  inReferenceTime: string | null;
+  waivePremium: boolean;
+  unlessHoursExceed: boolean;
+  unlessHoursExceedMinutes: number;
+  unlessPunchedMeal: boolean;
+}
 type OtPreset = Pick<RSFields, "dailyOtMinutes" | "dailyDtMinutes" | "dailyDtMaxMinutes" | "weeklyOtEnabled" | "weeklyOtMinutes" | "weeklyDtMinutes" | "weeklyDtMaxMinutes" | "consecutiveDayOtEnabled" | "consecutiveDayOtDay" | "consecutiveDayPayCycleOnly" | "consecutiveDayOtMaxMinutes" | "consecutiveDayDtMaxMinutes">;
-type RSTab = "general" | "overtime" | "breaks";
+type RSTab = "general" | "overtime" | "breaks" | "rounding" | "guaranteed" | "miscellaneous";
 
 const FEDERAL: OtPreset = { dailyOtMinutes: 1440, dailyDtMinutes: 1440, dailyDtMaxMinutes: 0, weeklyOtEnabled: true, weeklyOtMinutes: 2400, weeklyDtMinutes: 86400, weeklyDtMaxMinutes: 0, consecutiveDayOtEnabled: false, consecutiveDayOtDay: 7, consecutiveDayPayCycleOnly: true, consecutiveDayOtMaxMinutes: 0, consecutiveDayDtMaxMinutes: 0 };
 
@@ -72,7 +86,23 @@ function parseForm(fd: FormData): RSFields {
     consecutiveDayPayCycleOnly: fd.get("consecutiveDayPayCycleOnly") === "true",
     consecutiveDayOtMaxMinutes: Number(fd.get("consecutiveDayOtMaxMinutes") ?? 0),
     consecutiveDayDtMaxMinutes: Number(fd.get("consecutiveDayDtMaxMinutes") ?? 0),
-    punchRoundingMinutes: Number(fd.get("punchRoundingMinutes")),
+    pairRoundingEnabled: fd.get("pairRoundingEnabled") === "true",
+    pairRoundingMinutes: Number(fd.get("pairRoundingMinutes") ?? 15),
+    pairRoundingPoint: Number(fd.get("pairRoundingPoint") ?? 0),
+    pairMinGuaranteedMinutes: Number(fd.get("pairMinGuaranteedMinutes") ?? 0),
+    punchRoundingInEnabled: fd.get("punchRoundingInEnabled") === "true",
+    punchRoundingInMinutes: Number(fd.get("punchRoundingInMinutes") ?? 15),
+    punchRoundingInPoint: Number(fd.get("punchRoundingInPoint") ?? 0),
+    punchRoundingInApplyToBreaks: fd.get("punchRoundingInApplyToBreaks") === "true",
+    punchRoundingOutEnabled: fd.get("punchRoundingOutEnabled") === "true",
+    punchRoundingOutMinutes: Number(fd.get("punchRoundingOutMinutes") ?? 15),
+    punchRoundingOutPoint: Number(fd.get("punchRoundingOutPoint") ?? 0),
+    punchRoundingOutApplyToBreaks: fd.get("punchRoundingOutApplyToBreaks") === "true",
+    shiftRoundingEnabled: fd.get("shiftRoundingEnabled") === "true",
+    shiftRoundingInWindow: Number(fd.get("shiftRoundingInWindow") ?? 0),
+    shiftRoundingInGrace: Number(fd.get("shiftRoundingInGrace") ?? 0),
+    shiftRoundingOutGrace: Number(fd.get("shiftRoundingOutGrace") ?? 0),
+    shiftRoundingOutWindow: Number(fd.get("shiftRoundingOutWindow") ?? 0),
     mealBreakMinutes: Number(fd.get("mealBreakMinutes")),
     mealBreakAfterMinutes: Number(fd.get("mealBreakAfterHours")) * 60,
     autoDeductMeal: fd.get("autoDeductMeal") === "true",
@@ -84,6 +114,37 @@ function parseForm(fd: FormData): RSFields {
     payFrequency: (payFreqRaw || null) as RSFields["payFrequency"],
     payPeriodAnchorDate: anchorRaw || null,
     defaultPayCodeId: (fd.get("defaultPayCodeId") as string | null) || null,
+    autoPayEnabled: fd.get("autoPayEnabled") === "true",
+    autoPayMode: ((fd.get("autoPayMode") as string) || "POLICY_HOURS") as AutoPayMode,
+    autoPayDailyMinutes: Number(fd.get("autoPayDailyMinutes") ?? 480),
+    autoPayWeekdaysOnly: fd.get("autoPayWeekdaysOnly") !== "false",
+    autoPayPayCodeId: (fd.get("autoPayPayCodeId") as string | null) || null,
+    autoPayOverflowThresholdMinutes: Number(fd.get("autoPayOverflowThresholdMinutes") ?? 0),
+    autoPayOverflowPayCodeId: (fd.get("autoPayOverflowPayCodeId") as string | null) || null,
+    mealBreakPremiumEnabled: fd.get("mealBreakPremiumEnabled") === "true",
+    mealBreakPremiumMaxPerDay: Number(fd.get("mealBreakPremiumMaxPerDay") ?? 2),
+    mealBreakPremiumResetEnabled: fd.get("mealBreakPremiumResetEnabled") === "true",
+    mealBreakPremiumResetMinutes: Math.round(Number(fd.get("mealBreakPremiumResetHours") ?? 0) * 60),
+    mealBreakPremiumWaivedMsgEnabled: fd.get("mealBreakPremiumWaivedMsgEnabled") === "true",
+    mealBreakPremiumWaivedMsg: (fd.get("mealBreakPremiumWaivedMsg") as string | null) || null,
+    mealPremiumUseActualForWindow: fd.get("mealPremiumUseActualForWindow") === "true",
+    mealPremiumUseActualForMinimum: fd.get("mealPremiumUseActualForMinimum") === "true",
+    mealPremiumLimitToPayMinutes: fd.get("mealPremiumLimitToPayMinutes") === "true",
+    mealPremiumAllowTimesheetEdits: fd.get("mealPremiumAllowTimesheetEdits") === "true",
+    mealPremiumUseTransferGroup: fd.get("mealPremiumUseTransferGroup") === "true",
+    mealPremiumRows: [0, 1, 2, 3].map((i) => ({
+      applyFromMinutes: Math.round(Number(fd.get(`mpr${i}From`) ?? 0) * 60),
+      applyToMinutes: Math.round(Number(fd.get(`mpr${i}To`) ?? 0) * 60),
+      minimumMealMinutes: Number(fd.get(`mpr${i}MinMeal`) ?? 0),
+      payMinutes: Number(fd.get(`mpr${i}PayMins`) ?? 0),
+      payCodeId: (fd.get(`mpr${i}PayCodeId`) as string | null) || null,
+      payLevel: (fd.get(`mpr${i}PayLevel`) as string) || "REG",
+      inReferenceTime: (fd.get(`mpr${i}RefTime`) as string | null) || null,
+      waivePremium: fd.get(`mpr${i}Waive`) === "true",
+      unlessHoursExceed: fd.get(`mpr${i}UnlessExceed`) === "true",
+      unlessHoursExceedMinutes: Math.round(Number(fd.get(`mpr${i}UnlessHrs`) ?? 0) * 60),
+      unlessPunchedMeal: fd.get(`mpr${i}UnlessPunched`) === "true",
+    })),
     weekStartDay: Number(fd.get("weekStartDay") ?? 1),
     consecutiveDayOtEnabled: fd.get("consecutiveDayOtEnabled") === "true",
     otCycle: ((fd.get("otCycle") as string | null) || null) as OtCycle | null,
@@ -346,6 +407,31 @@ function StatePresetPicker({ onChange }: { onChange: (p: OtPreset) => void }) {
 
 function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string; code: number; label: string }[] }) {
   const [activeTab, setActiveTab] = useState<RSTab>("general");
+  const [shiftRoundingEnabled, setShiftRoundingEnabled] = useState<boolean>(rs?.shiftRoundingEnabled ?? false);
+  const [pairRoundingEnabled, setPairRoundingEnabled] = useState<boolean>(rs?.pairRoundingEnabled ?? false);
+  const [punchRoundingInEnabled, setPunchRoundingInEnabled] = useState<boolean>(rs?.punchRoundingInEnabled ?? false);
+  const [punchRoundingOutEnabled, setPunchRoundingOutEnabled] = useState<boolean>(rs?.punchRoundingOutEnabled ?? false);
+  const [autoPayEnabled, setAutoPayEnabled] = useState<boolean>(rs?.autoPayEnabled ?? false);
+  const [autoPayMode, setAutoPayMode] = useState<AutoPayMode>(rs?.autoPayMode ?? "POLICY_HOURS");
+  const [mealBreakPremiumEnabled, setMealBreakPremiumEnabled] = useState<boolean>(rs?.mealBreakPremiumEnabled ?? false);
+  const [mealBreakPremiumResetEnabled, setMealBreakPremiumResetEnabled] = useState<boolean>(rs?.mealBreakPremiumResetEnabled ?? false);
+  const [mealBreakPremiumWaivedMsgEnabled, setMealBreakPremiumWaivedMsgEnabled] = useState<boolean>(rs?.mealBreakPremiumWaivedMsgEnabled ?? false);
+  const [mealPremiumUseActualForWindow, setMealPremiumUseActualForWindow] = useState<boolean>(rs?.mealPremiumUseActualForWindow ?? true);
+  const [mealPremiumUseActualForMinimum, setMealPremiumUseActualForMinimum] = useState<boolean>(rs?.mealPremiumUseActualForMinimum ?? true);
+  const [mealPremiumLimitToPayMinutes, setMealPremiumLimitToPayMinutes] = useState<boolean>(rs?.mealPremiumLimitToPayMinutes ?? false);
+  const [mealPremiumAllowTimesheetEdits, setMealPremiumAllowTimesheetEdits] = useState<boolean>(rs?.mealPremiumAllowTimesheetEdits ?? true);
+  const [mealPremiumUseTransferGroup, setMealPremiumUseTransferGroup] = useState<boolean>(rs?.mealPremiumUseTransferGroup ?? false);
+  const existingMealRows = (rs?.mealPremiumRows as MealPremiumRow[] | null) ?? [];
+  const emptyRow: MealPremiumRow = { applyFromMinutes: 0, applyToMinutes: 0, minimumMealMinutes: 0, payMinutes: 0, payCodeId: null, payLevel: "REG", inReferenceTime: null, waivePremium: false, unlessHoursExceed: false, unlessHoursExceedMinutes: 0, unlessPunchedMeal: false };
+  const [mealRowStates, setMealRowStates] = useState(() =>
+    [0, 1, 2, 3].map((i) => {
+      const r = existingMealRows[i] ?? emptyRow;
+      return { waive: r.waivePremium, unlessExceed: r.unlessHoursExceed, unlessPunched: r.unlessPunchedMeal };
+    })
+  );
+  function setMealRowCheck(i: number, key: "waive" | "unlessExceed" | "unlessPunched", val: boolean) {
+    setMealRowStates((prev) => prev.map((r, idx) => idx === i ? { ...r, [key]: val } : r));
+  }
   const [otCycle, setOtCycle] = useState<string>(rs?.otCycle ?? "WEEKLY");
   const [otKey, setOtKey] = useState(0);
   const [otDefaults, setOtDefaults] = useState<OtPreset>({
@@ -368,6 +454,9 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
     { id: "general", label: "General" },
     { id: "overtime", label: "Overtime" },
     { id: "breaks", label: "Breaks & Attendance" },
+    { id: "rounding", label: "Rounding" },
+    { id: "guaranteed", label: "Guaranteed Hours / Pay" },
+    { id: "miscellaneous", label: "Miscellaneous" },
   ];
 
   return (
@@ -573,17 +662,6 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
       {/* Breaks & Attendance tab */}
       <div className={activeTab !== "breaks" ? "hidden" : "block"}>
         <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-          <div className="col-span-2">
-            <label className="mb-1 block text-xs text-zinc-500">Punch rounding</label>
-            <select name="punchRoundingMinutes" defaultValue={rs?.punchRoundingMinutes ?? 0} className={inputCls}>
-              <option value={0}>None (exact)</option>
-              <option value={5}>5 min</option>
-              <option value={6}>6 min</option>
-              <option value={10}>10 min</option>
-              <option value={15}>15 min (quarter-hour)</option>
-              <option value={30}>30 min (half-hour)</option>
-            </select>
-          </div>
           <NumField name="mealBreakMinutes" label="Meal break duration" defaultValue={rs?.mealBreakMinutes ?? 30} unit="min" />
           <HoursField name="mealBreakAfterHours" label="Require meal after" defaultMinutes={rs?.mealBreakAfterMinutes ?? 300} />
           <div className="col-span-2">
@@ -596,6 +674,492 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
           <NumField name="shortBreakMinutes" label="Short break duration" defaultValue={rs?.shortBreakMinutes ?? 15} unit="min" />
           <NumField name="shortBreaksPerDay" label="Short breaks per day" defaultValue={rs?.shortBreaksPerDay ?? 2} />
           <HoursField name="longShiftHours" label="Flag shift as long after" defaultMinutes={rs?.longShiftMinutes ?? 720} />
+        </div>
+      </div>
+
+      {/* Rounding tab */}
+      <div className={activeTab !== "rounding" ? "hidden" : "space-y-4"}>
+        {/* Shift-aware rounding */}
+        <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+          <div className="flex items-center gap-2.5 rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-700 dark:bg-zinc-800/60">
+            <input
+              type="checkbox"
+              id="shiftRoundingEnabled"
+              checked={shiftRoundingEnabled}
+              onChange={(e) => setShiftRoundingEnabled(e.target.checked)}
+              className="h-4 w-4 cursor-pointer rounded"
+            />
+            <label htmlFor="shiftRoundingEnabled" className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">
+              Shift Time Rounding
+            </label>
+          </div>
+          {/* A/B/C/D inputs stay in DOM even when hidden so FormData always includes them */}
+          <div className={shiftRoundingEnabled ? "divide-y divide-zinc-100 px-4 dark:divide-zinc-800/60" : "hidden"}>
+            <div className="py-3">
+              <p className="mb-2.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Clock-In</p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <span className="w-5 text-center text-xs font-bold text-zinc-400">A</span>
+                  <span className="w-44 shrink-0 text-xs text-zinc-500">Before shift start</span>
+                  <input name="shiftRoundingInWindow" type="number" min={0} defaultValue={rs?.shiftRoundingInWindow ?? 0} className={`w-16 text-right ${smInputCls}`} />
+                  <span className="text-xs text-zinc-400">min → snaps to shift start</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="w-5 text-center text-xs font-bold text-zinc-400">B</span>
+                  <span className="w-44 shrink-0 text-xs text-zinc-500">After shift start (grace)</span>
+                  <input name="shiftRoundingInGrace" type="number" min={0} defaultValue={rs?.shiftRoundingInGrace ?? 0} className={`w-16 text-right ${smInputCls}`} />
+                  <span className="text-xs text-zinc-400">min → snaps to shift start</span>
+                </div>
+              </div>
+            </div>
+            <div className="py-3">
+              <p className="mb-2.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Clock-Out</p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <span className="w-5 text-center text-xs font-bold text-zinc-400">C</span>
+                  <span className="w-44 shrink-0 text-xs text-zinc-500">Before shift end (grace)</span>
+                  <input name="shiftRoundingOutGrace" type="number" min={0} defaultValue={rs?.shiftRoundingOutGrace ?? 0} className={`w-16 text-right ${smInputCls}`} />
+                  <span className="text-xs text-zinc-400">min → snaps to shift end</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="w-5 text-center text-xs font-bold text-zinc-400">D</span>
+                  <span className="w-44 shrink-0 text-xs text-zinc-500">After shift end</span>
+                  <input name="shiftRoundingOutWindow" type="number" min={0} defaultValue={rs?.shiftRoundingOutWindow ?? 0} className={`w-16 text-right ${smInputCls}`} />
+                  <span className="text-xs text-zinc-400">min → snaps to shift end</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          {!shiftRoundingEnabled && (
+            <p className="px-4 py-3 text-xs text-zinc-400">Disabled — punches are not snapped to shift boundaries</p>
+          )}
+          <input type="hidden" name="shiftRoundingEnabled" value={shiftRoundingEnabled ? "true" : "false"} />
+        </div>
+
+        {/* In / Out Rounding */}
+        <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+          <div className="rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-700 dark:bg-zinc-800/60">
+            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">In / Out Rounding</span>
+          </div>
+          <div className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
+            {/* Clock-In */}
+            <div className="px-4 py-3">
+              <div className="mb-2.5 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="punchRoundingInEnabled"
+                  checked={punchRoundingInEnabled}
+                  onChange={(e) => setPunchRoundingInEnabled(e.target.checked)}
+                  className="h-4 w-4 cursor-pointer rounded"
+                />
+                <label htmlFor="punchRoundingInEnabled" className="cursor-pointer select-none text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  Round punch-in time
+                </label>
+              </div>
+              <div className={punchRoundingInEnabled ? "space-y-2 pl-6" : "hidden"}>
+                <div className="flex items-center gap-3">
+                  <span className="w-36 shrink-0 text-xs text-zinc-500">Increment</span>
+                  <select name="punchRoundingInMinutes" defaultValue={rs?.punchRoundingInMinutes ?? 15} className={`w-44 ${smInputCls}`}>
+                    <option value={6}>6 min (tenths)</option>
+                    <option value={10}>10 min</option>
+                    <option value={15}>15 min (quarters)</option>
+                    <option value={20}>20 min (thirds)</option>
+                    <option value={30}>30 min (halves)</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="w-36 shrink-0 text-xs text-zinc-500">Rounding point</span>
+                  <input name="punchRoundingInPoint" type="number" min={0} defaultValue={rs?.punchRoundingInPoint ?? 0} className={`w-16 text-right ${smInputCls}`} />
+                  <span className="text-xs text-zinc-400">min offset</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="w-36 shrink-0 text-xs text-zinc-500">Apply to breaks</span>
+                  <select name="punchRoundingInApplyToBreaks" defaultValue={rs?.punchRoundingInApplyToBreaks ? "true" : "false"} className={`w-52 ${smInputCls}`}>
+                    <option value="false">Clock-in only</option>
+                    <option value="true">Clock-in + meal/break starts</option>
+                  </select>
+                </div>
+              </div>
+              <input type="hidden" name="punchRoundingInEnabled" value={punchRoundingInEnabled ? "true" : "false"} />
+            </div>
+            {/* Clock-Out */}
+            <div className="px-4 py-3">
+              <div className="mb-2.5 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="punchRoundingOutEnabled"
+                  checked={punchRoundingOutEnabled}
+                  onChange={(e) => setPunchRoundingOutEnabled(e.target.checked)}
+                  className="h-4 w-4 cursor-pointer rounded"
+                />
+                <label htmlFor="punchRoundingOutEnabled" className="cursor-pointer select-none text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  Round punch-out time
+                </label>
+              </div>
+              <div className={punchRoundingOutEnabled ? "space-y-2 pl-6" : "hidden"}>
+                <div className="flex items-center gap-3">
+                  <span className="w-36 shrink-0 text-xs text-zinc-500">Increment</span>
+                  <select name="punchRoundingOutMinutes" defaultValue={rs?.punchRoundingOutMinutes ?? 15} className={`w-44 ${smInputCls}`}>
+                    <option value={6}>6 min (tenths)</option>
+                    <option value={10}>10 min</option>
+                    <option value={15}>15 min (quarters)</option>
+                    <option value={20}>20 min (thirds)</option>
+                    <option value={30}>30 min (halves)</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="w-36 shrink-0 text-xs text-zinc-500">Rounding point</span>
+                  <input name="punchRoundingOutPoint" type="number" min={0} defaultValue={rs?.punchRoundingOutPoint ?? 0} className={`w-16 text-right ${smInputCls}`} />
+                  <span className="text-xs text-zinc-400">min offset</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="w-36 shrink-0 text-xs text-zinc-500">Apply to breaks</span>
+                  <select name="punchRoundingOutApplyToBreaks" defaultValue={rs?.punchRoundingOutApplyToBreaks ? "true" : "false"} className={`w-52 ${smInputCls}`}>
+                    <option value="false">Clock-out only</option>
+                    <option value="true">Clock-out + meal/break ends</option>
+                  </select>
+                </div>
+              </div>
+              <input type="hidden" name="punchRoundingOutEnabled" value={punchRoundingOutEnabled ? "true" : "false"} />
+            </div>
+          </div>
+        </div>
+
+        {/* In / Out Pair Rounding */}
+        <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+          <div className="flex items-center gap-2.5 rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-700 dark:bg-zinc-800/60">
+            <input
+              type="checkbox"
+              id="pairRoundingEnabled"
+              checked={pairRoundingEnabled}
+              onChange={(e) => setPairRoundingEnabled(e.target.checked)}
+              className="h-4 w-4 cursor-pointer rounded"
+            />
+            <label htmlFor="pairRoundingEnabled" className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">
+              In / Out Pair Rounding
+            </label>
+          </div>
+          <div className={pairRoundingEnabled ? "divide-y divide-zinc-100 px-4 dark:divide-zinc-800/60" : "hidden"}>
+            <div className="flex items-center gap-3 py-2">
+              <span className="w-44 shrink-0 text-xs text-zinc-500">Increment</span>
+              <select name="pairRoundingMinutes" defaultValue={rs?.pairRoundingMinutes ?? 15} className={`w-44 ${smInputCls}`}>
+                <option value={6}>6 min (tenths)</option>
+                <option value={10}>10 min</option>
+                <option value={15}>15 min (quarters)</option>
+                <option value={20}>20 min (thirds)</option>
+                <option value={30}>30 min (halves)</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-3 py-2">
+              <span className="w-44 shrink-0 text-xs text-zinc-500">Rounding point</span>
+              <input name="pairRoundingPoint" type="number" min={0} defaultValue={rs?.pairRoundingPoint ?? 0} className={`w-16 text-right ${smInputCls}`} />
+              <span className="text-xs text-zinc-400">min offset</span>
+            </div>
+            <div className="flex items-center gap-3 py-2">
+              <span className="w-44 shrink-0 text-xs text-zinc-500">Minimum guaranteed</span>
+              <input name="pairMinGuaranteedMinutes" type="number" min={0} defaultValue={rs?.pairMinGuaranteedMinutes ?? 0} className={`w-16 text-right ${smInputCls}`} />
+              <span className="text-xs text-zinc-400">min (0 = none)</span>
+            </div>
+          </div>
+          {!pairRoundingEnabled && (
+            <p className="px-4 py-3 text-xs text-zinc-400">Disabled — work duration is not rounded after punches are recorded</p>
+          )}
+          <input type="hidden" name="pairRoundingEnabled" value={pairRoundingEnabled ? "true" : "false"} />
+        </div>
+      </div>
+
+      {/* Guaranteed Hours / Pay tab */}
+      <div className={activeTab !== "guaranteed" ? "hidden" : "space-y-4"}>
+        <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+          <div className="flex items-center gap-2.5 rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-700 dark:bg-zinc-800/60">
+            <input
+              type="checkbox"
+              id="autoPayEnabled"
+              checked={autoPayEnabled}
+              onChange={(e) => setAutoPayEnabled(e.target.checked)}
+              className="h-4 w-4 cursor-pointer rounded"
+            />
+            <label htmlFor="autoPayEnabled" className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">
+              Apply Guaranteed Auto-Pay
+            </label>
+          </div>
+          <div className={autoPayEnabled ? "divide-y divide-zinc-100 dark:divide-zinc-800/60" : "hidden"}>
+            {/* Hours source */}
+            <div className="px-4 py-3">
+              <p className="mb-2.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Hours Source</p>
+              <div className="space-y-2">
+                <label className="flex cursor-pointer items-center gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
+                  <input
+                    type="radio"
+                    name="_autoPayModeRadio"
+                    value="POLICY_HOURS"
+                    checked={autoPayMode === "POLICY_HOURS"}
+                    onChange={() => setAutoPayMode("POLICY_HOURS")}
+                    className="h-4 w-4 cursor-pointer"
+                  />
+                  Policy Daily Hours
+                </label>
+                <div className={autoPayMode === "POLICY_HOURS" ? "flex items-center gap-3 pl-6" : "hidden"}>
+                  <input
+                    name="autoPayDailyMinutes"
+                    type="number"
+                    min={1}
+                    defaultValue={rs?.autoPayDailyMinutes ?? 480}
+                    className={`w-16 text-right ${smInputCls}`}
+                  />
+                  <span className="text-xs text-zinc-400">min/day</span>
+                  <span className="text-xs text-zinc-400 italic">({Math.round((rs?.autoPayDailyMinutes ?? 480) / 60 * 10) / 10}h)</span>
+                </div>
+                <label className="flex cursor-pointer items-center gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
+                  <input
+                    type="radio"
+                    name="_autoPayModeRadio"
+                    value="SHIFT_HOURS"
+                    checked={autoPayMode === "SHIFT_HOURS"}
+                    onChange={() => setAutoPayMode("SHIFT_HOURS")}
+                    className="h-4 w-4 cursor-pointer"
+                  />
+                  Shift Hours <span className="ml-1 text-zinc-400">(uses employee&apos;s assigned shift duration)</span>
+                </label>
+              </div>
+              <input type="hidden" name="autoPayMode" value={autoPayMode} />
+            </div>
+
+            {/* Apply to — only relevant for POLICY_HOURS */}
+            <div className={`flex items-center gap-3 px-4 py-2 ${autoPayMode === "POLICY_HOURS" ? "" : "hidden"}`}>
+              <span className="w-44 shrink-0 text-xs text-zinc-500">Apply to</span>
+              <select name="autoPayWeekdaysOnly" defaultValue={rs?.autoPayWeekdaysOnly !== false ? "true" : "false"} className={`w-52 ${smInputCls}`}>
+                <option value="true">Weekdays only (Mon–Fri)</option>
+                <option value="false">All 7 days</option>
+              </select>
+            </div>
+
+            {/* Auto-Pay pay code */}
+            <div className="flex items-center gap-3 px-4 py-2">
+              <span className="w-44 shrink-0 text-xs text-zinc-500">Auto-Pay Pay Code</span>
+              <select name="autoPayPayCodeId" defaultValue={rs?.autoPayPayCodeId ?? ""} className={`w-52 ${smInputCls}`}>
+                <option value="">— Use default pay code —</option>
+                {payCodes.map((pc) => (
+                  <option key={pc.id} value={pc.id}>{pc.code} — {pc.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Overflow */}
+            <div className="px-4 py-3">
+              <p className="mb-2.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Overflow</p>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                  <span>When auto-pay total exceeds</span>
+                  <input
+                    name="autoPayOverflowThresholdMinutes"
+                    type="number"
+                    min={0}
+                    defaultValue={rs?.autoPayOverflowThresholdMinutes ?? 0}
+                    className={`w-16 text-right ${smInputCls}`}
+                  />
+                  <span>min for the period — apply excess to:</span>
+                </div>
+                <div className="flex items-center gap-3 pl-0">
+                  <span className="w-44 shrink-0 text-xs text-zinc-500">Overflow Pay Code</span>
+                  <select name="autoPayOverflowPayCodeId" defaultValue={rs?.autoPayOverflowPayCodeId ?? ""} className={`w-52 ${smInputCls}`}>
+                    <option value="">— None (0 min = disabled) —</option>
+                    {payCodes.map((pc) => (
+                      <option key={pc.id} value={pc.id}>{pc.code} — {pc.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-xs text-zinc-400">Set threshold to 0 or leave overflow pay code empty to disable overflow.</p>
+              </div>
+            </div>
+          </div>
+          {!autoPayEnabled && (
+            <p className="px-4 py-3 text-xs text-zinc-400">Disabled — no automatic hours credited without punch activity</p>
+          )}
+          <input type="hidden" name="autoPayEnabled" value={autoPayEnabled ? "true" : "false"} />
+        </div>
+      </div>
+
+      {/* Miscellaneous tab */}
+      <div className={activeTab !== "miscellaneous" ? "hidden" : "space-y-4"}>
+        {/* Meal / Break Premium Rules — master section */}
+        <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+          <div className="flex items-start gap-2.5 rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/60">
+            <input
+              type="checkbox"
+              id="mealBreakPremiumEnabled"
+              checked={mealBreakPremiumEnabled}
+              onChange={(e) => setMealBreakPremiumEnabled(e.target.checked)}
+              className="mt-0.5 h-4 w-4 cursor-pointer rounded"
+            />
+            <label htmlFor="mealBreakPremiumEnabled" className="cursor-pointer select-none text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+              <span className="font-semibold uppercase tracking-wider">Meal / Break Premium Rules</span>
+              <br />
+              <span className="font-normal text-zinc-500 dark:text-zinc-400">
+                Apply a premium when employees do not take the minimum required meal and/or paid break time and other qualifications are met.
+              </span>
+            </label>
+          </div>
+
+          <div className={mealBreakPremiumEnabled ? "divide-y divide-zinc-100 dark:divide-zinc-800/60" : "hidden"}>
+            {/* Max premiums per day */}
+            <div className="flex items-center gap-3 px-4 py-3">
+              <span className="w-64 shrink-0 text-xs text-zinc-500">Maximum premiums earned per day</span>
+              <input name="mealBreakPremiumMaxPerDay" type="number" min={1} defaultValue={rs?.mealBreakPremiumMaxPerDay ?? 2} className={`w-16 text-right ${smInputCls}`} />
+            </div>
+
+            {/* Reset calculation */}
+            <div className="px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  id="mealBreakPremiumResetEnabled"
+                  checked={mealBreakPremiumResetEnabled}
+                  onChange={(e) => setMealBreakPremiumResetEnabled(e.target.checked)}
+                  className="h-4 w-4 cursor-pointer rounded"
+                />
+                <label htmlFor="mealBreakPremiumResetEnabled" className="cursor-pointer select-none text-xs text-zinc-600 dark:text-zinc-300">
+                  Reset premium calculation when employee has punched out for more than
+                </label>
+                <input name="mealBreakPremiumResetHours" type="number" min={0} step={0.5} defaultValue={rs ? rs.mealBreakPremiumResetMinutes / 60 : 0} className={`w-16 text-right ${smInputCls}`} />
+                <span className="text-xs text-zinc-400">hours</span>
+              </div>
+              <p className="mt-1.5 pl-6 text-xs text-zinc-400">Premiums applied to previous hours still apply. Set to 0 or uncheck to disable.</p>
+            </div>
+
+            {/* Waived message */}
+            <div className="px-4 py-3">
+              <div className="mb-2 flex items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  id="mealBreakPremiumWaivedMsgEnabled"
+                  checked={mealBreakPremiumWaivedMsgEnabled}
+                  onChange={(e) => setMealBreakPremiumWaivedMsgEnabled(e.target.checked)}
+                  className="h-4 w-4 cursor-pointer rounded"
+                />
+                <label htmlFor="mealBreakPremiumWaivedMsgEnabled" className="cursor-pointer select-none text-xs text-zinc-600 dark:text-zinc-300">
+                  Show waived meal / break premium message to employees
+                </label>
+              </div>
+              <div className={mealBreakPremiumWaivedMsgEnabled ? "pl-6" : "hidden"}>
+                <textarea name="mealBreakPremiumWaivedMsg" maxLength={250} rows={3} defaultValue={rs?.mealBreakPremiumWaivedMsg ?? ""} placeholder="Message shown to employees when a premium is waived…" className={`${inputCls} resize-none`} />
+                <p className="mt-1 text-xs text-zinc-400">250 characters max</p>
+              </div>
+            </div>
+          </div>
+
+          {!mealBreakPremiumEnabled && (
+            <p className="px-4 py-3 text-xs text-zinc-400">Disabled — no meal/break premium rules applied</p>
+          )}
+          <input type="hidden" name="mealBreakPremiumEnabled" value={mealBreakPremiumEnabled ? "true" : "false"} />
+          <input type="hidden" name="mealBreakPremiumResetEnabled" value={mealBreakPremiumResetEnabled ? "true" : "false"} />
+          <input type="hidden" name="mealBreakPremiumWaivedMsgEnabled" value={mealBreakPremiumWaivedMsgEnabled ? "true" : "false"} />
+        </div>
+
+        {/* Meal Premiums — detail config (visible only when premium enabled) */}
+        <div className={mealBreakPremiumEnabled ? "rounded-md border border-zinc-200 dark:border-zinc-700" : "hidden"}>
+          <div className="rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-700 dark:bg-zinc-800/60">
+            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Meal Premiums</span>
+          </div>
+
+          {/* Calculation options */}
+          <div className="space-y-2 px-4 py-3">
+            {([
+              ["mealPremiumUseActualForWindow",  mealPremiumUseActualForWindow,  setMealPremiumUseActualForWindow,  "Calculate 'Apply Meal Premiums if no meal between' hours qualification based on actual (non-rounded) punch times"],
+              ["mealPremiumUseActualForMinimum", mealPremiumUseActualForMinimum, setMealPremiumUseActualForMinimum, "Calculate 'Minimum Meal (in minutes)' qualification based on actual (non-rounded) punch times"],
+              ["mealPremiumLimitToPayMinutes",   mealPremiumLimitToPayMinutes,   setMealPremiumLimitToPayMinutes,   "Limit paid Meal Premium minutes to the difference between 'Pay (in Minutes)' value and punches meal minutes"],
+              ["mealPremiumAllowTimesheetEdits", mealPremiumAllowTimesheetEdits, setMealPremiumAllowTimesheetEdits, "Allow Meal Premium timesheet record edits"],
+              ["mealPremiumUseTransferGroup",    mealPremiumUseTransferGroup,    setMealPremiumUseTransferGroup,    "Use transfer group values (e.g. job, department) for meal premium records"],
+            ] as [string, boolean, (v: boolean) => void, string][]).map(([name, val, setter, label]) => (
+              <label key={name} className="flex cursor-pointer items-start gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
+                <input type="checkbox" checked={val} onChange={(e) => setter(e.target.checked)} className="mt-0.5 h-4 w-4 cursor-pointer rounded" />
+                {label}
+                <input type="hidden" name={name} value={val ? "true" : "false"} />
+              </label>
+            ))}
+          </div>
+
+          <p className="mx-4 mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800/40 dark:bg-amber-900/20 dark:text-amber-400">
+            The Waive Premium option below also requires individual employee activation.
+          </p>
+
+          {/* Row table */}
+          <div className="overflow-x-auto px-4 pb-4">
+            <table className="w-full min-w-max border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-zinc-200 dark:border-zinc-700">
+                  <th className="py-2 pr-3 text-left font-medium text-zinc-500 whitespace-nowrap">Meal</th>
+                  <th className="py-2 pr-3 text-center font-medium text-zinc-500 whitespace-nowrap" colSpan={3}>Apply if no meal between (hrs)</th>
+                  <th className="py-2 pr-3 text-center font-medium text-zinc-500 whitespace-nowrap">Min Meal<br />(min)</th>
+                  <th className="py-2 pr-3 text-center font-medium text-zinc-500 whitespace-nowrap">Pay<br />(min)</th>
+                  <th className="py-2 pr-3 text-center font-medium text-zinc-500 whitespace-nowrap">Pay Code</th>
+                  <th className="py-2 pr-3 text-center font-medium text-zinc-500 whitespace-nowrap">Pay Level</th>
+                  <th className="py-2 pr-3 text-center font-medium text-zinc-500 whitespace-nowrap">Ref Time</th>
+                  <th className="py-2 pr-3 text-center font-medium text-zinc-500 whitespace-nowrap">Waive</th>
+                  <th className="py-2 pr-3 text-center font-medium text-zinc-500 whitespace-nowrap">Unless hrs exceed</th>
+                  <th className="py-2 text-center font-medium text-zinc-500 whitespace-nowrap">Unless<br />Punched Meal</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
+                {(["First", "Second", "Third", "Fourth"] as const).map((label, i) => {
+                  const r = existingMealRows[i] ?? emptyRow;
+                  const rs2 = mealRowStates[i];
+                  return (
+                    <tr key={i}>
+                      <td className="py-2 pr-3 font-medium text-zinc-500 whitespace-nowrap">{label}</td>
+                      <td className="py-2 pr-1 text-center">
+                        <input name={`mpr${i}From`} type="number" min={0} step={0.01} defaultValue={r.applyFromMinutes / 60 || ""} placeholder="0.00" className={`w-16 text-right ${smInputCls}`} />
+                      </td>
+                      <td className="py-2 px-1 text-center text-zinc-400">and</td>
+                      <td className="py-2 pr-3 text-center">
+                        <input name={`mpr${i}To`} type="number" min={0} step={0.01} defaultValue={r.applyToMinutes / 60 || ""} placeholder="0.00" className={`w-16 text-right ${smInputCls}`} />
+                      </td>
+                      <td className="py-2 pr-3 text-center">
+                        <input name={`mpr${i}MinMeal`} type="number" min={0} defaultValue={r.minimumMealMinutes || ""} placeholder="0" className={`w-16 text-right ${smInputCls}`} />
+                      </td>
+                      <td className="py-2 pr-3 text-center">
+                        <input name={`mpr${i}PayMins`} type="number" min={0} defaultValue={r.payMinutes || ""} placeholder="0" className={`w-16 text-right ${smInputCls}`} />
+                      </td>
+                      <td className="py-2 pr-3 text-center">
+                        <select name={`mpr${i}PayCodeId`} defaultValue={r.payCodeId ?? ""} className={`w-32 ${smInputCls}`}>
+                          <option value="">— None —</option>
+                          {payCodes.map((pc) => (
+                            <option key={pc.id} value={pc.id}>{pc.code} — {pc.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="py-2 pr-3 text-center">
+                        <select name={`mpr${i}PayLevel`} defaultValue={r.payLevel || "REG"} className={`w-24 ${smInputCls}`}>
+                          <option value="REG">Regular</option>
+                          <option value="OT1">Overtime</option>
+                          <option value="OT2">Double Time</option>
+                          <option value="HOL">Holiday</option>
+                        </select>
+                      </td>
+                      <td className="py-2 pr-3 text-center">
+                        <input name={`mpr${i}RefTime`} type="time" defaultValue={r.inReferenceTime ?? ""} className={`w-24 ${smInputCls}`} />
+                      </td>
+                      <td className="py-2 pr-3 text-center">
+                        <input type="checkbox" checked={rs2.waive} onChange={(e) => setMealRowCheck(i, "waive", e.target.checked)} className="h-4 w-4 cursor-pointer rounded" />
+                        <input type="hidden" name={`mpr${i}Waive`} value={rs2.waive ? "true" : "false"} />
+                      </td>
+                      <td className="py-2 pr-3 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <input type="checkbox" checked={rs2.unlessExceed} onChange={(e) => setMealRowCheck(i, "unlessExceed", e.target.checked)} className="h-4 w-4 cursor-pointer rounded" />
+                          <input name={`mpr${i}UnlessHrs`} type="number" min={0} step={0.01} defaultValue={r.unlessHoursExceedMinutes / 60 || ""} placeholder="0.00" className={`w-16 text-right ${smInputCls}`} />
+                        </div>
+                        <input type="hidden" name={`mpr${i}UnlessExceed`} value={rs2.unlessExceed ? "true" : "false"} />
+                      </td>
+                      <td className="py-2 text-center">
+                        <input type="checkbox" checked={rs2.unlessPunched} onChange={(e) => setMealRowCheck(i, "unlessPunched", e.target.checked)} className="h-4 w-4 cursor-pointer rounded" />
+                        <input type="hidden" name={`mpr${i}UnlessPunched`} value={rs2.unlessPunched ? "true" : "false"} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

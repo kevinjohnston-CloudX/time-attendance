@@ -60,7 +60,7 @@ export function PayPeriodActions({ payPeriodId, status, isReady, isPast, adpConf
   }
 
   function handleSubmitOpen() {
-    if (!confirm("Move all open timesheets to Pending Supervisor for this pay period?")) return;
+    if (!confirm("Move all open and submitted timesheets to Supervisor Approved for this pay period?")) return;
     setError(null);
     setSubmitResult(null);
     startTransition(async () => {
@@ -169,7 +169,7 @@ export function PayPeriodActions({ payPeriodId, status, isReady, isPast, adpConf
           disabled={isPending}
           className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
         >
-          {isPending ? "Submitting…" : "Submit Open Timesheets"}
+          {isPending ? "Approving…" : "Approve Open Timesheets"}
         </button>
       )}
       {status === "OPEN" && (

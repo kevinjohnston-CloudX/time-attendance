@@ -94,16 +94,18 @@ model LeaveAccrualLedger {
 }
 
 model Holiday {
-  id           String    @id @default(cuid())
-  tenantId     String
-  name         String
-  date         DateTime  // stored as UTC midnight
-  observedDate DateTime? // optional observed date (e.g. Monday when holiday falls on Sunday)
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                    String    @id @default(cuid())
+  tenantId              String
+  name                  String
+  date                  DateTime  // stored as UTC midnight
+  observedDate          DateTime? // optional observed date (e.g. Monday when holiday falls on Sunday)
+  bypassAfterEligibility Boolean  @default(false)
+  isActive              Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  tenant       Tenant               @relation(fields: [tenantId], references: [id])
+  holidayRules HolidayRuleHoliday[]
 
   @@unique([tenantId, date])
   @@map("holidays")

@@ -2,7 +2,7 @@ import { format, eachDayOfInterval, isWeekend } from "date-fns";
 import { db } from "@/lib/db";
 import { applyOvertime } from "@/lib/engines/overtime-engine";
 import { reconcileLeaveDeductions } from "@/lib/engines/leave-deduction";
-import { startOfDayInTz, nextMidnightInTz, endOfDayInTz } from "@/lib/utils/date";
+import { startOfDayInTz, nextMidnightInTz, endOfDayInTz, roundDurationMinutes } from "@/lib/utils/date";
 import type { Punch, RuleSet, PayBucket, SegmentType, HolidayCreditMethod } from "@prisma/client";
 
 const SALARY_DAILY_MINUTES = 480; // 8 h
@@ -255,6 +255,133 @@ function applyAutoMealDeduction(
 }
 
 /**
+ * In/Out Pair rounding: rounds the total WORK duration per calendar day after meal
+ * deductions have already been applied.  Also enforces a per-day minimum guarantee.
+ *
+ * The difference between the rounded and raw totals is absorbed by the last WORK
+ * segment of the day so start/end timestamps remain meaningful while durationMinutes
+ * reflects the credited (rounded) time.
+ */
+function applyPairRounding(segments: SegmentInput[], ruleSet: RuleSet): SegmentInput[] {
+  if (!ruleSet.pairRoundingEnabled) return segments;
+
+  const interval = ruleSet.pairRoundingMinutes;
+  const point    = ruleSet.pairRoundingPoint;
+  const minGuaranteed = ruleSet.pairMinGuaranteedMinutes;
+
+  // Group WORK segments by calendar day key
+  const byDay = new Map<string, SegmentInput[]>();
+  for (const seg of segments) {
+    if (seg.segmentType !== "WORK") continue;
+    const key = format(seg.segmentDate, "yyyy-MM-dd");
+    const list = byDay.get(key) ?? [];
+    list.push(seg);
+    byDay.set(key, list);
+  }
+
+  const result = [...segments];
+
+  for (const workSegs of byDay.values()) {
+    const rawTotal = workSegs.reduce((sum, s) => sum + s.durationMinutes, 0);
+    let credited = roundDurationMinutes(rawTotal, interval, point);
+    if (minGuaranteed > 0) credited = Math.max(credited, minGuaranteed);
+
+    const diff = credited - rawTotal;
+    if (diff === 0) continue;
+
+    // Apply the adjustment to the last WORK segment of the day
+    const lastSeg = [...workSegs].sort((a, b) => b.endTime.getTime() - a.endTime.getTime())[0];
+    const idx = result.indexOf(lastSeg);
+    if (idx >= 0) {
+      result[idx] = { ...lastSeg, durationMinutes: Math.max(0, lastSeg.durationMinutes + diff) };
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Guaranteed Hours / Auto-Pay: inserts a configurable daily credit for every
+ * eligible day in the pay period (up to and including today) that has no
+ * existing WORK segment. Called inside rebuildSegments before applyOvertime
+ * so auto-pay credits are included in the OT accumulator.
+ */
+async function applyAutoPayCredits(
+  timesheetId: string,
+  periodStart: Date,
+  periodEnd: Date,
+  ruleSet: RuleSet,
+  shift: { startTime: string; endTime: string; workDays: number[] } | null,
+): Promise<void> {
+  const today = new Date();
+  today.setUTCHours(23, 59, 59, 999);
+  const rangeEnd = periodEnd < today ? periodEnd : today;
+
+  const allDays = eachDayOfInterval({ start: periodStart, end: rangeEnd });
+
+  // Determine eligible days based on mode
+  let eligibleDays: Date[];
+  if (ruleSet.autoPayMode === "SHIFT_HOURS" && shift?.workDays?.length) {
+    eligibleDays = allDays.filter((d) => shift.workDays.includes(d.getUTCDay()));
+  } else if (ruleSet.autoPayWeekdaysOnly) {
+    eligibleDays = allDays.filter((d) => !isWeekend(d));
+  } else {
+    eligibleDays = allDays;
+  }
+  if (eligibleDays.length === 0) return;
+
+  // Determine daily credit amount
+  let dailyMinutes: number;
+  if (ruleSet.autoPayMode === "SHIFT_HOURS" && shift) {
+    const [sh, sm] = shift.startTime.split(":").map(Number);
+    const [eh, em] = shift.endTime.split(":").map(Number);
+    let endMins = eh * 60 + em;
+    const startMins = sh * 60 + sm;
+    if (endMins <= startMins) endMins += 1440;
+    dailyMinutes = endMins - startMins;
+  } else {
+    dailyMinutes = ruleSet.autoPayDailyMinutes;
+  }
+  if (dailyMinutes <= 0) return;
+
+  // Skip days that already have WORK segments from real punches
+  const existing = await db.workSegment.findMany({
+    where: { timesheetId, segmentType: "WORK" },
+    select: { segmentDate: true },
+  });
+  const coveredDates = new Set(existing.map((s) => format(s.segmentDate, "yyyy-MM-dd")));
+
+  const uncoveredDays = eligibleDays.filter((d) => !coveredDates.has(format(d, "yyyy-MM-dd")));
+  if (uncoveredDays.length === 0) return;
+
+  const basePayCodeId = ruleSet.autoPayPayCodeId ?? ruleSet.defaultPayCodeId ?? null;
+  const overflowPayCodeId = ruleSet.autoPayOverflowPayCodeId ?? null;
+  const overflowThreshold = ruleSet.autoPayOverflowThresholdMinutes;
+
+  let runningMinutes = 0;
+  const toCreate: SegmentInput[] = uncoveredDays.map((d) => {
+    const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    const end = new Date(start.getTime() + dailyMinutes * 60_000);
+    const useOverflow = overflowThreshold > 0 && overflowPayCodeId !== null && runningMinutes >= overflowThreshold;
+    runningMinutes += dailyMinutes;
+    return {
+      timesheetId,
+      segmentType: "WORK" as SegmentType,
+      startTime: start,
+      endTime: end,
+      durationMinutes: dailyMinutes,
+      segmentDate: start,
+      isPaid: true,
+      payBucket: "REG" as PayBucket,
+      isSplit: false,
+      payCodeId: useOverflow ? overflowPayCodeId : basePayCodeId,
+    };
+  });
+
+  await db.workSegment.createMany({ data: toCreate });
+}
+
+/**
  * Full rebuild: deletes all existing WorkSegments for a timesheet,
  * recomputes from approved punches, inserts new segments, then runs
  * the overtime engine to reclassify REG → OT / DT buckets.
@@ -329,18 +456,21 @@ export async function rebuildSegments(
           id: true,
           tenantId: true,
           payType: true,
+          hireDate: true,
+          adjustedHireDate: true,
+          dateOfBirth: true,
           site: { select: { timezone: true } },
           shift: {
             select: {
               startTime: true,
               endTime: true,
               workDays: true,
-              lateInMinutes: true,
-              earlyOutMinutes: true,
             },
           },
           holidayRule: {
             select: {
+              id: true,
+              payCodeId: true,
               creditMethod: true,
               creditMinutes: true,
               maxCreditMinutes: true,
@@ -348,8 +478,42 @@ export async function rebuildSegments(
               workingPremium: true,
               requireDayBefore: true,
               requireDayAfter: true,
+              requireDayBeforeOrAfter: true,
               minPeriodMinutes: true,
+              mustNotWorkOnHoliday: true,
+              payNonWorkingHolidayOnly: true,
+              requireDaysWorkedEnabled: true,
+              requireDaysWorkedCount: true,
+              requireDaysWorkedPeriod: true,
+              requireDaysWorkedPeriodUnit: true,
+              requireDaysWorkedMinDailyHours: true,
+              requireScheduledHoursPct: true,
+              requireScheduledHoursPctValue: true,
+              bypassAfterEligibility: true,
+              excludedWeekDays: true,
               countTowardOt: true,
+              includeOnProbation: true,
+              probationDays: true,
+              tenureRequiredEnabled: true,
+              tenureRequiredDays: true,
+              tenureRequiredBasis: true,
+              tenureRequiredUnit: true,
+              prorateEnabled: true,
+              prorateLookbackDays: true,
+              prorateIncludeCurrentWeek: true,
+              prorateAppliedRule: true,
+              prorateThresholdHours: true,
+              prorateMultiplier: true,
+              prorateAverageDailyMaxHours: true,
+              prorateExcludeOt: true,
+              postWorkingHoursToAccrual: true,
+              postWorkingHoursMax: true,
+              postWorkingHoursExcessEnabled: true,
+              postWorkingHoursExcessMin: true,
+              accrualCode: true,
+              birthdayIsHoliday: true,
+              holidayOverridesEnabled: true,
+              holidayOverrides: true,
             },
           },
         },
@@ -375,6 +539,11 @@ export async function rebuildSegments(
       waivers.map((w) => format(w.segmentDate, "yyyy-MM-dd"))
     );
     segments = applyAutoMealDeduction(rawSegments, ruleSet, waivedDates);
+  }
+
+  // Pair rounding runs after meal deduction so the rounded total already excludes unpaid breaks
+  if (ruleSet.pairRoundingEnabled) {
+    segments = applyPairRounding(segments, ruleSet);
   }
 
   // Apply default pay code to all WORK segments
@@ -466,7 +635,12 @@ export async function rebuildSegments(
 
   // Persist pay codes for missed-punch days as 0-duration LEAVE markers so they
   // survive future rebuilds (deleteMany never touches LEAVE segments).
+  // Delete before insert to prevent duplicates from concurrent recalculation calls.
   if (payCodeMarkers.size > 0) {
+    const markerDates = Array.from(payCodeMarkers.keys()).map((s) => new Date(s + "T00:00:00.000Z"));
+    await db.workSegment.deleteMany({
+      where: { timesheetId, segmentType: "LEAVE", durationMinutes: 0, segmentDate: { in: markerDates } },
+    });
     await db.workSegment.createMany({
       data: Array.from(payCodeMarkers.entries()).map(([dateStr, payCodeId]) => {
         const date = new Date(dateStr + "T00:00:00.000Z");
@@ -506,8 +680,18 @@ export async function rebuildSegments(
     }
   }
 
-  // For salary employees, fill in 8 h REG for any weekday with no real punch segments.
-  if (isSalary) {
+  // Guaranteed hours / auto-pay: fill in configured daily credits for uncovered days.
+  // When autoPayEnabled, uses the rule set's configurable settings.
+  // Otherwise falls back to legacy 8 h/day behavior for salary employees.
+  if (ruleSet.autoPayEnabled) {
+    await applyAutoPayCredits(
+      timesheetId,
+      timesheet.payPeriod.startDate,
+      timesheet.payPeriod.endDate,
+      ruleSet,
+      timesheet.employee.shift ?? null,
+    );
+  } else if (isSalary) {
     await ensureSalarySegments(
       timesheetId,
       timesheet.payPeriod.startDate,
@@ -517,21 +701,40 @@ export async function rebuildSegments(
   }
 
   // OT engine reads the fresh segments and writes REG/OT/DT buckets.
-  await applyOvertime(timesheetId, ruleSet);
+  await applyOvertime(timesheetId, ruleSet, timesheet.employee.shift ?? null, timezone);
 
   // Holiday credits: delete any stale HOLIDAY bucket, then recompute from rule.
   await db.overtimeBucket.deleteMany({ where: { timesheetId, bucket: "HOLIDAY" } });
   if (timesheet.employee.holidayRule && tenantId) {
+    const _hr = timesheet.employee.holidayRule;
     await syncHolidayCredits(
       timesheetId,
       timezone,
       timesheet.payPeriod.startDate,
       timesheet.payPeriod.endDate,
       punches,
-      timesheet.employee.holidayRule,
+      {
+        ..._hr,
+        requireDaysWorkedMinDailyHours: Number(_hr.requireDaysWorkedMinDailyHours),
+        prorateThresholdHours:    Number(_hr.prorateThresholdHours),
+        prorateMultiplier:        Number(_hr.prorateMultiplier),
+        prorateAverageDailyMaxHours: Number(_hr.prorateAverageDailyMaxHours),
+        postWorkingHoursMax:      Number(_hr.postWorkingHoursMax),
+        postWorkingHoursExcessMin: Number(_hr.postWorkingHoursExcessMin),
+      },
       tenantId,
-      timesheet.employee.shift ?? null
+      timesheet.employee.shift ?? null,
+      {
+        id:              timesheet.employee.id,
+        hireDate:        timesheet.employee.hireDate,
+        adjustedHireDate: timesheet.employee.adjustedHireDate,
+        dateOfBirth:     timesheet.employee.dateOfBirth,
+      },
+      ruleSet.weekStartDay
     );
+    if (timesheet.employee.holidayRule.countTowardOt) {
+      await applyHolidayOtAdjustment(timesheetId, ruleSet);
+    }
   }
 
   // Auto-assign the tenant's code-0 (Regular Hours) PayCode to REG WORK segments
@@ -578,17 +781,6 @@ export async function rebuildSegments(
     punches
   );
 
-  // Sync LATE_IN / EARLY_OUT exceptions when the employee has a shift with tolerance configured.
-  if (timesheet.employee.shift) {
-    await syncPunchToleranceExceptions(
-      timesheetId,
-      timezone,
-      timesheet.payPeriod.startDate,
-      timesheet.payPeriod.endDate,
-      punches,
-      timesheet.employee.shift
-    );
-  }
 }
 
 /**
@@ -833,172 +1025,12 @@ async function syncMissingPunchExceptions(
 }
 
 /**
- * Creates LATE_IN exceptions when the first clock-in of a shift day is more than
- * lateInMinutes after the shift start, and EARLY_OUT exceptions when the last
- * clock-out is more than earlyOutMinutes before the shift end.
- * Only fires for days matching the shift's workDays. 0 = feature disabled for that field.
- * Auto-resolves when punches are corrected to fall within tolerance.
- */
-async function syncPunchToleranceExceptions(
-  timesheetId: string,
-  timezone: string,
-  payPeriodStart: Date,
-  payPeriodEnd: Date,
-  punches: Punch[],
-  shift: {
-    startTime: string;
-    endTime: string;
-    workDays: number[];
-    lateInMinutes: number;
-    earlyOutMinutes: number;
-  }
-): Promise<void> {
-  if (punches.length === 0) return;
-  if (shift.lateInMinutes === 0 && shift.earlyOutMinutes === 0) return;
-
-  const periodStartStr = format(payPeriodStart, "yyyy-MM-dd");
-  const periodEndStr = format(payPeriodEnd, "yyyy-MM-dd");
-  const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
-  const localDateOf = (d: Date) =>
-    new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(d);
-
-  const [shiftStartH, shiftStartM] = shift.startTime.split(":").map(Number);
-  const [shiftEndH, shiftEndM] = shift.endTime.split(":").map(Number);
-  const shiftStartMins = shiftStartH * 60 + shiftStartM;
-  const shiftEndMins = shiftEndH * 60 + shiftEndM;
-
-  const toLocalMins = (d: Date): number => {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-      timeZone: timezone,
-    }).formatToParts(d);
-    const h = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
-    const m = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
-    return h * 60 + m;
-  };
-
-  // Group punches by local date, sorted ascending
-  const punchesByDay = new Map<string, Punch[]>();
-  for (const p of punches) {
-    const ds = localDateOf(p.roundedTime);
-    const list = punchesByDay.get(ds) ?? [];
-    list.push(p);
-    punchesByDay.set(ds, list);
-  }
-  for (const list of punchesByDay.values()) {
-    list.sort((a, b) => a.roundedTime.getTime() - b.roundedTime.getTime());
-  }
-
-  const lateInDays = new Map<string, number>();   // dateStr → minutes late
-  const earlyOutDays = new Map<string, number>(); // dateStr → minutes early
-
-  let dateStr = periodStartStr;
-  while (dateStr < todayStr && dateStr <= periodEndStr) {
-    const dayPunches = punchesByDay.get(dateStr);
-    if (dayPunches && dayPunches.length > 0) {
-      const dow = new Date(dateStr + "T12:00:00.000Z").getUTCDay();
-      if (shift.workDays.includes(dow)) {
-        if (shift.lateInMinutes > 0) {
-          const firstIn = dayPunches.find((p) => p.stateBefore === "OUT");
-          if (firstIn) {
-            const minsLate = toLocalMins(firstIn.roundedTime) - shiftStartMins;
-            if (minsLate > shift.lateInMinutes) {
-              lateInDays.set(dateStr, minsLate);
-            }
-          }
-        }
-        if (shift.earlyOutMinutes > 0) {
-          const lastOut = [...dayPunches].reverse().find((p) => p.stateAfter === "OUT");
-          if (lastOut) {
-            const minsEarly = shiftEndMins - toLocalMins(lastOut.roundedTime);
-            if (minsEarly > shift.earlyOutMinutes) {
-              earlyOutDays.set(dateStr, minsEarly);
-            }
-          }
-        }
-      }
-    }
-    const d = new Date(dateStr + "T00:00:00.000Z");
-    d.setUTCDate(d.getUTCDate() + 1);
-    dateStr = d.toISOString().slice(0, 10);
-  }
-
-  const formatDay = (ds: string) =>
-    new Intl.DateTimeFormat("en-US", {
-      month: "long", day: "numeric", year: "numeric", timeZone: timezone,
-    }).format(new Date(ds + "T12:00:00.000Z"));
-
-  // Sync LATE_IN
-  const openLateIn = await db.exception.findMany({
-    where: { timesheetId, exceptionType: "LATE_IN", resolvedAt: null },
-    select: { id: true, occurredAt: true },
-  });
-  const openLateInByDate = new Map<string, string>(
-    openLateIn.map((e) => [format(e.occurredAt, "yyyy-MM-dd"), e.id])
-  );
-  for (const [ds, mins] of lateInDays) {
-    if (!openLateInByDate.has(ds)) {
-      await db.exception.create({
-        data: {
-          timesheetId,
-          exceptionType: "LATE_IN",
-          description: `Clocked in ${mins} minute${mins !== 1 ? "s" : ""} late on ${formatDay(ds)}`,
-          occurredAt: new Date(ds + "T12:00:00.000Z"),
-        },
-      });
-    }
-  }
-  for (const [ds, exId] of openLateInByDate) {
-    if (!lateInDays.has(ds)) {
-      await db.exception.update({
-        where: { id: exId },
-        data: { resolvedAt: new Date(), resolution: "Auto-resolved: punch-in within tolerance" },
-      });
-    }
-  }
-
-  // Sync EARLY_OUT
-  const openEarlyOut = await db.exception.findMany({
-    where: { timesheetId, exceptionType: "EARLY_OUT", resolvedAt: null },
-    select: { id: true, occurredAt: true },
-  });
-  const openEarlyOutByDate = new Map<string, string>(
-    openEarlyOut.map((e) => [format(e.occurredAt, "yyyy-MM-dd"), e.id])
-  );
-  for (const [ds, mins] of earlyOutDays) {
-    if (!openEarlyOutByDate.has(ds)) {
-      await db.exception.create({
-        data: {
-          timesheetId,
-          exceptionType: "EARLY_OUT",
-          description: `Clocked out ${mins} minute${mins !== 1 ? "s" : ""} early on ${formatDay(ds)}`,
-          occurredAt: new Date(ds + "T12:00:00.000Z"),
-        },
-      });
-    }
-  }
-  for (const [ds, exId] of openEarlyOutByDate) {
-    if (!earlyOutDays.has(ds)) {
-      await db.exception.update({
-        where: { id: exId },
-        data: { resolvedAt: new Date(), resolution: "Auto-resolved: punch-out within tolerance" },
-      });
-    }
-  }
-}
-
-/**
  * Inserts HOLIDAY-type WorkSegments for each qualifying holiday in the pay period:
  *  - A credit segment (FIXED / ACTUAL_WORKED / SCHEDULED_HOURS hours at the rule's payBucket)
  *  - A premium segment for any hours actually worked on the holiday (workingPremium - 100)/100 × worked
  *
  * Called after applyOvertime() so HOLIDAY segments are not touched by the OT engine,
  * and after the HOLIDAY OvertimeBucket has been cleared by the caller.
- *
- * NOTE: countTowardOt = true is not yet implemented. Holiday credits currently never
- * contribute to the weekly OT accumulator regardless of this flag.
  */
 async function syncHolidayCredits(
   timesheetId: string,
@@ -1007,6 +1039,8 @@ async function syncHolidayCredits(
   payPeriodEnd: Date,
   punches: Punch[],
   rule: {
+    id: string;
+    payCodeId: string | null;
     creditMethod: HolidayCreditMethod;
     creditMinutes: number;
     maxCreditMinutes: number;
@@ -1014,24 +1048,69 @@ async function syncHolidayCredits(
     workingPremium: number;
     requireDayBefore: boolean;
     requireDayAfter: boolean;
+    requireDayBeforeOrAfter: boolean;
     minPeriodMinutes: number;
+    mustNotWorkOnHoliday: boolean;
+    payNonWorkingHolidayOnly: boolean;
+    requireDaysWorkedEnabled: boolean;
+    requireDaysWorkedCount: number;
+    requireDaysWorkedPeriod: number;
+    requireDaysWorkedPeriodUnit: string;
+    requireDaysWorkedMinDailyHours: number;
+    requireScheduledHoursPct: boolean;
+    requireScheduledHoursPctValue: number;
+    bypassAfterEligibility: boolean;
+    excludedWeekDays: number[];
     countTowardOt: boolean;
+    includeOnProbation: boolean;
+    probationDays: number;
+    tenureRequiredEnabled: boolean;
+    tenureRequiredDays: number;
+    tenureRequiredBasis: string;
+    tenureRequiredUnit: string;
+    prorateEnabled: boolean;
+    prorateLookbackDays: number;
+    prorateIncludeCurrentWeek: boolean;
+    prorateAppliedRule: string;
+    prorateThresholdHours: number;
+    prorateMultiplier: number;
+    prorateAverageDailyMaxHours: number;
+    prorateExcludeOt: boolean;
+    postWorkingHoursToAccrual: boolean;
+    postWorkingHoursMax: number;
+    postWorkingHoursExcessEnabled: boolean;
+    postWorkingHoursExcessMin: number;
+    accrualCode: string | null;
+    birthdayIsHoliday: boolean;
+    holidayOverridesEnabled: boolean;
+    holidayOverrides: unknown;
   },
   tenantId: string,
-  shift: { startTime: string; endTime: string; workDays: number[] } | null
+  shift: { startTime: string; endTime: string; workDays: number[] } | null,
+  employee: {
+    id: string;
+    hireDate: Date;
+    adjustedHireDate: Date | null;
+    dateOfBirth: Date | null;
+  },
+  weekStartDay: number
 ): Promise<void> {
+  // If the rule has specific holidays assigned, only credit those.
+  // Otherwise fall back to all active tenant holidays (backward-compatible for unconfigured rules).
+  const assignedCount = await db.holidayRuleHoliday.count({ where: { holidayRuleId: rule.id } });
+
   const holidays = await db.holiday.findMany({
     where: {
       tenantId,
       isActive: true,
+      ...(assignedCount > 0 ? { holidayRules: { some: { holidayRuleId: rule.id } } } : {}),
       OR: [
         { date:         { gte: payPeriodStart, lte: payPeriodEnd } },
         { observedDate: { gte: payPeriodStart, lte: payPeriodEnd } },
       ],
     },
-    select: { date: true, observedDate: true },
+    select: { date: true, observedDate: true, bypassAfterEligibility: true },
   });
-  if (holidays.length === 0) return;
 
   const periodStartStr = format(payPeriodStart, "yyyy-MM-dd");
   const periodEndStr   = format(payPeriodEnd,   "yyyy-MM-dd");
@@ -1039,20 +1118,44 @@ async function syncHolidayCredits(
   const localDateOf = (d: Date) =>
     new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(d);
 
-  // Effective holiday dates — use observedDate when set
-  const holidayDates = new Set<string>(
-    holidays.map((h) => format(h.observedDate ?? h.date, "yyyy-MM-dd"))
-  );
+  // Effective holiday dates — use observedDate when set; track per-holiday bypass flag
+  const holidayBypassAfter = new Map<string, boolean>();
+  for (const h of holidays) {
+    const ds = format(h.observedDate ?? h.date, "yyyy-MM-dd");
+    holidayBypassAfter.set(ds, h.bypassAfterEligibility);
+  }
 
-  // Paid WORK segments already written by the OT engine
+  // Birthday holiday — employee's birthday treated as a floating holiday under this rule
+  if (rule.birthdayIsHoliday && employee.dateOfBirth) {
+    const dob = employee.dateOfBirth;
+    const dobMonth = dob.getUTCMonth();
+    const dobDay   = dob.getUTCDate();
+    const d = new Date(payPeriodStart);
+    while (d <= payPeriodEnd) {
+      if (d.getUTCMonth() === dobMonth && d.getUTCDate() === dobDay) {
+        const ds = d.toISOString().slice(0, 10);
+        if (!holidayBypassAfter.has(ds)) holidayBypassAfter.set(ds, false);
+      }
+      d.setUTCDate(d.getUTCDate() + 1);
+    }
+  }
+
+  if (holidayBypassAfter.size === 0) return;
+  const holidayDates = new Set(holidayBypassAfter.keys());
+
+  // Paid WORK segments — include payBucket to separate REG from OT for prorate
   const workSegs = await db.workSegment.findMany({
     where: { timesheetId, segmentType: "WORK", isPaid: true },
-    select: { segmentDate: true, durationMinutes: true },
+    select: { segmentDate: true, durationMinutes: true, payBucket: true },
   });
-  const workedMinsByDay = new Map<string, number>();
+  const workedMinsByDay = new Map<string, number>(); // REG + OT + DT
+  const regMinsByDay    = new Map<string, number>(); // REG only (for prorateExcludeOt)
   for (const seg of workSegs) {
     const ds = format(seg.segmentDate, "yyyy-MM-dd");
     workedMinsByDay.set(ds, (workedMinsByDay.get(ds) ?? 0) + seg.durationMinutes);
+    if (seg.payBucket === "REG") {
+      regMinsByDay.set(ds, (regMinsByDay.get(ds) ?? 0) + seg.durationMinutes);
+    }
   }
 
   // Minimum period check
@@ -1060,7 +1163,7 @@ async function syncHolidayCredits(
   if (rule.minPeriodMinutes > 0 && totalWorkedMins < rule.minPeriodMinutes) return;
 
   // Days with any activity (for requireDayBefore/After checks)
-  const punchedDays = new Set(punches.map((p) => localDateOf(p.roundedTime)));
+  const punchedDays  = new Set(punches.map((p) => localDateOf(p.roundedTime)));
   const activityDays = new Set([...punchedDays, ...workedMinsByDay.keys()]);
 
   // Shift duration for SCHEDULED_HOURS credit (fallback to rule's creditMinutes if no shift)
@@ -1074,7 +1177,8 @@ async function syncHolidayCredits(
     shiftDurationMins = endMins - startMins;
   }
 
-  // Walk to the nearest adjacent scheduled work day (skips holidays and non-work days)
+  // Walk to the nearest adjacent scheduled work day, skipping holidays, off-schedule days,
+  // and any day-of-week in excludedWeekDays.
   function adjacentWorkDay(fromDs: string, dir: 1 | -1): string {
     const d = new Date(fromDs + "T12:00:00.000Z");
     for (let i = 0; i < 14; i++) {
@@ -1082,9 +1186,119 @@ async function syncHolidayCredits(
       const ds = d.toISOString().slice(0, 10);
       const dow = new Date(ds + "T12:00:00.000Z").getUTCDay();
       const onSchedule = !shift || shift.workDays.includes(dow);
-      if (onSchedule && !holidayDates.has(ds)) return ds;
+      if (onSchedule && !rule.excludedWeekDays.includes(dow) && !holidayDates.has(ds)) return ds;
     }
     return "";
+  }
+
+  // Returns true if the employee worked at least requireScheduledHoursPctValue% of their
+  // scheduled hours on the given day.
+  function meetsScheduledHoursPct(ds: string): boolean {
+    if (!rule.requireScheduledHoursPct || shiftDurationMins <= 0) return true;
+    return (workedMinsByDay.get(ds) ?? 0) / shiftDurationMins >= rule.requireScheduledHoursPctValue / 100;
+  }
+
+  // Returns true if the employee worked at least requireDaysWorkedCount qualifying days
+  // in the window immediately before the holiday (limited to the current pay period).
+  function meetsRequiredDaysWorked(holidayDs: string): boolean {
+    if (!rule.requireDaysWorkedEnabled || rule.requireDaysWorkedCount <= 0) return true;
+    const unitDays = rule.requireDaysWorkedPeriodUnit === "WEEK" ? 7 : 1;
+    const windowSize = rule.requireDaysWorkedPeriod * unitDays;
+    const windowEndDate = new Date(holidayDs + "T00:00:00.000Z");
+    windowEndDate.setUTCDate(windowEndDate.getUTCDate() - 1);
+    const windowStartDate = new Date(windowEndDate);
+    windowStartDate.setUTCDate(windowStartDate.getUTCDate() - windowSize + 1);
+    const windowStartStr = windowStartDate.toISOString().slice(0, 10);
+    const windowEndStr   = windowEndDate.toISOString().slice(0, 10);
+    const minMins = Math.round(rule.requireDaysWorkedMinDailyHours * 60);
+
+    let count = 0;
+    for (const [ds, mins] of workedMinsByDay) {
+      if (ds < windowStartStr || ds > windowEndStr) continue;
+      if (rule.excludedWeekDays.includes(new Date(ds + "T12:00:00.000Z").getUTCDay())) continue;
+      if (minMins > 0 && mins < minMins) continue;
+      count++;
+    }
+    return count >= rule.requireDaysWorkedCount;
+  }
+
+  // Returns true when the employee has sufficient tenure before the holiday.
+  function meetsTenure(holidayDs: string): boolean {
+    if (!rule.tenureRequiredEnabled || rule.tenureRequiredDays <= 0) return true;
+    const basisDate = rule.tenureRequiredBasis === "ADJUSTED_HIRE_DATE"
+      ? (employee.adjustedHireDate ?? employee.hireDate)
+      : employee.hireDate;
+    const holidayDate = new Date(holidayDs + "T00:00:00.000Z");
+    if (rule.tenureRequiredUnit === "MONTHS") {
+      const yDiff = holidayDate.getUTCFullYear() - basisDate.getUTCFullYear();
+      const mDiff = holidayDate.getUTCMonth()    - basisDate.getUTCMonth();
+      const dDiff = holidayDate.getUTCDate()     - basisDate.getUTCDate();
+      const months = yDiff * 12 + mDiff + (dDiff < 0 ? -1 : 0);
+      return months >= rule.tenureRequiredDays;
+    }
+    const diffDays = Math.floor((holidayDate.getTime() - basisDate.getTime()) / 86_400_000);
+    return diffDays >= rule.tenureRequiredDays;
+  }
+
+  // Returns true when the employee is still in their probationary period.
+  function isInProbation(holidayDs: string): boolean {
+    if (!rule.probationDays || rule.probationDays <= 0) return false;
+    const holidayDate = new Date(holidayDs + "T00:00:00.000Z");
+    const diffDays = Math.floor((holidayDate.getTime() - employee.hireDate.getTime()) / 86_400_000);
+    return diffDays < rule.probationDays;
+  }
+
+  // Prorate the base credit amount based on the employee's average daily hours over
+  // the lookback window (limited to the current pay period).
+  function applyProrate(baseCreditMins: number, holidayDs: string): number {
+    if (!rule.prorateEnabled || baseCreditMins <= 0) return baseCreditMins;
+
+    const holidayDate = new Date(holidayDs + "T00:00:00.000Z");
+
+    // Window end: day before the holiday (optionally further back to exclude current week)
+    let windowEndDate = new Date(holidayDate);
+    windowEndDate.setUTCDate(windowEndDate.getUTCDate() - 1);
+    if (!rule.prorateIncludeCurrentWeek) {
+      const dow = holidayDate.getUTCDay();
+      const diffToWeekStart = (dow - weekStartDay + 7) % 7;
+      const currentWeekStart = new Date(holidayDate);
+      currentWeekStart.setUTCDate(currentWeekStart.getUTCDate() - diffToWeekStart);
+      currentWeekStart.setUTCDate(currentWeekStart.getUTCDate() - 1); // day before week start
+      if (currentWeekStart < windowEndDate) windowEndDate = currentWeekStart;
+    }
+
+    const windowStartDate = new Date(windowEndDate);
+    windowStartDate.setUTCDate(windowStartDate.getUTCDate() - rule.prorateLookbackDays + 1);
+    if (windowStartDate < payPeriodStart) windowStartDate.setTime(payPeriodStart.getTime());
+
+    if (windowStartDate > windowEndDate) return baseCreditMins; // no valid window → full credit
+
+    const workDays = shift ? shift.workDays : [1, 2, 3, 4, 5];
+    const dayMinsMap = rule.prorateExcludeOt ? regMinsByDay : workedMinsByDay;
+    let scheduledDays = 0;
+    let totalMins = 0;
+    const d = new Date(windowStartDate);
+    while (d <= windowEndDate) {
+      const ds = d.toISOString().slice(0, 10);
+      const dow = d.getUTCDay();
+      if (workDays.includes(dow) && !rule.excludedWeekDays.includes(dow) && !holidayDates.has(ds)) {
+        scheduledDays++;
+        totalMins += dayMinsMap.get(ds) ?? 0;
+      }
+      d.setUTCDate(d.getUTCDate() + 1);
+    }
+
+    if (scheduledDays === 0) return 0;
+    const avgDailyMins = totalMins / scheduledDays;
+
+    if (rule.prorateAppliedRule === "THRESHOLD") {
+      const thresholdMins = rule.prorateThresholdHours * 60;
+      if (thresholdMins <= 0 || avgDailyMins >= thresholdMins) return baseCreditMins;
+      return Math.round(baseCreditMins * (avgDailyMins / thresholdMins));
+    }
+    // AVERAGE_DAILY: credit = min(avgDaily, maxDailyHours) × multiplier
+    const capped = Math.min(avgDailyMins, rule.prorateAverageDailyMaxHours * 60);
+    return Math.round(capped * rule.prorateMultiplier);
   }
 
   type HolidaySegInput = {
@@ -1097,58 +1311,104 @@ async function syncHolidayCredits(
     isPaid: boolean;
     payBucket: PayBucket;
     isSplit: boolean;
+    payCodeId: string | null;
   };
 
+  interface HolidayOverrideEntry { date: string; hours: number; payCodeId?: string }
+
   const toCreate: HolidaySegInput[] = [];
+  // Accumulate worked-on-holiday minutes for postWorkingHoursToAccrual (keyed by holiday ds)
+  const accrualMins: { ds: string; mins: number }[] = [];
 
   for (const ds of holidayDates) {
     if (ds < periodStartStr || ds > periodEndStr) continue;
     if (ds >= todayStr) continue;
 
-    // Eligibility: must have worked the day before
-    if (rule.requireDayBefore) {
+    const workedMinsOnHoliday = workedMinsByDay.get(ds) ?? 0;
+
+    // mustNotWorkOnHoliday: if employee worked any hours on the holiday, skip entirely
+    if (rule.mustNotWorkOnHoliday && workedMinsOnHoliday > 0) continue;
+
+    // Tenure: employee must have been employed long enough before the holiday
+    if (!meetsTenure(ds)) continue;
+
+    // Probation: skip probationary employees unless the rule explicitly includes them
+    if (!rule.includeOnProbation && isInProbation(ds)) continue;
+
+    // requireDaysWorked: must have worked N qualifying days in the lookback window
+    if (!meetsRequiredDaysWorked(ds)) continue;
+
+    // bypassAfterEligibility: both the rule AND the specific holiday must have the flag set
+    const bypassAfter = rule.bypassAfterEligibility && (holidayBypassAfter.get(ds) ?? false);
+
+    // Day-before / day-after eligibility
+    if (rule.requireDayBeforeOrAfter) {
       const prev = adjacentWorkDay(ds, -1);
-      if (!prev || !activityDays.has(prev)) continue;
-    }
-
-    // Eligibility: must have worked the day after (only once that day has passed)
-    if (rule.requireDayAfter) {
-      const next = adjacentWorkDay(ds, 1);
-      if (!next || next >= todayStr) continue;
-      if (!activityDays.has(next)) continue;
-    }
-
-    // Credit amount
-    let creditMins: number;
-    if (rule.creditMethod === "ACTUAL_WORKED") {
-      creditMins = workedMinsByDay.get(ds) ?? 0;
-    } else if (rule.creditMethod === "SCHEDULED_HOURS") {
-      creditMins = shiftDurationMins;
+      const prevOk = !!prev && activityDays.has(prev) && meetsScheduledHoursPct(prev);
+      let afterOk = bypassAfter;
+      if (!afterOk) {
+        const next = adjacentWorkDay(ds, 1);
+        afterOk = !!next && next < todayStr && activityDays.has(next) && meetsScheduledHoursPct(next);
+      }
+      if (!prevOk && !afterOk) continue;
     } else {
-      creditMins = rule.creditMinutes;
+      if (rule.requireDayBefore) {
+        const prev = adjacentWorkDay(ds, -1);
+        if (!prev || !activityDays.has(prev) || !meetsScheduledHoursPct(prev)) continue;
+      }
+      if (rule.requireDayAfter && !bypassAfter) {
+        const next = adjacentWorkDay(ds, 1);
+        if (!next || next >= todayStr || !activityDays.has(next) || !meetsScheduledHoursPct(next)) continue;
+      }
     }
-    if (rule.maxCreditMinutes > 0) creditMins = Math.min(creditMins, rule.maxCreditMinutes);
-    if (creditMins <= 0) continue;
+
+    // Base credit amount
+    let creditMins: number;
+    let creditPayCodeId = rule.payCodeId ?? null;
+
+    // Holiday overrides take priority over the base credit calculation
+    const override = rule.holidayOverridesEnabled && Array.isArray(rule.holidayOverrides)
+      ? (rule.holidayOverrides as HolidayOverrideEntry[]).find((o) => o.date === ds)
+      : null;
+
+    if (override) {
+      creditMins = Math.round(override.hours * 60);
+      if (override.payCodeId) creditPayCodeId = override.payCodeId;
+    } else {
+      if (rule.creditMethod === "ACTUAL_WORKED") {
+        creditMins = workedMinsOnHoliday;
+      } else if (rule.creditMethod === "SCHEDULED_HOURS") {
+        creditMins = shiftDurationMins;
+      } else {
+        creditMins = rule.creditMinutes;
+      }
+      if (rule.maxCreditMinutes > 0) creditMins = Math.min(creditMins, rule.maxCreditMinutes);
+      creditMins = applyProrate(creditMins, ds);
+    }
 
     const segmentDate = new Date(ds + "T00:00:00.000Z");
     const creditStart = new Date(ds + "T00:00:00.000Z");
 
-    toCreate.push({
-      timesheetId,
-      segmentType: "HOLIDAY",
-      startTime: creditStart,
-      endTime: new Date(creditStart.getTime() + creditMins * 60_000),
-      durationMinutes: creditMins,
-      segmentDate,
-      isPaid: true,
-      payBucket: rule.payBucket,
-      isSplit: false,
-    });
+    // payNonWorkingHolidayOnly: only post credit segment if employee did NOT work the holiday
+    if ((!rule.payNonWorkingHolidayOnly || workedMinsOnHoliday === 0) && creditMins > 0) {
+      toCreate.push({
+        timesheetId,
+        segmentType: "HOLIDAY",
+        startTime: creditStart,
+        endTime: new Date(creditStart.getTime() + creditMins * 60_000),
+        durationMinutes: creditMins,
+        segmentDate,
+        isPaid: true,
+        payBucket: rule.payBucket,
+        isSplit: false,
+        payCodeId: creditPayCodeId,
+      });
+    }
 
-    // Working premium — extra pay for hours actually clocked on the holiday
-    const workedMins = workedMinsByDay.get(ds) ?? 0;
-    if (workedMins > 0 && rule.workingPremium > 100) {
-      const premiumMins = Math.round(workedMins * (rule.workingPremium - 100) / 100);
+    // Working premium — extra pay for hours actually clocked on the holiday.
+    // Applies regardless of payNonWorkingHolidayOnly (premium covers worked hours, not credit).
+    if (workedMinsOnHoliday > 0 && rule.workingPremium > 100) {
+      const premiumMins = Math.round(workedMinsOnHoliday * (rule.workingPremium - 100) / 100);
       if (premiumMins > 0) {
         toCreate.push({
           timesheetId,
@@ -1160,21 +1420,196 @@ async function syncHolidayCredits(
           isPaid: true,
           payBucket: rule.payBucket,
           isSplit: false,
+          payCodeId: creditPayCodeId,
         });
+      }
+    }
+
+    // Accumulate for postWorkingHoursToAccrual (processed after segment creation)
+    if (rule.postWorkingHoursToAccrual && rule.accrualCode && workedMinsOnHoliday > 0) {
+      let minsToPost = workedMinsOnHoliday;
+      if (rule.postWorkingHoursExcessEnabled) {
+        const excessMin = Math.round(rule.postWorkingHoursExcessMin * 60);
+        minsToPost = minsToPost > excessMin ? minsToPost - excessMin : 0;
+      }
+      if (rule.postWorkingHoursMax > 0) {
+        minsToPost = Math.min(minsToPost, Math.round(rule.postWorkingHoursMax * 60));
+      }
+      if (minsToPost > 0) accrualMins.push({ ds, mins: minsToPost });
+    }
+  }
+
+  if (toCreate.length > 0) {
+    const totalHolidayMins = toCreate.reduce((a, s) => a + s.durationMinutes, 0);
+    await db.$transaction([
+      db.workSegment.createMany({ data: toCreate }),
+      db.overtimeBucket.upsert({
+        where: { timesheetId_bucket: { timesheetId, bucket: "HOLIDAY" } },
+        create: { timesheetId, bucket: "HOLIDAY", totalMinutes: totalHolidayMins },
+        update: { totalMinutes: totalHolidayMins },
+      }),
+    ]);
+  }
+
+  // Post worked-on-holiday hours to the configured accrual leave type
+  if (accrualMins.length > 0 && rule.accrualCode) {
+    const totalToPost = accrualMins.reduce((sum, e) => sum + e.mins, 0);
+    const leaveType = await db.leaveType.findFirst({
+      where: { id: rule.accrualCode, tenantId },
+      select: { id: true },
+    });
+    if (leaveType) {
+      const accrualYear = payPeriodEnd.getUTCFullYear();
+      const currentBalance = await db.leaveBalance.findUnique({
+        where: {
+          employeeId_leaveTypeId_accrualYear: {
+            employeeId: employee.id,
+            leaveTypeId: leaveType.id,
+            accrualYear,
+          },
+        },
+        select: { balanceMinutes: true },
+      });
+      const balanceAfter = (currentBalance?.balanceMinutes ?? 0) + totalToPost;
+      await db.$transaction([
+        db.leaveBalance.upsert({
+          where: {
+            employeeId_leaveTypeId_accrualYear: {
+              employeeId: employee.id,
+              leaveTypeId: leaveType.id,
+              accrualYear,
+            },
+          },
+          create: {
+            employeeId: employee.id,
+            leaveTypeId: leaveType.id,
+            accrualYear,
+            balanceMinutes: totalToPost,
+            usedMinutes: 0,
+          },
+          update: { balanceMinutes: { increment: totalToPost } },
+        }),
+        db.leaveAccrualLedger.create({
+          data: {
+            employeeId: employee.id,
+            leaveTypeId: leaveType.id,
+            action: "EARNED_ADJUSTMENT",
+            deltaMinutes: totalToPost,
+            balanceAfter,
+            payPeriodEnd: payPeriodEnd,
+            note: "Holiday worked hours",
+          },
+        }),
+      ]);
+    }
+  }
+}
+
+/**
+ * After holiday credits are written, reclassifies weekly REG WORK minutes that are
+ * pushed over the OT threshold by the holiday credit hours (countTowardOt = true).
+ * Works from the end of the week backwards, splitting segments when needed.
+ */
+async function applyHolidayOtAdjustment(
+  timesheetId: string,
+  ruleSet: { weeklyOtEnabled: boolean; weeklyOtMinutes: number; weekStartDay: number }
+): Promise<void> {
+  if (!ruleSet.weeklyOtEnabled || ruleSet.weeklyOtMinutes >= 86400) return;
+
+  function weekStartOf(date: Date): string {
+    const dow = date.getUTCDay();
+    const diff = (dow - ruleSet.weekStartDay + 7) % 7;
+    const d = new Date(date);
+    d.setUTCDate(d.getUTCDate() - diff);
+    return d.toISOString().slice(0, 10);
+  }
+
+  const [regSegs, holidaySegs] = await Promise.all([
+    db.workSegment.findMany({
+      where: { timesheetId, segmentType: "WORK", payBucket: "REG", isPaid: true },
+      select: { id: true, segmentDate: true, startTime: true, endTime: true, durationMinutes: true, payCodeId: true },
+      orderBy: [{ segmentDate: "desc" }, { startTime: "desc" }],
+    }),
+    db.workSegment.findMany({
+      where: { timesheetId, segmentType: "HOLIDAY", isPaid: true },
+      select: { segmentDate: true, durationMinutes: true },
+    }),
+  ]);
+
+  if (regSegs.length === 0 || holidaySegs.length === 0) return;
+
+  // Minutes per week
+  const weekReg = new Map<string, number>();
+  const weekHol = new Map<string, number>();
+  for (const s of regSegs)     weekReg.set(weekStartOf(s.segmentDate), (weekReg.get(weekStartOf(s.segmentDate)) ?? 0) + s.durationMinutes);
+  for (const s of holidaySegs) weekHol.set(weekStartOf(s.segmentDate), (weekHol.get(weekStartOf(s.segmentDate)) ?? 0) + s.durationMinutes);
+
+  // Overflow per week: how many REG minutes should become OT
+  const weekOverflow = new Map<string, number>();
+  for (const [wk, regMins] of weekReg) {
+    const holMins = weekHol.get(wk) ?? 0;
+    if (holMins === 0) continue;
+    const overflow = Math.min((regMins + holMins) - ruleSet.weeklyOtMinutes, regMins);
+    if (overflow > 0) weekOverflow.set(wk, overflow);
+  }
+
+  if (weekOverflow.size === 0) return;
+
+  type SegUpdate = Parameters<typeof db.workSegment.update>[0];
+  const ops: ReturnType<typeof db.workSegment.update>[] = [];
+  const creates: {
+    timesheetId: string; segmentType: "WORK"; startTime: Date; endTime: Date;
+    durationMinutes: number; segmentDate: Date; isPaid: boolean; payBucket: "OT";
+    isSplit: boolean; payCodeId: string | null;
+  }[] = [];
+  let totalReclassified = 0;
+
+  for (const [wk, overflow] of weekOverflow) {
+    let remaining = overflow;
+    const weekSegs = regSegs.filter((s) => weekStartOf(s.segmentDate) === wk);
+
+    for (const seg of weekSegs) {
+      if (remaining <= 0) break;
+
+      if (seg.durationMinutes <= remaining) {
+        // Whole segment → OT
+        ops.push(db.workSegment.update({ where: { id: seg.id }, data: { payBucket: "OT" } }));
+        totalReclassified += seg.durationMinutes;
+        remaining -= seg.durationMinutes;
+      } else {
+        // Partial: trim this segment to (duration - remaining) REG, create a new OT tail
+        const otMins = remaining;
+        const regMins = seg.durationMinutes - otMins;
+        const splitTime = new Date(seg.endTime.getTime() - otMins * 60_000);
+        ops.push(db.workSegment.update({
+          where: { id: seg.id },
+          data: { durationMinutes: regMins, endTime: splitTime },
+        }));
+        creates.push({
+          timesheetId, segmentType: "WORK", startTime: splitTime, endTime: seg.endTime,
+          durationMinutes: otMins, segmentDate: seg.segmentDate, isPaid: true,
+          payBucket: "OT", isSplit: true, payCodeId: seg.payCodeId,
+        });
+        totalReclassified += otMins;
+        remaining = 0;
       }
     }
   }
 
-  if (toCreate.length === 0) return;
-
-  const totalHolidayMins = toCreate.reduce((a, s) => a + s.durationMinutes, 0);
+  if (totalReclassified === 0) return;
 
   await db.$transaction([
-    db.workSegment.createMany({ data: toCreate }),
+    ...ops,
+    ...(creates.length > 0 ? [db.workSegment.createMany({ data: creates })] : []),
     db.overtimeBucket.upsert({
-      where: { timesheetId_bucket: { timesheetId, bucket: "HOLIDAY" } },
-      create: { timesheetId, bucket: "HOLIDAY", totalMinutes: totalHolidayMins },
-      update: { totalMinutes: totalHolidayMins },
+      where: { timesheetId_bucket: { timesheetId, bucket: "REG" } },
+      create: { timesheetId, bucket: "REG", totalMinutes: 0 },
+      update: { totalMinutes: { decrement: totalReclassified } },
+    }),
+    db.overtimeBucket.upsert({
+      where: { timesheetId_bucket: { timesheetId, bucket: "OT" } },
+      create: { timesheetId, bucket: "OT", totalMinutes: totalReclassified },
+      update: { totalMinutes: { increment: totalReclassified } },
     }),
   ]);
 }

@@ -67,13 +67,17 @@ export default async function PayPeriodsPage({
   const allPayPeriods = result.data;
   const currentYear = new Date().getFullYear();
 
-  // Default to the current pay period when none is selected
+  // Default to the current pay period when none is selected.
+  // When multiple rule sets have overlapping current periods, pick the one ending soonest.
   if (!selectedId) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const current = allPayPeriods.find(
+    const currentPeriods = allPayPeriods.filter(
       (pp) => parseUtcDate(pp.startDate) <= today && today <= parseUtcDate(pp.endDate)
     );
+    const current = currentPeriods.sort(
+      (a, b) => parseUtcDate(a.endDate).getTime() - parseUtcDate(b.endDate).getTime()
+    )[0];
     if (current) {
       const siteParam = siteId ? `&siteId=${siteId}` : "";
       const deptParam = departmentId ? `&departmentId=${departmentId}` : "";
@@ -115,6 +119,9 @@ export default async function PayPeriodsPage({
     startDate: pp.startDate.toISOString(),
     endDate: pp.endDate.toISOString(),
     status: pp.status,
+    ruleSetId: pp.ruleSetId ?? null,
+    ruleSetName: pp.ruleSet?.name ?? null,
+    ruleSetFrequency: (pp.ruleSet?.payFrequency ?? null) as string | null,
   }));
 
   // Fetch detail if a pay period is selected
@@ -163,8 +170,28 @@ export default async function PayPeriodsPage({
           {payPeriods.length === 0 && (
             <p className="px-4 py-8 text-center text-sm text-zinc-400">No pay periods found.</p>
           )}
-          <div className="flex flex-col">
-            {payPeriods.map((pp) => {
+          {(() => {
+            const FREQ_LABEL: Record<string, string> = {
+              WEEKLY: "Weekly", BIWEEKLY: "Biweekly",
+              SEMI_MONTHLY: "Semi-monthly", MONTHLY: "Monthly",
+            };
+
+            const groupMap = new Map<string, { name: string; frequency: string | null; periods: typeof payPeriods }>();
+            for (const pp of payPeriods) {
+              const key = pp.ruleSetId ?? "__tenant__";
+              if (!groupMap.has(key)) {
+                groupMap.set(key, {
+                  name: pp.ruleSet?.name ?? "Default",
+                  frequency: (pp.ruleSet?.payFrequency as string | null | undefined) ?? null,
+                  periods: [],
+                });
+              }
+              groupMap.get(key)!.periods.push(pp);
+            }
+            const groups = [...groupMap.values()];
+            const showHeaders = groups.length > 1;
+
+            const renderItem = (pp: typeof payPeriods[number]) => {
               const total = pp.timesheets.length;
               const approved = pp.timesheets.filter(
                 (t) => t.status === "PAYROLL_APPROVED" || t.status === "LOCKED"
@@ -176,7 +203,6 @@ export default async function PayPeriodsPage({
               const filterHref = !monthParam && currentFilter !== "all" ? `&filter=${currentFilter}` : "";
               const statusHref = statusFilter !== "all" ? `&status=${statusFilter}` : "";
               const href = `/payroll/pay-periods?id=${pp.id}${filterHref}${statusHref}${monthHref}${siteParam}${deptParam}`;
-
               return (
                 <Link
                   key={pp.id}
@@ -200,8 +226,30 @@ export default async function PayPeriodsPage({
                   </p>
                 </Link>
               );
-            })}
-          </div>
+            };
+
+            return (
+              <div className="flex flex-col">
+                {groups.map((group) => (
+                  <div key={group.name}>
+                    {showHeaders && (
+                      <div className="sticky top-0 z-10 border-b border-zinc-100 bg-zinc-50 px-4 py-1.5 dark:border-zinc-800 dark:bg-zinc-900">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                          {group.name}
+                          {group.frequency && (
+                            <span className="ml-1 normal-case font-normal text-zinc-400 dark:text-zinc-500">
+                              · {FREQ_LABEL[group.frequency] ?? group.frequency}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    )}
+                    {group.periods.map(renderItem)}
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       </div>
 

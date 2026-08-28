@@ -455,7 +455,7 @@ export const getEmployeeLeaveLog = withRBAC(
         select: { user: { select: { name: true } } },
       }),
       db.leaveAccrualLedger.findMany({
-        where: { employeeId, action: { in: ["ACCRUAL", "USAGE", "ADJUSTMENT", "TIMECARD_DEDUCTION", "EOD_SNAPSHOT", "POLICY_CHANGE"] } },
+        where: { employeeId, action: { in: ["ACCRUAL", "EARNED_ADJUSTMENT", "USAGE", "ADJUSTMENT", "TIMECARD_DEDUCTION", "EOD_SNAPSHOT", "POLICY_CHANGE"] } },
         orderBy: { createdAt: "desc" },
         take: 500,
         include: {
@@ -471,7 +471,7 @@ export const getEmployeeLeaveLog = withRBAC(
     const creatorIds = [
       ...new Set(
         ledgerEntries
-          .filter((e) => (e.action === "ADJUSTMENT" || e.action === "POLICY_CHANGE" || e.action === "TIMECARD_DEDUCTION") && e.createdById)
+          .filter((e) => (e.action === "ADJUSTMENT" || e.action === "EARNED_ADJUSTMENT" || e.action === "POLICY_CHANGE" || e.action === "TIMECARD_DEDUCTION") && e.createdById)
           .map((e) => e.createdById as string)
       ),
     ];
@@ -495,6 +495,7 @@ export const getEmployeeLeaveLog = withRBAC(
         entry.action === "POLICY_CHANGE"       ? "policy_change" :
         isAccrualReset                          ? "accrual_reset" :
         entry.action === "ACCRUAL"             ? "accrual" :
+        entry.action === "EARNED_ADJUSTMENT"   ? "accrual" :
         entry.action === "TIMECARD_DEDUCTION"  ? "timecard_entry" :
         isTimecardAdjustment                   ? "timecard_entry" :
         entry.action === "USAGE"               ? "leave_request" :
@@ -505,6 +506,7 @@ export const getEmployeeLeaveLog = withRBAC(
         entry.action === "POLICY_CHANGE"       ? (entry.createdById ? (creatorById.get(entry.createdById) ?? "Unknown") : "System") :
         isAccrualReset                          ? (entry.createdById ? (creatorById.get(entry.createdById) ?? "System") : "System") :
         entry.action === "ACCRUAL"             ? "System" :
+        entry.action === "EARNED_ADJUSTMENT"   ? (entry.createdById ? (creatorById.get(entry.createdById) ?? "Unknown") : "System") :
         entry.action === "TIMECARD_DEDUCTION"  ? (entry.createdById ? (creatorById.get(entry.createdById) ?? "Unknown") : "System") :
         isTimecardAdjustment                   ? (entry.createdById ? (creatorById.get(entry.createdById) ?? "Unknown") : "System") :
         entry.action === "USAGE"               ? (employee.user.name ?? "Employee") :
@@ -518,6 +520,7 @@ export const getEmployeeLeaveLog = withRBAC(
         entry.action === "USAGE"               ? (entry.leaveRequest?.note ?? null) :
         entry.action === "TIMECARD_DEDUCTION"  ? (entry.note ?? null) :
         entry.action === "ADJUSTMENT"          ? (entry.note ?? null) :
+        entry.action === "EARNED_ADJUSTMENT"   ? (entry.note ?? null) :
         null;
 
       return {
@@ -926,7 +929,7 @@ export const resetLeaveBalanceToAccrual = withRBAC(
         where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear: year } },
       }),
       db.leaveAccrualLedger.aggregate({
-        where: { employeeId, leaveTypeId, action: "ACCRUAL", payPeriodEnd: { gte: yearStart, lt: yearEnd } },
+        where: { employeeId, leaveTypeId, action: { in: ["ACCRUAL", "EARNED_ADJUSTMENT"] }, payPeriodEnd: { gte: yearStart, lt: yearEnd } },
         _sum: { deltaMinutes: true },
       }),
     ]);
@@ -1255,19 +1258,20 @@ export const bulkCreateEmployees = withRBAC(
 export const postManualAccrualEntry = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: unknown) => {
-    const { employeeId, leaveTypeId, year, effectiveDate, accrualMinutes, adjustMinutes, note } =
+    const { employeeId, leaveTypeId, year, effectiveDate, accrualMinutes, adjustEarnMinutes, adjustMinutes, note } =
       z.object({
         employeeId: z.string(),
         leaveTypeId: z.string(),
         year: z.number().int(),
         effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         accrualMinutes: z.number().int(),
+        adjustEarnMinutes: z.number().int().default(0),
         adjustMinutes: z.number().int(),
         note: z.string().min(1),
       }).parse(input);
 
-    if (accrualMinutes === 0 && adjustMinutes === 0) {
-      return { success: false as const, error: "Enter a non-zero value for Accrual Hours or Adjust Hours." };
+    if (accrualMinutes === 0 && adjustEarnMinutes === 0 && adjustMinutes === 0) {
+      return { success: false as const, error: "Enter a non-zero value for Accrual Hours, Adjust Earn Hours, or Adjust Hours." };
     }
 
     const existing = await db.leaveBalance.upsert({
@@ -1277,10 +1281,10 @@ export const postManualAccrualEntry = withRBAC(
     });
 
     const effectiveDateObj = new Date(`${effectiveDate}T00:00:00Z`);
-    const newBalance = existing.balanceMinutes + accrualMinutes + adjustMinutes;
+    const newBalance = existing.balanceMinutes + accrualMinutes + adjustEarnMinutes + adjustMinutes;
 
     const ledgerEntries: {
-      employeeId: string; leaveTypeId: string; action: "ACCRUAL" | "ADJUSTMENT";
+      employeeId: string; leaveTypeId: string; action: "ACCRUAL" | "EARNED_ADJUSTMENT" | "ADJUSTMENT";
       deltaMinutes: number; balanceAfter: number; payPeriodEnd: Date; note: string; createdById: string | null;
     }[] = [];
     let running = existing.balanceMinutes;
@@ -1288,6 +1292,10 @@ export const postManualAccrualEntry = withRBAC(
     if (accrualMinutes !== 0) {
       running += accrualMinutes;
       ledgerEntries.push({ employeeId, leaveTypeId, action: "ACCRUAL", deltaMinutes: accrualMinutes, balanceAfter: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
+    }
+    if (adjustEarnMinutes !== 0) {
+      running += adjustEarnMinutes;
+      ledgerEntries.push({ employeeId, leaveTypeId, action: "EARNED_ADJUSTMENT", deltaMinutes: adjustEarnMinutes, balanceAfter: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
     }
     if (adjustMinutes !== 0) {
       running += adjustMinutes;
@@ -1307,7 +1315,7 @@ export const postManualAccrualEntry = withRBAC(
       action: "LEAVE_BALANCE_ADJUSTED",
       changes: {
         before: { balanceMinutes: existing.balanceMinutes },
-        after:  { balanceMinutes: newBalance, note, accrualMinutes, adjustMinutes },
+        after:  { balanceMinutes: newBalance, note, accrualMinutes, adjustEarnMinutes, adjustMinutes },
       },
     });
 
@@ -1408,6 +1416,7 @@ function yearlyRatePerPosting(annualHours: number, freq: string): number {
 function ledgerLabel(action: string): string {
   switch (action) {
     case "ACCRUAL":            return "Accrual";
+    case "EARNED_ADJUSTMENT":  return "Earned Adj.";
     case "USAGE":              return "Leave Used";
     case "ADJUSTMENT":         return "Adjustment";
     case "CARRY_OVER":         return "Carry Over";
@@ -1463,7 +1472,7 @@ export const getAccrualYearSummary = withRBAC(
       db.leaveBalance.findMany({ where: { employeeId, accrualYear: year } }),
       db.leaveAccrualLedger.groupBy({
         by: ["leaveTypeId"],
-        where: { employeeId, action: "ACCRUAL", payPeriodEnd: { gte: yearStart, lt: yearEnd } },
+        where: { employeeId, action: { in: ["ACCRUAL", "EARNED_ADJUSTMENT"] }, payPeriodEnd: { gte: yearStart, lt: yearEnd } },
         _sum: { deltaMinutes: true },
       }),
       db.leaveAccrualLedger.groupBy({

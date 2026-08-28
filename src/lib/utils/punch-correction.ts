@@ -1,4 +1,4 @@
-import { applyRounding } from "@/lib/utils/date";
+import { computeRoundedTime } from "@/lib/utils/date";
 import { writeAuditLog } from "@/lib/audit/logger";
 import type { Punch, RuleSet } from "@prisma/client";
 import type { TxClient } from "@/types/prisma";
@@ -32,16 +32,27 @@ export async function createCorrectionPunch(
 
   const original = await tx.punch.findUniqueOrThrow({
     where: { id: originalPunchId },
-    include: { employee: { include: { ruleSet: true } } },
+    include: {
+      employee: {
+        include: {
+          ruleSet: true,
+          shift: { select: { startTime: true, endTime: true, workDays: true } },
+          site: { select: { timezone: true } },
+        },
+      },
+    },
   });
 
   if (original.correctedById) {
     throw new Error("Punch has already been corrected.");
   }
 
-  const roundedTime = applyRounding(
+  const roundedTime = computeRoundedTime(
     newPunchTime,
-    original.employee.ruleSet.punchRoundingMinutes
+    original.punchType,
+    original.employee.ruleSet,
+    original.employee.shift,
+    original.employee.site?.timezone ?? "UTC",
   );
 
   const correction = await tx.punch.create({

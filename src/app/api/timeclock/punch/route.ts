@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
-import { applyRounding } from "@/lib/utils/date";
+import { computeRoundedTime } from "@/lib/utils/date";
 import { getCurrentPunchState, findOpenPayPeriod, saveRejectedPunch } from "@/lib/utils/punch-helpers";
 import { validateTransition } from "@/lib/state-machines/punch-state";
 import { timeclockScanSchema } from "@/lib/validators/punch.schema";
@@ -117,7 +117,11 @@ export async function POST(req: NextRequest) {
   // 3. Look up employee by wmsId (badge QR code)
   const employee = await db.employee.findUnique({
     where: { wmsId: EmployeeCode },
-    include: { ruleSet: true, site: true },
+    include: {
+      ruleSet: true,
+      site: true,
+      shift: { select: { startTime: true, endTime: true, workDays: true } },
+    },
   });
 
   if (!employee) {
@@ -184,7 +188,7 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-  const roundedTime = applyRounding(punchTime, employee.ruleSet.punchRoundingMinutes);
+  const roundedTime = computeRoundedTime(punchTime, punchType, employee.ruleSet, employee.shift, employee.site.timezone);
 
   // 9. Create punch + audit log in transaction
   try {

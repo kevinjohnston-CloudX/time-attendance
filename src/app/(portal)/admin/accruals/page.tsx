@@ -10,21 +10,31 @@ export default async function AccrualsPage() {
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
 
-  const employees = await db.employee.findMany({
-    where: { isActive: true },
-    include: {
-      user: { select: { name: true } },
-      department: { select: { name: true } },
-      payCategory: { select: { number: true, description: true } },
-    },
-    orderBy: { user: { name: "asc" } },
-  });
+  const [employees, sites] = await Promise.all([
+    db.employee.findMany({
+      where: { isActive: true },
+      include: {
+        user: { select: { name: true } },
+        department: { select: { name: true } },
+        site: { select: { id: true, name: true } },
+        payCategory: { select: { number: true, description: true } },
+      },
+      orderBy: { user: { name: "asc" } },
+    }),
+    db.site.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
   const rows = employees.map((emp) => ({
     id: emp.id,
     name: emp.user?.name ?? emp.id,
     employeeCode: emp.employeeCode,
     department: emp.department.name,
+    siteId: emp.site.id,
+    site: emp.site.name,
     payCategory: emp.payCategory
       ? emp.payCategory.description ?? `Category ${emp.payCategory.number}`
       : null,
@@ -37,7 +47,7 @@ export default async function AccrualsPage() {
       <p className="mt-1 text-sm text-zinc-500">
         Leave balances and accrual history per employee.
       </p>
-      <AccrualsEmployeeList employees={rows} />
+      <AccrualsEmployeeList employees={rows} sites={sites} />
     </div>
   );
 }

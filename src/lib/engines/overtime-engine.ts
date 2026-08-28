@@ -2,6 +2,7 @@ import { format, startOfWeek } from "date-fns";
 import { db } from "@/lib/db";
 import type { WorkSegment, RuleSet, PayBucket } from "@prisma/client";
 import type { DayBreakdown, OvertimeResult } from "@/types/overtime";
+import { snapToLocalTime } from "@/lib/utils/date";
 
 interface ReclassifiedSegment {
   timesheetId: string;
@@ -161,10 +162,16 @@ function calcDayBuckets(
 /**
  * Pure function: given WORK segments for one timesheet, compute OT breakdown.
  * Does NOT touch the database.
+ *
+ * When `shift` and `timezone` are provided, the grace period is applied
+ * per-punch: minutes clocked before shift start (within otGraceBeforeShiftMinutes)
+ * and after shift end (within otGraceAfterShiftMinutes) are reclassified back to REG.
  */
 export function computeOvertime(
   segments: WorkSegment[],
-  ruleSet: RuleSet
+  ruleSet: RuleSet,
+  shift?: { startTime: string; endTime: string } | null,
+  timezone?: string
 ): OvertimeResult {
   // Group work minutes by date
   const minutesByDate = new Map<string, number>();
@@ -225,13 +232,61 @@ export function computeOvertime(
     }
   }
 
-  // Grace period: reclassify small daily OT amounts back to REG when total
-  // daily OT is within the combined grace window (before + after shift).
-  // Full shift-aware logic deferred until shift scheduling is built — see memory note.
-  const graceMinutes = (ruleSet.otGraceBeforeShiftMinutes ?? 0) + (ruleSet.otGraceAfterShiftMinutes ?? 0);
-  if (graceMinutes > 0) {
+  // Grace period: reclassify boundary minutes (before shift start / after shift end) from OT → REG.
+  const graceBefore = ruleSet.otGraceBeforeShiftMinutes ?? 0;
+  const graceAfter  = ruleSet.otGraceAfterShiftMinutes  ?? 0;
+  if ((graceBefore > 0 || graceAfter > 0) && shift && timezone) {
+    // Build per-day first/last work segment boundary (UTC timestamps)
+    const dayFirstStart = new Map<string, Date>();
+    const dayLastEnd    = new Map<string, Date>();
+    for (const seg of segments) {
+      if (seg.segmentType !== "WORK") continue;
+      const ds = format(seg.segmentDate, "yyyy-MM-dd");
+      if (!dayFirstStart.has(ds) || seg.startTime < dayFirstStart.get(ds)!) {
+        dayFirstStart.set(ds, seg.startTime);
+      }
+      if (!dayLastEnd.has(ds) || seg.endTime > dayLastEnd.get(ds)!) {
+        dayLastEnd.set(ds, seg.endTime);
+      }
+    }
+
     for (const day of days) {
-      if (day.otMinutes > 0 && day.otMinutes <= graceMinutes) {
+      if (day.otMinutes <= 0) continue;
+
+      const firstStart = dayFirstStart.get(day.date);
+      const lastEnd    = dayLastEnd.get(day.date);
+      if (!firstStart && !lastEnd) continue;
+
+      const shiftStartUtc = snapToLocalTime(shift.startTime, day.date, timezone);
+      let   shiftEndUtc   = snapToLocalTime(shift.endTime,   day.date, timezone);
+      // Handle overnight shifts
+      if (shiftEndUtc <= shiftStartUtc) shiftEndUtc = new Date(shiftEndUtc.getTime() + 86_400_000);
+
+      let graceApplied = 0;
+
+      // Minutes the employee started before the shift start (within grace window)
+      if (graceBefore > 0 && firstStart && firstStart < shiftStartUtc) {
+        const earlyMins = Math.round((shiftStartUtc.getTime() - firstStart.getTime()) / 60_000);
+        graceApplied += Math.min(earlyMins, graceBefore);
+      }
+
+      // Minutes the employee stayed after the shift end (within grace window)
+      if (graceAfter > 0 && lastEnd && lastEnd > shiftEndUtc) {
+        const lateMins = Math.round((lastEnd.getTime() - shiftEndUtc.getTime()) / 60_000);
+        graceApplied += Math.min(lateMins, graceAfter);
+      }
+
+      graceApplied = Math.min(graceApplied, day.otMinutes);
+      if (graceApplied > 0) {
+        day.otMinutes  -= graceApplied;
+        day.regMinutes += graceApplied;
+      }
+    }
+  } else if ((graceBefore > 0 || graceAfter > 0) && !shift) {
+    // Fallback when no shift is assigned: treat the combined grace as a flat daily window
+    const graceTotal = graceBefore + graceAfter;
+    for (const day of days) {
+      if (day.otMinutes > 0 && day.otMinutes <= graceTotal) {
         day.regMinutes += day.otMinutes;
         day.otMinutes = 0;
       }
@@ -451,16 +506,28 @@ function reclassifySegments(
  */
 export async function applyOvertime(
   timesheetId: string,
-  ruleSet: RuleSet
+  ruleSet: RuleSet,
+  shift?: { startTime: string; endTime: string } | null,
+  timezone?: string
 ): Promise<OvertimeResult> {
-  const [segments, punchesWithCode] = await Promise.all([
+  const [segments, punchesWithCode, missingPunchExceptions] = await Promise.all([
     db.workSegment.findMany({ where: { timesheetId } }),
     db.punch.findMany({
       where: { timesheetId, isApproved: true, correctedById: null, payCodeId: { not: null } },
       orderBy: { roundedTime: "asc" },
       select: { punchType: true, roundedTime: true, payCodeId: true },
     }),
+    db.exception.findMany({
+      where: { timesheetId, exceptionType: "MISSING_PUNCH" },
+      select: { occurredAt: true },
+    }),
   ]);
+
+  // Dates with unresolved missing punches are excluded from OT accumulation.
+  // Once the missing punch is added and the timesheet is recalculated they count normally.
+  const missedPunchDates = new Set(
+    missingPunchExceptions.map((e) => format(e.occurredAt, "yyyy-MM-dd"))
+  );
 
   // Build exempt time ranges from punches whose pay code excludes OT counting
   const exemptRanges: Array<{ start: Date; end: Date | null }> = [];
@@ -491,10 +558,13 @@ export async function applyOvertime(
         return false;
       };
 
-  const workExempt = segments.filter((s) => s.segmentType === "WORK" && isExemptSeg(s));
-  const otEligible = segments.filter((s) => s.segmentType !== "WORK" || !isExemptSeg(s));
+  const isMissedPunchSeg = (seg: WorkSegment) =>
+    seg.segmentType === "WORK" && missedPunchDates.has(format(seg.segmentDate, "yyyy-MM-dd"));
 
-  const result = computeOvertime(otEligible, ruleSet);
+  const workExempt = segments.filter((s) => s.segmentType === "WORK" && (isExemptSeg(s) || isMissedPunchSeg(s)));
+  const otEligible = segments.filter((s) => s.segmentType !== "WORK" || (!isExemptSeg(s) && !isMissedPunchSeg(s)));
+
+  const result = computeOvertime(otEligible, ruleSet, shift, timezone);
   const reclassified = reclassifySegments(otEligible, result, ruleSet);
 
   // Exempt segments stay as REG — preserve all fields except payBucket

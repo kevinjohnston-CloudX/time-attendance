@@ -7,7 +7,7 @@ import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { createCorrectionPunch } from "@/lib/utils/punch-correction";
-import { applyRounding } from "@/lib/utils/date";
+import { computeRoundedTime } from "@/lib/utils/date";
 import { findOpenPayPeriod } from "@/lib/utils/punch-helpers";
 import { recordPunchCore } from "@/lib/services/punch.service";
 import {
@@ -52,7 +52,11 @@ export const requestMissedPunch = withRBAC(
 
     const employee = await db.employee.findUniqueOrThrow({
       where: { id: employeeId },
-      include: { ruleSet: true },
+      include: {
+        ruleSet: true,
+        shift: { select: { startTime: true, endTime: true, workDays: true } },
+        site: { select: { timezone: true } },
+      },
     });
 
     const payPeriod = await findOpenPayPeriod(tenantId, employee.ruleSetId);
@@ -60,9 +64,12 @@ export const requestMissedPunch = withRBAC(
 
     const timesheet = await findOrCreateTimesheet(employeeId, payPeriod.id);
 
-    const roundedTime = applyRounding(
+    const roundedTime = computeRoundedTime(
       punchTime,
-      employee.ruleSet.punchRoundingMinutes
+      punchType,
+      employee.ruleSet,
+      employee.shift,
+      employee.site?.timezone ?? "UTC",
     );
 
     const punch = await db.$transaction(async (tx) => {

@@ -141,6 +141,7 @@ export default async function TimecardsPage({
             mealBreakAfterMinutes: timecard.employee.ruleSet.mealBreakAfterMinutes,
             overtimeRequiresAuth: timecard.employee.ruleSet.overtimeRequiresAuth,
             allowTimesheetOtAuth: timecard.employee.ruleSet.allowTimesheetOtAuth,
+            defaultPayCodeId: timecard.employee.ruleSet.defaultPayCodeId ?? null,
           },
         },
         punches: timecard.punches.map((p) => ({

@@ -3,15 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { PunchClock } from "@/components/time/punch-clock";
 import { PunchHistoryTable } from "@/components/time/punch-history-table";
-import type { PunchState } from "@prisma/client";
-
-async function getCurrentState(employeeId: string): Promise<PunchState> {
-  const last = await db.punch.findFirst({
-    where: { employeeId, isApproved: true, correctedById: null },
-    orderBy: { roundedTime: "desc" },
-  });
-  return (last?.stateAfter as PunchState) ?? "OUT";
-}
+import { getCurrentPunchState } from "@/lib/utils/punch-helpers";
 
 async function getTodayPunches(employeeId: string) {
   const start = new Date();
@@ -29,7 +21,7 @@ export default async function PunchPage() {
   const { employeeId } = session.user;
 
   const [currentState, todayPunches] = await Promise.all([
-    getCurrentState(employeeId),
+    getCurrentPunchState(employeeId),
     getTodayPunches(employeeId),
   ]);
 

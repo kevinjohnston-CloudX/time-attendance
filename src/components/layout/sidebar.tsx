@@ -26,6 +26,7 @@ import {
   KeyRound,
   Eye,
   X,
+  BookOpen,
 } from "lucide-react";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { ThemeToggle } from "./theme-toggle";
@@ -309,6 +310,20 @@ export function Sidebar({ role, userName, permissions, realRole, viewAsRole }: S
                   ))}
                 </div>
               )}
+            </li>
+          )}
+
+          {/* Rules Setup — direct link for HR Admin and above */}
+          {hasPermission("RULES_MANAGE") && (
+            <li>
+              <Link
+                href="/admin/rules-setup"
+                title={collapsed ? "Rules Setup" : undefined}
+                className={linkClass(pathname.startsWith("/admin/rules-setup"))}
+              >
+                <BookOpen className="h-4 w-4 shrink-0" />
+                {!collapsed && "Rules Setup"}
+              </Link>
             </li>
           )}
 

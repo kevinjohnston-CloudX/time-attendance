@@ -278,7 +278,7 @@ export async function reconcileLeaveDeductions(
       }
       await db.leaveRequest.update({
         where: { id: req.id },
-        data: { status: "CANCELLED", cancelledAt: new Date() },
+        data: { status: "CANCELLED", cancelledAt: new Date(), sourcePunchId: null },
       });
     }
   }

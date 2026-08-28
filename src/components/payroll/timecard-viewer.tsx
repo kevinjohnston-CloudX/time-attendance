@@ -7,7 +7,6 @@ import {
   eachDayOfInterval,
   parseISO,
   isToday,
-  addDays,
 } from "date-fns";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -171,7 +170,7 @@ type TimecardDetail = {
     employeeCode: string;
     payRate: number | null;
     payType: string | null;
-    ruleSet: { autoDeductMeal: boolean; mealBreakMinutes: number; mealBreakAfterMinutes: number; overtimeRequiresAuth: boolean; allowTimesheetOtAuth: boolean };
+    ruleSet: { autoDeductMeal: boolean; mealBreakMinutes: number; mealBreakAfterMinutes: number; overtimeRequiresAuth: boolean; allowTimesheetOtAuth: boolean; defaultPayCodeId: string | null };
   };
   punches: TimecardPunch[];
   segments: TimecardSegment[];
@@ -732,13 +731,13 @@ export function TimecardViewer({
 
     if (timecard) {
       periodStart = customStartDate ?? parseUtcDate(timecard.payPeriod.startDate);
-      periodEnd = customEndDate ?? addDays(parseUtcDate(timecard.payPeriod.endDate), -1);
+      periodEnd = customEndDate ?? parseUtcDate(timecard.payPeriod.endDate);
     } else if (selectedPeriodId && selectedEmployeeId) {
       // No timesheet yet — still build the day grid so absent days render
       const period = sortedPeriods.find((p) => p.id === selectedPeriodId);
       if (!period) return null;
       periodStart = parseUtcDate(period.startDate);
-      periodEnd = addDays(parseUtcDate(period.endDate), -1);
+      periodEnd = parseUtcDate(period.endDate);
     } else {
       return null;
     }
@@ -1303,7 +1302,7 @@ export function TimecardViewer({
               const sel = sortedPeriods[currentIndex];
               if (!sel) return "—";
               const s = parseUtcDate(sel.startDate);
-              const e = addDays(parseUtcDate(sel.endDate), -1);
+              const e = parseUtcDate(sel.endDate);
               return `${format(s, "MM/dd/yyyy")} (${format(s, "EEE")}) – ${format(e, "MM/dd/yyyy")} (${format(e, "EEE")})`;
             })()}
           </span>
@@ -1393,7 +1392,7 @@ export function TimecardViewer({
         {sites.length > 0 && (
           <select
             value={selectedSiteId ?? ""}
-            onChange={(e) => navigate(selectedEmployeeId, selectedPeriodId, e.target.value || null, null)}
+            onChange={(e) => navigate(null, selectedPeriodId, e.target.value || null, null)}
             className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
           >
             <option value="">All Sites</option>
@@ -1973,10 +1972,10 @@ export function TimecardViewer({
                                     if (canEdit) {
                                       const absentKey = `absent:${dayStr}`;
                                       const absentPending = pendingPayCodes.has(absentKey);
-                                      // Pre-populate missed-punch days with Regular Hours (code 0) so the
-                                      // dropdown doesn't show "Absent" before a recalculate creates the marker.
+                                      // Pre-populate missed-punch days with the rule set's default pay code
+                                      // so the dropdown doesn't show "Absent" before a recalculate creates the marker.
                                       const regularId = !isMarker && isMissedPunchDay
-                                        ? (payCodes.find((pc) => pc.code === 0)?.id ?? "")
+                                        ? (timecard?.employee.ruleSet?.defaultPayCodeId ?? payCodes.find((pc) => pc.code === 0)?.id ?? "")
                                         : "";
                                       const currentValue = absentPending
                                         ? (pendingPayCodes.get(absentKey) ?? "")
@@ -2007,9 +2006,29 @@ export function TimecardViewer({
                                     return <span className="text-xs text-red-400 dark:text-red-600">Absent</span>;
                                   }
 
-                                  // Non-working day (weekend or not scheduled): show blank like REASON column.
+                                  // Non-working day (weekend or not scheduled): show blank dropdown like REASON.
                                   if (isWeekend) {
-                                    return <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>;
+                                    if (canEdit) {
+                                      const absentKey = `absent:${dayStr}`;
+                                      const absentPending = pendingPayCodes.has(absentKey);
+                                      const dayMarker = daySegments.find((s) => s.segmentType === "LEAVE" && s.durationMinutes === 0);
+                                      return (
+                                        <select
+                                          value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : (dayMarker?.payCode?.id ?? "")}
+                                          onChange={(e) => handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)}
+                                          className={absentDropdownClass(absentPending)}
+                                        >
+                                          <option value="">—</option>
+                                          {payCodes.map((pc) => (
+                                            <option key={pc.id} value={pc.id}>{pc.code}[{pc.label}]</option>
+                                          ))}
+                                        </select>
+                                      );
+                                    }
+                                    const dayMarker = daySegments.find((s) => s.segmentType === "LEAVE" && s.durationMinutes === 0);
+                                    return dayMarker?.payCode
+                                      ? <span className="text-xs text-zinc-500">{dayMarker.payCode.code}[{dayMarker.payCode.label}]</span>
+                                      : null;
                                   }
 
                                   // Working day with no segments yet (open punch today, or future day).
@@ -2018,9 +2037,12 @@ export function TimecardViewer({
                                     if (canEdit) {
                                       const absentKey = `absent:${dayStr}`;
                                       const absentPending = pendingPayCodes.has(absentKey);
+                                      const defaultId = dayPunches.length > 0
+                                        ? (timecard?.employee.ruleSet?.defaultPayCodeId ?? "")
+                                        : "";
                                       return (
                                         <select
-                                          value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : ""}
+                                          value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : defaultId}
                                           onChange={(e) =>
                                             handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)
                                           }
@@ -2420,9 +2442,25 @@ export function TimecardViewer({
                                       <span className="text-xs text-zinc-500">
                                         {pairWorkSeg.payCode.code}[{pairWorkSeg.payCode.label}]
                                       </span>
-                                    ) : (
-                                      <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
-                                    )}
+                                    ) : canEdit ? (() => {
+                                      const absentKey = `absent:${dayKey}`;
+                                      const absentPending = pendingPayCodes.has(absentKey);
+                                      const dayMarker = daySegments.find((s) => s.segmentType === "LEAVE" && s.durationMinutes === 0);
+                                      return (
+                                        <select
+                                          value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : (pairWorkSeg?.payCode?.id ?? dayMarker?.payCode?.id ?? "")}
+                                          onChange={(e) => handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayKey, e.target.value)}
+                                          className={`w-24 rounded border px-1 py-0.5 text-xs focus:outline-none ${absentPending ? "border-amber-400 bg-amber-50/50 text-zinc-700 dark:border-amber-600 dark:bg-amber-950/10 dark:text-zinc-300" : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"}`}
+                                        >
+                                          <option value="">—</option>
+                                          {payCodes.map((pc) => (
+                                            <option key={pc.id} value={pc.id}>
+                                              {pc.code}[{pc.label}]
+                                            </option>
+                                          ))}
+                                        </select>
+                                      );
+                                    })() : null}
                                   </td>
                                 )}
                                 {/* Reason code — day-level, shown only on first row; blank cell for continuations */}
@@ -2856,7 +2894,7 @@ export function TimecardViewer({
                             const periodEntry = timecard ? timecard.payPeriod : sortedPeriods.find((p) => p.id === selectedPeriodId);
                             if (!periodEntry) return null;
                             const ppStart = parseUtcDate(periodEntry.startDate);
-                            const ppEnd = addDays(parseUtcDate(periodEntry.endDate), -1);
+                            const ppEnd = parseUtcDate(periodEntry.endDate);
                             const weeks: {
                               label: string;
                               start: Date;
@@ -3128,7 +3166,7 @@ export function TimecardViewer({
                     onChange={(e) => setNewEntryDate(e.target.value)}
                     required
                     min={format(parseUtcDate(timecard.payPeriod.startDate), "yyyy-MM-dd")}
-                    max={format(addDays(parseUtcDate(timecard.payPeriod.endDate), -1), "yyyy-MM-dd")}
+                    max={format(parseUtcDate(timecard.payPeriod.endDate), "yyyy-MM-dd")}
                     className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
                   />
                 </div>

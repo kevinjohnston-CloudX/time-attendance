@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useRef } from "react";
+import { useState, useTransition, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import {
@@ -36,8 +36,6 @@ interface BalanceRow {
 interface Props {
   employeeId: string;
   balances: BalanceRow[];
-  year: number;
-  pastYears: number[];
 }
 
 const inputCls =
@@ -108,16 +106,21 @@ function AddEntryForm({
   const [accrualSign, setAccrualSign] = useState<"+" | "-">("+");
   const [accrualH, setAccrualH] = useState("");
   const [accrualM, setAccrualM] = useState("");
+  const [earnAdjSign, setEarnAdjSign] = useState<"+" | "-">("+");
+  const [earnAdjH, setEarnAdjH] = useState("");
+  const [earnAdjM, setEarnAdjM] = useState("");
   const [adjustSign, setAdjustSign] = useState<"+" | "-">("+");
   const [adjustH, setAdjustH] = useState("");
   const [adjustM, setAdjustM] = useState("");
   const [note, setNote] = useState("");
 
-  const rawAccrual = (parseInt(accrualH || "0", 10) || 0) * 60 + (parseInt(accrualM || "0", 10) || 0);
-  const rawAdjust  = (parseInt(adjustH  || "0", 10) || 0) * 60 + (parseInt(adjustM  || "0", 10) || 0);
-  const accrualMinutes = rawAccrual * (accrualSign === "+" ? 1 : -1);
-  const adjustMinutes  = rawAdjust  * (adjustSign  === "+" ? 1 : -1);
-  const totalDelta = accrualMinutes + adjustMinutes;
+  const rawAccrual  = (parseInt(accrualH   || "0", 10) || 0) * 60 + (parseInt(accrualM   || "0", 10) || 0);
+  const rawEarnAdj  = (parseInt(earnAdjH   || "0", 10) || 0) * 60 + (parseInt(earnAdjM   || "0", 10) || 0);
+  const rawAdjust   = (parseInt(adjustH    || "0", 10) || 0) * 60 + (parseInt(adjustM    || "0", 10) || 0);
+  const accrualMinutes    = rawAccrual * (accrualSign   === "+" ? 1 : -1);
+  const adjustEarnMinutes = rawEarnAdj * (earnAdjSign   === "+" ? 1 : -1);
+  const adjustMinutes     = rawAdjust  * (adjustSign    === "+" ? 1 : -1);
+  const totalDelta = accrualMinutes + adjustEarnMinutes + adjustMinutes;
   const previewBalance = row.balanceMinutes + totalDelta;
 
   function handleSave(e: React.FormEvent) {
@@ -130,6 +133,7 @@ function AddEntryForm({
         year: row.year,
         effectiveDate,
         accrualMinutes,
+        adjustEarnMinutes,
         adjustMinutes,
         note,
       });
@@ -139,7 +143,7 @@ function AddEntryForm({
     });
   }
 
-  const canSave = note.trim().length > 0 && (accrualMinutes !== 0 || adjustMinutes !== 0);
+  const canSave = note.trim().length > 0 && (accrualMinutes !== 0 || adjustEarnMinutes !== 0 || adjustMinutes !== 0);
 
   return (
     <form
@@ -185,6 +189,36 @@ function AddEntryForm({
             placeholder="0"
             value={accrualM}
             onChange={(e) => setAccrualM(e.target.value)}
+            className={`w-16 ${inputCls}`}
+          />
+          <span className="text-xs text-zinc-400">m</span>
+        </div>
+      </div>
+
+      {/* Adjust Earn Hours */}
+      <div className="mb-3">
+        <label className="mb-1 block text-xs text-zinc-500">Adjust Earn Hours</label>
+        <p className="mb-1.5 text-[10px] text-zinc-400">
+          Adjusts the earned total — counts toward accrued hours, use for earn-rate corrections
+        </p>
+        <div className="flex items-center gap-1.5">
+          <SignToggle sign={earnAdjSign} onChange={setEarnAdjSign} />
+          <input
+            type="number"
+            min={0}
+            placeholder="0"
+            value={earnAdjH}
+            onChange={(e) => setEarnAdjH(e.target.value)}
+            className={`w-16 ${inputCls}`}
+          />
+          <span className="text-xs text-zinc-400">h</span>
+          <input
+            type="number"
+            min={0}
+            max={59}
+            placeholder="0"
+            value={earnAdjM}
+            onChange={(e) => setEarnAdjM(e.target.value)}
             className={`w-16 ${inputCls}`}
           />
           <span className="text-xs text-zinc-400">m</span>
@@ -247,6 +281,11 @@ function AddEntryForm({
               Accrual: {accrualMinutes > 0 ? "+" : ""}{fmtHours(accrualMinutes)}
             </span>
           )}
+          {adjustEarnMinutes !== 0 && (
+            <span className="ml-3 text-zinc-400">
+              Earn Adj: {adjustEarnMinutes > 0 ? "+" : ""}{fmtHours(adjustEarnMinutes)}
+            </span>
+          )}
           {adjustMinutes !== 0 && (
             <span className="ml-3 text-zinc-400">
               Adj: {adjustMinutes > 0 ? "+" : ""}{fmtHours(adjustMinutes)}
@@ -285,6 +324,7 @@ function typeConfig(type: string, isFuture: boolean) {
   if (isFuture && type === "FORECAST") return { dot: "bg-indigo-400", text: "text-indigo-600 dark:text-indigo-400" };
   if (type === "LEAVE_REQUEST") return { dot: "bg-amber-400", text: "text-red-600 dark:text-red-400" };
   if (type === "ACCRUAL" || type === "CARRY_OVER") return { dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-400" };
+  if (type === "EARNED_ADJUSTMENT") return { dot: "bg-teal-400", text: "text-teal-700 dark:text-teal-400" };
   if (type === "TIMECARD_DEDUCTION" || type === "USAGE") return { dot: "bg-red-400", text: "text-red-600 dark:text-red-400" };
   if (type === "FORFEITURE") return { dot: "bg-red-500", text: "text-red-600 dark:text-red-400" };
   return { dot: "bg-zinc-400", text: "text-zinc-600 dark:text-zinc-300" };
@@ -294,6 +334,8 @@ function LedgerTable({ entries, openingBalance }: { entries: LedgerDetailEntry[]
   if (entries.length === 0) {
     return <p className="py-4 text-center text-sm text-zinc-400">No activity this year.</p>;
   }
+
+  const reversed = [...entries].reverse();
 
   return (
     <div className="overflow-x-auto">
@@ -307,17 +349,9 @@ function LedgerTable({ entries, openingBalance }: { entries: LedgerDetailEntry[]
           </tr>
         </thead>
         <tbody>
-          <tr className="border-b border-zinc-100 dark:border-zinc-800">
-            <td className="py-1.5 pr-3 italic text-zinc-400">—</td>
-            <td className="py-1.5 pr-3 italic text-zinc-400">Opening balance</td>
-            <td className="py-1.5 pr-3 text-right text-zinc-400">—</td>
-            <td className="py-1.5 text-right font-medium tabular-nums text-zinc-600 dark:text-zinc-300">
-              {fmtHours(openingBalance)}
-            </td>
-          </tr>
-          {entries.map((e) => {
+          {reversed.map((e) => {
             const cfg = typeConfig(e.type, e.isFuture);
-            const sign = e.deltaMinutes > 0 ? "+" : "";
+            const sign = e.deltaMinutes > 0 ? "+" : e.deltaMinutes < 0 ? "-" : "";
             return (
               <tr
                 key={e.id}
@@ -352,6 +386,14 @@ function LedgerTable({ entries, openingBalance }: { entries: LedgerDetailEntry[]
               </tr>
             );
           })}
+          <tr className="border-t-2 border-zinc-200 dark:border-zinc-700">
+            <td className="py-1.5 pr-3 italic text-zinc-400">—</td>
+            <td className="py-1.5 pr-3 italic text-zinc-400">Opening balance</td>
+            <td className="py-1.5 pr-3 text-right text-zinc-400">—</td>
+            <td className="py-1.5 text-right font-medium tabular-nums text-zinc-600 dark:text-zinc-300">
+              {fmtHours(openingBalance)}
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -362,10 +404,16 @@ function LedgerDrillDown({
   employeeId,
   leaveTypeId,
   defaultYear,
+  fromDate,
+  toDate,
+  onFilteredBalance,
 }: {
   employeeId: string;
   leaveTypeId: string;
   defaultYear: number;
+  fromDate?: string;
+  toDate?: string;
+  onFilteredBalance?: (v: number | null) => void;
 }) {
   const [selectedYear, setSelectedYear] = useState(defaultYear);
   const [result, setResult] = useState<DetailResult | null>(null);
@@ -388,6 +436,34 @@ function LedgerDrillDown({
   }, [employeeId, leaveTypeId, selectedYear]);
 
   const years = result?.availableYears ?? [defaultYear];
+  const isFiltered = !!(fromDate || toDate);
+
+  // Filter entries to the active date range
+  const allEntries = result?.entries ?? [];
+  const filteredEntries = isFiltered
+    ? allEntries.filter((e) => {
+        if (fromDate && e.date < fromDate) return false;
+        if (toDate && e.date > toDate) return false;
+        return true;
+      })
+    : allEntries;
+
+  // Opening balance for filtered range = runningBalance of last entry before fromDate
+  const filteredOpeningBalance = (() => {
+    if (!result) return 0;
+    if (!fromDate) return result.openingBalance;
+    const before = [...result.entries].reverse().find((e) => e.date < fromDate);
+    return before ? before.runningBalance : result.openingBalance;
+  })();
+
+  // Notify parent of the as-of-to-date balance whenever filtered entries change
+  useEffect(() => {
+    if (!onFilteredBalance) return;
+    if (!isFiltered || !result) { onFilteredBalance(null); return; }
+    const last = filteredEntries[filteredEntries.length - 1];
+    onFilteredBalance(last ? last.runningBalance : filteredOpeningBalance);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, fromDate, toDate, isFiltered]);
 
   return (
     <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/40">
@@ -410,7 +486,17 @@ function LedgerDrillDown({
         {loading && <p className="py-4 text-center text-xs text-zinc-400">Loading…</p>}
         {error   && <p className="py-4 text-center text-xs text-red-500">{error}</p>}
         {!loading && !error && result && (
-          <LedgerTable entries={result.entries} openingBalance={result.openingBalance} />
+          <>
+            {isFiltered && filteredEntries.length === 0 && (
+              <p className="py-4 text-center text-xs text-zinc-400">No activity in the selected date range for {selectedYear}.</p>
+            )}
+            {(!isFiltered || filteredEntries.length > 0) && (
+              <LedgerTable
+                entries={filteredEntries}
+                openingBalance={isFiltered ? filteredOpeningBalance : result.openingBalance}
+              />
+            )}
+          </>
         )}
       </div>
     </div>
@@ -496,13 +582,27 @@ function RecalcSection({ row, employeeId }: { row: BalanceRow; employeeId: strin
 
 // ─── Balance row item ─────────────────────────────────────────────────────────
 
-function BalanceRowItem({ row, employeeId }: { row: BalanceRow; employeeId: string }) {
+function BalanceRowItem({
+  row,
+  employeeId,
+  fromDate,
+  toDate,
+}: {
+  row: BalanceRow;
+  employeeId: string;
+  fromDate?: string;
+  toDate?: string;
+}) {
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [filteredAvailable, setFilteredAvailable] = useState<number | null>(null);
+  const onFilteredBalance = useCallback((v: number | null) => setFilteredAvailable(v), []);
 
   const forecastForAvail =
     row.forecastApplyToAvailable && row.forecastedMinutes != null ? row.forecastedMinutes : 0;
   const currentAvailable = row.balanceMinutes - row.approvedMinutes - row.pendingMinutes + forecastForAvail;
+  const isFiltered = !!(fromDate || toDate);
+  const displayAvailable = isFiltered && filteredAvailable !== null ? filteredAvailable : currentAvailable;
 
   return (
     <div className="border-b border-zinc-100 py-3 last:border-0 dark:border-zinc-800">
@@ -568,11 +668,16 @@ function BalanceRowItem({ row, employeeId }: { row: BalanceRow; employeeId: stri
               {row.postedMinutes > 0 && <p className="text-[10px] text-zinc-400">{fmtHours(row.postedMinutes)} timecard</p>}
             </div>
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Available</p>
-              <p className={`mt-0.5 text-sm font-semibold ${currentAvailable < 0 ? "text-red-600 dark:text-red-400" : "text-zinc-700 dark:text-zinc-200"}`}>
-                {fmtHours(currentAvailable)}
+              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                Available{isFiltered && toDate ? ` as of ${fmtDate(toDate)}` : ""}
               </p>
-              {row.forecastApplyToAvailable && forecastForAvail > 0 && (
+              <p className={`mt-0.5 text-sm font-semibold ${displayAvailable < 0 ? "text-red-600 dark:text-red-400" : "text-zinc-700 dark:text-zinc-200"}`}>
+                {isFiltered && filteredAvailable === null && !ledgerOpen
+                  ? <span className="text-zinc-400 text-xs">expand to see</span>
+                  : fmtHours(displayAvailable)
+                }
+              </p>
+              {!isFiltered && row.forecastApplyToAvailable && forecastForAvail > 0 && (
                 <p className="text-[10px] text-indigo-500 dark:text-indigo-400">incl. projected</p>
               )}
             </div>
@@ -598,7 +703,14 @@ function BalanceRowItem({ row, employeeId }: { row: BalanceRow; employeeId: stri
           {addOpen && (
             <AddEntryForm row={row} employeeId={employeeId} onClose={() => setAddOpen(false)} />
           )}
-          <LedgerDrillDown employeeId={employeeId} leaveTypeId={row.leaveTypeId} defaultYear={row.year} />
+          <LedgerDrillDown
+            employeeId={employeeId}
+            leaveTypeId={row.leaveTypeId}
+            defaultYear={row.year}
+            fromDate={fromDate}
+            toDate={toDate}
+            onFilteredBalance={onFilteredBalance}
+          />
         </div>
       )}
     </div>
@@ -653,7 +765,7 @@ function PastYearRowItem({
           </div>
           <div>
             <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Used</p>
-            <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">{fmtHours(row.usedMinutes)}</p>
+            <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">{row.usedMinutes > 0 ? "-" : ""}{fmtHours(row.usedMinutes)}</p>
           </div>
           <div>
             <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Final Balance</p>
@@ -738,68 +850,118 @@ function PastYearSection({ year, employeeId }: { year: number; employeeId: strin
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
-export function LeaveBalancesPanel({ employeeId, balances, year, pastYears }: Props) {
-  const [currentYearOpen, setCurrentYearOpen] = useState(true);
+export function LeaveBalancesPanel({ employeeId, balances }: Props) {
   const [otherOpen, setOtherOpen] = useState(false);
+  const [inputFrom, setInputFrom] = useState("");
+  const [inputTo, setInputTo] = useState("");
+  const [activeFrom, setActiveFrom] = useState("");
+  const [activeTo, setActiveTo] = useState("");
+  const isFiltered = !!(activeFrom || activeTo);
+
+  function applyFilter() {
+    setActiveFrom(inputFrom);
+    setActiveTo(inputTo);
+  }
+  function clearFilter() {
+    setInputFrom("");
+    setInputTo("");
+    setActiveFrom("");
+    setActiveTo("");
+  }
 
   const tracked   = balances.filter((r) => r.accrualTracked);
   const untracked = balances.filter((r) => !r.accrualTracked);
 
   return (
     <div>
-      {/* Current year — expanded by default */}
-      <button
-        type="button"
-        onClick={() => setCurrentYearOpen((v) => !v)}
-        className="flex w-full items-center gap-2 text-left"
-      >
-        {currentYearOpen
-          ? <ChevronDown className="h-3.5 w-3.5 text-zinc-400" />
-          : <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />
-        }
-        <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{year}</span>
-        <div className="flex-1 border-t border-zinc-100 dark:border-zinc-800" />
-      </button>
+      {/* Date range filter */}
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 dark:border-zinc-700 dark:bg-zinc-800/50">
+        <span className="text-xs font-medium text-zinc-500">Filter by date range</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-zinc-400">From</span>
+          <input
+            type="date"
+            value={inputFrom}
+            onChange={(e) => setInputFrom(e.target.value)}
+            className={inputCls}
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-zinc-400">To</span>
+          <input
+            type="date"
+            value={inputTo}
+            onChange={(e) => setInputTo(e.target.value)}
+            className={inputCls}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={applyFilter}
+          disabled={!inputFrom && !inputTo}
+          className={btnCls}
+        >
+          Apply Filter
+        </button>
+        {isFiltered && (
+          <button
+            type="button"
+            onClick={clearFilter}
+            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-700"
+          >
+            Clear Filter
+          </button>
+        )}
+        {isFiltered && (
+          <span className="text-xs text-amber-600 dark:text-amber-400">
+            Showing activity{activeFrom ? ` from ${fmtDate(activeFrom)}` : ""}
+            {activeTo ? ` to ${fmtDate(activeTo)}` : ""}. Expand a leave type to see the filtered ledger and as-of balance.
+          </span>
+        )}
+      </div>
 
-      {currentYearOpen && (
-        <div className="mt-1">
-          {balances.length === 0 ? (
-            <p className="py-3 text-sm text-zinc-400">
-              No active leave types configured. Add leave types in{" "}
-              <a href="/admin/leave-types" className="text-blue-600 hover:underline">Admin → Leave Types</a>.
-            </p>
-          ) : (
+      {balances.length === 0 ? (
+        <p className="py-3 text-sm text-zinc-400">
+          No active leave types configured. Add leave types in{" "}
+          <a href="/admin/leave-types" className="text-blue-600 hover:underline">Admin → Leave Types</a>.
+        </p>
+      ) : (
+        <>
+          {tracked.map((row) => (
+            <BalanceRowItem
+              key={row.leaveTypeId}
+              row={row}
+              employeeId={employeeId}
+              fromDate={activeFrom || undefined}
+              toDate={activeTo || undefined}
+            />
+          ))}
+          {untracked.length > 0 && (
             <>
-              {tracked.map((row) => (
-                <BalanceRowItem key={row.leaveTypeId} row={row} employeeId={employeeId} />
+              <button
+                type="button"
+                onClick={() => setOtherOpen((v) => !v)}
+                className="my-3 flex w-full items-center gap-2 text-left"
+              >
+                {otherOpen ? <ChevronDown className="h-3.5 w-3.5 text-zinc-400" /> : <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />}
+                <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                  Other Leave Types ({untracked.length})
+                </span>
+                <div className="flex-1 border-t border-zinc-100 dark:border-zinc-800" />
+              </button>
+              {otherOpen && untracked.map((row) => (
+                <BalanceRowItem
+                  key={row.leaveTypeId}
+                  row={row}
+                  employeeId={employeeId}
+                  fromDate={activeFrom || undefined}
+                  toDate={activeTo || undefined}
+                />
               ))}
-              {untracked.length > 0 && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setOtherOpen((v) => !v)}
-                    className="my-3 flex w-full items-center gap-2 text-left"
-                  >
-                    {otherOpen ? <ChevronDown className="h-3.5 w-3.5 text-zinc-400" /> : <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />}
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-                      Other Leave Types ({untracked.length})
-                    </span>
-                    <div className="flex-1 border-t border-zinc-100 dark:border-zinc-800" />
-                  </button>
-                  {otherOpen && untracked.map((row) => (
-                    <BalanceRowItem key={row.leaveTypeId} row={row} employeeId={employeeId} />
-                  ))}
-                </>
-              )}
             </>
           )}
-        </div>
+        </>
       )}
-
-      {/* Past years — collapsed by default, lazy-loaded */}
-      {pastYears.map((y) => (
-        <PastYearSection key={y} year={y} employeeId={employeeId} />
-      ))}
     </div>
   );
 }

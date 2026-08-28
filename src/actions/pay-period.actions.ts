@@ -24,6 +24,9 @@ export const getPayPeriods = withRBAC("PAY_PERIOD_MANAGE", async ({ tenantId }, 
       timesheets: {
         select: { status: true },
       },
+      ruleSet: {
+        select: { id: true, name: true, payFrequency: true },
+      },
     },
   });
 });
@@ -240,20 +243,25 @@ export const submitOpenTimesheets = withRBAC(
     });
 
     if (payPeriod.endDate >= new Date()) {
-      throw new Error("Can only bulk-submit timesheets for past pay periods");
+      throw new Error("Can only bulk-approve timesheets for past pay periods");
     }
 
-    const open = await db.timesheet.findMany({
-      where: { payPeriodId, status: "OPEN" },
+    const pending = await db.timesheet.findMany({
+      where: { payPeriodId, status: { in: ["OPEN", "SUBMITTED"] } },
       select: { id: true },
     });
 
-    if (open.length === 0) return { submitted: 0 };
+    if (pending.length === 0) return { submitted: 0 };
 
     const now = new Date();
     await db.timesheet.updateMany({
-      where: { payPeriodId, status: "OPEN" },
-      data: { status: "SUBMITTED", submittedAt: now },
+      where: { payPeriodId, status: { in: ["OPEN", "SUBMITTED"] } },
+      data: {
+        status: "SUP_APPROVED",
+        submittedAt: now,
+        supApprovedAt: now,
+        supApprovedById: employeeId ?? null,
+      },
     });
 
     await writeAuditLog({
@@ -261,12 +269,12 @@ export const submitOpenTimesheets = withRBAC(
       actorId: employeeId,
       entityType: "PAY_PERIOD",
       entityId: payPeriodId,
-      action: "BULK_SUBMIT",
-      changes: { after: { count: open.length, source: "MANUAL_BULK" } },
+      action: "BULK_SUP_APPROVE",
+      changes: { after: { count: pending.length, source: "MANUAL_BULK" } },
     });
 
     revalidatePath("/payroll/pay-periods");
-    return { submitted: open.length };
+    return { submitted: pending.length };
   }
 );
 

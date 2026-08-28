@@ -4,6 +4,11 @@ enum OtCycle {
   CUSTOM
 }
 
+enum AutoPayMode {
+  POLICY_HOURS
+  SHIFT_HOURS
+}
+
 enum HolidayCreditMethod {
   FIXED_HOURS
   ACTUAL_WORKED
@@ -27,25 +32,112 @@ model HolidayRule {
   /// Multiplier × 100 for hours worked on the holiday (200 = 2.0×, 150 = 1.5×)
   workingPremium   Int                 @default(200)
 
+  /// Specific pay code to post holiday hours to (overrides payBucket when set)
+  payCodeId String?
+
+  /// Include employees still in their probationary period
+  includeOnProbation Boolean @default(false)
+  /// How many days from hire date constitute the probationary period
+  probationDays      Int     @default(90)
+
+  /// Require employee to have been hired at least N days/months before the holiday
+  tenureRequiredEnabled Boolean @default(false)
+  tenureRequiredDays    Int     @default(90)
+  tenureRequiredBasis   String  @default("HIRE_DATE")  /// HIRE_DATE | ADJUSTED_HIRE_DATE
+  tenureRequiredUnit    String  @default("DAYS")        /// DAYS | MONTHS
+
+  /// Only include employees currently assigned to and active with Daily/Weekly Averaging
+  dailyWeeklyAveragingOnly Boolean @default(false)
+
   /// Employee must have worked the day before the holiday to qualify
-  requireDayBefore Boolean @default(false)
+  requireDayBefore       Boolean @default(false)
   /// Employee must have worked the day after the holiday to qualify
-  requireDayAfter  Boolean @default(false)
+  requireDayAfter        Boolean @default(false)
+  /// Employee must have worked the day before OR after (either satisfies)
+  requireDayBeforeOrAfter Boolean @default(false)
   /// Minimum minutes worked in the pay period to qualify (0 = no minimum)
-  minPeriodMinutes Int     @default(0)
+  minPeriodMinutes       Int     @default(0)
+
+  /// Must work at least N days within a window before the holiday
+  requireDaysWorkedEnabled      Boolean @default(false)
+  requireDaysWorkedCount        Int     @default(0)
+  requireDaysWorkedPeriod       Int     @default(0)
+  requireDaysWorkedPeriodUnit   String  @default("DAY")   /// DAY | WEEK
+  requireDaysWorkedMinDailyHours Decimal @default(0) @db.Decimal(5, 2)
+
+  /// Must work at least N% of scheduled calculated hours on eligible workday(s)
+  requireScheduledHoursPct      Boolean @default(false)
+  requireScheduledHoursPctValue Int     @default(50)
+
+  /// Employee must NOT have worked on the holiday to qualify
+  mustNotWorkOnHoliday Boolean @default(false)
+
+  /// When checking eligibility, use all dynamic schedules for the day (multiple in a day)
+  useDynamicSchedules Boolean @default(false)
+
+  /// Days of week (0=Sun … 6=Sat) excluded from eligibility rule counts
+  excludedWeekDays Int[] @default([])
+
+  /// Allow a "Post Holiday bypass" option for the scheduled workday after requirement
+  bypassAfterEligibility Boolean @default(false)
+
+  /// Only pay holiday credit if the employee did NOT work on the holiday
+  payNonWorkingHolidayOnly Boolean @default(false)
+
+  /// Post hours physically worked on the holiday to an accrual bank
+  postWorkingHoursToAccrual     Boolean @default(false)
+  postWorkingHoursMax           Decimal @default(0) @db.Decimal(5, 2)
+  postWorkingHoursExcessEnabled Boolean @default(false)
+  postWorkingHoursExcessMin     Decimal @default(0) @db.Decimal(5, 2)
+  /// Accrual code identifier to post working hours into
+  accrualCode                   String?
+
+  /// Include non-calculated attendance pay codes when evaluating eligibility
+  includeNonCalcAttendance Boolean @default(true)
 
   /// Whether credited hours count toward the weekly OT threshold
   countTowardOt Boolean @default(true)
+
+  /// Prorate Rule — pay partial holiday credit based on recent worked-hours average
+  prorateEnabled             Boolean @default(false)
+  prorateLookbackDays        Int     @default(28)
+  prorateIncludeCurrentWeek  Boolean @default(true)
+  prorateUseCustomRange      Boolean @default(false)
+  /// THRESHOLD | AVERAGE_DAILY
+  prorateAppliedRule          String  @default("AVERAGE_DAILY")
+  prorateThresholdHours       Decimal @default(0)   @db.Decimal(7, 3)
+  prorateMultiplier            Decimal @default(0)   @db.Decimal(10, 7)
+  prorateAverageDailyMaxHours  Decimal @default(8)   @db.Decimal(7, 3)
+  prorateExcludeOt             Boolean @default(false)
+
+  /// Employee birthdays are treated as a holiday under this rule
+  birthdayIsHoliday       Boolean @default(false)
+  /// Apply date-specific pay overrides for holidays in this rule
+  holidayOverridesEnabled Boolean @default(false)
+  /// JSON array of HolidayOverride objects { date, hours, payCodeId }
+  holidayOverrides        Json?
 
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant    Tenant     @relation(fields: [tenantId], references: [id])
-  employees Employee[]
+  tenant           Tenant               @relation(fields: [tenantId], references: [id])
+  employees        Employee[]
+  assignedHolidays HolidayRuleHoliday[]
 
   @@unique([tenantId, name])
   @@map("holiday_rules")
+}
+
+model HolidayRuleHoliday {
+  holidayRuleId String
+  holidayId     String
+
+  holidayRule HolidayRule @relation(fields: [holidayRuleId], references: [id], onDelete: Cascade)
+  holiday     Holiday     @relation(fields: [holidayId],     references: [id], onDelete: Cascade)
+
+  @@id([holidayRuleId, holidayId])
+  @@map("holiday_rule_holidays")
 }
 
 model PayCategory {
@@ -118,8 +210,28 @@ model RuleSet {
   consecutiveDayOtMaxMinutes   Int     @default(0)      // 0 = no cap on consecutive day OT
   consecutiveDayDtMaxMinutes   Int     @default(0)      // 0 = no cap on consecutive day DT
 
-  // Punch rounding (minutes, 0 = no rounding)
-  punchRoundingMinutes Int @default(0)
+  // Punch rounding — general In/Out rounding (applied after shift-aware rounding windows)
+  punchRoundingInEnabled       Boolean @default(false)
+  punchRoundingInMinutes       Int     @default(15)  // rounding interval in minutes
+  punchRoundingInPoint         Int     @default(0)   // offset that shifts the rounding grid
+  punchRoundingInApplyToBreaks Boolean @default(false)
+  punchRoundingOutEnabled       Boolean @default(false)
+  punchRoundingOutMinutes       Int     @default(15)
+  punchRoundingOutPoint         Int     @default(0)
+  punchRoundingOutApplyToBreaks Boolean @default(false)
+
+  // In/Out Pair rounding — rounds the total work duration per day after meal deductions
+  pairRoundingEnabled       Boolean @default(false)
+  pairRoundingMinutes       Int     @default(15) // rounding interval applied to total daily work minutes
+  pairRoundingPoint         Int     @default(0)  // offset that shifts the rounding grid
+  pairMinGuaranteedMinutes  Int     @default(0)  // minimum credited minutes per punch pair (0 = no minimum)
+
+  // Shift-aware rounding (Novatime A/B/C/D windows)
+  shiftRoundingEnabled     Boolean @default(false) // master toggle for shift-aware rounding
+  shiftRoundingInWindow    Int     @default(0)    // A: minutes before shift start → snap to start
+  shiftRoundingInGrace     Int     @default(0)    // B: minutes after shift start → snap to start
+  shiftRoundingOutGrace    Int     @default(0)    // C: minutes before shift end → snap to end
+  shiftRoundingOutWindow   Int     @default(0)    // D: minutes after shift end → snap to end
 
   // Meal rules
   mealBreakMinutes        Int     @default(30)  // unpaid meal duration
@@ -147,6 +259,32 @@ model RuleSet {
 
   // Default pay code applied to new timecard rows and salary daily credits
   defaultPayCodeId    String?
+
+  // Guaranteed Hours / Auto-Pay — credit hours automatically without punch activity
+  autoPayEnabled                  Boolean     @default(false)
+  autoPayMode                     AutoPayMode @default(POLICY_HOURS)
+  autoPayDailyMinutes             Int         @default(480)   // used when autoPayMode = POLICY_HOURS (e.g. 480 = 8h)
+  autoPayWeekdaysOnly             Boolean     @default(true)  // used when autoPayMode = POLICY_HOURS; SHIFT_HOURS uses shift.workDays
+  autoPayPayCodeId                String?     // pay code for auto-credits; null = fall back to defaultPayCodeId
+  autoPayOverflowThresholdMinutes Int         @default(0)     // 0 = disabled; credits above this total → overflowPayCode
+  autoPayOverflowPayCodeId        String?     // pay code for overflow credits when threshold is exceeded
+
+  // Meal / Break Premium Rules
+  mealBreakPremiumEnabled         Boolean     @default(false) // apply premium when employee misses required meal/break
+  mealBreakPremiumMaxPerDay       Int         @default(2)     // max premium credits per day
+  mealBreakPremiumResetEnabled    Boolean     @default(false) // reset calculation when punched out > threshold
+  mealBreakPremiumResetMinutes    Int         @default(0)     // minutes without a punch-in before reset (0 = disabled)
+  mealBreakPremiumWaivedMsgEnabled Boolean    @default(false) // show waived-meal message to employee
+  mealBreakPremiumWaivedMsg       String?     // message shown when premium is waived (max 250 chars)
+
+  // Meal Premium — calculation options
+  mealPremiumUseActualForWindow   Boolean     @default(true)  // use non-rounded times for "no meal between" window check
+  mealPremiumUseActualForMinimum  Boolean     @default(true)  // use non-rounded times for minimum meal duration check
+  mealPremiumLimitToPayMinutes    Boolean     @default(false) // limit paid premium to (payMinutes − actual meal taken)
+  mealPremiumAllowTimesheetEdits  Boolean     @default(true)  // allow supervisors to edit premium records on timecard
+  mealPremiumUseTransferGroup     Boolean     @default(false) // copy transfer group (job/dept) onto premium records
+  /// JSON array of up to 4 MealPremiumRow objects — see rule-sets-manager.tsx MealPremiumRow interface
+  mealPremiumRows                 Json?
 
   isDefault Boolean  @default(false)
   isActive  Boolean  @default(true)

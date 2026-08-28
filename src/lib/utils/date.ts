@@ -2,12 +2,127 @@ import { startOfDay } from "date-fns";
 
 /**
  * Round a Date to the nearest interval of `roundingMinutes`.
- * If roundingMinutes is 0 or falsy, returns the original time unchanged.
+ * `pointMinutes` shifts the rounding grid by an offset (e.g. point=5 with interval=15
+ * snaps to :05/:20/:35/:50 instead of :00/:15/:30/:45).
  */
-export function applyRounding(time: Date, roundingMinutes: number): Date {
+/**
+ * Round a raw duration (in minutes) to the nearest interval.
+ * `point` shifts the rounding grid (e.g. point=7 with interval=15 rounds to 7, 22, 37, 52...).
+ * Returns 0 if interval is 0 or falsy.
+ */
+export function roundDurationMinutes(minutes: number, interval: number, point = 0): number {
+  if (!interval) return minutes;
+  if (!point) return Math.round(minutes / interval) * interval;
+  return Math.round((minutes - point) / interval) * interval + point;
+}
+
+export function applyRounding(time: Date, roundingMinutes: number, pointMinutes = 0): Date {
   if (!roundingMinutes) return time;
-  const ms = roundingMinutes * 60 * 1000;
-  return new Date(Math.round(time.getTime() / ms) * ms);
+  const ms = roundingMinutes * 60_000;
+  if (!pointMinutes) return new Date(Math.round(time.getTime() / ms) * ms);
+  const pointMs = pointMinutes * 60_000;
+  return new Date(Math.round((time.getTime() - pointMs) / ms) * ms + pointMs);
+}
+
+/**
+ * Snap a local HH:mm time on a given local calendar date to a UTC Date.
+ * Uses the same offset-inversion trick as nextMidnightInTz.
+ */
+export function snapToLocalTime(hhmm: string, localDateStr: string, timezone: string): Date {
+  const [y, m, d] = localDateStr.split("-").map(Number);
+  const [hh, mm] = hhmm.split(":").map(Number);
+  const asIfUtc = new Date(Date.UTC(y, m - 1, d, hh, mm, 0));
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  }).formatToParts(asIfUtc);
+  const get = (type: string) => parseInt(parts.find((p) => p.type === type)?.value ?? "0", 10);
+  let hours = get("hour");
+  if (hours === 24) hours = 0;
+  const localMs = Date.UTC(get("year"), get("month") - 1, get("day"), hours, get("minute"), get("second"));
+  return new Date(2 * asIfUtc.getTime() - localMs);
+}
+
+/**
+ * Novatime-style shift-aware rounding:
+ *   A (shiftRoundingInWindow):  minutes BEFORE shift start → snap clock-in to shift start
+ *   B (shiftRoundingInGrace):   minutes AFTER  shift start → snap clock-in to shift start
+ *   C (shiftRoundingOutGrace):  minutes BEFORE shift end   → snap clock-out to shift end
+ *   D (shiftRoundingOutWindow): minutes AFTER  shift end   → snap clock-out to shift end
+ *
+ * Falls back to simple applyRounding when:
+ *   - shiftRoundingEnabled is false, or no shift assigned
+ *   - punchType is not CLOCK_IN / CLOCK_OUT
+ *   - the punch day is not a shift workday
+ *   - the punch falls outside the shift windows
+ */
+type RoundingRuleSet = {
+  shiftRoundingEnabled: boolean;
+  shiftRoundingInWindow: number;
+  shiftRoundingInGrace: number;
+  shiftRoundingOutGrace: number;
+  shiftRoundingOutWindow: number;
+  punchRoundingInEnabled: boolean;
+  punchRoundingInMinutes: number;
+  punchRoundingInPoint: number;
+  punchRoundingInApplyToBreaks: boolean;
+  punchRoundingOutEnabled: boolean;
+  punchRoundingOutMinutes: number;
+  punchRoundingOutPoint: number;
+  punchRoundingOutApplyToBreaks: boolean;
+};
+
+function applyGeneralRounding(time: Date, punchType: string, rs: RoundingRuleSet): Date {
+  const isIn  = punchType === "CLOCK_IN"   || (rs.punchRoundingInApplyToBreaks  && ["MEAL_START", "BREAK_START"].includes(punchType));
+  const isOut = punchType === "CLOCK_OUT"  || (rs.punchRoundingOutApplyToBreaks && ["MEAL_END",   "BREAK_END"  ].includes(punchType));
+  if (isIn  && rs.punchRoundingInEnabled)  return applyRounding(time, rs.punchRoundingInMinutes,  rs.punchRoundingInPoint);
+  if (isOut && rs.punchRoundingOutEnabled) return applyRounding(time, rs.punchRoundingOutMinutes, rs.punchRoundingOutPoint);
+  return time;
+}
+
+export function computeRoundedTime(
+  time: Date,
+  punchType: string,
+  ruleSet: RoundingRuleSet,
+  shift: { startTime: string; endTime: string; workDays: number[] } | null | undefined,
+  timezone: string,
+): Date {
+  const isIn  = punchType === "CLOCK_IN";
+  const isOut = punchType === "CLOCK_OUT";
+
+  // Shift-aware rounding: only applies to CLOCK_IN / CLOCK_OUT on workdays
+  if (ruleSet.shiftRoundingEnabled && shift && (isIn || isOut)) {
+    const localDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(time);
+    const dow = new Date(localDateStr + "T12:00:00.000Z").getUTCDay();
+
+    if (shift.workDays.includes(dow)) {
+      const timeParts = new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false,
+      }).formatToParts(time);
+      const lh = parseInt(timeParts.find((p) => p.type === "hour")?.value ?? "0", 10);
+      const lm = parseInt(timeParts.find((p) => p.type === "minute")?.value ?? "0", 10);
+      const localMins = (lh === 24 ? 0 : lh) * 60 + lm;
+
+      if (isIn) {
+        const [sh, sm] = shift.startTime.split(":").map(Number);
+        const startMins = sh * 60 + sm;
+        if (localMins >= startMins - ruleSet.shiftRoundingInWindow && localMins <= startMins + ruleSet.shiftRoundingInGrace) {
+          return snapToLocalTime(shift.startTime, localDateStr, timezone);
+        }
+      } else {
+        const [eh, em] = shift.endTime.split(":").map(Number);
+        const endMins = eh * 60 + em;
+        if (localMins >= endMins - ruleSet.shiftRoundingOutGrace && localMins <= endMins + ruleSet.shiftRoundingOutWindow) {
+          return snapToLocalTime(shift.endTime, localDateStr, timezone);
+        }
+      }
+    }
+  }
+
+  // General per-direction rounding fallback
+  return applyGeneralRounding(time, punchType, ruleSet);
 }
 
 /**
