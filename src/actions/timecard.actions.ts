@@ -102,14 +102,28 @@ export const getEmployeePeriods = withRBAC(
       select: { id: true, startDate: true, endDate: true, status: true },
     });
 
-    // If the rule set has its own schedule but no periods generated yet,
-    // fall back to tenant-level so existing timesheets remain visible.
-    if (hasOwnSchedule && periods.length === 0) {
-      periods = await db.payPeriod.findMany({
-        where: { tenantId: employee.tenantId, ruleSetId: null },
+    // Also include tenant-level periods where this employee has a timesheet —
+    // handles the case where the rule set was applied mid-year and historical
+    // timesheets still live in those tenant-level periods. Excludes tenant-level
+    // periods that overlap with existing ruleset-specific periods to avoid duplicates.
+    if (hasOwnSchedule) {
+      const historicTenantPeriods = await db.payPeriod.findMany({
+        where: {
+          tenantId: employee.tenantId,
+          ruleSetId: null,
+          timesheets: { some: { employeeId } },
+        },
         orderBy: { startDate: "asc" },
         select: { id: true, startDate: true, endDate: true, status: true },
       });
+      const seen = new Set(periods.map((p) => p.id));
+      const merged = [...periods];
+      for (const p of historicTenantPeriods) {
+        if (!seen.has(p.id)) merged.push(p);
+      }
+      periods = merged.sort(
+        (a, b) => a.startDate.getTime() - b.startDate.getTime()
+      );
     }
 
     const tenant = await db.tenant.findUnique({

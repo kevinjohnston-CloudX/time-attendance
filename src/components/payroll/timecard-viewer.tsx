@@ -488,6 +488,7 @@ export function TimecardViewer({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [exceptionFilter, setExceptionFilter] = useState("ALL");
+  const [payTypeFilter, setPayTypeFilter] = useState("ALL");
   const [activeOnly, setActiveOnly] = useState(true);
   const [isPending, startTransition] = useTransition();
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -678,6 +679,10 @@ export function TimecardViewer({
 
     // Active only filter
     if (activeOnly && !emp.isActive) return false;
+
+    // Pay type filter
+    if (payTypeFilter === "HOURLY" && emp.payType !== "HOURLY") return false;
+    if (payTypeFilter === "SALARY" && emp.payType !== "SALARY") return false;
 
     // Status filter (only applies when period-dependent data is present)
     const empStatus = emp.status ?? "OPEN";
@@ -884,7 +889,7 @@ export function TimecardViewer({
 
   function handleAddEntry(e: React.FormEvent) {
     e.preventDefault();
-    if (!timecard) return;
+    if (!timecard && (!selectedEmployeeId || !selectedPeriodId)) return;
     setNewEntryError(null);
 
     const inParsed = parseTimeInput(newInTimeStr);
@@ -912,26 +917,37 @@ export function TimecardViewer({
     }
 
     // Client-side overlap check against existing punch pairs for this date
-    const dayPunches = timecard.punches
-      .filter((p) => format(parseISO(p.roundedTime), "yyyy-MM-dd") === newEntryDate)
-      .sort((a, b) => parseISO(a.roundedTime).getTime() - parseISO(b.roundedTime).getTime());
-    for (let i = 0; i < dayPunches.length; i++) {
-      if (dayPunches[i].punchType !== "CLOCK_IN") continue;
-      const nextOut = dayPunches.slice(i + 1).find((p) => p.punchType === "CLOCK_OUT");
-      if (!nextOut) continue;
-      const existIn = parseISO(dayPunches[i].roundedTime).getTime();
-      const existOut = parseISO(nextOut.roundedTime).getTime();
-      if (inDate.getTime() < existOut && outDate.getTime() > existIn) {
-        const s = format(parseISO(dayPunches[i].roundedTime), "h:mm a");
-        const en = format(parseISO(nextOut.roundedTime), "h:mm a");
-        setNewEntryError(`Overlaps with existing entry ${s} – ${en}`);
-        return;
+    if (timecard) {
+      const dayPunches = timecard.punches
+        .filter((p) => format(parseISO(p.roundedTime), "yyyy-MM-dd") === newEntryDate)
+        .sort((a, b) => parseISO(a.roundedTime).getTime() - parseISO(b.roundedTime).getTime());
+      for (let i = 0; i < dayPunches.length; i++) {
+        if (dayPunches[i].punchType !== "CLOCK_IN") continue;
+        const nextOut = dayPunches.slice(i + 1).find((p) => p.punchType === "CLOCK_OUT");
+        if (!nextOut) continue;
+        const existIn = parseISO(dayPunches[i].roundedTime).getTime();
+        const existOut = parseISO(nextOut.roundedTime).getTime();
+        if (inDate.getTime() < existOut && outDate.getTime() > existIn) {
+          const s = format(parseISO(dayPunches[i].roundedTime), "h:mm a");
+          const en = format(parseISO(nextOut.roundedTime), "h:mm a");
+          setNewEntryError(`Overlaps with existing entry ${s} – ${en}`);
+          return;
+        }
       }
     }
 
     startTransition(async () => {
+      let timesheetId: string = timecard?.timesheetId ?? "";
+      if (!timesheetId) {
+        const ensureResult = await ensureTimesheet({ employeeId: selectedEmployeeId!, periodId: selectedPeriodId! });
+        if (!ensureResult.success) {
+          setNewEntryError("Failed to create timesheet");
+          return;
+        }
+        timesheetId = ensureResult.data.timesheetId;
+      }
       const result = await addManualPunchPair({
-        timesheetId: timecard.timesheetId,
+        timesheetId,
         date: newEntryDate,
         inTime: inDate.toISOString(),
         outTime: outDate.toISOString(),
@@ -944,7 +960,7 @@ export function TimecardViewer({
       }
       if (newEntryReasonCodeId) {
         await setDayReasonCode({
-          timesheetId: timecard.timesheetId,
+          timesheetId,
           segmentDate: newEntryDate,
           reasonCodeId: newEntryReasonCodeId,
         });
@@ -962,7 +978,7 @@ export function TimecardViewer({
       }
       if (newEntryNote.trim()) entryLines.push(`  Note: ${newEntryNote.trim()}`);
       const noteResult = await saveTimesheetNote({
-        timesheetId: timecard.timesheetId,
+        timesheetId,
         noteDate: newEntryDate,
         note: `Entry added\n${entryLines.join("\n")}`,
       });
@@ -1447,6 +1463,16 @@ export function TimecardViewer({
               <option value="SUP_APPROVED">Supervisor Approved</option>
               <option value="PAYROLL_APPROVED">Payroll Approved</option>
               <option value="LOCKED">Locked</option>
+            </select>
+            {/* Pay type filter */}
+            <select
+              value={payTypeFilter}
+              onChange={(e) => setPayTypeFilter(e.target.value)}
+              className="w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+            >
+              <option value="ALL">All Pay Types</option>
+              <option value="HOURLY">Hourly</option>
+              <option value="SALARY">Salary</option>
             </select>
             {/* Exception filter */}
             <select
@@ -3131,7 +3157,7 @@ export function TimecardViewer({
       )}
 
       {/* Add Entry Modal */}
-      {showAddEntryModal && canEdit && timecard && (
+      {showAddEntryModal && canEdit && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
           onClick={() => { setShowAddEntryModal(false); setNewEntryError(null); }}
@@ -3144,7 +3170,7 @@ export function TimecardViewer({
               <div>
                 <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">Add Time Entry</h3>
                 <p className="mt-0.5 text-xs text-zinc-500">
-                  {timecard.employee.user?.name ?? timecard.employee.employeeCode}
+                  {timecard?.employee.user?.name ?? timecard?.employee.employeeCode ?? employees.find((e) => e.employeeId === selectedEmployeeId)?.name ?? selectedEmployeeId}
                 </p>
               </div>
               <button
@@ -3165,8 +3191,8 @@ export function TimecardViewer({
                     value={newEntryDate}
                     onChange={(e) => setNewEntryDate(e.target.value)}
                     required
-                    min={format(parseUtcDate(timecard.payPeriod.startDate), "yyyy-MM-dd")}
-                    max={format(parseUtcDate(timecard.payPeriod.endDate), "yyyy-MM-dd")}
+                    min={format(parseUtcDate((timecard?.payPeriod ?? payPeriods.find((pp) => pp.id === selectedPeriodId))?.startDate ?? new Date().toISOString()), "yyyy-MM-dd")}
+                    max={format(parseUtcDate((timecard?.payPeriod ?? payPeriods.find((pp) => pp.id === selectedPeriodId))?.endDate ?? new Date().toISOString()), "yyyy-MM-dd")}
                     className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
                   />
                 </div>

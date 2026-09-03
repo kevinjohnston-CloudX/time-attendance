@@ -4,6 +4,9 @@ import { applyOvertime } from "@/lib/engines/overtime-engine";
 import { reconcileLeaveDeductions } from "@/lib/engines/leave-deduction";
 import { startOfDayInTz, nextMidnightInTz, endOfDayInTz, roundDurationMinutes } from "@/lib/utils/date";
 import type { Punch, RuleSet, PayBucket, SegmentType, HolidayCreditMethod } from "@prisma/client";
+import type { MealConfig } from "@/actions/shift.actions";
+
+type EffectiveMealCfg = { mealBreakAfterMinutes: number; mealBreakMinutes: number };
 
 const SALARY_DAILY_MINUTES = 480; // 8 h
 
@@ -84,14 +87,33 @@ const truncToMin = (d: Date): Date => new Date(Math.floor(d.getTime() / 60_000) 
 export function computeSegments(
   timesheetId: string,
   punches: Punch[],
-  timezone: string
+  timezone: string,
+  // Pay period start — used as the floor when recovering hours for an orphaned close punch.
+  periodStart?: Date,
+  // Active state carried in from the previous pay period (employee clocked in before this
+  // period started and clocked out inside it). openStart is clamped to periodStart so only
+  // hours earned in this period are credited.
+  carryIn?: { openStart: Date; openState: ActiveState }
 ): SegmentInput[] {
   const segments: SegmentInput[] = [];
-  let openStart: Date | null = null;
-  let openState: ActiveState | null = null;
+  let openStart: Date | null = carryIn ? truncToMin(carryIn.openStart) : null;
+  let openState: ActiveState | null = carryIn?.openState ?? null;
 
   for (const punch of punches) {
     const punchMin = truncToMin(punch.roundedTime);
+
+    // Orphan recovery: this punch expects to close an active segment (stateBefore !== OUT)
+    // but nothing is open — the matching clock-in was in a previous pay period or is missing.
+    // Use the start of the punch's local calendar day as the implicit open (floored to
+    // periodStart so we never credit time before this period began).
+    if (!openState && punch.stateBefore !== "OUT") {
+      const dayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(punchMin);
+      const [y, m, d] = dayStr.split("-").map(Number);
+      const dayStartUtc = new Date(Date.UTC(y, m - 1, d));
+      const floor = periodStart && periodStart > dayStartUtc ? truncToMin(periodStart) : dayStartUtc;
+      openStart = floor;
+      openState = punch.stateBefore as ActiveState;
+    }
 
     // Close the previous segment at this punch's truncated minute
     if (openState && openStart) {
@@ -134,7 +156,7 @@ export function computeSegments(
  */
 function applyAutoMealDeduction(
   segments: SegmentInput[],
-  ruleSet: RuleSet,
+  cfg: EffectiveMealCfg,
   waivedDates: Set<string>
 ): SegmentInput[] {
   // Group WORK segments by calendar day (yyyy-MM-dd)
@@ -163,7 +185,7 @@ function applyAutoMealDeduction(
     if (hasRealMeal) continue;
 
     const totalWork = workSegs.reduce((s, seg) => s + seg.durationMinutes, 0);
-    if (totalWork <= ruleSet.mealBreakAfterMinutes) continue;
+    if (totalWork <= cfg.mealBreakAfterMinutes) continue;
 
     // Sort by start time
     const sorted = [...workSegs].sort(
@@ -172,8 +194,8 @@ function applyAutoMealDeduction(
 
     // Find the segment that contains the meal start point
     const mealStartMs =
-      sorted[0].startTime.getTime() + ruleSet.mealBreakAfterMinutes * 60_000;
-    const mealEndMs = mealStartMs + ruleSet.mealBreakMinutes * 60_000;
+      sorted[0].startTime.getTime() + cfg.mealBreakAfterMinutes * 60_000;
+    const mealEndMs = mealStartMs + cfg.mealBreakMinutes * 60_000;
 
     const target = sorted.find(
       (seg) =>
@@ -205,7 +227,7 @@ function applyAutoMealDeduction(
     }
 
     // Synthetic MEAL segment
-    const mealMins = ruleSet.mealBreakMinutes;
+    const mealMins = cfg.mealBreakMinutes;
     extra.push({
       timesheetId: target.timesheetId,
       segmentType: "MEAL",
@@ -319,65 +341,78 @@ async function applyAutoPayCredits(
 
   const allDays = eachDayOfInterval({ start: periodStart, end: rangeEnd });
 
-  // Determine eligible days based on mode
-  let eligibleDays: Date[];
-  if (ruleSet.autoPayMode === "SHIFT_HOURS" && shift?.workDays?.length) {
-    eligibleDays = allDays.filter((d) => shift.workDays.includes(d.getUTCDay()));
-  } else if (ruleSet.autoPayWeekdaysOnly) {
-    eligibleDays = allDays.filter((d) => !isWeekend(d));
-  } else {
-    eligibleDays = allDays;
-  }
-  if (eligibleDays.length === 0) return;
-
-  // Determine daily credit amount
-  let dailyMinutes: number;
-  if (ruleSet.autoPayMode === "SHIFT_HOURS" && shift) {
-    const [sh, sm] = shift.startTime.split(":").map(Number);
-    const [eh, em] = shift.endTime.split(":").map(Number);
-    let endMins = eh * 60 + em;
-    const startMins = sh * 60 + sm;
-    if (endMins <= startMins) endMins += 1440;
-    dailyMinutes = endMins - startMins;
-  } else {
-    dailyMinutes = ruleSet.autoPayDailyMinutes;
-  }
-  if (dailyMinutes <= 0) return;
-
-  // Skip days that already have WORK segments from real punches
+  // Skip days already covered by real punch-derived WORK segments
   const existing = await db.workSegment.findMany({
     where: { timesheetId, segmentType: "WORK" },
     select: { segmentDate: true },
   });
   const coveredDates = new Set(existing.map((s) => format(s.segmentDate, "yyyy-MM-dd")));
 
-  const uncoveredDays = eligibleDays.filter((d) => !coveredDates.has(format(d, "yyyy-MM-dd")));
-  if (uncoveredDays.length === 0) return;
-
   const basePayCodeId = ruleSet.autoPayPayCodeId ?? ruleSet.defaultPayCodeId ?? null;
   const overflowPayCodeId = ruleSet.autoPayOverflowPayCodeId ?? null;
   const overflowThreshold = ruleSet.autoPayOverflowThresholdMinutes;
 
   let runningMinutes = 0;
-  const toCreate: SegmentInput[] = uncoveredDays.map((d) => {
-    const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-    const end = new Date(start.getTime() + dailyMinutes * 60_000);
-    const useOverflow = overflowThreshold > 0 && overflowPayCodeId !== null && runningMinutes >= overflowThreshold;
-    runningMinutes += dailyMinutes;
-    return {
-      timesheetId,
-      segmentType: "WORK" as SegmentType,
-      startTime: start,
-      endTime: end,
-      durationMinutes: dailyMinutes,
-      segmentDate: start,
-      isPaid: true,
-      payBucket: "REG" as PayBucket,
-      isSplit: false,
-      payCodeId: useOverflow ? overflowPayCodeId : basePayCodeId,
-    };
-  });
+  const toCreate: SegmentInput[] = [];
 
+  if (ruleSet.autoPayMode === "SHIFT_HOURS" && shift) {
+    // Derive credit amount from shift duration; eligible days from shift.workDays
+    const [sh, sm] = shift.startTime.split(":").map(Number);
+    const [eh, em] = shift.endTime.split(":").map(Number);
+    let endMins = eh * 60 + em;
+    const startMins = sh * 60 + sm;
+    if (endMins <= startMins) endMins += 1440;
+    const dailyMinutes = endMins - startMins;
+    if (dailyMinutes <= 0) return;
+
+    for (const d of allDays) {
+      if (!shift.workDays.includes(d.getUTCDay())) continue;
+      if (coveredDates.has(format(d, "yyyy-MM-dd"))) continue;
+      const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+      const useOverflow = overflowThreshold > 0 && overflowPayCodeId !== null && runningMinutes >= overflowThreshold;
+      runningMinutes += dailyMinutes;
+      toCreate.push({
+        timesheetId,
+        segmentType: "WORK" as SegmentType,
+        startTime: start,
+        endTime: new Date(start.getTime() + dailyMinutes * 60_000),
+        durationMinutes: dailyMinutes,
+        segmentDate: start,
+        isPaid: true,
+        payBucket: "REG" as PayBucket,
+        isSplit: false,
+        payCodeId: useOverflow ? overflowPayCodeId : basePayCodeId,
+      });
+    }
+  } else {
+    // POLICY_HOURS: per-day schedule drives both eligibility and credit amount
+    type DayRow = { day: number; apply: boolean; minutes: number };
+    const schedule = ruleSet.autoPayDaySchedule as DayRow[] | null;
+    const dayMap = new Map<number, DayRow>((schedule ?? []).map((r) => [r.day, r]));
+
+    for (const d of allDays) {
+      if (coveredDates.has(format(d, "yyyy-MM-dd"))) continue;
+      const row = dayMap.get(d.getUTCDay());
+      if (!row?.apply || !row.minutes) continue;
+      const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+      const useOverflow = overflowThreshold > 0 && overflowPayCodeId !== null && runningMinutes >= overflowThreshold;
+      runningMinutes += row.minutes;
+      toCreate.push({
+        timesheetId,
+        segmentType: "WORK" as SegmentType,
+        startTime: start,
+        endTime: new Date(start.getTime() + row.minutes * 60_000),
+        durationMinutes: row.minutes,
+        segmentDate: start,
+        isPaid: true,
+        payBucket: "REG" as PayBucket,
+        isSplit: false,
+        payCodeId: useOverflow ? overflowPayCodeId : basePayCodeId,
+      });
+    }
+  }
+
+  if (toCreate.length === 0) return;
   await db.workSegment.createMany({ data: toCreate });
 }
 
@@ -465,6 +500,8 @@ export async function rebuildSegments(
               startTime: true,
               endTime: true,
               workDays: true,
+              mealConfig: true,
+              breakConfig: true,
             },
           },
           holidayRule: {
@@ -530,15 +567,38 @@ export async function rebuildSegments(
     orderBy: { roundedTime: "asc" },
   });
 
-  const rawSegments = computeSegments(timesheetId, punches, timezone);
+  // If the first approved punch in this period has stateBefore !== OUT, the employee
+  // clocked in during a previous period. Seed computeSegments with the period's own
+  // startDate so only hours earned here are credited.
+  const firstPunch = punches[0];
+  const carryIn =
+    firstPunch && firstPunch.stateBefore !== "OUT"
+      ? { openStart: timesheet.payPeriod.startDate, openState: firstPunch.stateBefore as ActiveState }
+      : undefined;
+
+  const rawSegments = computeSegments(timesheetId, punches, timezone, timesheet.payPeriod.startDate, carryIn);
+
+  // Merge shift-level meal config on top of rule set defaults.
+  // Shift wins when its autoDeduct flag is explicitly set; rule set is the fallback.
+  const shiftMeal = timesheet.employee.shift?.mealConfig as MealConfig | null | undefined;
+  const shiftFirstMeal = shiftMeal?.meals?.[0];
+  const effectiveAutoDeductMeal = shiftMeal?.autoDeduct ?? ruleSet.autoDeductMeal;
+  const effectiveMealCfg: EffectiveMealCfg = {
+    mealBreakAfterMinutes: shiftMeal?.autoDeduct && shiftFirstMeal
+      ? Math.round(shiftFirstMeal.workAtLeastHours * 60)
+      : ruleSet.mealBreakAfterMinutes,
+    mealBreakMinutes: shiftMeal?.autoDeduct && shiftFirstMeal
+      ? shiftFirstMeal.deductMinutes
+      : ruleSet.mealBreakMinutes,
+  };
 
   let segments = rawSegments;
-  if (ruleSet.autoDeductMeal) {
+  if (effectiveAutoDeductMeal) {
     const waivers = await db.mealWaiver.findMany({ where: { timesheetId } });
     const waivedDates = new Set(
       waivers.map((w) => format(w.segmentDate, "yyyy-MM-dd"))
     );
-    segments = applyAutoMealDeduction(rawSegments, ruleSet, waivedDates);
+    segments = applyAutoMealDeduction(rawSegments, effectiveMealCfg, waivedDates);
   }
 
   // Pair rounding runs after meal deduction so the rounded total already excludes unpaid breaks
@@ -683,7 +743,7 @@ export async function rebuildSegments(
   // Guaranteed hours / auto-pay: fill in configured daily credits for uncovered days.
   // When autoPayEnabled, uses the rule set's configurable settings.
   // Otherwise falls back to legacy 8 h/day behavior for salary employees.
-  if (ruleSet.autoPayEnabled) {
+  if (ruleSet.autoPayEnabled && isSalary) {
     await applyAutoPayCredits(
       timesheetId,
       timesheet.payPeriod.startDate,

@@ -21,7 +21,8 @@ const cancelBtnCls = "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font
 const dangerBtnCls = "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50";
 const sectionHdrCls = "col-span-full mb-0.5 border-b border-zinc-200 pb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-700";
 
-type RSFields = Omit<RuleSet, "id" | "tenantId" | "createdAt" | "updatedAt" | "employees" | "payPeriods" | "isActive" | "payPeriodAnchorDate" | "otCycleAnchorDate" | "otCycle" | "mealPremiumRows"> & { isActive?: boolean; payPeriodAnchorDate?: string | null; otCycleAnchorDate?: string | null; otCycle?: OtCycle | null; mealPremiumRows?: MealPremiumRow[] };
+type AutoPayDaySchedule = { day: number; apply: boolean; minutes: number }[];
+type RSFields = Omit<RuleSet, "id" | "tenantId" | "createdAt" | "updatedAt" | "employees" | "payPeriods" | "isActive" | "payPeriodAnchorDate" | "otCycleAnchorDate" | "otCycle" | "mealPremiumRows" | "autoPayDaySchedule"> & { isActive?: boolean; payPeriodAnchorDate?: string | null; otCycleAnchorDate?: string | null; otCycle?: OtCycle | null; mealPremiumRows?: MealPremiumRow[]; autoPayDaySchedule?: AutoPayDaySchedule };
 
 interface MealPremiumRow {
   applyFromMinutes: number;
@@ -75,6 +76,7 @@ function parseForm(fd: FormData): RSFields {
   const anchorRaw = fd.get("payPeriodAnchorDate") as string | null;
   return {
     name: fd.get("name") as string,
+    number: fd.get("number") ? Number(fd.get("number")) : null,
     dailyOtMinutes: Number(fd.get("dailyOtMinutes")),
     dailyDtMinutes: Number(fd.get("dailyDtMinutes")),
     weeklyOtEnabled: fd.get("weeklyOtEnabled") === "true",
@@ -116,8 +118,7 @@ function parseForm(fd: FormData): RSFields {
     defaultPayCodeId: (fd.get("defaultPayCodeId") as string | null) || null,
     autoPayEnabled: fd.get("autoPayEnabled") === "true",
     autoPayMode: ((fd.get("autoPayMode") as string) || "POLICY_HOURS") as AutoPayMode,
-    autoPayDailyMinutes: Number(fd.get("autoPayDailyMinutes") ?? 480),
-    autoPayWeekdaysOnly: fd.get("autoPayWeekdaysOnly") !== "false",
+    autoPayDaySchedule: (() => { try { return JSON.parse(fd.get("autoPayDayScheduleJson") as string) || undefined; } catch { return undefined; } })(),
     autoPayPayCodeId: (fd.get("autoPayPayCodeId") as string | null) || null,
     autoPayOverflowThresholdMinutes: Number(fd.get("autoPayOverflowThresholdMinutes") ?? 0),
     autoPayOverflowPayCodeId: (fd.get("autoPayOverflowPayCodeId") as string | null) || null,
@@ -413,6 +414,15 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
   const [punchRoundingOutEnabled, setPunchRoundingOutEnabled] = useState<boolean>(rs?.punchRoundingOutEnabled ?? false);
   const [autoPayEnabled, setAutoPayEnabled] = useState<boolean>(rs?.autoPayEnabled ?? false);
   const [autoPayMode, setAutoPayMode] = useState<AutoPayMode>(rs?.autoPayMode ?? "POLICY_HOURS");
+  type AutoPayDayRow = { day: number; apply: boolean; minutes: number };
+  const DEFAULT_DAY_SCHEDULE: AutoPayDayRow[] = [0,1,2,3,4,5,6].map((d) => ({
+    day: d, apply: d >= 1 && d <= 5, minutes: d >= 1 && d <= 5 ? 480 : 0,
+  }));
+  const [autoPayDaySchedule, setAutoPayDaySchedule] = useState<AutoPayDayRow[]>(() => {
+    const stored = (rs as RuleSet & { autoPayDaySchedule?: AutoPayDayRow[] | null } | undefined)?.autoPayDaySchedule;
+    if (Array.isArray(stored) && stored.length === 7) return stored as AutoPayDayRow[];
+    return DEFAULT_DAY_SCHEDULE;
+  });
   const [mealBreakPremiumEnabled, setMealBreakPremiumEnabled] = useState<boolean>(rs?.mealBreakPremiumEnabled ?? false);
   const [mealBreakPremiumResetEnabled, setMealBreakPremiumResetEnabled] = useState<boolean>(rs?.mealBreakPremiumResetEnabled ?? false);
   const [mealBreakPremiumWaivedMsgEnabled, setMealBreakPremiumWaivedMsgEnabled] = useState<boolean>(rs?.mealBreakPremiumWaivedMsgEnabled ?? false);
@@ -486,6 +496,19 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
         <div>
           <label className="mb-1 block text-xs text-zinc-500">Rule Set Name</label>
           <input name="name" defaultValue={rs?.name} placeholder="e.g. California Hourly" className={inputCls} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-zinc-500">Pay Policy Number</label>
+          <input
+            name="number"
+            type="number"
+            min="1"
+            step="1"
+            defaultValue={rs?.number ?? ""}
+            placeholder="e.g. 101"
+            className={inputCls}
+          />
+          <p className="mt-1 text-xs text-zinc-400">Optional identifier used by external payroll systems.</p>
         </div>
         <div>
           <label className="mb-1 block text-xs text-zinc-500">Default rule set</label>
@@ -899,17 +922,6 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
                   />
                   Policy Daily Hours
                 </label>
-                <div className={autoPayMode === "POLICY_HOURS" ? "flex items-center gap-3 pl-6" : "hidden"}>
-                  <input
-                    name="autoPayDailyMinutes"
-                    type="number"
-                    min={1}
-                    defaultValue={rs?.autoPayDailyMinutes ?? 480}
-                    className={`w-16 text-right ${smInputCls}`}
-                  />
-                  <span className="text-xs text-zinc-400">min/day</span>
-                  <span className="text-xs text-zinc-400 italic">({Math.round((rs?.autoPayDailyMinutes ?? 480) / 60 * 10) / 10}h)</span>
-                </div>
                 <label className="flex cursor-pointer items-center gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
                   <input
                     type="radio"
@@ -925,13 +937,57 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
               <input type="hidden" name="autoPayMode" value={autoPayMode} />
             </div>
 
-            {/* Apply to — only relevant for POLICY_HOURS */}
-            <div className={`flex items-center gap-3 px-4 py-2 ${autoPayMode === "POLICY_HOURS" ? "" : "hidden"}`}>
-              <span className="w-44 shrink-0 text-xs text-zinc-500">Apply to</span>
-              <select name="autoPayWeekdaysOnly" defaultValue={rs?.autoPayWeekdaysOnly !== false ? "true" : "false"} className={`w-52 ${smInputCls}`}>
-                <option value="true">Weekdays only (Mon–Fri)</option>
-                <option value="false">All 7 days</option>
-              </select>
+            {/* Per-day schedule — only for POLICY_HOURS */}
+            <div className={autoPayMode === "POLICY_HOURS" ? "px-4 py-3" : "hidden"}>
+              <p className="mb-2.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Daily Schedule</p>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-zinc-400">
+                    <th className="pb-1.5 font-normal">Day</th>
+                    <th className="pb-1.5 font-normal text-center">Apply</th>
+                    <th className="pb-1.5 font-normal text-right pr-1">Hours</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {autoPayDaySchedule.map((row, i) => {
+                    const dayName = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][row.day];
+                    return (
+                      <tr key={row.day}>
+                        <td className="py-1 text-zinc-600 dark:text-zinc-300">{dayName}</td>
+                        <td className="py-1 text-center">
+                          <input
+                            type="checkbox"
+                            checked={row.apply}
+                            onChange={(e) => {
+                              const next = [...autoPayDaySchedule];
+                              next[i] = { ...row, apply: e.target.checked };
+                              setAutoPayDaySchedule(next);
+                            }}
+                            className="h-4 w-4 cursor-pointer rounded"
+                          />
+                        </td>
+                        <td className="py-1 text-right">
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.5}
+                            value={row.minutes / 60}
+                            onChange={(e) => {
+                              const next = [...autoPayDaySchedule];
+                              next[i] = { ...row, minutes: Math.round(parseFloat(e.target.value || "0") * 60) };
+                              setAutoPayDaySchedule(next);
+                            }}
+                            disabled={!row.apply}
+                            className={`w-16 text-right ${smInputCls} disabled:opacity-40`}
+                          />
+                          <span className="ml-1 text-zinc-400">h</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <input type="hidden" name="autoPayDayScheduleJson" value={JSON.stringify(autoPayDaySchedule)} />
             </div>
 
             {/* Auto-Pay pay code */}

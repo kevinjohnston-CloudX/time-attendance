@@ -33,7 +33,15 @@ const dangerBtnCls =
 
 function toDateInputValue(date: Date | string): string {
   const d = typeof date === "string" ? parseISO(date) : date;
-  return format(d, "yyyy-MM-dd");
+  // Use UTC components to avoid local-timezone day shift
+  return d.toISOString().slice(0, 10);
+}
+
+function formatUTCDate(date: Date | string, fmt: string): string {
+  const d = typeof date === "string" ? parseISO(date) : date;
+  // Build a local-midnight Date from UTC components so date-fns format stays on the right day
+  const utc = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  return format(utc, fmt);
 }
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
@@ -416,7 +424,7 @@ export function HolidaysManager({ holidays, holidayRules }: Props) {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="w-24 shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-center text-xs font-mono font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                    {format(new Date(h.date), "MMM d, yyyy")}
+                    {formatUTCDate(h.date, "MMM d, yyyy")}
                   </span>
                   <span
                     className={`font-medium ${h.isActive ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"}`}
@@ -425,7 +433,7 @@ export function HolidaysManager({ holidays, holidayRules }: Props) {
                   </span>
                   {h.observedDate && (
                     <span className="text-xs text-zinc-400">
-                      Observed {format(new Date(h.observedDate), "MMM d")}
+                      Observed {formatUTCDate(h.observedDate, "MMM d")}
                     </span>
                   )}
                 </div>

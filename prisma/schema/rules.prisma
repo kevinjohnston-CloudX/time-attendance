@@ -185,6 +185,7 @@ model RuleSet {
   id       String @id @default(cuid())
   tenantId String
   name     String
+  number   Int?
 
   // Overtime rate multipliers (used at payroll export; 150 = 1.5×, 200 = 2.0×)
   otRateMultiplier         Int     @default(150)   // OT-1 rate × 100
@@ -263,8 +264,8 @@ model RuleSet {
   // Guaranteed Hours / Auto-Pay — credit hours automatically without punch activity
   autoPayEnabled                  Boolean     @default(false)
   autoPayMode                     AutoPayMode @default(POLICY_HOURS)
-  autoPayDailyMinutes             Int         @default(480)   // used when autoPayMode = POLICY_HOURS (e.g. 480 = 8h)
-  autoPayWeekdaysOnly             Boolean     @default(true)  // used when autoPayMode = POLICY_HOURS; SHIFT_HOURS uses shift.workDays
+  /// JSON array of 7 AutoPayDayRow objects (Sun–Sat): { day: 0-6, apply: bool, minutes: int }
+  autoPayDaySchedule              Json?       // used when autoPayMode = POLICY_HOURS; SHIFT_HOURS uses shift duration
   autoPayPayCodeId                String?     // pay code for auto-credits; null = fall back to defaultPayCodeId
   autoPayOverflowThresholdMinutes Int         @default(0)     // 0 = disabled; credits above this total → overflowPayCode
   autoPayOverflowPayCodeId        String?     // pay code for overflow credits when threshold is exceeded

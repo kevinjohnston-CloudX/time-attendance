@@ -1,0 +1,1 @@
+ALTER TABLE "rule_sets" ADD COLUMN IF NOT EXISTS "number" INTEGER;

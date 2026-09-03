@@ -146,8 +146,7 @@ function HolidayRuleFields({ rule, isEdit, payCodes = [] }: { rule?: HolidayRule
       </div>
 
       {/* ── General tab ── */}
-      {tab === "general" && (
-        <div className="flex flex-col gap-5">
+      <div className={tab !== "general" ? "hidden" : "flex flex-col gap-5"}>
 
           {/* Number + Name + Status */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
@@ -446,12 +445,10 @@ function HolidayRuleFields({ rule, isEdit, payCodes = [] }: { rule?: HolidayRule
           <input type="hidden" name="workingPremium" value={rule ? (rule.workingPremium / 100).toFixed(2) : "1.00"} />
           <input type="hidden" name="countTowardOt" value={rule?.countTowardOt !== false ? "true" : "false"} />
 
-        </div>
-      )}
+      </div>
 
       {/* ── Holiday tab ── */}
-      {tab === "holiday" && (
-        <div className="flex flex-col gap-5">
+      <div className={tab !== "holiday" ? "hidden" : "flex flex-col gap-5"}>
 
           {/* Assigned holidays — read-only */}
           <div>
@@ -463,7 +460,7 @@ function HolidayRuleFields({ rule, isEdit, payCodes = [] }: { rule?: HolidayRule
                 {(rule?.assignedHolidays ?? []).map(({ holiday: h }) => (
                   <div key={h.id} className="flex items-center gap-3 border-b border-zinc-100 px-3 py-1.5 last:border-0 dark:border-zinc-800">
                     <span className="font-mono text-xs text-zinc-400">
-                      {new Date(h.date).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" })}
+                      {new Date(h.date).toLocaleDateString("en-US", { timeZone: "UTC", month: "2-digit", day: "2-digit", year: "numeric" })}
                     </span>
                     <span className="text-sm text-zinc-700 dark:text-zinc-300">{h.name}</span>
                   </div>
@@ -557,12 +554,10 @@ function HolidayRuleFields({ rule, isEdit, payCodes = [] }: { rule?: HolidayRule
           <input type="hidden" name="workingPremium" value={rule ? (rule.workingPremium / 100).toFixed(2) : "1.00"} />
           <input type="hidden" name="countTowardOt" value={rule?.countTowardOt !== false ? "true" : "false"} />
 
-        </div>
-      )}
+      </div>
 
       {/* ── Prorate Rule tab ── */}
-      {tab === "prorate" && (
-        <div className="flex flex-col gap-5">
+      <div className={tab !== "prorate" ? "hidden" : "flex flex-col gap-5"}>
 
           {/* Apply toggle */}
           <div>
@@ -680,8 +675,7 @@ function HolidayRuleFields({ rule, isEdit, payCodes = [] }: { rule?: HolidayRule
             </>
           )}
 
-        </div>
-      )}
+      </div>
 
     </div>
   );

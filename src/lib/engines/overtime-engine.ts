@@ -518,7 +518,7 @@ export async function applyOvertime(
       select: { punchType: true, roundedTime: true, payCodeId: true },
     }),
     db.exception.findMany({
-      where: { timesheetId, exceptionType: "MISSING_PUNCH" },
+      where: { timesheetId, exceptionType: "MISSING_PUNCH", resolvedAt: null },
       select: { occurredAt: true },
     }),
   ]);

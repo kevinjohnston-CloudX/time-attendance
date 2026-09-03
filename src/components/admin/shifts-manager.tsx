@@ -71,12 +71,35 @@ function DefinitionTable({
   schedule: DayScheduleRow[];
   onChange: (s: DayScheduleRow[]) => void;
 }) {
+  const [fillStart, setFillStart] = useState("08:00");
+  const [fillEnd, setFillEnd] = useState("16:30");
+
   function update(day: number, patch: Partial<DayScheduleRow>) {
     onChange(schedule.map((r) => (r.day === day ? { ...r, ...patch } : r)));
   }
 
+  function applyFill() {
+    onChange(schedule.map((r) =>
+      r.isWorkday ? { ...r, startTime: fillStart, endTime: fillEnd } : r
+    ));
+  }
+
   return (
     <div>
+      {/* Quick-fill bar */}
+      <div className="mb-3 flex items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800/60">
+        <span className="shrink-0 text-xs text-zinc-500">Apply to workdays:</span>
+        <input type="time" value={fillStart} onChange={(e) => setFillStart(e.target.value)} className={cellInputCls} />
+        <span className="text-xs text-zinc-400">–</span>
+        <input type="time" value={fillEnd} onChange={(e) => setFillEnd(e.target.value)} className={cellInputCls} />
+        <button
+          type="button"
+          onClick={applyFill}
+          className="ml-1 rounded bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700"
+        >
+          Apply
+        </button>
+      </div>
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-zinc-200 dark:border-zinc-700">
@@ -698,9 +721,8 @@ function ShiftFields({ shift, isEdit }: { shift?: Shift; isEdit?: boolean }) {
         ))}
       </div>
 
-      {/* Properties tab */}
-      {tab === "properties" && (
-        <div className="flex flex-col gap-4">
+      {/* Properties tab — always mounted so defaultValue inputs survive tab switches */}
+      <div className={tab !== "properties" ? "hidden" : "flex flex-col gap-4"}>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -799,8 +821,7 @@ function ShiftFields({ shift, isEdit }: { shift?: Shift; isEdit?: boolean }) {
               placeholder="0.00" className={inputCls} />
           </div>
 
-        </div>
-      )}
+      </div>
 
       {/* Definition tab */}
       {tab === "definition" && (

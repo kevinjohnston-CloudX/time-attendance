@@ -118,6 +118,7 @@ export const updateLeaveTypeSchema = leaveTypeSchema.extend({
 
 export const ruleSetSchema = z.object({
   name: z.string().min(1),
+  number: z.coerce.number().int().min(1).nullable().optional(),
   otRateMultiplier: z.number().int().min(100).max(1000).default(150),
   dtRateMultiplier: z.number().int().min(100).max(1000).default(200),
   overtimeRequiresAuth: z.boolean().default(false),
@@ -169,8 +170,11 @@ export const ruleSetSchema = z.object({
   defaultPayCodeId: z.string().nullable().optional(),
   autoPayEnabled: z.boolean().default(false),
   autoPayMode: z.enum(["POLICY_HOURS", "SHIFT_HOURS"]).default("POLICY_HOURS"),
-  autoPayDailyMinutes: z.number().int().min(1).default(480),
-  autoPayWeekdaysOnly: z.boolean().default(true),
+  autoPayDaySchedule: z.array(z.object({
+    day: z.number().int().min(0).max(6),
+    apply: z.boolean(),
+    minutes: z.number().int().min(0),
+  })).length(7).optional(),
   autoPayPayCodeId: z.string().nullable().optional(),
   autoPayOverflowThresholdMinutes: z.number().int().min(0).default(0),
   autoPayOverflowPayCodeId: z.string().nullable().optional(),
