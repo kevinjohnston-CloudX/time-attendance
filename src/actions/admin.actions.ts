@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
-import { migrateTimesheetsOnRuleSetChange } from "@/lib/timesheet-migration";
+
 import {
   createEmployeeSchema,
   updateEmployeeSchema,
@@ -243,10 +243,8 @@ export const updateEmployee = withRBAC(
       });
     });
 
-    // Migrate timesheets when rule set changes to one with its own pay period schedule
-    if (ruleSetId !== undefined && ruleSetId !== current.ruleSetId) {
-      await migrateTimesheetsOnRuleSetChange(employeeId, ruleSetId).catch(() => {});
-    }
+    // TODO: migrate open timesheets to the new rule set's pay period when ruleSetId changes
+    // (src/lib/timesheet-migration.ts — not yet implemented)
 
     // Build field-level diff for audit log
     const decCurrent = decryptPiiFields({
