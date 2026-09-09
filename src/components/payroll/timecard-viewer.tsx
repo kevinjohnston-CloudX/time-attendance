@@ -417,10 +417,16 @@ function InlinePunchEdit({
   onBlurSave: () => void; onCancel: () => void; onDelete?: () => void;
 }) {
   const deletingRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Refocus the input whenever a validation error appears so the user can correct without re-clicking
+  useEffect(() => {
+    if (error) inputRef.current?.focus();
+  }, [error]);
   return (
     <div className="flex flex-col gap-0.5">
       <div className="flex items-center gap-1">
         <input
+          ref={inputRef}
           value={timeStr}
           onChange={(e) => onTimeChange(e.target.value)}
           onBlur={() => { if (!deletingRef.current) onBlurSave(); deletingRef.current = false; }}
@@ -596,7 +602,7 @@ export function TimecardViewer({
   const [newEntryError, setNewEntryError] = useState<string | null>(null);
 
   // Punch editing / adding
-  const [addingPunch, setAddingPunch] = useState<{ dayKey: string; pairIndex: number; punchType: "CLOCK_IN" | "CLOCK_OUT" } | null>(null);
+  const [addingPunch, setAddingPunch] = useState<{ dayKey: string; pairIndex: number; punchType: "CLOCK_IN" | "CLOCK_OUT"; pairedTime: Date | null } | null>(null);
   const [editingPunchId, setEditingPunchId] = useState<string | null>(null);
   const [editTimeStr, setEditTimeStr] = useState("");
   const [editAmPm, setEditAmPm] = useState<"AM" | "PM">("AM");
@@ -853,6 +859,19 @@ export function TimecardViewer({
     const punchDate = new Date(editOriginalDate);
     punchDate.setHours(hours, minutes, 0, 0);
     const snap = addingPunch;
+
+    // Validate against the existing paired punch captured at the time the edit was opened
+    if (snap.pairedTime) {
+      if (snap.punchType === "CLOCK_IN" && punchDate >= snap.pairedTime) {
+        setEditError(`In time must be before out time (${format(snap.pairedTime, "h:mm a")})`);
+        return;
+      }
+      if (snap.punchType === "CLOCK_OUT" && punchDate <= snap.pairedTime) {
+        setEditError(`Out time must be after in time (${format(snap.pairedTime, "h:mm a")})`);
+        return;
+      }
+    }
+
     setPendingNewPunches((prev) => [...prev, { dayKey: snap.dayKey, pairIndex: snap.pairIndex, punchType: snap.punchType, punchDate }]);
     setAddingPunch(null);
     setEditError(null);
@@ -877,9 +896,9 @@ export function TimecardViewer({
     });
   }
 
-  function startAddingPunch(dayKey: string, pairIndex: number, punchType: "CLOCK_IN" | "CLOCK_OUT", day: Date) {
+  function startAddingPunch(dayKey: string, pairIndex: number, punchType: "CLOCK_IN" | "CLOCK_OUT", day: Date, pairedTime: Date | null = null) {
     if (!canEdit) return;
-    setAddingPunch({ dayKey, pairIndex, punchType });
+    setAddingPunch({ dayKey, pairIndex, punchType, pairedTime });
     setEditingPunchId(null);
     setEditTimeStr("");
     setEditAmPm(punchType === "CLOCK_IN" ? "AM" : "PM");
@@ -2221,7 +2240,7 @@ export function TimecardViewer({
                                 return hasMissingPunch && canEdit ? (
                                   <button
                                     type="button"
-                                    onClick={() => startAddingPunch(dayKey, 0, "CLOCK_IN", day)}
+                                    onClick={() => startAddingPunch(dayKey, 0, "CLOCK_IN", day, lastOut ? parseISO(lastOut.roundedTime) : null)}
                                     className="rounded px-1 py-0.5 font-medium text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/30"
                                   >
                                     Missed
@@ -2281,7 +2300,7 @@ export function TimecardViewer({
                                 return hasMissingPunch && canEdit ? (
                                   <button
                                     type="button"
-                                    onClick={() => startAddingPunch(dayKey, 0, "CLOCK_OUT", day)}
+                                    onClick={() => startAddingPunch(dayKey, 0, "CLOCK_OUT", day, firstIn ? parseISO(firstIn.roundedTime) : null)}
                                     className="rounded px-1 py-0.5 font-medium text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/30"
                                   >
                                     Missed
