@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { findOpenPayPeriod } from "@/lib/utils/punch-helpers";
 import { PunchHistoryTable } from "@/components/time/punch-history-table";
 import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
@@ -11,11 +12,15 @@ export default async function PunchHistoryPage() {
 
   const { employeeId } = session.user;
 
-  // Find current pay period
-  const now = new Date();
-  const payPeriod = await db.payPeriod.findFirst({
-    where: { startDate: { lte: now }, endDate: { gte: now } },
+  // Resolve the employee's rule set so we find the right pay period
+  const employee = await db.employee.findUnique({
+    where: { id: employeeId },
+    select: { ruleSetId: true, tenantId: true },
   });
+
+  const payPeriod = employee
+    ? await findOpenPayPeriod(employee.tenantId, employee.ruleSetId)
+    : null;
 
   const punches = payPeriod
     ? await db.punch.findMany({

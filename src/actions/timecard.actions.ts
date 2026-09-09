@@ -76,10 +76,43 @@ export const getActiveEmployeesForTimecards = withRBAC(
   }
 );
 
+// ─── Team employees for supervisor view ──────────────────────────────────────
+
+export const getTeamEmployeesForTimecards = withRBAC(
+  "TIMECARD_VIEW_TEAM",
+  async ({ employeeId, tenantId }, _input: Record<string, never>) => {
+    const employees = await db.employee.findMany({
+      where: {
+        isActive: true,
+        supervisorId: employeeId,
+        ...(tenantId ? { tenantId } : {}),
+      },
+      include: {
+        user: { select: { name: true } },
+        department: { select: { name: true } },
+        site: { select: { id: true, name: true } },
+      },
+      orderBy: { user: { name: "asc" } },
+    });
+
+    return employees.map((emp) => ({
+      employeeId: emp.id,
+      name: emp.user?.name ?? emp.id,
+      employeeCode: emp.employeeCode,
+      department: emp.department.name,
+      siteId: emp.site?.id ?? null,
+      siteName: emp.site?.name ?? null,
+      isActive: emp.isActive,
+      payType: emp.payType ?? null,
+      exceptionTypes: [] as string[],
+    }));
+  }
+);
+
 // ─── Periods for a specific employee's rule set ───────────────────────────────
 
 export const getEmployeePeriods = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  ["PAY_PERIOD_MANAGE", "TIMECARD_VIEW_TEAM"],
   async (_ctx, input: { employeeId: string }) => {
     const { employeeId } = z.object({ employeeId: z.string() }).parse(input);
 
@@ -150,7 +183,7 @@ export const getEmployeePeriods = withRBAC(
 // ─── Timecard by employee + period (employee-centric lookup) ─────────────────
 
 export const getTimecardByEmployeeAndPeriod = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  ["PAY_PERIOD_MANAGE", "TIMECARD_VIEW_TEAM"],
   async (_ctx, input: { employeeId: string; periodId: string }) => {
     const { employeeId, periodId } = z.object({
       employeeId: z.string(),

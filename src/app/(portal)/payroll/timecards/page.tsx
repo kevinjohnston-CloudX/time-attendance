@@ -5,6 +5,7 @@ import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import {
   getActiveEmployeesForTimecards,
+  getTeamEmployeesForTimecards,
   getEmployeePeriods,
   getTimecardByEmployeeAndPeriod,
 } from "@/actions/timecard.actions";
@@ -27,17 +28,22 @@ export default async function TimecardsPage({
   const sp = await searchParams;
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!await userHasPermission(session.user, "PAY_PERIOD_MANAGE")) redirect("/dashboard");
+
+  const isAdmin = await userHasPermission(session.user, "PAY_PERIOD_MANAGE");
+  const isSupervisor = !isAdmin && await userHasPermission(session.user, "TIMECARD_VIEW_TEAM");
+  if (!isAdmin && !isSupervisor) redirect("/dashboard");
 
   const t = session.user.tenantId ?? undefined;
 
   // Load employees + sites + departments in parallel
   const [employeesResult, sites, departments] = await Promise.all([
-    getActiveEmployeesForTimecards({
-      siteId: sp.siteId ?? null,
-      departmentId: sp.departmentId ?? null,
-      payPeriodId: sp.periodId ?? null,
-    }),
+    isAdmin
+      ? getActiveEmployeesForTimecards({
+          siteId: sp.siteId ?? null,
+          departmentId: sp.departmentId ?? null,
+          payPeriodId: sp.periodId ?? null,
+        })
+      : getTeamEmployeesForTimecards({}),
     db.site.findMany({
       where: { isActive: true, ...(t ? { tenantId: t } : {}) },
       orderBy: { name: "asc" },
@@ -205,6 +211,7 @@ export default async function TimecardsPage({
         timecard={serializedTimecard}
         payFrequency={payFrequency}
         userRole={session.user.role ?? "EMPLOYEE"}
+        readOnly={isSupervisor}
         customStart={sp.customStart ?? null}
         customEnd={sp.customEnd ?? null}
         payCodes={payCodes.map((pc) => ({

@@ -205,6 +205,7 @@ interface TimecardViewerProps {
   departments: { id: string; name: string }[];
   selectedDepartmentId: string | null;
   userRole: string;
+  readOnly?: boolean;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -489,6 +490,7 @@ export function TimecardViewer({
   departments,
   selectedDepartmentId,
   userRole,
+  readOnly = false,
 }: TimecardViewerProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -666,9 +668,9 @@ export function TimecardViewer({
     setPendingDeletions([]);
   }, [timecard?.timesheetId]);
 
-  const canEdit = timecard
+  const canEdit = !readOnly && (timecard
     ? (timecard.status !== "LOCKED" && timecard.status !== "PAYROLL_APPROVED")
-    : (!!selectedEmployeeId && !!selectedPeriodId);
+    : (!!selectedEmployeeId && !!selectedPeriodId));
 
   const canDeleteManual =
     !!canEdit &&
@@ -2046,7 +2048,7 @@ export function TimecardViewer({
                                     }
                                     // Read-only locked view
                                     if (isMarker && workSeg.payCode) {
-                                      return <span className="text-xs text-zinc-500">{workSeg.payCode.code}[{workSeg.payCode.label}]</span>;
+                                      return <span className="text-xs text-zinc-700 dark:text-zinc-200">{workSeg.payCode.code}[{workSeg.payCode.label}]</span>;
                                     }
                                     return <span className="text-xs text-red-400 dark:text-red-600">Absent</span>;
                                   }
@@ -2120,7 +2122,7 @@ export function TimecardViewer({
                                       ))}
                                     </select>
                                   ) : workSeg.payCode ? (
-                                    <span className="text-xs text-zinc-500">
+                                    <span className="text-xs text-zinc-700 dark:text-zinc-200">
                                       {workSeg.payCode.code}[{workSeg.payCode.label}]
                                     </span>
                                   ) : null;
@@ -2484,7 +2486,7 @@ export function TimecardViewer({
                                         ))}
                                       </select>
                                     ) : pairWorkSeg?.payCode ? (
-                                      <span className="text-xs text-zinc-500">
+                                      <span className="text-xs text-zinc-700 dark:text-zinc-200">
                                         {pairWorkSeg.payCode.code}[{pairWorkSeg.payCode.label}]
                                       </span>
                                     ) : canEdit ? (() => {

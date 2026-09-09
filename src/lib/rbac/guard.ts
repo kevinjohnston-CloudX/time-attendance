@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { hasPermission, type Permission } from "./permissions";
 import { hasPermissionByLegacy } from "./permission-resolver";
+import { getEffectiveRole } from "./check-permission";
 import type { Role } from "./roles";
 
 type ActionResult<T> =
@@ -19,7 +20,7 @@ type ActionResult<T> =
  * });
  */
 export function withRBAC<TInput, TOutput>(
-  permission: Permission,
+  permission: Permission | Permission[],
   handler: (
     ctx: { employeeId: string; role: Role; tenantId: string | null },
     input: TInput
@@ -32,20 +33,25 @@ export function withRBAC<TInput, TOutput>(
       return { success: false, error: "UNAUTHENTICATED" };
     }
 
-    const isSuperAdmin = session.user.role === "SUPER_ADMIN";
+    const realRole = session.user.role ?? "EMPLOYEE";
+    const effectiveRole = await getEffectiveRole(session.user);
+    const isSuperAdmin = effectiveRole === "SUPER_ADMIN";
 
     if (!isSuperAdmin) {
       const rawCustomRoleId = (session.user as { customRoleId?: string | null }).customRoleId ?? null;
-      const customRoleId = session.user.role === "EMPLOYEE" ? rawCustomRoleId : null;
-      const allowed = customRoleId
-        ? await hasPermissionByLegacy(customRoleId, permission)
-        : hasPermission(session.user.role, permission);
+      const customRoleId = effectiveRole === "EMPLOYEE" ? rawCustomRoleId : null;
+      const perms = Array.isArray(permission) ? permission : [permission];
+      const allowed = perms.some((p) =>
+        customRoleId
+          ? false // legacy roles checked separately below
+          : hasPermission(effectiveRole, p)
+      ) || (customRoleId ? await Promise.all(perms.map((p) => hasPermissionByLegacy(customRoleId, p))).then((r) => r.some(Boolean)) : false);
       if (!allowed) return { success: false, error: "FORBIDDEN" };
     }
 
     try {
       let tenantId = session.user.tenantId ?? null;
-      if (isSuperAdmin) {
+      if (["SYSTEM_ADMIN", "SUPER_ADMIN"].includes(realRole)) {
         const cookieStore = await cookies();
         const override = cookieStore.get(SUPER_ADMIN_TENANT_COOKIE)?.value;
         if (override) tenantId = override;
@@ -54,7 +60,7 @@ export function withRBAC<TInput, TOutput>(
       const data = await handler(
         {
           employeeId: session.user.employeeId ?? "",
-          role: session.user.role as Role,
+          role: effectiveRole as Role,
           tenantId,
         },
         input

@@ -46,7 +46,7 @@ const navItems: NavItem[] = [
   { label: "My Leave", href: "/leave", icon: CalendarDays },
   { label: "Documents", href: "/documents", icon: FileText },
   { label: "Payroll", href: "/payroll", icon: DollarSign, permission: "PAY_PERIOD_MANAGE" },
-  { label: "Timecards", href: "/payroll/timecards", icon: ClipboardList, permission: "PAY_PERIOD_MANAGE" },
+  { label: "Timecards", href: "/payroll/timecards", icon: ClipboardList, permission: ["PAY_PERIOD_MANAGE", "TIMECARD_VIEW_TEAM"] },
   { label: "Reports", href: "/reports", icon: FileText, permission: "REPORT_MANAGE" },
 ];
 

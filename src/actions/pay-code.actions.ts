@@ -8,7 +8,7 @@ import { z } from "zod";
 // ─── List pay codes for tenant ──────────────────────────────────────────────
 
 export const getPayCodes = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  ["PAY_PERIOD_MANAGE", "TIMECARD_VIEW_TEAM"],
   async (ctx) => {
     const tenantId = ctx.tenantId;
     if (!tenantId) return [];

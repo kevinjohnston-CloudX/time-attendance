@@ -20,9 +20,7 @@ export default async function TeamPunchHistoryPage({
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "PUNCH_VIEW_TEAM")) redirect("/dashboard");
 
-  const isPayroll = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"].includes(
-    session.user.role ?? ""
-  );
+  const isPayroll = await userHasPermission(session.user, "PAY_PERIOD_MANAGE");
   const myEmployeeId = session.user.employeeId;
   const t = session.user.tenantId ?? undefined;
 

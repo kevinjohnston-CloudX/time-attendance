@@ -10,6 +10,8 @@ export const PERMISSIONS = [
   "TIMESHEET_SUBMIT_OWN",
   "TIMESHEET_APPROVE_TEAM",
   "TIMESHEET_APPROVE_ANY",
+  // Timecards
+  "TIMECARD_VIEW_TEAM",
   // Leave
   "LEAVE_REQUEST_OWN",
   "LEAVE_APPROVE_TEAM",
@@ -44,6 +46,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "LEAVE_REQUEST_OWN",
     "LEAVE_APPROVE_TEAM",
     "DOCUMENT_VIEW_OWN",
+    "TIMECARD_VIEW_TEAM",
   ],
   PAYROLL_ADMIN: [
     "PUNCH_OWN",
