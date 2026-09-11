@@ -27,6 +27,7 @@ model Tenant {
   shifts       Shift[]
   holidayRules   HolidayRule[]
   payCategories  PayCategory[]
+  payTypes       PayType[]
   apiKeys        ApiKey[]
 
   @@map("tenants")
@@ -92,6 +93,7 @@ model Employee {
   ruleSetId    String
   shiftId      String?
   isActive     Boolean  @default(true)
+  onLeave      Boolean  @default(false)
   hireDate         DateTime
   adjustedHireDate DateTime?  /// Seniority date override — used when serviceMonthBasis = ADJUSTED_HIRE_DATE
   titleChangeDate  DateTime?  /// Date of last title/role change
@@ -105,7 +107,8 @@ model Employee {
   terminationReason String?
 
   // Pay
-  payType        String?          // "HOURLY" | "SALARY"
+  payType        String?          // "HOURLY" | "SALARY" — compensation method
+  payTypeId      String?          // FK → PayType (FLSA classification)
   payRate        Decimal?  @db.Decimal(10, 4)
   holidayRuleId  String?
   payCategoryId  String?
@@ -143,6 +146,7 @@ model Employee {
   shift        Shift?       @relation(fields: [shiftId], references: [id])
   holidayRule  HolidayRule? @relation(fields: [holidayRuleId], references: [id])
   payCategory  PayCategory? @relation(fields: [payCategoryId], references: [id])
+  payTypeLookup PayType?    @relation(fields: [payTypeId], references: [id])
   punches      Punch[]
   timesheets   Timesheet[]
   leaveBalances    LeaveBalance[]

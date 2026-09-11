@@ -1055,32 +1055,39 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes }: Props) {
 
   return (
     <div className="mt-6">
-      {policies.length === 0 && <p className="text-sm text-zinc-400">No PTO policies yet. Add one below.</p>}
-      {policies.length > 0 && (
-        <div className="mb-3 flex items-center gap-3">
-          <div className="relative flex-1 max-w-xs">
-            <svg className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search policies…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm text-zinc-700 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:placeholder-zinc-500"
-            />
-          </div>
-          {policyGroups.length > 0 && !searchLower && (
-            <button
-              type="button"
-              onClick={toggleAll}
-              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:bg-zinc-800"
-            >
-              {allExpanded ? "Collapse all" : "Expand all"}
-            </button>
-          )}
-        </div>
-      )}
+      <div className="mb-3 flex items-center gap-3">
+        {policies.length > 0 && (
+          <>
+            <div className="relative flex-1 max-w-xs">
+              <svg className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search policies…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm text-zinc-700 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:placeholder-zinc-500"
+              />
+            </div>
+            {policyGroups.length > 0 && !searchLower && (
+              <button
+                type="button"
+                onClick={toggleAll}
+                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:bg-zinc-800"
+              >
+                {allExpanded ? "Collapse all" : "Expand all"}
+              </button>
+            )}
+          </>
+        )}
+        <button
+          onClick={openCreate}
+          className="ml-auto rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        >
+          + Add Policy
+        </button>
+      </div>
       {searchLower && policyGroups.length === 0 && (
         <p className="text-sm text-zinc-400">No policies match &ldquo;{search}&rdquo;.</p>
       )}
@@ -1149,10 +1156,6 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes }: Props) {
           );
         })}
       </div>
-
-      <button onClick={openCreate} className="mt-4 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-600 dark:hover:border-zinc-400">
-        + Add Policy
-      </button>
 
       {showCreate && (
         <Modal title="New PTO Policy" onClose={closeCreate}>

@@ -7,6 +7,9 @@ import { exitTenant } from "@/actions/super-admin.actions";
 import { SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
 import { getPermissions } from "@/lib/rbac/permissions";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
+import { getLegacyPermissions } from "@/lib/rbac/permission-resolver";
+
+const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
 export default async function PortalLayout({
   children,
@@ -20,10 +23,17 @@ export default async function PortalLayout({
   const realRole = session.user.role ?? "EMPLOYEE";
   let sidebarRole = realRole;
 
-  // Build permission list for sidebar filtering — always driven by the enum role
+  const customRoleId = session.user.customRoleId ?? null;
+  const userCanViewAs = session.user.canViewAs ?? false;
+  const isPrivileged = PRIVILEGED_ROLES.includes(realRole);
+  const canUseViewAs = isPrivileged || userCanViewAs;
+
+  // Build sidebar permissions for the user's real role
   let userPermissions: string[] = [];
-  if (realRole === "SUPER_ADMIN") {
+  if (realRole === "SUPER_ADMIN" || realRole === "SYSTEM_ADMIN") {
     userPermissions = Object.keys(LEGACY_MAP);
+  } else if (customRoleId) {
+    userPermissions = await getLegacyPermissions(customRoleId);
   } else {
     userPermissions = getPermissions(sidebarRole as Parameters<typeof getPermissions>[0]);
   }
@@ -43,15 +53,48 @@ export default async function PortalLayout({
     sidebarRole = "SYSTEM_ADMIN";
   }
 
-  // View-as role override (SYSTEM_ADMIN and SUPER_ADMIN only)
+  // Determine user's rank for filtering view-as options
+  let userRank: number | null = null;
+  if (!isPrivileged && canUseViewAs && customRoleId) {
+    const cr = await db.customRole.findUnique({ where: { id: customRoleId }, select: { rank: true } });
+    userRank = cr?.rank ?? 0;
+  }
+
+  // Fetch available view-as roles (lower rank than user, or all for privileged)
+  const effectiveTenantId = session.user.tenantId ?? null;
+  let viewAsOptions: { id: string; name: string; rank: number }[] = [];
+  if (canUseViewAs && effectiveTenantId) {
+    const cookieStore = await cookies();
+    const tenantOverride = cookieStore.get(SUPER_ADMIN_TENANT_COOKIE)?.value;
+    const lookupTenantId = tenantOverride ?? effectiveTenantId;
+
+    viewAsOptions = await db.customRole.findMany({
+      where: {
+        tenantId: lookupTenantId,
+        isActive: true,
+        ...(userRank !== null ? { rank: { lt: userRank } } : {}),
+      },
+      select: { id: true, name: true, rank: true },
+      orderBy: { rank: "desc" },
+    });
+  }
+
+  // View-as role override — reads cookie and uses real DB permissions
   let viewAsRole: string | null = null;
-  if (["SYSTEM_ADMIN", "SUPER_ADMIN"].includes(realRole)) {
+  if (canUseViewAs) {
     const cookieStore = await cookies();
     const cookieVal = cookieStore.get(VIEW_AS_ROLE_COOKIE)?.value;
     if (cookieVal) {
-      viewAsRole = cookieVal;
-      sidebarRole = viewAsRole;
-      userPermissions = getPermissions(viewAsRole as Parameters<typeof getPermissions>[0]);
+      // Look up the role name and permissions from DB
+      const viewAsRoleData = viewAsOptions.find((r) => r.id === cookieVal)
+        ?? await db.customRole.findUnique({ where: { id: cookieVal }, select: { id: true, name: true, rank: true } })
+            .then((r) => r ?? null);
+
+      if (viewAsRoleData) {
+        viewAsRole = viewAsRoleData.name;
+        sidebarRole = viewAsRole;
+        userPermissions = await getLegacyPermissions(cookieVal);
+      }
     }
   }
 
@@ -76,7 +119,15 @@ export default async function PortalLayout({
         </div>
       )}
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar role={sidebarRole} userName={session.user.name} permissions={userPermissions} realRole={realRole} viewAsRole={viewAsRole} />
+        <Sidebar
+          role={sidebarRole}
+          userName={session.user.name}
+          permissions={userPermissions}
+          realRole={realRole}
+          viewAsRole={viewAsRole}
+          canViewAs={canUseViewAs}
+          viewAsOptions={viewAsOptions.map((r) => ({ id: r.id, name: r.name }))}
+        />
         <main className="flex-1 overflow-y-auto">
           <div className="px-6 py-8">{children}</div>
         </main>

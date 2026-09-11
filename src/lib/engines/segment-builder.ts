@@ -875,9 +875,9 @@ async function syncAbsentExceptions(
   });
   const leaveDays = new Set(leaveSegs.map((s) => format(s.segmentDate, "yyyy-MM-dd")));
 
-  // Build set of days that have a WORK segment (covers salary auto-credits).
+  // Build set of days that have a WORK or HOLIDAY segment (covers salary auto-credits and holiday credits).
   const workSegs = await db.workSegment.findMany({
-    where: { timesheetId, segmentType: "WORK" },
+    where: { timesheetId, segmentType: { in: ["WORK", "HOLIDAY"] } },
     select: { segmentDate: true },
   });
   const workDays = new Set(workSegs.map((s) => format(s.segmentDate, "yyyy-MM-dd")));

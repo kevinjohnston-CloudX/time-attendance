@@ -57,6 +57,7 @@ export const createRole = withRBAC(
         name: data.name,
         description: data.description,
         rank: data.rank,
+        canViewAs: data.canViewAs ?? false,
         permissions: {
           create: data.permissions.map((p) => ({
             resource: p.resource,
@@ -105,6 +106,7 @@ export const updateRole = withRBAC(
         ...(data.name !== undefined && { name: data.name }),
         ...(data.description !== undefined && { description: data.description }),
         ...(data.rank !== undefined && { rank: data.rank }),
+        ...(data.canViewAs !== undefined && { canViewAs: data.canViewAs }),
       },
     });
 

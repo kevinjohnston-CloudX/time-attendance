@@ -8,7 +8,7 @@ const globalForPrisma = globalThis as unknown as {
 
 function createClient() {
   // Transaction pooler (port 6543) — used at runtime by the app
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
   const adapter = new PrismaPg(pool);
   return new PrismaClient({
     adapter,

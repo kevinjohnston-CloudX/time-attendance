@@ -21,10 +21,11 @@ interface Props {
   departments: (Department & { sites: { site: Site }[] })[];
   ruleSets: RuleSet[];
   employees: { id: string; user: { name: string | null } }[];
-  customRoles: { id: string; name: string }[];
+  customRoles: { id: string; name: string; isSystem: boolean; rank: number }[];
   shifts: { id: string; name: string; startTime: string; endTime: string }[];
   holidayRules: { id: string; name: string }[];
   payCategories: { id: string; number: number; description: string | null }[];
+  payTypes: { id: string; number: number; description: string | null }[];
   logs: Array<{
     id: string;
     createdAt: string;
@@ -45,14 +46,16 @@ const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-
 
 type Tab = "general" | "personal" | "pay" | "logs";
 
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, logs }: Props) {
+export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, logs }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("general");
   const [selectedSiteId, setSelectedSiteId] = useState(employee.siteId);
-  const [isActive, setIsActive] = useState(employee.isActive);
+  const [status, setStatus] = useState<"active" | "on-leave" | "inactive">(
+    !employee.isActive ? "inactive" : employee.onLeave ? "on-leave" : "active"
+  );
   const [payType, setPayType] = useState<string>(employee.payType ?? "HOURLY");
   const [logField, setLogField] = useState("");
   const [logDays, setLogDays] = useState(0);
@@ -76,17 +79,15 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
   function handleGeneral(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const rawRole = (fd.get("role") as string) || employee.role;
-    const isCustom = rawRole.startsWith("custom:");
     save({
       name: fd.get("name") as string,
       email: fd.get("email") as string,
-      role: isCustom ? "EMPLOYEE" : rawRole,
-      customRoleId: isCustom ? rawRole.slice(7) : null,
+      customRoleId: (fd.get("customRoleId") as string) || null,
       siteId: fd.get("siteId") as string,
       departmentId: fd.get("departmentId") as string,
       supervisorId: (fd.get("supervisorId") as string) || null,
-      isActive: fd.get("isActive") === "true",
+      isActive: fd.get("status") !== "inactive",
+      onLeave: fd.get("status") === "on-leave",
       wmsId: fd.get("wmsId") as string,
       adpWorkerId: fd.get("adpWorkerId") as string,
       jobTitle: fd.get("jobTitle") as string,
@@ -123,6 +124,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       shiftId: (fd.get("shiftId") as string) || null,
       holidayRuleId: (fd.get("holidayRuleId") as string) || null,
       payCategoryId: (fd.get("payCategoryId") as string) || null,
+      payTypeId: (fd.get("payTypeId") as string) || null,
       payType: fd.get("payType") as string,
       payRate: rateStr ? parseFloat(rateStr) : null,
     });
@@ -191,18 +193,25 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
             <div>
               <label className={labelCls}>Role</label>
               <select
-                name="role"
-                defaultValue={employee.customRoleId ? `custom:${employee.customRoleId}` : employee.role}
+                name="customRoleId"
+                defaultValue={
+                  employee.customRoleId ??
+                  customRoles.find((r) => r.isSystem && r.name === { EMPLOYEE: "Employee", SUPERVISOR: "Supervisor", PAYROLL_ADMIN: "Payroll Admin", HR_ADMIN: "HR Admin", SYSTEM_ADMIN: "System Admin" }[employee.role])?.id ??
+                  customRoles[0]?.id ??
+                  ""
+                }
                 className={inputCls}
               >
-                <option value="EMPLOYEE">Employee</option>
-                <option value="SUPERVISOR">Supervisor</option>
-                <option value="PAYROLL_ADMIN">Payroll Admin</option>
-                <option value="HR_ADMIN">HR Admin</option>
-                <option value="SYSTEM_ADMIN">System Admin</option>
-                {customRoles.map((r) => (
-                  <option key={r.id} value={`custom:${r.id}`}>{r.name}</option>
+                {customRoles.filter((r) => r.isSystem).map((r) => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
                 ))}
+                {customRoles.some((r) => !r.isSystem) && (
+                  <optgroup label="────────────────">
+                    {customRoles.filter((r) => !r.isSystem).map((r) => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
 
@@ -262,17 +271,18 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
             <div>
               <label className={labelCls}>Status</label>
               <select
-                name="isActive"
-                value={isActive ? "true" : "false"}
-                onChange={(e) => setIsActive(e.target.value === "true")}
+                name="status"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as "active" | "on-leave" | "inactive")}
                 className={inputCls}
               >
-                <option value="true">Active</option>
-                <option value="false">Inactive</option>
+                <option value="active">Active</option>
+                <option value="on-leave">On Leave</option>
+                <option value="inactive">Inactive</option>
               </select>
             </div>
 
-            {!isActive && (
+            {status === "inactive" && (
               <div>
                 <label className={labelCls}>Termination Reason</label>
                 <input name="terminationReason" defaultValue={employee.terminationReason ?? ""} className={inputCls} />
@@ -429,6 +439,18 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
 
             <div>
               <label className={labelCls}>Pay Type</label>
+              <select name="payTypeId" defaultValue={(employee as any).payTypeId ?? ""} className={inputCls}>
+                <option value="">— None —</option>
+                {payTypes.map((pt) => (
+                  <option key={pt.id} value={pt.id}>
+                    {pt.number}{pt.description ? ` — ${pt.description}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className={labelCls}>Pay Method</label>
               <select
                 name="payType"
                 value={payType}

@@ -8,6 +8,15 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
 
+// Maps system custom role names to their legacy enum values
+const SYSTEM_ROLE_NAME_TO_ENUM: Record<string, string> = {
+  "Employee": "EMPLOYEE",
+  "Supervisor": "SUPERVISOR",
+  "Payroll Admin": "PAYROLL_ADMIN",
+  "HR Admin": "HR_ADMIN",
+  "System Admin": "SYSTEM_ADMIN",
+};
+
 import {
   createEmployeeSchema,
   updateEmployeeSchema,
@@ -52,7 +61,7 @@ export const getAdminRefData = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ tenantId }, _input: void) => {
     const t = tenantId ?? undefined;
-    const [sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories] = await Promise.all([
+    const [sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes] = await Promise.all([
       db.site.findMany({ where: { isActive: true, tenantId: t }, orderBy: { name: "asc" } }),
       db.department.findMany({
         where: { isActive: true, tenantId: t },
@@ -67,7 +76,7 @@ export const getAdminRefData = withRBAC(
       }),
       db.customRole.findMany({
         where: { tenantId: t, isActive: true },
-        select: { id: true, name: true },
+        select: { id: true, name: true, isSystem: true, rank: true },
         orderBy: { rank: "asc" },
       }),
       db.shift.findMany({
@@ -85,8 +94,13 @@ export const getAdminRefData = withRBAC(
         orderBy: { number: "asc" },
         select: { id: true, number: true, description: true },
       }),
+      db.payType.findMany({
+        where: { isActive: true, includeInEmployeeSetup: true, tenantId: t },
+        orderBy: { number: "asc" },
+        select: { id: true, number: true, description: true },
+      }),
     ]);
-    return { sites, departments, ruleSets, employees: employees.map(serializePayRate), customRoles, shifts, holidayRules, payCategories };
+    return { sites, departments, ruleSets, employees: employees.map(serializePayRate), customRoles, shifts, holidayRules, payCategories, payTypes };
   }
 );
 
@@ -138,6 +152,24 @@ export const createEmployee = withRBAC(
     if (!tenantId) throw new Error("Tenant context required");
     const parsed = createEmployeeSchema.parse(input);
 
+    // Auto-assign the system custom role when only a role enum is provided
+    let resolvedCustomRoleId = parsed.customRoleId ?? null;
+    let resolvedRole = parsed.role;
+    if (!resolvedCustomRoleId) {
+      const systemName = Object.entries(SYSTEM_ROLE_NAME_TO_ENUM).find(([, v]) => v === parsed.role)?.[0];
+      if (systemName) {
+        const systemRole = await db.customRole.findFirst({
+          where: { tenantId, isSystem: true, name: systemName, isActive: true },
+          select: { id: true },
+        });
+        resolvedCustomRoleId = systemRole?.id ?? null;
+      }
+    } else {
+      // Derive role enum from the provided customRoleId
+      const cr = await db.customRole.findUnique({ where: { id: resolvedCustomRoleId }, select: { isSystem: true, name: true } });
+      resolvedRole = (cr?.isSystem ? (SYSTEM_ROLE_NAME_TO_ENUM[cr.name] ?? "EMPLOYEE") : "EMPLOYEE") as typeof parsed.role;
+    }
+
     const employee = await db.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
@@ -146,13 +178,19 @@ export const createEmployee = withRBAC(
         },
       });
 
+      const encPii = encryptPiiFields({
+        phone: parsed.phone, phone2: parsed.phone2, gender: parsed.gender, maritalStatus: parsed.maritalStatus,
+        emergencyContact: parsed.emergencyContact, emergencyPhone: parsed.emergencyPhone, emergencyRelationship: parsed.emergencyRelationship,
+        address1: parsed.address1, address2: parsed.address2, city: parsed.city, state: parsed.state, country: parsed.country, zipCode: parsed.zipCode,
+      });
+
       return tx.employee.create({
         data: {
           userId: user.id,
           tenantId,
           employeeCode: parsed.employeeCode,
-          role: parsed.role,
-          customRoleId: parsed.customRoleId ?? null,
+          role: resolvedRole,
+          customRoleId: resolvedCustomRoleId,
           siteId: parsed.siteId,
           departmentId: parsed.departmentId,
           ruleSetId: parsed.ruleSetId,
@@ -161,6 +199,13 @@ export const createEmployee = withRBAC(
           wmsId: parsed.wmsId ?? null,
           payType: parsed.payType ?? null,
           payRate: parsed.payRate ?? null,
+          jobTitle: parsed.jobTitle ?? null,
+          adpWorkerId: parsed.adpWorkerId ?? null,
+          shiftId: parsed.shiftId ?? null,
+          holidayRuleId: parsed.holidayRuleId ?? null,
+          payCategoryId: parsed.payCategoryId ?? null,
+          payTypeId: parsed.payTypeId ?? null,
+          ...encPii,
         },
       });
     });
@@ -183,7 +228,7 @@ export const updateEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateEmployeeInput) => {
     const {
-      employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, isActive, wmsId, adpWorkerId,
+      employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, payTypeId, isActive, onLeave, wmsId, adpWorkerId,
       jobTitle, terminationReason, payType, payRate,
       phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
@@ -194,6 +239,16 @@ export const updateEmployee = withRBAC(
       where: { id: employeeId },
       include: { user: true },
     });
+
+    // Derive the role enum from the custom role when customRoleId is being set
+    let derivedRole: string | undefined = role;
+    if (customRoleId !== undefined && customRoleId !== null) {
+      const cr = await db.customRole.findUnique({
+        where: { id: customRoleId },
+        select: { isSystem: true, name: true },
+      });
+      derivedRole = cr?.isSystem ? (SYSTEM_ROLE_NAME_TO_ENUM[cr.name] ?? "EMPLOYEE") : "EMPLOYEE";
+    }
 
     await db.$transaction(async (tx) => {
       if (name !== undefined || email !== undefined) {
@@ -210,7 +265,7 @@ export const updateEmployee = withRBAC(
       await tx.employee.update({
         where: { id: employeeId },
         data: {
-          ...(role !== undefined && { role }),
+          ...(derivedRole !== undefined && { role: derivedRole as import("@prisma/client").Role }),
           ...(customRoleId !== undefined && { customRole: customRoleId ? { connect: { id: customRoleId } } : { disconnect: true } }),
           ...(supervisorId !== undefined && { supervisor: supervisorId ? { connect: { id: supervisorId } } : { disconnect: true } }),
           ...(siteId !== undefined && { site: { connect: { id: siteId } } }),
@@ -219,7 +274,9 @@ export const updateEmployee = withRBAC(
           ...(shiftId !== undefined && { shift: shiftId ? { connect: { id: shiftId } } : { disconnect: true } }),
           ...(holidayRuleId !== undefined && { holidayRule: holidayRuleId ? { connect: { id: holidayRuleId } } : { disconnect: true } }),
           ...(payCategoryId !== undefined && { payCategory: payCategoryId ? { connect: { id: payCategoryId } } : { disconnect: true } }),
+          ...(payTypeId !== undefined && { payTypeLookup: payTypeId ? { connect: { id: payTypeId } } : { disconnect: true } }),
           ...(isActive !== undefined && { isActive }),
+          ...(onLeave !== undefined && { onLeave }),
           ...(wmsId !== undefined && { wmsId }),
           ...(adpWorkerId !== undefined && { adpWorkerId }),
           ...(jobTitle !== undefined && { jobTitle }),
@@ -264,8 +321,13 @@ export const updateEmployee = withRBAC(
 
     if (name !== undefined) diff("Full Name", current.user.name, name);
     if (email !== undefined) diff("Email", current.user.email, email);
-    if (role !== undefined) diff("Role", current.role, role);
-    if (isActive !== undefined) diff("Status", current.isActive ? "Active" : "Inactive", isActive ? "Active" : "Inactive");
+    if (derivedRole !== undefined) diff("Role", current.role, derivedRole);
+    const statusLabel = (active: boolean, leave: boolean) => !active ? "Inactive" : leave ? "On Leave" : "Active";
+    if (isActive !== undefined || onLeave !== undefined) {
+      const newActive = isActive ?? current.isActive;
+      const newLeave = onLeave ?? current.onLeave;
+      diff("Status", statusLabel(current.isActive, current.onLeave), statusLabel(newActive, newLeave));
+    }
     if (jobTitle !== undefined) diff("Job Title", current.jobTitle, jobTitle);
     if (wmsId !== undefined) diff("Badge ID (WMS)", current.wmsId, wmsId);
     if (adpWorkerId !== undefined) diff("ADP Worker ID", current.adpWorkerId, adpWorkerId);

@@ -9,6 +9,7 @@ import { getReasonCodes } from "@/actions/reason-code.actions";
 import { getPtoPolicies } from "@/actions/pto-policy.actions";
 import { getHolidayRules } from "@/actions/holiday-rule.actions";
 import { getPayCategories } from "@/actions/pay-category.actions";
+import { getPayTypes } from "@/actions/pay-type.actions";
 import { SiteSettingsClient } from "./site-settings-client";
 
 export default async function SiteSettingsPage({
@@ -32,7 +33,7 @@ export default async function SiteSettingsPage({
   const [
     sitesResult, deptsResult, holidaysResult,
     leaveTypesResult, payCodesResult, reasonCodesResult, ptoPoliciesResult,
-    holidayRulesResult, payCategoriesResult,
+    holidayRulesResult, payCategoriesResult, payTypesResult,
   ] = await Promise.all([
     getSites(),
     getDepartments(),
@@ -43,6 +44,7 @@ export default async function SiteSettingsPage({
     hasRulesManage ? getPtoPolicies() : Promise.resolve({ success: true as const, data: [] }),
     hasRulesManage ? getHolidayRules() : Promise.resolve({ success: true as const, data: [] }),
     hasRulesManage ? getPayCategories() : Promise.resolve({ success: true as const, data: [] }),
+    hasRulesManage ? getPayTypes() : Promise.resolve({ success: true as const, data: [] }),
   ]);
 
   // Serialize Prisma Decimal/Date objects so they cross the server→client boundary as plain values
@@ -58,7 +60,7 @@ export default async function SiteSettingsPage({
       >
         ← Admin
       </Link>
-      <h1 className="mt-1 text-2xl font-bold text-zinc-900 dark:text-white">Site Settings</h1>
+      <h1 className="mt-1 text-2xl font-bold text-zinc-900 dark:text-white">Company Setup</h1>
 
       <SiteSettingsClient
         sites={serialize(sitesResult.success ? sitesResult.data : [])}
@@ -70,6 +72,7 @@ export default async function SiteSettingsPage({
         ptoPolicies={serialize(ptoPoliciesResult.success ? ptoPoliciesResult.data : [])}
         holidayRules={serialize(holidayRulesResult.success ? holidayRulesResult.data : [])}
         payCategories={serialize(payCategoriesResult.success ? payCategoriesResult.data : [])}
+        payTypes={serialize(payTypesResult.success ? payTypesResult.data : [])}
         hasSiteManage={hasSiteManage}
         hasRulesManage={hasRulesManage}
         hasPayPeriodManage={hasPayPeriodManage}

@@ -1878,7 +1878,9 @@ export function TimecardViewer({
                         const eb = (seg.payBucketOverride && !["REG", "OT", "DT"].includes(seg.payBucketOverride))
                           ? seg.payBucketOverride
                           : seg.payBucket;
-                        buckets[eb] = (buckets[eb] ?? 0) + seg.durationMinutes;
+                        // Holiday credits display under the REG column (pay code identifies them as holiday)
+                        const displayBucket = (seg.segmentType === "HOLIDAY") ? "REG" : eb;
+                        buckets[displayBucket] = (buckets[displayBucket] ?? 0) + seg.durationMinutes;
                       }
 
                       const reg = buckets["REG"] ?? 0;
@@ -2054,7 +2056,8 @@ export function TimecardViewer({
                                   }
 
                                   // Non-working day (weekend or not scheduled): show blank dropdown like REASON.
-                                  if (isWeekend) {
+                                  // Skip this branch when there are actual work segments (e.g. a manually added entry).
+                                  if (isWeekend && !workSeg) {
                                     if (canEdit) {
                                       const absentKey = `absent:${dayStr}`;
                                       const absentPending = pendingPayCodes.has(absentKey);
@@ -2076,6 +2079,15 @@ export function TimecardViewer({
                                     return dayMarker?.payCode
                                       ? <span className="text-xs text-zinc-500">{dayMarker.payCode.code}[{dayMarker.payCode.label}]</span>
                                       : null;
+                                  }
+
+                                  // Holiday day: show the HOLIDAY segment's pay code read-only.
+                                  // The credit is engine-managed; admin cannot change it here.
+                                  if (!workSeg) {
+                                    const holidaySeg = daySegments.find((s) => s.segmentType === "HOLIDAY" && s.durationMinutes > 0);
+                                    if (holidaySeg?.payCode) {
+                                      return <span className="text-xs text-zinc-700 dark:text-zinc-200">{holidaySeg.payCode.code}[{holidaySeg.payCode.label}]</span>;
+                                    }
                                   }
 
                                   // Working day with no segments yet (open punch today, or future day).

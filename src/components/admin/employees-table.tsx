@@ -25,6 +25,7 @@ interface Employee {
   employeeCode: string;
   role: string;
   isActive: boolean;
+  onLeave: boolean;
   hireDate: Date;
   user: { name: string | null; email: string | null };
   site: { name: string };
@@ -154,11 +155,13 @@ export function EmployeesTable({ employees }: { employees: Employee[] }) {
                 </td>
                 <td className="px-4 py-3">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    emp.isActive
-                      ? "bg-green-100 text-green-700"
-                      : "bg-zinc-100 text-zinc-500"
+                    !emp.isActive
+                      ? "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                      : emp.onLeave
+                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                      : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                   }`}>
-                    {emp.isActive ? "Active" : "Inactive"}
+                    {!emp.isActive ? "Inactive" : emp.onLeave ? "On Leave" : "Active"}
                   </span>
                 </td>
               </tr>

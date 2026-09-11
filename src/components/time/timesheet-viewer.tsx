@@ -57,6 +57,11 @@ export interface TimesheetDetailData {
     payBucketOverride: string | null;
     isPaid: boolean;
     leaveTypeName: string | null;
+    payCode: { code: number; label: string } | null;
+  }[];
+  dayReasons: {
+    segmentDate: string;
+    reasonCode: { code: string; label: string };
   }[];
   overtimeBuckets: { bucket: string; totalMinutes: number }[];
   exceptionCount: number;
@@ -402,7 +407,7 @@ export function TimesheetViewer({
         </div>
 
         {/* ── Right: detail ─────────────────────────────────────────────── */}
-        <div className="flex min-h-0 flex-col bg-white pb-0 dark:bg-zinc-950">
+        <div className="flex flex-col min-h-0 bg-white dark:bg-zinc-950">
         {!detail ? (
           <div className="flex flex-1 items-center justify-center">
             <p className="text-sm text-zinc-400">
@@ -413,58 +418,48 @@ export function TimesheetViewer({
           </div>
         ) : (
           <>
-            <div className="min-h-0 flex-1 overflow-y-auto pl-5 pr-7 pt-4">
-            {/* Status header + tiles + submit */}
-            <div className="flex items-start gap-3">
-              {/* Date + badges */}
-              <div className="shrink-0">
-                <h2 className="text-lg font-bold text-zinc-900 dark:text-white">
-                  {format(parseUtcDate(detail.payPeriod.startDate), "MMM d")} –{" "}
-                  {format(addDays(parseUtcDate(detail.payPeriod.endDate), -1), "MMM d, yyyy")}
-                </h2>
-                <div className="mt-0.5 flex items-center gap-2">
-                  <span
-                    className={`rounded-full px-3 py-0.5 text-xs font-medium ${
-                      STATUS_BADGE[detail.status] ?? STATUS_BADGE.OPEN
-                    }`}
-                  >
-                    {(TIMESHEET_STATUS_LABEL as Record<string, string>)[detail.status] ?? detail.status}
-                  </span>
-                  {detail.exceptionCount > 0 && (
-                    <span className="rounded-full bg-amber-100 px-3 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                      {detail.exceptionCount} exception{detail.exceptionCount !== 1 ? "s" : ""}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Tiles */}
-              <div className="flex flex-1 flex-wrap gap-2">
-                {visibleBuckets.map((b) => (
-                  <div
-                    key={b.key}
-                    className="rounded-lg border-2 border-zinc-300 bg-zinc-50 px-3 py-1.5 shadow-sm dark:border-zinc-600 dark:bg-zinc-800"
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{b.label}</p>
-                    <p className={`mt-0.5 text-sm font-bold ${b.color}`}>
-                      {formatMinutes(bucketMap[b.key] ?? 0)}
-                    </p>
+            {/* Header strip */}
+            <div className="shrink-0 flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+              <div className="flex items-center gap-3">
+                <div>
+                  <h2 className="text-base font-bold text-zinc-900 dark:text-white">
+                    {format(parseUtcDate(detail.payPeriod.startDate), "MMM d")} –{" "}
+                    {format(addDays(parseUtcDate(detail.payPeriod.endDate), -1), "MMM d, yyyy")}
+                  </h2>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-zinc-500">
+                    {visibleBuckets.map((b) => (
+                      <span key={b.key}>
+                        {b.label}:{" "}
+                        <span className={`font-semibold tabular-nums ${b.color}`}>
+                          {formatMinutes(bucketMap[b.key] ?? 0)}
+                        </span>
+                      </span>
+                    ))}
                   </div>
-                ))}
+                </div>
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[detail.status] ?? STATUS_BADGE.OPEN}`}>
+                  {(TIMESHEET_STATUS_LABEL as Record<string, string>)[detail.status] ?? detail.status}
+                </span>
+                {detail.exceptionCount > 0 && (
+                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                    {detail.exceptionCount} exception{detail.exceptionCount !== 1 ? "s" : ""}
+                  </span>
+                )}
               </div>
-
               {detail.status === "OPEN" && (
                 <SubmitTimesheetButton timesheetId={detail.timesheetId} />
               )}
             </div>
 
-            {/* Daily table */}
-            <div className="-mx-6 mt-4 overflow-x-auto pb-3">
+            {/* Scrollable table + legend + summary */}
+            <div className="flex-1 overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 border-b-2 border-zinc-400 bg-zinc-300 dark:border-zinc-500 dark:bg-zinc-700">
                   <tr>
                     <th className="w-7 pl-2 pr-0 py-1.5" />
                     <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Date</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Code</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Reason</th>
                     <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">In</th>
                     <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Out</th>
                     <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Reg</th>
@@ -488,7 +483,9 @@ export function TimesheetViewer({
                     const buckets: Record<string, number> = {};
                     for (const seg of daySegments) {
                       const eb = seg.payBucketOverride ?? seg.payBucket;
-                      buckets[eb] = (buckets[eb] ?? 0) + seg.durationMinutes;
+                      // Holiday credits display under the REG column (pay code identifies them as holiday)
+                      const displayBucket = (seg.segmentType === "HOLIDAY") ? "REG" : eb;
+                      buckets[displayBucket] = (buckets[displayBucket] ?? 0) + seg.durationMinutes;
                     }
                     const reg = buckets["REG"] ?? 0;
                     const ot = buckets["OT"] ?? 0;
@@ -515,7 +512,7 @@ export function TimesheetViewer({
                       <Fragment key={dayKey}>
                         {showWeekSeparator && (
                           <tr aria-hidden>
-                            <td colSpan={8} className="h-0 border-t-2 border-zinc-300 p-0 dark:border-zinc-600" />
+                            <td colSpan={10} className="h-0 border-t-2 border-zinc-300 p-0 dark:border-zinc-600" />
                           </tr>
                         )}
                         <tr
@@ -549,6 +546,23 @@ export function TimesheetViewer({
                           }`}>
                             <span className={`mr-0.5 ${isWeekend ? "" : "font-semibold"}`}>{format(day, "EEE")}</span>
                             {format(day, "MM/dd/yyyy")}
+                          </td>
+                          {/* Code */}
+                          <td className="px-3 py-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                            {(() => {
+                              const workSeg = daySegments.find((s) => s.segmentType === "WORK" && s.payCode);
+                              return workSeg?.payCode
+                                ? <span>{workSeg.payCode.code}[{workSeg.payCode.label}]</span>
+                                : null;
+                            })()}
+                          </td>
+                          {/* Reason */}
+                          <td className="px-3 py-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                            {(() => {
+                              const dayStr = format(day, "yyyy-MM-dd");
+                              const dr = detail.dayReasons.find((r) => r.segmentDate.startsWith(dayStr));
+                              return dr ? <span>{dr.reasonCode.code}[{dr.reasonCode.label}]</span> : null;
+                            })()}
                           </td>
                           <td className={`px-3 py-1.5 font-mono text-sm ${
                             isAbsent ? "text-red-700 dark:text-red-400" : "text-zinc-700 dark:text-zinc-300"
@@ -597,7 +611,7 @@ export function TimesheetViewer({
                         </tr>
                         {isExpanded && hasActivity && (
                           <tr className="border-b border-zinc-200 bg-zinc-50/80 dark:border-zinc-700 dark:bg-zinc-900/40">
-                            <td colSpan={8} className="px-5 py-2">
+                            <td colSpan={10} className="px-5 py-2">
                               {daySegments.length > 0 && (
                                 <div className="mb-2">
                                   <SegmentTimeline
@@ -630,9 +644,7 @@ export function TimesheetViewer({
                   })}
                 </tbody>
               </table>
-            </div>
-
-            </div>{/* end scrollable content */}
+            </div>{/* end flex-1 overflow-y-auto */}
 
             {/* ── Color Legend ───────────────────────────────────────── */}
             <div className="shrink-0 flex flex-wrap items-center gap-4 border-t-4 border-zinc-400 bg-zinc-200 px-4 py-2 dark:border-zinc-500 dark:bg-zinc-800/80">

@@ -181,6 +181,23 @@ model PayCategoryLeaveType {
   @@map("pay_category_leave_types")
 }
 
+model PayType {
+  id                     String   @id @default(cuid())
+  tenantId               String
+  number                 Int
+  description            String?
+  includeInEmployeeSetup Boolean  @default(true)
+  isActive               Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  employees Employee[]
+
+  @@unique([tenantId, number])
+  @@map("pay_types")
+}
+
 model RuleSet {
   id       String @id @default(cuid())
   tenantId String
@@ -286,6 +303,28 @@ model RuleSet {
   mealPremiumUseTransferGroup     Boolean     @default(false) // copy transfer group (job/dept) onto premium records
   /// JSON array of up to 4 MealPremiumRow objects — see rule-sets-manager.tsx MealPremiumRow interface
   mealPremiumRows                 Json?
+
+  // FLSA Policy Setup
+  flsaEnabled                  Boolean @default(false)
+  flsaType                     String  @default("FEDERAL")           // "FEDERAL" | "CALIFORNIA"
+  flsaDistributionFrequency    String  @default("PER_PERIOD")        // "PER_PERIOD" | "WEEKLY"
+  flsaAdjustmentPayCodeId      String?
+  flsaAdjustmentInRefTime      String?
+  flsaAltPayCodeEnabled        Boolean @default(false)
+  flsaAltPayCodeId             String?
+  flsaAltInRefTime             String?
+  flsaIncludePremiumHours      Boolean @default(false)
+  flsaIncludePayMatrixHours    Boolean @default(false)
+  flsaNoNegativeAdjustment     Boolean @default(false)
+  flsaUseTotalOtPremium        Boolean @default(false)
+  flsaWeeklyOtPayMethod        Boolean @default(false)
+  flsaMaxWeeklyRegularMinutes  Int     @default(2400)
+  flsaWeeklyOtLevel            String  @default("OT1")              // "OT1" | "OT2"
+  flsaApplyFullOtAmount        Boolean @default(false)
+  flsaDistributeMultipleRecords Boolean @default(false)
+  flsaOtRateComputation        String  @default("BASE_PLUS_AVG_HALF") // "BASE_PLUS_AVG_HALF" | "AVG_RATE" | "BASE_RATE"
+  flsaOtLevels                 Json?   // string[] — e.g. ["OT1", "OT2"]
+  flsaIncludeAsRegular         Json?   // string[] — e.g. ["OT1"]
 
   isDefault Boolean  @default(false)
   isActive  Boolean  @default(true)

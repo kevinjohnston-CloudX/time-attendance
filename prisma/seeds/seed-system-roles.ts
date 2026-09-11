@@ -19,6 +19,7 @@ const SYSTEM_ROLES: {
   description: string;
   rank: number;
   legacyRole: string;
+  canViewAs?: boolean;
   permissions: PermissionEntry[];
 }[] = [
   {
@@ -31,6 +32,7 @@ const SYSTEM_ROLES: {
       { resource: "timesheet", action: "write", scope: "own" },
       { resource: "leave", action: "write", scope: "own" },
       { resource: "document", action: "read", scope: "own" },
+      { resource: "accrual", action: "read", scope: "own" },
     ],
   },
   {
@@ -47,6 +49,8 @@ const SYSTEM_ROLES: {
       { resource: "leave", action: "write", scope: "own" },
       { resource: "leave", action: "execute", scope: "team" },
       { resource: "document", action: "read", scope: "own" },
+      { resource: "accrual", action: "read", scope: "own" },
+      { resource: "accrual", action: "read", scope: "team" },
     ],
   },
   {
@@ -68,6 +72,8 @@ const SYSTEM_ROLES: {
       { resource: "report", action: "read", scope: "all" },
       { resource: "report", action: "write", scope: "all" },
       { resource: "report", action: "execute", scope: "all" },
+      { resource: "accrual", action: "read", scope: "own" },
+      { resource: "accrual", action: "read", scope: "all" },
     ],
   },
   {
@@ -95,6 +101,9 @@ const SYSTEM_ROLES: {
       { resource: "report", action: "read", scope: "all" },
       { resource: "report", action: "write", scope: "all" },
       { resource: "report", action: "execute", scope: "all" },
+      { resource: "accrual", action: "read", scope: "own" },
+      { resource: "accrual", action: "read", scope: "all" },
+      { resource: "accrual", action: "write", scope: "all" },
     ],
   },
   {
@@ -102,6 +111,7 @@ const SYSTEM_ROLES: {
     description: "Full system administrator — all permissions including role management",
     rank: 4,
     legacyRole: "SYSTEM_ADMIN",
+    canViewAs: true,
     permissions: [
       { resource: "punch", action: "read", scope: "all" },
       { resource: "punch", action: "write", scope: "all" },
@@ -112,6 +122,12 @@ const SYSTEM_ROLES: {
       { resource: "leave", action: "read", scope: "all" },
       { resource: "leave", action: "write", scope: "all" },
       { resource: "leave", action: "execute", scope: "all" },
+      { resource: "accrual", action: "read", scope: "own" },
+      { resource: "accrual", action: "read", scope: "team" },
+      { resource: "accrual", action: "read", scope: "all" },
+      { resource: "accrual", action: "write", scope: "own" },
+      { resource: "accrual", action: "write", scope: "all" },
+      { resource: "accrual", action: "execute", scope: "all" },
       { resource: "payroll", action: "read", scope: "all" },
       { resource: "payroll", action: "write", scope: "all" },
       { resource: "payroll", action: "execute", scope: "all" },
@@ -154,6 +170,12 @@ async function main() {
         console.log(`  Role "${roleDef.name}" already exists, updating permissions...`);
         roleId = existing.id;
 
+        // Update canViewAs flag
+        await prisma.customRole.update({
+          where: { id: roleId },
+          data: { canViewAs: roleDef.canViewAs ?? false },
+        });
+
         // Replace permissions
         await prisma.rolePermission.deleteMany({ where: { customRoleId: roleId } });
       } else {
@@ -164,6 +186,7 @@ async function main() {
             name: roleDef.name,
             description: roleDef.description,
             rank: roleDef.rank,
+            canViewAs: roleDef.canViewAs ?? false,
             isSystem: true,
           },
         });

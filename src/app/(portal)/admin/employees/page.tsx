@@ -20,7 +20,7 @@ export default async function EmployeesPage() {
   if (!employeesResult.success || !refDataResult.success) redirect("/admin");
 
   const employees = employeesResult.data;
-  const { sites, departments, ruleSets, employees: allEmps, customRoles } = refDataResult.data;
+  const { sites, departments, ruleSets, employees: allEmps, customRoles, shifts, holidayRules, payCategories, payTypes } = refDataResult.data;
 
   return (
     <div>
@@ -45,6 +45,10 @@ export default async function EmployeesPage() {
             ruleSets={ruleSets}
             employees={allEmps}
             customRoles={customRoles}
+            shifts={shifts}
+            holidayRules={holidayRules}
+            payCategories={payCategories ?? []}
+            payTypes={payTypes ?? []}
           />
         </div>
       </div>

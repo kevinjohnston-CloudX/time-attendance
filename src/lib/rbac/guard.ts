@@ -12,12 +12,8 @@ type ActionResult<T> =
 
 /**
  * Wraps a Server Action with RBAC enforcement.
- * Permissions are always derived from the employee's enum role.
- *
- * @example
- * export const myAction = withRBAC("PUNCH_EDIT_ANY", async ({ employeeId, role, tenantId }, input) => {
- *   // ...
- * });
+ * When the employee has a customRoleId, permissions are resolved from the DB.
+ * Otherwise falls back to the static role-permission map.
  */
 export function withRBAC<TInput, TOutput>(
   permission: Permission | Permission[],
@@ -35,17 +31,14 @@ export function withRBAC<TInput, TOutput>(
 
     const realRole = session.user.role ?? "EMPLOYEE";
     const effectiveRole = await getEffectiveRole(session.user);
-    const isSuperAdmin = effectiveRole === "SUPER_ADMIN";
+    const isPrivilegedAdmin = ["SUPER_ADMIN", "SYSTEM_ADMIN"].includes(realRole);
 
-    if (!isSuperAdmin) {
-      const rawCustomRoleId = (session.user as { customRoleId?: string | null }).customRoleId ?? null;
-      const customRoleId = effectiveRole === "EMPLOYEE" ? rawCustomRoleId : null;
+    if (!isPrivilegedAdmin) {
+      const customRoleId = (session.user as { customRoleId?: string | null }).customRoleId ?? null;
       const perms = Array.isArray(permission) ? permission : [permission];
-      const allowed = perms.some((p) =>
-        customRoleId
-          ? false // legacy roles checked separately below
-          : hasPermission(effectiveRole, p)
-      ) || (customRoleId ? await Promise.all(perms.map((p) => hasPermissionByLegacy(customRoleId, p))).then((r) => r.some(Boolean)) : false);
+      const allowed = customRoleId
+        ? await Promise.all(perms.map((p) => hasPermissionByLegacy(customRoleId, p))).then((r) => r.some(Boolean))
+        : perms.some((p) => hasPermission(effectiveRole, p));
       if (!allowed) return { success: false, error: "FORBIDDEN" };
     }
 

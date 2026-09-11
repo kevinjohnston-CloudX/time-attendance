@@ -20,6 +20,8 @@ const LEAVE_CATEGORIES = [
   "UNPAID",
 ] as const;
 
+const nullableStr = z.string().nullable().optional().transform((v) => v === undefined ? undefined : (v || null));
+
 export const createEmployeeSchema = z.object({
   name: z.string().min(1),
   email: z.string().email("A valid email address is required"),
@@ -34,9 +36,28 @@ export const createEmployeeSchema = z.object({
   wmsId: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
   payType: z.enum(["HOURLY", "SALARY"]).nullable().optional(),
   payRate: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().positive().nullable().optional()),
+  // Work info
+  jobTitle: nullableStr,
+  adpWorkerId: nullableStr,
+  shiftId: nullableStr,
+  holidayRuleId: nullableStr,
+  payCategoryId: nullableStr,
+  payTypeId: nullableStr,
+  // Personal
+  phone: nullableStr,
+  phone2: nullableStr,
+  gender: nullableStr,
+  maritalStatus: nullableStr,
+  emergencyContact: nullableStr,
+  emergencyPhone: nullableStr,
+  emergencyRelationship: nullableStr,
+  address1: nullableStr,
+  address2: nullableStr,
+  city: nullableStr,
+  state: nullableStr,
+  country: nullableStr,
+  zipCode: nullableStr,
 });
-
-const nullableStr = z.string().nullable().optional().transform((v) => v === undefined ? undefined : (v || null));
 
 export const updateEmployeeSchema = z.object({
   employeeId: z.string().min(1),
@@ -52,6 +73,7 @@ export const updateEmployeeSchema = z.object({
   holidayRuleId: nullableStr,
   payCategoryId: nullableStr,
   isActive: z.boolean().optional(),
+  onLeave: z.boolean().optional(),
   wmsId: nullableStr,
   adpWorkerId: nullableStr,
   // Work info
@@ -59,6 +81,7 @@ export const updateEmployeeSchema = z.object({
   terminationReason: nullableStr,
   // Pay
   payType: z.enum(["HOURLY", "SALARY"]).nullable().optional(),
+  payTypeId: nullableStr,
   payRate: z.number().positive().nullable().optional(),
   // Personal
   phone: nullableStr,
@@ -202,6 +225,26 @@ export const ruleSetSchema = z.object({
     unlessHoursExceedMinutes: z.number().int().min(0),
     unlessPunchedMeal: z.boolean(),
   })).max(4).optional(),
+  flsaEnabled: z.boolean().default(false),
+  flsaType: z.enum(["FEDERAL", "CALIFORNIA"]).default("FEDERAL"),
+  flsaDistributionFrequency: z.enum(["PER_PERIOD", "WEEKLY"]).default("PER_PERIOD"),
+  flsaAdjustmentPayCodeId: z.string().nullable().optional(),
+  flsaAdjustmentInRefTime: z.string().nullable().optional(),
+  flsaAltPayCodeEnabled: z.boolean().default(false),
+  flsaAltPayCodeId: z.string().nullable().optional(),
+  flsaAltInRefTime: z.string().nullable().optional(),
+  flsaIncludePremiumHours: z.boolean().default(false),
+  flsaIncludePayMatrixHours: z.boolean().default(false),
+  flsaNoNegativeAdjustment: z.boolean().default(false),
+  flsaUseTotalOtPremium: z.boolean().default(false),
+  flsaWeeklyOtPayMethod: z.boolean().default(false),
+  flsaMaxWeeklyRegularMinutes: z.number().int().min(0).default(2400),
+  flsaWeeklyOtLevel: z.enum(["OT1", "OT2"]).default("OT1"),
+  flsaApplyFullOtAmount: z.boolean().default(false),
+  flsaDistributeMultipleRecords: z.boolean().default(false),
+  flsaOtRateComputation: z.enum(["BASE_PLUS_AVG_HALF", "AVG_RATE", "BASE_RATE"]).default("BASE_PLUS_AVG_HALF"),
+  flsaOtLevels: z.array(z.string()).optional(),
+  flsaIncludeAsRegular: z.array(z.string()).optional(),
 });
 
 export const updateRuleSetSchema = ruleSetSchema.extend({

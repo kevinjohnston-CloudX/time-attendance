@@ -1,53 +1,5 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
-import { userHasPermission } from "@/lib/rbac/check-permission";
-import { db } from "@/lib/db";
-import { format } from "date-fns";
-import { AccrualsEmployeeList } from "@/components/admin/accruals-employee-list";
 
-export default async function AccrualsPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
-
-  const [employees, sites] = await Promise.all([
-    db.employee.findMany({
-      where: { isActive: true },
-      include: {
-        user: { select: { name: true } },
-        department: { select: { name: true } },
-        site: { select: { id: true, name: true } },
-        payCategory: { select: { number: true, description: true } },
-      },
-      orderBy: { user: { name: "asc" } },
-    }),
-    db.site.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-  ]);
-
-  const rows = employees.map((emp) => ({
-    id: emp.id,
-    name: emp.user?.name ?? emp.id,
-    employeeCode: emp.employeeCode,
-    department: emp.department.name,
-    siteId: emp.site.id,
-    site: emp.site.name,
-    payCategory: emp.payCategory
-      ? emp.payCategory.description ?? `Category ${emp.payCategory.number}`
-      : null,
-    hireDate: emp.hireDate ? format(emp.hireDate, "MMM d, yyyy") : null,
-  }));
-
-  return (
-    <div>
-      <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Accruals</h1>
-      <p className="mt-1 text-sm text-zinc-500">
-        Leave balances and accrual history per employee.
-      </p>
-      <AccrualsEmployeeList employees={rows} sites={sites} />
-    </div>
-  );
+export default function OldAccrualsPage() {
+  redirect("/accruals");
 }

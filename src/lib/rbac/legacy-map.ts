@@ -24,6 +24,11 @@ export const LEGACY_MAP: Record<string, PermissionTuple> = {
   LEAVE_REQUEST_OWN:      { resource: "leave",     action: "write",   scope: "own" },
   LEAVE_APPROVE_TEAM:     { resource: "leave",     action: "execute", scope: "team" },
   LEAVE_APPROVE_ANY:      { resource: "leave",     action: "execute", scope: "all" },
+  // Accruals
+  ACCRUAL_VIEW_OWN:       { resource: "accrual",   action: "read",    scope: "own" },
+  ACCRUAL_VIEW_TEAM:      { resource: "accrual",   action: "read",    scope: "team" },
+  ACCRUAL_VIEW_ANY:       { resource: "accrual",   action: "read",    scope: "all" },
+  ACCRUAL_ADJUST_ANY:     { resource: "accrual",   action: "write",   scope: "all" },
   // Payroll & admin
   PAY_PERIOD_MANAGE:      { resource: "payroll",   action: "write",   scope: "all" },
   EMPLOYEE_MANAGE:        { resource: "employee",  action: "write",   scope: "all" },

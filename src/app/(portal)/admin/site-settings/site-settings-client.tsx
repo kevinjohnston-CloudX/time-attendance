@@ -9,11 +9,12 @@ import { LeaveTypesManager } from "@/components/admin/leave-types-manager";
 import { PayCodesManager } from "@/components/admin/pay-codes-manager";
 import { ReasonCodesManager } from "@/components/admin/reason-codes-manager";
 import { PayCategoriesManager } from "@/components/admin/pay-categories-manager";
+import { PayTypesManager } from "@/components/admin/pay-types-manager";
 import type { Site, Department } from "@prisma/client";
 
 type DepartmentWithSites = Department & { sites: { site: Site }[] };
 
-type Tab = "sites" | "departments" | "holidays" | "leave-types" | "pay-codes" | "reason-codes" | "pay-categories";
+type Tab = "sites" | "departments" | "holidays" | "leave-types" | "pay-codes" | "reason-codes" | "pay-categories" | "pay-types";
 
 interface TabDef {
   id: Tab;
@@ -32,6 +33,8 @@ const TABS: TabDef[] = [
   { id: "leave-types",    label: "Leave Types",    icon: Calendar,      requires: "rules",   title: "Leave Types" },
   { id: "pay-categories", label: "Pay Categories", icon: Layers,        requires: "rules",   title: "Pay Categories",
     description: "Define pay category codes and descriptions used to classify employees for payroll." },
+  { id: "pay-types",      label: "Pay Types",      icon: Tag,           requires: "rules",   title: "Pay Types",
+    description: "Define pay type codes and descriptions (e.g. Non-Exempt, Exempt) used to classify employees." },
   { id: "pay-codes",      label: "Pay Codes",      icon: Tag,           requires: "payroll", title: "Pay Codes",
     description: "Manage numeric pay codes used for payroll export and segment classification." },
   { id: "reason-codes",   label: "Reason Codes",   icon: MessageSquare, requires: "payroll", title: "Reason Codes",
@@ -57,6 +60,8 @@ interface Props {
   holidayRules: any[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   payCategories: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  payTypes: any[];
   hasSiteManage: boolean;
   hasRulesManage: boolean;
   hasPayPeriodManage: boolean;
@@ -73,6 +78,7 @@ export function SiteSettingsClient({
   ptoPolicies,
   holidayRules,
   payCategories,
+  payTypes,
   hasSiteManage,
   hasRulesManage,
   hasPayPeriodManage,
@@ -147,6 +153,9 @@ export function SiteSettingsClient({
             )}
             {activeTab === "pay-categories" && (
               <PayCategoriesManager categories={payCategories} ptoPolicies={ptoPolicies} leaveTypes={leaveTypes} />
+            )}
+            {activeTab === "pay-types" && (
+              <PayTypesManager payTypes={payTypes} />
             )}
             {activeTab === "pay-codes" && (
               <PayCodesManager payCodes={payCodes} />

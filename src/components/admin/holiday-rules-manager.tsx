@@ -720,8 +720,11 @@ export function HolidayRulesManager({ rules, payCodes = [] }: Props) {
   const [showCreate, setShowCreate] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
+  const [search, setSearch] = useState("");
 
-  const visible = showInactive ? rules : rules.filter((r) => r.isActive);
+  const searchLower = search.trim().toLowerCase();
+  const visible = (showInactive ? rules : rules.filter((r) => r.isActive))
+    .filter((r) => !searchLower || r.name.toLowerCase().includes(searchLower));
 
   function openEdit(rule: HolidayRule) { setEditingRule(rule); setConfirmDeleteId(null); setError(null); }
   function closeEdit() { setEditingRule(null); setConfirmDeleteId(null); setError(null); }
@@ -825,14 +828,36 @@ export function HolidayRulesManager({ rules, payCodes = [] }: Props) {
       )}
 
       <div className="mb-3 flex items-center gap-3">
+        <div className="relative max-w-xs flex-1">
+          <svg className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search rules…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm text-zinc-700 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:placeholder-zinc-500"
+          />
+        </div>
         <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-500">
           <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="rounded" />
           Show inactive
         </label>
+        <button
+          onClick={openCreate}
+          className="ml-auto rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        >
+          + Add Holiday Rule
+        </button>
       </div>
 
       <div className="flex flex-col gap-2">
-        {visible.length === 0 && <p className="text-sm text-zinc-400">No holiday rules yet. Add one below.</p>}
+        {visible.length === 0 && (
+          <p className="text-sm text-zinc-400">
+            {searchLower ? `No rules match "${search}".` : "No holiday rules yet."}
+          </p>
+        )}
 
         {visible.map((rule) => (
           <button
@@ -867,13 +892,6 @@ export function HolidayRulesManager({ rules, payCodes = [] }: Props) {
           </button>
         ))}
       </div>
-
-      <button
-        onClick={openCreate}
-        className="mt-4 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-600"
-      >
-        + Add Holiday Rule
-      </button>
 
       {/* Create modal */}
       {showCreate && (

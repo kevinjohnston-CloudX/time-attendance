@@ -34,7 +34,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const user = await db.user.findUnique({
           where: { username: parsed.data.username.toLowerCase() },
-          include: { employee: true },
+          include: { employee: { include: { customRole: { select: { canViewAs: true } } } } },
         });
 
         if (!user?.passwordHash) return null;
@@ -61,6 +61,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           employeeId: user.employee?.id ?? undefined,
           tenantId: user.employee?.tenantId ?? null,
           customRoleId: user.employee?.customRoleId ?? undefined,
+          canViewAs: user.employee?.customRole?.canViewAs ?? false,
         };
       },
     }),
@@ -110,17 +111,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           // Google sign-in: look up employee from DB
           const fullUser = await db.user.findUnique({
             where: { id: user.id! },
-            include: { employee: true },
+            include: { employee: { include: { customRole: { select: { canViewAs: true } } } } },
           });
           if (fullUser?.isSuperAdmin) {
             token.role = "SUPER_ADMIN";
             token.employeeId = undefined;
             token.tenantId = null;
+            token.canViewAs = false;
           } else {
             token.role = fullUser?.employee?.role ?? "EMPLOYEE";
             token.employeeId = fullUser?.employee?.id ?? undefined;
             token.tenantId = fullUser?.employee?.tenantId ?? null;
             token.customRoleId = fullUser?.employee?.customRoleId ?? undefined;
+            token.canViewAs = fullUser?.employee?.customRole?.canViewAs ?? false;
           }
         } else {
           // Credentials: role already stamped by authorize()
@@ -128,6 +131,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.employeeId = (user as { employeeId?: string }).employeeId;
           token.tenantId = (user as { tenantId?: string | null }).tenantId;
           token.customRoleId = (user as { customRoleId?: string }).customRoleId;
+          token.canViewAs = (user as { canViewAs?: boolean }).canViewAs ?? false;
         }
       }
       return token;
@@ -140,6 +144,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.employeeId = token.employeeId as string | undefined;
         session.user.tenantId = token.tenantId as string | null | undefined;
         session.user.customRoleId = token.customRoleId as string | undefined;
+        session.user.canViewAs = token.canViewAs as boolean | undefined ?? false;
       }
       return session;
     },

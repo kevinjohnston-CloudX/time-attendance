@@ -27,6 +27,7 @@ import {
   Eye,
   X,
   BookOpen,
+  Hourglass,
 } from "lucide-react";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { ThemeToggle } from "./theme-toggle";
@@ -45,6 +46,7 @@ const navItems: NavItem[] = [
   { label: "Punch History", href: "/time/history", icon: CalendarDays },
   { label: "My Leave", href: "/leave", icon: CalendarDays },
   { label: "Documents", href: "/documents", icon: FileText },
+  { label: "Accruals", href: "/accruals", icon: Hourglass, permission: ["ACCRUAL_VIEW_OWN", "ACCRUAL_VIEW_TEAM", "ACCRUAL_VIEW_ANY"] },
   { label: "Payroll", href: "/payroll", icon: DollarSign, permission: "PAY_PERIOD_MANAGE" },
   { label: "Timecards", href: "/payroll/timecards", icon: ClipboardList, permission: ["PAY_PERIOD_MANAGE", "TIMECARD_VIEW_TEAM"] },
   { label: "Reports", href: "/reports", icon: FileText, permission: "REPORT_MANAGE" },
@@ -59,23 +61,12 @@ const supervisorItems: NavItem[] = [
 ];
 
 const adminItems: NavItem[] = [
-  { label: "Employees", href: "/admin/employees", icon: Users, permission: "EMPLOYEE_MANAGE" },
-  { label: "Accruals", href: "/admin/accruals", icon: CalendarDays, permission: "EMPLOYEE_MANAGE" },
-  { label: "Site Settings", href: "/admin/site-settings", icon: Layers, permission: ["SITE_MANAGE", "RULES_MANAGE", "PAY_PERIOD_MANAGE"] },
   { label: "Integrations", href: "/admin/api-keys", icon: KeyRound, permission: "SITE_MANAGE" },
   { label: "Roles", href: "/admin/roles", icon: ShieldCheck, permission: "ROLE_MANAGE" },
   { label: "ADP Sync", href: "/admin/adp", icon: RefreshCw, permission: "EMPLOYEE_MANAGE" },
   { label: "Audit Log", href: "/admin/audit", icon: FileText, permission: "AUDIT_VIEW" },
   { label: "Company Settings", href: "/admin/settings", icon: SlidersHorizontal, permission: "PAY_PERIOD_MANAGE" },
 ];
-
-const VIEW_AS_ROLES = [
-  { value: "EMPLOYEE",      label: "Employee" },
-  { value: "SUPERVISOR",    label: "Supervisor" },
-  { value: "PAYROLL_ADMIN", label: "Payroll Admin" },
-  { value: "HR_ADMIN",      label: "HR Admin" },
-  { value: "SYSTEM_ADMIN",  label: "System Admin" },
-] as const;
 
 const ROLE_LABEL: Record<string, string> = {
   EMPLOYEE: "Employee",
@@ -92,9 +83,11 @@ interface SidebarProps {
   permissions?: string[];
   realRole?: string;
   viewAsRole?: string | null;
+  canViewAs?: boolean;
+  viewAsOptions?: { id: string; name: string }[];
 }
 
-export function Sidebar({ role, userName, permissions, realRole, viewAsRole }: SidebarProps) {
+export function Sidebar({ role, userName, permissions, realRole, viewAsRole, canViewAs = false, viewAsOptions = [] }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -109,14 +102,10 @@ export function Sidebar({ role, userName, permissions, realRole, viewAsRole }: S
   const teamBtnRef = useRef<HTMLButtonElement>(null);
   const teamPopupRef = useRef<HTMLDivElement>(null);
   const rolePickerRef = useRef<HTMLDivElement>(null);
-  const canViewAs = realRole === "SYSTEM_ADMIN" || realRole === "SUPER_ADMIN";
-  const availableRoles = VIEW_AS_ROLES.filter((r) =>
-    realRole === "SUPER_ADMIN" ? true : r.value !== "SYSTEM_ADMIN"
-  );
 
-  function handleSetViewAs(roleValue: string) {
+  function handleSetViewAs(customRoleId: string) {
     startTransition(async () => {
-      await setViewAsRole(roleValue);
+      await setViewAsRole(customRoleId);
       setShowRolePicker(false);
       router.push("/dashboard");
       router.refresh();
@@ -189,7 +178,10 @@ export function Sidebar({ role, userName, permissions, realRole, viewAsRole }: S
   const visibleItems = navItems.filter((item) => hasPermission(item.permission));
   const visibleAdminItems = adminItems.filter((item) => hasPermission(item.permission));
   const visibleSupervisorItems = supervisorItems.filter((item) => hasPermission(item.permission));
-  const isAdminActive = pathname.startsWith("/admin");
+  const isAdminActive = pathname.startsWith("/admin") &&
+    !pathname.startsWith("/admin/rules-setup") &&
+    !pathname.startsWith("/admin/site-settings") &&
+    !pathname.startsWith("/admin/employees");
   const isTeamActive = pathname.startsWith("/supervisor");
 
   const linkClass = (isActive: boolean) =>
@@ -313,6 +305,34 @@ export function Sidebar({ role, userName, permissions, realRole, viewAsRole }: S
             </li>
           )}
 
+          {/* Employees — direct link */}
+          {hasPermission("EMPLOYEE_MANAGE") && (
+            <li>
+              <Link
+                href="/admin/employees"
+                title={collapsed ? "Employees" : undefined}
+                className={linkClass(pathname.startsWith("/admin/employees"))}
+              >
+                <Users className="h-4 w-4 shrink-0" />
+                {!collapsed && "Employees"}
+              </Link>
+            </li>
+          )}
+
+          {/* Company Setup — direct link */}
+          {hasPermission(["SITE_MANAGE", "RULES_MANAGE", "PAY_PERIOD_MANAGE"]) && (
+            <li>
+              <Link
+                href="/admin/site-settings"
+                title={collapsed ? "Company Setup" : undefined}
+                className={linkClass(pathname.startsWith("/admin/site-settings"))}
+              >
+                <Layers className="h-4 w-4 shrink-0" />
+                {!collapsed && "Company Setup"}
+              </Link>
+            </li>
+          )}
+
           {/* Rules Setup — direct link for HR Admin and above */}
           {hasPermission("RULES_MANAGE") && (
             <li>
@@ -413,7 +433,7 @@ export function Sidebar({ role, userName, permissions, realRole, viewAsRole }: S
                 <div className="flex items-center gap-1.5">
                   <Eye className="h-3 w-3 text-amber-600 dark:text-amber-400" />
                   <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
-                    {ROLE_LABEL[viewAsRole] ?? viewAsRole}
+                    {viewAsRole}
                   </span>
                 </div>
                 <button onClick={handleClearViewAs} disabled={isPending}
@@ -440,7 +460,7 @@ export function Sidebar({ role, userName, permissions, realRole, viewAsRole }: S
                     {ROLE_LABEL[realRole ?? ""] ?? realRole}
                   </p>
                 </div>
-                {canViewAs && (
+                {canViewAs && !viewAsRole && (
                   <Eye className="ml-1 h-3.5 w-3.5 shrink-0 text-zinc-400" />
                 )}
               </button>
@@ -451,20 +471,23 @@ export function Sidebar({ role, userName, permissions, realRole, viewAsRole }: S
                   <p className="px-3 pb-1 pt-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
                     View as
                   </p>
-                  {availableRoles.map((r) => (
+                  {viewAsOptions.length === 0 && (
+                    <p className="px-3 py-2 text-xs text-zinc-400">No roles available</p>
+                  )}
+                  {viewAsOptions.map((r) => (
                     <button
-                      key={r.value}
+                      key={r.id}
                       type="button"
-                      disabled={isPending || r.value === viewAsRole}
-                      onClick={() => handleSetViewAs(r.value)}
+                      disabled={isPending || r.name === viewAsRole}
+                      onClick={() => handleSetViewAs(r.id)}
                       className={`flex w-full items-center px-3 py-1.5 text-sm transition-colors disabled:opacity-40 ${
-                        r.value === viewAsRole
+                        r.name === viewAsRole
                           ? "bg-blue-50 font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
                           : "text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
                       }`}
                     >
-                      {r.label}
-                      {r.value === viewAsRole && <span className="ml-auto text-xs text-blue-500">active</span>}
+                      {r.name}
+                      {r.name === viewAsRole && <span className="ml-auto text-xs text-blue-500">active</span>}
                     </button>
                   ))}
                   {viewAsRole && (

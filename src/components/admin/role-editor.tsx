@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createRole, updateRole, deleteRole, duplicateRole } from "@/actions/role.actions";
 import { RESOURCES, ACTIONS, SCOPES, type PermissionEntry } from "@/lib/validators/role.schema";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
-import { Trash2, Copy, Save, X, CopyCheck } from "lucide-react";
+import { Trash2, Copy, Save, X, CopyCheck, Info } from "lucide-react";
 
 // Only these cells map to an enforced server-side permission check.
 // All others are rendered but non-functional — disable them in the UI.
@@ -17,6 +17,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   punch: "Punches",
   timesheet: "Timesheets",
   leave: "Leave",
+  accrual: "Accruals",
   payroll: "Payroll",
   employee: "Employees",
   rules: "Rule Sets",
@@ -39,12 +40,103 @@ const SCOPE_LABELS: Record<string, string> = {
   all: "All",
 };
 
+type PermInfo = { summary: string; cells: Record<string, string> };
+
+const RESOURCE_INFO: Record<string, PermInfo> = {
+  punch: {
+    summary: "Controls who can clock in/out and who can view or modify punch records.",
+    cells: {
+      "write:own":  "Clock in and out for yourself via the Punch Clock.",
+      "read:team":  "View your team's current punch status and punch history.",
+      "write:team": "Manually add, edit, or delete punch records for your team members.",
+      "write:all":  "Manually add, edit, or delete punch records for any employee.",
+    },
+  },
+  timesheet: {
+    summary: "Controls timesheet submission and the approval workflow.",
+    cells: {
+      "write:own":    "Submit your own timesheet for approval at the end of a pay period.",
+      "execute:team": "Approve or reject timesheets submitted by your direct reports.",
+      "execute:all":  "Approve or reject timesheets for any employee across all teams.",
+    },
+  },
+  leave: {
+    summary: "Controls leave requests and the approval workflow.",
+    cells: {
+      "write:own":    "Submit leave requests (PTO, sick, etc.) for yourself.",
+      "execute:team": "Approve or reject leave requests submitted by your team.",
+      "execute:all":  "Approve or reject leave requests from any employee.",
+    },
+  },
+  accrual: {
+    summary: "Controls who can view PTO/sick balances and who can manually adjust them.",
+    cells: {
+      "read:own":   "View your own leave balances, accrual history, and forecasted hours.",
+      "read:team":  "View leave balances for your assigned team members.",
+      "read:all":   "View leave balances for any employee across all locations.",
+      "write:all":  "Manually adjust accrual balances, carryovers, and assign policy exceptions. Restricted to HR Super Admin.",
+    },
+  },
+  payroll: {
+    summary: "Controls pay period management and payroll operations.",
+    cells: {
+      "write:all": "Open and close pay periods, access timecards, manage pay codes and payroll settings.",
+    },
+  },
+  employee: {
+    summary: "Controls access to employee records.",
+    cells: {
+      "write:all": "Add new employees, edit profiles, change roles, and deactivate or terminate employees.",
+    },
+  },
+  rules: {
+    summary: "Controls configuration of rule sets, overtime rules, and scheduling.",
+    cells: {
+      "write:all": "Create and edit rule sets, OT rules, shift schedules, and holiday rules.",
+    },
+  },
+  site: {
+    summary: "Controls company site and location management.",
+    cells: {
+      "write:all": "Add and edit sites, departments, and company location settings.",
+    },
+  },
+  document: {
+    summary: "Controls document upload and access.",
+    cells: {
+      "write:own": "Upload documents to your own employee profile.",
+      "read:own":  "View documents attached to your own profile.",
+      "read:all":  "View documents for any employee.",
+    },
+  },
+  report: {
+    summary: "Controls report creation and execution.",
+    cells: {
+      "write:all":   "Create, configure, and save custom reports.",
+      "execute:all": "Run reports and schedule automated exports.",
+    },
+  },
+  audit: {
+    summary: "Controls access to the system audit trail.",
+    cells: {
+      "read:all": "View the full audit log showing all changes made across the system.",
+    },
+  },
+  role: {
+    summary: "Controls role and permission management.",
+    cells: {
+      "write:all": "Create, edit, and delete custom roles and assign their permissions.",
+    },
+  },
+};
+
 type RoleData = {
   id: string;
   name: string;
   description: string | null;
   rank: number;
   isSystem: boolean;
+  canViewAs: boolean;
   permissions: { resource: string; action: string; scope: string }[];
   _count: { employees: number };
 };
@@ -134,12 +226,14 @@ export function RoleEditor({
   const [name, setName] = useState(role?.name ?? "");
   const [description, setDescription] = useState(role?.description ?? "");
   const [rank, setRank] = useState(role?.rank ?? 0);
+  const [canViewAs, setCanViewAs] = useState(role?.canViewAs ?? false);
   const [permSet, setPermSet] = useState<Set<string>>(
     buildPermSet((role?.permissions ?? []) as PermissionEntry[])
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedBuiltinKey, setSelectedBuiltinKey] = useState("");
+  const [expandedResource, setExpandedResource] = useState<string | null>(null);
 
   function handleMimicBuiltin() {
     const source = builtinRoles.find((r) => r.key === selectedBuiltinKey);
@@ -168,6 +262,7 @@ export function RoleEditor({
           name: isSystem ? undefined : name,
           description: description || null,
           rank,
+          canViewAs,
           permissions,
         });
         if (!res.success) {
@@ -176,7 +271,7 @@ export function RoleEditor({
           return;
         }
       } else {
-        const res = await createRole({ name, description, rank, permissions });
+        const res = await createRole({ name, description, rank, canViewAs, permissions });
         if (!res.success) {
           setError(res.error);
           setSaving(false);
@@ -279,6 +374,31 @@ export function RoleEditor({
             />
           </div>
 
+          {/* View-as toggle */}
+          <div className="flex items-center justify-between rounded-lg border border-zinc-200 px-4 py-3 dark:border-zinc-700">
+            <div>
+              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Allow View As</p>
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                Users with this role can simulate other roles with a lower rank to preview their experience.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={canViewAs}
+              onClick={() => setCanViewAs((v) => !v)}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 ${
+                canViewAs ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-200 dark:bg-zinc-700"
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                  canViewAs ? "translate-x-4" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+
           {/* Mimic built-in role */}
           {builtinRoles.length > 0 && (
             <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/40">
@@ -351,44 +471,82 @@ export function RoleEditor({
                   </tr>
                 </thead>
                 <tbody>
-                  {RESOURCES.map((resource) => (
-                    <tr
-                      key={resource}
-                      className="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
-                    >
-                      <td className="px-4 py-2.5 font-medium text-zinc-700 dark:text-zinc-300">
-                        {RESOURCE_LABELS[resource]}
-                      </td>
-                      {ACTIONS.map((action) =>
-                        SCOPES.map((scope) => {
-                          const key = permKey(resource, action, scope);
-                          const checked = permSet.has(key);
-                          const isActive = ACTIVE_CELLS.has(key);
-                          return (
-                            <td
-                              key={`${resource}-${action}-${scope}`}
-                              className={`px-2 py-2.5 text-center ${
-                                scope === "own"
-                                  ? "border-l border-zinc-200 dark:border-zinc-700"
-                                  : ""
-                              } ${!isActive ? "bg-zinc-50 dark:bg-zinc-800/40" : ""}`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => handleToggle(resource, action, scope)}
-                                disabled={!isActive}
-                                title={!isActive ? "Not enforced — no server action checks this permission" : undefined}
-                                className={`h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 ${
-                                  !isActive ? "cursor-not-allowed opacity-20" : ""
-                                }`}
-                              />
+                  {RESOURCES.map((resource) => {
+                    const info = RESOURCE_INFO[resource];
+                    const isExpanded = expandedResource === resource;
+                    const totalCols = 1 + ACTIONS.length * SCOPES.length;
+                    return (
+                      <React.Fragment key={resource}>
+                        <tr
+                          className="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
+                        >
+                          <td className="px-4 py-2.5 font-medium text-zinc-700 dark:text-zinc-300">
+                            <div className="flex items-center gap-1.5">
+                              {RESOURCE_LABELS[resource]}
+                              {info && (
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedResource(isExpanded ? null : resource)}
+                                  className="rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+                                  title="About this permission"
+                                >
+                                  <Info className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          {ACTIONS.map((action) =>
+                            SCOPES.map((scope) => {
+                              const key = permKey(resource, action, scope);
+                              const checked = permSet.has(key);
+                              const isActive = ACTIVE_CELLS.has(key);
+                              return (
+                                <td
+                                  key={`${resource}-${action}-${scope}`}
+                                  className={`px-2 py-2.5 text-center ${
+                                    scope === "own"
+                                      ? "border-l border-zinc-200 dark:border-zinc-700"
+                                      : ""
+                                  } ${!isActive ? "bg-zinc-50 dark:bg-zinc-800/40" : ""}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => handleToggle(resource, action, scope)}
+                                    disabled={!isActive}
+                                    title={!isActive ? "Not enforced — no server action checks this permission" : undefined}
+                                    className={`h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 ${
+                                      !isActive ? "cursor-not-allowed opacity-20" : ""
+                                    }`}
+                                  />
+                                </td>
+                              );
+                            })
+                          )}
+                        </tr>
+                        {isExpanded && info && (
+                          <tr className="border-b border-zinc-100 bg-blue-50/60 dark:border-zinc-800 dark:bg-blue-950/20">
+                            <td colSpan={totalCols} className="px-4 pb-3 pt-2">
+                              <p className="mb-2 text-xs text-zinc-600 dark:text-zinc-400">{info.summary}</p>
+                              <ul className="space-y-1">
+                                {Object.entries(info.cells).map(([cellKey, desc]) => {
+                                  const [action, scope] = cellKey.split(":");
+                                  return (
+                                    <li key={cellKey} className="flex items-start gap-2 text-xs text-zinc-500 dark:text-zinc-500">
+                                      <span className="mt-0.5 shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 font-mono text-[10px] uppercase leading-none text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400">
+                                        {ACTION_LABELS[action]} / {SCOPE_LABELS[scope]}
+                                      </span>
+                                      <span>{desc}</span>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
                             </td>
-                          );
-                        })
-                      )}
-                    </tr>
-                  ))}
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

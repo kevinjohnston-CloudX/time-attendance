@@ -5,6 +5,7 @@ model CustomRole {
   description String?
   isSystem    Boolean  @default(false)
   rank        Int      @default(0)
+  canViewAs   Boolean  @default(false)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

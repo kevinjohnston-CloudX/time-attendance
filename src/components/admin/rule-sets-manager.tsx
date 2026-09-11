@@ -22,7 +22,7 @@ const dangerBtnCls = "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text
 const sectionHdrCls = "col-span-full mb-0.5 border-b border-zinc-200 pb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-700";
 
 type AutoPayDaySchedule = { day: number; apply: boolean; minutes: number }[];
-type RSFields = Omit<RuleSet, "id" | "tenantId" | "createdAt" | "updatedAt" | "employees" | "payPeriods" | "isActive" | "payPeriodAnchorDate" | "otCycleAnchorDate" | "otCycle" | "mealPremiumRows" | "autoPayDaySchedule"> & { isActive?: boolean; payPeriodAnchorDate?: string | null; otCycleAnchorDate?: string | null; otCycle?: OtCycle | null; mealPremiumRows?: MealPremiumRow[]; autoPayDaySchedule?: AutoPayDaySchedule };
+type RSFields = Omit<RuleSet, "id" | "tenantId" | "createdAt" | "updatedAt" | "employees" | "payPeriods" | "isActive" | "payPeriodAnchorDate" | "otCycleAnchorDate" | "otCycle" | "mealPremiumRows" | "autoPayDaySchedule" | "flsaOtLevels" | "flsaIncludeAsRegular" | "flsaType" | "flsaDistributionFrequency" | "flsaWeeklyOtLevel" | "flsaOtRateComputation"> & { isActive?: boolean; payPeriodAnchorDate?: string | null; otCycleAnchorDate?: string | null; otCycle?: OtCycle | null; mealPremiumRows?: MealPremiumRow[]; autoPayDaySchedule?: AutoPayDaySchedule; flsaOtLevels?: string[]; flsaIncludeAsRegular?: string[]; flsaType: "FEDERAL" | "CALIFORNIA"; flsaDistributionFrequency: "PER_PERIOD" | "WEEKLY"; flsaWeeklyOtLevel: "OT1" | "OT2"; flsaOtRateComputation: "BASE_PLUS_AVG_HALF" | "AVG_RATE" | "BASE_RATE" };
 
 interface MealPremiumRow {
   applyFromMinutes: number;
@@ -38,7 +38,7 @@ interface MealPremiumRow {
   unlessPunchedMeal: boolean;
 }
 type OtPreset = Pick<RSFields, "dailyOtMinutes" | "dailyDtMinutes" | "dailyDtMaxMinutes" | "weeklyOtEnabled" | "weeklyOtMinutes" | "weeklyDtMinutes" | "weeklyDtMaxMinutes" | "consecutiveDayOtEnabled" | "consecutiveDayOtDay" | "consecutiveDayPayCycleOnly" | "consecutiveDayOtMaxMinutes" | "consecutiveDayDtMaxMinutes">;
-type RSTab = "general" | "overtime" | "breaks" | "rounding" | "guaranteed" | "miscellaneous";
+type RSTab = "general" | "overtime" | "breaks" | "rounding" | "guaranteed" | "miscellaneous" | "flsa";
 
 const FEDERAL: OtPreset = { dailyOtMinutes: 1440, dailyDtMinutes: 1440, dailyDtMaxMinutes: 0, weeklyOtEnabled: true, weeklyOtMinutes: 2400, weeklyDtMinutes: 86400, weeklyDtMaxMinutes: 0, consecutiveDayOtEnabled: false, consecutiveDayOtDay: 7, consecutiveDayPayCycleOnly: true, consecutiveDayOtMaxMinutes: 0, consecutiveDayDtMaxMinutes: 0 };
 
@@ -157,6 +157,26 @@ function parseForm(fd: FormData): RSFields {
     allowTimesheetOtAuth: fd.get("allowTimesheetOtAuth") === "true",
     otGraceBeforeShiftMinutes: Number(fd.get("otGraceBeforeShiftMinutes") ?? 0),
     otGraceAfterShiftMinutes: Number(fd.get("otGraceAfterShiftMinutes") ?? 0),
+    flsaEnabled: fd.get("flsaEnabled") === "true",
+    flsaType: (((fd.get("flsaType") as string) || "FEDERAL") as "FEDERAL" | "CALIFORNIA"),
+    flsaDistributionFrequency: (((fd.get("flsaDistributionFrequency") as string) || "PER_PERIOD") as "PER_PERIOD" | "WEEKLY"),
+    flsaAdjustmentPayCodeId: (fd.get("flsaAdjustmentPayCodeId") as string | null) || null,
+    flsaAdjustmentInRefTime: (fd.get("flsaAdjustmentInRefTime") as string | null) || null,
+    flsaAltPayCodeEnabled: fd.get("flsaAltPayCodeEnabled") === "true",
+    flsaAltPayCodeId: (fd.get("flsaAltPayCodeId") as string | null) || null,
+    flsaAltInRefTime: (fd.get("flsaAltInRefTime") as string | null) || null,
+    flsaIncludePremiumHours: fd.get("flsaIncludePremiumHours") === "true",
+    flsaIncludePayMatrixHours: fd.get("flsaIncludePayMatrixHours") === "true",
+    flsaNoNegativeAdjustment: fd.get("flsaNoNegativeAdjustment") === "true",
+    flsaUseTotalOtPremium: fd.get("flsaUseTotalOtPremium") === "true",
+    flsaWeeklyOtPayMethod: fd.get("flsaWeeklyOtPayMethod") === "true",
+    flsaMaxWeeklyRegularMinutes: Math.round(Number(fd.get("flsaMaxWeeklyRegularHours") ?? 40) * 60),
+    flsaWeeklyOtLevel: (((fd.get("flsaWeeklyOtLevel") as string) || "OT1") as "OT1" | "OT2"),
+    flsaApplyFullOtAmount: fd.get("flsaApplyFullOtAmount") === "true",
+    flsaDistributeMultipleRecords: fd.get("flsaDistributeMultipleRecords") === "true",
+    flsaOtRateComputation: (((fd.get("flsaOtRateComputation") as string) || "BASE_PLUS_AVG_HALF") as "BASE_PLUS_AVG_HALF" | "AVG_RATE" | "BASE_RATE"),
+    flsaOtLevels: (() => { try { return JSON.parse(fd.get("flsaOtLevelsJson") as string) || []; } catch { return []; } })(),
+    flsaIncludeAsRegular: (() => { try { return JSON.parse(fd.get("flsaIncludeAsRegularJson") as string) || []; } catch { return []; } })(),
   };
 }
 
@@ -460,6 +480,16 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
   });
   function applyPreset(preset: OtPreset) { setOtDefaults(preset); setOtKey((k) => k + 1); }
 
+  const [flsaEnabled, setFlsaEnabled] = useState<boolean>(rs?.flsaEnabled ?? false);
+  const [flsaAltPayCodeEnabled, setFlsaAltPayCodeEnabled] = useState<boolean>(rs?.flsaAltPayCodeEnabled ?? false);
+  const [flsaWeeklyOtPayMethod, setFlsaWeeklyOtPayMethod] = useState<boolean>(rs?.flsaWeeklyOtPayMethod ?? false);
+  const [flsaOtLevels, setFlsaOtLevels] = useState<string[]>(() =>
+    Array.isArray(rs?.flsaOtLevels) ? (rs.flsaOtLevels as string[]) : []
+  );
+  const [flsaIncludeAsRegular, setFlsaIncludeAsRegular] = useState<string[]>(() =>
+    Array.isArray(rs?.flsaIncludeAsRegular) ? (rs.flsaIncludeAsRegular as string[]) : []
+  );
+
   const rsTabs: { id: RSTab; label: string }[] = [
     { id: "general", label: "General" },
     { id: "overtime", label: "Overtime" },
@@ -467,6 +497,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
     { id: "rounding", label: "Rounding" },
     { id: "guaranteed", label: "Guaranteed Hours / Pay" },
     { id: "miscellaneous", label: "Miscellaneous" },
+    { id: "flsa", label: "FLSA" },
   ];
 
   return (
@@ -1218,6 +1249,200 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
           </div>
         </div>
       </div>
+
+      {/* FLSA tab */}
+      <div className={activeTab !== "flsa" ? "hidden" : "space-y-4"}>
+        <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+          <div className="flex items-start gap-2.5 rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/60">
+            <input
+              type="checkbox"
+              id="flsaEnabled"
+              checked={flsaEnabled}
+              onChange={(e) => setFlsaEnabled(e.target.checked)}
+              className="mt-0.5 h-4 w-4 cursor-pointer rounded"
+            />
+            <label htmlFor="flsaEnabled" className="cursor-pointer select-none text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+              <span className="font-semibold uppercase tracking-wider">Apply FLSA?</span>
+              <br />
+              <span className="font-normal text-zinc-500 dark:text-zinc-400">
+                Enable Fair Labor Standards Act overtime calculation for employees on this rule set.
+              </span>
+            </label>
+          </div>
+          <input type="hidden" name="flsaEnabled" value={flsaEnabled ? "true" : "false"} />
+
+          {!flsaEnabled && (
+            <p className="px-4 py-3 text-xs text-zinc-400">Disabled — no FLSA adjustments applied</p>
+          )}
+
+          <div className={flsaEnabled ? "divide-y divide-zinc-100 dark:divide-zinc-800/60" : "hidden"}>
+            {/* FLSA type */}
+            <div className="px-4 py-3">
+              <p className="mb-2 text-xs font-medium text-zinc-500">FLSA Type</p>
+              <div className="flex gap-6">
+                {(["FEDERAL", "CALIFORNIA"] as const).map((val) => (
+                  <label key={val} className="flex items-center gap-1.5 text-sm text-zinc-700 dark:text-zinc-300">
+                    <input type="radio" name="flsaType" value={val} defaultChecked={(rs?.flsaType ?? "FEDERAL") === val} />
+                    {val === "FEDERAL" ? "Federal FLSA" : "California FLSA"}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Distribution frequency */}
+            <div className="flex items-center gap-3 px-4 py-3">
+              <span className="w-56 shrink-0 text-xs text-zinc-500">FLSA OT Distribution Frequency</span>
+              <select name="flsaDistributionFrequency" defaultValue={rs?.flsaDistributionFrequency ?? "PER_PERIOD"} className={`w-auto ${smInputCls}`}>
+                <option value="PER_PERIOD">Once per Pay Period</option>
+                <option value="WEEKLY">Weekly</option>
+              </select>
+            </div>
+
+            {/* Adjustment pay code */}
+            <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <span className="w-56 shrink-0 text-xs text-zinc-500">FLSA Adjustment Pay Code</span>
+              <select name="flsaAdjustmentPayCodeId" defaultValue={rs?.flsaAdjustmentPayCodeId ?? ""} className={`flex-1 ${smInputCls}`}>
+                <option value="">— None —</option>
+                {payCodes.map((pc) => (
+                  <option key={pc.id} value={pc.id}>{pc.code} — {pc.label}</option>
+                ))}
+              </select>
+              <span className="text-xs text-zinc-400">In Ref. Time</span>
+              <input name="flsaAdjustmentInRefTime" type="time" defaultValue={rs?.flsaAdjustmentInRefTime ?? ""} className={`w-28 ${smInputCls}`} />
+            </div>
+
+            {/* Alt pay code for alternating weeks */}
+            <div className="px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  id="flsaAltPayCodeEnabled"
+                  checked={flsaAltPayCodeEnabled}
+                  onChange={(e) => setFlsaAltPayCodeEnabled(e.target.checked)}
+                  className="h-4 w-4 cursor-pointer rounded"
+                />
+                <label htmlFor="flsaAltPayCodeEnabled" className="cursor-pointer select-none text-xs text-zinc-600 dark:text-zinc-300">
+                  Use a different FLSA pay code for alternating weeks in the same pay period
+                </label>
+                <input type="hidden" name="flsaAltPayCodeEnabled" value={flsaAltPayCodeEnabled ? "true" : "false"} />
+              </div>
+              <div className={flsaAltPayCodeEnabled ? "mt-2 flex flex-wrap items-center gap-3 pl-6" : "hidden"}>
+                <select name="flsaAltPayCodeId" defaultValue={rs?.flsaAltPayCodeId ?? ""} className={`flex-1 ${smInputCls}`}>
+                  <option value="">— None —</option>
+                  {payCodes.map((pc) => (
+                    <option key={pc.id} value={pc.id}>{pc.code} — {pc.label}</option>
+                  ))}
+                </select>
+                <span className="text-xs text-zinc-400">In Ref. Time</span>
+                <input name="flsaAltInRefTime" type="time" defaultValue={rs?.flsaAltInRefTime ?? ""} className={`w-28 ${smInputCls}`} />
+              </div>
+            </div>
+
+            {/* Boolean options */}
+            <div className="space-y-2 px-4 py-3">
+              {([
+                ["flsaIncludePremiumHours",      "flsaIncludePremiumHours",      "Include Premium Hours?"],
+                ["flsaIncludePayMatrixHours",    "flsaIncludePayMatrixHours",    "Include Pay Matrix Distribution Hours?"],
+                ["flsaNoNegativeAdjustment",     "flsaNoNegativeAdjustment",     "Do not create a negative FLSA Adjustment Pay timesheet record"],
+                ["flsaApplyFullOtAmount",        "flsaApplyFullOtAmount",        "Apply the full FLSA OT amount"],
+                ["flsaDistributeMultipleRecords","flsaDistributeMultipleRecords","Distribute the computed FLSA adjustment amount to multiple records based on FLSA overtime timesheet groups"],
+              ] as [string, keyof RuleSet, string][]).map(([id, key, label]) => (
+                <label key={id} className="flex cursor-pointer items-start gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
+                  <input type="checkbox" name={id} value="true" defaultChecked={(rs?.[key] as boolean) ?? false} className="mt-0.5 h-4 w-4 cursor-pointer rounded" />
+                  {label}
+                </label>
+              ))}
+            </div>
+
+            {/* Use Total OT Premium */}
+            <div className="px-4 py-3">
+              <label className="flex cursor-pointer items-start gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
+                <input type="checkbox" name="flsaUseTotalOtPremium" value="true" defaultChecked={rs?.flsaUseTotalOtPremium ?? false} className="mt-0.5 h-4 w-4 cursor-pointer rounded" />
+                <span>
+                  Use Total OT Premium Pay as FLSA Adjustment Pay amount in timesheet
+                  <span className="block text-zinc-400">(OT-level Hours × (Rate multiplier − 1.00) × Avg. Rate)</span>
+                </span>
+              </label>
+            </div>
+
+            {/* FLSA Pay = Weekly OT pay - All Other OT pay */}
+            <div className="px-4 py-3">
+              <div className="flex items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  id="flsaWeeklyOtPayMethod"
+                  checked={flsaWeeklyOtPayMethod}
+                  onChange={(e) => setFlsaWeeklyOtPayMethod(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 cursor-pointer rounded"
+                />
+                <label htmlFor="flsaWeeklyOtPayMethod" className="cursor-pointer select-none text-xs text-zinc-600 dark:text-zinc-300">
+                  FLSA Pay = Weekly OT pay − All Other OT pay
+                  <span className="block text-zinc-400">Used when Weekly OT is not enabled</span>
+                </label>
+                <input type="hidden" name="flsaWeeklyOtPayMethod" value={flsaWeeklyOtPayMethod ? "true" : "false"} />
+              </div>
+              <div className={flsaWeeklyOtPayMethod ? "mt-2 flex items-center gap-3 pl-6" : "hidden"}>
+                <span className="text-xs text-zinc-500">Maximum Weekly Regular Hours</span>
+                <input name="flsaMaxWeeklyRegularHours" type="number" min={0} step={0.5} defaultValue={(rs?.flsaMaxWeeklyRegularMinutes ?? 2400) / 60} className={`w-16 text-right ${smInputCls}`} />
+                <span className="text-xs text-zinc-400">hrs</span>
+                <span className="ml-2 text-xs text-zinc-500">OT Level</span>
+                <select name="flsaWeeklyOtLevel" defaultValue={rs?.flsaWeeklyOtLevel ?? "OT1"} className={`w-auto ${smInputCls}`}>
+                  <option value="OT1">Overtime-1</option>
+                  <option value="OT2">Overtime-2</option>
+                </select>
+              </div>
+            </div>
+
+            {/* OT rate computation */}
+            <div className="flex items-center gap-3 px-4 py-3">
+              <span className="w-56 shrink-0 text-xs text-zinc-500">FLSA OT rate computation</span>
+              <select name="flsaOtRateComputation" defaultValue={rs?.flsaOtRateComputation ?? "BASE_PLUS_AVG_HALF"} className={`w-auto ${smInputCls}`}>
+                <option value="BASE_PLUS_AVG_HALF">Base Rate + (Average Rate / 2)</option>
+                <option value="AVG_RATE">Average Rate</option>
+                <option value="BASE_RATE">Base Rate</option>
+              </select>
+            </div>
+
+            {/* O/T Level */}
+            <div className="px-4 py-3">
+              <p className="mb-2 text-xs font-medium text-zinc-500">O/T Level — OT tiers counted for FLSA calculation</p>
+              <div className="flex flex-wrap gap-4">
+                {(["OT1", "OT2"] as const).map((lvl) => (
+                  <label key={lvl} className="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">
+                    <input
+                      type="checkbox"
+                      checked={flsaOtLevels.includes(lvl)}
+                      onChange={(e) => setFlsaOtLevels(e.target.checked ? [...flsaOtLevels, lvl] : flsaOtLevels.filter((l) => l !== lvl))}
+                      className="h-4 w-4 cursor-pointer rounded"
+                    />
+                    {lvl === "OT1" ? "Overtime-1" : "Overtime-2"}
+                  </label>
+                ))}
+              </div>
+              <input type="hidden" name="flsaOtLevelsJson" value={JSON.stringify(flsaOtLevels)} />
+            </div>
+
+            {/* Include As Regular */}
+            <div className="px-4 py-3">
+              <p className="mb-2 text-xs font-medium text-zinc-500">Include As Regular — OT tiers treated as regular hours for FLSA</p>
+              <div className="flex flex-wrap gap-4">
+                {(["OT1", "OT2"] as const).map((lvl) => (
+                  <label key={lvl} className="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">
+                    <input
+                      type="checkbox"
+                      checked={flsaIncludeAsRegular.includes(lvl)}
+                      onChange={(e) => setFlsaIncludeAsRegular(e.target.checked ? [...flsaIncludeAsRegular, lvl] : flsaIncludeAsRegular.filter((l) => l !== lvl))}
+                      className="h-4 w-4 cursor-pointer rounded"
+                    />
+                    {lvl === "OT1" ? "Overtime-1" : "Overtime-2"}
+                  </label>
+                ))}
+              </div>
+              <input type="hidden" name="flsaIncludeAsRegularJson" value={JSON.stringify(flsaIncludeAsRegular)} />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1272,6 +1497,12 @@ export function RuleSetsManager({ ruleSets, payCodes }: Props) {
   const [editingRs, setEditingRs] = useState<RuleSet | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+
+  const searchLower = search.trim().toLowerCase();
+  const visible = searchLower
+    ? ruleSets.filter((rs) => rs.name.toLowerCase().includes(searchLower))
+    : ruleSets;
 
   function openCreate() { setShowCreate(true); setError(null); }
   function closeCreate() { setShowCreate(false); setError(null); }
@@ -1317,8 +1548,34 @@ export function RuleSetsManager({ ruleSets, payCodes }: Props) {
         </p>
       )}
 
+      <div className="mb-3 flex items-center gap-3">
+        <div className="relative max-w-xs flex-1">
+          <svg className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search rule sets…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm text-zinc-700 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:placeholder-zinc-500"
+          />
+        </div>
+        <button
+          onClick={openCreate}
+          className="ml-auto rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        >
+          + Add Rule Set
+        </button>
+      </div>
+
       <div className="flex flex-col gap-3">
-        {ruleSets.map((rs) => (
+        {visible.length === 0 && (
+          <p className="text-sm text-zinc-400">
+            {searchLower ? `No rule sets match "${search}".` : "No rule sets yet."}
+          </p>
+        )}
+        {visible.map((rs) => (
           <button
             key={rs.id}
             type="button"
@@ -1350,13 +1607,6 @@ export function RuleSetsManager({ ruleSets, payCodes }: Props) {
           </button>
         ))}
       </div>
-
-      <button
-        onClick={openCreate}
-        className="mt-4 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-600"
-      >
-        + Add Rule Set
-      </button>
 
       {/* Create modal */}
       {showCreate && (

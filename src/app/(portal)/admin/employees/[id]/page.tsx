@@ -27,7 +27,7 @@ export default async function EditEmployeePage({
 
   const logs = logsResult.success ? logsResult.data : [];
   const employee = empResult.data;
-  const { sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories } = refResult.data;
+  const { sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes } = refResult.data;
 
   return (
     <div className="max-w-2xl">
@@ -66,6 +66,7 @@ export default async function EditEmployeePage({
         shifts={shifts}
         holidayRules={holidayRules}
         payCategories={payCategories ?? []}
+        payTypes={payTypes ?? []}
         logs={logs}
       />
     </div>

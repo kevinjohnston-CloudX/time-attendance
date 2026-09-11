@@ -4,6 +4,7 @@ export const RESOURCES = [
   "punch",
   "timesheet",
   "leave",
+  "accrual",
   "payroll",
   "employee",
   "rules",
@@ -33,6 +34,7 @@ export const createRoleSchema = z.object({
   name: z.string().min(1).max(100).trim(),
   description: z.string().max(500).optional(),
   rank: z.number().int().min(0).max(100).default(0),
+  canViewAs: z.boolean().optional(),
   permissions: z.array(permissionEntrySchema),
 });
 
@@ -43,6 +45,7 @@ export const updateRoleSchema = z.object({
   name: z.string().min(1).max(100).trim().optional(),
   description: z.string().max(500).optional().nullable(),
   rank: z.number().int().min(0).max(100).optional(),
+  canViewAs: z.boolean().optional(),
   permissions: z.array(permissionEntrySchema).optional(),
 });
 

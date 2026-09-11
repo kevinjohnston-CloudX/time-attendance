@@ -72,7 +72,7 @@ export function AccrualsEmployeeList({
         {filtered.map((emp) => (
           <Link
             key={emp.id}
-            href={`/admin/accruals/${emp.id}`}
+            href={`/accruals/${emp.id}`}
             className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
           >
             <div>

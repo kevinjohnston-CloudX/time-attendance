@@ -1,6 +1,11 @@
 import { db } from "@/lib/db";
 import { LEGACY_MAP, type PermissionTuple } from "./legacy-map";
 
+// Reverse map: (resource|action|scope) → legacy permission key
+const REVERSE_MAP = new Map<string, string>(
+  Object.entries(LEGACY_MAP).map(([key, t]) => [`${t.resource}|${t.action}|${t.scope}`, key])
+);
+
 type CacheEntry = {
   permissions: { resource: string; action: string; scope: string }[];
   expiresAt: number;
@@ -79,6 +84,30 @@ export async function getAllPermissions(
   if (!customRoleId) return [];
   const rows = await getPermissions(customRoleId);
   return rows as PermissionTuple[];
+}
+
+/**
+ * Returns all legacy permission strings granted by a customRoleId.
+ * Used by the portal layout to build the sidebar's permission list from the DB.
+ * Scope subsumption: having "all" scope also grants "team" and "own" for the same resource+action.
+ */
+export async function getLegacyPermissions(customRoleId: string | null | undefined): Promise<string[]> {
+  if (!customRoleId) return [];
+  const rows = await getPermissions(customRoleId);
+  const granted = new Set<string>();
+
+  for (const [key, tuple] of Object.entries(LEGACY_MAP)) {
+    const requiredRank = SCOPE_RANK[tuple.scope] ?? 0;
+    const has = rows.some(
+      (p) =>
+        p.resource === tuple.resource &&
+        p.action === tuple.action &&
+        (SCOPE_RANK[p.scope] ?? 0) >= requiredRank
+    );
+    if (has) granted.add(key);
+  }
+
+  return Array.from(granted);
 }
 
 /**

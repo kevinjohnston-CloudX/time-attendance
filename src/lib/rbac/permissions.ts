@@ -16,6 +16,11 @@ export const PERMISSIONS = [
   "LEAVE_REQUEST_OWN",
   "LEAVE_APPROVE_TEAM",
   "LEAVE_APPROVE_ANY",
+  // Accruals
+  "ACCRUAL_VIEW_OWN",
+  "ACCRUAL_VIEW_TEAM",
+  "ACCRUAL_VIEW_ANY",
+  "ACCRUAL_ADJUST_ANY",
   // Payroll & admin
   "PAY_PERIOD_MANAGE",
   "EMPLOYEE_MANAGE",
@@ -36,7 +41,7 @@ export const PERMISSIONS = [
 export type Permission = (typeof PERMISSIONS)[number];
 
 const rolePermissions: Record<Role, Permission[]> = {
-  EMPLOYEE: ["PUNCH_OWN", "TIMESHEET_SUBMIT_OWN", "LEAVE_REQUEST_OWN", "DOCUMENT_VIEW_OWN"],
+  EMPLOYEE: ["PUNCH_OWN", "TIMESHEET_SUBMIT_OWN", "LEAVE_REQUEST_OWN", "DOCUMENT_VIEW_OWN", "ACCRUAL_VIEW_OWN"],
   SUPERVISOR: [
     "PUNCH_OWN",
     "PUNCH_VIEW_TEAM",
@@ -47,6 +52,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "LEAVE_APPROVE_TEAM",
     "DOCUMENT_VIEW_OWN",
     "TIMECARD_VIEW_TEAM",
+    "ACCRUAL_VIEW_OWN",
+    "ACCRUAL_VIEW_TEAM",
   ],
   PAYROLL_ADMIN: [
     "PUNCH_OWN",
@@ -65,6 +72,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "DOCUMENT_VIEW_ANY",
     "REPORT_MANAGE",
     "REPORT_SCHEDULE",
+    "ACCRUAL_VIEW_OWN",
+    "ACCRUAL_VIEW_ANY",
   ],
   HR_ADMIN: [
     "PUNCH_OWN",
@@ -86,6 +95,10 @@ const rolePermissions: Record<Role, Permission[]> = {
     "DOCUMENT_VIEW_ANY",
     "REPORT_MANAGE",
     "REPORT_SCHEDULE",
+    "ROLE_MANAGE",
+    "ACCRUAL_VIEW_OWN",
+    "ACCRUAL_VIEW_ANY",
+    "ACCRUAL_ADJUST_ANY",
   ],
   SYSTEM_ADMIN: [...PERMISSIONS],
   SUPER_ADMIN: [...PERMISSIONS],

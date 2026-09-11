@@ -150,12 +150,14 @@ export default async function TenantDetailPage({
                   <td className="px-4 py-3">
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                        e.isActive
-                          ? "bg-emerald-900/40 text-emerald-400"
-                          : "bg-zinc-800 text-zinc-400"
+                        !e.isActive
+                          ? "bg-zinc-800 text-zinc-400"
+                          : e.onLeave
+                          ? "bg-amber-900/40 text-amber-400"
+                          : "bg-emerald-900/40 text-emerald-400"
                       }`}
                     >
-                      {e.isActive ? "Active" : "Inactive"}
+                      {!e.isActive ? "Inactive" : e.onLeave ? "On Leave" : "Active"}
                     </span>
                   </td>
                 </tr>
