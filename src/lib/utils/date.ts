@@ -175,6 +175,42 @@ export function startOfDayInTz(utcDate: Date, timezone: string): Date {
  * Example: dateStr="2026-08-03", timezone="America/New_York" (EDT, UTC-4)
  *          → 2026-08-03T23:59:59 EDT = 2026-08-04T03:59:59Z
  */
+/**
+ * Given the local calendar date of a clock-in and the employee's shift definition,
+ * returns the UTC Date for the shift end and the workday-expansion expiry.
+ *
+ * For overnight shifts (endTime hour:min <= startTime hour:min), the shift ends
+ * on the next calendar day relative to `punchLocalDate`.
+ *
+ * Used by the auto-clock-out cron and the timeclock punch route to determine
+ * whether a late punch still belongs to the previous workday.
+ */
+export function computeShiftExpiry(
+  shift: { startTime: string; endTime: string },
+  punchLocalDate: string,
+  expansionAfterMinutes: number,
+  timezone: string,
+): { shiftEndUtc: Date; expiryUtc: Date } {
+  const [sh, sm] = shift.startTime.split(":").map(Number);
+  const [eh, em] = shift.endTime.split(":").map(Number);
+  const startMins = sh * 60 + sm;
+  const endMins = eh * 60 + em;
+  const isOvernight = endMins <= startMins;
+
+  const [y, mo, d] = punchLocalDate.split("-").map(Number);
+  let endDateStr: string;
+  if (isOvernight) {
+    const nextDay = new Date(Date.UTC(y, mo - 1, d + 1));
+    endDateStr = nextDay.toISOString().slice(0, 10);
+  } else {
+    endDateStr = punchLocalDate;
+  }
+
+  const shiftEndUtc = snapToLocalTime(shift.endTime, endDateStr, timezone);
+  const expiryUtc = new Date(shiftEndUtc.getTime() + expansionAfterMinutes * 60_000);
+  return { shiftEndUtc, expiryUtc };
+}
+
 export function endOfDayInTz(dateStr: string, timezone: string): Date {
   const [y, m, d] = dateStr.split("-").map(Number);
   const asIfUtc = new Date(Date.UTC(y, m - 1, d, 23, 59, 59));

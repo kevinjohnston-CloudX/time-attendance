@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
-import { computeRoundedTime } from "@/lib/utils/date";
+import { computeRoundedTime, computeShiftExpiry } from "@/lib/utils/date";
 import { getCurrentPunchState, findOpenPayPeriod, saveRejectedPunch } from "@/lib/utils/punch-helpers";
 import { validateTransition } from "@/lib/state-machines/punch-state";
 import { timeclockScanSchema } from "@/lib/validators/punch.schema";
@@ -148,37 +148,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 5. Find or create timesheet + get current state
-  const timesheet = await findOrCreateTimesheet(employee.id, payPeriod.id);
-  const stateBefore = await getCurrentPunchState(employee.id);
-
-  if (timesheet.status === "LOCKED") {
-    await saveRejectedPunch({ employeeId: employee.id, timesheetId: timesheet.id, punchType: "CLOCK_IN", source: "KIOSK", stateBefore, rejectionReason: "Timesheet is locked for this pay period" });
-    return NextResponse.json(
-      { success: false, error: "Timesheet is locked for this pay period" },
-      { status: 409 }
-    );
-  }
-
-  // 6. Auto-detect punch type and validate transition
-  const punchType = await detectPunchType(
-    employee.id,
-    timesheet.id,
-    stateBefore,
-    employee.ruleSet.autoDeductMeal
-  );
-
-  // 7. Validate state transition
-  const transition = validateTransition(stateBefore, punchType);
-  if (!transition.valid) {
-    await saveRejectedPunch({ employeeId: employee.id, timesheetId: timesheet.id, punchType, source: "KIOSK", stateBefore, rejectionReason: transition.error ?? "Invalid state transition" });
-    return NextResponse.json(
-      { success: false, error: transition.error },
-      { status: 409 }
-    );
-  }
-
-  // 8. Parse scan time in the site's local timezone, then apply rounding
+  // 5. Parse scan time early — needed for expansion window check below.
   let punchTime: Date;
   try {
     punchTime = parseLocalDateTime(ScanDateTime, employee.site.timezone);
@@ -188,6 +158,82 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+
+  // 6. Find or create timesheet + get current state
+  const timesheet = await findOrCreateTimesheet(employee.id, payPeriod.id);
+  const stateBefore = await getCurrentPunchState(employee.id);
+
+  // 6a. Workday expansion: if the employee is still clocked in from a previous
+  // shift and the current punch arrives within the expansion window, attribute
+  // it to the OLD timesheet so all punches for that shift stay together.
+  let activeTimesheetId = timesheet.id;
+  let activeTimesheetStatus = timesheet.status;
+  if (
+    stateBefore === "WORK" &&
+    employee.ruleSet.workdayExpansionEnabled &&
+    employee.ruleSet.workdayExpansionUseShiftDef &&
+    employee.shift
+  ) {
+    const lastOpenPunch = await db.punch.findFirst({
+      where: { employeeId: employee.id, stateAfter: "WORK", correctedById: null },
+      orderBy: { punchTime: "desc" },
+      select: { punchTime: true, timesheetId: true },
+    });
+
+    if (lastOpenPunch?.timesheetId) {
+      const tz = employee.site.timezone;
+      const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(lastOpenPunch.punchTime);
+      const { expiryUtc } = computeShiftExpiry(
+        employee.shift,
+        localDate,
+        employee.ruleSet.workdayExpansionAfterMinutes,
+        tz,
+      );
+
+      if (punchTime <= expiryUtc) {
+        // Punch is within the expansion window — route to the old timesheet.
+        const oldTimesheet = await db.timesheet.findUnique({
+          where: { id: lastOpenPunch.timesheetId },
+          select: { id: true, status: true },
+        });
+        if (
+          oldTimesheet &&
+          oldTimesheet.status !== "LOCKED" &&
+          oldTimesheet.status !== "PAYROLL_APPROVED"
+        ) {
+          activeTimesheetId = oldTimesheet.id;
+          activeTimesheetStatus = oldTimesheet.status;
+        }
+      }
+    }
+  }
+
+  if (activeTimesheetStatus === "LOCKED") {
+    await saveRejectedPunch({ employeeId: employee.id, timesheetId: activeTimesheetId, punchType: "CLOCK_IN", source: "KIOSK", stateBefore, rejectionReason: "Timesheet is locked for this pay period" });
+    return NextResponse.json(
+      { success: false, error: "Timesheet is locked for this pay period" },
+      { status: 409 }
+    );
+  }
+
+  // 7. Auto-detect punch type and validate transition
+  const punchType = await detectPunchType(
+    employee.id,
+    activeTimesheetId,
+    stateBefore,
+    employee.ruleSet.autoDeductMeal
+  );
+
+  // 8. Validate state transition
+  const transition = validateTransition(stateBefore, punchType);
+  if (!transition.valid) {
+    await saveRejectedPunch({ employeeId: employee.id, timesheetId: activeTimesheetId, punchType, source: "KIOSK", stateBefore, rejectionReason: transition.error ?? "Invalid state transition" });
+    return NextResponse.json(
+      { success: false, error: transition.error },
+      { status: 409 }
+    );
+  }
+
   const roundedTime = computeRoundedTime(punchTime, punchType, employee.ruleSet, employee.shift, employee.site.timezone);
 
   // 9. Create punch + audit log in transaction
@@ -196,7 +242,7 @@ export async function POST(req: NextRequest) {
       const p = await tx.punch.create({
         data: {
           employeeId: employee.id,
-          timesheetId: timesheet.id,
+          timesheetId: activeTimesheetId,
           punchType,
           punchTime,
           roundedTime,

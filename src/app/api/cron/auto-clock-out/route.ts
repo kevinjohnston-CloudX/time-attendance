@@ -1,30 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PunchState } from "@prisma/client";
 import { db } from "@/lib/db";
-import { endOfDayInTz } from "@/lib/utils/date";
+import { endOfDayInTz, computeShiftExpiry } from "@/lib/utils/date";
 
-// Runs at 10:00 AM UTC daily (= 6:00 AM EDT), 5 min before detect-missing-punches.
-// Scans ALL active employees — regardless of timesheet approval status —
-// and creates a SYSTEM unapproved CLOCK_OUT at 23:59:59 local time for any
-// employee whose last punch leaves them in a non-OUT state from a previous day.
+// Runs at 10:00 AM UTC daily (= 6:00 AM EDT) AND at 16:00 AM UTC (= 12:00 PM EDT).
+// The second run catches night-shift workers whose expansion windows close mid-morning.
 //
-// This catches night-shift workers and cross-period open clock-ins that the
-// detect-missing-punches cron misses (it requires at least one approved punch).
+// Scans ALL active employees — regardless of timesheet approval status —
+// and creates a SYSTEM unapproved CLOCK_OUT for any employee whose last punch
+// leaves them in a non-OUT state once their workday expansion window has expired.
+//
+// With workday expansion enabled:  auto-close fires at shift end time once
+//   (shift end + workdayExpansionAfterMinutes) has passed.
+// Without expansion: auto-close fires at 23:59:59 local time (legacy behavior).
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const secret = process.env.CRON_SECRET;
   if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  // Conservative cutoff: anything before 4 AM UTC is definitely "yesterday" in any
-  // US Eastern timezone (midnight EDT=4AM UTC, midnight EST=5AM UTC).
-  // Per-employee we do a precise local-date check using their site timezone.
   const now = new Date();
+  // Conservative initial filter: any non-corrected, non-OUT punch before 4 AM UTC
+  // covers "midnight EDT or earlier" in all US Eastern locations.
   const etTodayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(now);
-  // 4 AM UTC = midnight EDT. Punches before this are from "yesterday or earlier" in ET.
   const cutoffUtc = new Date(etTodayStr + "T04:00:00.000Z");
 
-  // Step 1: Find candidate employees — those with any non-corrected, non-OUT punch before cutoff.
   const candidates = await db.punch.groupBy({
     by: ["employeeId"],
     where: {
@@ -40,7 +40,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   for (const { employeeId } of candidates) {
     try {
-      // Step 2: Get the employee's actual LATEST punch to verify they're still open.
       const latestPunch = await db.punch.findFirst({
         where: { employeeId, correctedById: null },
         orderBy: { punchTime: "desc" },
@@ -50,34 +49,64 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           stateAfter: true,
           timesheetId: true,
           employee: {
-            select: { site: { select: { timezone: true } } },
+            select: {
+              site: { select: { timezone: true } },
+              shift: { select: { startTime: true, endTime: true } },
+              ruleSet: {
+                select: {
+                  workdayExpansionEnabled: true,
+                  workdayExpansionUseShiftDef: true,
+                  workdayExpansionAfterMinutes: true,
+                },
+              },
+            },
           },
         },
       });
 
       if (!latestPunch || latestPunch.stateAfter === PunchState.OUT) {
         skipped++;
-        continue; // already clocked out by a subsequent punch
+        continue;
       }
 
       const timezone = latestPunch.employee.site?.timezone ?? "America/New_York";
       const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(latestPunch.punchTime);
-      const localToday = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(now);
+      const ruleSet = latestPunch.employee.ruleSet;
+      const shift = latestPunch.employee.shift;
 
-      if (localDate >= localToday) {
-        skipped++;
-        continue; // punch happened today in their local timezone — don't auto-close yet
+      let closeAtTime: Date;
+
+      if (ruleSet?.workdayExpansionEnabled && ruleSet.workdayExpansionUseShiftDef && shift) {
+        // Shift-aware expansion: close at shift end once the expansion window has expired.
+        const { shiftEndUtc, expiryUtc } = computeShiftExpiry(
+          shift,
+          localDate,
+          ruleSet.workdayExpansionAfterMinutes,
+          timezone,
+        );
+
+        if (now < expiryUtc) {
+          skipped++;
+          continue; // expansion window still open — employee may punch out naturally
+        }
+
+        closeAtTime = shiftEndUtc;
+      } else {
+        // Legacy behavior: close at 23:59:59 local time of the punch date.
+        const localToday = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(now);
+        if (localDate >= localToday) {
+          skipped++;
+          continue; // punch is from today — don't auto-close yet
+        }
+        closeAtTime = endOfDayInTz(localDate, timezone);
       }
 
-      const eodTime = endOfDayInTz(localDate, timezone);
-
-      // Check if a SYSTEM auto-out already exists for this employee at this exact time.
       const alreadyExists = await db.punch.findFirst({
         where: {
           employeeId,
           source: "SYSTEM",
           punchType: "CLOCK_OUT",
-          punchTime: eodTime,
+          punchTime: closeAtTime,
           correctedById: null,
         },
         select: { id: true },
@@ -93,13 +122,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           employeeId,
           timesheetId: latestPunch.timesheetId,
           punchType: "CLOCK_OUT",
-          punchTime: eodTime,
-          roundedTime: eodTime,
+          punchTime: closeAtTime,
+          roundedTime: closeAtTime,
           source: "SYSTEM",
           stateBefore: latestPunch.stateAfter,
           stateAfter: PunchState.OUT,
           isApproved: false,
-          note: "Auto-generated: employee still clocked in at end of day — pending payroll correction",
+          note: "Auto-generated: employee still clocked in after workday expansion window — pending payroll correction",
         },
       });
       created++;
