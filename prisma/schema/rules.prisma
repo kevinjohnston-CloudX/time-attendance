@@ -326,6 +326,13 @@ model RuleSet {
   flsaOtLevels                 Json?   // string[] — e.g. ["OT1", "OT2"]
   flsaIncludeAsRegular         Json?   // string[] — e.g. ["OT1"]
 
+  // Workday Expansion — defines the window around the scheduled shift during which
+  // punches are associated with that workday (mirrors Novatime's Expansion settings).
+  workdayExpansionEnabled       Boolean @default(false) // Apply workday expansion?
+  workdayExpansionUseShiftDef   Boolean @default(true)  // true = use shift definition; false = do not use workday definition
+  workdayExpansionBeforeMinutes Int     @default(0)     // minutes before shift start included in this workday
+  workdayExpansionAfterMinutes  Int     @default(120)   // minutes after shift end included in this workday
+
   isDefault Boolean  @default(false)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())

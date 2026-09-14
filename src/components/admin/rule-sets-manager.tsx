@@ -177,6 +177,10 @@ function parseForm(fd: FormData): RSFields {
     flsaOtRateComputation: (((fd.get("flsaOtRateComputation") as string) || "BASE_PLUS_AVG_HALF") as "BASE_PLUS_AVG_HALF" | "AVG_RATE" | "BASE_RATE"),
     flsaOtLevels: (() => { try { return JSON.parse(fd.get("flsaOtLevelsJson") as string) || []; } catch { return []; } })(),
     flsaIncludeAsRegular: (() => { try { return JSON.parse(fd.get("flsaIncludeAsRegularJson") as string) || []; } catch { return []; } })(),
+    workdayExpansionEnabled: fd.get("workdayExpansionEnabled") === "true",
+    workdayExpansionUseShiftDef: fd.get("workdayExpansionUseShiftDef") !== "false",
+    workdayExpansionBeforeMinutes: Number(fd.get("workdayExpansionBeforeMinutes") ?? 0),
+    workdayExpansionAfterMinutes: Number(fd.get("workdayExpansionAfterMinutes") ?? 120),
   };
 }
 
@@ -443,6 +447,8 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
     if (Array.isArray(stored) && stored.length === 7) return stored as AutoPayDayRow[];
     return DEFAULT_DAY_SCHEDULE;
   });
+  const [workdayExpansionEnabled, setWorkdayExpansionEnabled] = useState<boolean>(rs?.workdayExpansionEnabled ?? false);
+  const [workdayExpansionUseShiftDef, setWorkdayExpansionUseShiftDef] = useState<boolean>(rs?.workdayExpansionUseShiftDef ?? true);
   const [mealBreakPremiumEnabled, setMealBreakPremiumEnabled] = useState<boolean>(rs?.mealBreakPremiumEnabled ?? false);
   const [mealBreakPremiumResetEnabled, setMealBreakPremiumResetEnabled] = useState<boolean>(rs?.mealBreakPremiumResetEnabled ?? false);
   const [mealBreakPremiumWaivedMsgEnabled, setMealBreakPremiumWaivedMsgEnabled] = useState<boolean>(rs?.mealBreakPremiumWaivedMsgEnabled ?? false);
@@ -1069,6 +1075,92 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
 
       {/* Miscellaneous tab */}
       <div className={activeTab !== "miscellaneous" ? "hidden" : "space-y-4"}>
+
+        {/* Expansion */}
+        <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+          <div className="flex items-start gap-2.5 rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/60">
+            <input
+              type="checkbox"
+              id="workdayExpansionEnabled"
+              checked={workdayExpansionEnabled}
+              onChange={(e) => setWorkdayExpansionEnabled(e.target.checked)}
+              className="mt-0.5 h-4 w-4 cursor-pointer rounded"
+            />
+            <label htmlFor="workdayExpansionEnabled" className="cursor-pointer select-none text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+              <span className="font-semibold uppercase tracking-wider">Expansion</span>
+              <br />
+              <span className="font-normal text-zinc-500 dark:text-zinc-400">
+                Extend the workday window before and after the scheduled shift so late clock-outs are correctly attributed to the right shift rather than split at midnight.
+              </span>
+            </label>
+          </div>
+
+          <div className={workdayExpansionEnabled ? "divide-y divide-zinc-100 dark:divide-zinc-800/60" : "hidden"}>
+            {/* Use workday definition */}
+            <div className="px-4 py-3">
+              <p className="mb-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">Workday definition</p>
+              <div className="flex flex-col gap-1.5">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="workdayExpansionUseShiftDef"
+                    value="true"
+                    checked={workdayExpansionUseShiftDef}
+                    onChange={() => setWorkdayExpansionUseShiftDef(true)}
+                    className="h-4 w-4"
+                  />
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">Use workday definition (shift schedule)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="workdayExpansionUseShiftDef"
+                    value="false"
+                    checked={!workdayExpansionUseShiftDef}
+                    onChange={() => setWorkdayExpansionUseShiftDef(false)}
+                    className="h-4 w-4"
+                  />
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">Do NOT use workday definition (calendar day only)</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Before / After minutes */}
+            <div className="flex items-center gap-6 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="w-48 shrink-0 text-xs text-zinc-500">Before the start of a workday</span>
+                <input
+                  name="workdayExpansionBeforeMinutes"
+                  type="number"
+                  min={0}
+                  max={480}
+                  defaultValue={rs?.workdayExpansionBeforeMinutes ?? 0}
+                  className={`w-16 text-right ${smInputCls}`}
+                />
+                <span className="text-xs text-zinc-400">min</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-44 shrink-0 text-xs text-zinc-500">After the end of a workday</span>
+                <input
+                  name="workdayExpansionAfterMinutes"
+                  type="number"
+                  min={0}
+                  max={480}
+                  defaultValue={rs?.workdayExpansionAfterMinutes ?? 120}
+                  className={`w-16 text-right ${smInputCls}`}
+                />
+                <span className="text-xs text-zinc-400">min</span>
+              </div>
+            </div>
+          </div>
+
+          {!workdayExpansionEnabled && (
+            <p className="px-4 py-3 text-xs text-zinc-400">Disabled — workday boundaries use calendar midnight</p>
+          )}
+          <input type="hidden" name="workdayExpansionEnabled" value={workdayExpansionEnabled ? "true" : "false"} />
+          <input type="hidden" name="workdayExpansionUseShiftDef" value={workdayExpansionUseShiftDef ? "true" : "false"} />
+        </div>
+
         {/* Meal / Break Premium Rules — master section */}
         <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
           <div className="flex items-start gap-2.5 rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/60">
