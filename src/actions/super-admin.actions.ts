@@ -61,6 +61,7 @@ export async function getTenantBySlug(
     employeeCode: string;
     role: string;
     isActive: boolean;
+    onLeave: boolean;
     user: { name: string | null; username: string | null };
   }>;
 }>> {

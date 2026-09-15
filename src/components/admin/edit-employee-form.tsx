@@ -196,7 +196,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
                 name="customRoleId"
                 defaultValue={
                   employee.customRoleId ??
-                  customRoles.find((r) => r.isSystem && r.name === { EMPLOYEE: "Employee", SUPERVISOR: "Supervisor", PAYROLL_ADMIN: "Payroll Admin", HR_ADMIN: "HR Admin", SYSTEM_ADMIN: "System Admin" }[employee.role])?.id ??
+                  customRoles.find((r) => r.isSystem && r.name === { EMPLOYEE: "Employee", SUPERVISOR: "Supervisor", PAYROLL_ADMIN: "Payroll Admin", HR_ADMIN: "HR Admin", SYSTEM_ADMIN: "System Admin", SUPER_ADMIN: "Super Admin" }[employee.role])?.id ??
                   customRoles[0]?.id ??
                   ""
                 }
