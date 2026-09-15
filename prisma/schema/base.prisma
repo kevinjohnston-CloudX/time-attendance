@@ -56,6 +56,29 @@ enum ScanDirection {
   UNKNOWN
 }
 
+/// What the timecard pipeline did with a scan, recorded on the scan itself.
+///
+/// The point of this field is that a scan is written down BEFORE the pipeline
+/// runs, so a scan the pipeline refused — or crashed on — still leaves a row.
+/// Those are precisely the scans that are worth alerting on, and the previous
+/// design lost every one of them.
+enum ScanOutcome {
+  /// Written, pipeline has not reported back yet. A row left in this state is
+  /// itself a fault: something died between recording and resolving.
+  PENDING
+  /// A punch was created. `punchId` points at it.
+  PUNCH_RECORDED
+  /// The pipeline understood the scan and refused it — no open pay period, a
+  /// locked timesheet, an invalid state transition, an inactive employee.
+  PUNCH_REJECTED
+  /// No employee matches this badge. Nothing could be recorded against anyone.
+  NO_EMPLOYEE
+  /// The pipeline threw. The scan happened; what followed did not.
+  ERROR
+  /// Security gate scans, which never enter the timecard pipeline at all.
+  NOT_APPLICABLE
+}
+
 enum SegmentType {
   WORK
   MEAL
@@ -136,6 +159,12 @@ enum ExceptionType {
   ABSENT
   LATE_IN
   EARLY_OUT
+  /// A tablet recorded a scan that the timecard does not account for, or
+  /// accounts for differently. Raised by detect-scan-discrepancies, which
+  /// compares the tablet transaction log against the punches themselves —
+  /// the one exception type not derived from punches, and so the only one
+  /// that can see a punch which is simply absent.
+  SCAN_DISCREPANCY
 }
 
 enum PayFrequency {

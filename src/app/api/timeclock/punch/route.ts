@@ -7,7 +7,7 @@ import { computeRoundedTime, computeShiftExpiry } from "@/lib/utils/date";
 import { getCurrentPunchState, findOpenPayPeriod, saveRejectedPunch } from "@/lib/utils/punch-helpers";
 import { validateTransition } from "@/lib/state-machines/punch-state";
 import { timeclockScanSchema } from "@/lib/validators/punch.schema";
-import { recordScanEvent } from "@/lib/services/scan-event.service";
+import { recordScanEvent, resolveScanOutcome } from "@/lib/services/scan-event.service";
 import type { PunchType, PunchState } from "@prisma/client";
 
 function unauthorized() {
@@ -125,34 +125,14 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  if (!employee) {
-    return NextResponse.json(
-      { success: false, error: `Badge ID "${EmployeeCode}" not found` },
-      { status: 404 }
-    );
-  }
-
-  if (!employee.isActive) {
-    return NextResponse.json(
-      { success: false, error: "Employee is inactive" },
-      { status: 400 }
-    );
-  }
-
-  // 4. Find open pay period
-  const payPeriod = await findOpenPayPeriod(employee.tenantId, employee.ruleSetId);
-  if (!payPeriod) {
-    await saveRejectedPunch({ employeeId: employee.id, timesheetId: null, punchType: "CLOCK_IN", source: "KIOSK", stateBefore: "OUT", rejectionReason: "No active pay period" });
-    return NextResponse.json(
-      { success: false, error: "No active pay period" },
-      { status: 400 }
-    );
-  }
-
-  // 5. Parse scan time early — needed for expansion window check below.
+  // 4. Parse the scan time. Needed before anything else now, because the
+  //    tablet's transaction is written down before any timecard work happens.
   let punchTime: Date;
   try {
-    punchTime = parseLocalDateTime(ScanDateTime, employee.site.timezone);
+    punchTime = parseLocalDateTime(
+      ScanDateTime,
+      employee?.site.timezone ?? "America/New_York"
+    );
   } catch {
     return NextResponse.json(
       { success: false, error: `Invalid ScanDateTime: ${ScanDateTime}` },
@@ -160,7 +140,79 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 6. Find or create timesheet + get current state
+  // 5. Record the tablet's transaction BEFORE the pipeline below runs.
+  //
+  //    This is what makes scan_events an independent record rather than a copy
+  //    of this pipeline's conclusions. Every exit path below reports back what
+  //    happened, so a scan that gets refused, dropped or crashed on still
+  //    leaves a row — and those are exactly the scans worth alerting on,
+  //    because by definition they leave no trace in `punches`.
+  //
+  //    Never allowed to fail the punch: a reporting write must not cost an
+  //    employee a punch this pipeline would otherwise have accepted.
+  let scanEventId: string | null = null;
+  try {
+    const recorded = await recordScanEvent({
+      badgeCode: EmployeeCode,
+      stream: "TIME_CLOCK",
+      scanTime: punchTime,
+      deviceName: DeviceName ?? null,
+      warehouse: Warehouse ?? null,
+    });
+    scanEventId = recorded.id;
+
+    // 5a. Idempotency. The kiosk retries a post until the server acknowledges
+    //     it, so a response lost on the way back arrives here a second time.
+    //     Replaying it would create a SECOND punch — and because the employee
+    //     is now clocked in, the state machine would classify that one as a
+    //     clock OUT, silently ending their shift. One physical scan must
+    //     produce at most one punch, and (badge, stream, scanTime) is what
+    //     identifies the physical scan.
+    if (recorded.duplicate && recorded.punchId) {
+      return NextResponse.json({
+        success: true,
+        punchId: recorded.punchId,
+        punchType: recorded.timecardPunchType,
+        stateAfter: recorded.timecardStateAfter,
+        duplicate: true,
+      });
+    }
+  } catch (err) {
+    console.error("scan_events: failed to record scan for badge", EmployeeCode, err);
+  }
+
+  /** Reports this pipeline's verdict back onto the scan row. Never throws. */
+  type Settle = Parameters<typeof resolveScanOutcome>[1];
+  const settle = async (outcome: Settle["outcome"], extra: Omit<Settle, "outcome"> = {}) => {
+    if (scanEventId) await resolveScanOutcome(scanEventId, { outcome, ...extra });
+  };
+
+  if (!employee) {
+    const error = `Badge ID "${EmployeeCode}" not found`;
+    await settle("NO_EMPLOYEE", { rejectionReason: error });
+    return NextResponse.json({ success: false, error }, { status: 404 });
+  }
+
+  if (!employee.isActive) {
+    await settle("PUNCH_REJECTED", { rejectionReason: "Employee is inactive" });
+    return NextResponse.json(
+      { success: false, error: "Employee is inactive" },
+      { status: 400 }
+    );
+  }
+
+  // 6. Find open pay period
+  const payPeriod = await findOpenPayPeriod(employee.tenantId, employee.ruleSetId);
+  if (!payPeriod) {
+    await saveRejectedPunch({ employeeId: employee.id, timesheetId: null, punchType: "CLOCK_IN", source: "KIOSK", stateBefore: "OUT", rejectionReason: "No active pay period" });
+    await settle("PUNCH_REJECTED", { rejectionReason: "No active pay period" });
+    return NextResponse.json(
+      { success: false, error: "No active pay period" },
+      { status: 400 }
+    );
+  }
+
+  // 7. Find or create timesheet + get current state
   const timesheet = await findOrCreateTimesheet(employee.id, payPeriod.id);
   const stateBefore = await getCurrentPunchState(employee.id);
 
@@ -211,6 +263,7 @@ export async function POST(req: NextRequest) {
 
   if (activeTimesheetStatus === "LOCKED") {
     await saveRejectedPunch({ employeeId: employee.id, timesheetId: activeTimesheetId, punchType: "CLOCK_IN", source: "KIOSK", stateBefore, rejectionReason: "Timesheet is locked for this pay period" });
+    await settle("PUNCH_REJECTED", { rejectionReason: "Timesheet is locked for this pay period" });
     return NextResponse.json(
       { success: false, error: "Timesheet is locked for this pay period" },
       { status: 409 }
@@ -229,6 +282,10 @@ export async function POST(req: NextRequest) {
   const transition = validateTransition(stateBefore, punchType);
   if (!transition.valid) {
     await saveRejectedPunch({ employeeId: employee.id, timesheetId: activeTimesheetId, punchType, source: "KIOSK", stateBefore, rejectionReason: transition.error ?? "Invalid state transition" });
+    await settle("PUNCH_REJECTED", {
+      punchType,
+      rejectionReason: transition.error ?? "Invalid state transition",
+    });
     return NextResponse.json(
       { success: false, error: transition.error },
       { status: 409 }
@@ -274,27 +331,15 @@ export async function POST(req: NextRequest) {
     // 10. Rebuild segments
     await rebuildSegments(punch.timesheetId!, employee.ruleSet);
 
-    // 11. Mirror the punch into the unified scan log, so one table answers
-    //     "is this person in or out" for the Time Clock and the gate alike.
-    //
-    //     Deliberately outside the punch transaction and best-effort: the
-    //     timecard pipeline has already accepted this punch, and a failure to
-    //     write a reporting row must never cost an employee a recorded punch.
-    //     Direction mirrors the state machine rather than being re-derived —
-    //     WORK means on the clock, everything else (meal, break, out) does not.
-    try {
-      await recordScanEvent({
-        badgeCode: EmployeeCode,
-        stream: "TIME_CLOCK",
-        scanTime: punchTime,
-        deviceName: DeviceName ?? null,
-        warehouse: Warehouse ?? null,
-        punchId: punch.id,
-        direction: transition.newState === "WORK" ? "IN" : "OUT",
-      });
-    } catch (scanErr) {
-      console.error("scan_events mirror failed for punch", punch.id, scanErr);
-    }
+    // 12. Report the verdict back onto the tablet's transaction record.
+    //     The scan row keeps its own independently resolved direction; what is
+    //     written here is what THIS pipeline concluded, so the two can be
+    //     compared afterwards by detect-scan-discrepancies.
+    await settle("PUNCH_RECORDED", {
+      punchId: punch.id,
+      punchType,
+      stateAfter: transition.newState,
+    });
 
     return NextResponse.json({
       success: true,
@@ -304,6 +349,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal server error";
+    await settle("ERROR", { rejectionReason: message });
     return NextResponse.json(
       { success: false, error: message },
       { status: 500 }

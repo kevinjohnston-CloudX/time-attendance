@@ -25,6 +25,10 @@
       "schedule": "10 10 * * *"
     },
     {
+      "path": "/api/cron/detect-scan-discrepancies",
+      "schedule": "20 10 * * *"
+    },
+    {
       "path": "/api/cron/salary-hours",
       "schedule": "0 6 * * *"
     },

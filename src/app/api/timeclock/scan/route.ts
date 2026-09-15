@@ -89,6 +89,10 @@ export async function POST(req: NextRequest) {
       deviceName: DeviceName ?? null,
       warehouse: Warehouse ?? null,
       legacyScanType: LegacyScanType ?? null,
+      // A gate crossing never enters the timecard pipeline, so it is resolved
+      // the moment it is stored. Leaving these PENDING would have the
+      // discrepancy sweep chase a punch that was never meant to exist.
+      outcome: "NOT_APPLICABLE",
     });
 
     return NextResponse.json({

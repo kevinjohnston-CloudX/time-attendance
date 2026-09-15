@@ -88,20 +88,34 @@ model Punch {
   @@map("punches")
 }
 
-/// Append-only record of every badge scan a kiosk reports, from both the Time
-/// Clock flow and the Security gate, with the direction each one resolved to.
+/// The tablets' own transaction log: one row per scan a kiosk reports, from
+/// both the Time Clock flow and the Security gate.
 ///
-/// Deliberately NOT part of Punch. A gate scan is a building-access event, not
-/// paid time: it must never reach a timesheet, a work segment or a pay bucket.
-/// Time Clock scans appear here as well as in Punch, linked by `punchId`, so
-/// this one table can answer "is this person in or out" for either stream.
+/// <b>This table is deliberately independent of the timecard pipeline.</b> It
+/// records what a tablet did, not what the punch engine concluded, and it is
+/// written BEFORE that engine runs. That independence is the whole point — a
+/// witness that copies its testimony from the accused is worth nothing. It
+/// means this table can show:
+///   - a scan the pipeline refused (no pay period, locked timesheet, bad state)
+///   - a scan whose badge matches no employee
+///   - a scan the pipeline crashed on
+///   - a scan whose direction disagrees with the punch that came of it
+/// none of which leave any trace in `punches`, because in those cases no punch
+/// exists to leave one.
 ///
-/// How `direction` is decided differs by stream, and that difference matters:
-///   TIME_CLOCK — taken from the punch state machine's `stateAfter`. That engine
-///                already owns meals and breaks, so it is authoritative and no
-///                toggling happens here.
-///   SECURITY   — toggled from this employee's previous SECURITY event, because
-///                nothing else on this side of the system knows the gate state.
+/// `direction` is resolved by this table alone, by alternating from the
+/// employee's previous scan in the same stream. It is never copied from the
+/// punch engine. `timecardPunchType` / `timecardStateAfter` record what that
+/// engine decided, so the two can be compared — which is exactly what
+/// detect-scan-discrepancies does.
+///
+/// The two streams are tracked independently: someone can be inside the
+/// building (SECURITY = IN) while clocked out for a meal (TIME_CLOCK = OUT),
+/// so a single flag would be wrong for anyone on lunch.
+///
+/// Gate scans never become a Punch. A gate crossing is a building-access
+/// event, not paid time, and routing it into the timecard pipeline would
+/// double-count hours for anyone who badges a gate and then clocks in.
 ///
 /// Scans can arrive out of order: a tablet that was offline flushes its queue
 /// minutes or hours later. Direction is therefore resolved against the previous
@@ -122,8 +136,24 @@ model ScanEvent {
   deviceName String?
   warehouse  Int?
 
-  /// The Punch this scan also produced, when the Time Clock pipeline accepted it.
+  /// The Punch this scan produced, when the timecard pipeline accepted it.
+  /// Null whenever it did not — which is the interesting case.
   punchId String? @unique
+
+  /* ---- What the timecard pipeline made of this scan ----
+     Recorded for comparison, never used to decide `direction`. A row where
+     these disagree with `direction`, or where they are absent entirely, is
+     what detect-scan-discrepancies raises an Exception for. */
+
+  outcome ScanOutcome @default(PENDING)
+  /// The pipeline's own words when it refused the scan.
+  rejectionReason String?
+  /// CLOCK_IN / CLOCK_OUT / MEAL_START / … as the pipeline classified it.
+  timecardPunchType String?
+  /// WORK / OUT / MEAL / BREAK — the state the pipeline left the employee in.
+  /// WORK means on the clock; anything else means not. That is what gets
+  /// compared against this row's independently resolved `direction`.
+  timecardStateAfter String?
 
   /// What the legacy cajaapi call reported, when it reported anything. Recorded
   /// for reconciliation only — never used to decide `direction`.
@@ -146,6 +176,9 @@ model ScanEvent {
   @@index([employeeId, stream, scanTime(sort: Desc)])
   @@index([tenantId, stream, scanTime(sort: Desc)])
   @@index([badgeCode, scanTime(sort: Desc)])
+  /// Drives the discrepancy sweep, which looks for anything that is not a
+  /// clean PUNCH_RECORDED within a date window.
+  @@index([tenantId, outcome, scanTime(sort: Desc)])
   @@map("scan_events")
 }
 
