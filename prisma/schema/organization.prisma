@@ -148,6 +148,7 @@ model Employee {
   payCategory  PayCategory? @relation(fields: [payCategoryId], references: [id])
   payTypeLookup PayType?    @relation(fields: [payTypeId], references: [id])
   punches      Punch[]
+  scanEvents   ScanEvent[]
   timesheets   Timesheet[]
   leaveBalances    LeaveBalance[]
   leaveRequests    LeaveRequest[]

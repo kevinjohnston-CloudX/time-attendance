@@ -40,6 +40,22 @@ enum PunchSource {
   SYSTEM
 }
 
+/// Which kiosk flow a badge scan came from. The two are independent states:
+/// someone can be present in the building (SECURITY = IN) while clocked out
+/// for a meal (TIME_CLOCK = OUT), so they are never collapsed into one flag.
+enum ScanStream {
+  TIME_CLOCK
+  SECURITY
+}
+
+/// Which way a scan went. UNKNOWN is a real, storable answer — it is what an
+/// unmatched badge or an unresolvable scan gets, rather than a guessed IN.
+enum ScanDirection {
+  IN
+  OUT
+  UNKNOWN
+}
+
 enum SegmentType {
   WORK
   MEAL

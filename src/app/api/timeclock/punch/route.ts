@@ -7,6 +7,7 @@ import { computeRoundedTime, computeShiftExpiry } from "@/lib/utils/date";
 import { getCurrentPunchState, findOpenPayPeriod, saveRejectedPunch } from "@/lib/utils/punch-helpers";
 import { validateTransition } from "@/lib/state-machines/punch-state";
 import { timeclockScanSchema } from "@/lib/validators/punch.schema";
+import { recordScanEvent } from "@/lib/services/scan-event.service";
 import type { PunchType, PunchState } from "@prisma/client";
 
 function unauthorized() {
@@ -112,7 +113,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { EmployeeCode, ScanDateTime, DeviceName } = parsed.data;
+  const { EmployeeCode, ScanDateTime, DeviceName, Warehouse } = parsed.data;
 
   // 3. Look up employee by wmsId (badge QR code)
   const employee = await db.employee.findUnique({
@@ -272,6 +273,28 @@ export async function POST(req: NextRequest) {
 
     // 10. Rebuild segments
     await rebuildSegments(punch.timesheetId!, employee.ruleSet);
+
+    // 11. Mirror the punch into the unified scan log, so one table answers
+    //     "is this person in or out" for the Time Clock and the gate alike.
+    //
+    //     Deliberately outside the punch transaction and best-effort: the
+    //     timecard pipeline has already accepted this punch, and a failure to
+    //     write a reporting row must never cost an employee a recorded punch.
+    //     Direction mirrors the state machine rather than being re-derived —
+    //     WORK means on the clock, everything else (meal, break, out) does not.
+    try {
+      await recordScanEvent({
+        badgeCode: EmployeeCode,
+        stream: "TIME_CLOCK",
+        scanTime: punchTime,
+        deviceName: DeviceName ?? null,
+        warehouse: Warehouse ?? null,
+        punchId: punch.id,
+        direction: transition.newState === "WORK" ? "IN" : "OUT",
+      });
+    } catch (scanErr) {
+      console.error("scan_events mirror failed for punch", punch.id, scanErr);
+    }
 
     return NextResponse.json({
       success: true,

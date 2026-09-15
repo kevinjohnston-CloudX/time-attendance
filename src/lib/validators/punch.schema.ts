@@ -31,6 +31,26 @@ export const timeclockScanSchema = z.object({
   DeviceName: z.string().optional(),
 });
 
+/**
+ * Payload for the unified kiosk scan endpoint. Mirrors timeclockScanSchema's
+ * PascalCase so the Android client can build one body shape for both flows,
+ * and adds the two fields that endpoint needs:
+ *
+ *   Stream         — which kiosk flow this came from. Required: the two streams
+ *                    resolve direction differently and must never be conflated.
+ *   LegacyScanType — what cajaapi reported, recorded for reconciliation only.
+ *                    Never used to decide the stored direction.
+ */
+export const kioskScanSchema = z.object({
+  EmployeeCode: z.string().min(1, "EmployeeCode is required"),
+  ScanDateTime: z.string().min(1, "ScanDateTime is required"),
+  Stream: z.enum(["TIME_CLOCK", "SECURITY"]),
+  DeviceName: z.string().optional(),
+  Warehouse: z.number().int().optional(),
+  LegacyScanType: z.string().optional(),
+});
+
+export type KioskScanInput = z.infer<typeof kioskScanSchema>;
 export type TimeclockScanInput = z.infer<typeof timeclockScanSchema>;
 export type RecordPunchInput = z.infer<typeof recordPunchSchema>;
 export type RequestMissedPunchInput = z.infer<typeof requestMissedPunchSchema>;

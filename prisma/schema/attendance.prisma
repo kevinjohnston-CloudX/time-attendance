@@ -83,8 +83,70 @@ model Punch {
   correctedBy Punch?      @relation("PunchCorrection")
   payCode     PayCode?    @relation("PunchPayCode", fields: [payCodeId], references: [id])
   sourcedLeaveRequest LeaveRequest? @relation("SourcePunchLeaveRequest")
+  scanEvent   ScanEvent?
 
   @@map("punches")
+}
+
+/// Append-only record of every badge scan a kiosk reports, from both the Time
+/// Clock flow and the Security gate, with the direction each one resolved to.
+///
+/// Deliberately NOT part of Punch. A gate scan is a building-access event, not
+/// paid time: it must never reach a timesheet, a work segment or a pay bucket.
+/// Time Clock scans appear here as well as in Punch, linked by `punchId`, so
+/// this one table can answer "is this person in or out" for either stream.
+///
+/// How `direction` is decided differs by stream, and that difference matters:
+///   TIME_CLOCK — taken from the punch state machine's `stateAfter`. That engine
+///                already owns meals and breaks, so it is authoritative and no
+///                toggling happens here.
+///   SECURITY   — toggled from this employee's previous SECURITY event, because
+///                nothing else on this side of the system knows the gate state.
+///
+/// Scans can arrive out of order: a tablet that was offline flushes its queue
+/// minutes or hours later. Direction is therefore resolved against the previous
+/// event *by scan time*, not by arrival, and inserting a late scan re-resolves
+/// the events that follow it. See scan-event.service.ts.
+model ScanEvent {
+  id         String        @id @default(cuid())
+  /// Denormalised from the employee so a scan stays scoped even if unmatched.
+  tenantId   String?
+  employeeId String?
+  /// The badge exactly as the QR decoded, kept even when no employee matches —
+  /// an unmatched scan is precisely the one someone asks about later.
+  badgeCode  String
+  stream     ScanStream
+  direction  ScanDirection @default(UNKNOWN)
+  /// Instant of the scan, in UTC, converted from the kiosk's configured zone.
+  scanTime   DateTime
+  deviceName String?
+  warehouse  Int?
+
+  /// The Punch this scan also produced, when the Time Clock pipeline accepted it.
+  punchId String? @unique
+
+  /// What the legacy cajaapi call reported, when it reported anything. Recorded
+  /// for reconciliation only — never used to decide `direction`.
+  legacyScanType String?
+  /// True when `legacyScanType` was present and disagreed with `direction`.
+  /// These are the rows to look at when the two systems drift apart.
+  legacyMismatch Boolean @default(false)
+
+  /// Why a scan carries UNKNOWN, or could not be matched to an employee.
+  note String?
+
+  createdAt DateTime @default(now())
+
+  employee Employee? @relation(fields: [employeeId], references: [id])
+  punch    Punch?    @relation(fields: [punchId], references: [id])
+
+  /// Makes a retried post idempotent — the kiosk queue retries the same scan
+  /// until the server takes it, and a duplicate must not flip the direction.
+  @@unique([badgeCode, stream, scanTime])
+  @@index([employeeId, stream, scanTime(sort: Desc)])
+  @@index([tenantId, stream, scanTime(sort: Desc)])
+  @@index([badgeCode, scanTime(sort: Desc)])
+  @@map("scan_events")
 }
 
 model WorkSegment {
