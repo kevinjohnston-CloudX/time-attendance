@@ -89,6 +89,9 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       isActive: fd.get("status") !== "inactive",
       onLeave: fd.get("status") === "on-leave",
       wmsId: fd.get("wmsId") as string,
+      // Editing the barcode by hand marks it as an override, so the nightly
+      // Oracle sync leaves it alone instead of undoing the correction.
+      barcode: fd.get("barcode") as string,
       adpWorkerId: fd.get("adpWorkerId") as string,
       jobTitle: fd.get("jobTitle") as string,
       terminationReason: fd.get("terminationReason") as string,
@@ -261,6 +264,24 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
             <div>
               <label className={labelCls}>Badge ID (WMS)</label>
               <input name="wmsId" defaultValue={employee.wmsId ?? ""} placeholder="QR code badge ID" className={inputCls} />
+            </div>
+
+            <div>
+              <label className={labelCls}>Badge barcode</label>
+              <input
+                name="barcode"
+                defaultValue={employee.barcode ?? ""}
+                placeholder="10-digit code on the badge"
+                className={inputCls}
+              />
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                {employee.barcodeOverride
+                  ? "Set by hand — the Oracle sync will not overwrite this."
+                  : employee.barcodeSyncedAt
+                    ? `Synced from Oracle ${format(employee.barcodeSyncedAt, "MMM d, h:mm a")}.`
+                    : "Not yet synced. Only needed when the badge encodes a different number than the Badge ID."}
+                {" "}Kiosks accept either value.
+              </p>
             </div>
 
             <div>

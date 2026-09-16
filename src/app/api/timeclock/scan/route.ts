@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { findEmployeeIdentityByBadge } from "@/lib/utils/badge-lookup";
 import { kioskScanSchema } from "@/lib/validators/punch.schema";
 import { parseScanTime } from "@/lib/utils/scan-time";
 import { recordScanEvent } from "@/lib/services/scan-event.service";
@@ -64,10 +64,7 @@ export async function POST(req: NextRequest) {
   //    The gate sends its own UTC offset, so this is only a fallback — but a
   //    scan from a badge we cannot match still has to be stored, and storing
   //    it at the wrong instant would be worse than not storing it at all.
-  const employee = await db.employee.findUnique({
-    where: { wmsId: EmployeeCode },
-    select: { site: { select: { timezone: true } } },
-  });
+  const employee = await findEmployeeIdentityByBadge(EmployeeCode);
 
   let scanTime: Date;
   try {

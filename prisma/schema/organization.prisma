@@ -85,6 +85,20 @@ model Employee {
   employeeCode String
   adpWorkerId  String?  @unique  /// ADP Workforce Now worker ID for sync
   wmsId        String?  @unique  /// Warehouse Management System badge ID (QR code)
+
+  /// The value physically encoded on the badge, when it differs from wmsId.
+  ///
+  /// Two badge formats are in circulation: a 6-digit employee number (wmsId)
+  /// and a 10-digit barcode. The legacy API resolves the second to the first
+  /// via wmsusers.barcode -> framewrk.users.empid; this system had no such
+  /// step, so every 10-digit badge failed to match and its punches were never
+  /// recorded at all. Kiosk lookups now accept either.
+  barcode         String?   @unique
+  /// True when someone set the barcode by hand. The Oracle sync leaves these
+  /// alone, so a deliberate correction is not silently overwritten overnight.
+  barcodeOverride Boolean   @default(false)
+  /// When the Oracle sync last confirmed this barcode.
+  barcodeSyncedAt DateTime?
   role         Role     @default(EMPLOYEE)
   customRoleId String?
   supervisorId String?

@@ -228,7 +228,7 @@ export const updateEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateEmployeeInput) => {
     const {
-      employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, payTypeId, isActive, onLeave, wmsId, adpWorkerId,
+      employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, payTypeId, isActive, onLeave, wmsId, barcode, adpWorkerId,
       jobTitle, terminationReason, payType, payRate,
       phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
@@ -278,6 +278,13 @@ export const updateEmployee = withRBAC(
           ...(isActive !== undefined && { isActive }),
           ...(onLeave !== undefined && { onLeave }),
           ...(wmsId !== undefined && { wmsId }),
+          // A barcode set by hand is marked as an override so the Oracle sync
+          // leaves it alone — otherwise a deliberate correction would be undone
+          // on the next run and nobody would know why the badge stopped working.
+          ...(barcode !== undefined && {
+            barcode: barcode || null,
+            barcodeOverride: Boolean(barcode),
+          }),
           ...(adpWorkerId !== undefined && { adpWorkerId }),
           ...(jobTitle !== undefined && { jobTitle }),
           ...(terminationReason !== undefined && { terminationReason }),
@@ -330,6 +337,7 @@ export const updateEmployee = withRBAC(
     }
     if (jobTitle !== undefined) diff("Job Title", current.jobTitle, jobTitle);
     if (wmsId !== undefined) diff("Badge ID (WMS)", current.wmsId, wmsId);
+    if (barcode !== undefined) diff("Badge barcode", current.barcode, barcode);
     if (adpWorkerId !== undefined) diff("ADP Worker ID", current.adpWorkerId, adpWorkerId);
     if (terminationReason !== undefined) diff("Termination Reason", current.terminationReason, terminationReason);
     if (payType !== undefined) diff("Pay Type", current.payType, payType);

@@ -8,6 +8,7 @@ import { getCurrentPunchState, findOpenPayPeriod, saveRejectedPunch } from "@/li
 import { validateTransition } from "@/lib/state-machines/punch-state";
 import { timeclockScanSchema } from "@/lib/validators/punch.schema";
 import { recordScanEvent, resolveScanOutcome } from "@/lib/services/scan-event.service";
+import { findEmployeeByBadge } from "@/lib/utils/badge-lookup";
 import type { PunchType, PunchState } from "@prisma/client";
 
 function unauthorized() {
@@ -115,15 +116,10 @@ export async function POST(req: NextRequest) {
 
   const { EmployeeCode, ScanDateTime, DeviceName, Warehouse } = parsed.data;
 
-  // 3. Look up employee by wmsId (badge QR code)
-  const employee = await db.employee.findUnique({
-    where: { wmsId: EmployeeCode },
-    include: {
-      ruleSet: true,
-      site: true,
-      shift: { select: { startTime: true, endTime: true, workDays: true } },
-    },
-  });
+  // 3. Look up the employee by either badge form — the 6-digit employee
+  //    number or the 10-digit barcode. See badge-lookup for why both exist
+  //    and what matching only one of them used to cost.
+  const employee = await findEmployeeByBadge(EmployeeCode);
 
   // 4. Parse the scan time. Needed before anything else now, because the
   //    tablet's transaction is written down before any timecard work happens.

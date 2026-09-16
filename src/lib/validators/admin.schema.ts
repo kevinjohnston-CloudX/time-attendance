@@ -75,6 +75,7 @@ export const updateEmployeeSchema = z.object({
   isActive: z.boolean().optional(),
   onLeave: z.boolean().optional(),
   wmsId: nullableStr,
+  barcode: nullableStr,
   adpWorkerId: nullableStr,
   // Work info
   jobTitle: nullableStr,

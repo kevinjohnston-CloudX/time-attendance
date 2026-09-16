@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { findEmployeeIdentityByBadge } from "@/lib/utils/badge-lookup";
 import type { Prisma, ScanDirection, ScanOutcome, ScanStream } from "@prisma/client";
 
 /**
@@ -150,10 +151,8 @@ async function reresolveFollowing(
  * would leave nothing to answer with.
  */
 export async function recordScanEvent(input: RecordScanInput): Promise<RecordedScan> {
-  const employee = await db.employee.findUnique({
-    where: { wmsId: input.badgeCode },
-    select: { id: true, tenantId: true, user: { select: { name: true } } },
-  });
+  // Matches either badge form — see badge-lookup for why both exist.
+  const employee = await findEmployeeIdentityByBadge(input.badgeCode);
 
   const employeeName = employee?.user?.name?.trim() || null;
 
