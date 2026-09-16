@@ -35,6 +35,10 @@
     {
       "path": "/api/cron/daily-accruals",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/enqueue-sync-jobs",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

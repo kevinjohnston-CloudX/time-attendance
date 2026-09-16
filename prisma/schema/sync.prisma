@@ -1,0 +1,215 @@
+/// One execution of one leg of the VM sync service.
+///
+/// <b>Why this table exists at all.</b> The service runs unattended every 15
+/// minutes on a machine nobody logs into. Without a run log, "synced and
+/// nothing changed" and "has not run since Tuesday" look identical from
+/// inside CloudTime, and the second one is only noticed when somebody's badge
+/// stops working. Every run writes a row before it does any work, so a crash
+/// mid-run leaves a RUNNING row rather than no evidence.
+model SyncRun {
+  id       String        @id @default(cuid())
+  tenantId String
+  kind     SyncKind
+  status   SyncRunStatus @default(RUNNING)
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  /// Rows the VM sent (or, for SCHEDULE_PUSH, rows it collected).
+  received Int @default(0)
+  /// Rows that changed something.
+  applied  Int @default(0)
+  /// Rows that were understood and deliberately left alone — an unchanged
+  /// value, or a manual override the sync is not allowed to overwrite.
+  skipped  Int @default(0)
+  /// Rows that could not be applied: unknown employee, conflict, bad data.
+  rejected Int @default(0)
+
+  /// First fatal error, when the run failed outright.
+  error String?
+  /// Per-row detail — an array of { code, ref, message } objects. Capped by
+  /// the endpoint so one bad export cannot write a megabyte of JSON.
+  details Json?
+
+  /// Which host reported this run, from the VM's own configuration.
+  agent String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, kind, startedAt(sort: Desc)])
+  @@map("sync_runs")
+}
+
+/// An Oracle employee the sync has seen that CloudTime has no Employee for.
+///
+/// <b>Why the sync does not simply create them.</b> An Employee needs a site,
+/// a department, a rule set and a hire date; Oracle supplies none of those.
+/// The rule set is what computes overtime, so an invented one produces a
+/// timecard that looks complete and pays wrong — which is worse than no
+/// timecard, because nothing about it looks broken. These land here instead
+/// and an admin creates the real record, with the Oracle identity pre-filled.
+model RosterCandidate {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// framewrk.users.empid — the 6-digit employee number.
+  oracleEmpId  String
+  /// framewrk.users.usersid — the surrogate key schedule writes need.
+  oracleUsersId String?
+  barcode      String?
+  name         String?
+  /// Oracle's own department / site text, to help whoever triages this.
+  departmentName String?
+  siteName       String?
+  isActiveInOracle Boolean @default(true)
+
+  status RosterCandidateStatus @default(NEW)
+  /// Why it was ignored, when it was.
+  note   String?
+
+  /// How many badge scans have been refused because this person is missing.
+  /// Makes the triage list sort itself by who is actually being hurt.
+  failedScans Int @default(0)
+
+  firstSeenAt DateTime  @default(now())
+  lastSeenAt  DateTime  @updatedAt
+  resolvedAt  DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, oracleEmpId])
+  @@index([tenantId, status, failedScans(sort: Desc)])
+  @@map("roster_candidates")
+}
+
+/// One employee's schedule for one calendar day.
+///
+/// CloudTime had no per-day schedule before this — `Shift` is a recurring
+/// definition, not an assignment — so this is the table both sides sync
+/// against. Oracle's `dailyworkerschedule` is the other end.
+///
+/// <b>Conflicts are flagged, never resolved.</b> A schedule row gates gate
+/// admission: guessing wrong either locks someone out of the building or lets
+/// someone in who should not be there. When both sides have changed since the
+/// last pull the row goes to CONFLICT and stops syncing until a human says
+/// which one wins.
+model ScheduleDay {
+  id         String @id @default(cuid())
+  tenantId   String
+  employeeId String
+
+  /// The calendar date in the site's own zone. Stored as a bare date, not an
+  /// instant, so a site in another timezone cannot shift someone's schedule
+  /// onto the previous day.
+  workDate DateTime @db.Date
+
+  /// The shift definition this day was scheduled from, when it came from one.
+  shiftId     String?
+  isWorkday   Boolean @default(true)
+  /// HH:mm in the site's zone, matching how Shift stores its times.
+  startTime   String?
+  endTime     String?
+  mealMinutes Int?
+
+  /* ---- Oracle identity, needed to write back ---- */
+
+  /// Primary key of the Oracle `dailyworkerschedule` row, when one exists.
+  /// Absent on a day created in CloudTime that has not been pushed yet.
+  oracleScheduleId String?
+  /// framewrk.users.usersid — what Oracle keys schedule rows by. The barcode
+  /// export does not currently include it, which is why it is nullable.
+  oracleUsersId    String?
+
+  /* ---- Sync state ---- */
+
+  source    ScheduleSource    @default(ORACLE)
+  syncState ScheduleSyncState @default(SYNCED)
+
+  /// Hash of the Oracle row's scheduling fields as of the last pull. An
+  /// incoming row whose hash differs is a genuine Oracle-side change; one
+  /// whose hash matches is the same row arriving again and is not a conflict.
+  oracleFingerprint String?
+  oracleSyncedAt    DateTime?
+
+  /// What the two sides disagreed about, for whoever resolves it.
+  conflictNote String?
+
+  /// Who made the CloudTime-side edit, when it was a person.
+  updatedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift    Shift?   @relation(fields: [shiftId], references: [id])
+
+  /// One schedule row per person per day.
+  @@unique([employeeId, workDate])
+  @@unique([oracleScheduleId])
+  @@index([tenantId, workDate])
+  /// Finds the rows a pull must not overwrite, and the conflicts awaiting a
+  /// decision.
+  @@index([tenantId, syncState, updatedAt])
+  @@map("schedule_days")
+}
+
+/// One unit of work for the bridge.
+///
+/// <b>Why a queue and not a call.</b> Oracle sits on a network CloudTime
+/// cannot reach, and no port was opened inwards for this. So every exchange is
+/// started by the bridge: it asks what needs doing, does it, and posts the
+/// answer back over the same outbound connection. A job that nobody collects
+/// simply waits, which means the bridge being down delays a sync rather than
+/// failing one.
+///
+/// `kind` and the JSON payload/result are deliberately generic, so a new flow
+/// is a new kind and a new handler rather than new plumbing — the same shape
+/// the ticketing bridge already uses against this Oracle instance.
+model BridgeJob {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// "roster.sync", "schedule.pull" — see BRIDGE_JOB_KINDS.
+  kind    String
+  payload Json
+
+  /// PENDING | DONE | FAILED
+  status String @default("PENDING")
+  /// What the bridge sent back. Large for a roster, so it is cleared once
+  /// applied — the SyncRun keeps the outcome, and replaying stale rows would
+  /// be worse than having no copy of them.
+  result Json?
+  error  String?
+
+  attempts Int @default(0)
+
+  createdAt   DateTime  @default(now())
+  /// When the bridge answered.
+  answeredAt  DateTime?
+  /// When CloudTime finished acting on the answer.
+  processedAt DateTime?
+
+  /// The sync run this job produced, once it was applied.
+  syncRunId String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([status, kind, createdAt])
+  @@index([tenantId, kind, createdAt(sort: Desc)])
+  @@map("bridge_jobs")
+}
+
+/// Last contact from a bridge process.
+///
+/// A queue that nobody is collecting from looks exactly like a quiet queue.
+/// This is what tells the two apart, and what an alert on a stalled sync
+/// actually watches.
+model BridgeAgent {
+  id         String    @id @default(cuid())
+  name       String    @unique
+  lastSeenAt DateTime?
+  version    String?
+
+  @@map("bridge_agents")
+}

@@ -1,0 +1,11 @@
+{
+  "cloudTimeBaseUrl": "https://your-cloudtime-host",
+  "bridgeSecret": "SAME-VALUE-AS-BRIDGE_SECRET-IN-CLOUDTIME",
+  "pollSeconds": 60,
+  "oracle": {
+    "user": "READ-ONLY-USER",
+    "password": "ITS-PASSWORD",
+    "connectString": "10.11.0.13:1521/WMS_STBY",
+    "clientLibDir": "C:\oracle\instantclient_19_28"
+  }
+}

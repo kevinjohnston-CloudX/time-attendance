@@ -1,0 +1,16 @@
+{
+  "name": "cloudtime-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reads WMS Oracle on behalf of CloudTime. Outbound only.",
+  "main": "bridge.mjs",
+  "scripts": {
+    "start": "node bridge.mjs",
+    "once": "node bridge.mjs --once",
+    "dry-run": "node bridge.mjs --dry-run"
+  },
+  "dependencies": {
+    "oracledb": "^6.6.0"
+  }
+}

@@ -29,6 +29,10 @@ model Tenant {
   payCategories  PayCategory[]
   payTypes       PayType[]
   apiKeys        ApiKey[]
+  syncRuns         SyncRun[]
+  rosterCandidates RosterCandidate[]
+  scheduleDays     ScheduleDay[]
+  bridgeJobs       BridgeJob[]
 
   @@map("tenants")
 }
@@ -163,6 +167,7 @@ model Employee {
   payTypeLookup PayType?    @relation(fields: [payTypeId], references: [id])
   punches      Punch[]
   scanEvents   ScanEvent[]
+  scheduleDays ScheduleDay[]
   timesheets   Timesheet[]
   leaveBalances    LeaveBalance[]
   leaveRequests    LeaveRequest[]
@@ -232,6 +237,7 @@ model Shift {
 
   tenant    Tenant     @relation(fields: [tenantId], references: [id])
   employees Employee[]
+  scheduleDays ScheduleDay[]
 
   @@unique([tenantId, name])
   @@map("shifts")

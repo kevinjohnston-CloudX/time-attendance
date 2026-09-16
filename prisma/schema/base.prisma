@@ -189,3 +189,63 @@ enum AuditEntityType {
   ROLE
   PTO_POLICY
 }
+
+/* ---------------------------------------------------------------------------
+   Oracle sync service
+   -------------------------------------------------------------------------*/
+
+/// Which leg of the VM sync service a run belongs to. The three are recorded
+/// separately because they fail independently — schedules can stop flowing
+/// while the roster keeps arriving, and a single "last sync" timestamp would
+/// hide that.
+enum SyncKind {
+  /// Oracle employee + barcode data into CloudTime.
+  ROSTER
+  /// Oracle `dailyworkerschedule` rows into CloudTime.
+  SCHEDULE_PULL
+}
+
+/// Outcome of one sync run. PARTIAL is the common real-world case: most rows
+/// applied, some were refused or conflicted, and the run itself did not fail.
+enum SyncRunStatus {
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+}
+
+/// Which system last asserted a schedule row.
+enum ScheduleSource {
+  ORACLE
+  CLOUDTIME
+}
+
+/// How a schedule row stands against Oracle.
+///
+/// There is no "pushed" state because CloudTime cannot write to Oracle at all:
+/// the bridge reaches a read-only standby (WMS_STBY) and Oracle refuses writes
+/// inside a read-only transaction. A CloudTime-side edit therefore lives here
+/// and nowhere else, which is precisely why it has to be marked — otherwise
+/// the next pull would silently overwrite it with Oracle's older value.
+enum ScheduleSyncState {
+  /// Matches Oracle as of the last pull.
+  SYNCED
+  /// Edited in CloudTime. Oracle still holds its own value and cannot be told.
+  /// Protected from being overwritten by a pull that carries the same Oracle
+  /// value we already knew about.
+  LOCAL_EDIT
+  /// Oracle changed this day too, after CloudTime had edited it. Deliberately
+  /// NOT resolved — a schedule row gates gate admission, so the system flags
+  /// the disagreement and a human picks the winner.
+  CONFLICT
+}
+
+/// State of an Oracle employee the sync has seen but CloudTime does not have.
+enum RosterCandidateStatus {
+  /// Seen, not yet triaged.
+  NEW
+  /// Deliberately not wanted in CloudTime (contractor, other site, duplicate).
+  IGNORED
+  /// An Employee now exists for this empId.
+  RESOLVED
+}
