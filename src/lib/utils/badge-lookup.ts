@@ -17,12 +17,35 @@ import type { Prisma } from "@prisma/client";
  *
  * — and this system did not. Every 10-digit badge therefore matched nothing
  * and its punches were never recorded, which on 2026-09-15 was 247 distinct
- * badges and roughly 40% of all time clock scans. Those employees' timecards
- * were simply missing the punches.
+ * badges and roughly 40% of all time clock scans.
  *
- * Matching on either column closes that, and the barcode column is kept
- * current by the Oracle sync service.
+ * <p><b>And why the leading zeros matter.</b> The tablets zero-pad the barcode
+ * to ten characters; Oracle stores it unpadded. So `0851064226` on the badge is
+ * `851064226` in `wmsusers`. Eleven of the failing badges differed by nothing
+ * but that padding, so a scan is matched against both its literal value and its
+ * zero-stripped form. The stored value stays exactly as Oracle has it — the
+ * normalising happens here, at the point of comparison, rather than by
+ * rewriting what the source system said.
  */
+
+/** A scanned code as itself, and with any leading zeros removed. */
+function badgeCandidates(code: string): string[] {
+  const trimmed = code.trim();
+  const stripped = trimmed.replace(/^0+/, "");
+  // A code that is all zeros strips to nothing; keep the original in that case.
+  return stripped && stripped !== trimmed ? [trimmed, stripped] : [trimmed];
+}
+
+/**
+ * wmsId is matched literally — employee numbers are not zero-padded, so
+ * stripping there would let "0123456" match employee 123456, which is a
+ * different person's timecard.
+ */
+function badgeWhere(code: string): Prisma.EmployeeWhereInput {
+  const candidates = badgeCandidates(code);
+  return { OR: [{ wmsId: code.trim() }, { barcode: { in: candidates } }] };
+}
+
 export const KIOSK_EMPLOYEE_SELECT = {
   ruleSet: true,
   site: true,
@@ -32,7 +55,7 @@ export const KIOSK_EMPLOYEE_SELECT = {
 /** Full employee record for the punch pipeline, matched on either badge form. */
 export async function findEmployeeByBadge(code: string) {
   return db.employee.findFirst({
-    where: { OR: [{ wmsId: code }, { barcode: code }] },
+    where: badgeWhere(code),
     include: KIOSK_EMPLOYEE_SELECT,
   });
 }
@@ -40,7 +63,7 @@ export async function findEmployeeByBadge(code: string) {
 /** Minimal lookup for recording a scan — no rule set, shift or site needed. */
 export async function findEmployeeIdentityByBadge(code: string) {
   return db.employee.findFirst({
-    where: { OR: [{ wmsId: code }, { barcode: code }] },
+    where: badgeWhere(code),
     select: {
       id: true,
       tenantId: true,
