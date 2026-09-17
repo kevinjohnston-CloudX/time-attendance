@@ -17,21 +17,50 @@ Every cycle (default 60s):
 2. Run one read-only Oracle query per job
 3. `POST /api/bridge/jobs/<id>` — hand back the answer
 
-Two job kinds:
+Three job kinds:
 
-| kind | what it returns |
-|---|---|
-| `roster.sync` | every employee with their barcode, from `framewrk.users` joined to `wmsusers` |
-| `schedule.pull` | `dailyworkerschedule` rows for a date window |
+| kind | what it returns | cadence |
+|---|---|---|
+| `roster.sync` | every employee with their barcode, name, department and terminated flag | every 15 min |
+| `schedule.pull` | `dailyworkerschedule` rows for a date window, with the shift's times | every 15 min |
+| `gatestate.pull` | the latest `timestationscanlog` row per badge | once a day |
 
-CloudTime queues the jobs on a 15-minute cron. A job nobody collects simply
-waits, so the bridge being down **delays** a sync rather than failing one.
+CloudTime queues the jobs on a cron. A job nobody collects simply waits, so the
+bridge being down **delays** a sync rather than failing one.
+
+`gatestate.pull` is a seed, not a feed: it only ever writes for a badge that has
+no security scan in CloudTime at all. That is what stops the first gate scan
+after go-live being forced to resolve IN regardless of which way the person was
+actually walking.
+
+## Where the SQL comes from
+
+Every query is derived from SQL the legacy TimeClock API runs against this same
+database in production today —
+`Wms.TimeClock.Api/Infrastructure/Wms.TimeClock.Repository.Oracle/EmployeeRepository.cs`.
+Those column names are serving live kiosks, so they are facts rather than
+guesses, and where an earlier guess disagreed with them the guess lost.
+
+Two consequences worth knowing before reading the queries:
+
+- **Oracle's daily schedule is a yes/no flag, not a set of times.** The only
+  production reference to `dailyworkerschedule` is one left join in `GetInfo`
+  and it uses three columns: `wmsuserid`, `scheduledate`, `active`. Shift times
+  live in `shiftsbywarehouse`, reached through `workerschedule.shiftid`. So a
+  schedule row's start/end describe the person's assigned shift, and
+  `mealMinutes` has no Oracle source at all and stays null.
+- **One person can have several `workerschedule` rows and several badges.**
+  `GetInfo` orders by shift and takes the first row, which is how we know. Every
+  query therefore picks one row per person deterministically with `ROW_NUMBER`,
+  so a sync cannot make somebody's badge appear to flip back and forth.
 
 ## One direction only
 
 The Oracle connection is a **read-only standby** (`WMS_STBY`), and the bridge
-opens every transaction with `SET TRANSACTION READ ONLY` so this holds even if
-it is ever pointed at a login that could write.
+opens every connection with `SET TRANSACTION READ ONLY` so this holds even if it
+is ever pointed at a login that could write. That happens in `withConnection`,
+not in each handler — a future job kind cannot drop the guarantee by forgetting
+to ask for it.
 
 CloudTime therefore cannot push schedule changes back to WMS. A schedule edited
 in CloudTime is marked `LOCAL_EDIT` and stays there; the next pull will not
@@ -58,7 +87,8 @@ Fill in:
 - `oracle.connectString` — e.g. `10.11.0.13:1521/WMS_STBY`
 - `oracle.clientLibDir` — the Instant Client folder, for thick mode. Required
   for Oracle servers older than 12.1, which the thin driver refuses with
-  NJS-138
+  NJS-138. **Windows paths need doubled backslashes** — this file is JSON and
+  the bridge parses it as its first act.
 
 ### Check it before running it
 
@@ -66,13 +96,15 @@ Fill in:
 node bridge.mjs --dry-run
 ```
 
-Queries Oracle and prints what it found. Sends nothing anywhere. Use this to
-confirm the SQL before any data reaches CloudTime.
+Queries Oracle and prints what it found. Sends nothing anywhere. Each of the
+three queries runs independently and reports its own failure, so an `ORA-00904`
+names the one column Oracle does not have instead of aborting the whole pass.
 
-> **The `schedule.pull` SQL is a placeholder.** The `dailyworkerschedule`
-> column names in `bridge.mjs` are a guess and `--dry-run` will most likely
-> fail on it. Correct them against the real table first. `roster.sync` mirrors
-> what the legacy TimeClock API has always done and should work as written.
+**Do this first, and read the sample rows.** The queries are derived from live
+legacy SQL, but no one here can see the database: confirm that `roster.sync`
+returns roughly the headcount you expect, that `schedule.pull` returns non-zero
+rows with sane `startTime`/`endTime`, and that `gatestate.pull` returns IN/OUT
+values rather than nulls.
 
 Then one real cycle:
 
@@ -83,14 +115,16 @@ node bridge.mjs --once
 ### Scheduled task
 
 ```powershell
-schtasks /create /tn "CloudTime Bridge" /sc onstart /ru SYSTEM ^
-  /tr "node C:\cloudtime-bridge\bridge.mjs"
+powershell -ExecutionPolicy Bypass -File .\install-cloudtime-bridge.ps1
 ```
 
-Unlike the PowerShell approach, there is nothing account-scoped here — the
-secrets live in `config.json`, so the task can run as any account that can read
-that file. Restrict the file's ACL accordingly; it holds the Oracle password in
-plain text, the same as the ticketing bridge's config does.
+Registers `CloudTime-wms-bridge` to start at boot as SYSTEM and restart if it
+dies, and restricts `config.json` to SYSTEM and Administrators — it holds the
+Oracle password and the bridge secret in plain text, the same as the ticketing
+bridge's config does. The installer validates `config.json` first, so a
+malformed file fails at install time rather than as a silent boot restart loop.
+
+Uninstall: same script with `-Uninstall`.
 
 ## Checking on it
 
@@ -103,3 +137,14 @@ plain text, the same as the ticketing bridge's config does.
   restarted bridge starts on current data rather than a backlog of stale
   windows.
 - `logs/bridge-YYYY-MM.log` next to the script.
+
+## Rotating the secret
+
+Change `BRIDGE_SECRET` in CloudTime, mirror it in `config.json`, then restart:
+
+```powershell
+Stop-ScheduledTask CloudTime-wms-bridge; Start-ScheduledTask CloudTime-wms-bridge
+```
+
+There is no overlap window — the bridge gets 401s between the two changes, and
+jobs queued in that gap are reaped after 90 minutes. Rotate at a quiet hour.

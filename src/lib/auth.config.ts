@@ -20,6 +20,11 @@ export const authConfig = {
         !nextUrl.pathname.startsWith("/api/auth") &&
         !nextUrl.pathname.startsWith("/api/timeclock") &&
         !nextUrl.pathname.startsWith("/api/cron") &&
+        // The WMS bridge is a process on a VM, not a browser session. It
+        // authenticates with the BRIDGE_SECRET bearer token in bridgeAuthed;
+        // without this exemption the session middleware 307s it to /login and
+        // it receives an HTML page where it expects JSON.
+        !nextUrl.pathname.startsWith("/api/bridge") &&
         !nextUrl.pathname.startsWith("/api/mobile") &&
         !nextUrl.pathname.startsWith("/api/external");
 

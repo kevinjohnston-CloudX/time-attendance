@@ -1,10 +1,14 @@
 import { db } from "@/lib/db";
-import { Prisma } from "@prisma/client";
+import { Prisma, type SyncKind } from "@prisma/client";
 import { applyRosterBatch, type RosterRow } from "@/lib/services/roster-sync.service";
 import {
   applyScheduleBatch,
   type OracleScheduleRow,
 } from "@/lib/services/schedule-sync.service";
+import {
+  applyGateStateBatch,
+  type OracleGateScanRow,
+} from "@/lib/services/gate-state-sync.service";
 import {
   startSyncRun,
   finishSyncRun,
@@ -28,7 +32,22 @@ export const BRIDGE_AGENT = "cloudtime-wms";
 
 export const ROSTER_SYNC_KIND = "roster.sync";
 export const SCHEDULE_PULL_KIND = "schedule.pull";
-export const BRIDGE_JOB_KINDS = [ROSTER_SYNC_KIND, SCHEDULE_PULL_KIND] as const;
+export const GATE_STATE_PULL_KIND = "gatestate.pull";
+export const BRIDGE_JOB_KINDS = [
+  ROSTER_SYNC_KIND,
+  SCHEDULE_PULL_KIND,
+  GATE_STATE_PULL_KIND,
+] as const;
+
+/**
+ * How far back the gate-state seed looks for a badge's last scan.
+ *
+ * <p>Long enough to cover someone returning from a week off, short enough that
+ * the baseline is a plausible description of where they are now. A badge whose
+ * last gate scan is older than this is left unseeded and resolves IN on its
+ * next scan, which is the right answer for someone who has not been on site.
+ */
+export const GATE_STATE_DAYS = 14;
 
 /**
  * How long a schedule window to ask for. Backwards far enough to pick up a
@@ -94,6 +113,25 @@ export function scheduleWindow(): { dateFrom: string; dateTo: string } {
   };
 }
 
+/**
+ * Whether the gate-state seed is worth queueing for this tenant right now.
+ *
+ * <p>Unlike the roster and the schedule, this one is not a feed. It only ever
+ * writes for badges that have no security history at all, so once a badge is
+ * live the job does nothing for it forever. Running it on the 15-minute
+ * cadence would mean a full `timestationscanlog` scan four times an hour to
+ * apply nothing. Once a day picks up newly created employees and costs
+ * essentially nothing the rest of the time.
+ */
+export async function gateStateSeedDue(tenantId: string): Promise<boolean> {
+  const since = new Date(Date.now() - 24 * 60 * 60_000);
+  const recent = await db.syncRun.findFirst({
+    where: { tenantId, kind: "GATE_STATE", startedAt: { gte: since } },
+    select: { id: true },
+  });
+  return !recent;
+}
+
 export async function reapStaleJobs(): Promise<number> {
   const cutoff = new Date(Date.now() - STALE_JOB_MINUTES * 60_000);
   const result = await db.bridgeJob.updateMany({
@@ -143,6 +181,13 @@ export async function applyBridgeAnswer(
     );
   }
 
+  if (kind === GATE_STATE_PULL_KIND) {
+    const rows = extractRows<OracleGateScanRow>(result, "scans");
+    return runAndRecord(jobId, tenantId, "GATE_STATE", () =>
+      applyGateStateBatch(tenantId, rows),
+    );
+  }
+
   throw new Error(`Unknown bridge job kind: ${kind}`);
 }
 
@@ -155,7 +200,7 @@ function extractRows<T>(result: unknown, key: string): T[] {
 async function runAndRecord(
   jobId: string,
   tenantId: string,
-  syncKind: "ROSTER" | "SCHEDULE_PULL",
+  syncKind: SyncKind,
   work: () => Promise<SyncTally>,
 ): Promise<ApplyOutcome> {
   const runId = await startSyncRun(tenantId, syncKind, BRIDGE_AGENT);

@@ -203,6 +203,10 @@ enum SyncKind {
   ROSTER
   /// Oracle `dailyworkerschedule` rows into CloudTime.
   SCHEDULE_PULL
+  /// The last security-gate scan per badge, from Oracle `timestationscanlog`.
+  /// Seeds the IN/OUT baseline that `scan_events` alternates from, so the
+  /// first gate scan after go-live is not forced to resolve IN.
+  GATE_STATE
 }
 
 /// Outcome of one sync run. PARTIAL is the common real-world case: most rows

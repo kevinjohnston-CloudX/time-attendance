@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
+  GATE_STATE_DAYS,
+  GATE_STATE_PULL_KIND,
   ROSTER_SYNC_KIND,
   SCHEDULE_PULL_KIND,
   enqueueBridgeJob,
+  gateStateSeedDue,
   scheduleWindow,
 } from "@/lib/services/bridge.service";
 
@@ -41,6 +44,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const schedule = await enqueueBridgeJob(tenant.id, SCHEDULE_PULL_KIND, window);
     queued.push({ tenant: tenant.slug, kind: SCHEDULE_PULL_KIND, created: schedule.created });
+
+    // Daily rather than every pass — see gateStateSeedDue.
+    if (await gateStateSeedDue(tenant.id)) {
+      const gate = await enqueueBridgeJob(tenant.id, GATE_STATE_PULL_KIND, {
+        days: GATE_STATE_DAYS,
+      });
+      queued.push({ tenant: tenant.slug, kind: GATE_STATE_PULL_KIND, created: gate.created });
+    }
   }
 
   return NextResponse.json({

@@ -54,10 +54,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "result or error required" }, { status: 400 });
   }
 
-  // Claim the job before doing the work. Two bridges, or one bridge retrying,
-  // then find it no longer PENDING and stop rather than applying twice.
-  await db.bridgeJob.update({
-    where: { id: job.id },
+  // Claim the job before doing the work. Two bridges, or one bridge retrying
+  // after a timeout while the first request is still running, then find it no
+  // longer PENDING and stop rather than applying twice.
+  //
+  // The status check above is not enough on its own: both callers can read
+  // PENDING before either writes. The claim has to be the conditional write
+  // itself, and `count === 0` is how we learn somebody else got there first.
+  const claimed = await db.bridgeJob.updateMany({
+    where: { id: job.id, status: "PENDING" },
     data: {
       status: "DONE",
       result: body.result as object,
@@ -65,6 +70,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       attempts: { increment: 1 },
     },
   });
+  if (claimed.count === 0) {
+    return NextResponse.json({ ok: true, note: "already answered" });
+  }
 
   try {
     const outcome = await applyBridgeAnswer(job.id, job.tenantId, job.kind, body.result);

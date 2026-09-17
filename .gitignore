@@ -46,3 +46,9 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+# Bridge runtime files: config.json holds the Oracle password and the bridge
+# secret in plain text, and logs hold employee badge data. Neither belongs in
+# git, and the install instructions have people create them inside this tree.
+tools/*/config.json
+tools/*/logs/

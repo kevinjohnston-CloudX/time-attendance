@@ -3,7 +3,7 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { getEffectiveRole } from "@/lib/rbac/check-permission";
-import { Users, Building2, FolderOpen, Calendar, Settings, FileText, RefreshCw, SlidersHorizontal, CalendarClock } from "lucide-react";
+import { Users, Building2, FolderOpen, Calendar, Settings, FileText, RefreshCw, SlidersHorizontal, CalendarClock, DatabaseZap } from "lucide-react";
 
 const adminCards = [
   { label: "Employees", href: "/admin/employees", icon: Users, perm: "EMPLOYEE_MANAGE" },
@@ -13,6 +13,7 @@ const adminCards = [
   { label: "PTO Policies", href: "/admin/pto-policies", icon: CalendarClock, perm: "RULES_MANAGE" },
   { label: "Rule Sets", href: "/admin/rules", icon: Settings, perm: "RULES_MANAGE" },
   { label: "ADP Sync", href: "/admin/adp", icon: RefreshCw, perm: "EMPLOYEE_MANAGE" },
+  { label: "WMS Sync", href: "/admin/wms-sync", icon: DatabaseZap, perm: "EMPLOYEE_MANAGE" },
   { label: "Audit Log", href: "/admin/audit", icon: FileText, perm: "AUDIT_VIEW" },
   { label: "Company Settings", href: "/admin/settings", icon: SlidersHorizontal, perm: "PAY_PERIOD_MANAGE" },
 ] as const;

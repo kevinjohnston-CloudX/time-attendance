@@ -8,8 +8,9 @@ import { SyncTally } from "@/lib/services/sync-run.service";
  * needs a site, a department, a rule set and a hire date, and Oracle supplies
  * none of them. The rule set is what computes overtime, so an invented one
  * produces a timecard that looks complete and pays wrong — worse than no
- * timecard, because nothing about it looks broken. Unknown employees are
- * staged as RosterCandidate rows for a human to create properly.
+ * timecard, because nothing about it looks broken. Unknown employees who are
+ * actually being turned away at a kiosk are staged as RosterCandidate rows for
+ * a human to create properly.
  *
  * <p><b>And it does not flip isActive.</b> Deactivating someone stops them
  * clocking in, which costs them pay and is discovered at the gate; activating
@@ -17,6 +18,14 @@ import { SyncTally } from "@/lib/services/sync-run.service";
  * bad enough that a 15-minute unattended job should not do either on its own
  * authority, so a disagreement is reported and left for a person. Flip
  * APPLY_ACTIVE_STATE once the feed has been trusted for a few weeks.
+ *
+ * <p><b>Why this reads everything up front.</b> `framewrk.users` returns about
+ * 18,000 rows and CloudTime has a few hundred employees, so the overwhelming
+ * majority of a batch matches nothing. An earlier version issued two or three
+ * queries per row, which is ~50,000 round trips for one sync — it would not
+ * finish inside a serverless request. Everything needed to decide is loaded in
+ * three queries and the per-row work happens in memory; only genuine changes
+ * are written.
  */
 
 /** See the note above before changing this. */
@@ -45,12 +54,72 @@ function normaliseBarcode(raw: string | null | undefined): string | null {
   return trimmed;
 }
 
+/**
+ * Oracle's user table carries sentinel and test rows — `-1`, `0`, `1` all
+ * appear — alongside real employee numbers. They match nobody and would only
+ * pad the review queue with rows no one can act on.
+ */
+function isPlausibleEmpId(empId: string): boolean {
+  if (!/^\d+$/.test(empId)) return false;
+  return Number(empId) > 0 && empId.length >= 4;
+}
+
 export async function applyRosterBatch(
   tenantId: string,
   rows: RosterRow[],
 ): Promise<SyncTally> {
   const tally = new SyncTally();
   tally.received = rows.length;
+
+  /* ---- Everything needed to decide, in three queries ---- */
+
+  const employees = await db.employee.findMany({
+    where: { tenantId, wmsId: { not: null } },
+    select: {
+      id: true,
+      wmsId: true,
+      barcode: true,
+      barcodeOverride: true,
+      isActive: true,
+      userId: true,
+      user: { select: { name: true } },
+    },
+  });
+
+  const byWmsId = new Map(employees.map((e) => [e.wmsId as string, e]));
+  // Who already holds each barcode, so a clash is caught without asking the
+  // database per row — the unique index would otherwise throw a 500.
+  const barcodeOwner = new Map(
+    employees.filter((e) => e.barcode).map((e) => [e.barcode as string, e]),
+  );
+
+  // How many scans each unmatched badge has already had refused. This is what
+  // sorts the review queue by who is actually being hurt, and — since a badge
+  // nobody has ever scanned costs nobody anything — what decides whether a
+  // missing employee is worth staging at all.
+  const refusedByBadge = new Map<string, number>();
+  const refused = await db.scanEvent.groupBy({
+    by: ["badgeCode"],
+    where: { outcome: "NO_EMPLOYEE" },
+    _count: { _all: true },
+  });
+  for (const row of refused) {
+    refusedByBadge.set(row.badgeCode, row._count._all);
+  }
+
+  /** A badge as Oracle stores it, or zero-padded the way the tablets send it. */
+  const refusedCount = (barcode: string | null, empId: string): number =>
+    Math.max(
+      refusedByBadge.get(empId) ?? 0,
+      barcode ? refusedByBadge.get(barcode) ?? 0 : 0,
+      barcode ? refusedByBadge.get(barcode.padStart(10, "0")) ?? 0 : 0,
+    );
+
+  /* ---- Decide in memory, write only what changed ---- */
+
+  const resolvedEmpIds: string[] = [];
+  let ignoredJunk = 0;
+  let unmatchedUnseen = 0;
 
   for (const row of rows) {
     const empId = (row.empId ?? "").trim();
@@ -66,22 +135,31 @@ export async function applyRosterBatch(
     // employee number match as a barcode for somebody else.
     const usableBarcode = barcode && barcode !== empId ? barcode : null;
 
-    const employee = await db.employee.findFirst({
-      where: { tenantId, wmsId: empId },
-      select: {
-        id: true,
-        barcode: true,
-        barcodeOverride: true,
-        isActive: true,
-        userId: true,
-        user: { select: { name: true } },
-      },
-    });
+    const employee = byWmsId.get(empId);
 
     if (!employee) {
-      await stageCandidate(tenantId, row, empId, usableBarcode);
+      if (!isPlausibleEmpId(empId)) {
+        ignoredJunk++;
+        continue;
+      }
+
+      const failedScans = refusedCount(usableBarcode, empId);
+      if (failedScans === 0) {
+        // Exists in Oracle, unknown here, and has never tried to scan. Almost
+        // all of the ~18,000 rows land here: office staff, historical records,
+        // other sites. Staging them would bury the handful of people who are
+        // standing at a kiosk being turned away.
+        unmatchedUnseen++;
+        continue;
+      }
+
+      await stageCandidate(tenantId, row, empId, usableBarcode, failedScans);
       tally.rejected++;
-      tally.note("NO_EMPLOYEE", empId, "No CloudTime employee — staged for review");
+      tally.note(
+        "NO_EMPLOYEE",
+        empId,
+        `No CloudTime employee — ${failedScans} scan(s) already refused, staged for review`,
+      );
       continue;
     }
 
@@ -94,12 +172,8 @@ export async function applyRosterBatch(
       } else if (employee.barcode === usableBarcode) {
         changes.barcodeSyncedAt = new Date();
       } else {
-        // The unique index would throw; a clear rejection beats a 500.
-        const taken = await db.employee.findFirst({
-          where: { barcode: usableBarcode, id: { not: employee.id } },
-          select: { wmsId: true },
-        });
-        if (taken) {
+        const taken = barcodeOwner.get(usableBarcode);
+        if (taken && taken.id !== employee.id) {
           tally.rejected++;
           tally.note(
             "BARCODE_CONFLICT",
@@ -110,6 +184,10 @@ export async function applyRosterBatch(
         }
         changes.barcode = usableBarcode;
         changes.barcodeSyncedAt = new Date();
+        // Keep the in-memory view honest for the rest of this batch.
+        if (employee.barcode) barcodeOwner.delete(employee.barcode);
+        barcodeOwner.set(usableBarcode, employee);
+        employee.barcode = usableBarcode;
       }
     }
 
@@ -128,14 +206,12 @@ export async function applyRosterBatch(
 
     /* ---- name ---- */
     const name = (row.name ?? "").trim();
+    let nameChanged = false;
     if (name && name !== employee.user.name) {
       await db.user.update({ where: { id: employee.userId }, data: { name } });
       tally.note("NAME_UPDATED", empId, `${employee.user.name ?? "(blank)"} -> ${name}`);
-      changes.__nameChanged = true;
+      nameChanged = true;
     }
-
-    const nameChanged = Boolean(changes.__nameChanged);
-    delete changes.__nameChanged;
 
     const substantive = Object.keys(changes).filter((k) => k !== "barcodeSyncedAt");
 
@@ -146,11 +222,30 @@ export async function applyRosterBatch(
     if (substantive.length || nameChanged) tally.applied++;
     else tally.skipped++;
 
-    // Somebody who was staged as missing and now exists stops being pending.
+    resolvedEmpIds.push(empId);
+  }
+
+  // Anyone who was staged as missing and now exists stops being pending —
+  // one statement for the whole batch rather than one per row.
+  if (resolvedEmpIds.length) {
     await db.rosterCandidate.updateMany({
-      where: { tenantId, oracleEmpId: empId, status: "NEW" },
+      where: { tenantId, oracleEmpId: { in: resolvedEmpIds }, status: "NEW" },
       data: { status: "RESOLVED", resolvedAt: new Date() },
     });
+  }
+
+  // Counted, not listed: these are the normal bulk of an Oracle roster and
+  // saying so once is information, while 17,000 detail lines would not be.
+  tally.skipped += ignoredJunk + unmatchedUnseen;
+  if (unmatchedUnseen) {
+    tally.note(
+      "UNMATCHED_NOT_STAGED",
+      "-",
+      `${unmatchedUnseen} Oracle employees unknown to CloudTime with no refused scans — not staged`,
+    );
+  }
+  if (ignoredJunk) {
+    tally.note("JUNK_EMPID", "-", `${ignoredJunk} rows with sentinel or malformed empIds ignored`);
   }
 
   return tally;
@@ -166,17 +261,8 @@ async function stageCandidate(
   row: RosterRow,
   empId: string,
   barcode: string | null,
+  failedScans: number,
 ): Promise<void> {
-  let failedScans = 0;
-  if (barcode) {
-    failedScans = await db.scanEvent.count({
-      where: {
-        outcome: "NO_EMPLOYEE",
-        badgeCode: { in: [barcode, barcode.padStart(10, "0")] },
-      },
-    });
-  }
-
   const data = {
     oracleUsersId: row.usersId?.trim() || null,
     barcode,
