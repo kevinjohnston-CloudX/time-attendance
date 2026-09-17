@@ -229,7 +229,7 @@ export const updateEmployee = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: UpdateEmployeeInput) => {
     const {
       employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, payTypeId, isActive, onLeave, wmsId, barcode, adpWorkerId,
-      jobTitle, terminationReason, payType, payRate,
+      adjustedHireDate, jobTitle, terminationReason, payType, payRate,
       phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
       address1, address2, city, state, country, zipCode,
@@ -286,6 +286,7 @@ export const updateEmployee = withRBAC(
             barcodeOverride: Boolean(barcode),
           }),
           ...(adpWorkerId !== undefined && { adpWorkerId }),
+          ...(adjustedHireDate !== undefined && { adjustedHireDate: adjustedHireDate ? parseISO(adjustedHireDate) : null }),
           ...(jobTitle !== undefined && { jobTitle }),
           ...(terminationReason !== undefined && { terminationReason }),
           ...(payType !== undefined && { payType }),
@@ -1713,8 +1714,14 @@ export const getLeaveTypeLedgerDetail = withRBAC(
 
         if (forecastFrom >= forecastTo) break;
 
+        // For PER_PAY_PERIOD, project forward at bi-weekly intervals from the last
+        // actual accrual posting (or cycleAnchor if no postings yet this year).
         const postingDates = policy.posting1Freq === "PER_PAY_PERIOD"
-          ? []
+          ? (() => {
+              const lastAccrual = [...yearEntries].reverse().find(e => e.action === "ACCRUAL");
+              const anchor = lastAccrual ? lastAccrual.createdAt : cycleAnchor;
+              return enumeratePostingDates("BI_WEEKLY", anchor, basisDate, forecastFrom, forecastTo);
+            })()
           : enumeratePostingDates(policy.posting1Freq, cycleAnchor, basisDate, forecastFrom, forecastTo);
 
         const forecastItems: { date: Date; deltaMinutes: number }[] = [];

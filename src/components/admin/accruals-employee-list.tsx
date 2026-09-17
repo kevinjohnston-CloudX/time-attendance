@@ -11,6 +11,7 @@ type EmployeeRow = {
   department: string;
   siteId: string;
   site: string;
+  isActive: boolean;
   payCategory: string | null;
   hireDate: string | null;
 };
@@ -26,9 +27,11 @@ export function AccrualsEmployeeList({
 }) {
   const [query, setQuery] = useState("");
   const [siteId, setSiteId] = useState("");
+  const [activeOnly, setActiveOnly] = useState(true);
 
   const q = query.toLowerCase().trim();
   const filtered = employees.filter((e) => {
+    if (activeOnly && !e.isActive) return false;
     if (siteId && e.siteId !== siteId) return false;
     if (q) {
       return (
@@ -63,6 +66,17 @@ export function AccrualsEmployeeList({
             ))}
           </select>
         )}
+        <button
+          type="button"
+          onClick={() => setActiveOnly((v) => !v)}
+          className={`rounded-lg border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-400 ${
+            activeOnly
+              ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-700"
+              : "border-zinc-300 bg-white text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+          }`}
+        >
+          Active only
+        </button>
       </div>
 
       <div className="mt-4 divide-y divide-zinc-200 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">

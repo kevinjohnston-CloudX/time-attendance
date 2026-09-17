@@ -254,6 +254,7 @@ export default async function EmployeeAccrualsPage({
     fcMode: string,
     fcMonths: number | null,
     alreadyAccruedThisYear: number,
+    actualPostingCount: number,
   ): number | null {
     if (tiers.length === 0) return null;
 
@@ -338,9 +339,20 @@ export default async function EmployeeAccrualsPage({
     let forecastMinutes: number;
 
     if (postingFreq === "PER_PAY_PERIOD") {
-      if (rateMode !== "YEARLY") return null;
-      const daysRemaining = Math.max(0, Math.floor((forecastEndDate.getTime() - todayUtc.getTime()) / ms));
-      forecastMinutes = Math.round(effectiveHours * 60 / daysInYear * daysRemaining);
+      if (rateMode === "PER_POSTING") {
+        // Interpolate remaining pay-period postings from actual count so far this year.
+        // elapsed = days from Jan 1 to today; remaining = days from today to forecastEndDate.
+        const yearStartUtc = new Date(Date.UTC(year, 0, 1));
+        const elapsedDays = Math.max(1, Math.floor((todayUtc.getTime() - yearStartUtc.getTime()) / ms));
+        const remainingDays = Math.max(0, Math.floor((forecastEndDate.getTime() - todayUtc.getTime()) / ms));
+        const remainingPostings = Math.round(actualPostingCount * (remainingDays / elapsedDays));
+        forecastMinutes = remainingPostings * Math.round(effectiveHours * 60);
+      } else if (rateMode === "YEARLY") {
+        const daysRemaining = Math.max(0, Math.floor((forecastEndDate.getTime() - todayUtc.getTime()) / ms));
+        forecastMinutes = Math.round(effectiveHours * 60 / daysInYear * daysRemaining);
+      } else {
+        return null;
+      }
     } else {
       const postings = countPostings(forecastStart, forecastEndDate);
       const ratePerPosting = rateMode === "PER_POSTING"
@@ -470,6 +482,7 @@ export default async function EmployeeAccrualsPage({
             policyRate.forecastMode ?? "END_OF_YEAR",
             policyRate.forecastMonths,
             alreadyAccruedThisYear,
+            accrualCountMap.get(lt.id) ?? 0,
           )
         : null,
       forecastApplyToAvailable: policyRate?.forecastApplyToAvailable ?? false,

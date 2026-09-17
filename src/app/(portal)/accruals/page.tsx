@@ -21,8 +21,8 @@ export default async function AccrualsPage() {
   }
 
   const employeeWhere = canViewAny
-    ? { isActive: true }
-    : { isActive: true, supervisorId: session.user.employeeId ?? undefined };
+    ? {}
+    : { supervisorId: session.user.employeeId ?? undefined };
 
   const [employees, sites] = await Promise.all([
     db.employee.findMany({
@@ -49,6 +49,7 @@ export default async function AccrualsPage() {
     department: emp.department.name,
     siteId: emp.site.id,
     site: emp.site.name,
+    isActive: emp.isActive,
     payCategory: emp.payCategory
       ? emp.payCategory.description ?? `Category ${emp.payCategory.number}`
       : null,

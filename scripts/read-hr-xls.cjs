@@ -1,0 +1,12 @@
+const xlsx = require('xlsx');
+const wb = xlsx.readFile('C:/Users/john.raefski/Downloads/Employees List HR.xls');
+console.log('Sheets:', wb.SheetNames);
+const ws = wb.Sheets[wb.SheetNames[0]];
+const rows = xlsx.utils.sheet_to_json(ws, { header: 1, defval: '' });
+console.log('\n=== HEADERS (Row 0) ===');
+console.log(JSON.stringify(rows[0], null, 2));
+console.log('\n=== SAMPLE ROW 1 ===');
+console.log(JSON.stringify(rows[1], null, 2));
+console.log('\n=== SAMPLE ROW 2 ===');
+console.log(JSON.stringify(rows[2], null, 2));
+console.log('\nTotal rows (including header):', rows.length);

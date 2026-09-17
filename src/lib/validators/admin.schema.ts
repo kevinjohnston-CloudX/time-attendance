@@ -77,6 +77,11 @@ export const updateEmployeeSchema = z.object({
   wmsId: nullableStr,
   barcode: nullableStr,
   adpWorkerId: nullableStr,
+  adjustedHireDate: z.union([
+    z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    z.literal(""),
+    z.null(),
+  ]).optional().transform((v) => v || null),
   // Work info
   jobTitle: nullableStr,
   terminationReason: nullableStr,

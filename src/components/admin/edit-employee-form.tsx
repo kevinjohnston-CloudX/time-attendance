@@ -268,6 +268,19 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
             </div>
 
             <div>
+              <label className={labelCls}>Adjusted Hire Date</label>
+              <input
+                type="date"
+                name="adjustedHireDate"
+                defaultValue={employee.adjustedHireDate ? format(employee.adjustedHireDate, "yyyy-MM-dd") : ""}
+                className={inputCls}
+              />
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                Seniority date override — used for leave tier calculations when the policy&apos;s service basis is &ldquo;Adjusted Hire Date&rdquo;.
+              </p>
+            </div>
+
+            <div>
               <label className={labelCls}>Badge ID (WMS)</label>
               <input name="wmsId" defaultValue={employee.wmsId ?? ""} placeholder="QR code badge ID" className={inputCls} />
             </div>

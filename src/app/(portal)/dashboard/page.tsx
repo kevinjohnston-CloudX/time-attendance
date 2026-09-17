@@ -189,10 +189,10 @@ export default async function DashboardPage({
       [exceptionCounts, leaveStatusCounts, timesheetStatusCounts] = await Promise.all([
         db.$queryRaw<{ exceptionType: string; cnt: bigint }[]>`
           SELECT e."exceptionType", COUNT(*)::int AS cnt
-          FROM "Exception" e
-          JOIN "Timesheet" ts  ON ts.id  = e."timesheetId"
-          JOIN "PayPeriod" pp  ON pp.id  = ts."payPeriodId"
-          JOIN "Employee"  emp ON emp.id = ts."employeeId"
+          FROM "exceptions" e
+          JOIN "timesheets" ts  ON ts.id  = e."timesheetId"
+          JOIN "pay_periods" pp ON pp.id  = ts."payPeriodId"
+          JOIN "employees"  emp ON emp.id = ts."employeeId"
           WHERE e."resolvedAt"   IS NULL
             AND pp."tenantId"    = ${tenantId}
             AND pp."startDate"   = ${selectedPeriod.startDate}
