@@ -1356,8 +1356,8 @@ export function TimecardViewer({
     const payCodeId =
       pendingPayCodes.get("absent:" + dayKey) ??
       timecard?.segments.find((s) => {
-        try { return format(parseUtcDate(s.segmentDate), "yyyy-MM-dd") === dayKey && !!s.payCodeId; } catch { return false; }
-      })?.payCodeId ??
+        try { return format(parseUtcDate(s.segmentDate), "yyyy-MM-dd") === dayKey && !!s.payCode?.id; } catch { return false; }
+      })?.payCode?.id ??
       undefined;
     setPendingHoursEntries((prev) => {
       const filtered = prev.filter((e) => e.dayKey !== dayKey);
