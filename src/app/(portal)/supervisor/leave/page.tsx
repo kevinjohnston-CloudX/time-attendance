@@ -19,6 +19,7 @@ export default async function SupervisorLeavePage({
 
   const canFilter = await userHasPermission(session.user, "LEAVE_APPROVE_ANY");
   const canHrApprove = canFilter;
+  const canSubmitLeave = await userHasPermission(session.user, "LEAVE_REQUEST_TEAM");
   const tenantId = (session.user as { tenantId?: string }).tenantId;
   const filterInput = canFilter ? { siteId, departmentId } : {};
 
@@ -50,6 +51,7 @@ export default async function SupervisorLeavePage({
       initialTab={initialTab}
       canFilter={canFilter}
       canHrApprove={canHrApprove}
+      canSubmitLeave={canSubmitLeave}
       sites={sites}
       departments={departments}
       selectedSiteId={siteId}

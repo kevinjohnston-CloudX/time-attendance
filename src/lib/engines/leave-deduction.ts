@@ -368,22 +368,29 @@ export async function reconcileLeaveDeductions(
       if (newDuration > 0) {
         const startDate = segs[0]!.segmentDate;
         const accrualYear = getYear(startDate);
-        const req = await db.leaveRequest.create({
-          data: {
-            employeeId,
-            leaveTypeId: leaveType.id,
-            status: "POSTED",
-            startDate,
-            endDate: startDate,
-            durationMinutes: newDuration,
-            sourcePunchId: clockIn.id,
-            submittedAt: new Date(),
-            reviewedAt: new Date(),
-            postedAt: new Date(),
-          },
-        });
-        await debitBalance(employeeId, leaveType.id, req.id, newDuration, accrualYear, clockIn.approvedById);
-        handledRequestIds.add(req.id);
+        try {
+          const req = await db.leaveRequest.create({
+            data: {
+              employeeId,
+              leaveTypeId: leaveType.id,
+              status: "POSTED",
+              startDate,
+              endDate: startDate,
+              durationMinutes: newDuration,
+              sourcePunchId: clockIn.id,
+              submittedAt: new Date(),
+              reviewedAt: new Date(),
+              postedAt: new Date(),
+            },
+          });
+          await debitBalance(employeeId, leaveType.id, req.id, newDuration, accrualYear, clockIn.approvedById);
+          handledRequestIds.add(req.id);
+        } catch (err: unknown) {
+          // P2002: a concurrent rebuild already created this leave request — skip.
+          if ((err as { code?: string })?.code !== "P2002") throw err;
+          const conflict = await db.leaveRequest.findUnique({ where: { sourcePunchId: clockIn.id } });
+          if (conflict) handledRequestIds.add(conflict.id);
+        }
       }
     } else {
       const accrualYear = getYear(existing.startDate);
@@ -393,7 +400,7 @@ export async function reconcileLeaveDeductions(
         }
         await db.leaveRequest.update({
           where: { id: existing.id },
-          data: { status: "CANCELLED", cancelledAt: new Date() },
+          data: { status: "CANCELLED", cancelledAt: new Date(), sourcePunchId: null },
         });
         handledRequestIds.delete(existing.id);
       } else if (leaveType.id !== existing.leaveTypeId) {

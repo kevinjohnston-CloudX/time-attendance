@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { findOpenPayPeriod } from "@/lib/utils/punch-helpers";
 import { PunchHistoryTable } from "@/components/time/punch-history-table";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 
 export default async function PunchHistoryPage() {
@@ -44,7 +44,7 @@ export default async function PunchHistoryPage() {
             <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
               Pay period:{" "}
               {format(parseUtcDate(payPeriod.startDate), "MMM d, yyyy")} –{" "}
-              {format(parseUtcDate(payPeriod.endDate), "MMM d, yyyy")}
+              {format(addDays(parseUtcDate(payPeriod.endDate), -1), "MMM d, yyyy")}
             </p>
           ) : (
             <p className="mt-1 text-sm text-amber-500">No active pay period.</p>

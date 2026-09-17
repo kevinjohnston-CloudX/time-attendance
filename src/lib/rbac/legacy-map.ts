@@ -22,6 +22,8 @@ export const LEGACY_MAP: Record<string, PermissionTuple> = {
   TIMESHEET_APPROVE_ANY:  { resource: "timesheet", action: "execute", scope: "all" },
   // Leave
   LEAVE_REQUEST_OWN:      { resource: "leave",     action: "write",   scope: "own" },
+  LEAVE_REQUEST_TEAM:     { resource: "leave",     action: "write",   scope: "team" },
+  LEAVE_REQUEST_ANY:      { resource: "leave",     action: "write",   scope: "all" },
   LEAVE_APPROVE_TEAM:     { resource: "leave",     action: "execute", scope: "team" },
   LEAVE_APPROVE_ANY:      { resource: "leave",     action: "execute", scope: "all" },
   // Accruals
@@ -29,6 +31,11 @@ export const LEGACY_MAP: Record<string, PermissionTuple> = {
   ACCRUAL_VIEW_TEAM:      { resource: "accrual",   action: "read",    scope: "team" },
   ACCRUAL_VIEW_ANY:       { resource: "accrual",   action: "read",    scope: "all" },
   ACCRUAL_ADJUST_ANY:     { resource: "accrual",   action: "write",   scope: "all" },
+  // Timecards
+  TIMECARD_VIEW_TEAM:     { resource: "timecard",  action: "read",    scope: "team" },
+  TIMECARD_VIEW_ANY:      { resource: "timecard",  action: "read",    scope: "all" },
+  TIMECARD_EDIT_TEAM:     { resource: "timecard",  action: "write",   scope: "team" },
+  TIMECARD_EDIT_ANY:      { resource: "timecard",  action: "write",   scope: "all" },
   // Payroll & admin
   PAY_PERIOD_MANAGE:      { resource: "payroll",   action: "write",   scope: "all" },
   EMPLOYEE_MANAGE:        { resource: "employee",  action: "write",   scope: "all" },

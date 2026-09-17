@@ -36,7 +36,7 @@ export default async function TeamPunchHistoryPage({
   } else {
     const today = new Date();
     const currentPP = await db.payPeriod.findFirst({
-      where: { startDate: { lte: today }, endDate: { gte: today } },
+      where: { startDate: { lte: today }, endDate: { gt: today } },
     });
     if (currentPP) {
       startDate = format(currentPP.startDate, "yyyy-MM-dd");

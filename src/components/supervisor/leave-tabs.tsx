@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { format, parseISO, differenceInCalendarDays, eachDayOfInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, isToday } from "date-fns";
 
@@ -10,11 +10,13 @@ function parseLeaveDate(d: Date | string): Date {
   const s = (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
   return parseISO(s);
 }
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, Plus } from "lucide-react";
 import { LeaveApprovalButtons } from "@/components/supervisor/leave-approval-buttons";
 import { LeaveReverseButton } from "@/components/supervisor/leave-reverse-button";
 import { HrApproveButtons } from "@/components/supervisor/hr-approve-buttons";
 import { LEAVE_STATUS_LABEL, LEAVE_STATUS_BADGE, type LeaveRequestStatusValue } from "@/lib/state-machines/labels";
+import { getTeamMembersForLeave, createLeaveRequestForEmployee } from "@/actions/leave.actions";
+import { LeaveDayPicker, type DaySelection, type ShiftInfo } from "@/components/leave/leave-day-picker";
 
 interface LeaveRequestRow {
   id: string;
@@ -36,6 +38,7 @@ interface LeaveTabsProps {
   initialTab?: "pending" | "hr-pending" | "upcoming";
   canFilter?: boolean;
   canHrApprove?: boolean;
+  canSubmitLeave?: boolean;
   sites?: { id: string; name: string }[];
   departments?: { id: string; name: string }[];
   selectedSiteId?: string;
@@ -44,9 +47,98 @@ interface LeaveTabsProps {
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export function LeaveTabs({ pending, hrPending, upcoming, initialTab, canFilter, canHrApprove, sites = [], departments = [], selectedSiteId, selectedDepartmentId }: LeaveTabsProps) {
+export function LeaveTabs({ pending, hrPending, upcoming, initialTab, canFilter, canHrApprove, canSubmitLeave, sites = [], departments = [], selectedSiteId, selectedDepartmentId }: LeaveTabsProps) {
   const router = useRouter();
   const [tab, setTab] = useState<"pending" | "hr-pending" | "upcoming">(initialTab ?? "pending");
+  type TeamEmployee = {
+    id: string;
+    wmsId: string | null;
+    user: { name: string | null } | null;
+    shift: { startTime: string; endTime: string; workDays: number[]; mealConfig: unknown } | null;
+  };
+
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const [teamEmployees, setTeamEmployees] = useState<TeamEmployee[]>([]);
+  const [leaveTypes, setLeaveTypes] = useState<{ id: string; name: string }[]>([]);
+  const [loadingTeam, setLoadingTeam] = useState(false);
+
+  // Form state
+  const [targetEmployeeId, setTargetEmployeeId] = useState("");
+  const [leaveTypeId, setLeaveTypeId] = useState("");
+  const [selectedDays, setSelectedDays] = useState<DaySelection[]>([]);
+  const [note, setNote] = useState("");
+
+  const selectedEmployee = teamEmployees.find((e) => e.id === targetEmployeeId) ?? null;
+  const shift: ShiftInfo | null = selectedEmployee?.shift
+    ? {
+        startTime: selectedEmployee.shift.startTime,
+        endTime: selectedEmployee.shift.endTime,
+        workDays: selectedEmployee.shift.workDays,
+        mealBreakMinutes: (selectedEmployee.shift.mealConfig as { deductMinutes?: number } | null)?.deductMinutes ?? null,
+      }
+    : null;
+
+  async function openSubmitModal() {
+    setShowSubmitModal(true);
+    setSubmitError(null);
+    setSubmitSuccess(false);
+    if (teamEmployees.length === 0) {
+      setLoadingTeam(true);
+      try {
+        const result = await getTeamMembersForLeave();
+        if (result.success) {
+          setTeamEmployees(result.data.employees as TeamEmployee[]);
+          setLeaveTypes(result.data.leaveTypes);
+          if (result.data.employees.length > 0) setTargetEmployeeId(result.data.employees[0].id);
+          if (result.data.leaveTypes.length > 0) setLeaveTypeId(result.data.leaveTypes[0].id);
+        }
+      } catch { /* swallow */ }
+      setLoadingTeam(false);
+    }
+  }
+
+  function closeModal() {
+    setShowSubmitModal(false);
+    setSubmitError(null);
+    setSubmitSuccess(false);
+    setSelectedDays([]);
+    setNote("");
+  }
+
+  function handleEmployeeChange(id: string) {
+    setTargetEmployeeId(id);
+    setSelectedDays([]); // reset days when employee changes — shift may differ
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitError(null);
+    if (selectedDays.length === 0) { setSubmitError("Select at least one day."); return; }
+
+    startTransition(async () => {
+      try {
+        const result = await createLeaveRequestForEmployee({
+          targetEmployeeId,
+          leaveTypeId,
+          selectedDays,
+          note: note || undefined,
+        });
+        if (result.success) {
+          setSubmitSuccess(true);
+          setSelectedDays([]);
+          setNote("");
+          router.refresh();
+        } else {
+          setSubmitError(result.error);
+        }
+      } catch (err) {
+        setSubmitError(err instanceof Error ? err.message : "Failed to submit leave request.");
+      }
+    });
+  }
 
   function navigate(siteId?: string, departmentId?: string) {
     const params = new URLSearchParams();
@@ -122,7 +214,19 @@ export function LeaveTabs({ pending, hrPending, upcoming, initialTab, canFilter,
           >
             ← Team Portal
           </a>
-          <h1 className="mt-1 text-xl font-bold text-zinc-900 dark:text-white">Team Leave</h1>
+          <div className="mt-1 flex items-center justify-between gap-2">
+            <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Team Leave</h1>
+            {canSubmitLeave && (
+              <button
+                type="button"
+                onClick={openSubmitModal}
+                className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Submit Leave
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Site / Department filter — payroll+ only */}
@@ -354,6 +458,123 @@ export function LeaveTabs({ pending, hrPending, upcoming, initialTab, canFilter,
           </span>
         </div>
       </div>
+
+      {/* Submit Leave Modal */}
+      {showSubmitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4 dark:border-zinc-700 dark:bg-zinc-900">
+              <h2 className="text-base font-semibold text-zinc-900 dark:text-white">Submit Leave for Employee</h2>
+              <button type="button" onClick={closeModal} className="rounded-lg p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {submitSuccess ? (
+              <div className="px-6 py-8 text-center">
+                <p className="text-sm font-medium text-green-600 dark:text-green-400">Leave request submitted successfully.</p>
+                <p className="mt-1 text-xs text-zinc-400">It is now in the HR Review queue.</p>
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                >
+                  Close
+                </button>
+              </div>
+            ) : loadingTeam ? (
+              <div className="px-6 py-8 text-center text-sm text-zinc-400">Loading team members…</div>
+            ) : (
+              <form onSubmit={handleSubmit} className="flex flex-col gap-5 px-6 py-5">
+                {/* Employee selector */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Employee
+                  </label>
+                  <select
+                    value={targetEmployeeId}
+                    onChange={(e) => handleEmployeeChange(e.target.value)}
+                    required
+                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                  >
+                    <option value="">Select employee…</option>
+                    {teamEmployees.map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.user?.name ?? emp.wmsId ?? emp.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Leave Type */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Leave Type
+                  </label>
+                  <select
+                    value={leaveTypeId}
+                    onChange={(e) => setLeaveTypeId(e.target.value)}
+                    required
+                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                  >
+                    <option value="">Select type…</option>
+                    {leaveTypes.map((lt) => (
+                      <option key={lt.id} value={lt.id}>{lt.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Day picker — same as My Leave */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Select Days
+                  </label>
+                  <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
+                    <LeaveDayPicker value={selectedDays} onChange={setSelectedDays} shift={shift} />
+                  </div>
+                </div>
+
+                {/* Note */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Note <span className="font-normal text-zinc-400">(optional)</span>
+                  </label>
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    rows={2}
+                    placeholder="Reason or additional context…"
+                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                  />
+                </div>
+
+                {submitError && (
+                  <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+                    {submitError}
+                  </p>
+                )}
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeModal}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isPending || !targetEmployeeId || !leaveTypeId || selectedDays.length === 0}
+                    className="rounded-lg bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                  >
+                    {isPending ? "Submitting…" : "Submit Request"}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Hover tooltip */}
       {tooltip && (

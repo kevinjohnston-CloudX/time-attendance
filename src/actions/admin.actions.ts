@@ -1512,6 +1512,7 @@ export type LedgerDetailEntry = {
   isFuture: boolean;
   note?: string | null;
   status?: string;
+  createdByName?: string | null;
 };
 
 // ─── Past-year accrual summary (per-leave-type totals for a completed year) ──
@@ -1613,7 +1614,7 @@ export const getLeaveTypeLedgerDetail = withRBAC(
       db.leaveAccrualLedger.findMany({
         where: { employeeId, leaveTypeId, createdAt: { gte: yearStart, lt: yearEnd }, action: { not: "EOD_SNAPSHOT" } },
         orderBy: { createdAt: "asc" },
-        select: { id: true, action: true, deltaMinutes: true, balanceAfter: true, createdAt: true, note: true },
+        select: { id: true, action: true, deltaMinutes: true, balanceAfter: true, createdAt: true, note: true, createdById: true },
       }),
       db.leaveRequest.findMany({
         where: { employeeId, leaveTypeId, status: { in: ["APPROVED", "PENDING"] }, startDate: { gte: yearStart, lt: yearEnd } },
@@ -1642,6 +1643,13 @@ export const getLeaveTypeLedgerDetail = withRBAC(
 
     const openingBalance = openingEntry?.balanceAfter ?? 0;
 
+    // Batch-fetch names for users who appear in these ledger entries
+    const creatorIds = [...new Set(yearEntries.map((e) => e.createdById).filter(Boolean))] as string[];
+    const creatorUsers = creatorIds.length > 0
+      ? await db.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, name: true } })
+      : [];
+    const creatorNameById = new Map(creatorUsers.map((u) => [u.id, u.name]));
+
     // Build historical entries
     const entries: LedgerDetailEntry[] = yearEntries.map((e) => ({
       id: e.id,
@@ -1652,6 +1660,7 @@ export const getLeaveTypeLedgerDetail = withRBAC(
       runningBalance: e.balanceAfter,
       isFuture: false,
       note: e.note,
+      createdByName: e.createdById ? (creatorNameById.get(e.createdById) ?? null) : null,
     }));
 
     // Forecast: only for current or future year

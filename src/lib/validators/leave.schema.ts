@@ -17,6 +17,15 @@ export const requestLeaveSchema = z.object({
   note: z.string().optional(),
 });
 
+export const submitLeaveForEmployeeSchema = z.object({
+  targetEmployeeId: z.string().min(1),
+  leaveTypeId: z.string().min(1),
+  selectedDays: z.array(daySelectionSchema).min(1, "Select at least one day"),
+  note: z.string().optional(),
+});
+
+export type SubmitLeaveForEmployeeInput = z.infer<typeof submitLeaveForEmployeeSchema>;
+
 export const leaveRequestIdSchema = z.object({
   leaveRequestId: z.string().min(1),
 });

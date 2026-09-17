@@ -48,7 +48,7 @@ const navItems: NavItem[] = [
   { label: "Documents", href: "/documents", icon: FileText },
   { label: "Accruals", href: "/accruals", icon: Hourglass, permission: ["ACCRUAL_VIEW_OWN", "ACCRUAL_VIEW_TEAM", "ACCRUAL_VIEW_ANY"] },
   { label: "Payroll", href: "/payroll", icon: DollarSign, permission: "PAY_PERIOD_MANAGE" },
-  { label: "Timecards", href: "/payroll/timecards", icon: ClipboardList, permission: ["PAY_PERIOD_MANAGE", "TIMECARD_VIEW_TEAM"] },
+  { label: "Timecards", href: "/payroll/timecards", icon: ClipboardList, permission: ["TIMECARD_VIEW_TEAM", "TIMECARD_VIEW_ANY", "TIMECARD_EDIT_TEAM", "TIMECARD_EDIT_ANY"] },
   { label: "Reports", href: "/reports", icon: FileText, permission: "REPORT_MANAGE" },
 ];
 
@@ -77,6 +77,8 @@ const ROLE_LABEL: Record<string, string> = {
   SUPER_ADMIN: "Super Admin",
 };
 
+const INACTIVE_ALLOWED_HREFS = ["/time/timesheet", "/time/history", "/documents"];
+
 interface SidebarProps {
   role: string;
   userName?: string | null;
@@ -85,9 +87,10 @@ interface SidebarProps {
   viewAsRole?: string | null;
   canViewAs?: boolean;
   viewAsOptions?: { id: string; name: string }[];
+  isInactive?: boolean;
 }
 
-export function Sidebar({ role, userName, permissions, realRole, viewAsRole, canViewAs = false, viewAsOptions = [] }: SidebarProps) {
+export function Sidebar({ role, userName, permissions, realRole, viewAsRole, canViewAs = false, viewAsOptions = [], isInactive = false }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -175,9 +178,11 @@ export function Sidebar({ role, userName, permissions, realRole, viewAsRole, can
     return permissions.includes(perm);
   }
 
-  const visibleItems = navItems.filter((item) => hasPermission(item.permission));
-  const visibleAdminItems = adminItems.filter((item) => hasPermission(item.permission));
-  const visibleSupervisorItems = supervisorItems.filter((item) => hasPermission(item.permission));
+  const visibleItems = isInactive
+    ? navItems.filter((item) => INACTIVE_ALLOWED_HREFS.includes(item.href))
+    : navItems.filter((item) => hasPermission(item.permission));
+  const visibleAdminItems = isInactive ? [] : adminItems.filter((item) => hasPermission(item.permission));
+  const visibleSupervisorItems = isInactive ? [] : supervisorItems.filter((item) => hasPermission(item.permission));
   const isAdminActive = pathname.startsWith("/admin") &&
     !pathname.startsWith("/admin/rules-setup") &&
     !pathname.startsWith("/admin/site-settings") &&
@@ -410,6 +415,13 @@ export function Sidebar({ role, userName, permissions, realRole, viewAsRole, can
           )}
         </ul>
       </nav>
+
+      {/* Inactive notice */}
+      {isInactive && !collapsed && (
+        <div className="mx-2 mb-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+          Account inactive — view only
+        </div>
+      )}
 
       {/* User / Logout */}
       <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">

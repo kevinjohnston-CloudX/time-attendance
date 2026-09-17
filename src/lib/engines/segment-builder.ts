@@ -1,4 +1,4 @@
-import { format, eachDayOfInterval, isWeekend } from "date-fns";
+import { format, eachDayOfInterval, isWeekend, addDays } from "date-fns";
 import { db } from "@/lib/db";
 import { applyOvertime } from "@/lib/engines/overtime-engine";
 import { reconcileLeaveDeductions } from "@/lib/engines/leave-deduction";
@@ -337,7 +337,8 @@ async function applyAutoPayCredits(
 ): Promise<void> {
   const today = new Date();
   today.setUTCHours(23, 59, 59, 999);
-  const rangeEnd = periodEnd < today ? periodEnd : today;
+  const periodEndInclusive = addDays(periodEnd, -1);
+  const rangeEnd = periodEndInclusive < today ? periodEndInclusive : today;
 
   const allDays = eachDayOfInterval({ start: periodStart, end: rangeEnd });
 
@@ -347,6 +348,17 @@ async function applyAutoPayCredits(
     select: { segmentDate: true },
   });
   const coveredDates = new Set(existing.map((s) => format(s.segmentDate, "yyyy-MM-dd")));
+
+  // Build a map of leave minutes per day from approved leave segments
+  const leaveSegs = await db.workSegment.findMany({
+    where: { timesheetId, segmentType: "LEAVE", leaveRequestId: { not: null } },
+    select: { segmentDate: true, durationMinutes: true },
+  });
+  const leaveMinutesByDate = new Map<string, number>();
+  for (const s of leaveSegs) {
+    const k = format(s.segmentDate, "yyyy-MM-dd");
+    leaveMinutesByDate.set(k, (leaveMinutesByDate.get(k) ?? 0) + s.durationMinutes);
+  }
 
   const basePayCodeId = ruleSet.autoPayPayCodeId ?? ruleSet.defaultPayCodeId ?? null;
   const overflowPayCodeId = ruleSet.autoPayOverflowPayCodeId ?? null;
@@ -368,15 +380,19 @@ async function applyAutoPayCredits(
     for (const d of allDays) {
       if (!shift.workDays.includes(d.getUTCDay())) continue;
       if (coveredDates.has(format(d, "yyyy-MM-dd"))) continue;
+      const dateKey = format(d, "yyyy-MM-dd");
+      const leaveMinutes = leaveMinutesByDate.get(dateKey) ?? 0;
+      const creditMinutes = dailyMinutes - leaveMinutes;
+      if (creditMinutes <= 0) continue; // full-day leave — skip auto-credit
       const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
       const useOverflow = overflowThreshold > 0 && overflowPayCodeId !== null && runningMinutes >= overflowThreshold;
-      runningMinutes += dailyMinutes;
+      runningMinutes += creditMinutes;
       toCreate.push({
         timesheetId,
         segmentType: "WORK" as SegmentType,
         startTime: start,
-        endTime: new Date(start.getTime() + dailyMinutes * 60_000),
-        durationMinutes: dailyMinutes,
+        endTime: new Date(start.getTime() + creditMinutes * 60_000),
+        durationMinutes: creditMinutes,
         segmentDate: start,
         isPaid: true,
         payBucket: "REG" as PayBucket,
@@ -394,15 +410,19 @@ async function applyAutoPayCredits(
       if (coveredDates.has(format(d, "yyyy-MM-dd"))) continue;
       const row = dayMap.get(d.getUTCDay());
       if (!row?.apply || !row.minutes) continue;
+      const dateKey = format(d, "yyyy-MM-dd");
+      const leaveMinutes = leaveMinutesByDate.get(dateKey) ?? 0;
+      const creditMinutes = row.minutes - leaveMinutes;
+      if (creditMinutes <= 0) continue; // full-day leave — skip auto-credit
       const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
       const useOverflow = overflowThreshold > 0 && overflowPayCodeId !== null && runningMinutes >= overflowThreshold;
-      runningMinutes += row.minutes;
+      runningMinutes += creditMinutes;
       toCreate.push({
         timesheetId,
         segmentType: "WORK" as SegmentType,
         startTime: start,
-        endTime: new Date(start.getTime() + row.minutes * 60_000),
-        durationMinutes: row.minutes,
+        endTime: new Date(start.getTime() + creditMinutes * 60_000),
+        durationMinutes: creditMinutes,
         segmentDate: start,
         isPaid: true,
         payBucket: "REG" as PayBucket,
@@ -436,7 +456,8 @@ async function ensureSalarySegments(
 ): Promise<void> {
   const today = new Date();
   today.setUTCHours(23, 59, 59, 999);
-  const rangeEnd = periodEnd < today ? periodEnd : today;
+  const periodEndInclusive = addDays(periodEnd, -1);
+  const rangeEnd = periodEndInclusive < today ? periodEndInclusive : today;
 
   const workDays = eachDayOfInterval({ start: periodStart, end: rangeEnd }).filter(
     (d) => !isWeekend(d)
@@ -452,26 +473,39 @@ async function ensureSalarySegments(
     existing.map((s) => format(s.segmentDate, "yyyy-MM-dd"))
   );
 
-  const toCreate: SegmentInput[] = workDays
-    .filter((d) => !coveredDates.has(format(d, "yyyy-MM-dd")))
-    .map((d) => {
-      const start = new Date(d);
-      start.setUTCHours(0, 0, 0, 0);
-      const end = new Date(d);
-      end.setUTCHours(8, 0, 0, 0);
-      return {
-        timesheetId,
-        segmentType: "WORK" as SegmentType,
-        startTime: start,
-        endTime: end,
-        durationMinutes: SALARY_DAILY_MINUTES,
-        segmentDate: start,
-        isPaid: true,
-        payBucket: "REG" as PayBucket,
-        isSplit: false,
-        payCodeId: defaultPayCodeId ?? null,
-      };
+  // Build a map of leave minutes per day from approved leave segments
+  const leaveSegs = await db.workSegment.findMany({
+    where: { timesheetId, segmentType: "LEAVE", leaveRequestId: { not: null } },
+    select: { segmentDate: true, durationMinutes: true },
+  });
+  const leaveMinutesByDate = new Map<string, number>();
+  for (const s of leaveSegs) {
+    const k = format(s.segmentDate, "yyyy-MM-dd");
+    leaveMinutesByDate.set(k, (leaveMinutesByDate.get(k) ?? 0) + s.durationMinutes);
+  }
+
+  const toCreate: SegmentInput[] = [];
+  for (const d of workDays) {
+    const dateKey = format(d, "yyyy-MM-dd");
+    if (coveredDates.has(dateKey)) continue;
+    const leaveMinutes = leaveMinutesByDate.get(dateKey) ?? 0;
+    const creditMinutes = SALARY_DAILY_MINUTES - leaveMinutes;
+    if (creditMinutes <= 0) continue; // full-day leave — skip auto-credit
+    const start = new Date(d);
+    start.setUTCHours(0, 0, 0, 0);
+    toCreate.push({
+      timesheetId,
+      segmentType: "WORK" as SegmentType,
+      startTime: start,
+      endTime: new Date(start.getTime() + creditMinutes * 60_000),
+      durationMinutes: creditMinutes,
+      segmentDate: start,
+      isPaid: true,
+      payBucket: "REG" as PayBucket,
+      isSplit: false,
+      payCodeId: defaultPayCodeId ?? null,
     });
+  }
 
   if (toCreate.length > 0) {
     await db.workSegment.createMany({ data: toCreate });
@@ -885,7 +919,7 @@ async function syncAbsentExceptions(
   // Collect all past calendar days in the pay period that have no activity.
   const absentDays = new Set<string>();
   let dateStr = periodStartStr;
-  while (dateStr < todayStr && dateStr <= periodEndStr) {
+  while (dateStr < todayStr && dateStr < periodEndStr) {
     const dow = new Date(dateStr + "T12:00:00.000Z").getUTCDay();
     const isScheduledDay = !shiftWorkDays || shiftWorkDays.includes(dow);
     if (isScheduledDay && !punchedDays.has(dateStr) && !leaveDays.has(dateStr) && !workDays.has(dateStr)) {
@@ -980,7 +1014,7 @@ async function syncMissingPunchExceptions(
   // missingPunchDays maps date string → description of what's missing.
   const missingPunchDays = new Map<string, string>();
   let dateStr = periodStartStr;
-  while (dateStr < todayStr && dateStr <= periodEndStr) {
+  while (dateStr < todayStr && dateStr < periodEndStr) {
     const dayPunches = punchesByDay.get(dateStr);
     if (dayPunches && dayPunches.length > 0) {
       const firstPunch = dayPunches[0];
@@ -1381,7 +1415,7 @@ async function syncHolidayCredits(
   const accrualMins: { ds: string; mins: number }[] = [];
 
   for (const ds of holidayDates) {
-    if (ds < periodStartStr || ds > periodEndStr) continue;
+    if (ds < periodStartStr || ds >= periodEndStr) continue;
     if (ds >= todayStr) continue;
 
     const workedMinsOnHoliday = workedMinsByDay.get(ds) ?? 0;

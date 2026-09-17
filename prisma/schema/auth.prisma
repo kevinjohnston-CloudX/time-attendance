@@ -6,18 +6,33 @@ model User {
   image         String?
   username      String?   @unique
   passwordHash  String?
-  isSuperAdmin  Boolean   @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  isSuperAdmin        Boolean   @default(false)
+  mustChangePassword  Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  accounts      Account[]
-  sessions      Session[]
-  refreshTokens RefreshToken[]
-  employee      Employee?
-  ownedReports  ReportDefinition[] @relation("ReportOwner")
-  sharedReports ReportShare[]      @relation("SharedReports")
+  accounts          Account[]
+  sessions          Session[]
+  refreshTokens     RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  employee          Employee?
+  ownedReports      ReportDefinition[] @relation("ReportOwner")
+  sharedReports     ReportShare[]      @relation("SharedReports")
 
   @@map("users")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique  /// SHA-256 of the raw token sent in the email
+  expiresAt DateTime
+  usedAt    DateTime?           /// null = available; set on first successful use
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 model Account {

@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import Link from "next/link";
-import { format, differenceInMinutes } from "date-fns";
+import { format, addDays, differenceInMinutes } from "date-fns";
 import { formatMinutes } from "@/lib/utils/duration";
 import { parseUtcDate } from "@/lib/utils/date";
 import { userHasPermission } from "@/lib/rbac/check-permission";
@@ -76,19 +76,24 @@ export default async function DashboardPage({
 }) {
   const session = await auth();
   const employeeId = session?.user?.employeeId ?? null;
+  const tenantId = (session?.user as { tenantId?: string } | undefined)?.tenantId;
   const now = new Date();
   const year = now.getFullYear();
   const { overviewPeriodId } = (await searchParams) ?? {};
 
   const [payPeriod, lastPunch, allLeaveBalances, pendingLeaveRequests] = await Promise.all([
-    db.payPeriod.findFirst({
-      where: {
-        startDate: { lte: now },
-        endDate:   { gte: now },
-        status: "OPEN",
-      },
-      select: { id: true, tenantId: true, startDate: true, endDate: true, status: true },
-    }),
+    tenantId
+      ? db.payPeriod.findFirst({
+          where: {
+            tenantId,
+            ruleSetId: { not: null },
+            startDate: { lte: now },
+            endDate:   { gt: now },
+            status: "OPEN",
+          },
+          select: { id: true, tenantId: true, startDate: true, endDate: true, status: true },
+        })
+      : null,
 
     employeeId
       ? db.punch.findFirst({
@@ -124,7 +129,6 @@ export default async function DashboardPage({
       : null;
 
   // ── Payroll overview (PAY_PERIOD_MANAGE only) ────────────────────────────
-  const tenantId = (session?.user as { tenantId?: string } | undefined)?.tenantId;
   const hasPayrollAccess = session?.user
     ? await userHasPermission(session.user, "PAY_PERIOD_MANAGE")
     : false;
@@ -140,14 +144,14 @@ export default async function DashboardPage({
     const [prevPP, nextPP] = await Promise.all([
       payPeriod
         ? db.payPeriod.findFirst({
-            where: { tenantId, endDate: { lt: payPeriod.startDate } },
+            where: { tenantId, ruleSetId: { not: null }, endDate: { lt: payPeriod.startDate } },
             orderBy: { endDate: "desc" },
             select: { id: true, startDate: true, endDate: true },
           })
         : null,
       payPeriod
         ? db.payPeriod.findFirst({
-            where: { tenantId, startDate: { gt: payPeriod.endDate } },
+            where: { tenantId, ruleSetId: { not: null }, startDate: { gt: payPeriod.endDate } },
             orderBy: { startDate: "asc" },
             select: { id: true, startDate: true, endDate: true },
           })
@@ -158,17 +162,17 @@ export default async function DashboardPage({
     const allPeriods: PeriodOption[] = [
       prevPP && {
         ...prevPP,
-        label: `${format(parseUtcDate(prevPP.startDate), "MMM d")} – ${format(parseUtcDate(prevPP.endDate), "MMM d")} (Previous)`,
+        label: `${format(parseUtcDate(prevPP.startDate), "MMM d")} – ${format(addDays(parseUtcDate(prevPP.endDate), -1), "MMM d")} (Previous)`,
       },
       payPeriod && {
         id: payPeriod.id,
         startDate: payPeriod.startDate,
         endDate: payPeriod.endDate,
-        label: `${format(parseUtcDate(payPeriod.startDate), "MMM d")} – ${format(parseUtcDate(payPeriod.endDate), "MMM d")} (Current)`,
+        label: `${format(parseUtcDate(payPeriod.startDate), "MMM d")} – ${format(addDays(parseUtcDate(payPeriod.endDate), -1), "MMM d")} (Current)`,
       },
       nextPP && {
         ...nextPP,
-        label: `${format(parseUtcDate(nextPP.startDate), "MMM d")} – ${format(parseUtcDate(nextPP.endDate), "MMM d")} (Next)`,
+        label: `${format(parseUtcDate(nextPP.startDate), "MMM d")} – ${format(addDays(parseUtcDate(nextPP.endDate), -1), "MMM d")} (Next)`,
       },
     ].filter(Boolean) as PeriodOption[];
 
@@ -183,14 +187,21 @@ export default async function DashboardPage({
 
     if (selectedPeriod) {
       [exceptionCounts, leaveStatusCounts, timesheetStatusCounts] = await Promise.all([
-        db.exception.groupBy({
-          by: ["exceptionType"],
-          where: {
-            resolvedAt: null,
-            timesheet: { payPeriodId: selectedPeriod.id, employee: { tenantId } },
-          },
-          _count: { _all: true },
-        }),
+        db.$queryRaw<{ exceptionType: string; cnt: bigint }[]>`
+          SELECT e."exceptionType", COUNT(*)::int AS cnt
+          FROM "Exception" e
+          JOIN "Timesheet" ts  ON ts.id  = e."timesheetId"
+          JOIN "PayPeriod" pp  ON pp.id  = ts."payPeriodId"
+          JOIN "Employee"  emp ON emp.id = ts."employeeId"
+          WHERE e."resolvedAt"   IS NULL
+            AND pp."tenantId"    = ${tenantId}
+            AND pp."startDate"   = ${selectedPeriod.startDate}
+            AND emp."tenantId"   = ${tenantId}
+            AND e."exceptionType" != 'SCAN_DISCREPANCY'
+          GROUP BY e."exceptionType"
+        `.then((rows) =>
+          rows.map((r) => ({ exceptionType: r.exceptionType, _count: { _all: Number(r.cnt) } }))
+        ).catch(() => []),
         db.leaveRequest.groupBy({
           by: ["status"],
           where: {
@@ -201,7 +212,10 @@ export default async function DashboardPage({
         }),
         db.timesheet.groupBy({
           by: ["status"],
-          where: { payPeriodId: selectedPeriod.id, employee: { tenantId } },
+          where: {
+            payPeriod: { tenantId, startDate: selectedPeriod.startDate },
+            employee:  { tenantId },
+          },
           _count: { _all: true },
         }),
       ]);
@@ -210,7 +224,7 @@ export default async function DashboardPage({
 
   // ── Pay period display ────────────────────────────────────────────────────
   const payPeriodValue = payPeriod
-    ? `${format(parseUtcDate(payPeriod.startDate), "MMM d")} – ${format(parseUtcDate(payPeriod.endDate), "MMM d")}`
+    ? `${format(parseUtcDate(payPeriod.startDate), "MMM d")} – ${format(addDays(parseUtcDate(payPeriod.endDate), -1), "MMM d")}`
     : "No active period";
 
   const payPeriodSub = payPeriod

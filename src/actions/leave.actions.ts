@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
+import { auth } from "@/lib/auth";
 import { withRBAC } from "@/lib/rbac/guard";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { validateLeaveTransition } from "@/lib/state-machines/leave-state";
 import { postLeaveUsage, reverseLeaveUsage } from "@/lib/engines/accrual-engine";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
@@ -19,9 +21,11 @@ import {
 import {
   leaveRequestIdSchema,
   reviewLeaveSchema,
+  submitLeaveForEmployeeSchema,
   type RequestLeaveInput,
   type LeaveRequestIdInput,
   type ReviewLeaveInput,
+  type SubmitLeaveForEmployeeInput,
 } from "@/lib/validators/leave.schema";
 
 // ─── Employee actions ─────────────────────────────────────────────────────────
@@ -91,6 +95,97 @@ export const cancelLeaveRequest = withRBAC(
     revalidatePath("/payroll/timecards");
     revalidatePath("/time/timesheet");
     return updated;
+  }
+);
+
+// ─── Supervisor: submit leave on behalf of an employee ───────────────────────
+
+/** Fetch active employees available for leave submission based on the actor's scope. */
+export const getTeamMembersForLeave = withRBAC(
+  "LEAVE_REQUEST_TEAM",
+  async ({ employeeId: actorId, tenantId }, _input: void) => {
+    const session = await auth();
+    const canSubmitForAny = session?.user
+      ? await userHasPermission(session.user, "LEAVE_REQUEST_ANY")
+      : false;
+
+    const employees = await db.employee.findMany({
+      where: {
+        isActive: true,
+        tenantId: tenantId ?? undefined,
+        ...(canSubmitForAny ? {} : { supervisorId: actorId }),
+      },
+      select: {
+        id: true,
+        wmsId: true,
+        user: { select: { name: true } },
+        shift: {
+          select: {
+            startTime: true,
+            endTime: true,
+            workDays: true,
+            mealConfig: true,
+          },
+        },
+      },
+      orderBy: { user: { name: "asc" } },
+    });
+
+    const leaveTypes = await db.leaveType.findMany({
+      where: { isActive: true, tenantId: tenantId ?? undefined },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    });
+
+    return { employees, leaveTypes };
+  }
+);
+
+/** Create and submit a leave request on behalf of a team member. */
+export const createLeaveRequestForEmployee = withRBAC(
+  "LEAVE_REQUEST_TEAM",
+  async ({ employeeId: actorId, tenantId }, input: SubmitLeaveForEmployeeInput) => {
+    const { targetEmployeeId, leaveTypeId, selectedDays, note } =
+      submitLeaveForEmployeeSchema.parse(input);
+
+    // Verify target belongs to same tenant
+    const target = await db.employee.findUniqueOrThrow({
+      where: { id: targetEmployeeId },
+      select: { supervisorId: true, tenantId: true },
+    });
+    if (target.tenantId !== tenantId) throw new Error("Employee not found.");
+
+    // For team scope: must be a direct report. For any scope: bypass.
+    if (target.supervisorId !== actorId) {
+      const session = await auth();
+      const canSubmitForAny = session?.user
+        ? await userHasPermission(session.user, "LEAVE_REQUEST_ANY")
+        : false;
+      if (!canSubmitForAny) {
+        throw new Error("You can only submit leave for your direct reports.");
+      }
+    }
+
+    // Create DRAFT → submit → supervisor-approve (moves to PENDING_HR)
+    const request = await createLeaveRequestCore(targetEmployeeId, { leaveTypeId, selectedDays, note });
+    await submitLeaveRequestCore(targetEmployeeId, tenantId ?? "", request.id);
+    await db.leaveRequest.update({
+      where: { id: request.id },
+      data: { status: "PENDING_HR", reviewedAt: new Date(), reviewedById: actorId },
+    });
+
+    await writeAuditLog({
+      tenantId,
+      actorId,
+      entityType: "LEAVE_REQUEST",
+      entityId: request.id,
+      action: "CREATED",
+      changes: { note: `Submitted on behalf of employee by supervisor` },
+    });
+
+    revalidatePath("/supervisor/leave");
+    revalidatePath("/leave");
+    return { success: true as const };
   }
 );
 

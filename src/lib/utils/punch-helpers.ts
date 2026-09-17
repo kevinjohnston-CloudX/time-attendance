@@ -69,7 +69,7 @@ export async function findOpenPayPeriod(
       where: {
         ruleSetId,
         startDate: { lte: now },
-        endDate: { gte: now },
+        endDate: { gt: now },
         status: "OPEN",
       },
     });
@@ -82,7 +82,7 @@ export async function findOpenPayPeriod(
       ...(tenantId && { tenantId }),
       ruleSetId: null,
       startDate: { lte: now },
-      endDate: { gte: now },
+      endDate: { gt: now },
       status: "OPEN",
     },
   });

@@ -7,7 +7,7 @@ import { z } from "zod";
 // ─── Active employee directory (employee-centric timecard) ───────────────────
 
 export const getActiveEmployeesForTimecards = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"],
   async ({ tenantId }, input: { siteId?: string | null; departmentId?: string | null; payPeriodId?: string | null }) => {
     const { siteId, departmentId, payPeriodId: payPeriodIdInput } = z.object({
       siteId: z.string().nullish(),
@@ -79,7 +79,7 @@ export const getActiveEmployeesForTimecards = withRBAC(
 // ─── Team employees for supervisor view ──────────────────────────────────────
 
 export const getTeamEmployeesForTimecards = withRBAC(
-  "TIMECARD_VIEW_TEAM",
+  ["TIMECARD_VIEW_TEAM", "TIMECARD_EDIT_TEAM"],
   async ({ employeeId, tenantId }, _input: Record<string, never>) => {
     const employees = await db.employee.findMany({
       where: {
@@ -112,7 +112,7 @@ export const getTeamEmployeesForTimecards = withRBAC(
 // ─── Periods for a specific employee's rule set ───────────────────────────────
 
 export const getEmployeePeriods = withRBAC(
-  ["PAY_PERIOD_MANAGE", "TIMECARD_VIEW_TEAM"],
+  ["TIMECARD_VIEW_TEAM", "TIMECARD_VIEW_ANY", "TIMECARD_EDIT_TEAM", "TIMECARD_EDIT_ANY"],
   async (_ctx, input: { employeeId: string }) => {
     const { employeeId } = z.object({ employeeId: z.string() }).parse(input);
 
@@ -183,7 +183,7 @@ export const getEmployeePeriods = withRBAC(
 // ─── Timecard by employee + period (employee-centric lookup) ─────────────────
 
 export const getTimecardByEmployeeAndPeriod = withRBAC(
-  ["PAY_PERIOD_MANAGE", "TIMECARD_VIEW_TEAM"],
+  ["TIMECARD_VIEW_TEAM", "TIMECARD_VIEW_ANY", "TIMECARD_EDIT_TEAM", "TIMECARD_EDIT_ANY"],
   async (_ctx, input: { employeeId: string; periodId: string }) => {
     const { employeeId, periodId } = z.object({
       employeeId: z.string(),
@@ -270,7 +270,7 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
 // ─── Create or retrieve a timesheet for an employee+period ───────────────────
 
 export const ensureTimesheet = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  ["TIMECARD_EDIT_TEAM", "TIMECARD_EDIT_ANY"],
   async (_ctx, input: { employeeId: string; periodId: string }) => {
     const { employeeId, periodId } = z.object({
       employeeId: z.string(),
@@ -291,7 +291,7 @@ export const ensureTimesheet = withRBAC(
 // ─── Employee list for timecard sidebar ──────────────────────────────────────
 
 export const getTimecardEmployeeList = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"],
   async (_ctx, input: { payPeriodId: string; siteId?: string | null; departmentId?: string | null }) => {
     const { payPeriodId, siteId, departmentId } = z.object({
       payPeriodId: z.string(),
@@ -349,7 +349,7 @@ export const getTimecardEmployeeList = withRBAC(
 // ─── Full timecard detail ────────────────────────────────────────────────────
 
 export const getTimecardDetail = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  ["TIMECARD_VIEW_TEAM", "TIMECARD_VIEW_ANY", "TIMECARD_EDIT_TEAM", "TIMECARD_EDIT_ANY"],
   async (_ctx, input: { timesheetId: string }) => {
     const { timesheetId } = z
       .object({ timesheetId: z.string() })

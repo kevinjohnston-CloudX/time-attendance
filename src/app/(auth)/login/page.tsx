@@ -7,7 +7,7 @@ import { signIn } from "next-auth/react";
 export default function LoginPage() {
   const router = useRouter();
   const [showAdmin, setShowAdmin] = useState(false);
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,7 +24,7 @@ export default function LoginPage() {
     setLoading(true);
 
     const result = await signIn("credentials", {
-      username,
+      username: email,
       password,
       redirect: false,
     });
@@ -32,7 +32,7 @@ export default function LoginPage() {
     setLoading(false);
 
     if (result?.error) {
-      setError("Invalid username or password.");
+      setError("Invalid email or password.");
       return;
     }
 
@@ -81,18 +81,18 @@ export default function LoginPage() {
       ) : (
         <form onSubmit={handleCredentials} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
-            <label htmlFor="username" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Username
+            <label htmlFor="email" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              Email
             </label>
             <input
-              id="username"
-              type="text"
-              autoComplete="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              id="email"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
               className="rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 px-3 py-2 text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-zinc-500"
-              placeholder="Enter your username"
+              placeholder="your@email.com"
             />
           </div>
 

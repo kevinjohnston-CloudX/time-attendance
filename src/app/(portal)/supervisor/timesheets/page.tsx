@@ -6,7 +6,7 @@ import { getTeamTimesheets } from "@/actions/supervisor.actions";
 import { TIMESHEET_STATUS_LABEL } from "@/lib/state-machines/labels";
 import { ApproveTimesheetButtons } from "@/components/supervisor/approve-timesheet-buttons";
 import { formatMinutes } from "@/lib/utils/duration";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 
 export default async function TeamTimesheetsPage() {
   const session = await auth();
@@ -61,7 +61,7 @@ export default async function TeamTimesheetsPage() {
                   </p>
                   <p className="mt-0.5 text-sm text-zinc-500">
                     {format(ts.payPeriod.startDate, "MMM d")} –{" "}
-                    {format(ts.payPeriod.endDate, "MMM d, yyyy")}
+                    {format(addDays(ts.payPeriod.endDate, -1), "MMM d, yyyy")}
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">
                     REG {formatMinutes(reg)}

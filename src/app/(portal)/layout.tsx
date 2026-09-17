@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Sidebar } from "@/components/layout/sidebar";
+import { InactiveRouteGuard } from "@/components/layout/inactive-route-guard";
 import { exitTenant } from "@/actions/super-admin.actions";
 import { SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
 import { getPermissions } from "@/lib/rbac/permissions";
@@ -18,6 +19,17 @@ export default async function PortalLayout({
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+  if (session.user.mustChangePassword) redirect("/change-password");
+
+  // Check if the employee is active. Inactive employees get a restricted read-only view.
+  let isEmployeeActive = true;
+  if (session.user.employeeId) {
+    const emp = await db.employee.findUnique({
+      where: { id: session.user.employeeId },
+      select: { isActive: true },
+    });
+    isEmployeeActive = emp?.isActive ?? true;
+  }
 
   let tenantBannerName: string | null = null;
   const realRole = session.user.role ?? "EMPLOYEE";
@@ -125,10 +137,12 @@ export default async function PortalLayout({
           permissions={userPermissions}
           realRole={realRole}
           viewAsRole={viewAsRole}
-          canViewAs={canUseViewAs}
+          canViewAs={canUseViewAs && isEmployeeActive}
           viewAsOptions={viewAsOptions.map((r) => ({ id: r.id, name: r.name }))}
+          isInactive={!isEmployeeActive}
         />
         <main className="flex-1 overflow-y-auto">
+          <InactiveRouteGuard isInactive={!isEmployeeActive} />
           <div className="px-6 py-8">{children}</div>
         </main>
       </div>

@@ -4,6 +4,7 @@ import React, { useState, useTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   format,
+  addDays,
   eachDayOfInterval,
   parseISO,
   isToday,
@@ -39,6 +40,7 @@ import {
   addManualPunchPair,
   addSingleManualPunch,
   deleteManualPunchPair,
+  addManualHoursEntry,
 } from "@/actions/timecard-entry.actions";
 import { setSegmentPayCode, setSegmentPayBucket, setAbsentDayPayBucket, setAbsentDayPayCode } from "@/actions/pay-code.actions";
 import { setDayReasonCode } from "@/actions/reason-code.actions";
@@ -322,6 +324,9 @@ function RecalculateButton({ timesheetId }: { timesheetId: string }) {
   );
 }
 
+// Buckets that are paid at regular rate (shown in Reg Hrs column in summary)
+const PAID_LEAVE_BUCKETS = new Set(["PTO", "SICK", "HOLIDAY", "FMLA", "BEREAVEMENT", "JURY_DUTY", "MILITARY"]);
+
 // ─── Summary Row Helper ─────────────────────────────────────────────────────
 
 function SummaryRow({
@@ -506,6 +511,7 @@ export function TimecardViewer({
   const [pendingNewPunches, setPendingNewPunches] = useState<Array<{ dayKey: string; pairIndex: number; punchType: "CLOCK_IN" | "CLOCK_OUT"; punchDate: Date }>>([]);
   const [pendingWaiverToggles, setPendingWaiverToggles] = useState<Set<string>>(new Set());
   const [pendingDeletions, setPendingDeletions] = useState<Array<{ punchIds: string[]; dayKey: string; inTime: string | null; outTime: string | null }>>([]);
+  const [pendingHoursEntries, setPendingHoursEntries] = useState<Array<{ dayKey: string; hours: number; payCodeId?: string }>>([]);
 
   // ── Pay period navigation helpers ─────────────────────────────────────
   const sortedPeriods = [...payPeriods].sort(
@@ -594,10 +600,12 @@ export function TimecardViewer({
 
   // New entry row (always-visible blank row at table bottom)
   const [newEntryDate, setNewEntryDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [newEntryMode, setNewEntryMode] = useState<"time" | "hours">("time");
   const [newInTimeStr, setNewInTimeStr] = useState("");
   const [newInAmPm, setNewInAmPm] = useState<"AM" | "PM">("AM");
   const [newOutTimeStr, setNewOutTimeStr] = useState("");
   const [newOutAmPm, setNewOutAmPm] = useState<"AM" | "PM">("PM");
+  const [newEntryHours, setNewEntryHours] = useState("");
   const [newEntryPayCodeId, setNewEntryPayCodeId] = useState("");
   const [newEntryReasonCodeId, setNewEntryReasonCodeId] = useState("");
   const [newEntryNote, setNewEntryNote] = useState("");
@@ -639,6 +647,10 @@ export function TimecardViewer({
   const [noteText, setNoteText] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
 
+  // Manual hours inline editor
+  const [editingHours, setEditingHours] = useState<{ dayKey: string; value: string } | null>(null);
+  const [hoursError, setHoursError] = useState<string | null>(null);
+
   // Summary
   const [summaryGroupBy, setSummaryGroupBy] = useState<
     "total" | "week" | "paycode"
@@ -666,6 +678,10 @@ export function TimecardViewer({
     setPendingNewPunches([]);
     setPendingWaiverToggles(new Set());
     setPendingDeletions([]);
+    setEditingHours(null);
+    setHoursError(null);
+    setNewEntryMode("time");
+    setNewEntryHours("");
   }, [timecard?.timesheetId]);
 
   const canEdit = !readOnly && (timecard
@@ -1020,6 +1036,46 @@ export function TimecardViewer({
     });
   }
 
+  function handleAddHoursEntry(e: React.FormEvent) {
+    e.preventDefault();
+    if (!timecard && (!selectedEmployeeId || !selectedPeriodId)) return;
+    setNewEntryError(null);
+    const hours = parseFloat(newEntryHours);
+    if (isNaN(hours) || hours < 0.25 || hours > 24) {
+      setNewEntryError("Enter hours between 0.25 and 24");
+      return;
+    }
+    startTransition(async () => {
+      let timesheetId: string = timecard?.timesheetId ?? "";
+      if (!timesheetId) {
+        const ensureResult = await ensureTimesheet({ employeeId: selectedEmployeeId!, periodId: selectedPeriodId! });
+        if (!ensureResult.success) { setNewEntryError("Failed to create timesheet"); return; }
+        timesheetId = ensureResult.data.timesheetId;
+      }
+      const result = await addManualHoursEntry({
+        timesheetId,
+        date: newEntryDate,
+        hours,
+        payCodeId: newEntryPayCodeId || undefined,
+        note: newEntryNote.trim() || undefined,
+      });
+      if (!result.success) { setNewEntryError(result.error ?? "Failed to add entry"); return; }
+      if (newEntryReasonCodeId) {
+        await setDayReasonCode({ timesheetId, segmentDate: newEntryDate, reasonCodeId: newEntryReasonCodeId });
+      }
+      if (newEntryNote.trim()) {
+        await saveTimesheetNote({ timesheetId, noteDate: newEntryDate, note: `Manual hours entry: ${hours}h\n  Note: ${newEntryNote.trim()}` });
+      }
+      setNewEntryHours("");
+      setNewEntryPayCodeId("");
+      setNewEntryReasonCodeId("");
+      setNewEntryNote("");
+      setNewEntryError(null);
+      setShowAddEntryModal(false);
+      router.refresh();
+    });
+  }
+
   async function handleOpenAddEntry(dayStr: string) {
     setAddEntryDay(dayStr);
     // Fetch leave types lazily once
@@ -1128,7 +1184,7 @@ export function TimecardViewer({
     });
   }
 
-  const hasPendingChanges = pendingPayCodes.size > 0 || pendingReasonCodes.size > 0 || pendingPunchEdits.size > 0 || pendingNewPunches.length > 0 || pendingWaiverToggles.size > 0 || pendingDeletions.length > 0;
+  const hasPendingChanges = pendingPayCodes.size > 0 || pendingReasonCodes.size > 0 || pendingPunchEdits.size > 0 || pendingNewPunches.length > 0 || pendingWaiverToggles.size > 0 || pendingDeletions.length > 0 || pendingHoursEntries.length > 0;
 
   function handleDiscardChanges() {
     setPendingPayCodes(new Map());
@@ -1137,6 +1193,7 @@ export function TimecardViewer({
     setPendingNewPunches([]);
     setPendingWaiverToggles(new Set());
     setPendingDeletions([]);
+    setPendingHoursEntries([]);
   }
 
   function handleSaveChanges() {
@@ -1215,12 +1272,18 @@ export function TimecardViewer({
           const timeRange = [inTime, outTime].filter(Boolean).join(" – ");
           addChange(dayKey, `Entry deleted${timeRange ? `: ${timeRange}` : ""}`);
         }
+        for (const { dayKey, hours } of pendingHoursEntries) {
+          addChange(dayKey, `Manual hours added: ${hours}h`);
+        }
         // ─────────────────────────────────────────────────────────────
 
         const ops: Promise<unknown>[] = [];
         for (const [key, payCodeId] of pendingPayCodes.entries()) {
           if (key.startsWith("absent:")) {
-            ops.push(setAbsentDayPayCode({ timesheetId, segmentDate: key.slice(7), payCodeId: payCodeId || null }));
+            const segDate = key.slice(7);
+            // Skip: addManualHoursEntry will handle the pay code for this day
+            if (pendingHoursEntries.some((e) => e.dayKey === segDate)) continue;
+            ops.push(setAbsentDayPayCode({ timesheetId, segmentDate: segDate, payCodeId: payCodeId || null }));
           } else {
             ops.push(setSegmentPayCode({ segmentId: key, payCodeId: payCodeId || null }));
           }
@@ -1239,6 +1302,9 @@ export function TimecardViewer({
         }
         for (const { punchIds } of pendingDeletions) {
           ops.push(deleteManualPunchPair({ punchIds }));
+        }
+        for (const { dayKey, hours, payCodeId } of pendingHoursEntries) {
+          ops.push(addManualHoursEntry({ timesheetId, date: dayKey, hours, ...(payCodeId ? { payCodeId } : {}) }));
         }
         await Promise.all(ops);
 
@@ -1261,6 +1327,7 @@ export function TimecardViewer({
         setPendingNewPunches([]);
         setPendingWaiverToggles(new Set());
         setPendingDeletions([]);
+        setPendingHoursEntries([]);
         router.refresh();
       } catch (err) {
         setActionError(err instanceof Error ? err.message : "Failed to save changes");
@@ -1271,6 +1338,31 @@ export function TimecardViewer({
   function handleOpenNote(dayStr: string) {
     setNoteDay(dayStr);
     setNoteText("");
+  }
+
+  function handleHoursBlur() {
+    if (!editingHours) return;
+    const raw = editingHours.value.trim();
+    if (!raw) { setEditingHours(null); return; }
+    const hours = parseFloat(raw);
+    if (isNaN(hours) || hours < 0.25 || hours > 24) {
+      setHoursError("Enter hours between 0.25 and 24");
+      return;
+    }
+    const dayKey = editingHours.dayKey;
+    setEditingHours(null);
+    setHoursError(null);
+    // Capture the pay code for this day: prefer a pending change, fall back to existing segment
+    const payCodeId =
+      pendingPayCodes.get("absent:" + dayKey) ??
+      timecard?.segments.find((s) => {
+        try { return format(parseUtcDate(s.segmentDate), "yyyy-MM-dd") === dayKey && !!s.payCodeId; } catch { return false; }
+      })?.payCodeId ??
+      undefined;
+    setPendingHoursEntries((prev) => {
+      const filtered = prev.filter((e) => e.dayKey !== dayKey);
+      return [...filtered, { dayKey, hours, payCodeId }];
+    });
   }
 
   function handleSaveNote() {
@@ -1339,7 +1431,7 @@ export function TimecardViewer({
               const sel = sortedPeriods[currentIndex];
               if (!sel) return "—";
               const s = parseUtcDate(sel.startDate);
-              const e = parseUtcDate(sel.endDate);
+              const e = addDays(parseUtcDate(sel.endDate), -1);
               return `${format(s, "MM/dd/yyyy")} (${format(s, "EEE")}) – ${format(e, "MM/dd/yyyy")} (${format(e, "EEE")})`;
             })()}
           </span>
@@ -1722,6 +1814,16 @@ export function TimecardViewer({
                         type="button"
                         onClick={() => {
                           setNewEntryDate(format(new Date(), "yyyy-MM-dd"));
+                          setNewInTimeStr("");
+                          setNewOutTimeStr("");
+                          setNewInAmPm("AM");
+                          setNewOutAmPm("PM");
+                          setNewEntryHours("");
+                          setNewEntryPayCodeId("");
+                          setNewEntryReasonCodeId("");
+                          setNewEntryNote("");
+                          setNewEntryError(null);
+                          setNewEntryMode("time");
                           setShowAddEntryModal(true);
                         }}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -1878,8 +1980,8 @@ export function TimecardViewer({
                         const eb = (seg.payBucketOverride && !["REG", "OT", "DT"].includes(seg.payBucketOverride))
                           ? seg.payBucketOverride
                           : seg.payBucket;
-                        // Holiday credits display under the REG column (pay code identifies them as holiday)
-                        const displayBucket = (seg.segmentType === "HOLIDAY") ? "REG" : eb;
+                        // Holiday and leave credits display under the REG column
+                        const displayBucket = (seg.segmentType === "HOLIDAY" || seg.segmentType === "LEAVE") ? "REG" : eb;
                         buckets[displayBucket] = (buckets[displayBucket] ?? 0) + seg.durationMinutes;
                       }
 
@@ -2334,17 +2436,60 @@ export function TimecardViewer({
                             </td>
 
                             {/* Reg */}
-                            <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
-                              isAbsent
-                                ? "text-red-400 dark:text-red-700"
-                                : hasMissingPunch
-                                  ? "text-amber-400 dark:text-amber-600"
-                                  : (reg > 0 || isSalaryVirtualDay)
-                                    ? "text-zinc-700 dark:text-zinc-300"
-                                    : "text-zinc-300 dark:text-zinc-700"
-                            }`}>
-                              {isAbsent ? "0.00" : hasMissingPunch ? "—" : (reg > 0 || isSalaryVirtualDay) ? minutesToHoursDecimal(reg || SALARY_VIRTUAL_MINS) : "—"}
-                            </td>
+                            {(() => {
+                              const canAddHours = canEdit && timecard && dayPunches.length === 0 && reg === 0 && !isSalaryVirtualDay && !isTodayRow;
+                              const isEditingThis = editingHours?.dayKey === dayKey;
+                              const pendingHours = pendingHoursEntries.find((e) => e.dayKey === dayKey)?.hours;
+                              return (
+                                <td
+                                  className={`px-3 py-1.5 text-right tabular-nums text-sm ${
+                                    isAbsent
+                                      ? "text-red-400 dark:text-red-700"
+                                      : hasMissingPunch
+                                        ? "text-amber-400 dark:text-amber-600"
+                                        : (reg > 0 || isSalaryVirtualDay)
+                                          ? "text-zinc-700 dark:text-zinc-300"
+                                          : "text-zinc-300 dark:text-zinc-700"
+                                  }`}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {isEditingThis ? (
+                                    <div className="flex flex-col items-end gap-0.5">
+                                      <div className="flex items-center gap-1">
+                                        <input
+                                          type="text"
+                                          autoFocus
+                                          value={editingHours.value}
+                                          onChange={(e) => setEditingHours({ dayKey, value: e.target.value })}
+                                          onBlur={handleHoursBlur}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") { e.preventDefault(); handleHoursBlur(); }
+                                            if (e.key === "Escape") { e.preventDefault(); setEditingHours(null); setHoursError(null); }
+                                          }}
+                                          placeholder="0.00"
+                                          className="w-14 rounded border border-blue-400 bg-white px-1 py-0.5 text-right text-xs dark:border-blue-600 dark:bg-zinc-800 dark:text-white"
+                                        />
+                                        <span className="text-xs text-zinc-400">h</span>
+                                      </div>
+                                      {hoursError && <span className="text-xs text-red-500">{hoursError}</span>}
+                                    </div>
+                                  ) : pendingHours !== undefined ? (
+                                    <span className="font-medium text-amber-500 dark:text-amber-400">{pendingHours.toFixed(2)}</span>
+                                  ) : canAddHours ? (
+                                    <button
+                                      type="button"
+                                      title="Add manual hours"
+                                      onClick={() => { setEditingHours({ dayKey, value: "" }); setHoursError(null); }}
+                                      className={`rounded px-1 py-0.5 ${isAbsent ? "hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/20 dark:hover:text-red-400" : "hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}
+                                    >
+                                      {isAbsent ? "0.00" : "—"}
+                                    </button>
+                                  ) : (
+                                    isAbsent ? "0.00" : hasMissingPunch ? "—" : (reg > 0 || isSalaryVirtualDay) ? minutesToHoursDecimal(reg || SALARY_VIRTUAL_MINS) : "—"
+                                  )}
+                                </td>
+                              );
+                            })()}
 
                             {/* OT */}
                             <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
@@ -2907,44 +3052,26 @@ export function TimecardViewer({
                                 : s.payBucket;
                               filteredBucketMap[eb] = (filteredBucketMap[eb] ?? 0) + s.durationMinutes;
                             }
-                            const reg = filteredBucketMap["REG"] ?? 0;
+                            const paidLeaveMinutes = Object.entries(filteredBucketMap)
+                              .filter(([k]) => PAID_LEAVE_BUCKETS.has(k))
+                              .reduce((s, [, v]) => s + v, 0);
+                            const reg = (filteredBucketMap["REG"] ?? 0) + paidLeaveMinutes;
                             const ot = filteredBucketMap["OT"] ?? 0;
                             const dt = filteredBucketMap["DT"] ?? 0;
                             const total = Object.values(filteredBucketMap).reduce(
                               (a, b) => a + b,
                               0
                             );
-                            // Also show non-REG/OT/DT buckets
-                            const otherBuckets = ALL_PAY_BUCKETS.filter(
-                              (b) =>
-                                !["REG", "OT", "DT"].includes(b.key) &&
-                                (filteredBucketMap[b.key] ?? 0) > 0
-                            );
-
                             return (
-                              <>
-                                {otherBuckets.map((b) => (
-                                  <SummaryRow
-                                    key={b.key}
-                                    label={b.label}
-                                    reg={0}
-                                    ot={0}
-                                    dt={0}
-                                    total={bucketMap[b.key] ?? 0}
-                                    rate={rate}
-                                    className={b.color}
-                                  />
-                                ))}
-                                <SummaryRow
-                                  label="Totals"
-                                  reg={reg}
-                                  ot={ot}
-                                  dt={dt}
-                                  total={total}
-                                  rate={rate}
-                                  isBold
-                                />
-                              </>
+                              <SummaryRow
+                                label="Totals"
+                                reg={reg}
+                                ot={ot}
+                                dt={dt}
+                                total={total}
+                                rate={rate}
+                                isBold
+                              />
                             );
                           }
 
@@ -2953,7 +3080,7 @@ export function TimecardViewer({
                             const periodEntry = timecard ? timecard.payPeriod : sortedPeriods.find((p) => p.id === selectedPeriodId);
                             if (!periodEntry) return null;
                             const ppStart = parseUtcDate(periodEntry.startDate);
-                            const ppEnd = parseUtcDate(periodEntry.endDate);
+                            const ppEnd = addDays(parseUtcDate(periodEntry.endDate), -1);
                             const weeks: {
                               label: string;
                               start: Date;
@@ -3040,10 +3167,12 @@ export function TimecardViewer({
                           // Pay code grouping
                           const byCode: Record<
                             string,
-                            { label: string; minutes: number }
+                            { label: string; reg: number; ot: number; dt: number; total: number }
                           > = {};
                           for (const seg of (timecard?.segments ?? [])) {
                             if (!seg.isPaid) continue;
+                            const sd = format(parseUtcDate(seg.segmentDate), "yyyy-MM-dd");
+                            if (missingPunchDates.has(sd)) continue;
                             const eb = (seg.payBucketOverride && !["REG", "OT", "DT"].includes(seg.payBucketOverride))
                               ? seg.payBucketOverride
                               : seg.payBucket;
@@ -3051,16 +3180,20 @@ export function TimecardViewer({
                               seg.payCode
                                 ? `${seg.payCode.code}[${seg.payCode.label}]`
                                 : PAY_BUCKET_LABEL[eb as PayBucketValue] ?? eb;
-                            byCode[key] = byCode[key] ?? {
-                              label: key,
-                              minutes: 0,
-                            };
-                            byCode[key].minutes += seg.durationMinutes;
+                            byCode[key] = byCode[key] ?? { label: key, reg: 0, ot: 0, dt: 0, total: 0 };
+                            byCode[key].total += seg.durationMinutes;
+                            if (eb === "REG" || PAID_LEAVE_BUCKETS.has(eb)) {
+                              byCode[key].reg += seg.durationMinutes;
+                            } else if (eb === "OT") {
+                              byCode[key].ot += seg.durationMinutes;
+                            } else if (eb === "DT") {
+                              byCode[key].dt += seg.durationMinutes;
+                            }
                           }
-                          const grandTotal = Object.values(byCode).reduce(
-                            (a, b) => a + b.minutes,
-                            0
-                          );
+                          let grandReg = 0, grandOt = 0, grandDt = 0, grandTotal = 0;
+                          for (const e of Object.values(byCode)) {
+                            grandReg += e.reg; grandOt += e.ot; grandDt += e.dt; grandTotal += e.total;
+                          }
 
                           return (
                             <>
@@ -3068,18 +3201,18 @@ export function TimecardViewer({
                                 <SummaryRow
                                   key={entry.label}
                                   label={entry.label}
-                                  reg={0}
-                                  ot={0}
-                                  dt={0}
-                                  total={entry.minutes}
+                                  reg={entry.reg}
+                                  ot={entry.ot}
+                                  dt={entry.dt}
+                                  total={entry.total}
                                   rate={rate}
                                 />
                               ))}
                               <SummaryRow
                                 label="Totals"
-                                reg={0}
-                                ot={0}
-                                dt={0}
+                                reg={grandReg}
+                                ot={grandOt}
+                                dt={grandDt}
                                 total={grandTotal}
                                 rate={rate}
                                 isBold
@@ -3214,7 +3347,7 @@ export function TimecardViewer({
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <form onSubmit={handleAddEntry} className="space-y-4 p-5">
+            <form onSubmit={newEntryMode === "hours" ? handleAddHoursEntry : handleAddEntry} className="space-y-4 p-5">
               <div className="grid grid-cols-2 gap-4">
                 {/* Date — full width */}
                 <div className="col-span-2 flex flex-col gap-1">
@@ -3229,46 +3362,91 @@ export function TimecardViewer({
                     className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
                   />
                 </div>
-                {/* In Time */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-zinc-500">In Time</label>
-                  <div className="flex min-w-0 gap-1.5">
-                    <input
-                      value={newInTimeStr}
-                      onChange={(e) => setNewInTimeStr(e.target.value)}
-                      placeholder="8:00"
-                      className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                    />
-                    <select
-                      value={newInAmPm}
-                      onChange={(e) => setNewInAmPm(e.target.value as "AM" | "PM")}
-                      className="shrink-0 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                    >
-                      <option value="AM">AM</option>
-                      <option value="PM">PM</option>
-                    </select>
-                  </div>
+
+                {/* Mode toggle */}
+                <div className="col-span-2 flex gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-800">
+                  <button
+                    type="button"
+                    onClick={() => { setNewEntryMode("time"); setNewEntryError(null); }}
+                    className={`flex-1 rounded-md px-3 py-1 text-xs font-medium transition-colors ${newEntryMode === "time" ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}
+                  >
+                    In / Out Times
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setNewEntryMode("hours"); setNewEntryError(null); }}
+                    className={`flex-1 rounded-md px-3 py-1 text-xs font-medium transition-colors ${newEntryMode === "hours" ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}
+                  >
+                    Reg Hours
+                  </button>
                 </div>
-                {/* Out Time */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-zinc-500">Out Time</label>
-                  <div className="flex min-w-0 gap-1.5">
-                    <input
-                      value={newOutTimeStr}
-                      onChange={(e) => setNewOutTimeStr(e.target.value)}
-                      placeholder="5:00"
-                      className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                    />
-                    <select
-                      value={newOutAmPm}
-                      onChange={(e) => setNewOutAmPm(e.target.value as "AM" | "PM")}
-                      className="shrink-0 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                    >
-                      <option value="AM">AM</option>
-                      <option value="PM">PM</option>
-                    </select>
+
+                {newEntryMode === "time" ? (
+                  <>
+                    {/* In Time */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-medium text-zinc-500">In Time</label>
+                      <div className="flex min-w-0 gap-1.5">
+                        <input
+                          value={newInTimeStr}
+                          onChange={(e) => setNewInTimeStr(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+                          placeholder="8:00"
+                          className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                        />
+                        <select
+                          value={newInAmPm}
+                          onChange={(e) => setNewInAmPm(e.target.value as "AM" | "PM")}
+                          className="shrink-0 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                        >
+                          <option value="AM">AM</option>
+                          <option value="PM">PM</option>
+                        </select>
+                      </div>
+                    </div>
+                    {/* Out Time */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-medium text-zinc-500">Out Time</label>
+                      <div className="flex min-w-0 gap-1.5">
+                        <input
+                          value={newOutTimeStr}
+                          onChange={(e) => setNewOutTimeStr(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+                          placeholder="5:00"
+                          className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                        />
+                        <select
+                          value={newOutAmPm}
+                          onChange={(e) => setNewOutAmPm(e.target.value as "AM" | "PM")}
+                          className="shrink-0 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                        >
+                          <option value="AM">AM</option>
+                          <option value="PM">PM</option>
+                        </select>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  /* Reg Hours */
+                  <div className="col-span-2 flex flex-col gap-1">
+                    <label className="text-xs font-medium text-zinc-500">Reg Hours</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="0.25"
+                        max="24"
+                        step="0.25"
+                        value={newEntryHours}
+                        onChange={(e) => setNewEntryHours(e.target.value)}
+                        placeholder="8.00"
+                        required
+                        className="w-28 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                      />
+                      <span className="text-sm text-zinc-400">hours</span>
+                    </div>
                   </div>
-                </div>
+                )}
+
                 {/* Pay Code */}
                 {payCodes.length > 0 && (
                   <div className="flex flex-col gap-1">
@@ -3302,7 +3480,7 @@ export function TimecardViewer({
                   </div>
                 )}
                 {/* Notes — full width, saved as timesheet note */}
-                <div className={`${reasonCodes.length > 0 ? "col-span-2" : "col-span-2"} flex flex-col gap-1`}>
+                <div className="col-span-2 flex flex-col gap-1">
                   <label className="text-xs font-medium text-zinc-500">Notes</label>
                   <input
                     value={newEntryNote}
@@ -3325,7 +3503,7 @@ export function TimecardViewer({
                 </button>
                 <button
                   type="submit"
-                  disabled={isPending || !newInTimeStr || !newOutTimeStr}
+                  disabled={isPending || (newEntryMode === "time" ? (!newInTimeStr || !newOutTimeStr) : !newEntryHours)}
                   className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
                 >
                   {isPending ? "Adding…" : "Add Entry"}

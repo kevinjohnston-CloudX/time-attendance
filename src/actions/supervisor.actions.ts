@@ -108,6 +108,7 @@ export const getTeamExceptions = withRBAC(
     return db.exception.findMany({
       where: {
         resolvedAt: null,
+        exceptionType: { in: Object.values(ExceptionType) },
         ...(exceptionType ? { exceptionType } : {}),
         timesheet: {
           ...(payPeriodId ? { payPeriodId } : {}),

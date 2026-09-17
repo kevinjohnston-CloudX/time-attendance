@@ -3,6 +3,7 @@ import { z } from "zod";
 export const RESOURCES = [
   "punch",
   "timesheet",
+  "timecard",
   "leave",
   "accrual",
   "payroll",

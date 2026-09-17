@@ -4,6 +4,7 @@ import { useTransition, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { updateEmployee } from "@/actions/admin.actions";
+import { setTemporaryPassword } from "@/actions/password.actions";
 import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
 
 type EmployeeWithRelations = Omit<Employee, "payRate"> & {
@@ -53,6 +54,10 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
   const [success, setSuccess] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("general");
   const [selectedSiteId, setSelectedSiteId] = useState(employee.siteId);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [tempPassword, setTempPasswordValue] = useState("");
+  const [tempStatus, setTempStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [tempMessage, setTempMessage] = useState("");
   const [status, setStatus] = useState<"active" | "on-leave" | "inactive">(
     !employee.isActive ? "inactive" : employee.onLeave ? "on-leave" : "active"
   );
@@ -148,6 +153,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
   ];
 
   return (
+    <>
     <div className="mt-6">
       {/* Tab header */}
       <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-700">
@@ -311,9 +317,16 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
             )}
           </div>
 
-          <div>
+          <div className="flex items-center gap-3">
             <button type="submit" disabled={isPending} className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900">
               {isPending ? "Saving…" : "Save Changes"}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowPasswordModal(true); setTempStatus("idle"); setTempMessage(""); setTempPasswordValue(""); }}
+              className="rounded-lg border border-zinc-300 dark:border-zinc-600 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            >
+              Set Temporary Password
             </button>
           </div>
         </form>
@@ -587,5 +600,67 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
         </div>
       )}
     </div>
+
+      {/* ── Temp password modal ─────────────────────────────────────────── */}
+      {showPasswordModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowPasswordModal(false); }}
+        >
+          <div className="w-full max-w-sm rounded-xl bg-white dark:bg-zinc-800 p-6 shadow-xl">
+            <h2 className="mb-1 text-base font-semibold text-zinc-900 dark:text-white">Set Temporary Password</h2>
+            <p className="mb-1 text-sm text-zinc-500 dark:text-zinc-400">
+              The employee will be required to change this on first login.
+            </p>
+            <p className="mb-4 text-xs text-zinc-400 dark:text-zinc-500">
+              Requirements: 8+ characters, uppercase letter, number, special character.
+            </p>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setTempStatus("loading");
+                setTempMessage("");
+                const result = await setTemporaryPassword(employee.id, tempPassword);
+                setTempStatus(result.success ? "done" : "error");
+                setTempMessage(result.message);
+                if (result.success) setTempPasswordValue("");
+              }}
+              className="flex flex-col gap-3"
+            >
+              <input
+                type="text"
+                value={tempPassword}
+                onChange={(e) => setTempPasswordValue(e.target.value)}
+                placeholder="Enter temporary password"
+                minLength={8}
+                required
+                className={inputCls}
+              />
+              {tempMessage && (
+                <p className={`text-sm ${tempStatus === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+                  {tempMessage}
+                </p>
+              )}
+              <div className="flex justify-end gap-2 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordModal(false)}
+                  className="rounded-lg border border-zinc-300 dark:border-zinc-600 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={tempStatus === "loading"}
+                  className="rounded-lg bg-zinc-900 dark:bg-white px-4 py-2 text-sm font-semibold text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 disabled:opacity-50"
+                >
+                  {tempStatus === "loading" ? "Saving…" : "Set Password"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

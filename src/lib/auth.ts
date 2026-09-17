@@ -32,8 +32,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const parsed = credentialsSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
-        const user = await db.user.findUnique({
-          where: { username: parsed.data.username.toLowerCase() },
+        // Try email first; fall back to username for super-admin accounts
+        const identifier = parsed.data.username.toLowerCase();
+        const user = await db.user.findFirst({
+          where: { OR: [{ email: identifier }, { username: identifier }] },
           include: { employee: { include: { customRole: { select: { canViewAs: true } } } } },
         });
 
@@ -50,6 +52,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             role: "SUPER_ADMIN",
             employeeId: undefined,
             tenantId: null,
+            mustChangePassword: false,
           };
         }
 
@@ -62,6 +65,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           tenantId: user.employee?.tenantId ?? null,
           customRoleId: user.employee?.customRoleId ?? undefined,
           canViewAs: user.employee?.customRole?.canViewAs ?? false,
+          mustChangePassword: user.mustChangePassword,
         };
       },
     }),
@@ -118,12 +122,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.employeeId = undefined;
             token.tenantId = null;
             token.canViewAs = false;
+            token.mustChangePassword = false;
           } else {
             token.role = fullUser?.employee?.role ?? "EMPLOYEE";
             token.employeeId = fullUser?.employee?.id ?? undefined;
             token.tenantId = fullUser?.employee?.tenantId ?? null;
             token.customRoleId = fullUser?.employee?.customRoleId ?? undefined;
             token.canViewAs = fullUser?.employee?.customRole?.canViewAs ?? false;
+            token.mustChangePassword = fullUser?.mustChangePassword ?? false;
           }
         } else {
           // Credentials: role already stamped by authorize()
@@ -132,6 +138,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.tenantId = (user as { tenantId?: string | null }).tenantId;
           token.customRoleId = (user as { customRoleId?: string }).customRoleId;
           token.canViewAs = (user as { canViewAs?: boolean }).canViewAs ?? false;
+          token.mustChangePassword = (user as { mustChangePassword?: boolean }).mustChangePassword ?? false;
         }
       }
       return token;
@@ -145,6 +152,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.tenantId = token.tenantId as string | null | undefined;
         session.user.customRoleId = token.customRoleId as string | undefined;
         session.user.canViewAs = token.canViewAs as boolean | undefined ?? false;
+        session.user.mustChangePassword = token.mustChangePassword as boolean | undefined ?? false;
       }
       return session;
     },

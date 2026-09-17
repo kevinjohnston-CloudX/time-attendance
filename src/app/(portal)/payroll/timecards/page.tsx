@@ -29,15 +29,22 @@ export default async function TimecardsPage({
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const isAdmin = await userHasPermission(session.user, "PAY_PERIOD_MANAGE");
-  const isSupervisor = !isAdmin && await userHasPermission(session.user, "TIMECARD_VIEW_TEAM");
-  if (!isAdmin && !isSupervisor) redirect("/dashboard");
+  const [canViewTeam, canViewAll, canEditTeam, canEditAll] = await Promise.all([
+    userHasPermission(session.user, "TIMECARD_VIEW_TEAM"),
+    userHasPermission(session.user, "TIMECARD_VIEW_ANY"),
+    userHasPermission(session.user, "TIMECARD_EDIT_TEAM"),
+    userHasPermission(session.user, "TIMECARD_EDIT_ANY"),
+  ]);
+  if (!canViewTeam && !canViewAll && !canEditTeam && !canEditAll) redirect("/dashboard");
+
+  const isAllScope = canViewAll || canEditAll;
+  const canEdit = canEditTeam || canEditAll;
 
   const t = session.user.tenantId ?? undefined;
 
   // Load employees + sites + departments in parallel
   const [employeesResult, sites, departments] = await Promise.all([
-    isAdmin
+    isAllScope
       ? getActiveEmployeesForTimecards({
           siteId: sp.siteId ?? null,
           departmentId: sp.departmentId ?? null,
@@ -211,7 +218,7 @@ export default async function TimecardsPage({
         timecard={serializedTimecard}
         payFrequency={payFrequency}
         userRole={session.user.role ?? "EMPLOYEE"}
-        readOnly={isSupervisor}
+        readOnly={!canEdit}
         customStart={sp.customStart ?? null}
         customEnd={sp.customEnd ?? null}
         payCodes={payCodes.map((pc) => ({

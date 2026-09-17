@@ -8,7 +8,7 @@ import { getAdpConfig } from "@/lib/integrations/adp/client";
 import { PAY_PERIOD_STATUS_LABEL } from "@/lib/state-machines/labels";
 import { PayPeriodActions } from "@/components/payroll/pay-period-actions";
 import { PayPeriodsFilter } from "@/components/payroll/pay-periods-filter";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 import { PayPeriodTimesheets } from "@/components/payroll/pay-period-timesheets";
 import { PayPeriodDetailFilter } from "@/components/payroll/pay-period-detail-filter";
@@ -215,7 +215,7 @@ export default async function PayPeriodsPage({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">
-                      {format(pp.startDate, "MMM d")} – {format(pp.endDate, "MMM d, yyyy")}
+                      {format(pp.startDate, "MMM d")} – {format(addDays(pp.endDate, -1), "MMM d, yyyy")}
                     </p>
                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${PP_BADGE[pp.status]}`}>
                       {PAY_PERIOD_STATUS_LABEL[pp.status]}

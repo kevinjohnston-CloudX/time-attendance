@@ -16,6 +16,7 @@ const ACTIVE_CELLS = new Set(
 const RESOURCE_LABELS: Record<string, string> = {
   punch: "Punches",
   timesheet: "Timesheets",
+  timecard: "Timecards",
   leave: "Leave",
   accrual: "Accruals",
   payroll: "Payroll",
@@ -60,10 +61,21 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
       "execute:all":  "Approve or reject timesheets for any employee across all teams.",
     },
   },
+  timecard: {
+    summary: "Controls who can view and edit detailed timecards (punches, segments, pay codes).",
+    cells: {
+      "read:team":  "View timecards for your direct reports in read-only mode.",
+      "read:all":   "View timecards for any employee in read-only mode.",
+      "write:team": "Edit timecards, adjust punches, and assign pay codes for your direct reports.",
+      "write:all":  "Edit timecards, adjust punches, and assign pay codes for any employee.",
+    },
+  },
   leave: {
     summary: "Controls leave requests and the approval workflow.",
     cells: {
       "write:own":    "Submit leave requests (PTO, sick, etc.) for yourself.",
+      "write:team":   "Submit leave requests on behalf of your direct reports.",
+      "write:all":    "Submit leave requests on behalf of any employee.",
       "execute:team": "Approve or reject leave requests submitted by your team.",
       "execute:all":  "Approve or reject leave requests from any employee.",
     },
@@ -80,7 +92,7 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
   payroll: {
     summary: "Controls pay period management and payroll operations.",
     cells: {
-      "write:all": "Open and close pay periods, access timecards, manage pay codes and payroll settings.",
+      "write:all": "Open and close pay periods, manage pay codes and payroll settings. Timecard access is controlled separately under Timecards.",
     },
   },
   employee: {

@@ -339,11 +339,12 @@ function LedgerTable({ entries, openingBalance }: { entries: LedgerDetailEntry[]
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[520px] text-xs">
+      <table className="w-full min-w-[620px] text-xs">
         <thead>
           <tr className="border-b border-zinc-200 dark:border-zinc-700">
             <th className="pb-1.5 pr-3 text-left font-medium uppercase tracking-wide text-zinc-400">Date</th>
             <th className="pb-1.5 pr-3 text-left font-medium uppercase tracking-wide text-zinc-400">Type</th>
+            <th className="pb-1.5 pr-3 text-left font-medium uppercase tracking-wide text-zinc-400">User</th>
             <th className="pb-1.5 pr-3 text-right font-medium uppercase tracking-wide text-zinc-400">Hours</th>
             <th className="pb-1.5 text-right font-medium uppercase tracking-wide text-zinc-400">Available</th>
           </tr>
@@ -377,6 +378,9 @@ function LedgerTable({ entries, openingBalance }: { entries: LedgerDetailEntry[]
                     )}
                   </span>
                 </td>
+                <td className="py-1.5 pr-3 text-zinc-400">
+                  {e.createdByName ?? <span className="text-zinc-300 dark:text-zinc-600">—</span>}
+                </td>
                 <td className={`py-1.5 pr-3 text-right tabular-nums font-medium ${cfg.text}`}>
                   {sign}{fmtHours(Math.abs(e.deltaMinutes))}
                 </td>
@@ -389,6 +393,7 @@ function LedgerTable({ entries, openingBalance }: { entries: LedgerDetailEntry[]
           <tr className="border-t-2 border-zinc-200 dark:border-zinc-700">
             <td className="py-1.5 pr-3 italic text-zinc-400">—</td>
             <td className="py-1.5 pr-3 italic text-zinc-400">Opening balance</td>
+            <td className="py-1.5 pr-3" />
             <td className="py-1.5 pr-3 text-right text-zinc-400">—</td>
             <td className="py-1.5 text-right font-medium tabular-nums text-zinc-600 dark:text-zinc-300">
               {fmtHours(openingBalance)}

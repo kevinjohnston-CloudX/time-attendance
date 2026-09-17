@@ -41,10 +41,14 @@ model PtoPolicy {
   posting1Freq  AccrualPostingFreq  @default(PER_PAY_PERIOD)
   posting1Month Int?
   posting1Day   Int?
-  dualPosting   Boolean             @default(false)
-  posting2Freq  AccrualPostingFreq?
-  posting2Month Int?
-  posting2Day   Int?
+  dualPosting              Boolean             @default(false)
+  posting2Freq             AccrualPostingFreq?
+  posting2Month            Int?
+  posting2Day              Int?
+  posting2ServiceMonthBasis ServiceMonthBasis? // null = same as posting1
+  posting2AnchorDate       DateTime? @db.Date
+  posting2StartsOnYear     Int?      // "starts on the Nth calendar year"; null = immediately
+  posting2BasedOnMonths    Boolean   @default(false) // when true, posting2StartsOnYear is in months
 
   postingAnchorDate DateTime? @db.Date  // reference date for fixed-cycle frequencies (e.g. bi-weekly)
 

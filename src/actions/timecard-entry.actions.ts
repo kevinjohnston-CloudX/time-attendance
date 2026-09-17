@@ -6,7 +6,7 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
-import { computeRoundedTime } from "@/lib/utils/date";
+import { computeRoundedTime, snapToLocalTime } from "@/lib/utils/date";
 import {
   manualPunchPairSchema,
   singleManualPunchSchema,
@@ -449,6 +449,146 @@ export const saveTimesheetNote = withRBAC(
         createdByName,
       },
     });
+
+    revalidatePath("/payroll/timecards");
+  }
+);
+
+// ─── Add manual hours to a punchless day ─────────────────────────────────────
+
+const LEAVE_BUCKETS = new Set(["PTO", "SICK", "FMLA", "BEREAVEMENT", "JURY_DUTY", "MILITARY", "UNPAID"]);
+
+export const addManualHoursEntry = withRBAC(
+  "PAY_PERIOD_MANAGE",
+  async ({ employeeId: actorId, tenantId }, input: unknown) => {
+    const { timesheetId, date, hours, payCodeId, note } = z.object({
+      timesheetId: z.string(),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      hours: z.number().min(0.25).max(24),
+      payCodeId: z.string().optional(),
+      note: z.string().optional(),
+    }).parse(input);
+
+    const minutes = Math.round(hours * 60);
+
+    const ts = await db.timesheet.findUniqueOrThrow({
+      where: { id: timesheetId },
+      include: { employee: { include: { ruleSet: true, site: true } } },
+    });
+
+    if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
+      throw new Error("Cannot modify a locked or approved timesheet.");
+    }
+
+    // Determine if this pay code maps to a leave type.
+    // If so, use the leave-request path (no punches, no meal deduction).
+    let leaveTypeId: string | null = null;
+    if (payCodeId && tenantId) {
+      const payCode = await db.payCode.findUnique({
+        where: { id: payCodeId },
+        select: { payBucket: true },
+      });
+      // Try explicit payCode → leaveType link first
+      let leaveType = await db.leaveType.findFirst({
+        where: { payCodeId, isActive: true, tenantId },
+      });
+      // Fall back: payBucket is a leave bucket → find matching leaveType by category
+      if (!leaveType && payCode?.payBucket && LEAVE_BUCKETS.has(payCode.payBucket)) {
+        leaveType = await db.leaveType.findFirst({
+          where: { category: payCode.payBucket as never, isActive: true, tenantId },
+        });
+      }
+      if (leaveType) leaveTypeId = leaveType.id;
+    }
+
+    if (leaveTypeId) {
+      // Leave-type pay code: create a leave request and sync leave segments.
+      // This bypasses punches entirely, so no meal deduction, no OT rules,
+      // and no IN/OUT times appear on the timecard.
+      const leaveDate = new Date(date + "T00:00:00.000Z");
+
+      const leaveRequest = await db.$transaction(async (tx) => {
+        const req = await tx.leaveRequest.create({
+          data: {
+            employeeId: ts.employeeId,
+            leaveTypeId,
+            status: "POSTED",
+            startDate: leaveDate,
+            endDate: leaveDate,
+            durationMinutes: minutes,
+            note: note ?? null,
+            submittedAt: new Date(),
+            reviewedAt: new Date(),
+            reviewedById: actorId,
+            postedAt: new Date(),
+          },
+        });
+
+        await writeAuditLog({
+          tenantId: tenantId!,
+          actorId,
+          action: "MANUAL_PUNCH_ADDED",
+          entityType: "TIMESHEET",
+          entityId: timesheetId,
+          changes: { after: { date, hours, leaveTypeId, source: "MANUAL_HOURS_LEAVE" } },
+        });
+
+        return req;
+      });
+
+      await syncLeaveSegments(leaveRequest.id);
+    } else {
+      // Non-leave pay code: create a synthetic punch pair at local midnight.
+      const tz = ts.employee.site?.timezone ?? "UTC";
+      const inDate  = snapToLocalTime("00:00", date, tz);
+      const outDate = new Date(inDate.getTime() + minutes * 60_000);
+
+      await db.$transaction(async (tx) => {
+        await tx.punch.create({
+          data: {
+            employeeId: ts.employeeId,
+            timesheetId,
+            punchType: "CLOCK_IN",
+            punchTime: inDate,
+            roundedTime: inDate,
+            source: "MANUAL",
+            stateBefore: "OUT",
+            stateAfter: "WORK",
+            isApproved: true,
+            approvedById: actorId,
+            approvedAt: new Date(),
+            note: note ?? `Manual hours entry: ${hours}h`,
+            payCodeId: payCodeId ?? null,
+          },
+        });
+        await tx.punch.create({
+          data: {
+            employeeId: ts.employeeId,
+            timesheetId,
+            punchType: "CLOCK_OUT",
+            punchTime: outDate,
+            roundedTime: outDate,
+            source: "MANUAL",
+            stateBefore: "WORK",
+            stateAfter: "OUT",
+            isApproved: true,
+            approvedById: actorId,
+            approvedAt: new Date(),
+            note: note ?? `Manual hours entry: ${hours}h`,
+          },
+        });
+        await writeAuditLog({
+          tenantId: tenantId!,
+          actorId,
+          action: "MANUAL_PUNCH_ADDED",
+          entityType: "TIMESHEET",
+          entityId: timesheetId,
+          changes: { after: { date, hours, source: "MANUAL_HOURS" } },
+        });
+      });
+
+      await rebuildSegments(timesheetId, ts.employee.ruleSet);
+    }
 
     revalidatePath("/payroll/timecards");
   }

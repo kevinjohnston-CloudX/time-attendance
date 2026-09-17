@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import { ChevronLeft, ChevronRight, Calendar, CalendarCheck } from "lucide-react";
 import { parseUtcDate } from "@/lib/utils/date";
 
@@ -189,7 +189,7 @@ export function PayPeriodsFilter({
       return format(new Date(y, m - 1, 1), "MMMM yyyy");
     }
     if (selectedPp) {
-      return `${format(parseUtcDate(selectedPp.startDate), "MMM d")} – ${format(parseUtcDate(selectedPp.endDate), "MMM d, yyyy")}`;
+      return `${format(parseUtcDate(selectedPp.startDate), "MMM d")} – ${format(addDays(parseUtcDate(selectedPp.endDate), -1), "MMM d, yyyy")}`;
     }
     return "—";
   })();
