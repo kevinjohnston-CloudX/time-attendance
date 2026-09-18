@@ -40,6 +40,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       badgeCode: string;
       name: string | null;
       occurrences: bigint;
+      timeClock: bigint;
+      security: bigint;
       firstSeen: Date;
       lastSeen: Date;
       sites: string[];
@@ -49,6 +51,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
            MIN(s."badgeCode")            AS "badgeCode",
            MIN(u."name")                 AS "name",
            COUNT(*)                      AS "occurrences",
+           COUNT(*) FILTER (WHERE s."stream" = 'TIME_CLOCK') AS "timeClock",
+           COUNT(*) FILTER (WHERE s."stream" = 'SECURITY')   AS "security",
            MIN(s."scanTime")             AS "firstSeen",
            MAX(s."scanTime")             AS "lastSeen",
            ARRAY_AGG(DISTINCT s."site") FILTER (WHERE s."site" IS NOT NULL) AS "sites"
@@ -68,6 +72,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     badgeCode: r.badgeCode,
     name: r.name,
     missedClockOuts: Number(r.occurrences),
+    timeClock: Number(r.timeClock),
+    security: Number(r.security),
     firstSeen: r.firstSeen,
     lastSeen: r.lastSeen,
     sites: r.sites ?? [],
@@ -78,10 +84,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       const s = v == null ? "" : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const header = "badgeCode,name,missedClockOuts,firstSeen,lastSeen,sites";
+    const header = "badgeCode,name,missedClockOuts,timeClock,security,firstSeen,lastSeen,sites";
     const body = data
       .map((d) =>
-        [d.badgeCode, d.name, d.missedClockOuts, d.firstSeen.toISOString(),
+        [d.badgeCode, d.name, d.missedClockOuts, d.timeClock, d.security, d.firstSeen.toISOString(),
          d.lastSeen.toISOString(), d.sites.join(" ")].map(esc).join(","),
       )
       .join("\n");

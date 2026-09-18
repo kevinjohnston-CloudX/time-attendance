@@ -12,16 +12,17 @@ import { snapToLocalTime } from "@/lib/utils/date";
  * else's. Adding a site in a further zone means adding a schedule, not changing
  * this code.
  *
- * <p><b>TIME_CLOCK only, deliberately.</b> Measured over two months of
- * production logs: of 1,044 employees still showing IN on the time clock at
- * 23:00, every single one had simply never clocked out — not one clocked out
- * later. Closing them invents nothing.
+ * <p><b>Both streams.</b> The buildings are shut by this hour, so anyone either
+ * system still shows as present did not scan out rather than is still there.
  *
- * <p>The security gate is the opposite and must never be swept this way. Of 741
- * badges still inside at 23:00, 686 scanned out AFTER it, most between 06:00 and
- * 09:00 the next morning — night shift, genuinely in the building. Auto-closing
- * those would fabricate exits for 93% of the people it touched and would empty
- * the on-site list of exactly the people an evacuation needs to account for.
+ * <p>Measured over two months of production logs. On the time clock, of 1,044
+ * employees still showing IN at 23:00, every single one had simply never clocked
+ * out — not one clocked out later. At the gate, 686 badges appear to exit after
+ * 23:00, which looks like night shift until the durations are read: the median
+ * such "visit" is 23.8 hours and 262 of them exceed a full day. They are morning
+ * arrivals that were never closed, paired by the legacy system with the badge's
+ * NEXT arrival — a phantom presence, not a person in the building. Closing them
+ * at 23:00 is what makes the on-site list mean something.
  *
  * <p><b>This does not create a Punch and does not touch pay.</b> Timecards have
  * their own sweep in {@code /api/cron/auto-clock-out}, which writes a SYSTEM
@@ -72,13 +73,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const now = new Date();
 
-  // Everyone whose newest TIME_CLOCK scan says IN. DISTINCT ON gives one row per
-  // employee — the latest — which is the only one that says where they stand.
+  // Newest scan per employee PER STREAM. DISTINCT ON over (employeeId, stream)
+  // because the two are independent states — someone can be shut out of the
+  // building while the time clock still thinks they are on shift, and each needs
+  // closing on its own terms.
   const open = await db.$queryRaw<
     Array<{
       employeeId: string;
       tenantId: string | null;
       badgeCode: string;
+      stream: "TIME_CLOCK" | "SECURITY";
       scanTime: Date;
       direction: string;
       site: string | null;
@@ -86,17 +90,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       name: string | null;
     }>
   >`
-    SELECT DISTINCT ON (s."employeeId")
-           s."employeeId", s."tenantId", s."badgeCode", s."scanTime",
+    SELECT DISTINCT ON (s."employeeId", s."stream")
+           s."employeeId", s."tenantId", s."badgeCode",
+           s."stream"::text AS "stream", s."scanTime",
            s."direction"::text AS "direction", s."site",
            si."timezone", u."name"
     FROM   "scan_events" s
     JOIN   "employees" e  ON e."id" = s."employeeId"
     LEFT   JOIN "sites" si ON si."id" = e."siteId"
     LEFT   JOIN "users" u  ON u."id" = e."userId"
-    WHERE  s."stream" = 'TIME_CLOCK'
-      AND  s."employeeId" IS NOT NULL
-    ORDER  BY s."employeeId", s."scanTime" DESC
+    WHERE  s."employeeId" IS NOT NULL
+    ORDER  BY s."employeeId", s."stream", s."scanTime" DESC
   `;
 
   let closed = 0;
@@ -104,7 +108,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let alreadyOut = 0;
   let duplicate = 0;
   let errors = 0;
-  const closedFor: Array<{ badgeCode: string; name: string | null; since: string }> = [];
+  const closedFor: Array<{
+    badgeCode: string; name: string | null; stream: string; since: string;
+  }> = [];
+  const closedByStream: Record<string, number> = {};
 
   for (const row of open) {
     try {
@@ -133,7 +140,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           tenantId: row.tenantId,
           employeeId: row.employeeId,
           badgeCode: row.badgeCode,
-          stream: "TIME_CLOCK",
+          stream: row.stream,
           direction: "OUT",
           directionSource: "AUTO_CLOSE",
           scanTime: closeAt,
@@ -141,16 +148,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           sourceSlot: "AUTO_CLOSE",
           outcome: "NOT_APPLICABLE",
           note:
-            `auto-closed at ${CLOSE_AT_HOUR}:00 ${timezone}: still showing IN from ` +
-            `${row.scanTime.toISOString()} with no clock-out`,
+            `auto-closed at ${CLOSE_AT_HOUR}:00 ${timezone}: ${row.stream} still ` +
+            `showing IN from ${row.scanTime.toISOString()} with no exit scan`,
         },
       });
 
       closed++;
-      if (closedFor.length < 100) {
+      closedByStream[row.stream] = (closedByStream[row.stream] ?? 0) + 1;
+      if (closedFor.length < 200) {
         closedFor.push({
           badgeCode: row.badgeCode,
           name: row.name,
+          stream: row.stream,
           since: row.scanTime.toISOString(),
         });
       }
@@ -171,6 +180,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     ranAt: now.toISOString(),
     examined: open.length,
     closed,
+    closedByStream,
     alreadyOut,
     skippedNotYetLocalEleven: notYetLocalEleven,
     skippedAlreadyClosed: duplicate,
