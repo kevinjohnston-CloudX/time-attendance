@@ -30,13 +30,16 @@ CREATE TYPE "ScanDirectionSource" AS ENUM (
     'SEEDED'
 );
 
--- AlterTable: site replaces warehouse.
--- Added, backfilled, then the old column dropped, so no value is lost: every
--- warehouse that ever stored successfully was an integer, and its text form is
--- the same site.
+-- AlterTable: site supersedes warehouse.
+--
+-- Expand now, contract later. `warehouse` is deliberately NOT dropped here:
+-- `prisma migrate deploy` runs during the build while the PREVIOUS deployment is
+-- still serving traffic, and that code still writes `warehouse`. Dropping it in
+-- this migration would fail every kiosk scan for the length of the build.
+-- It is nullable and no longer written once this ships, so it simply sits
+-- unused until a later migration removes it.
 ALTER TABLE "scan_events" ADD COLUMN "site" TEXT;
 UPDATE "scan_events" SET "site" = "warehouse"::text WHERE "warehouse" IS NOT NULL;
-ALTER TABLE "scan_events" DROP COLUMN "warehouse";
 
 -- AlterTable: how this row's direction was arrived at.
 -- Existing rows were all produced by alternation, which is the honest default.

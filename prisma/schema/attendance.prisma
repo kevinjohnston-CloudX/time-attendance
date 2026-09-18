@@ -141,6 +141,10 @@ model ScanEvent {
   /// CA2 / GA7575 / CAN while the gates report numeric location ids, and an
   /// integer column could only ever hold the gates.
   site       String?
+  /// Superseded by `site`. Nothing writes it any more; it remains only because
+  /// dropping it in the same migration that stops writing it would fail live
+  /// scans for the length of the deploy. Remove in a follow-up.
+  warehouse  Int?
 
   /// Which slot of the legacy row this event was expanded from —
   /// TIMECLOCKIN / TIMECLOCKOUT / SCANTIME / OUTTIME — or 'LIVE' for a scan
