@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
       stream: "SECURITY",
       scanTime,
       deviceName: DeviceName ?? null,
-      warehouse: Warehouse ?? null,
+      site: Warehouse == null ? null : String(Warehouse),
       legacyScanType: LegacyScanType ?? null,
       // A gate crossing never enters the timecard pipeline, so it is resolved
       // the moment it is stored. Leaving these PENDING would have the

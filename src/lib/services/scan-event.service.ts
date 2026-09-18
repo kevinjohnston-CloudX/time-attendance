@@ -1,6 +1,13 @@
 import { db } from "@/lib/db";
 import { findEmployeeIdentityByBadge } from "@/lib/utils/badge-lookup";
-import type { Prisma, ScanDirection, ScanOutcome, ScanStream } from "@prisma/client";
+import { snapToLocalTime } from "@/lib/utils/date";
+import type {
+  Prisma,
+  ScanDirection,
+  ScanDirectionSource,
+  ScanOutcome,
+  ScanStream,
+} from "@prisma/client";
 
 /**
  * The tablets' transaction log — recording, direction resolution, and the
@@ -45,7 +52,21 @@ export type RecordScanInput = {
   stream: ScanStream;
   scanTime: Date;
   deviceName?: string | null;
-  warehouse?: number | null;
+  /** Reader location. Text: the clocks report NJ299/NJ3/CA2, the gates report ids. */
+  site?: string | null;
+  /**
+   * Which slot of a legacy report row this came from — TIMECLOCKIN,
+   * TIMECLOCKOUT, SCANTIME, OUTTIME. Omitted for live kiosk scans, which
+   * default to 'LIVE'. When set, `direction` is taken from it as fact.
+   */
+  sourceSlot?: string;
+  /** The legacy row this was expanded from, for tracing back to the report. */
+  sourceRef?: string | null;
+  /**
+   * Direction stated by the source, when there is one. Supplying this skips
+   * alternation entirely and stores the row as SOURCE_COLUMN.
+   */
+  knownDirection?: ScanDirection;
   /** Gate scans never enter the timecard pipeline, so they start resolved. */
   outcome?: ScanOutcome;
   /** What cajaapi said, recorded for reconciliation only. */
@@ -54,33 +75,56 @@ export type RecordScanInput = {
 };
 
 /**
+ * The UTC instant of local midnight on the day `scanTime` falls in.
+ *
+ * Note this is not `startOfDayInTz`, which returns UTC midnight of the local
+ * calendar date — four hours adrift from local midnight in New York, enough to
+ * pull the previous evening's scans into today's window.
+ */
+function localMidnightUtc(scanTime: Date, timezone: string): Date {
+  const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(scanTime);
+  return snapToLocalTime("00:00", localDate, timezone);
+}
+
+/**
  * Alternates from the employee's previous scan in the same stream.
  *
  * Resolved against the previous event *by scan time* rather than by arrival,
  * because an offline tablet flushes its queue out of order — a scan from 06:02
  * can land after one from 06:47.
  *
- * With no previous event the answer is IN: the first scan of someone's day is
- * an arrival, and treating an unknown first scan as an exit would immediately
- * desynchronise the stream. That first scan after go-live is the one case
- * where this can legitimately disagree with an older system, which is why
- * `legacyMismatch` exists to mark it.
+ * <b>TIME_CLOCK re-anchors at local midnight; SECURITY does not.</b> Unbounded
+ * alternation has no re-sync point, so a single unpaired scan inverts every
+ * later scan for that badge until another unpaired one happens to flip it back.
+ * That is not rare: replaying two months of production logs, 689 of 789 badges
+ * had at least one shift with no clock-out, and the resulting error rate was
+ * 22.5% of all time-clock events.
  *
- * For TIME_CLOCK this alternation also lines up with a four-punch day —
- * in, meal-start, meal-end, out reads as IN, OUT, IN, OUT — so it stays
- * comparable against the pipeline's own classification without borrowing it.
+ * Anchoring the time clock to "the first scan of the local day is an arrival"
+ * takes that to 0.03% (12 events in 44,501), and is safe because not one of the
+ * 22,799 shifts in those logs crossed midnight. Applying the same anchor to
+ * SECURITY makes it far worse — 0.38% to 5.08% — because 685 gate visits DO
+ * cross midnight on night shift, and a midnight reset calls every one of those
+ * exits an entry. The two streams genuinely need different rules.
+ *
+ * With no previous event inside the window the answer is IN: the first scan of
+ * someone's day is an arrival. For SECURITY that default is only reached once
+ * per badge ever, which is what the gate-state seed exists to pre-empt.
  */
 async function resolveDirection(
   tx: Prisma.TransactionClient,
   employeeId: string,
   stream: ScanStream,
   scanTime: Date,
+  timezone: string,
 ): Promise<ScanDirection> {
+  const anchor = stream === "TIME_CLOCK" ? localMidnightUtc(scanTime, timezone) : null;
+
   const previous = await tx.scanEvent.findFirst({
     where: {
       employeeId,
       stream,
-      scanTime: { lt: scanTime },
+      scanTime: anchor ? { lt: scanTime, gte: anchor } : { lt: scanTime },
       direction: { in: ["IN", "OUT"] },
     },
     orderBy: { scanTime: "desc" },
@@ -104,13 +148,24 @@ async function reresolveFollowing(
   stream: ScanStream,
   afterScanTime: Date,
   startingFrom: ScanDirection,
+  timezone: string,
 ): Promise<number> {
+  // Bounded by the same anchor `resolveDirection` uses, or the correction would
+  // run past the point where the chain restarts and "fix" rows that were right.
+  const dayEnd =
+    stream === "TIME_CLOCK"
+      ? new Date(localMidnightUtc(afterScanTime, timezone).getTime() + 24 * 60 * 60 * 1000)
+      : null;
+
   const following = await tx.scanEvent.findMany({
     where: {
       employeeId,
       stream,
-      scanTime: { gt: afterScanTime },
+      scanTime: dayEnd ? { gt: afterScanTime, lt: dayEnd } : { gt: afterScanTime },
       direction: { in: ["IN", "OUT"] },
+      // Never rewrite a direction the source stated. Only guesses are ours to
+      // revise; a TIMECLOCKOUT is an out no matter what the chain implies.
+      directionSource: "ALTERNATION",
     },
     orderBy: { scanTime: "asc" },
     select: { id: true, direction: true },
@@ -158,10 +213,11 @@ export async function recordScanEvent(input: RecordScanInput): Promise<RecordedS
 
   const existing = await db.scanEvent.findUnique({
     where: {
-      badgeCode_stream_scanTime: {
+      badgeCode_stream_scanTime_sourceSlot: {
         badgeCode: input.badgeCode,
         stream: input.stream,
         scanTime: input.scanTime,
+        sourceSlot: input.sourceSlot ?? "LIVE",
       },
     },
     select: {
@@ -188,12 +244,22 @@ export async function recordScanEvent(input: RecordScanInput): Promise<RecordedS
     };
   }
 
+  const timezone = employee?.site?.timezone ?? "America/New_York";
+
   const created = await db.$transaction(async (tx) => {
-    // No employee means no stream to alternate within, and nothing honest to
-    // say about direction.
-    const direction: ScanDirection = employee
-      ? await resolveDirection(tx, employee.id, input.stream, input.scanTime)
-      : "UNKNOWN";
+    // A direction the source stated is a fact, and is taken as-is even when no
+    // employee matched — TIMECLOCKOUT is an out whether or not we know whose.
+    // Otherwise: no employee means no stream to alternate within, and nothing
+    // honest to say about direction.
+    const direction: ScanDirection =
+      input.knownDirection ??
+      (employee
+        ? await resolveDirection(tx, employee.id, input.stream, input.scanTime, timezone)
+        : "UNKNOWN");
+
+    const directionSource: ScanDirectionSource = input.knownDirection
+      ? "SOURCE_COLUMN"
+      : "ALTERNATION";
 
     const legacy = normaliseLegacyScanType(input.legacyScanType);
     const legacyMismatch =
@@ -206,9 +272,12 @@ export async function recordScanEvent(input: RecordScanInput): Promise<RecordedS
         badgeCode: input.badgeCode,
         stream: input.stream,
         direction,
+        directionSource,
         scanTime: input.scanTime,
         deviceName: input.deviceName ?? null,
-        warehouse: input.warehouse ?? null,
+        site: input.site ?? null,
+        sourceSlot: input.sourceSlot ?? "LIVE",
+        sourceRef: input.sourceRef ?? null,
         outcome: input.outcome ?? (employee ? "PENDING" : "NO_EMPLOYEE"),
         legacyScanType: legacy,
         legacyMismatch,
@@ -217,8 +286,12 @@ export async function recordScanEvent(input: RecordScanInput): Promise<RecordedS
       select: { id: true, direction: true, legacyMismatch: true, outcome: true },
     });
 
-    if (employee && direction !== "UNKNOWN") {
-      await reresolveFollowing(tx, employee.id, input.stream, input.scanTime, direction);
+    // Only a guessed direction disturbs the chain that follows it. A row whose
+    // direction came from the source is an anchor, not a perturbation.
+    if (employee && direction !== "UNKNOWN" && directionSource === "ALTERNATION") {
+      await reresolveFollowing(
+        tx, employee.id, input.stream, input.scanTime, direction, timezone,
+      );
     }
 
     return event;

@@ -117,8 +117,15 @@ export async function applyGateStateBatch(
           badgeCode,
           stream: "SECURITY",
           direction,
+          // A baseline, not an observation: this is the state the legacy system
+          // was left in, planted so the first real scan alternates off something
+          // rather than defaulting to IN. Marked so a consumer can tell it from
+          // a scan that actually happened at a reader.
+          directionSource: "SEEDED",
           scanTime,
-          warehouse: row.location ?? null,
+          site: row.location == null ? null : String(row.location),
+          sourceSlot: "GATE_SEED",
+          sourceRef: row.scanId == null ? null : String(row.scanId),
           // A gate crossing never enters the timecard pipeline, and this one
           // happened before CloudTime existed. Leaving it PENDING would have
           // the discrepancy sweep chase a punch that was never meant to exist.

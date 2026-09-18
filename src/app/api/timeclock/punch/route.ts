@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
       stream: "TIME_CLOCK",
       scanTime: punchTime,
       deviceName: DeviceName ?? null,
-      warehouse: Warehouse ?? null,
+      site: Warehouse == null ? null : String(Warehouse),
     });
     scanEventId = recorded.id;
 

@@ -131,10 +131,28 @@ model ScanEvent {
   badgeCode  String
   stream     ScanStream
   direction  ScanDirection @default(UNKNOWN)
+  /// Whether `direction` was read off the source or guessed by alternation.
+  /// Only ALTERNATION rows may be rewritten by `reresolveFollowing`.
+  directionSource ScanDirectionSource @default(ALTERNATION)
   /// Instant of the scan, in UTC, converted from the kiosk's configured zone.
   scanTime   DateTime
   deviceName String?
-  warehouse  Int?
+  /// Where the reader is. Text, not Int: the time clocks report NJ299 / NJ3 /
+  /// CA2 / GA7575 / CAN while the gates report numeric location ids, and an
+  /// integer column could only ever hold the gates.
+  site       String?
+
+  /// Which slot of the legacy row this event was expanded from —
+  /// TIMECLOCKIN / TIMECLOCKOUT / SCANTIME / OUTTIME — or 'LIVE' for a scan
+  /// posted by a kiosk in real time.
+  ///
+  /// Part of the idempotency key, and NOT NULL for that reason: Postgres treats
+  /// NULLs in a unique index as distinct, so a nullable discriminator would stop
+  /// live retries deduping at all.
+  sourceSlot String  @default("LIVE")
+  /// The legacy report row this was expanded from, for tracing a row back to
+  /// its source. Null for live scans.
+  sourceRef  String?
 
   /// The Punch this scan produced, when the timecard pipeline accepted it.
   /// Null whenever it did not — which is the interesting case.
@@ -172,7 +190,13 @@ model ScanEvent {
 
   /// Makes a retried post idempotent — the kiosk queue retries the same scan
   /// until the server takes it, and a duplicate must not flip the direction.
-  @@unique([badgeCode, stream, scanTime])
+  ///
+  /// `sourceSlot` is in the key because a clock-out and the next clock-in do
+  /// legitimately land in the same second: two months of production logs hold
+  /// 393 such pairs, and without the discriminator the log kept one and
+  /// silently dropped the other — which was always the opposite direction.
+  /// Live retries are unaffected: both posts carry 'LIVE'.
+  @@unique([badgeCode, stream, scanTime, sourceSlot])
   @@index([employeeId, stream, scanTime(sort: Desc)])
   @@index([tenantId, stream, scanTime(sort: Desc)])
   @@index([badgeCode, scanTime(sort: Desc)])

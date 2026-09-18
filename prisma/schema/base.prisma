@@ -253,3 +253,21 @@ enum RosterCandidateStatus {
   /// An Employee now exists for this empId.
   RESOLVED
 }
+
+/// How a scan's `direction` was arrived at — whether it is a fact or a guess.
+///
+/// Worth recording because the two are not close in quality. Replaying two
+/// months of production logs, direction taken from the source column is right
+/// by construction, while direction guessed by alternation was wrong for 19.9%
+/// of time-clock events. A consumer that cannot tell them apart has to treat
+/// every row as suspect.
+enum ScanDirectionSource {
+  /// The legacy column stated it: TIMECLOCKIN / SCANTIME are arrivals,
+  /// TIMECLOCKOUT / OUTTIME are departures. Never re-resolved.
+  SOURCE_COLUMN
+  /// Inferred by alternating from this badge's previous scan in this stream.
+  /// The only kind `reresolveFollowing` may rewrite.
+  ALTERNATION
+  /// Planted as a starting baseline rather than observed at a reader.
+  SEEDED
+}

@@ -25,7 +25,10 @@ export const approveMissedPunchSchema = z.object({
 export const timeclockScanSchema = z.object({
   EmployeeCode: z.string().min(1, "EmployeeCode is required"),
   ScanId: z.number().optional(),
-  Warehouse: z.number().optional(),
+  // Text, not number: the time clocks report NJ299 / NJ3 / CA2 / GA7575 / CAN
+  // while the gates report numeric location ids. A numeric field could only
+  // ever accept the gates, and silently dropped every clock location.
+  Warehouse: z.union([z.string(), z.number()]).optional(),
   DepartmentName: z.string().optional(),
   ScanDateTime: z.string().min(1, "ScanDateTime is required"),
   DeviceName: z.string().optional(),
@@ -46,7 +49,7 @@ export const kioskScanSchema = z.object({
   ScanDateTime: z.string().min(1, "ScanDateTime is required"),
   Stream: z.enum(["TIME_CLOCK", "SECURITY"]),
   DeviceName: z.string().optional(),
-  Warehouse: z.number().int().optional(),
+  Warehouse: z.union([z.string(), z.number()]).optional(),
   LegacyScanType: z.string().optional(),
 });
 
