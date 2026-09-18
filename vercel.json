@@ -39,6 +39,14 @@
     {
       "path": "/api/cron/enqueue-sync-jobs",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/auto-close-scans",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/auto-close-scans",
+      "schedule": "0 8 * * *"
     }
   ]
 }

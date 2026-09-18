@@ -270,4 +270,8 @@ enum ScanDirectionSource {
   ALTERNATION
   /// Planted as a starting baseline rather than observed at a reader.
   SEEDED
+  /// Written by the nightly auto-close for someone who never scanned out.
+  /// Not an inference that might be wrong — a record that no exit ever arrived,
+  /// and the thing the "who is not clocking out" report counts.
+  AUTO_CLOSE
 }
