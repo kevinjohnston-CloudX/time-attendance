@@ -270,7 +270,7 @@ async function main() {
   }
 
   console.log(`\nwriting ${rows.length} rows`);
-  let created = 0, corrected = 0, unchanged = 0;
+  let created = 0, corrected = 0, adopted = 0, unchanged = 0;
 
   const CHUNK = 500;
   for (let i = 0; i < rows.length; i += CHUNK) {
@@ -297,7 +297,7 @@ async function main() {
           note: who ? null : "no employee matches this badge",
         };
 
-        const existing = await tx.scanEvent.findUnique({
+        let existing = await tx.scanEvent.findUnique({
           where: {
             badgeCode_stream_scanTime_sourceSlot: {
               badgeCode: e.badgeCode, stream: e.stream,
@@ -306,6 +306,32 @@ async function main() {
           },
           select: { id: true, direction: true, directionSource: true },
         });
+
+        // Adopt the live row for this same physical scan, if there is one.
+        //
+        // The table has been taking live kiosk scans since 2026-09-15, and those
+        // rows carry sourceSlot 'LIVE'. A report row for the same scan carries
+        // 'TIMECLOCKOUT' or similar, so the lookup above misses it and we would
+        // insert a SECOND row for one scan — with the opposite direction, since
+        // correcting that is the whole point. Claim the live row instead.
+        //
+        // Restricted to sourceSlot 'LIVE' so a legitimate same-second IN and OUT
+        // (393 such pairs exist) still land as the two distinct rows they are:
+        // the first report row adopts the live one, the second creates.
+        if (!existing) {
+          const live = await tx.scanEvent.findFirst({
+            where: {
+              badgeCode: e.badgeCode, stream: e.stream,
+              scanTime: e.scanTime, sourceSlot: "LIVE",
+            },
+            select: { id: true, direction: true, directionSource: true },
+          });
+          if (live) {
+            await tx.scanEvent.update({ where: { id: live.id }, data });
+            adopted++;
+            continue;
+          }
+        }
 
         if (!existing) {
           await tx.scanEvent.create({ data });
