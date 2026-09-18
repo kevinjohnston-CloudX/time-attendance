@@ -76,7 +76,16 @@ async function main() {
            ABS(EXTRACT(EPOCH FROM (a."scanTime" - b."scanTime")))::text AS "gap"
     FROM   "scan_events" a
     JOIN   "scan_events" b
-      ON   b."badgeCode" = a."badgeCode"
+      -- Paired on the EMPLOYEE, not the badge string. Two badge formats are in
+      -- circulation — a 6-digit employee number and a 10-digit barcode — and the
+      -- legacy report records the former while a kiosk records whichever was
+      -- scanned. 140 employees hold rows under both, so joining on badgeCode
+      -- silently skipped exactly the people most affected: their backfilled row
+      -- and their live row look like different badges entirely.
+      ON   (
+             (a."employeeId" IS NOT NULL AND b."employeeId" = a."employeeId")
+             OR (a."employeeId" IS NULL AND b."badgeCode" = a."badgeCode")
+           )
      AND   b."stream"    = a."stream"
      AND   b."directionSource" = 'SOURCE_COLUMN'
      AND   b."scanTime" BETWEEN a."scanTime" - interval '${windowSec} seconds'
