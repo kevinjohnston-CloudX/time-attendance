@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { findEmployeeIdentityByBadge } from "@/lib/utils/badge-lookup";
 import { kioskScanSchema } from "@/lib/validators/punch.schema";
 import { parseScanTime } from "@/lib/utils/scan-time";
-import { recordScanEvent } from "@/lib/services/scan-event.service";
+import { normaliseLegacyScanType, recordScanEvent } from "@/lib/services/scan-event.service";
 
 /**
  * Security-gate scan ingest.
@@ -86,6 +86,27 @@ export async function POST(req: NextRequest) {
       deviceName: DeviceName ?? null,
       site: Warehouse == null ? null : String(Warehouse),
       legacyScanType: LegacyScanType ?? null,
+      // The direction Oracle just stated for this very scan, used as fact
+      // rather than re-derived.
+      //
+      // The gate has no daily re-anchor — deliberately, because night shift
+      // crosses midnight — so alternation there has no point at which it can
+      // re-sync. One crossing the table never saw inverts every scan after it
+      // for that badge, indefinitely. That is not hypothetical: after the
+      // 2026-09-18 mid-day rollout, 87 of 129 badges came out the exact
+      // inverse of Oracle end to end, because the first crossing each tablet
+      // witnessed was people leaving at lunch rather than arriving.
+      //
+      // Not to be confused with the SCANTYPE *column* of the legacy report,
+      // which backfill-scan-events.ts refuses for good reason: there it is the
+      // visit row's state ("have they left yet"), not the direction of an
+      // event. The live PUT response is a different thing — Oracle's verdict on
+      // the scan just recorded — and it behaves like one, alternating across
+      // 96.1% of consecutive scans per badge where a state flag could not.
+      //
+      // Null when the legacy call never answered, which is the offline queue's
+      // case: those fall through to alternation exactly as before.
+      knownDirection: normaliseLegacyScanType(LegacyScanType) ?? undefined,
       // A gate crossing never enters the timecard pipeline, so it is resolved
       // the moment it is stored. Leaving these PENDING would have the
       // discrepancy sweep chase a punch that was never meant to exist.

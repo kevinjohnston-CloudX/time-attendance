@@ -154,10 +154,14 @@ type Event = {
   sourceRef: string;
 };
 
-function expand(timeclockPath: string, scanlogPath: string, timezone: string): Event[] {
+function expand(
+  timeclockPath: string | undefined,
+  scanlogPath: string | undefined,
+  timezone: string,
+): Event[] {
   const events: Event[] = [];
 
-  for (const r of loadRows(timeclockPath)) {
+  for (const r of timeclockPath ? loadRows(timeclockPath) : []) {
     const badgeCode = r.EMPID?.trim();
     if (!badgeCode) continue;
     const common = {
@@ -170,7 +174,7 @@ function expand(timeclockPath: string, scanlogPath: string, timezone: string): E
     if (outAt) events.push({ ...common, direction: "OUT", scanTime: outAt, sourceSlot: "TIMECLOCKOUT" });
   }
 
-  for (const r of loadRows(scanlogPath)) {
+  for (const r of scanlogPath ? loadRows(scanlogPath) : []) {
     const badgeCode = r.BADGEID?.trim();
     if (!badgeCode) continue;
     const common = {
@@ -206,9 +210,14 @@ async function main() {
   const apply = argv.includes("--apply");
   const lastOnly = argv.includes("--last-only");
 
-  if (!timeclockPath || !scanlogPath) {
+  // Either report alone is valid. On a deployment day the gate report is the
+  // urgent one — it is what the kiosk's IN/OUT alternates from — and waiting on
+  // the time-clock export before correcting the anchors would cost exactly the
+  // hours the load exists to protect.
+  if (!timeclockPath && !scanlogPath) {
     console.error(
-      "usage: --timeclock <path> --scanlog <path> [--timezone <tz>] [--last-only] [--apply]",
+      "usage: [--timeclock <path>] [--scanlog <path>] (at least one) " +
+        "[--timezone <tz>] [--last-only] [--apply]",
     );
     process.exit(1);
   }

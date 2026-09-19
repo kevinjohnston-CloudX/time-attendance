@@ -347,8 +347,15 @@ export async function resolveScanOutcome(
   }
 }
 
-/** Accepts the legacy API's "IN" / "OUT" in any casing; anything else is dropped. */
-function normaliseLegacyScanType(value?: string | null): ScanDirection | null {
+/**
+ * Accepts the legacy API's "IN" / "OUT" in any casing; anything else is dropped.
+ *
+ * Exported because the gate ingest route passes the same value as
+ * `knownDirection`, and a second copy of this parse would be free to drift from
+ * this one — which, for a field that decides whether a scan is an arrival or a
+ * departure, is not a drift anybody would notice until it mattered.
+ */
+export function normaliseLegacyScanType(value?: string | null): ScanDirection | null {
   if (!value) return null;
   const upper = value.trim().toUpperCase();
   return upper === "IN" || upper === "OUT" ? upper : null;
