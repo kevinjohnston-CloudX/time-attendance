@@ -274,4 +274,13 @@ enum ScanDirectionSource {
   /// Not an inference that might be wrong — a record that no exit ever arrived,
   /// and the thing the "who is not clocking out" report counts.
   AUTO_CLOSE
+  /// The same badge read again at the same kind of reader within seconds, which
+  /// is the reader firing twice rather than the person crossing twice. The row
+  /// is kept — it is what the gate actually did, and Oracle records both
+  /// crossings too, so dropping it would make the two impossible to reconcile —
+  /// but it inherits the previous scan's direction instead of alternating off
+  /// it. Measured 2026-09-19: of 447 consecutive gate scan pairs since Sep 17,
+  /// 164 were under a minute apart and 160 of those flipped the direction,
+  /// leaving people showing as inside a building they had just walked out of.
+  REREAD
 }

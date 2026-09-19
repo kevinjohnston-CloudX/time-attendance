@@ -120,6 +120,12 @@ export async function POST(req: NextRequest) {
       employeeName: result.employeeName,
       employeeMatched: result.employeeId !== null,
       duplicate: result.duplicate,
+      // The badge was read again within the re-read window, so `direction` is
+      // the one already showing rather than a new crossing. A kiosk that
+      // understands this field should say so instead of announcing a crossing
+      // that did not happen; one that ignores it still gets a direction that no
+      // longer flips, which is the half that matters for the record.
+      reread: result.reread,
       legacyMismatch: result.legacyMismatch,
     });
   } catch (err) {

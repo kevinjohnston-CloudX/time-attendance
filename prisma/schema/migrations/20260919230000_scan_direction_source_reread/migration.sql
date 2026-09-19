@@ -1,0 +1,25 @@
+-- Adds REREAD to ScanDirectionSource.
+--
+-- Marks a scan that is the same badge read again at the same kind of reader
+-- within seconds: the reader firing twice, not the person crossing twice.
+--
+-- Measured on production 2026-09-19. Of 447 consecutive gate scan pairs since
+-- Sep 17, 164 were less than a minute apart and 160 of those flipped the
+-- badge's direction. The distribution has a clear cliff -- 153 under 30s, then
+-- 11 in the 30-60s band and only 2 between one and two minutes -- so a sub-
+-- minute repeat is the reader, and real traffic resumes after that.
+--
+-- The row is kept rather than dropped. scan_events exists to be an independent
+-- record of what happened at the readers, and Oracle's timestationscanlog
+-- records both crossings too, so discarding one would make the two systems
+-- impossible to reconcile. What changes is only that the row inherits the
+-- previous scan's direction instead of alternating off it, which is what left
+-- people showing as inside a building they had just walked out of.
+--
+-- Purely additive: one enum value, no table or column changes.
+--
+-- ALTER TYPE ... ADD VALUE is transaction-safe on PostgreSQL 12+ provided the
+-- new value is not used in the same transaction. Nothing below uses it.
+
+-- AlterEnum
+ALTER TYPE "ScanDirectionSource" ADD VALUE 'REREAD';
