@@ -60,10 +60,36 @@ async function cloudtime(path, options = {}) {
       ...(options.headers ?? {}),
     },
   });
+  const ctype = res.headers.get("content-type") ?? "";
+  const body = await res.text();
+
   if (!res.ok) {
-    throw new Error(`CloudTime ${path} -> HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    throw new Error(`CloudTime ${path} -> HTTP ${res.status}: ${body.slice(0, 300)}`);
   }
-  return res.json();
+
+  // A 200 carrying HTML is the interesting failure: Vercel's deployment-
+  // protection page, an error page served mid-deploy, or a cloudTimeBaseUrl
+  // that resolves to the Next.js app shell rather than the API. Left to
+  // res.json() all three read as "Unexpected token '<'", which names the
+  // symptom and hides every one of the causes. Seen in production on
+  // 2026-09-17T17:21Z and it cost an evening to work out afterwards.
+  if (!ctype.includes("json")) {
+    const peek = body.slice(0, 200).replace(/\s+/g, " ").trim();
+    throw new Error(
+      `CloudTime ${path} -> HTTP ${res.status} returned ${ctype || "no content-type"}, ` +
+        `not JSON. Check cloudTimeBaseUrl points at the API host and that the ` +
+        `deployment is not behind an access wall. First bytes: ${peek}`,
+    );
+  }
+
+  try {
+    return JSON.parse(body);
+  } catch (err) {
+    throw new Error(
+      `CloudTime ${path} -> HTTP ${res.status} claimed ${ctype} but the body did not ` +
+        `parse: ${String(err?.message ?? err)}. First bytes: ${body.slice(0, 200)}`,
+    );
+  }
 }
 
 /* ------------------------------------------------------------------ */
