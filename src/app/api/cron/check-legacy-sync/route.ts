@@ -53,7 +53,30 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const since = new Date(now - 24 * 60 * 60 * 1000);
 
   /* ---- 1. Punches Oracle refused or never took ---- */
-  const broken = await db.legacySyncLog.findMany({
+  //
+  // Minus the refusals that mean the opposite of what they say.
+  //
+  // Oracle's write can time out on the RESPONSE while the request landed and
+  // the punch was created. The queue then retries, correctly — a genuinely
+  // lost request has to be — and Oracle refuses the retry as a duplicate of
+  // the punch it already holds. Observed on the first live 156 punch, four
+  // seconds apart:
+  //
+  //   attempt 1  RETRYING  "Request timed out"
+  //   attempt 2  REFUSED   "Scanned again to quickly ... prevent Duplicates"
+  //
+  // Read at face value that is a punch missing from Oracle. It is the exact
+  // opposite: it is Oracle telling us the punch is already there. Alerting on
+  // it would page somebody about a timecard that is correct, and an alert that
+  // is wrong on day one is an alert nobody reads by week two.
+  //
+  // Both conditions are required, because either alone is ambiguous. A prior
+  // failed attempt on the same queue row says the punch may already have
+  // landed; a duplicate-shaped message says Oracle thinks it has one. A
+  // refusal that follows a timeout but cites a different rule — CA2's lunch
+  // rule, say — still alerts, because that one really is a punch Oracle
+  // refused to keep.
+  const refusals = await db.legacySyncLog.findMany({
     where: {
       kind: "PUNCH",
       outcome: { in: ["REFUSED", "FAILED_PERMANENT"] },
@@ -65,11 +88,40 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       scanTime: true,
       message: true,
       deviceName: true,
+      queueRowId: true,
+      attemptCount: true,
       employee: { select: { user: { select: { name: true } } } },
     },
     orderBy: { createdAt: "desc" },
-    take: 50,
+    take: 200,
   });
+
+  // Which of those queue rows had an earlier attempt fail in transit.
+  const retriedRows = new Set(
+    (
+      await db.legacySyncLog.findMany({
+        where: {
+          kind: "PUNCH",
+          outcome: "RETRYING",
+          createdAt: { gte: since },
+          queueRowId: { not: null },
+        },
+        select: { deviceName: true, queueRowId: true },
+      })
+    ).map((r) => `${r.deviceName ?? ""}#${r.queueRowId}`),
+  );
+
+  /** Oracle's own duplicate wording, typo and all: "Scanned again to quickly". */
+  const looksLikeDuplicate = (message: string | null) =>
+    message != null && /duplicat/i.test(message);
+
+  const probablyDelivered = refusals.filter(
+    (r) =>
+      looksLikeDuplicate(r.message) &&
+      retriedRows.has(`${r.deviceName ?? ""}#${r.queueRowId}`),
+  );
+  const probablySet = new Set(probablyDelivered);
+  const broken = refusals.filter((r) => !probablySet.has(r)).slice(0, 50);
 
   if (broken.length) {
     // Named, not counted. "3 punches failed" sends somebody to a database;
@@ -162,6 +214,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     checkedAt: new Date(now).toISOString(),
     reportingFromVersion: REPORTING_FROM_VERSION,
     findings,
+    // Reported, never alerted on. These are refusals that follow a timeout on
+    // the same queue row and cite a duplicate — Oracle saying it already has
+    // the punch. Counted here so a rising number is still visible to anybody
+    // reading the output, because a lot of them means Oracle is slow enough to
+    // be timing out routinely, which is worth knowing even though no timecard
+    // is wrong.
+    probablyDelivered: probablyDelivered.length,
   };
 
   if (findings.length === 0) {
