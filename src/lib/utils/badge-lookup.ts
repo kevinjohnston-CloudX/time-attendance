@@ -41,7 +41,7 @@ function badgeCandidates(code: string): string[] {
  * stripping there would let "0123456" match employee 123456, which is a
  * different person's timecard.
  */
-function badgeWhere(code: string): Prisma.EmployeeWhereInput {
+export function badgeWhere(code: string): Prisma.EmployeeWhereInput {
   const candidates = badgeCandidates(code);
   return { OR: [{ wmsId: code.trim() }, { barcode: { in: candidates } }] };
 }
