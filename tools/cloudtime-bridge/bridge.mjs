@@ -149,10 +149,16 @@ const ROSTER_SQL = `
            -- card but one was discarded, and the people carrying those cards
            -- had their scans recorded against no employee.
            --
-           -- DISTINCT because the shift and department joins multiply rows,
-           -- and without it a card would be listed once per shift.
-           LISTAGG(DISTINCT wu2.barcode, ',') WITHIN GROUP (ORDER BY wu2.barcode)
-             OVER (PARTITION BY u.empid) AS "barcodes",
+           -- A scalar subquery rather than a window function over a joined
+           -- copy of wmsusers: the shift and department joins multiply rows,
+           -- so a windowed LISTAGG would repeat each card once per shift, and
+           -- LISTAGG DISTINCT needs Oracle 19c. This reads each person's cards
+           -- once, from one table, on any version. Duplicates are collapsed on
+           -- the CloudTime side anyway, in cardsOn.
+           (SELECT LISTAGG(w.barcode, ',') WITHIN GROUP (ORDER BY w.barcode)
+              FROM wmsusers w
+             WHERE w.userid = u.usersid
+               AND w.barcode IS NOT NULL) AS "barcodes",
            -- Which building this person works in.
            --
            -- department_login is how the legacy API itself resolves a
@@ -173,10 +179,6 @@ const ROSTER_SQL = `
     FROM framewrk.users u
     JOIN framewrk.contact c       ON c.contactid = u.contactid
     LEFT JOIN wmsusers wu         ON wu.userid   = u.usersid
-    -- A second, unfiltered pass over the same table purely to collect the
-    -- other cards. Kept separate from wu so the rn = 1 pick is byte for byte
-    -- what it was before this change.
-    LEFT JOIN wmsusers wu2        ON wu2.userid  = u.usersid
     LEFT JOIN workerschedule ws   ON ws.wmsuserid = u.usersid
     LEFT JOIN shiftsbywarehouse sw ON sw.shiftid  = ws.shiftid
     LEFT JOIN wmsdepartments d    ON d.id        = ws.deptid
