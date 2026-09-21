@@ -12,7 +12,7 @@ import { RulesSetupClient } from "./rules-setup-client";
 export default async function RulesSetupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; policy?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
