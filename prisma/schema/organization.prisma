@@ -49,6 +49,22 @@ model Site {
   /// does not report to CloudTime must never have punches refused for want of
   /// one, and inferring this from traffic gets that exactly backwards.
   requireGateScan Boolean @default(false)
+
+  /// Oracle's warehouse id for this building, from the legacy WarehouseLocation
+  /// enum (NJ3 = 5, CAN = 8, NL = 9, CA2 = 10, NJ299 = 13, PA1055 = 15,
+  /// CAN36 = 18, GA7575 = 19).
+  ///
+  /// <p>This is the link that lets an Oracle employee be placed in a building.
+  /// Without it the roster sync knows a person exists, what department they are
+  /// in and what their badge is, but not where they work — and site is one of
+  /// the four things an Employee cannot be created without, which is why every
+  /// staged RosterCandidate has had a null siteName.
+  ///
+  /// <p>Null where nobody has confirmed which warehouse a site is. Left null
+  /// deliberately rather than guessed: the two Canadian buildings both map to
+  /// plausible ids and putting somebody in the wrong building is worse than
+  /// leaving the queue exactly as useful as it is today.
+  wmsWarehouseId Int? @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

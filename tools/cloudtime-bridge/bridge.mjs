@@ -132,12 +132,35 @@ async function cloudtime(path, options = {}) {
  * silently drop that person — CloudTime would never learn their barcode.
  */
 const ROSTER_SQL = `
-  SELECT "empId", "usersId", "barcode", "firstName", "lastName",
+  SELECT "empId", "usersId", "barcode", "barcodes", "warehouseId",
+         "firstName", "lastName",
          "terminated", "departmentName", "shiftDescription"
   FROM (
     SELECT u.empid              AS "empId",
            u.usersid            AS "usersId",
            wu.barcode           AS "barcode",
+           -- Every card this person holds, not just the one rn = 1 keeps.
+           --
+           -- Oracle stores one wmsusers row per card, so a re-issued badge
+           -- leaves the old row in place: 95 employee numbers in the
+           -- 2026-09-21 export carry between two and four. The dedup below
+           -- exists so a person does not appear several times with different
+           -- barcodes, which made the roster flap -- but it also meant every
+           -- card but one was discarded, and the people carrying those cards
+           -- had their scans recorded against no employee.
+           --
+           -- DISTINCT because the shift and department joins multiply rows,
+           -- and without it a card would be listed once per shift.
+           LISTAGG(DISTINCT wu2.barcode, ',') WITHIN GROUP (ORDER BY wu2.barcode)
+             OVER (PARTITION BY u.empid) AS "barcodes",
+           -- Which building this person works in.
+           --
+           -- department_login is how the legacy API itself resolves a
+           -- warehouse for an employee -- see GetUserByEmployeeIds in
+           -- EmployeeRepository.cs, which NovaTime's rates message runs on.
+           -- Site is one of the four things CloudTime cannot create an
+           -- Employee without, and it is the one Oracle was never asked for.
+           dl.warehouseid       AS "warehouseId",
            c.firstname          AS "firstName",
            c.lastname           AS "lastName",
            ws.terminated        AS "terminated",
@@ -150,9 +173,16 @@ const ROSTER_SQL = `
     FROM framewrk.users u
     JOIN framewrk.contact c       ON c.contactid = u.contactid
     LEFT JOIN wmsusers wu         ON wu.userid   = u.usersid
+    -- A second, unfiltered pass over the same table purely to collect the
+    -- other cards. Kept separate from wu so the rn = 1 pick is byte for byte
+    -- what it was before this change.
+    LEFT JOIN wmsusers wu2        ON wu2.userid  = u.usersid
     LEFT JOIN workerschedule ws   ON ws.wmsuserid = u.usersid
     LEFT JOIN shiftsbywarehouse sw ON sw.shiftid  = ws.shiftid
     LEFT JOIN wmsdepartments d    ON d.id        = ws.deptid
+    -- LEFT, like the others: a person with no department_login row keeps their
+    -- roster entry and simply has no warehouse, rather than vanishing.
+    LEFT JOIN department_login dl ON dl.userid   = u.usersid
     -- framewrk.users carries sentinel and test rows alongside real staff:
     -- empids of -1, 0 and 1 all appear. They match nobody in CloudTime and
     -- only inflate a payload that is already ~18,000 rows. Real employee

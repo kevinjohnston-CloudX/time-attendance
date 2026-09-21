@@ -46,6 +46,18 @@ export type RosterRow = {
   usersId?: string | null;
   /** wmsusers.barcode, as Oracle stores it (unpadded). */
   barcode?: string | null;
+  /**
+   * Every card this person holds, comma separated, as the bridge's LISTAGG
+   * returns them. Absent from a bridge older than 2026-09-21, in which case
+   * `barcode` is all there is and the behaviour is exactly what it was.
+   */
+  barcodes?: string | null;
+  /**
+   * Oracle's warehouse id, from department_login. This is what lets a staged
+   * candidate name a building; without it site is the one thing a human has
+   * to work out by hand for every person in the queue.
+   */
+  warehouseId?: number | string | null;
   name?: string | null;
   departmentName?: string | null;
   siteName?: string | null;
@@ -72,6 +84,47 @@ function isPlausibleEmpId(empId: string): boolean {
   return Number(empId) > 0 && empId.length >= 4;
 }
 
+/**
+ * Every distinct card on a roster row, Oracle's own spelling preserved.
+ *
+ * <p>Falls back to the single `barcode` when `barcodes` is absent, which is
+ * what a bridge older than 2026-09-21 sends — so an un-updated bridge keeps
+ * working and simply keeps supplying one card per person.
+ *
+ * <p>A value equal to the employee number is dropped for the same reason it
+ * always was: Oracle's barcode column frequently repeats the empId, and that
+ * is a null mapping recorded as a value, not a badge.
+ */
+function cardsOn(row: RosterRow, empId: string): string[] {
+  const raw = row.barcodes
+    ? row.barcodes.split(",")
+    : [row.barcode ?? ""];
+  const seen = new Set<string>();
+  for (const value of raw) {
+    const card = normaliseBarcode(value);
+    if (card && card !== empId) seen.add(card);
+  }
+  return [...seen];
+}
+
+/**
+ * The building this person works in, or null.
+ *
+ * <p>Null is a normal answer and not a failure: an unmapped warehouse, or a
+ * bridge that does not send one, leaves the candidate exactly as useful as it
+ * was before. Guessing would put somebody in the wrong building, which is
+ * worse than leaving the field blank for a human who can check.
+ */
+function resolveSite(
+  row: RosterRow,
+  siteByWarehouse: Map<number, string>,
+): string | null {
+  if (row.siteName?.trim()) return row.siteName.trim();
+  const id = Number(row.warehouseId);
+  if (!Number.isInteger(id)) return null;
+  return siteByWarehouse.get(id) ?? null;
+}
+
 export async function applyRosterBatch(
   tenantId: string,
   rows: RosterRow[],
@@ -93,6 +146,17 @@ export async function applyRosterBatch(
       user: { select: { name: true } },
     },
   });
+
+  // Oracle warehouse id -> the building's name here. Only sites somebody has
+  // confirmed carry an id, so an unmapped warehouse leaves siteName null and
+  // the candidate exactly as useful as it was before — never a wrong building.
+  const sites = await db.site.findMany({
+    where: { tenantId, wmsWarehouseId: { not: null } },
+    select: { name: true, wmsWarehouseId: true },
+  });
+  const siteByWarehouse = new Map(
+    sites.map((s) => [s.wmsWarehouseId as number, s.name]),
+  );
 
   const byWmsId = new Map(employees.map((e) => [e.wmsId as string, e]));
   // Who already holds each barcode, so a clash is caught without asking the
@@ -171,7 +235,8 @@ export async function applyRosterBatch(
         continue;
       }
 
-      await stageCandidate(tenantId, row, empId, usableBarcode, failedScans);
+      const siteName = resolveSite(row, siteByWarehouse);
+      await stageCandidate(tenantId, row, empId, usableBarcode, failedScans, siteName);
       tally.rejected++;
       tally.note(
         "NO_EMPLOYEE",
@@ -184,23 +249,19 @@ export async function applyRosterBatch(
     const changes: Record<string, unknown> = {};
 
     /* ---- every card this person holds ---- */
-    if (usableBarcode) {
-      const heldBy = badgeOwner.get(usableBarcode);
+    for (const card of cardsOn(row, empId)) {
+      const heldBy = badgeOwner.get(card);
       if (!heldBy) {
-        const badge = {
-          employeeId: employee.id,
-          barcode: usableBarcode,
-          syncedAt: new Date(),
-        };
+        const badge = { employeeId: employee.id, barcode: card, syncedAt: new Date() };
         newBadges.push(badge);
-        badgeOwner.set(usableBarcode, { ...badge, source: "ORACLE" as const });
+        badgeOwner.set(card, { ...badge, source: "ORACLE" as const });
       } else if (heldBy.employeeId !== employee.id) {
         // Two people cannot present the same card. Reported rather than
         // reassigned: whichever way it is resolved, somebody's timecard moves.
         tally.note(
           "BARCODE_CONFLICT",
           empId,
-          `Card ${usableBarcode} is already recorded against another employee`,
+          `Card ${card} is already recorded against another employee`,
         );
       }
     }
@@ -310,13 +371,14 @@ async function stageCandidate(
   empId: string,
   barcode: string | null,
   failedScans: number,
+  siteName: string | null,
 ): Promise<void> {
   const data = {
     oracleUsersId: row.usersId?.trim() || null,
     barcode,
     name: row.name?.trim() || null,
     departmentName: row.departmentName?.trim() || null,
-    siteName: row.siteName?.trim() || null,
+    siteName,
     isActiveInOracle: row.isActive ?? true,
     failedScans,
   };
