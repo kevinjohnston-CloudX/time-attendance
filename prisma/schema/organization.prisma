@@ -179,9 +179,47 @@ model Employee {
   documents        Document[]
   auditLogs        AuditLog[]
   mealWaiversCreated MealWaiver[]
+  badges             EmployeeBadge[]
 
   @@unique([tenantId, employeeCode])
   @@map("employees")
+}
+
+/// Every card a person can physically present, not just the last one Oracle
+/// mentioned.
+///
+/// <p>Oracle's `wmsusers` holds one row per card, so an employee who was
+/// re-issued a badge keeps the old row alongside the new one — 95 employee
+/// numbers in the 2026-09-21 export carry between two and four barcodes each.
+/// `Employee.barcode` is a single unique column, so the sync could only ever
+/// keep one of them and the rest resolved to nobody. Measured the same day:
+/// ten of those people are active, four of their spare cards were in daily use,
+/// and 41 scans over 14 days were recorded against no employee because of it.
+///
+/// <p>That cost nothing while Oracle was still the one answering "is this a
+/// valid badge", because Oracle recognised every card. It becomes a lockout the
+/// moment CloudTime is the only system deciding — which is the direction this
+/// is moving — so the alias has to exist before the decision does.
+///
+/// <p>`Employee.barcode` is left in place and still resolves. This table is
+/// additive: it carries the cards that column has no room for.
+model EmployeeBadge {
+  id         String      @id @default(cuid())
+  employeeId String
+  /// The barcode exactly as Oracle stores it — unpadded. The tablets zero-pad
+  /// to ten characters, and that difference is reconciled when comparing, not
+  /// by rewriting what the source system said. See badge-lookup.
+  barcode    String      @unique
+  source     BadgeSource @default(ORACLE)
+  /// When the Oracle sync last saw this card in the feed. Null on a card a
+  /// person entered by hand, which Oracle may never have heard of.
+  syncedAt   DateTime?
+  createdAt  DateTime    @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@map("employee_badges")
 }
 
 enum ShiftCycle {

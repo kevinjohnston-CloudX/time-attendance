@@ -218,6 +218,15 @@ enum SyncRunStatus {
   FAILED
 }
 
+/// Where a card came from. The sync only ever adds rows, so nothing is at risk
+/// of being overwritten today; this records provenance so a later cleanup of
+/// stale Oracle cards can tell them apart from one a person entered by hand
+/// while holding the physical badge.
+enum BadgeSource {
+  ORACLE
+  MANUAL
+}
+
 /// Which system last asserted a schedule row.
 enum ScheduleSource {
   ORACLE

@@ -26,6 +26,13 @@ import type { Prisma } from "@prisma/client";
  * zero-stripped form. The stored value stays exactly as Oracle has it — the
  * normalising happens here, at the point of comparison, rather than by
  * rewriting what the source system said.
+ *
+ * <p><b>And why one column was not enough.</b> Oracle keeps a `wmsusers` row
+ * per card, so a re-issued badge leaves the old one in place: 95 employee
+ * numbers in the 2026-09-21 export hold two to four barcodes each. A single
+ * unique column can only store one, so the others matched nobody — 41 scans
+ * over 14 days, from four cards in daily use. Those are checked here too, via
+ * the `employee_badges` alias table.
  */
 
 /** A scanned code as itself, and with any leading zeros removed. */
@@ -43,7 +50,13 @@ function badgeCandidates(code: string): string[] {
  */
 export function badgeWhere(code: string): Prisma.EmployeeWhereInput {
   const candidates = badgeCandidates(code);
-  return { OR: [{ wmsId: code.trim() }, { barcode: { in: candidates } }] };
+  return {
+    OR: [
+      { wmsId: code.trim() },
+      { barcode: { in: candidates } },
+      { badges: { some: { barcode: { in: candidates } } } },
+    ],
+  };
 }
 
 export const KIOSK_EMPLOYEE_SELECT = {

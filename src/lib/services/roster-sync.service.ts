@@ -26,6 +26,14 @@ import { SyncTally } from "@/lib/services/sync-run.service";
  * finish inside a serverless request. Everything needed to decide is loaded in
  * three queries and the per-row work happens in memory; only genuine changes
  * are written.
+ *
+ * <p><b>Why a person can have more than one barcode.</b> Oracle keeps a
+ * `wmsusers` row per card, so a re-issued badge leaves the old row in place.
+ * `Employee.barcode` holds one value, so until now every card but the last one
+ * mentioned in a batch was discarded — and the people carrying those cards had
+ * their scans recorded against no employee. Each card is now also written to
+ * `employee_badges`, which is what kiosk lookups read. The primary column keeps
+ * its existing behaviour; this is additive.
  */
 
 /** See the note above before changing this. */
@@ -92,6 +100,16 @@ export async function applyRosterBatch(
   const barcodeOwner = new Map(
     employees.filter((e) => e.barcode).map((e) => [e.barcode as string, e]),
   );
+
+  // Every card already recorded, for the same reason: a batch carries ~18,000
+  // rows and the alias table has its own unique index on barcode.
+  const knownBadges = await db.employeeBadge.findMany({
+    where: { employee: { tenantId } },
+    select: { barcode: true, employeeId: true, source: true },
+  });
+  const badgeOwner = new Map(knownBadges.map((b) => [b.barcode, b]));
+  /** Cards this batch has newly learned, written in one statement at the end. */
+  const newBadges: { employeeId: string; barcode: string; syncedAt: Date }[] = [];
 
   // How many scans each unmatched badge has already had refused. This is what
   // sorts the review queue by who is actually being hurt, and — since a badge
@@ -165,7 +183,29 @@ export async function applyRosterBatch(
 
     const changes: Record<string, unknown> = {};
 
-    /* ---- barcode ---- */
+    /* ---- every card this person holds ---- */
+    if (usableBarcode) {
+      const heldBy = badgeOwner.get(usableBarcode);
+      if (!heldBy) {
+        const badge = {
+          employeeId: employee.id,
+          barcode: usableBarcode,
+          syncedAt: new Date(),
+        };
+        newBadges.push(badge);
+        badgeOwner.set(usableBarcode, { ...badge, source: "ORACLE" as const });
+      } else if (heldBy.employeeId !== employee.id) {
+        // Two people cannot present the same card. Reported rather than
+        // reassigned: whichever way it is resolved, somebody's timecard moves.
+        tally.note(
+          "BARCODE_CONFLICT",
+          empId,
+          `Card ${usableBarcode} is already recorded against another employee`,
+        );
+      }
+    }
+
+    /* ---- primary barcode ---- */
     if (usableBarcode) {
       if (employee.barcodeOverride) {
         tally.note("SKIPPED_OVERRIDE", empId, `Barcode set by hand; Oracle says ${usableBarcode}`);
@@ -223,6 +263,14 @@ export async function applyRosterBatch(
     else tally.skipped++;
 
     resolvedEmpIds.push(empId);
+  }
+
+  // One insert for the whole batch rather than one per card. skipDuplicates
+  // covers the race where a concurrent run recorded the same card first —
+  // the row would be identical, so losing it is not a loss.
+  if (newBadges.length) {
+    await db.employeeBadge.createMany({ data: newBadges, skipDuplicates: true });
+    tally.note("BADGES_ADDED", "-", `${newBadges.length} additional card(s) recorded`);
   }
 
   // Anyone who was staged as missing and now exists stops being pending —
