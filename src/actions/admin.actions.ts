@@ -4,6 +4,7 @@ import { parseISO, addMonths, addYears, differenceInMonths } from "date-fns";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
@@ -106,25 +107,63 @@ export const getAdminRefData = withRBAC(
 
 // ─── Employees ────────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 100;
+
+/** Returns the site IDs an HR_ADMIN is restricted to, or null if unrestricted. */
+async function getActorSiteRestrictions(employeeId: string, role: string): Promise<string[] | null> {
+  if (role !== "HR_ADMIN") return null;
+  const rows = await db.hrSiteAccess.findMany({
+    where: { employeeId },
+    select: { siteId: true },
+  });
+  if (rows.length === 0) return null; // empty = unrestricted
+  return rows.map((r) => r.siteId);
+}
+
 export const getEmployees = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ tenantId }, _input: void) => {
-    const employees = await db.employee.findMany({
-      where: { tenantId: tenantId ?? undefined },
-      include: {
-        user: true,
-        site: true,
-        department: true,
-        ruleSet: true,
-        supervisor: { include: { user: true } },
-        customRole: { select: { id: true, name: true } },
-      },
-      orderBy: { user: { name: "asc" } },
-    });
-    return employees.map((e) => {
-      const emp = serializePayRate(e);
+  async ({ tenantId, employeeId: actorEmpId, role: actorRole }, input?: { page?: number; q?: string; site?: string; dept?: string; role?: string }) => {
+    const { page = 0, q, site, dept, role } = input ?? {};
+
+    const allowedSiteIds = await getActorSiteRestrictions(actorEmpId, actorRole);
+
+    const where: Prisma.EmployeeWhereInput = { tenantId: tenantId ?? undefined };
+    if (allowedSiteIds) where.siteId = { in: allowedSiteIds };
+    if (site) where.site = { name: site };
+    if (dept) where.department = { name: dept };
+    if (role) where.role = { equals: role as Prisma.EnumRoleFilter["equals"] };
+    if (q) {
+      where.OR = [
+        { user: { name: { contains: q, mode: "insensitive" } } },
+        { user: { email: { contains: q, mode: "insensitive" } } },
+        { employeeCode: { contains: q, mode: "insensitive" } },
+      ];
+    }
+
+    const [rawEmployees, total] = await Promise.all([
+      db.employee.findMany({
+        where,
+        include: {
+          user: true,
+          site: true,
+          department: true,
+          ruleSet: true,
+          supervisor: { include: { user: true } },
+          customRole: { select: { id: true, name: true } },
+        },
+        orderBy: { user: { name: "asc" } },
+        take: PAGE_SIZE,
+        skip: page * PAGE_SIZE,
+      }),
+      db.employee.count({ where }),
+    ]);
+
+    const employees = rawEmployees.map((e) => {
+      const emp = serializePayRate(e) as any;
       return { ...emp, supervisor: emp.supervisor ? serializePayRate(emp.supervisor) : null };
     });
+
+    return { employees, total, page, pageSize: PAGE_SIZE };
   }
 );
 
@@ -500,6 +539,50 @@ export const updateEmployee = withRBAC(
     return { employeeId };
   }
 );
+
+// ─── HR Site Access ───────────────────────────────────────────────────────────
+
+export const getHrSiteAccess = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async (_actor, { employeeId }: { employeeId: string }) => {
+    const rows = await db.hrSiteAccess.findMany({
+      where: { employeeId },
+      select: { siteId: true },
+    });
+    return rows.map((r) => r.siteId);
+  }
+);
+
+export const updateHrSiteAccess = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async ({ tenantId, employeeId: actorEmpId, role: actorRole }, input: { employeeId: string; siteIds: string[] }) => {
+    const { employeeId, siteIds } = input;
+    if (actorRole !== "SYSTEM_ADMIN" && actorRole !== "HR_ADMIN") {
+      throw new Error("Only HR_ADMIN or SYSTEM_ADMIN can manage site access");
+    }
+
+    // Verify siteIds belong to this tenant
+    const validSites = await db.site.findMany({
+      where: { tenantId: tenantId ?? undefined, id: { in: siteIds } },
+      select: { id: true },
+    });
+    const validIds = new Set(validSites.map((s) => s.id));
+    const safeIds = siteIds.filter((id) => validIds.has(id));
+
+    // Replace: delete existing, create new
+    await db.$transaction([
+      db.hrSiteAccess.deleteMany({ where: { employeeId } }),
+      ...(safeIds.length > 0
+        ? [db.hrSiteAccess.createMany({ data: safeIds.map((siteId) => ({ employeeId, siteId })) })]
+        : []),
+    ]);
+
+    revalidatePath("/admin/employees");
+    return { siteIds: safeIds };
+  }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const getEmployeeAuditLogs = withRBAC(
   "EMPLOYEE_MANAGE",

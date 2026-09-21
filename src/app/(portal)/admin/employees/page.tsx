@@ -7,19 +7,30 @@ import { CreateEmployeeForm } from "@/components/admin/create-employee-form";
 import { CsvUploadForm } from "@/components/admin/csv-upload-form";
 import { EmployeesTable } from "@/components/admin/employees-table";
 
-export default async function EmployeesPage() {
+interface Props {
+  searchParams?: Promise<{ page?: string; q?: string; site?: string; dept?: string; role?: string }>;
+}
+
+export default async function EmployeesPage({ searchParams }: Props) {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
 
+  const sp = await searchParams;
+  const page = Math.max(0, Number(sp?.page ?? 0));
+  const q    = sp?.q    ?? "";
+  const site = sp?.site ?? "";
+  const dept = sp?.dept ?? "";
+  const role = sp?.role ?? "";
+
   const [employeesResult, refDataResult] = await Promise.all([
-    getEmployees(),
+    getEmployees({ page, q: q || undefined, site: site || undefined, dept: dept || undefined, role: role || undefined }),
     getAdminRefData(),
   ]);
 
   if (!employeesResult.success || !refDataResult.success) redirect("/admin");
 
-  const employees = employeesResult.data;
+  const { employees, total, pageSize } = employeesResult.data;
   const { sites, departments, ruleSets, employees: allEmps, customRoles, shifts, holidayRules, payCategories, payTypes } = refDataResult.data;
 
   return (
@@ -53,7 +64,15 @@ export default async function EmployeesPage() {
         </div>
       </div>
 
-      <EmployeesTable employees={employees} />
+      <EmployeesTable
+        employees={employees}
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        sites={[...new Set(sites.map((s) => s.name))].sort()}
+        departments={[...new Set(departments.map((d) => d.name))].sort()}
+        currentFilters={{ q, site, dept, role }}
+      />
     </div>
   );
 }

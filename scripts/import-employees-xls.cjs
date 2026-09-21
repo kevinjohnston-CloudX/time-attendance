@@ -99,6 +99,10 @@ async function main() {
 
   const existingCodes  = new Set(existingEmps.map(e => e.employeeCode));
   const existingWmsIds = new Set(existingEmps.filter(e => e.wmsId).map(e => e.wmsId));
+  // Also index by numeric suffix so "108195" matches existing "D0F108195"
+  const existingCodeSuffixes = new Set(
+    existingEmps.map(e => e.employeeCode.replace(/^[A-Z0-9]{3}(?=\d)/, ''))
+  );
 
   // ── Parse XLS rows ────────────────────────────────────────────────────────
   const toImport = [];
@@ -113,8 +117,12 @@ async function main() {
     const badgeStr = String(badge).trim();
     const wmsId  = (badgeStr === '0' || badgeStr === '') ? null : badgeStr;
 
-    // Skip if already in system
-    if (existingCodes.has(empId) || (wmsId && existingWmsIds.has(wmsId))) {
+    // Skip if already in system (exact code, wmsId, or prefix-stripped suffix match e.g. D0F108195 vs 108195)
+    if (
+      existingCodes.has(empId) ||
+      (wmsId && existingWmsIds.has(wmsId)) ||
+      existingCodeSuffixes.has(empId)
+    ) {
       skipped.push(empId);
       continue;
     }

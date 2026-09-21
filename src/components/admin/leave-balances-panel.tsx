@@ -633,13 +633,13 @@ function BalanceRowItem({
         <div className="mt-1.5 grid grid-cols-6 gap-3 pl-5 pr-2">
             <div>
               <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-                {row.policyRateMode === "PER_POSTING" ? "Per Posting" : "Annual Total"}
+                {row.policyRateMode === "PER_POSTING" ? "Per Pay Period" : "Annual Total"}
               </p>
               <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
                 {row.policyAnnualHours != null
                   ? row.policyRateMode === "PER_POSTING"
-                    ? `${Number.isInteger(row.policyAnnualHours) ? row.policyAnnualHours : row.policyAnnualHours.toFixed(2).replace(/\.?0+$/, "")}h/post`
-                    : fmtHoursPerYear(row.policyAnnualHours)
+                    ? fmtHours(Math.round(row.policyAnnualHours * 60))
+                    : `${Number.isInteger(row.policyAnnualHours) ? row.policyAnnualHours : row.policyAnnualHours.toFixed(1)}h`
                   : <span className="text-xs font-normal text-zinc-400">No policy</span>
                 }
               </p>

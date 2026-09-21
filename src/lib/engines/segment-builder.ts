@@ -613,10 +613,16 @@ export async function rebuildSegments(
   const rawSegments = computeSegments(timesheetId, punches, timezone, timesheet.payPeriod.startDate, carryIn);
 
   // Merge shift-level meal config on top of rule set defaults.
-  // Shift wins when its autoDeduct flag is explicitly set; rule set is the fallback.
+  // When a shift is assigned, the shift's mealConfig is authoritative:
+  //   - shiftMeal.autoDeduct = true/false → use that value
+  //   - shiftMeal is null (shift assigned but no meal config saved) → no auto-deduct
+  // Only fall back to ruleSet.autoDeductMeal when no shift is assigned at all.
+  const hasShift = !!timesheet.employee.shift;
   const shiftMeal = timesheet.employee.shift?.mealConfig as MealConfig | null | undefined;
   const shiftFirstMeal = shiftMeal?.meals?.[0];
-  const effectiveAutoDeductMeal = shiftMeal?.autoDeduct ?? ruleSet.autoDeductMeal;
+  const effectiveAutoDeductMeal = hasShift
+    ? (shiftMeal?.autoDeduct ?? false)
+    : ruleSet.autoDeductMeal;
   const effectiveMealCfg: EffectiveMealCfg = {
     mealBreakAfterMinutes: shiftMeal?.autoDeduct && shiftFirstMeal
       ? Math.round(shiftFirstMeal.workAtLeastHours * 60)
@@ -640,10 +646,17 @@ export async function rebuildSegments(
     segments = applyPairRounding(segments, ruleSet);
   }
 
-  // Apply default pay code to all WORK segments
-  if (ruleSet.defaultPayCodeId) {
+  // Apply pay code to all punch-derived WORK segments.
+  // Salary employees with autoPayEnabled use the salary pay code for punch days too,
+  // so the segment pay code matches what auto-pay assigns for non-punch days.
+  const workPayCodeId =
+    isSalary && ruleSet.autoPayEnabled && ruleSet.autoPayPayCodeId
+      ? ruleSet.autoPayPayCodeId
+      : ruleSet.defaultPayCodeId;
+
+  if (workPayCodeId) {
     segments = segments.map((seg) =>
-      seg.segmentType === "WORK" ? { ...seg, payCodeId: ruleSet.defaultPayCodeId } : seg
+      seg.segmentType === "WORK" ? { ...seg, payCodeId: workPayCodeId } : seg
     );
   }
 

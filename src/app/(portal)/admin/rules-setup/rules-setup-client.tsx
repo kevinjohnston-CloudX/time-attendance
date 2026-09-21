@@ -70,6 +70,7 @@ interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   payCodes: any[];
   initialTab?: string;
+  initialPolicyId?: string;
 }
 
 export function RulesSetupClient({
@@ -80,6 +81,7 @@ export function RulesSetupClient({
   leaveTypes,
   payCodes,
   initialTab,
+  initialPolicyId,
 }: Props) {
   const defaultTab =
     initialTab && TABS.some((t) => t.id === initialTab)
@@ -137,7 +139,7 @@ export function RulesSetupClient({
               <HolidayRulesManager rules={holidayRules} payCodes={payCodes} />
             )}
             {activeTab === "leave-policies" && (
-              <PtoPoliciesManager policies={ptoPolicies} leaveTypes={leaveTypes} payCodes={payCodes} />
+              <PtoPoliciesManager policies={ptoPolicies} leaveTypes={leaveTypes} payCodes={payCodes} initialPolicyId={initialPolicyId} />
             )}
           </>
         )}

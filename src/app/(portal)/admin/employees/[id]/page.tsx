@@ -2,7 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
-import { getEmployeeById, getAdminRefData, getEmployeeAuditLogs } from "@/actions/admin.actions";
+import { getEmployeeById, getAdminRefData, getEmployeeAuditLogs, getHrSiteAccess } from "@/actions/admin.actions";
 import { EditEmployeeForm } from "@/components/admin/edit-employee-form";
 import { format } from "date-fns";
 
@@ -16,10 +16,11 @@ export default async function EditEmployeePage({
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
 
-  const [empResult, refResult, logsResult] = await Promise.all([
+  const [empResult, refResult, logsResult, siteAccessResult] = await Promise.all([
     getEmployeeById({ employeeId: id }),
     getAdminRefData(),
     getEmployeeAuditLogs({ employeeId: id }),
+    getHrSiteAccess({ employeeId: id }),
   ]);
 
   if (!empResult.success) notFound();
@@ -27,6 +28,8 @@ export default async function EditEmployeePage({
 
   const logs = logsResult.success ? logsResult.data : [];
   const employee = empResult.data;
+  const hrSiteAccess = siteAccessResult.success ? siteAccessResult.data : [];
+  const actorRole = session.user.role;
   const { sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes } = refResult.data;
 
   return (
@@ -68,6 +71,8 @@ export default async function EditEmployeePage({
         payCategories={payCategories ?? []}
         payTypes={payTypes ?? []}
         logs={logs}
+        hrSiteAccess={hrSiteAccess}
+        actorRole={actorRole ?? "EMPLOYEE"}
       />
 
     </div>

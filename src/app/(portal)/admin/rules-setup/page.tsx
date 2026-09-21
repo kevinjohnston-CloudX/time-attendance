@@ -20,7 +20,7 @@ export default async function RulesSetupPage({
   const hasRulesManage = await userHasPermission(session.user, "RULES_MANAGE");
   if (!hasRulesManage) redirect("/dashboard");
 
-  const { tab } = (await searchParams) ?? {};
+  const { tab, policy } = (await searchParams) ?? {};
 
   const [ruleSetsResult, shiftsResult, holidayRulesResult, ptoPoliciesResult, leaveTypesResult, payCodesResult] =
     await Promise.all([
@@ -51,6 +51,7 @@ export default async function RulesSetupPage({
         leaveTypes={serialize(leaveTypesResult.success ? leaveTypesResult.data : [])}
         payCodes={serialize(payCodesResult.success ? payCodesResult.data : [])}
         initialTab={tab}
+        initialPolicyId={policy}
       />
     </div>
   );

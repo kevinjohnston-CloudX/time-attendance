@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 
@@ -33,38 +33,56 @@ interface Employee {
   customRole: { id: string; name: string } | null;
 }
 
-export function EmployeesTable({ employees }: { employees: Employee[] }) {
+interface Props {
+  employees: Employee[];
+  total: number;
+  page: number;
+  pageSize: number;
+  sites: string[];
+  departments: string[];
+  currentFilters: { q: string; site: string; dept: string; role: string };
+}
+
+export function EmployeesTable({ employees, total, page, pageSize, sites, departments, currentFilters }: Props) {
   const router = useRouter();
-  const [query, setQuery] = useState("");
-  const [siteFilter, setSiteFilter] = useState("");
-  const [deptFilter, setDeptFilter] = useState("");
-  const [roleFilter, setRoleFilter] = useState("");
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  const sites = Array.from(new Set(employees.map((e) => e.site.name))).sort();
-  const departments = Array.from(
-    new Set(
-      employees
-        .filter((e) => !siteFilter || e.site.name === siteFilter)
-        .map((e) => e.department.name)
-    )
-  ).sort();
+  // Local state for search input so typing feels instant (debounced URL push)
+  const [searchValue, setSearchValue] = useState(currentFilters.q);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const q = query.toLowerCase().trim();
-  const filtered = employees.filter((emp) => {
-    if (siteFilter && emp.site.name !== siteFilter) return false;
-    if (deptFilter && emp.department.name !== deptFilter) return false;
-    if (roleFilter && emp.role !== roleFilter) return false;
-    if (q) {
-      return (
-        (emp.user.name?.toLowerCase().includes(q)) ||
-        (emp.user.email?.toLowerCase().includes(q)) ||
-        emp.employeeCode.toLowerCase().includes(q)
-      );
-    }
-    return true;
-  });
+  // Keep local search in sync if the server-driven filter changes (e.g. browser back)
+  useEffect(() => { setSearchValue(currentFilters.q); }, [currentFilters.q]);
 
-  const isFiltered = !!q || !!siteFilter || !!deptFilter || !!roleFilter;
+  const buildUrl = useCallback((overrides: Partial<typeof currentFilters & { page: number }>) => {
+    const params = new URLSearchParams();
+    const q    = overrides.q    ?? currentFilters.q;
+    const site = overrides.site ?? currentFilters.site;
+    const dept = overrides.dept ?? currentFilters.dept;
+    const role = overrides.role ?? currentFilters.role;
+    const pg   = overrides.page ?? 0;
+    if (q)    params.set("q",    q);
+    if (site) params.set("site", site);
+    if (dept) params.set("dept", dept);
+    if (role) params.set("role", role);
+    if (pg)   params.set("page", String(pg));
+    const qs = params.toString();
+    return `/admin/employees${qs ? `?${qs}` : ""}`;
+  }, [currentFilters]);
+
+  function navigate(overrides: Partial<typeof currentFilters & { page: number }>) {
+    router.push(buildUrl(overrides));
+  }
+
+  function onSearchChange(val: string) {
+    setSearchValue(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => navigate({ q: val, page: 0 }), 350);
+  }
+
+  function onFilterChange(key: "site" | "dept" | "role", val: string) {
+    navigate({ [key]: val, page: 0 });
+  }
 
   const selectClass = "rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300";
 
@@ -73,30 +91,30 @@ export function EmployeesTable({ employees }: { employees: Employee[] }) {
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <input
           type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={searchValue}
+          onChange={(e) => onSearchChange(e.target.value)}
           placeholder="Search by name, email, or code…"
           className="w-64 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm placeholder-zinc-400 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-white dark:placeholder-zinc-500"
         />
         <select
-          value={siteFilter}
-          onChange={(e) => { setSiteFilter(e.target.value); setDeptFilter(""); }}
+          value={currentFilters.site}
+          onChange={(e) => onFilterChange("site", e.target.value)}
           className={selectClass}
         >
           <option value="">All Sites</option>
           {sites.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
         <select
-          value={deptFilter}
-          onChange={(e) => setDeptFilter(e.target.value)}
+          value={currentFilters.dept}
+          onChange={(e) => onFilterChange("dept", e.target.value)}
           className={selectClass}
         >
           <option value="">All Departments</option>
           {departments.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
         <select
-          value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value)}
+          value={currentFilters.role}
+          onChange={(e) => onFilterChange("role", e.target.value)}
           className={selectClass}
         >
           <option value="">All Roles</option>
@@ -119,14 +137,14 @@ export function EmployeesTable({ employees }: { employees: Employee[] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-950">
-            {filtered.length === 0 && (
+            {employees.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-zinc-400">
-                  {q ? "No employees match your search." : "No employees yet."}
+                  No employees match your search.
                 </td>
               </tr>
             )}
-            {filtered.map((emp) => (
+            {employees.map((emp) => (
               <tr
                 key={emp.id}
                 onClick={() => router.push(`/admin/employees/${emp.id}`)}
@@ -170,11 +188,36 @@ export function EmployeesTable({ employees }: { employees: Employee[] }) {
         </table>
       </div>
 
-      {isFiltered && (
-        <p className="mt-2 text-xs text-zinc-400">
-          Showing {filtered.length} of {employees.length} employees
-        </p>
-      )}
+      <div className="mt-3 flex items-center justify-between text-xs text-zinc-500">
+        <span>
+          {total.toLocaleString()} employees
+          {totalPages > 1 && ` · page ${page + 1} of ${totalPages}`}
+        </span>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => navigate({ page: 0 })}
+              disabled={page === 0}
+              className="rounded px-2 py-1 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
+            >«</button>
+            <button
+              onClick={() => navigate({ page: page - 1 })}
+              disabled={page === 0}
+              className="rounded px-2 py-1 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
+            >‹ Prev</button>
+            <button
+              onClick={() => navigate({ page: page + 1 })}
+              disabled={page >= totalPages - 1}
+              className="rounded px-2 py-1 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
+            >Next ›</button>
+            <button
+              onClick={() => navigate({ page: totalPages - 1 })}
+              disabled={page >= totalPages - 1}
+              className="rounded px-2 py-1 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
+            >»</button>
+          </div>
+        )}
+      </div>
     </>
   );
 }

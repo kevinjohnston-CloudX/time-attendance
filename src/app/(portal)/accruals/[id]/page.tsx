@@ -492,6 +492,8 @@ export default async function EmployeeAccrualsPage({
   });
 
   const policyMap = new Map<string, string[]>();
+  const policyIdMap = new Map<string, string>();
+  for (const l of policySources) policyIdMap.set(l.name, l.id);
   for (const b of balances) {
     if (!b.policyName) continue;
     const types = policyMap.get(b.policyName) ?? [];
@@ -538,15 +540,29 @@ export default async function EmployeeAccrualsPage({
 
         {policyMap.size > 0 ? (
           <div className="mt-2 flex flex-wrap gap-2">
-            {Array.from(policyMap.entries()).map(([name, types]) => (
-              <div
-                key={name}
-                className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 dark:border-zinc-700 dark:bg-zinc-800/50"
-              >
-                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-200">{name}</span>
-                <span className="ml-1.5 text-xs text-zinc-400">{types.join(", ")}</span>
-              </div>
-            ))}
+            {Array.from(policyMap.entries()).map(([name, types]) => {
+              const policyId = policyIdMap.get(name);
+              const tileContent = (
+                <>
+                  <span className="text-xs font-medium text-zinc-700 dark:text-zinc-200">{name}</span>
+                  <span className="ml-1.5 text-xs text-zinc-400">{types.join(", ")}</span>
+                </>
+              );
+              const baseCls = "rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 dark:border-zinc-700 dark:bg-zinc-800/50";
+              return canManageEmployee && policyId ? (
+                <Link
+                  key={name}
+                  href={`/admin/rules-setup?tab=leave-policies${policyId ? `&policy=${policyId}` : ""}`}
+                  className={`${baseCls} transition-colors hover:border-blue-400 hover:bg-blue-50 dark:hover:border-blue-500 dark:hover:bg-blue-950/40`}
+                >
+                  {tileContent}
+                </Link>
+              ) : (
+                <div key={name} className={baseCls}>
+                  {tileContent}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p className="mt-2 text-xs text-zinc-400">

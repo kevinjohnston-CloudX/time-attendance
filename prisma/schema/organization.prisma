@@ -72,6 +72,7 @@ model Site {
   departments DepartmentSite[]
   employees   Employee[]
   ptoPolicies SitePtoPolicy[]
+  hrAccess    HrSiteAccess[]
 
   @@unique([tenantId, name])
   @@map("sites")
@@ -197,6 +198,7 @@ model Employee {
   mealWaiversCreated MealWaiver[]
   badges             EmployeeBadge[]
   legacySyncLogs     LegacySyncLog[]
+  siteAccess         HrSiteAccess[]
 
   @@unique([tenantId, employeeCode])
   @@map("employees")
@@ -237,6 +239,19 @@ model EmployeeBadge {
 
   @@index([employeeId])
   @@map("employee_badges")
+}
+
+model HrSiteAccess {
+  id         String   @id @default(cuid())
+  employeeId String
+  siteId     String
+  createdAt  DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  site     Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, siteId])
+  @@map("hr_site_access")
 }
 
 enum ShiftCycle {

@@ -112,7 +112,7 @@ type Policy = {
 
 type LeaveTypeOption = { id: string; name: string; category: string };
 
-interface Props { policies: Policy[]; leaveTypes: LeaveTypeOption[]; payCodes: PayCodeOption[] }
+interface Props { policies: Policy[]; leaveTypes: LeaveTypeOption[]; payCodes: PayCodeOption[]; initialPolicyId?: string }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -995,7 +995,7 @@ function PolicyForm({ leaveTypes, payCodes, initial, isPending, onSubmit, onCanc
 
 // ─── Main manager ─────────────────────────────────────────────────────────────
 
-export function PtoPoliciesManager({ policies, leaveTypes, payCodes }: Props) {
+export function PtoPoliciesManager({ policies, leaveTypes, payCodes, initialPolicyId }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -1004,6 +1004,13 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes }: Props) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   function openEdit(p: Policy) { setEditingPolicy(p); setConfirmDeleteId(null); setError(null); }
+
+  useEffect(() => {
+    if (!initialPolicyId) return;
+    const target = policies.find((p) => p.id === initialPolicyId);
+    if (target) openEdit(target);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   function closeEdit() { setEditingPolicy(null); setConfirmDeleteId(null); setError(null); }
   function openCreate() { setShowCreate(true); setError(null); }
   function closeCreate() { setShowCreate(false); setError(null); }

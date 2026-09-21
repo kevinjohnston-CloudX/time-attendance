@@ -3,7 +3,7 @@
 import { useTransition, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
-import { updateEmployee } from "@/actions/admin.actions";
+import { updateEmployee, updateHrSiteAccess } from "@/actions/admin.actions";
 import { setTemporaryPassword } from "@/actions/password.actions";
 import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
 
@@ -33,6 +33,8 @@ interface Props {
     actorName: string;
     fields: Array<{ field: string; before: string; after: string }>;
   }>;
+  hrSiteAccess: string[];
+  actorRole: string;
 }
 
 function fmtTime(hhmm: string): string {
@@ -45,9 +47,9 @@ const inputCls =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
 const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400";
 
-type Tab = "general" | "personal" | "pay" | "logs";
+type Tab = "general" | "personal" | "pay" | "logs" | "site-access";
 
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, logs }: Props) {
+export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, logs, hrSiteAccess, actorRole }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +66,14 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
   const [payType, setPayType] = useState<string>(employee.payType ?? "HOURLY");
   const [logField, setLogField] = useState("");
   const [logDays, setLogDays] = useState(0);
+  const [selectedSiteAccess, setSelectedSiteAccess] = useState<Set<string>>(new Set(hrSiteAccess));
+  const [siteAccessSaving, setSiteAccessSaving] = useState(false);
+  const [siteAccessMsg, setSiteAccessMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Site access tab is only shown when the employee being edited is HR_ADMIN or SYSTEM_ADMIN
+  const employeeIsHrOrSysAdmin = ["HR_ADMIN", "SYSTEM_ADMIN"].includes(employee.role);
+  // Only HR_ADMIN / SYSTEM_ADMIN actors can manage site access
+  const canManageSiteAccess = ["HR_ADMIN", "SYSTEM_ADMIN"].includes(actorRole);
 
   const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === selectedSiteId));
 
@@ -150,6 +160,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
     { id: "personal", label: "Personal" },
     { id: "pay", label: "Pay" },
     { id: "logs", label: "Logs" },
+    ...(employeeIsHrOrSysAdmin ? [{ id: "site-access" as Tab, label: "Site Access" }] : []),
   ];
 
   return (
@@ -609,6 +620,75 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
                 </ol>
               )}
             </>
+          )}
+        </div>
+      )}
+
+      {/* ── Site Access tab ─────────────────────────────────────────────── */}
+      {activeTab === "site-access" && (
+        <div className="mt-5">
+          <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+            Control which sites this HR user can see employees from.
+            Leave all unchecked to grant access to <strong>all sites</strong>.
+          </p>
+          <div className="flex flex-col gap-2">
+            {sites.map((s) => (
+              <label key={s.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-4 py-3 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/50">
+                <input
+                  type="checkbox"
+                  disabled={!canManageSiteAccess}
+                  checked={selectedSiteAccess.has(s.id)}
+                  onChange={(e) => {
+                    const next = new Set(selectedSiteAccess);
+                    if (e.target.checked) next.add(s.id);
+                    else next.delete(s.id);
+                    setSelectedSiteAccess(next);
+                    setSiteAccessMsg(null);
+                  }}
+                  className="h-4 w-4 rounded border-zinc-300 text-zinc-900"
+                />
+                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{s.name}</span>
+              </label>
+            ))}
+          </div>
+          {selectedSiteAccess.size === 0 && (
+            <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+              No sites selected — this user has access to all sites.
+            </p>
+          )}
+          {canManageSiteAccess && (
+            <div className="mt-5 flex items-center gap-4">
+              <button
+                type="button"
+                disabled={siteAccessSaving}
+                onClick={async () => {
+                  setSiteAccessSaving(true);
+                  setSiteAccessMsg(null);
+                  const result = await updateHrSiteAccess({
+                    employeeId: employee.id,
+                    siteIds: Array.from(selectedSiteAccess),
+                  });
+                  setSiteAccessSaving(false);
+                  if (result.success) {
+                    setSiteAccessMsg({ ok: true, text: "Site access saved." });
+                    router.refresh();
+                  } else {
+                    setSiteAccessMsg({ ok: false, text: result.error ?? "Failed to save." });
+                  }
+                }}
+                className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+              >
+                {siteAccessSaving ? "Saving…" : "Save Site Access"}
+              </button>
+              {siteAccessMsg && (
+                <p className={`text-sm ${siteAccessMsg.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                  {siteAccessMsg.text}
+                </p>
+              )}
+            </div>
+          )}
+          {!canManageSiteAccess && (
+            <p className="mt-4 text-xs text-zinc-400">Only HR Admin or System Admin users can edit site access.</p>
           )}
         </div>
       )}

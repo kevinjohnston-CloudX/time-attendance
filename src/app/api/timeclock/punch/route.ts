@@ -288,19 +288,19 @@ export async function POST(req: NextRequest) {
 
   // 7. Find or create timesheet + get current state
   const timesheet = await findOrCreateTimesheet(employee.id, payPeriod.id);
-  const stateBefore = await getCurrentPunchState(employee.id);
+  let stateBefore = await getCurrentPunchState(employee.id);
 
-  // 6a. Workday expansion: if the employee is still clocked in from a previous
-  // shift and the current punch arrives within the expansion window, attribute
-  // it to the OLD timesheet so all punches for that shift stay together.
+  // Workday expansion: if the employee is still clocked in from a previous shift,
+  // either re-route the punch to the old timesheet (within the window) or reset
+  // state to OUT so this tap becomes a CLOCK_IN (outside the window).
+  //
+  // This also acts as a safety net when the state-reset cron runs late: without
+  // the SYSTEM punch in the DB yet, getCurrentPunchState returns WORK, and the
+  // next morning's clock-in would be misclassified as CLOCK_OUT. The expiry
+  // check below catches that case and overrides the state to OUT.
   let activeTimesheetId = timesheet.id;
   let activeTimesheetStatus = timesheet.status;
-  if (
-    stateBefore === "WORK" &&
-    employee.ruleSet.workdayExpansionEnabled &&
-    employee.ruleSet.workdayExpansionUseShiftDef &&
-    employee.shift
-  ) {
+  if (stateBefore === "WORK" && employee.ruleSet.workdayExpansionEnabled) {
     const lastOpenPunch = await db.punch.findFirst({
       where: { employeeId: employee.id, stateAfter: "WORK", correctedById: null },
       orderBy: { punchTime: "desc" },
@@ -309,27 +309,44 @@ export async function POST(req: NextRequest) {
 
     if (lastOpenPunch?.timesheetId) {
       const tz = employee.site.timezone;
-      const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(lastOpenPunch.punchTime);
-      const { expiryUtc } = computeShiftExpiry(
-        employee.shift,
-        localDate,
-        employee.ruleSet.workdayExpansionAfterMinutes,
-        tz,
-      );
 
-      if (punchTime <= expiryUtc) {
-        // Punch is within the expansion window — route to the old timesheet.
-        const oldTimesheet = await db.timesheet.findUnique({
-          where: { id: lastOpenPunch.timesheetId },
-          select: { id: true, status: true },
-        });
-        if (
-          oldTimesheet &&
-          oldTimesheet.status !== "LOCKED" &&
-          oldTimesheet.status !== "PAYROLL_APPROVED"
-        ) {
-          activeTimesheetId = oldTimesheet.id;
-          activeTimesheetStatus = oldTimesheet.status;
+      if (employee.ruleSet.workdayExpansionUseShiftDef && employee.shift) {
+        // Shift-based expiry: shift_end + expansion_window_minutes
+        const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(lastOpenPunch.punchTime);
+        const { expiryUtc } = computeShiftExpiry(
+          employee.shift,
+          localDate,
+          employee.ruleSet.workdayExpansionAfterMinutes,
+          tz,
+        );
+
+        if (punchTime <= expiryUtc) {
+          // Within the expansion window — route to the old timesheet.
+          const oldTimesheet = await db.timesheet.findUnique({
+            where: { id: lastOpenPunch.timesheetId },
+            select: { id: true, status: true },
+          });
+          if (
+            oldTimesheet &&
+            oldTimesheet.status !== "LOCKED" &&
+            oldTimesheet.status !== "PAYROLL_APPROVED"
+          ) {
+            activeTimesheetId = oldTimesheet.id;
+            activeTimesheetStatus = oldTimesheet.status;
+          }
+        } else {
+          // Outside the expansion window — the previous shift has definitively
+          // closed. Override state so this tap is recorded as a CLOCK_IN.
+          stateBefore = "OUT";
+        }
+      } else {
+        // No shift schedule defined (calendar-day mode or no shift assigned).
+        // Fallback: if the last WORK punch was on a previous calendar day the
+        // expansion window has certainly closed — treat this as a new CLOCK_IN.
+        const lastPunchDay = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(lastOpenPunch.punchTime);
+        const currentDay   = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(punchTime);
+        if (lastPunchDay !== currentDay) {
+          stateBefore = "OUT";
         }
       }
     }
