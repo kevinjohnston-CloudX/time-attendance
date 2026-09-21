@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { findEmployeeIdentityByBadge } from "@/lib/utils/badge-lookup";
 import { kioskScanSchema } from "@/lib/validators/punch.schema";
 import { parseScanTime } from "@/lib/utils/scan-time";
-import { normaliseLegacyScanType, recordScanEvent } from "@/lib/services/scan-event.service";
+import { recordScanEvent } from "@/lib/services/scan-event.service";
 
 /**
  * Security-gate scan ingest.
@@ -85,28 +85,47 @@ export async function POST(req: NextRequest) {
       scanTime,
       deviceName: DeviceName ?? null,
       site: Warehouse == null ? null : String(Warehouse),
+      // Oracle's verdict is recorded, and compared against, but no longer
+      // decides. `legacyMismatch` is therefore a working watchdog again.
       legacyScanType: LegacyScanType ?? null,
-      // The direction Oracle just stated for this very scan, used as fact
-      // rather than re-derived.
       //
-      // The gate has no daily re-anchor — deliberately, because night shift
-      // crosses midnight — so alternation there has no point at which it can
-      // re-sync. One crossing the table never saw inverts every scan after it
-      // for that badge, indefinitely. That is not hypothetical: after the
-      // 2026-09-18 mid-day rollout, 87 of 129 badges came out the exact
-      // inverse of Oracle end to end, because the first crossing each tablet
-      // witnessed was people leaving at lunch rather than arriving.
+      // WHY NOT `knownDirection` ANY MORE (this reverses 4c7a4db, 2026-09-19).
       //
-      // Not to be confused with the SCANTYPE *column* of the legacy report,
-      // which backfill-scan-events.ts refuses for good reason: there it is the
-      // visit row's state ("have they left yet"), not the direction of an
-      // event. The live PUT response is a different thing — Oracle's verdict on
-      // the scan just recorded — and it behaves like one, alternating across
-      // 96.1% of consecutive scans per badge where a state flag could not.
+      // That commit made Oracle authoritative because CloudTime's alternation
+      // had no re-anchor on this stream: after the 2026-09-18 mid-day rollout
+      // 87 of 129 badges came out the exact inverse, since the first crossing
+      // each tablet witnessed was people leaving at lunch. With nothing to
+      // re-sync against, one missed crossing inverted a badge indefinitely.
+      // Deferring to Oracle was right then. It is wrong now, and what changed
+      // is that both holes have since been filled:
       //
-      // Null when the legacy call never answered, which is the offline queue's
-      // case: those fall through to alternation exactly as before.
-      knownDirection: normaliseLegacyScanType(LegacyScanType) ?? undefined,
+      //   - `/api/cron/auto-close-scans` closes anyone still showing IN at
+      //     23:00 local, so the gate re-anchors nightly. A phase error now
+      //     lasts one day instead of forever, and every first scan of a
+      //     morning resolves to IN by construction.
+      //   - the REREAD rule stops a badge read twice inside a minute from
+      //     flipping anything, which was the main source of drift.
+      //
+      // Oracle has neither. Its rule is "if your last row says IN, close it
+      // and call this OUT", and nothing ever resets timestationscanlog — no
+      // sweep, no scheduler in that service at all — so a double-read leaves
+      // it holding a phantom open row until the person's next badge, however
+      // many days later.
+      //
+      // Measured on NJ299 for 2026-09-20 by replaying all 145 gate scans
+      // through both schemes: they differ on 43, and **14 of 56 people had
+      // Oracle call their FIRST scan of the day an OUT** — it told fourteen
+      // people arriving in the morning that they were leaving. At a site with
+      // no overnight shifts a first badge cannot be a departure, so those are
+      // not judgement calls, they are Oracle being wrong and CloudTime being
+      // right. See [[project-nj299-shift-and-oracle-limits]].
+      //
+      // The trade, stated plainly: a gate post that fails and never retries
+      // now drifts that badge until 23:00, where deferring to Oracle would
+      // have caught it. Bounded to one day, and accepted deliberately — the
+      // legacy system is being retired, so CloudTime has to be able to answer
+      // this on its own eventually, and the anchors that make that safe exist
+      // now rather than being promised.
       // A gate crossing never enters the timecard pipeline, so it is resolved
       // the moment it is stored. Leaving these PENDING would have the
       // discrepancy sweep chase a punch that was never meant to exist.
