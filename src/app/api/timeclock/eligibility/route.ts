@@ -31,6 +31,17 @@ import { badgeWhere } from "@/lib/utils/badge-lookup";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * How recently a flagged site's gate must have reported before a time clock may
+ * act on its silence. Long enough to cover the gap between a site's first gate
+ * scan of the day and its first punch — one minute at NJ299 on 2026-09-21 — and
+ * short enough that a gate going dark stops being load-bearing the same shift.
+ *
+ * This is a valve, not a trigger: `Site.requireGateScan` decides whether the
+ * rule applies at all, and no amount of traffic can switch it on.
+ */
+const GATE_ACTIVE_WINDOW_MS = 4 * 60 * 60 * 1000;
+
 /** Today's date in a site's own zone, as YYYY-MM-DD. */
 function localDate(now: Date, timezone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(now);
@@ -58,9 +69,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       wmsId: true,
       isActive: true,
       terminatedAt: true,
+      siteId: true,
       user: { select: { name: true } },
       department: { select: { name: true } },
-      site: { select: { timezone: true } },
+      site: { select: { timezone: true, requireGateScan: true } },
     },
   });
 
@@ -87,6 +99,35 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     select: { direction: true, scanTime: true },
   });
   const present = lastScan?.direction === "IN";
+
+  // May a time clock refuse this person for not having scanned at security?
+  //
+  // Two conditions, and the flag is the one that matters. `requireGateScan` is
+  // set per site by hand; without it no amount of gate traffic turns the rule
+  // on, which is the whole point. Measured 2026-09-21: inferring it from
+  // traffic instead would have marked NJ3 as gated on the strength of six test
+  // scans and two visiting employees, and refused all 198 of its punches the
+  // next morning at a site whose gate tablets have been dark since Sep 15.
+  //
+  // The liveness check is only a valve on top: a flagged site whose gate has
+  // gone quiet relaxes rather than locking people out. One recent scan is
+  // enough, because the flag has already decided that this site is gated —
+  // this is asking "is it still alive", not "does it exist".
+  //
+  // Keyed on the scanning employees' site rather than the scan's own `site`
+  // string, because gates post numeric ids and time clocks post names, so the
+  // two never join.
+  const gateActive =
+    employee.site?.requireGateScan === true &&
+    (await db.scanEvent.findFirst({
+      where: {
+        stream: "SECURITY",
+        deviceName: { not: null },
+        scanTime: { gte: new Date(Date.now() - GATE_ACTIVE_WINDOW_MS) },
+        employee: { siteId: employee.siteId },
+      },
+      select: { id: true },
+    })) !== null;
 
   const terminated = !employee.isActive || employee.terminatedAt !== null;
 
@@ -125,6 +166,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       : null,
     presence: lastScan ? (present ? "IN" : "OUT") : "UNKNOWN",
     presenceAt: lastScan?.scanTime?.toISOString() ?? null,
+    /// Whether a kiosk may refuse this badge a punch for want of a gate scan:
+    /// this site is flagged `requireGateScan` AND its gate has reported inside
+    /// GATE_ACTIVE_WINDOW_MS. False means the kiosk must fall back to the
+    /// legacy check — the site is not gated, or its gate has gone quiet, and in
+    /// neither case does CloudTime's silence say anything about the person.
+    gateActive,
     timezone,
     asOf: today,
   });

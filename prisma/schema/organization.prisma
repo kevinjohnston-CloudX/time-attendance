@@ -44,6 +44,11 @@ model Site {
   timezone  String   @default("America/New_York")
   address   String?
   isActive  Boolean  @default(true)
+  /// Whether a time clock here may refuse a punch from somebody with no recent
+  /// gate scan. Off by default and set per site by hand: a building whose gate
+  /// does not report to CloudTime must never have punches refused for want of
+  /// one, and inferring this from traffic gets that exactly backwards.
+  requireGateScan Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

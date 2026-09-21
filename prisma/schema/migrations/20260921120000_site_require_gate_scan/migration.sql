@@ -1,0 +1,14 @@
+-- Whether a time clock at this site may refuse a punch from somebody with no
+-- recent gate scan.
+--
+-- Off everywhere by default, and turned on per site by hand. The first attempt
+-- at this inferred it from traffic -- "has this site had a gate scan lately" --
+-- which is wrong in a way that only shows up in production: on 2026-09-21 six
+-- test scans from one tablet, plus two NJ3-homed employees badging at NJ299's
+-- gate, would have marked NJ3 as gated and refused all 198 of its punches the
+-- next morning, at a building whose gate tablets have been dark since Sep 15.
+--
+-- A rule that decides whether somebody gets paid is a decision, not an
+-- inference. Liveness stays as a safety valve on top of this flag: a site that
+-- is flagged but whose gate has gone quiet relaxes rather than locking out.
+ALTER TABLE "sites" ADD COLUMN "requireGateScan" BOOLEAN NOT NULL DEFAULT false;
