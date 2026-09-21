@@ -354,6 +354,20 @@ async function handleRosterSync(conn) {
         empId: text(row.empId) ?? "",
         usersId: text(row.usersId),
         barcode: text(row.barcode),
+        // Every card, comma separated, and the building. Both are new and both
+        // are optional on the CloudTime side, so a server that predates them
+        // ignores them rather than failing.
+        //
+        // This mapping is a fixed field list on purpose — the query returns
+        // more than CloudTime should be told — which means a column added to
+        // the SQL and not added here is fetched from Oracle and then silently
+        // dropped. That is exactly what happened on the first attempt at this
+        // change: the dry run looked perfect and nothing arrived.
+        barcodes: text(row.barcodes),
+        warehouseId:
+          row.warehouseId === null || row.warehouseId === undefined
+            ? null
+            : Number(row.warehouseId),
         name: name || null,
         departmentName: text(row.departmentName),
         // `terminated` is Oracle's column and counts up from 0; CloudTime
