@@ -251,6 +251,28 @@ enum LegacySyncOutcome {
   FAILED_PERMANENT
 }
 
+/// How strictly a building applies "scan at security before you clock in".
+///
+/// <p>Three states rather than a boolean, because the middle one is what makes
+/// the rule deployable. Measured 2026-09-21 at NJ299, the only site with
+/// working gate readers: 48% of morning clock-ins had a gate IN first. Turning
+/// enforcement on would have refused roughly 550 people in a week — not because
+/// they skipped the gate on purpose, but because two thirds of them got into
+/// the building without the reader seeing them and the evening shift is at 7%.
+///
+/// <p>REPORT closes that gap without anybody being turned away. A site is
+/// measured for as long as it takes for the number to climb, and enforcement is
+/// switched on once the report goes quiet — which makes it an observation
+/// rather than a bet.
+enum GateScanMode {
+  /// The rule does not apply. No refusal, no measurement.
+  OFF
+  /// Measured, never refused. Nobody at a tablet notices any difference.
+  REPORT
+  /// Refused, subject to the gate still being alive.
+  ENFORCE
+}
+
 /// while holding the physical badge.
 enum BadgeSource {
   ORACLE

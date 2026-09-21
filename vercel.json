@@ -37,6 +37,10 @@
       "schedule": "25 21 * * *"
     },
     {
+      "path": "/api/cron/gate-scan-compliance",
+      "schedule": "30 12 * * *"
+    },
+    {
       "path": "/api/cron/salary-hours",
       "schedule": "0 6 * * *"
     },

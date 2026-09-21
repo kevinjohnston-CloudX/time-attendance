@@ -37,7 +37,7 @@ export const dynamic = "force-dynamic";
  * scan of the day and its first punch — one minute at NJ299 on 2026-09-21 — and
  * short enough that a gate going dark stops being load-bearing the same shift.
  *
- * This is a valve, not a trigger: `Site.requireGateScan` decides whether the
+ * This is a valve, not a trigger: `Site.gateScanMode` decides whether the
  * rule applies at all, and no amount of traffic can switch it on.
  */
 const GATE_ACTIVE_WINDOW_MS = 4 * 60 * 60 * 1000;
@@ -72,7 +72,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       siteId: true,
       user: { select: { name: true } },
       department: { select: { name: true } },
-      site: { select: { timezone: true, requireGateScan: true } },
+      site: { select: { timezone: true, gateScanMode: true } },
     },
   });
 
@@ -102,7 +102,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // May a time clock refuse this person for not having scanned at security?
   //
-  // Two conditions, and the flag is the one that matters. `requireGateScan` is
+  // Two conditions, and the mode is the one that matters. `gateScanMode` is
   // set per site by hand; without it no amount of gate traffic turns the rule
   // on, which is the whole point. Measured 2026-09-21: inferring it from
   // traffic instead would have marked NJ3 as gated on the strength of six test
@@ -118,7 +118,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // string, because gates post numeric ids and time clocks post names, so the
   // two never join.
   const gateActive =
-    employee.site?.requireGateScan === true &&
+    // ENFORCE only. A site in REPORT is measured by the compliance job and
+    // never refuses anybody, which is the whole point of that state — a
+    // building can be watched for as long as it takes the number to climb,
+    // with nobody standing at a tablet paying for the gap.
+    employee.site?.gateScanMode === "ENFORCE" &&
     (await db.scanEvent.findFirst({
       where: {
         stream: "SECURITY",
@@ -167,7 +171,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     presence: lastScan ? (present ? "IN" : "OUT") : "UNKNOWN",
     presenceAt: lastScan?.scanTime?.toISOString() ?? null,
     /// Whether a kiosk may refuse this badge a punch for want of a gate scan:
-    /// this site is flagged `requireGateScan` AND its gate has reported inside
+    /// this site is in ENFORCE mode AND its gate has reported inside
     /// GATE_ACTIVE_WINDOW_MS. False means the kiosk must fall back to the
     /// legacy check — the site is not gated, or its gate has gone quiet, and in
     /// neither case does CloudTime's silence say anything about the person.

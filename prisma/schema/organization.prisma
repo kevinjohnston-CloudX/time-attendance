@@ -50,6 +50,11 @@ model Site {
   /// one, and inferring this from traffic gets that exactly backwards.
   requireGateScan Boolean @default(false)
 
+  /// How this site applies the security-first rule. Supersedes
+  /// requireGateScan, which is kept only so a deploy cannot land between the
+  /// migration and the code that reads the new column; nothing reads it now.
+  gateScanMode GateScanMode @default(OFF)
+
   /// Oracle's warehouse id for this building, from the legacy WarehouseLocation
   /// enum (NJ3 = 5, CAN = 8, NL = 9, CA2 = 10, NJ299 = 13, PA1055 = 15,
   /// CAN36 = 18, GA7575 = 19).
