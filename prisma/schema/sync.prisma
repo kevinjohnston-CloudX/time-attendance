@@ -48,6 +48,70 @@ model SyncRun {
 /// timecard that looks complete and pays wrong — which is worse than no
 /// timecard, because nothing about it looks broken. These land here instead
 /// and an admin creates the real record, with the Oracle identity pre-filled.
+/// Every attempt a tablet makes to write to Oracle, and how it ended.
+///
+/// <p><b>Why this has to exist here.</b> CloudTime cannot reach Oracle — the
+/// bridge talks to a read-only standby — so the only thing that writes a punch
+/// to Oracle is the tablet, and until now the only record of whether that
+/// worked was a SQLite row on the device and a line in a log file nobody reads.
+/// That was survivable while Oracle answered in front of the employee: a
+/// refusal was visible because the person was standing there.
+///
+/// <p>It stopped being survivable when the time clock started deciding in
+/// CloudTime and writing to Oracle behind the employee. A refusal now lands on
+/// a queue row on one tablet, with nobody watching, and the first anybody hears
+/// of it is a missing shift on a timecard. This table is where that becomes
+/// answerable: one row per attempt, queryable by outcome.
+///
+/// <p><b>Reported, not observed.</b> These rows are what a tablet says
+/// happened. A tablet that has stopped reporting writes nothing at all, so an
+/// absence of rows is a finding in itself — which is why deviceName and
+/// appVersion are here rather than being inferred.
+model LegacySyncLog {
+  id String @id @default(cuid())
+
+  /// The badge as the tablet read it, before any resolution. Kept raw so a
+  /// scan that matched no employee is still traceable to a person by hand.
+  badgeCode String
+  kind      LegacySyncKind
+  outcome   LegacySyncOutcome
+
+  /// The moment the badge was read, not the moment this was reported. A
+  /// deferred write can be reported minutes later, and the timecard cares
+  /// about the first.
+  scanTime DateTime
+  /// Which cajaapi path was called, so a failure can be read without knowing
+  /// the app's internals.
+  endpoint String?
+  /// Oracle's own words, when it gave any.
+  message  String?
+  /// Which attempt this was. A row that reaches FAILED_PERMANENT after one
+  /// attempt is a different problem from one that took twenty.
+  attemptCount Int @default(1)
+
+  /// The tablet's local queue row id. The device log on that tablet uses the
+  /// same id, so a row here leads straight to the lines around it there.
+  queueRowId Int?
+  deviceName String?
+  appVersion String?
+
+  /// Resolved when the badge is known. Null is normal and not an error — it
+  /// means the same thing it means on a scan event.
+  employeeId String?
+
+  createdAt DateTime @default(now())
+
+  employee Employee? @relation(fields: [employeeId], references: [id])
+
+  /// One row per attempt per queue row. A tablet re-posting a report it is
+  /// unsure landed writes the same row rather than a second one.
+  @@unique([deviceName, queueRowId, attemptCount])
+  /// The query this table exists to answer: what has failed, most recent first.
+  @@index([outcome, createdAt(sort: Desc)])
+  @@index([badgeCode, scanTime])
+  @@map("legacy_sync_logs")
+}
+
 model RosterCandidate {
   id       String @id @default(cuid())
   tenantId String

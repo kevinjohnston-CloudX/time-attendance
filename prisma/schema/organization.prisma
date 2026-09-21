@@ -180,6 +180,7 @@ model Employee {
   auditLogs        AuditLog[]
   mealWaiversCreated MealWaiver[]
   badges             EmployeeBadge[]
+  legacySyncLogs     LegacySyncLog[]
 
   @@unique([tenantId, employeeCode])
   @@map("employees")

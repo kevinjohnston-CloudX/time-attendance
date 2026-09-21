@@ -221,6 +221,36 @@ enum SyncRunStatus {
 /// Where a card came from. The sync only ever adds rows, so nothing is at risk
 /// of being overwritten today; this records provenance so a later cleanup of
 /// stale Oracle cards can tell them apart from one a person entered by hand
+/// Which legacy call a tablet was making when it reported an outcome.
+enum LegacySyncKind {
+  /// PUT .../scantime — the timecard write. This is the one that costs pay.
+  PUNCH
+  /// GET .../scantimesecurity — the gate write.
+  GATE_SCAN
+  /// A gate scan taken during an outage and replayed later, carrying its
+  /// original timestamp.
+  CAPTURE
+}
+
+/// How a tablet's conversation with Oracle ended.
+///
+/// Deliberately not a boolean. REFUSED and FAILED_PERMANENT both mean the
+/// punch is not in Oracle, but they need opposite responses: the first is a
+/// rule disagreeing, the second is a delivery that never succeeded, and
+/// treating them alike is how a broken tablet hides behind a policy.
+enum LegacySyncOutcome {
+  /// Oracle took it.
+  SUCCESS
+  /// Oracle understood it and said no — a business rule, most concretely
+  /// CA2's warehouse-10 lunch rule. Retrying will never change it.
+  REFUSED
+  /// Failed and will be tried again.
+  RETRYING
+  /// Out of attempts or too old to chase. Nobody will try again, and if the
+  /// punch was accepted by CloudTime, the two systems have now diverged.
+  FAILED_PERMANENT
+}
+
 /// while holding the physical badge.
 enum BadgeSource {
   ORACLE

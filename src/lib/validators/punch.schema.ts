@@ -59,7 +59,33 @@ export const kioskScanSchema = z.object({
   AppVersion: z.string().max(32).optional(),
 });
 
+/**
+ * What a tablet reports about its conversation with Oracle.
+ *
+ * Every field but the badge, the kind, the outcome and the time is optional:
+ * this is diagnostic data from a fleet that includes builds nobody will ever
+ * update again, and a report that arrives incomplete is worth more than one
+ * rejected for being incomplete.
+ */
+export const legacySyncReportSchema = z.object({
+  EmployeeCode: z.string().min(1, "EmployeeCode is required"),
+  Kind: z.enum(["PUNCH", "GATE_SCAN", "CAPTURE"]),
+  Outcome: z.enum(["SUCCESS", "REFUSED", "RETRYING", "FAILED_PERMANENT"]),
+  ScanDateTime: z.string().min(1, "ScanDateTime is required"),
+  Endpoint: z.string().max(200).optional(),
+  /// Oracle's own words. Bounded because it lands in a column and the legacy
+  /// API has been known to return a stack trace.
+  Message: z.string().max(500).optional(),
+  AttemptCount: z.number().int().min(1).max(1000).optional(),
+  /// The tablet's local queue row id, which the device log uses too.
+  QueueRowId: z.number().int().optional(),
+  DeviceName: z.string().max(100).optional(),
+  AppVersion: z.string().max(32).optional(),
+});
+
 export type KioskScanInput = z.infer<typeof kioskScanSchema>;
+export type LegacySyncReportInput = z.infer<typeof legacySyncReportSchema>;
+
 export type TimeclockScanInput = z.infer<typeof timeclockScanSchema>;
 export type RecordPunchInput = z.infer<typeof recordPunchSchema>;
 export type RequestMissedPunchInput = z.infer<typeof requestMissedPunchSchema>;
