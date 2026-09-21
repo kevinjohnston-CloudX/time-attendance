@@ -137,6 +137,14 @@ model ScanEvent {
   /// Instant of the scan, in UTC, converted from the kiosk's configured zone.
   scanTime   DateTime
   deviceName String?
+  /// Which build of the kiosk app recorded this scan, as its versionName.
+  ///
+  /// Null for anything a tablet older than 154 sent, and for rows expanded from
+  /// a legacy report. That null is itself the answer to "is this tablet still on
+  /// the old build", which until now could only be established by walking up to
+  /// it — the reason three separate questions today came down to guessing which
+  /// build a given reader was running.
+  appVersion String?
   /// Where the reader is. Text, not Int: the time clocks report NJ299 / NJ3 /
   /// CA2 / GA7575 / CAN while the gates report numeric location ids, and an
   /// integer column could only ever hold the gates.

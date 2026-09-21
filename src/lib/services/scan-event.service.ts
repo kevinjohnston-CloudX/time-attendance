@@ -85,6 +85,8 @@ export type RecordScanInput = {
   outcome?: ScanOutcome;
   /** What cajaapi said, recorded for reconciliation only. */
   legacyScanType?: string | null;
+  /** The kiosk build that recorded this scan. Null from anything before 154. */
+  appVersion?: string | null;
   note?: string | null;
 };
 
@@ -324,6 +326,7 @@ export async function recordScanEvent(input: RecordScanInput): Promise<RecordedS
         directionSource,
         scanTime: input.scanTime,
         deviceName: input.deviceName ?? null,
+        appVersion: input.appVersion ?? null,
         site: input.site ?? null,
         sourceSlot: input.sourceSlot ?? "LIVE",
         sourceRef: input.sourceRef ?? null,

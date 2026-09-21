@@ -1,0 +1,12 @@
+-- Which build of the kiosk app recorded each scan.
+--
+-- Null for anything sent by a tablet older than 154, and for rows expanded from
+-- a legacy report. That null is not missing data, it is the answer: a reader
+-- still producing nulls has not been updated.
+--
+-- Added because on 2026-09-21 three separate questions -- which tablets show
+-- Oracle's verdict at the gate, which ask Oracle whether someone came through
+-- security, and which build a given reader is on -- could only be answered by
+-- walking up to the tablet, while the scans themselves were sitting in this
+-- table saying nothing about where they came from.
+ALTER TABLE "scan_events" ADD COLUMN "appVersion" TEXT;

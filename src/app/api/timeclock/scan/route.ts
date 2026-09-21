@@ -48,7 +48,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: msgs }, { status: 400 });
   }
 
-  const { EmployeeCode, ScanDateTime, Stream, DeviceName, Warehouse, LegacyScanType } = parsed.data;
+  const { EmployeeCode, ScanDateTime, Stream, DeviceName, Warehouse, LegacyScanType, AppVersion } =
+    parsed.data;
 
   if (Stream !== "SECURITY") {
     return NextResponse.json(
@@ -84,6 +85,7 @@ export async function POST(req: NextRequest) {
       stream: "SECURITY",
       scanTime,
       deviceName: DeviceName ?? null,
+      appVersion: AppVersion ?? null,
       site: Warehouse == null ? null : String(Warehouse),
       // Oracle's verdict is recorded, and compared against, but no longer
       // decides. `legacyMismatch` is therefore a working watchdog again.

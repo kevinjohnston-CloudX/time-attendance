@@ -86,6 +86,17 @@ async function detectPunchType(
   }
 }
 
+/**
+ * How close together two punches may be before the second is refused.
+ *
+ * Five minutes, matching the legacy rule this mirrors —
+ * `EmployeesController.IsDuplicateScan`, which returns true on
+ * `difference.TotalMinutes < 5`. Kept identical on purpose: an employee should
+ * get the same answer whichever system is doing the deciding, and the point of
+ * holding the rule here is to be able to stop asking Oracle for it.
+ */
+const PUNCH_MIN_GAP_MS = 5 * 60 * 1000;
+
 export async function POST(req: NextRequest) {
   // 1. Authenticate via shared secret
   const apiKey = req.headers.get("x-api-key");
@@ -114,7 +125,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { EmployeeCode, ScanDateTime, DeviceName, Warehouse } = parsed.data;
+  const { EmployeeCode, ScanDateTime, DeviceName, Warehouse, AppVersion } = parsed.data;
 
   // 3. Look up the employee by either badge form — the 6-digit employee
   //    number or the 10-digit barcode. See badge-lookup for why both exist
@@ -153,6 +164,7 @@ export async function POST(req: NextRequest) {
       stream: "TIME_CLOCK",
       scanTime: punchTime,
       deviceName: DeviceName ?? null,
+      appVersion: AppVersion ?? null,
       site: Warehouse == null ? null : String(Warehouse),
     });
     scanEventId = recorded.id;
@@ -195,6 +207,72 @@ export async function POST(req: NextRequest) {
       { success: false, error: "Employee is inactive" },
       { status: 400 }
     );
+  }
+
+  // 5b. Too soon after the last punch.
+  //
+  //     Oracle refuses a punch inside five minutes of the previous one, and
+  //     that rule is presently the only thing keeping a reader that fires twice
+  //     from putting a spurious pair on a timecard. CloudTime's REREAD rule
+  //     covers both streams in principle but has never once fired on this one —
+  //     0 in the 7 days to 2026-09-21, against 89 of 89 caught at the gate the
+  //     same day — so it cannot be leaned on here.
+  //
+  //     Holding the rule on this side changes nothing for anybody today: the
+  //     kiosk still shows Oracle's verdict, and Oracle refuses these anyway. It
+  //     does two things. It keeps CloudTime's own timecard free of the pairs
+  //     Oracle rejects — 40 such pairs across 37 people in those 7 days, 26 of
+  //     which became punches here that Oracle does not have — and it is the
+  //     precondition for the kiosk ever showing this verdict without waiting on
+  //     a call to Oracle, which is what the gate already stopped doing.
+  //
+  //     The scan is still recorded. Only the punch is refused, so the attempt
+  //     stays visible in scan_events as PUNCH_REJECTED rather than vanishing.
+  //     No `saveRejectedPunch` row: this is a repeat of a punch that already
+  //     exists, not an attempt that failed a policy worth a timecard entry.
+  const tooSoon = await db.punch.findFirst({
+    where: {
+      employeeId: employee.id,
+      correctedById: null,
+      // Only a previous KIOSK punch counts. A SYSTEM or MANUAL punch is not
+      // "you just scanned" -- it is the auto clock-out job or a supervisor
+      // correction -- and must never block a real scan. Measured over the 14
+      // days to 2026-09-21: without this clause the rule refuses 226 punches,
+      // 73 of them a genuine kiosk CLOCK_IN landing within five minutes of the
+      // auto clock-out that had just closed the person's previous shift. With
+      // it, 57 -- the kiosk-following-kiosk pairs the rule is actually for.
+      source: "KIOSK",
+      punchTime: { gte: new Date(punchTime.getTime() - PUNCH_MIN_GAP_MS), lt: punchTime },
+    },
+    orderBy: { punchTime: "desc" },
+    select: { punchTime: true },
+  });
+  if (tooSoon) {
+    const error = "Scanned again too quickly, please wait to prevent duplicates";
+    await settle("PUNCH_REJECTED", { rejectionReason: error });
+    // 200, not 409, and this is not cosmetic. The kiosk queue marks a row
+    // synced on HTTP success and on any error deliberately leaves it in the
+    // backlog for the next sweep -- "the server treats a repeat of the same
+    // scan as the same punch, so a retry cannot double it". That reasoning
+    // holds for a transient failure and not for a refusal, which will answer
+    // the same way forever. A 4xx here would put every refused punch into a
+    // retry loop that no sweep can ever clear, on every tablet in the field
+    // including the ones that will never be updated again.
+    //
+    // So a decision the client can do nothing about is reported as a delivered
+    // scan that produced no punch. Same shape the idempotency branch above
+    // already uses.
+    return NextResponse.json({
+      success: true,
+      punchId: null,
+      /// Distinguishes "wait a moment" from a refusal waiting cannot fix, so a
+      /// kiosk can say which without parsing the message. Nothing reads this
+      /// yet; it is what the screen would show once the kiosk stops waiting on
+      /// Oracle for this verdict.
+      tooSoon: true,
+      error,
+      lastPunchAt: tooSoon.punchTime.toISOString(),
+    });
   }
 
   // 6. Find open pay period

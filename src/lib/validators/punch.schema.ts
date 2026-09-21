@@ -32,6 +32,10 @@ export const timeclockScanSchema = z.object({
   DepartmentName: z.string().optional(),
   ScanDateTime: z.string().min(1, "ScanDateTime is required"),
   DeviceName: z.string().optional(),
+  /// The kiosk build that recorded this, so a scan can be traced to a version
+  /// without anyone standing in front of the tablet. Bounded because it lands
+  /// in a column and comes from a client.
+  AppVersion: z.string().max(32).optional(),
 });
 
 /**
@@ -51,6 +55,8 @@ export const kioskScanSchema = z.object({
   DeviceName: z.string().optional(),
   Warehouse: z.union([z.string(), z.number()]).optional(),
   LegacyScanType: z.string().optional(),
+  /// The kiosk build that recorded this. See timeclockScanSchema.
+  AppVersion: z.string().max(32).optional(),
 });
 
 export type KioskScanInput = z.infer<typeof kioskScanSchema>;
