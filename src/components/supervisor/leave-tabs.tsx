@@ -1000,7 +1000,7 @@ export function LeaveTabs({
         {/* ── Coverage ─────────────────────────────────────────────────── */}
         <div className="sticky min-w-0" style={{ top: toolbarHeight + 14 }}>
         <Card
-          title="Who is off"
+          title="Coverage"
           subtitle={
             focused
               ? `${scopedToDept ? focusedDept!.name : "All departments"}, around ${
