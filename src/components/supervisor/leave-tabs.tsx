@@ -603,7 +603,7 @@ export function LeaveTabs({
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        title="Team Leave"
+        title="Leave Requests"
         subtitle={`${pending.length} awaiting you · ${hrPending.length} with HR · ${upcoming.length} approved upcoming`}
         actions={
           <>
