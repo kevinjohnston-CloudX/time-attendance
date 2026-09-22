@@ -9,6 +9,19 @@ export const authConfig = {
     signIn: "/login",
   },
   callbacks: {
+    // The proxy builds its session from THIS config alone, so without a
+    // session callback here `auth.user.role` is undefined in `authorized`
+    // below. A super admin then looks like a regular user: the proxy sends
+    // them from /super-admin to /dashboard, whose layout sends them back to
+    // /super-admin, and the browser gives up after a few dozen hops.
+    // The richer session callback in auth.ts replaces this one everywhere
+    // except the proxy, which is exactly where it was missing.
+    session({ session, token }) {
+      if (token && session.user) {
+        session.user.role = token.role as string;
+      }
+      return session;
+    },
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
       const isSuperAdmin = auth?.user?.role === "SUPER_ADMIN";
