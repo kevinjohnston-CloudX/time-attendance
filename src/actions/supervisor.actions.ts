@@ -7,6 +7,7 @@ import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { createCorrectionPunch } from "@/lib/utils/punch-correction";
 import { computeRoundedTime } from "@/lib/utils/date";
+import { scheduledWindow } from "@/lib/utils/shift-schedule";
 import {
   resolveExceptionSchema,
   addMissingPunchSchema,
@@ -15,6 +16,7 @@ import {
   type AddMissingPunchInput,
   type CorrectAndResolveInput,
 } from "@/lib/validators/supervisor.schema";
+import { format, endOfDay, startOfDay } from "date-fns";
 import { z } from "zod";
 import { ExceptionType } from "@prisma/client";
 import type { Role } from "@/lib/rbac/roles";
@@ -103,9 +105,10 @@ export const getTimesheetForReview = withRBAC(
 export const getTeamExceptions = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
   async ({ employeeId, role, tenantId }, input: unknown) => {
-    const { siteId, departmentId, exceptionType, payPeriodId } = z.object({
+    const { siteId, departmentId, shiftId, exceptionType, payPeriodId } = z.object({
       siteId: z.string().optional(),
       departmentId: z.string().optional(),
+      shiftId: z.string().optional(),
       exceptionType: z.nativeEnum(ExceptionType).optional(),
       payPeriodId: z.string().optional(),
     }).parse(input ?? {});
@@ -118,6 +121,7 @@ export const getTeamExceptions = withRBAC(
       ...(isPayroll ? {} : { supervisorId: employeeId }),
       ...(siteId ? { siteId } : {}),
       ...(departmentId ? { departmentId } : {}),
+      ...(shiftId ? { shiftId } : {}),
     };
 
     const rows = await db.exception.findMany({
@@ -141,6 +145,7 @@ export const getTeamExceptions = withRBAC(
             employeeId: true,
             employee: {
               select: {
+                shiftId:    true,
                 user:       { select: { name: true } },
                 site:       { select: { name: true } },
                 department: { select: { name: true } },
@@ -154,8 +159,80 @@ export const getTeamExceptions = withRBAC(
       orderBy: { occurredAt: "asc" },
     });
 
+    /**
+     * What the day was scheduled as, and what was actually recorded on it.
+     *
+     * <p>Two more queries rather than two more includes, and that is the whole
+     * point. Including the punches is what made this page 25MB: roughly three
+     * exceptions share a timesheet, so every punch on that sheet was
+     * serialised three times over. Here the punch read is narrowed to clock in
+     * and clock out, to the sheets already in the result, to the days those
+     * exceptions fell on, and to three columns, and nothing but two short
+     * strings per card ever reaches the browser.
+     *
+     * <p>The days are bucketed with the same format() the action panel uses
+     * rather than by grouping on rounded_time::date in Postgres. The database
+     * would do the arithmetic in one query fewer and would put a night shift's
+     * clock out on the following day, because the column is stored in UTC.
+     */
+    const timesheetIds = Array.from(new Set(rows.map((r) => r.timesheetId)));
+    const recorded = new Map<string, { in: string | null; out: string | null }>();
+
+    if (timesheetIds.length > 0) {
+      let earliest = rows[0].occurredAt;
+      let latest = rows[0].occurredAt;
+      for (const r of rows) {
+        if (r.occurredAt < earliest) earliest = r.occurredAt;
+        if (r.occurredAt > latest) latest = r.occurredAt;
+      }
+
+      const punches = await db.punch.findMany({
+        where: {
+          timesheetId: { in: timesheetIds },
+          punchType: { in: ["CLOCK_IN", "CLOCK_OUT"] },
+          isApproved: true,
+          correctedById: null,
+          roundedTime: { gte: startOfDay(earliest), lte: endOfDay(latest) },
+        },
+        select: { timesheetId: true, punchType: true, roundedTime: true },
+        orderBy: { roundedTime: "asc" },
+      });
+
+      for (const p of punches) {
+        if (!p.timesheetId) continue;
+        const key = `${p.timesheetId}|${format(p.roundedTime, "yyyy-MM-dd")}`;
+        const entry = recorded.get(key) ?? { in: null, out: null };
+        // Read in time order, so the first clock in and the last clock out of
+        // the day win. A split shift shows the outer edges of it, which is
+        // what the exception was raised against.
+        if (p.punchType === "CLOCK_IN") entry.in = entry.in ?? format(p.roundedTime, "HH:mm");
+        else entry.out = format(p.roundedTime, "HH:mm");
+        recorded.set(key, entry);
+      }
+    }
+
+    const shiftIds = Array.from(
+      new Set(rows.map((r) => r.timesheet.employee.shiftId).filter((id): id is string => !!id)),
+    );
+    const shifts = shiftIds.length
+      ? await db.shift.findMany({
+          // Scoped by the employees already in scope rather than by tenant
+          // again: these ids came off rows this caller is allowed to read.
+          where: { id: { in: shiftIds } },
+          select: { id: true, startTime: true, endTime: true, daySchedule: true },
+        })
+      : [];
+    const shiftById = new Map(shifts.map((sh) => [sh.id, sh]));
+
     return rows.map(({ timesheet, ...ex }) => ({
       ...ex,
+      scheduled: scheduledWindow(
+        timesheet.employee.shiftId ? shiftById.get(timesheet.employee.shiftId) : null,
+        ex.occurredAt,
+      ),
+      recorded:
+        recorded.get(`${ex.timesheetId}|${format(ex.occurredAt, "yyyy-MM-dd")}`) ??
+        { in: null, out: null },
       timesheet: {
         employeeId: timesheet.employeeId,
         employee:   timesheet.employee,
@@ -163,6 +240,53 @@ export const getTeamExceptions = withRBAC(
         hasPunches: timesheet._count.punches > 0,
       },
     }));
+  }
+);
+
+/**
+ * How many of each exception type are open in the viewer's scope.
+ *
+ * <p>Deliberately ignores the exception type filter while honouring every
+ * other one. The type control has to be able to say what picking a different
+ * type would get you, and a census taken after the type filter has run can
+ * only ever say "the one you already picked, and zero of everything else".
+ *
+ * <p>One grouped count in the database rather than a second pass over the
+ * rows, so the numbers stay right on a screen that pages its list.
+ */
+export const getExceptionTypeCounts = withRBAC(
+  "TIMESHEET_APPROVE_TEAM",
+  async ({ employeeId, role, tenantId }, input: unknown) => {
+    const { siteId, departmentId, shiftId, payPeriodId } = z.object({
+      siteId: z.string().optional(),
+      departmentId: z.string().optional(),
+      shiftId: z.string().optional(),
+      payPeriodId: z.string().optional(),
+    }).parse(input ?? {});
+
+    const isPayroll = PAYROLL_ROLES.includes(role);
+
+    const grouped = await db.exception.groupBy({
+      by: ["exceptionType"],
+      where: {
+        resolvedAt: null,
+        timesheet: {
+          ...(payPeriodId ? { payPeriodId } : {}),
+          employee: {
+            tenantId: tenantId ?? undefined,
+            ...(isPayroll ? {} : { supervisorId: employeeId }),
+            ...(siteId ? { siteId } : {}),
+            ...(departmentId ? { departmentId } : {}),
+            ...(shiftId ? { shiftId } : {}),
+          },
+        },
+      },
+      _count: { _all: true },
+    });
+
+    const counts: Record<string, number> = {};
+    for (const g of grouped) counts[g.exceptionType] = g._count._all;
+    return counts;
   }
 );
 
