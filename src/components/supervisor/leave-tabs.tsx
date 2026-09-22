@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   addMonths,
@@ -21,8 +21,6 @@ import {
   Banner,
   Button,
   Card,
-  FilterBar,
-  FilterChip,
   FilterSelectChip,
   LinkButton,
   PageHeader,
@@ -32,7 +30,6 @@ import {
   useToast,
   Select,
   Textarea,
-  Toolbar,
   leaveTone,
 } from "@/components/ui";
 import { LeaveApprovalButtons } from "@/components/supervisor/leave-approval-buttons";
@@ -239,6 +236,30 @@ export function LeaveTabs({
   // "who else is off" is a question about the people who cover the same work.
   const [deptOnly, setDeptOnly] = useState(true);
   const [shown, setShown] = useState(PAGE_SIZE);
+
+  /**
+   * The toolbar pins to the top, so the coverage panel has to pin below it
+   * rather than at a guessed offset. The toolbar's height is not a constant:
+   * the chips wrap onto a second line on a narrow window, and the "Clear all"
+   * link appears and disappears. Measuring it is what the handoff does too.
+   */
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
+  const [toolbarHeight, setToolbarHeight] = useState(96);
+
+  const measureToolbar = useCallback(() => {
+    const el = toolbarRef.current;
+    if (!el) return;
+    const h = Math.round(el.getBoundingClientRect().height);
+    if (h) setToolbarHeight((prev) => (prev === h ? prev : h));
+  }, []);
+
+  useEffect(() => {
+    const el = toolbarRef.current;
+    if (!el || typeof ResizeObserver !== "function") return;
+    const ro = new ResizeObserver(measureToolbar);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measureToolbar]);
   const { message: toast, flash } = useToast();
   // Storage is an external store, so it is read as one. This also keeps two
   // open tabs in step without either of them polling.
@@ -630,114 +651,123 @@ export function LeaveTabs({
         }
       />
 
-      <Toolbar count={rows.length} countLabel="request">
-        {/* Stays a SegmentedControl rather than the URL-backed SegmentedLinks:
-            each tab is a separate permission-scoped query that the server has
-            already run, so switching is a filter over rows in hand, not a
-            re-fetch. The ?tab= parameter still picks the opening tab, which is
-            what the dashboard's "Team Calendar" link relies on. */}
-        <SegmentedControl
-          ariaLabel="Leave view"
-          items={[
-            { value: "all", label: "All", count: pending.length + hrPending.length + upcoming.length },
-            { value: "pending", label: "Pending", count: pending.length },
-            { value: "hr-pending", label: "HR Review", count: hrPending.length },
-            { value: "upcoming", label: "Approved", count: upcoming.length },
-          ]}
-          value={tab}
-          onChange={(v) => {
-            setTab(v as Tab);
-            setSelectedId(null);
-            setShown(PAGE_SIZE);
-          }}
-        />
+      {/* The design's toolbar: two rows, pinned to the top of the scroll, on
+          the page background so cards pass underneath it rather than showing
+          through. Built here rather than with the shared Toolbar and FilterBar
+          because this page's layout is the design's, while the controls inside
+          it are still the shared ones. */}
+      <div
+        ref={toolbarRef}
+        className="sticky top-0 z-20 flex flex-col gap-2.5 py-3"
+        style={{ background: "var(--surface-page)" }}
+      >
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Stays a SegmentedControl rather than the URL-backed
+              SegmentedLinks: each tab is a separate permission-scoped query
+              the server has already run, so switching filters rows in hand
+              rather than re-fetching. The ?tab= parameter still picks the
+              opening tab, which the dashboard's link relies on. */}
+          <SegmentedControl
+            ariaLabel="Leave view"
+            size="sm"
+            items={[
+              { value: "all", label: "All", count: pending.length + hrPending.length + upcoming.length },
+              { value: "pending", label: "Pending", count: pending.length },
+              { value: "hr-pending", label: "HR Review", count: hrPending.length },
+              { value: "upcoming", label: "Approved", count: upcoming.length },
+            ]}
+            value={tab}
+            onChange={(v) => {
+              setTab(v as Tab);
+              setSelectedId(null);
+              setShown(PAGE_SIZE);
+            }}
+          />
 
-        {/* Name search, from the design. Filters rows already on the page. */}
-        <SearchInput
-          aria-label="Search by employee name"
-          placeholder="Employee name"
-          value={query}
-          onValueChange={(v) => {
-            setQuery(v);
-            setShown(PAGE_SIZE);
-          }}
-        />
+          <SearchInput
+            aria-label="Search by employee name"
+            placeholder="Employee name"
+            value={query}
+            onValueChange={(v) => {
+              setQuery(v);
+              setShown(PAGE_SIZE);
+            }}
+          />
 
-        {/* Site, department and shift, as the design's pills. Payroll+ only,
-            because these are the only people whose queries the page actually
-            narrows by them. */}
-        {canFilter && sites.length > 0 && (
-          <FilterSelectChip
-            label="Site"
-            value={selectedSiteId ?? ""}
-            options={sites}
-            // Changing the site clears the department with it: the department
-            // list the server offers is scoped to the chosen site, so one left
-            // behind would filter by something no longer on the screen.
-            onChange={(id) => navigate({ siteId: id || undefined, shiftId: selectedShiftId })}
-          />
-        )}
-        {canFilter && (
-          <FilterSelectChip
-            label="Department"
-            value={selectedDepartmentId ?? ""}
-            options={departments}
-            disabled={departments.length === 0}
-            onChange={(id) =>
-              navigate({
-                siteId: selectedSiteId,
-                departmentId: id || undefined,
-                shiftId: selectedShiftId,
-              })
-            }
-          />
-        )}
-        {canFilter && shifts.length > 0 && (
-          <FilterSelectChip
-            label="Shift"
-            value={selectedShiftId ?? ""}
-            options={shifts}
-            onChange={(id) =>
-              navigate({
-                siteId: selectedSiteId,
-                departmentId: selectedDepartmentId,
-                shiftId: id || undefined,
-              })
-            }
-          />
-        )}
-      </Toolbar>
+          <span
+            className="tabular ml-auto whitespace-nowrap"
+            style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+          >
+            {rows.length} {rows.length === 1 ? "request" : "requests"}
+          </span>
+        </div>
 
-      <FilterBar clearHref={isFiltered ? hrefFor({}) : undefined}>
-        {/* Clearing the site clears the department with it. The department list
-            the server offers is scoped to the chosen site, so a department left
-            behind would be filtering by something no longer on screen. */}
-        {canFilter && selectedSiteId ? (
-          <FilterChip label="Site" value={siteName} clearHref={hrefFor({ shiftId: selectedShiftId })} />
-        ) : null}
-        {canFilter && selectedDepartmentId ? (
-          <FilterChip
-            label="Department"
-            value={deptName}
-            clearHref={hrefFor({ siteId: selectedSiteId, shiftId: selectedShiftId })}
-          />
-        ) : null}
-        {canFilter && selectedShiftId ? (
-          <FilterChip
-            label="Shift"
-            value={shiftName}
-            clearHref={hrefFor({
-              siteId: selectedSiteId,
-              departmentId: selectedDepartmentId,
-            })}
-          />
-        ) : null}
-        <span className="ml-auto">
-          <Button hierarchy="link" size="sm" onClick={saveCurrentView}>
-            Save current view
-          </Button>
-        </span>
-      </FilterBar>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Department, shift, then site, in the design's order. Each clears
+              from inside its own pill rather than from a second row below, so
+              an applied filter and the control that set it are one thing. */}
+          {canFilter && (
+            <FilterSelectChip
+              label="Department"
+              value={selectedDepartmentId ?? ""}
+              options={departments}
+              disabled={departments.length === 0}
+              onChange={(id) =>
+                navigate({
+                  siteId: selectedSiteId,
+                  departmentId: id || undefined,
+                  shiftId: selectedShiftId,
+                })
+              }
+            />
+          )}
+          {canFilter && shifts.length > 0 && (
+            <FilterSelectChip
+              label="Shift"
+              value={selectedShiftId ?? ""}
+              options={shifts}
+              onChange={(id) =>
+                navigate({
+                  siteId: selectedSiteId,
+                  departmentId: selectedDepartmentId,
+                  shiftId: id || undefined,
+                })
+              }
+            />
+          )}
+          {/* Changing the site clears the department with it: the department
+              list the server offers is scoped to the chosen site, so one left
+              behind would filter by something no longer on the screen. */}
+          {canFilter && sites.length > 0 && (
+            <FilterSelectChip
+              label="Site"
+              value={selectedSiteId ?? ""}
+              options={sites}
+              onChange={(id) => navigate({ siteId: id || undefined, shiftId: selectedShiftId })}
+            />
+          )}
+
+          {(isFiltered || query.trim()) && (
+            <Button
+              hierarchy="link"
+              size="sm"
+              onClick={() => {
+                setQuery("");
+                setShown(PAGE_SIZE);
+                if (isFiltered) navigate({});
+              }}
+            >
+              Clear all
+            </Button>
+          )}
+
+          <span className="ml-auto">
+            <Button hierarchy="link" size="sm" onClick={saveCurrentView}>
+              Save current view
+            </Button>
+          </span>
+        </div>
+      </div>
 
       {/* A saved view is only worth saving if it can be got back, so the
           design's single link grows the row that returns you to one. */}
@@ -805,15 +835,6 @@ export function LeaveTabs({
             out, rather than one card of divided rows. Selecting a card drives
             the coverage panel beside it. */}
         <div className="flex min-w-0 flex-col gap-2.5">
-          <div className="flex flex-col gap-0.5">
-            <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>
-              {LIST_CARD[tab].title}
-            </span>
-            <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-              {LIST_CARD[tab].subtitle}
-            </span>
-          </div>
-
           {rows.length === 0 ? (
             <div
               className="flex flex-col items-center gap-2.5 px-6 py-12 text-center"
@@ -895,6 +916,7 @@ export function LeaveTabs({
         </div>
 
         {/* ── Coverage ─────────────────────────────────────────────────── */}
+        <div className="sticky min-w-0" style={{ top: toolbarHeight + 14 }}>
         <Card
           title="Who is off"
           subtitle={
@@ -1171,6 +1193,7 @@ export function LeaveTabs({
             </div>
           </div>
         </Card>
+        </div>
       </div>
 
       {/* Submit Leave Modal */}

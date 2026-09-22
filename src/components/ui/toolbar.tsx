@@ -211,11 +211,37 @@ export function FilterSelectChip({
           {selected?.name ?? value}
         </span>
       )}
-      <span style={{ display: "inline-flex", color: "var(--icon-tertiary)", lineHeight: 0 }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="m6 9 6 6 6-6" />
-        </svg>
-      </span>
+      {applied ? (
+        // Clearing happens in the pill that set it, as the design does, rather
+        // than from a second row of chips repeating the same filters.
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          aria-label={`Clear ${label} filter`}
+          style={{
+            position: "relative",
+            zIndex: 1,
+            display: "inline-flex",
+            alignItems: "center",
+            border: 0,
+            padding: 0,
+            background: "transparent",
+            color: "var(--icon-tertiary)",
+            cursor: "pointer",
+            lineHeight: 0,
+          }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+      ) : (
+        <span style={{ display: "inline-flex", color: "var(--icon-tertiary)", lineHeight: 0 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </span>
+      )}
       <select
         aria-label={label}
         value={value}
@@ -223,9 +249,12 @@ export function FilterSelectChip({
         onChange={(e) => onChange(e.target.value)}
         style={{
           position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
+          top: 0,
+          bottom: 0,
+          left: 0,
+          // Stops short of the clear control, which would otherwise sit under
+          // the invisible select and never receive the click.
+          right: applied ? 26 : 0,
           opacity: 0,
           cursor: disabled ? "not-allowed" : "pointer",
         }}
