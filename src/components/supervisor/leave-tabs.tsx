@@ -105,6 +105,16 @@ interface LeaveTabsProps {
 type Tab = "all" | "pending" | "hr-pending" | "upcoming";
 
 /**
+ * How many cards are drawn before the person asks for more.
+ *
+ * <p>A site with several hundred people can put a few hundred requests in the
+ * All view, and every card carries its own buttons and its own transition. The
+ * queue is worked from the top, so drawing the whole thing costs a slow first
+ * paint to render rows nobody scrolls to.
+ */
+const PAGE_SIZE = 25;
+
+/**
  * A filter combination somebody wants back tomorrow.
  *
  * <p>Held in this browser rather than the database. A saved view is one
@@ -228,6 +238,7 @@ export function LeaveTabs({
   // The coverage panel reads one department at a time by default, because
   // "who else is off" is a question about the people who cover the same work.
   const [deptOnly, setDeptOnly] = useState(true);
+  const [shown, setShown] = useState(PAGE_SIZE);
   const { message: toast, flash } = useToast();
   // Storage is an external store, so it is read as one. This also keeps two
   // open tabs in step without either of them polling.
@@ -637,6 +648,7 @@ export function LeaveTabs({
           onChange={(v) => {
             setTab(v as Tab);
             setSelectedId(null);
+            setShown(PAGE_SIZE);
           }}
         />
 
@@ -645,7 +657,10 @@ export function LeaveTabs({
           aria-label="Search by employee name"
           placeholder="Employee name"
           value={query}
-          onValueChange={setQuery}
+          onValueChange={(v) => {
+            setQuery(v);
+            setShown(PAGE_SIZE);
+          }}
         />
 
         {/* Site, department and shift, as the design's pills. Payroll+ only,
@@ -831,23 +846,51 @@ export function LeaveTabs({
               )}
             </div>
           ) : (
-            sortForTab(visible, tab).map(({ req, queue }) => (
-              <RequestCard
-                key={req.id}
-                req={req}
-                queue={queue}
-                canHrApprove={!!canHrApprove}
-                conflictWith={conflictNames.get(req.id)}
-                selected={req.id === focused?.id}
-                onSelect={() => {
-                  const next = req.id === selectedId ? null : req.id;
-                  setSelectedId(next);
-                  // Jumping the calendar to the request saves the supervisor
-                  // paging to it by hand, which was the point of selecting it.
-                  if (next) setCalMonth(startOfMonth(parseLeaveDate(req.startDate)));
-                }}
-              />
-            ))
+            <>
+              {sortForTab(visible, tab)
+                .slice(0, shown)
+                .map(({ req, queue }) => (
+                  <RequestCard
+                    key={req.id}
+                    req={req}
+                    queue={queue}
+                    canHrApprove={!!canHrApprove}
+                    conflictWith={conflictNames.get(req.id)}
+                    selected={req.id === focused?.id}
+                    onSelect={() => {
+                      const next = req.id === selectedId ? null : req.id;
+                      setSelectedId(next);
+                      // Jumping the calendar to the request saves the
+                      // supervisor paging to it by hand, which was the point
+                      // of selecting it.
+                      if (next) setCalMonth(startOfMonth(parseLeaveDate(req.startDate)));
+                    }}
+                  />
+                ))}
+
+              {/* A long queue is drawn a screenful at a time. The count is
+                  always visible, so nobody reads the bottom of a truncated
+                  list as the end of the queue. */}
+              {rows.length > shown && (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-2 px-1 py-1"
+                >
+                  <span
+                    className="tabular"
+                    style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                  >
+                    Showing {shown} of {rows.length}
+                  </span>
+                  <Button
+                    hierarchy="secondary"
+                    size="sm"
+                    onClick={() => setShown((n) => n + PAGE_SIZE)}
+                  >
+                    Show {Math.min(PAGE_SIZE, rows.length - shown)} more
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -996,7 +1039,7 @@ export function LeaveTabs({
                       background: tone
                         ? tone.bg
                         : inFocusedRequest
-                          ? "var(--wms-color-primary-50)"
+                          ? "var(--surface-info)"
                           : inMonth
                             ? "var(--surface-card)"
                             : "transparent",
@@ -1102,7 +1145,7 @@ export function LeaveTabs({
               {focused && (
                 <Swatch
                   label="Days in this request"
-                  bg="var(--wms-color-primary-50)"
+                  bg="var(--surface-info)"
                   line="var(--stroke-accent)"
                 />
               )}
@@ -1422,7 +1465,7 @@ function RequestCard({
       style={{
         border: `1px solid ${selected ? "var(--stroke-accent)" : "var(--stroke-secondary)"}`,
         borderRadius: 10,
-        background: selected ? "var(--wms-color-primary-50)" : "var(--surface-card)",
+        background: selected ? "var(--surface-info)" : "var(--surface-card)",
         transition: "border-color 140ms ease, background 140ms ease",
       }}
     >

@@ -81,6 +81,7 @@
   --ta-row-hover: rgb(31, 41, 55);
   --ta-track:     rgb(55, 65, 81);
   --ta-text-on-inverse: rgb(17, 24, 39);
+  --ta-skeleton:        rgb(45, 56, 72);
 
   /* The card shadow's inset hairline is a light-mode gray; in dark it has to
      ride the dark divider or every panel gets a pale outline. */

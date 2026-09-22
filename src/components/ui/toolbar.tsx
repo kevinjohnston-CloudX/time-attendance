@@ -186,7 +186,7 @@ export function FilterSelectChip({
         maxWidth: "100%",
         borderRadius: 999,
         border: `1px solid ${applied ? "var(--stroke-accent)" : "var(--stroke-secondary)"}`,
-        background: applied ? "var(--wms-color-primary-50)" : "var(--surface-card)",
+        background: applied ? "var(--surface-info)" : "var(--surface-card)",
         font: "var(--type-body2)",
         fontWeight: "var(--weight-medium)",
         color: "var(--text-secondary)",

@@ -119,6 +119,10 @@
      theme, so its text has to flip with it; white is only correct while
      the surface is dark. */
   --ta-text-on-inverse: #fff;
+  /* Loading skeletons. --surface-tertiary is the same value as
+     --surface-page, so a placeholder filled with it is invisible on any
+     part of a screen that is not inside a card. This reads on both. */
+  --ta-skeleton: var(--wms-color-gray-200);
 }
 
 /* ------------------------------------------------------------------
