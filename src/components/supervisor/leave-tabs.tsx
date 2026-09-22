@@ -246,54 +246,51 @@ export function LeaveTabs({
   const [toolbarHeight, setToolbarHeight] = useState(96);
 
   /**
-   * True once the page has scrolled past the top, which shrinks the title and
-   * drops the counts so the pinned bar costs less height without ever leaving
-   * the screen unnamed.
+   * True once the page has scrolled, which shrinks the title and drops the
+   * counts so the pinned bar costs less height without ever leaving the screen
+   * unnamed.
    *
-   * <p>Read from the scroll position with a dead band, not from a sentinel
-   * element. Condensing removes about thirty pixels of header, and a sentinel
-   * sitting above the bar gets pushed back into view by exactly that shift,
-   * which expands the header, which pushes it out again: the title flickers
-   * between both sizes as fast as the browser can lay out. The two thresholds
-   * below cannot oscillate, because the distance between them is wider than
-   * the height the header gives up.
+   * <p>Measured as the distance the pinned bar has travelled from a marker at
+   * the top of the page. The marker scrolls away while the bar stays put, so
+   * the gap between them is how far the page has scrolled, whichever element
+   * is doing the scrolling.
+   *
+   * <p>The marker is positioned absolutely on purpose. Sticky elements can
+   * only travel within their own parent, so wrapping the bar in something to
+   * measure against pins it to a box its own height and it never moves at all.
+   * Out of flow, the marker also costs no height and no column gap.
+   *
+   * <p>Condensing never moves the marker, which sits above the header, so the
+   * measurement cannot move itself and cannot oscillate.
    */
+  const markerRef = useRef<HTMLSpanElement | null>(null);
   const [condensed, setCondensed] = useState(false);
 
   useEffect(() => {
-    const el = toolbarRef.current;
-    if (!el) return;
-
-    // The portal scrolls an inner element, not the window, so find whichever
-    // ancestor actually scrolls rather than assuming either one.
-    let scroller: HTMLElement | Window = window;
-    for (let node = el.parentElement; node; node = node.parentElement) {
-      const overflowY = getComputedStyle(node).overflowY;
-      if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight) {
-        scroller = node;
-        break;
-      }
-    }
-
-    const CONDENSE_AT = 72;
-    const EXPAND_AT = 24;
     let frame = 0;
 
     const read = () => {
       frame = 0;
-      const y = scroller === window ? window.scrollY : (scroller as HTMLElement).scrollTop;
-      setCondensed((prev) => (prev ? y > EXPAND_AT : y > CONDENSE_AT));
+      const bar = toolbarRef.current;
+      const marker = markerRef.current;
+      if (!bar || !marker) return;
+      const travelled = bar.getBoundingClientRect().top - marker.getBoundingClientRect().top;
+      setCondensed((prev) => (prev ? travelled > 4 : travelled > 16));
     };
 
-    // Coalesced into one read per frame. Passive, so it never delays a scroll.
     const onScroll = () => {
       if (!frame) frame = requestAnimationFrame(read);
     };
 
+    // Captured on the document, because scroll events do not bubble: this
+    // catches the portal's inner scroller, the window, and anything else,
+    // without having to work out which one it is.
     read();
-    scroller.addEventListener("scroll", onScroll, { passive: true });
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    window.addEventListener("resize", onScroll, { passive: true });
     return () => {
-      scroller.removeEventListener("scroll", onScroll);
+      document.removeEventListener("scroll", onScroll, { capture: true });
+      window.removeEventListener("resize", onScroll);
       if (frame) cancelAnimationFrame(frame);
     };
   }, []);
@@ -674,7 +671,13 @@ export function LeaveTabs({
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="relative flex flex-col gap-4">
+      <span
+        ref={markerRef}
+        aria-hidden="true"
+        className="pointer-events-none absolute left-0 top-0 h-px w-px"
+      />
+
       {/* The whole top of the page pins, not just the filters. Scrolling a
           queue of several hundred used to take the title, the actions and the
           filters off the screen together. Built here rather than with the
