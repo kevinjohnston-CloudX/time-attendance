@@ -19,6 +19,6 @@ export { Input, Textarea, Checkbox, Switch, type InputProps } from "./input";
 export { PageHeader, EmptyState } from "./page-header";
 export { Table, THead, TBody, TFoot, TR, TH, TD, TableFooter } from "./table";
 export { SegmentedControl, SegmentedLinks, type SegmentItem } from "./segmented";
-export { Toolbar, FilterBar, FilterChip, SelectionBar } from "./toolbar";
+export { Toolbar, FilterBar, FilterChip, FilterSelectChip, SelectionBar } from "./toolbar";
 export { StatCard, type StatTone } from "./stat";
 export { Banner, type BannerTone } from "./banner";

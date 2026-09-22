@@ -23,6 +23,7 @@ import {
   Card,
   FilterBar,
   FilterChip,
+  FilterSelectChip,
   LinkButton,
   PageHeader,
   SearchInput,
@@ -93,8 +94,10 @@ interface LeaveTabsProps {
   canSubmitLeave?: boolean;
   sites?: { id: string; name: string }[];
   departments?: { id: string; name: string }[];
+  shifts?: { id: string; name: string }[];
   selectedSiteId?: string;
   selectedDepartmentId?: string;
+  selectedShiftId?: string;
 }
 
 type Tab = "all" | "pending" | "hr-pending" | "upcoming";
@@ -132,8 +135,10 @@ export function LeaveTabs({
   canSubmitLeave,
   sites = [],
   departments = [],
+  shifts = [],
   selectedSiteId,
   selectedDepartmentId,
+  selectedShiftId,
 }: LeaveTabsProps) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(initialTab ?? "pending");
@@ -242,16 +247,17 @@ export function LeaveTabs({
    * A filtered leave list has to survive a reload and be sendable to whoever
    * asked "who is out in Packing next week" — React state is neither.
    */
-  function hrefFor(next: { siteId?: string; departmentId?: string }) {
+  function hrefFor(next: { siteId?: string; departmentId?: string; shiftId?: string }) {
     const params = new URLSearchParams();
     if (next.siteId) params.set("siteId", next.siteId);
     if (next.departmentId) params.set("departmentId", next.departmentId);
+    if (next.shiftId) params.set("shiftId", next.shiftId);
     params.set("tab", tab);
     return `/supervisor/leave?${params.toString()}`;
   }
 
-  function navigate(siteId?: string, departmentId?: string) {
-    router.push(hrefFor({ siteId, departmentId }));
+  function navigate(next: { siteId?: string; departmentId?: string; shiftId?: string }) {
+    router.push(hrefFor(next));
   }
 
   const [calMonth, setCalMonth] = useState(() => new Date());
@@ -403,10 +409,11 @@ export function LeaveTabs({
   // permission narrows nothing. A chip for it would claim a filter the rows
   // underneath were never filtered by, and would turn a genuinely empty queue
   // into "nothing matches your filters".
-  const isFiltered = !!(canFilter && (selectedSiteId || selectedDepartmentId));
+  const isFiltered = !!(canFilter && (selectedSiteId || selectedDepartmentId || selectedShiftId));
 
   const siteName = sites.find((s) => s.id === selectedSiteId)?.name ?? selectedSiteId;
   const deptName = departments.find((d) => d.id === selectedDepartmentId)?.name ?? selectedDepartmentId;
+  const shiftName = shifts.find((sh) => sh.id === selectedShiftId)?.name ?? selectedShiftId;
 
   const LIST_CARD: Record<Tab, { title: string; subtitle: string; empty: string; emptyBody: string }> = {
     all: {
@@ -483,30 +490,48 @@ export function LeaveTabs({
           onValueChange={setQuery}
         />
 
-        {/* Site / Department filter — payroll+ only */}
+        {/* Site, department and shift, as the design's pills. Payroll+ only,
+            because these are the only people whose queries the page actually
+            narrows by them. */}
         {canFilter && sites.length > 0 && (
-          <Select
-            aria-label="Site"
+          <FilterSelectChip
+            label="Site"
             value={selectedSiteId ?? ""}
-            onChange={(e) => navigate(e.target.value || undefined, undefined)}
-          >
-            <option value="">All Sites</option>
-            {sites.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </Select>
+            options={sites}
+            // Changing the site clears the department with it: the department
+            // list the server offers is scoped to the chosen site, so one left
+            // behind would filter by something no longer on the screen.
+            onChange={(id) => navigate({ siteId: id || undefined, shiftId: selectedShiftId })}
+          />
         )}
         {canFilter && (
-          <Select
-            aria-label="Department"
+          <FilterSelectChip
+            label="Department"
             value={selectedDepartmentId ?? ""}
-            onChange={(e) => navigate(selectedSiteId, e.target.value || undefined)}
-          >
-            <option value="">All Departments</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </Select>
+            options={departments}
+            disabled={departments.length === 0}
+            onChange={(id) =>
+              navigate({
+                siteId: selectedSiteId,
+                departmentId: id || undefined,
+                shiftId: selectedShiftId,
+              })
+            }
+          />
+        )}
+        {canFilter && shifts.length > 0 && (
+          <FilterSelectChip
+            label="Shift"
+            value={selectedShiftId ?? ""}
+            options={shifts}
+            onChange={(id) =>
+              navigate({
+                siteId: selectedSiteId,
+                departmentId: selectedDepartmentId,
+                shiftId: id || undefined,
+              })
+            }
+          />
         )}
       </Toolbar>
 
@@ -515,13 +540,23 @@ export function LeaveTabs({
             the server offers is scoped to the chosen site, so a department left
             behind would be filtering by something no longer on screen. */}
         {canFilter && selectedSiteId ? (
-          <FilterChip label="Site" value={siteName} clearHref={hrefFor({})} />
+          <FilterChip label="Site" value={siteName} clearHref={hrefFor({ shiftId: selectedShiftId })} />
         ) : null}
         {canFilter && selectedDepartmentId ? (
           <FilterChip
             label="Department"
             value={deptName}
-            clearHref={hrefFor({ siteId: selectedSiteId })}
+            clearHref={hrefFor({ siteId: selectedSiteId, shiftId: selectedShiftId })}
+          />
+        ) : null}
+        {canFilter && selectedShiftId ? (
+          <FilterChip
+            label="Shift"
+            value={shiftName}
+            clearHref={hrefFor({
+              siteId: selectedSiteId,
+              departmentId: selectedDepartmentId,
+            })}
           />
         ) : null}
       </FilterBar>

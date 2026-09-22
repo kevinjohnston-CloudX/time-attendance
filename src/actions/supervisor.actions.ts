@@ -269,16 +269,22 @@ export const correctPunchAndResolve = withRBAC(
 export const getTeamLeaveRequests = withRBAC(
   "LEAVE_APPROVE_TEAM",
   async ({ employeeId, role, tenantId }, input: unknown) => {
-    const { siteId, departmentId } = z.object({
+    const { siteId, departmentId, shiftId } = z.object({
       siteId: z.string().optional(),
       departmentId: z.string().optional(),
+      shiftId: z.string().optional(),
     }).parse(input ?? {});
 
     const isPayroll = PAYROLL_ROLES.includes(role);
     const t = tenantId ?? undefined;
 
     const employeeFilter = isPayroll
-      ? { tenantId: t, ...(siteId ? { siteId } : {}), ...(departmentId ? { departmentId } : {}) }
+      ? {
+          tenantId: t,
+          ...(siteId ? { siteId } : {}),
+          ...(departmentId ? { departmentId } : {}),
+          ...(shiftId ? { shiftId } : {}),
+        }
       : { supervisorId: employeeId, tenantId: t };
 
     return db.leaveRequest.findMany({
@@ -315,16 +321,22 @@ export const getTeamLeaveRequests = withRBAC(
 export const getTeamHeadcount = withRBAC(
   "LEAVE_APPROVE_TEAM",
   async ({ employeeId, role, tenantId }, input: unknown) => {
-    const { siteId, departmentId } = z.object({
+    const { siteId, departmentId, shiftId } = z.object({
       siteId: z.string().optional(),
       departmentId: z.string().optional(),
+      shiftId: z.string().optional(),
     }).parse(input ?? {});
 
     const isPayroll = PAYROLL_ROLES.includes(role);
     const t = tenantId ?? undefined;
 
     const employeeFilter = isPayroll
-      ? { tenantId: t, ...(siteId ? { siteId } : {}), ...(departmentId ? { departmentId } : {}) }
+      ? {
+          tenantId: t,
+          ...(siteId ? { siteId } : {}),
+          ...(departmentId ? { departmentId } : {}),
+          ...(shiftId ? { shiftId } : {}),
+        }
       : { supervisorId: employeeId, tenantId: t };
 
     const grouped = await db.employee.groupBy({
@@ -359,16 +371,22 @@ export const getTeamHeadcount = withRBAC(
 export const getHrPendingLeave = withRBAC(
   "LEAVE_APPROVE_TEAM",
   async ({ employeeId, role, tenantId }, input: unknown) => {
-    const { siteId, departmentId } = z.object({
+    const { siteId, departmentId, shiftId } = z.object({
       siteId: z.string().optional(),
       departmentId: z.string().optional(),
+      shiftId: z.string().optional(),
     }).parse(input ?? {});
 
     const isPayroll = PAYROLL_ROLES.includes(role);
     const t = tenantId ?? undefined;
 
     const employeeFilter = isPayroll
-      ? { tenantId: t, ...(siteId ? { siteId } : {}), ...(departmentId ? { departmentId } : {}) }
+      ? {
+          tenantId: t,
+          ...(siteId ? { siteId } : {}),
+          ...(departmentId ? { departmentId } : {}),
+          ...(shiftId ? { shiftId } : {}),
+        }
       : { supervisorId: employeeId, tenantId: t };
 
     return db.leaveRequest.findMany({
@@ -396,9 +414,10 @@ export const getHrPendingLeave = withRBAC(
 export const getUpcomingTeamLeave = withRBAC(
   "LEAVE_APPROVE_TEAM",
   async ({ employeeId, role, tenantId }, input: unknown) => {
-    const { siteId, departmentId } = z.object({
+    const { siteId, departmentId, shiftId } = z.object({
       siteId: z.string().optional(),
       departmentId: z.string().optional(),
+      shiftId: z.string().optional(),
     }).parse(input ?? {});
 
     const isPayroll = PAYROLL_ROLES.includes(role);
@@ -407,7 +426,12 @@ export const getUpcomingTeamLeave = withRBAC(
     today.setHours(0, 0, 0, 0);
 
     const employeeFilter = isPayroll
-      ? { tenantId: t, ...(siteId ? { siteId } : {}), ...(departmentId ? { departmentId } : {}) }
+      ? {
+          tenantId: t,
+          ...(siteId ? { siteId } : {}),
+          ...(departmentId ? { departmentId } : {}),
+          ...(shiftId ? { shiftId } : {}),
+        }
       : { supervisorId: employeeId, tenantId: t };
 
     return db.leaveRequest.findMany({

@@ -24,22 +24,22 @@ import { LeaveTabs } from "@/components/supervisor/leave-tabs";
 export default async function SupervisorLeavePage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; siteId?: string; departmentId?: string }>;
+  searchParams: Promise<{ tab?: string; siteId?: string; departmentId?: string; shiftId?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "LEAVE_APPROVE_TEAM")) redirect("/dashboard");
 
-  const { tab, siteId, departmentId } = (await searchParams) ?? {};
+  const { tab, siteId, departmentId, shiftId } = (await searchParams) ?? {};
   const initialTab = tab === "upcoming" ? "upcoming" : tab === "hr-pending" ? "hr-pending" : "pending";
 
   const canFilter = await userHasPermission(session.user, "LEAVE_APPROVE_ANY");
   const canHrApprove = canFilter;
   const canSubmitLeave = await userHasPermission(session.user, "LEAVE_REQUEST_TEAM");
   const tenantId = (session.user as { tenantId?: string }).tenantId;
-  const filterInput = canFilter ? { siteId, departmentId } : {};
+  const filterInput = canFilter ? { siteId, departmentId, shiftId } : {};
 
-  const [pendingResult, hrPendingResult, upcomingResult, headcountResult, sites, departments] = await Promise.all([
+  const [pendingResult, hrPendingResult, upcomingResult, headcountResult, sites, departments, shifts] = await Promise.all([
     getTeamLeaveRequests(filterInput),
     getHrPendingLeave(filterInput),
     getUpcomingTeamLeave(filterInput),
@@ -51,6 +51,15 @@ export default async function SupervisorLeavePage({
       ? db.department.findMany({
           where: { tenantId, isActive: true, ...(siteId ? { sites: { some: { siteId } } } : {}) },
           orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        })
+      : [],
+    // Shifts are a tenant-level list, and only offered to the same people who
+    // get the site and department filters.
+    canFilter && tenantId
+      ? db.shift.findMany({
+          where: { tenantId },
+          orderBy: [{ number: "asc" }, { name: "asc" }],
           select: { id: true, name: true },
         })
       : [],
@@ -72,8 +81,10 @@ export default async function SupervisorLeavePage({
       canSubmitLeave={canSubmitLeave}
       sites={sites}
       departments={departments}
+      shifts={shifts}
       selectedSiteId={siteId}
       selectedDepartmentId={departmentId}
+      selectedShiftId={shiftId}
     />
   );
 }

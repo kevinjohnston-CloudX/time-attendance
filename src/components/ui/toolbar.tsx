@@ -141,6 +141,107 @@ export function FilterChip({
 }
 
 /**
+ * A filter chip you can pick from, in the same pill the applied chips use.
+ *
+ * <p>The design draws filters as pills that open a list, not as boxed selects.
+ * This is a real `<select>` sitting invisibly over the pill rather than a
+ * hand-rolled popover: it keeps keyboard support, the native list on a phone,
+ * and the screen-reader behaviour, none of which a div dressed as a menu gets
+ * for free.
+ *
+ * <p>The pill shows the chosen option's name once something is picked, so the
+ * value on screen is always the user's own word for it rather than a label we
+ * hardcoded.
+ */
+export function FilterSelectChip({
+  label,
+  value,
+  options,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  /** The selected option id, or "" for none. */
+  value: string;
+  options: { id: string; name: string }[];
+  onChange: (id: string) => void;
+  disabled?: boolean;
+}) {
+  const applied = value !== "";
+  const selected = options.find((o) => o.id === value);
+
+  return (
+    <span
+      className="ta-chip"
+      data-applied={applied ? "true" : undefined}
+      style={{
+        position: "relative",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        height: 28,
+        padding: "0 10px",
+        boxSizing: "border-box",
+        whiteSpace: "nowrap",
+        maxWidth: "100%",
+        borderRadius: 999,
+        border: `1px solid ${applied ? "var(--stroke-accent)" : "var(--stroke-secondary)"}`,
+        background: applied ? "var(--wms-color-primary-50)" : "var(--surface-card)",
+        font: "var(--type-body2)",
+        fontWeight: "var(--weight-medium)",
+        color: "var(--text-secondary)",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <span>{label}</span>
+      {applied && (
+        // Site and shift names are free text the customer can make as long as
+        // they like, so the value truncates rather than stretching the pill
+        // until the row wraps.
+        <span
+          className="truncate"
+          style={{
+            minWidth: 0,
+            maxWidth: 160,
+            fontWeight: "var(--weight-semibold)",
+            color: "var(--text-accent)",
+          }}
+        >
+          {selected?.name ?? value}
+        </span>
+      )}
+      <span style={{ display: "inline-flex", color: "var(--icon-tertiary)", lineHeight: 0 }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </span>
+      <select
+        aria-label={label}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          opacity: 0,
+          cursor: disabled ? "not-allowed" : "pointer",
+        }}
+      >
+        <option value="">All {label.toLowerCase()}s</option>
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
+/**
  * The bar that appears when rows are selected, carrying the actions that apply
  * to all of them.
  *
