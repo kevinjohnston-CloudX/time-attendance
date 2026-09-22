@@ -23,7 +23,6 @@ import {
   Card,
   FilterSelectChip,
   LinkButton,
-  PageHeader,
   SearchInput,
   SegmentedControl,
   Toast,
@@ -245,6 +244,30 @@ export function LeaveTabs({
    */
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   const [toolbarHeight, setToolbarHeight] = useState(96);
+
+  /**
+   * True once the page has scrolled at all, which shrinks the title and drops
+   * the subtitle so the pinned bar costs less height without ever leaving the
+   * screen unnamed.
+   *
+   * <p>Driven by a one pixel sentinel above the bar rather than a scroll
+   * listener. A listener fires on every frame of every scroll and would be
+   * doing work on a list of several hundred cards; this fires twice, once each
+   * way.
+   */
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const [condensed, setCondensed] = useState(false);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || typeof IntersectionObserver !== "function") return;
+    const io = new IntersectionObserver(
+      ([entry]) => setCondensed(!entry.isIntersecting),
+      { threshold: 0 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   const measureToolbar = useCallback(() => {
     const el = toolbarRef.current;
@@ -623,11 +646,54 @@ export function LeaveTabs({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Leave Requests"
-        subtitle={`${pending.length} awaiting you · ${hrPending.length} with HR · ${upcoming.length} approved upcoming`}
-        actions={
-          <>
+      {/* Watched to know when the page has scrolled. A sentinel is cheaper and
+          steadier than a scroll listener, which fires on every frame. */}
+      <div ref={sentinelRef} aria-hidden="true" style={{ height: 1 }} />
+
+      {/* The whole top of the page pins, not just the filters. Scrolling a
+          queue of several hundred used to take the title, the actions and the
+          filters off the screen together. Built here rather than with the
+          shared PageHeader because this one has to shrink, which that
+          component does not do. */}
+      <div
+        ref={toolbarRef}
+        className="sticky top-0 z-20 flex flex-col"
+        style={{ background: "var(--surface-page)" }}
+      >
+        <div
+          className="flex flex-wrap items-end gap-3"
+          style={{
+            paddingTop: condensed ? 8 : 0,
+            paddingBottom: condensed ? 8 : 12,
+            transition: "padding 140ms ease",
+          }}
+        >
+          <div className="flex min-w-60 flex-1 flex-col gap-0.5">
+            <h1
+              style={{
+                margin: 0,
+                // Shrinks to the page-title step rather than disappearing, so
+                // there is always something naming the screen you are in.
+                fontSize: condensed ? 20 : 30,
+                lineHeight: condensed ? "26px" : "36px",
+                fontWeight: "var(--weight-bold)",
+                letterSpacing: "-0.02em",
+                color: "var(--text-primary)",
+                transition: "font-size 140ms ease, line-height 140ms ease",
+              }}
+            >
+              Leave Requests
+            </h1>
+            {/* The counts are orientation, not navigation, so they are the
+                first thing to go when space is short. */}
+            {!condensed && (
+              <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
+                {`${pending.length} awaiting you \u00b7 ${hrPending.length} with HR \u00b7 ${upcoming.length} approved upcoming`}
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
             <LinkButton href="/supervisor" hierarchy="tertiary">
               ← Team Portal
             </LinkButton>
@@ -647,21 +713,13 @@ export function LeaveTabs({
                 Submit Leave
               </Button>
             )}
-          </>
-        }
-      />
+          </div>
+        </div>
 
-      {/* The design's toolbar: two rows, pinned to the top of the scroll, on
-          the page background so cards pass underneath it rather than showing
-          through. Built here rather than with the shared Toolbar and FilterBar
-          because this page's layout is the design's, while the controls inside
-          it are still the shared ones. */}
-      <div
-        ref={toolbarRef}
-        className="sticky top-0 z-20 flex flex-col gap-2.5 py-3"
-        style={{ background: "var(--surface-page)" }}
-      >
-        <div className="flex flex-wrap items-center gap-2.5">
+        {/* One row, not two: the views, the search and the three filters sit
+            together so the pinned bar costs as little height as possible. It
+            still wraps on a narrow window rather than overflowing. */}
+        <div className="flex flex-wrap items-center gap-2.5 pb-3">
           {/* Stays a SegmentedControl rather than the URL-backed
               SegmentedLinks: each tab is a separate permission-scoped query
               the server has already run, so switching filters rows in hand
@@ -694,18 +752,9 @@ export function LeaveTabs({
             }}
           />
 
-          <span
-            className="tabular ml-auto whitespace-nowrap"
-            style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
-          >
-            {rows.length} {rows.length === 1 ? "request" : "requests"}
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Department, shift, then site, in the design's order. Each clears
-              from inside its own pill rather than from a second row below, so
-              an applied filter and the control that set it are one thing. */}
+          {/* Department, shift, then site, in the handoff's order. Each clears
+              from inside its own pill rather than from a second row repeating
+              the same filters. */}
           {canFilter && (
             <FilterSelectChip
               label="Department"
@@ -761,11 +810,16 @@ export function LeaveTabs({
             </Button>
           )}
 
-          <span className="ml-auto">
-            <Button hierarchy="link" size="sm" onClick={saveCurrentView}>
-              Save current view
-            </Button>
+          <span
+            className="tabular ml-auto whitespace-nowrap"
+            style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+          >
+            {rows.length} {rows.length === 1 ? "request" : "requests"}
           </span>
+
+          <Button hierarchy="link" size="sm" onClick={saveCurrentView}>
+            Save current view
+          </Button>
         </div>
       </div>
 
