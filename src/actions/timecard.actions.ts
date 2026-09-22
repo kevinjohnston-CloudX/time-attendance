@@ -27,13 +27,24 @@ export const getActiveEmployeesForTimecards = withRBAC(
       payPeriodId = current?.id ?? null;
     }
 
+    // `select` rather than `include`: include brings every column on the
+    // employee with it, so the picker was carrying pay rates, dates of birth
+    // and home addresses for everybody to draw a name and a department.
+    //
+    // Scoped by tenant as well. It was filtered on isActive alone, which read
+    // the employee table across tenants.
     const employees = await db.employee.findMany({
       where: {
         isActive: true,
+        ...(tenantId ? { tenantId } : {}),
         ...(siteId ? { siteId } : {}),
         ...(departmentId ? { departmentId } : {}),
       },
-      include: {
+      select: {
+        id: true,
+        employeeCode: true,
+        isActive: true,
+        payType: true,
         user: { select: { name: true } },
         department: { select: { name: true } },
         site: { select: { id: true, name: true } },
