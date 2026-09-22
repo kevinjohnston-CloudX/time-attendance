@@ -1,0 +1,35 @@
+/* ============================================================
+   CloudX WMS — Font families
+
+   The design system's tokens/fonts.css, with one change: it pulls Inter
+   from the Google Fonts CDN with an @import, and here next/font does the
+   loading and hands us --font-inter. Only the family variables are kept.
+
+   These two are not optional. tokens/typography.css declares
+
+     --font-sans: var(--wms-font-sans);
+     --font-mono: var(--wms-font-mono);
+
+   and that file is imported unlayered, so it outranks Tailwind's layered
+   @theme definition of the same names. Without the two variables below,
+   --font-sans and --font-mono resolve to nothing and every element that asks
+   for them — which is every element, via `body { font-family: var(--font-sans) }`
+   — falls back to the browser's default serif.
+   ============================================================ */
+
+:root {
+  /*
+   * next/font supplies --font-inter; layout.tsx puts it on <html> so it is
+   * defined here on :root, where this declaration is resolved.
+   *
+   * The `, "Inter"` fallback inside the var() is not decoration. A var() with
+   * no fallback that names an undefined property makes the whole declaration
+   * invalid at computed-value time, and a custom property that is invalid at
+   * computed-value time becomes the guaranteed-invalid value — which every
+   * descendant then inherits. One missing variable would take out the font of
+   * the entire application, silently, with the stylesheet still compiling.
+   */
+  --wms-font-sans: var(--font-inter, "Inter"), -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --wms-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}

@@ -1,16 +1,49 @@
 "use client";
 
-import { useState, useTransition, useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Hourglass, Plus } from "lucide-react";
 import {
   postAccrualCorrection,
   postManualAccrualEntry,
   getLeaveTypeLedgerDetail,
-  getAccrualYearSummary,
   type LedgerDetailEntry,
-  type PastYearRow,
 } from "@/actions/admin.actions";
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  EmptyState,
+  Input,
+  LinkButton,
+  SegmentedControl,
+  TBody,
+  TD,
+  TFoot,
+  TH,
+  THead,
+  TR,
+  Table,
+  TableFooter,
+  leaveTone,
+} from "@/components/ui";
+
+/**
+ * The accrual ledger, on the design's doc template.
+ *
+ * <p>Three sections: the date range, the balances table, and the ledger for
+ * whichever leave type is selected. The ledger used to open inline underneath
+ * each row, several at once, with its own table nested inside the balances
+ * table — which meant a wide ledger stretched the balance columns it was
+ * nested in. One ledger, beside the row that owns it, is the shape the design
+ * draws and the only one where both tables can size themselves.
+ *
+ * <p>Hours are two decimals throughout. This screen used to answer in
+ * "64h 30m", which is the one format that cannot be checked against a
+ * timesheet, the dashboard or the ADP export, and the accrual rates it has to
+ * show — 3.08 hours a period — do not survive the conversion at all.
+ */
 
 interface BalanceRow {
   leaveTypeId: string;
@@ -36,23 +69,35 @@ interface BalanceRow {
 interface Props {
   employeeId: string;
   balances: BalanceRow[];
+  /** EMPLOYEE_MANAGE. Every write on this screen is gated on it server-side. */
+  canManage: boolean;
 }
 
-const inputCls =
-  "rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const btnCls =
-  "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
+/** Columns in the balances table — the section and expand rows span all of them. */
+const BALANCE_COLS = 9;
 
-function fmtHours(minutes: number): string {
-  if (minutes === 0) return "0h";
-  const h = Math.floor(Math.abs(minutes) / 60);
-  const m = Math.abs(minutes) % 60;
-  const val = m === 0 ? `${h}h` : `${h}h ${m}m`;
-  return minutes < 0 ? `-${val}` : val;
+/**
+ * Minutes as decimal hours.
+ *
+ * <p>Rounds a sub-second negative to zero rather than to "-0.00", which is
+ * what a balance that has been credited and debited the same amount produces.
+ */
+function hrs(minutes: number): string {
+  const v = minutes / 60;
+  return (Math.abs(v) < 0.005 ? 0 : v).toFixed(2);
 }
 
-function fmtHoursPerYear(hours: number): string {
-  return Number.isInteger(hours) ? `${hours}h/yr` : `${hours.toFixed(1)}h/yr`;
+/** A change rather than a level: the sign is the whole meaning, so it is kept. */
+function delta(minutes: number): string {
+  const s = hrs(minutes);
+  return minutes > 0 ? `+${s}` : s;
+}
+
+/** Green up, red down — for figures that are a movement, never for a level. */
+function deltaColor(minutes: number): string {
+  if (minutes > 0) return "var(--text-success)";
+  if (minutes < 0) return "var(--text-error)";
+  return "var(--text-primary)";
 }
 
 function fmtDate(iso: string): string {
@@ -64,30 +109,99 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-// ─── Sign toggle ──────────────────────────────────────────────────────────────
+/** Hours available right now: booked and pending time is already spoken for. */
+function availableMinutes(row: BalanceRow): number {
+  const forecast =
+    row.forecastApplyToAvailable && row.forecastedMinutes != null ? row.forecastedMinutes : 0;
+  return row.balanceMinutes - row.approvedMinutes - row.pendingMinutes + forecast;
+}
+
+/** What the policy says should have posted by now, against what did. */
+function accrualGap(row: BalanceRow): number | null {
+  if (row.expectedAccrualMinutes === null) return null;
+  const gap = row.expectedAccrualMinutes - row.accruedMinutes;
+  // Under two minutes is rounding between the rate and the postings, not a gap.
+  return Math.abs(gap) < 2 ? null : gap;
+}
+
+// ─── Amount field ─────────────────────────────────────────────────────────────
 
 function SignToggle({ sign, onChange }: { sign: "+" | "-"; onChange: (s: "+" | "-") => void }) {
   return (
-    <div className="flex overflow-hidden rounded-md border border-zinc-300 dark:border-zinc-600">
-      {(["+", "-"] as const).map((s) => (
-        <button
-          key={s}
-          type="button"
-          onClick={() => onChange(s)}
-          className={`w-7 py-1 text-xs font-bold font-mono transition-colors ${
-            sign === s
-              ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-              : "bg-white text-zinc-500 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-400"
-          }`}
-        >
-          {s}
-        </button>
-      ))}
+    /* The selected half used to be near-black. The design's selected state is
+       the card surface lifted out of a gray track — the accent is reserved for
+       actions, and a black fill on a sign toggle reads as a warning. */
+    <SegmentedControl
+      size="sm"
+      ariaLabel="Sign"
+      items={(["+", "-"] as const).map((s) => ({ value: s, label: s }))}
+      value={sign}
+      onChange={(v) => onChange(v as "+" | "-")}
+    />
+  );
+}
+
+/**
+ * One signed hours-and-minutes amount.
+ *
+ * <p>Hours and minutes rather than a decimal because these are typed, not
+ * read: a catch-up posting is "3 hours 5 minutes" on the policy sheet, and
+ * asking somebody to enter 3.08 is asking them to enter 3.05 by mistake.
+ */
+function AmountField({
+  label,
+  hint,
+  sign,
+  onSign,
+  hours,
+  onHours,
+  minutes,
+  onMinutes,
+}: {
+  label: string;
+  hint: string;
+  sign: "+" | "-";
+  onSign: (s: "+" | "-") => void;
+  hours: string;
+  onHours: (v: string) => void;
+  minutes: string;
+  onMinutes: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="wms-label">{label}</span>
+      <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{hint}</span>
+      <div className="flex items-center gap-1.5">
+        <SignToggle sign={sign} onChange={onSign} />
+        <div style={{ width: 76 }}>
+          <Input
+            type="number"
+            min={0}
+            placeholder="0"
+            aria-label={`${label} — hours`}
+            value={hours}
+            onChange={(e) => onHours(e.target.value)}
+          />
+        </div>
+        <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>h</span>
+        <div style={{ width: 76 }}>
+          <Input
+            type="number"
+            min={0}
+            max={59}
+            placeholder="0"
+            aria-label={`${label} — minutes`}
+            value={minutes}
+            onChange={(e) => onMinutes(e.target.value)}
+          />
+        </div>
+        <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>m</span>
+      </div>
     </div>
   );
 }
 
-// ─── Add entry modal ──────────────────────────────────────────────────────────
+// ─── Add entry form ───────────────────────────────────────────────────────────
 
 function AddEntryForm({
   row,
@@ -148,385 +262,127 @@ function AddEntryForm({
   return (
     <form
       onSubmit={handleSave}
-      className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50"
+      className="flex flex-col gap-3.5 px-4 py-3.5"
+      style={{ background: "var(--surface-secondary)", borderBottom: "1px solid var(--stroke-divider)" }}
     >
-      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-        Add Entry — {row.leaveTypeName}
-      </p>
+      <span className="wms-overline">Add entry — {row.leaveTypeName}</span>
 
-      {/* Date */}
-      <div className="mb-3">
-        <label className="mb-1 block text-xs text-zinc-500">Effective Date</label>
-        <input
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,30%)),1fr))]">
+        <Input
+          label="Effective Date"
           type="date"
           value={effectiveDate}
           onChange={(e) => setEffectiveDate(e.target.value)}
-          className={inputCls}
         />
       </div>
 
-      {/* Accrual Hours */}
-      <div className="mb-3">
-        <label className="mb-1 block text-xs text-zinc-500">Accrual Hours</label>
-        <p className="mb-1.5 text-[10px] text-zinc-400">
-          Adds to earned total — use for missed or catch-up postings
-        </p>
-        <div className="flex items-center gap-1.5">
-          <SignToggle sign={accrualSign} onChange={setAccrualSign} />
-          <input
-            type="number"
-            min={0}
-            placeholder="0"
-            value={accrualH}
-            onChange={(e) => setAccrualH(e.target.value)}
-            className={`w-16 ${inputCls}`}
-          />
-          <span className="text-xs text-zinc-400">h</span>
-          <input
-            type="number"
-            min={0}
-            max={59}
-            placeholder="0"
-            value={accrualM}
-            onChange={(e) => setAccrualM(e.target.value)}
-            className={`w-16 ${inputCls}`}
-          />
-          <span className="text-xs text-zinc-400">m</span>
-        </div>
-      </div>
-
-      {/* Adjust Earn Hours */}
-      <div className="mb-3">
-        <label className="mb-1 block text-xs text-zinc-500">Adjust Earn Hours</label>
-        <p className="mb-1.5 text-[10px] text-zinc-400">
-          Adjusts the earned total — counts toward accrued hours, use for earn-rate corrections
-        </p>
-        <div className="flex items-center gap-1.5">
-          <SignToggle sign={earnAdjSign} onChange={setEarnAdjSign} />
-          <input
-            type="number"
-            min={0}
-            placeholder="0"
-            value={earnAdjH}
-            onChange={(e) => setEarnAdjH(e.target.value)}
-            className={`w-16 ${inputCls}`}
-          />
-          <span className="text-xs text-zinc-400">h</span>
-          <input
-            type="number"
-            min={0}
-            max={59}
-            placeholder="0"
-            value={earnAdjM}
-            onChange={(e) => setEarnAdjM(e.target.value)}
-            className={`w-16 ${inputCls}`}
-          />
-          <span className="text-xs text-zinc-400">m</span>
-        </div>
-      </div>
-
-      {/* Adjust Hours */}
-      <div className="mb-3">
-        <label className="mb-1 block text-xs text-zinc-500">Adjust Hours</label>
-        <p className="mb-1.5 text-[10px] text-zinc-400">
-          Direct balance adjustment — use for one-time grants or corrections
-        </p>
-        <div className="flex items-center gap-1.5">
-          <SignToggle sign={adjustSign} onChange={setAdjustSign} />
-          <input
-            type="number"
-            min={0}
-            placeholder="0"
-            value={adjustH}
-            onChange={(e) => setAdjustH(e.target.value)}
-            className={`w-16 ${inputCls}`}
-          />
-          <span className="text-xs text-zinc-400">h</span>
-          <input
-            type="number"
-            min={0}
-            max={59}
-            placeholder="0"
-            value={adjustM}
-            onChange={(e) => setAdjustM(e.target.value)}
-            className={`w-16 ${inputCls}`}
-          />
-          <span className="text-xs text-zinc-400">m</span>
-        </div>
-      </div>
-
-      {/* Notes */}
-      <div className="mb-3">
-        <label className="mb-1 block text-xs text-zinc-500">Notes (required)</label>
-        <input
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="e.g. Catch-up for missed bi-weekly posting"
-          required
-          className={`w-full ${inputCls}`}
+      <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(260px,30%)),1fr))]">
+        <AmountField
+          label="Accrual Hours"
+          hint="Adds to the earned total — for missed or catch-up postings"
+          sign={accrualSign} onSign={setAccrualSign}
+          hours={accrualH} onHours={setAccrualH}
+          minutes={accrualM} onMinutes={setAccrualM}
+        />
+        <AmountField
+          label="Adjust Earn Hours"
+          hint="Also counts toward accrued hours — for earn-rate corrections"
+          sign={earnAdjSign} onSign={setEarnAdjSign}
+          hours={earnAdjH} onHours={setEarnAdjH}
+          minutes={earnAdjM} onMinutes={setEarnAdjM}
+        />
+        <AmountField
+          label="Adjust Hours"
+          hint="Balance only — for one-time grants and corrections"
+          sign={adjustSign} onSign={setAdjustSign}
+          hours={adjustH} onHours={setAdjustH}
+          minutes={adjustM} onMinutes={setAdjustM}
         />
       </div>
 
-      {/* Preview */}
+      <Input
+        label="Notes"
+        required
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="e.g. Catch-up for missed bi-weekly posting"
+        hint="Stored on the ledger entry against your name."
+      />
+
       {totalDelta !== 0 && (
-        <div className="mb-3 rounded-md bg-zinc-100 px-3 py-2 text-xs text-zinc-600 dark:bg-zinc-700/50 dark:text-zinc-300">
-          Balance{" "}
-          <span className="font-medium">{fmtHours(row.balanceMinutes)}</span>
-          {" → "}
-          <span className={`font-medium ${previewBalance < 0 ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}>
-            {fmtHours(previewBalance)}
+        <div
+          className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md px-3 py-2"
+          style={{
+            background: "var(--surface-card)",
+            border: "1px solid var(--stroke-divider)",
+            font: "var(--type-body2)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          <span className="tabular">
+            Balance {hrs(row.balanceMinutes)}
+            {" → "}
+            <span
+              style={{
+                fontWeight: "var(--weight-semibold)",
+                color: previewBalance < 0 ? "var(--text-error)" : "var(--text-success)",
+              }}
+            >
+              {hrs(previewBalance)}
+            </span>
+            {" h"}
           </span>
           {accrualMinutes !== 0 && (
-            <span className="ml-3 text-zinc-400">
-              Accrual: {accrualMinutes > 0 ? "+" : ""}{fmtHours(accrualMinutes)}
+            <span className="tabular" style={{ color: "var(--text-tertiary)" }}>
+              Accrual {delta(accrualMinutes)}
             </span>
           )}
           {adjustEarnMinutes !== 0 && (
-            <span className="ml-3 text-zinc-400">
-              Earn Adj: {adjustEarnMinutes > 0 ? "+" : ""}{fmtHours(adjustEarnMinutes)}
+            <span className="tabular" style={{ color: "var(--text-tertiary)" }}>
+              Earn adj. {delta(adjustEarnMinutes)}
             </span>
           )}
           {adjustMinutes !== 0 && (
-            <span className="ml-3 text-zinc-400">
-              Adj: {adjustMinutes > 0 ? "+" : ""}{fmtHours(adjustMinutes)}
+            <span className="tabular" style={{ color: "var(--text-tertiary)" }}>
+              Adj. {delta(adjustMinutes)}
             </span>
           )}
         </div>
       )}
 
-      {error && <p className="mb-2 text-xs text-red-500">{error}</p>}
+      {error && (
+        <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-error)" }}>{error}</p>
+      )}
 
       <div className="flex gap-2">
-        <button type="submit" disabled={isPending || !canSave} className={btnCls}>
-          {isPending ? "Saving…" : "Save"}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-700"
-        >
+        <Button type="submit" size="sm" disabled={isPending || !canSave}>
+          {isPending ? "Saving…" : "Save entry"}
+        </Button>
+        <Button type="button" size="sm" hierarchy="secondary" onClick={onClose}>
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );
 }
 
-// ─── Ledger drill-down ────────────────────────────────────────────────────────
+// ─── Accrual correction ───────────────────────────────────────────────────────
 
-type DetailResult = {
-  openingBalance: number;
-  availableYears: number[];
-  entries: LedgerDetailEntry[];
-};
-
-function typeConfig(type: string, isFuture: boolean) {
-  if (isFuture && type === "FORECAST") return { dot: "bg-indigo-400", text: "text-indigo-600 dark:text-indigo-400" };
-  if (type === "LEAVE_REQUEST") return { dot: "bg-amber-400", text: "text-red-600 dark:text-red-400" };
-  if (type === "ACCRUAL" || type === "CARRY_OVER") return { dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-400" };
-  if (type === "EARNED_ADJUSTMENT") return { dot: "bg-teal-400", text: "text-teal-700 dark:text-teal-400" };
-  if (type === "TIMECARD_DEDUCTION" || type === "USAGE") return { dot: "bg-red-400", text: "text-red-600 dark:text-red-400" };
-  if (type === "FORFEITURE") return { dot: "bg-red-500", text: "text-red-600 dark:text-red-400" };
-  return { dot: "bg-zinc-400", text: "text-zinc-600 dark:text-zinc-300" };
-}
-
-function LedgerTable({ entries, openingBalance }: { entries: LedgerDetailEntry[]; openingBalance: number }) {
-  if (entries.length === 0) {
-    return <p className="py-4 text-center text-sm text-zinc-400">No activity this year.</p>;
-  }
-
-  const reversed = [...entries].reverse();
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[620px] text-xs">
-        <thead>
-          <tr className="border-b border-zinc-200 dark:border-zinc-700">
-            <th className="pb-1.5 pr-3 text-left font-medium uppercase tracking-wide text-zinc-400">Date</th>
-            <th className="pb-1.5 pr-3 text-left font-medium uppercase tracking-wide text-zinc-400">Type</th>
-            <th className="pb-1.5 pr-3 text-left font-medium uppercase tracking-wide text-zinc-400">User</th>
-            <th className="pb-1.5 pr-3 text-right font-medium uppercase tracking-wide text-zinc-400">Hours</th>
-            <th className="pb-1.5 text-right font-medium uppercase tracking-wide text-zinc-400">Available</th>
-          </tr>
-        </thead>
-        <tbody>
-          {reversed.map((e) => {
-            const cfg = typeConfig(e.type, e.isFuture);
-            const sign = e.deltaMinutes > 0 ? "+" : e.deltaMinutes < 0 ? "-" : "";
-            return (
-              <tr
-                key={e.id}
-                className={`border-b border-zinc-100 dark:border-zinc-800 ${e.isFuture ? "opacity-60" : ""}`}
-              >
-                <td className="py-1.5 pr-3 tabular-nums text-zinc-500">
-                  {fmtDate(e.date)}
-                  {e.isFuture && <span className="ml-1 text-[9px] uppercase text-zinc-400">proj.</span>}
-                </td>
-                <td className="py-1.5 pr-3">
-                  <span className="flex items-center gap-1.5">
-                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${cfg.dot}`} />
-                    <span className="text-zinc-700 dark:text-zinc-200">{e.label}</span>
-                    {e.status === "PENDING" && (
-                      <span className="rounded bg-amber-100 px-1 py-0.5 text-[9px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                        PENDING
-                      </span>
-                    )}
-                    {e.note && (
-                      <span className="max-w-[160px] truncate text-zinc-400" title={e.note}>
-                        · {e.note}
-                      </span>
-                    )}
-                  </span>
-                </td>
-                <td className="py-1.5 pr-3 text-zinc-400">
-                  {e.createdByName ?? <span className="text-zinc-300 dark:text-zinc-600">—</span>}
-                </td>
-                <td className={`py-1.5 pr-3 text-right tabular-nums font-medium ${cfg.text}`}>
-                  {sign}{fmtHours(Math.abs(e.deltaMinutes))}
-                </td>
-                <td className="py-1.5 text-right tabular-nums font-semibold text-zinc-700 dark:text-zinc-200">
-                  {fmtHours(e.runningBalance)}
-                </td>
-              </tr>
-            );
-          })}
-          <tr className="border-t-2 border-zinc-200 dark:border-zinc-700">
-            <td className="py-1.5 pr-3 italic text-zinc-400">—</td>
-            <td className="py-1.5 pr-3 italic text-zinc-400">Opening balance</td>
-            <td className="py-1.5 pr-3" />
-            <td className="py-1.5 pr-3 text-right text-zinc-400">—</td>
-            <td className="py-1.5 text-right font-medium tabular-nums text-zinc-600 dark:text-zinc-300">
-              {fmtHours(openingBalance)}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function LedgerDrillDown({
+function CorrectionForm({
+  row,
   employeeId,
-  leaveTypeId,
-  defaultYear,
-  fromDate,
-  toDate,
-  onFilteredBalance,
+  gap,
+  onClose,
 }: {
+  row: BalanceRow;
   employeeId: string;
-  leaveTypeId: string;
-  defaultYear: number;
-  fromDate?: string;
-  toDate?: string;
-  onFilteredBalance?: (v: number | null) => void;
+  gap: number;
+  onClose: () => void;
 }) {
-  const [selectedYear, setSelectedYear] = useState(defaultYear);
-  const [result, setResult] = useState<DetailResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const cache = useRef<Map<number, DetailResult>>(new Map());
-
-  useEffect(() => {
-    const cached = cache.current.get(selectedYear);
-    if (cached) { setResult(cached); return; }
-    setLoading(true);
-    setError(null);
-    getLeaveTypeLedgerDetail({ employeeId, leaveTypeId, year: selectedYear })
-      .then((res) => {
-        if (res.success) { cache.current.set(selectedYear, res.data); setResult(res.data); }
-        else setError((res as { success: false; error: string }).error);
-      })
-      .catch(() => setError("Failed to load"))
-      .finally(() => setLoading(false));
-  }, [employeeId, leaveTypeId, selectedYear]);
-
-  const years = result?.availableYears ?? [defaultYear];
-  const isFiltered = !!(fromDate || toDate);
-
-  // Filter entries to the active date range
-  const allEntries = result?.entries ?? [];
-  const filteredEntries = isFiltered
-    ? allEntries.filter((e) => {
-        if (fromDate && e.date < fromDate) return false;
-        if (toDate && e.date > toDate) return false;
-        return true;
-      })
-    : allEntries;
-
-  // Opening balance for filtered range = runningBalance of last entry before fromDate
-  const filteredOpeningBalance = (() => {
-    if (!result) return 0;
-    if (!fromDate) return result.openingBalance;
-    const before = [...result.entries].reverse().find((e) => e.date < fromDate);
-    return before ? before.runningBalance : result.openingBalance;
-  })();
-
-  // Notify parent of the as-of-to-date balance whenever filtered entries change
-  useEffect(() => {
-    if (!onFilteredBalance) return;
-    if (!isFiltered || !result) { onFilteredBalance(null); return; }
-    const last = filteredEntries[filteredEntries.length - 1];
-    onFilteredBalance(last ? last.runningBalance : filteredOpeningBalance);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, fromDate, toDate, isFiltered]);
-
-  return (
-    <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/40">
-      <div className="flex gap-0 overflow-x-auto border-b border-zinc-200 dark:border-zinc-700">
-        {years.map((y) => (
-          <button
-            key={y}
-            onClick={() => setSelectedYear(y)}
-            className={`shrink-0 px-3 py-1.5 text-xs font-medium transition-colors ${
-              y === selectedYear
-                ? "border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100"
-                : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-            }`}
-          >
-            {y}
-          </button>
-        ))}
-      </div>
-      <div className="p-3">
-        {loading && <p className="py-4 text-center text-xs text-zinc-400">Loading…</p>}
-        {error   && <p className="py-4 text-center text-xs text-red-500">{error}</p>}
-        {!loading && !error && result && (
-          <>
-            {isFiltered && filteredEntries.length === 0 && (
-              <p className="py-4 text-center text-xs text-zinc-400">No activity in the selected date range for {selectedYear}.</p>
-            )}
-            {(!isFiltered || filteredEntries.length > 0) && (
-              <LedgerTable
-                entries={filteredEntries}
-                openingBalance={isFiltered ? filteredOpeningBalance : result.openingBalance}
-              />
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Recalc section ───────────────────────────────────────────────────────────
-
-function RecalcSection({ row, employeeId }: { row: BalanceRow; employeeId: string }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-
-  if (row.expectedAccrualMinutes === null) return null;
-
-  const delta = row.expectedAccrualMinutes - row.accruedMinutes;
-  if (Math.abs(delta) < 2) {
-    return (
-      <p className="mt-1.5 text-[10px] text-emerald-600 dark:text-emerald-400">
-        ✓ Accrual on track ({fmtHours(row.accruedMinutes)} accrued, {fmtHours(row.expectedAccrualMinutes)} expected)
-      </p>
-    );
-  }
 
   function handlePost(e: React.FormEvent) {
     e.preventDefault();
@@ -536,326 +392,458 @@ function RecalcSection({ row, employeeId }: { row: BalanceRow; employeeId: strin
         employeeId,
         leaveTypeId: row.leaveTypeId,
         year: row.year,
-        deltaMinutes: delta,
+        deltaMinutes: gap,
         note,
       });
       if (!result.success) { setError((result as { success: false; error: string }).error); return; }
-      setOpen(false);
-      setNote("");
+      onClose();
       router.refresh();
     });
   }
 
   return (
-    <div className="mt-2">
-      <div className="flex items-center gap-2">
-        <p className="text-[10px] text-amber-600 dark:text-amber-400">
-          Accrual mismatch — expected {fmtHours(row.expectedAccrualMinutes)}, posted {fmtHours(row.accruedMinutes)} ({delta > 0 ? "+" : ""}{fmtHours(delta)})
-        </p>
-        {!open && (
-          <button onClick={() => setOpen(true)} className="shrink-0 text-[10px] text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400">
-            Post correction
-          </button>
-        )}
+    <form
+      onSubmit={handlePost}
+      className="flex flex-col gap-3 px-4 py-3.5"
+      style={{ background: "var(--surface-secondary)", borderBottom: "1px solid var(--stroke-divider)" }}
+    >
+      <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+        Posts an ADJUSTMENT of{" "}
+        <span className="tabular" style={{ fontWeight: "var(--weight-semibold)", color: deltaColor(gap) }}>
+          {delta(gap)} h
+        </span>{" "}
+        to bring accrued hours to {hrs(row.expectedAccrualMinutes ?? 0)} h.
+      </span>
+
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-[240px] flex-1">
+          <Input
+            label="Reason"
+            required
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="e.g. Catch-up for missed semi-monthly posting"
+          />
+        </div>
+        <Button type="submit" size="sm" disabled={isPending || !note.trim()}>
+          {isPending ? "Posting…" : "Post correction"}
+        </Button>
+        <Button type="button" size="sm" hierarchy="secondary" onClick={onClose}>
+          Cancel
+        </Button>
       </div>
-      {open && (
-        <form onSubmit={handlePost} className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/40 dark:bg-amber-900/10">
-          <p className="mb-2 text-xs text-amber-700 dark:text-amber-300">
-            Posts an ADJUSTMENT of <strong>{delta > 0 ? "+" : ""}{fmtHours(delta)}</strong> to bring accrual to {fmtHours(row.expectedAccrualMinutes)}.
-          </p>
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="min-w-52 flex-1">
-              <label className="mb-1 block text-xs text-zinc-500">Reason (required)</label>
-              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Catch-up for missed semi-monthly posting" required className={`w-full ${inputCls}`} />
-            </div>
-            <div className="flex gap-2">
-              <button type="submit" disabled={isPending || !note.trim()} className={btnCls}>
-                {isPending ? "Posting…" : "Post correction"}
-              </button>
-              <button type="button" onClick={() => { setOpen(false); setError(null); setNote(""); }}
-                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-700">
-                Cancel
-              </button>
-            </div>
-          </div>
-          {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
-        </form>
+
+      {error && (
+        <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-error)" }}>{error}</p>
       )}
-    </div>
+    </form>
   );
 }
 
-// ─── Balance row item ─────────────────────────────────────────────────────────
+// ─── Ledger ───────────────────────────────────────────────────────────────────
 
-function BalanceRowItem({
+type DetailResult = {
+  openingBalance: number;
+  availableYears: number[];
+  entries: LedgerDetailEntry[];
+};
+
+/**
+ * One leave type's ledger: every posting, usage and adjustment.
+ *
+ * <p>The entry kind is plain text rather than a coloured pill. There is no
+ * tone helper for ledger actions, and inventing a local colour map here is how
+ * the status pills drifted apart in the first place — so the colour is spent
+ * where it means something, on the sign of the change.
+ *
+ * <p>Mounted with the leave type as its key, so switching rows starts a clean
+ * year selection and cache rather than showing the previous type's year.
+ */
+function LedgerCard({
   row,
   employeeId,
+  canManage,
   fromDate,
   toDate,
 }: {
   row: BalanceRow;
   employeeId: string;
+  canManage: boolean;
   fromDate?: string;
   toDate?: string;
 }) {
-  const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [selectedYear, setSelectedYear] = useState(row.year);
+  const [result, setResult] = useState<DetailResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [filteredAvailable, setFilteredAvailable] = useState<number | null>(null);
-  const onFilteredBalance = useCallback((v: number | null) => setFilteredAvailable(v), []);
+  const [fixOpen, setFixOpen] = useState(false);
+  const cache = useRef<Map<number, DetailResult>>(new Map());
 
-  const forecastForAvail =
-    row.forecastApplyToAvailable && row.forecastedMinutes != null ? row.forecastedMinutes : 0;
-  const currentAvailable = row.balanceMinutes - row.approvedMinutes - row.pendingMinutes + forecastForAvail;
+  useEffect(() => {
+    const cached = cache.current.get(selectedYear);
+    if (cached) { setResult(cached); return; }
+    setLoading(true);
+    setError(null);
+    getLeaveTypeLedgerDetail({ employeeId, leaveTypeId: row.leaveTypeId, year: selectedYear })
+      .then((res) => {
+        if (res.success) { cache.current.set(selectedYear, res.data); setResult(res.data); }
+        else setError((res as { success: false; error: string }).error);
+      })
+      .catch(() => setError("Failed to load"))
+      .finally(() => setLoading(false));
+  }, [employeeId, row.leaveTypeId, selectedYear]);
+
+  const years = result?.availableYears ?? [row.year];
   const isFiltered = !!(fromDate || toDate);
-  const displayAvailable = isFiltered && filteredAvailable !== null ? filteredAvailable : currentAvailable;
+
+  const allEntries = result?.entries ?? [];
+  const entries = isFiltered
+    ? allEntries.filter((e) => {
+        if (fromDate && e.date < fromDate) return false;
+        if (toDate && e.date > toDate) return false;
+        return true;
+      })
+    : allEntries;
+
+  // Opening balance for a filtered range is where the last entry before the
+  // range left off, not where the year started.
+  const openingBalance = (() => {
+    if (!result) return 0;
+    if (!fromDate) return result.openingBalance;
+    const before = [...result.entries].reverse().find((e) => e.date < fromDate);
+    return before ? before.runningBalance : result.openingBalance;
+  })();
+
+  const asOfBalance = entries.length > 0 ? entries[entries.length - 1].runningBalance : openingBalance;
+  const gap = accrualGap(row);
+
+  const rateLabel =
+    row.policyAnnualHours == null
+      ? "—"
+      : row.policyRateMode === "PER_POSTING"
+        ? `${row.policyAnnualHours.toFixed(2)} / period`
+        : `${row.policyAnnualHours.toFixed(2)} / year`;
+
+  const available = availableMinutes(row);
+
+  // The design's summary strip, with the two figures it asks for that this app
+  // does not hold — a balance cap and the next posting date — replaced by the
+  // two it does: what has accrued this year, and what is actually spendable.
+  const summary: { label: string; value: string; color?: string }[] = [
+    { label: "Current Balance", value: `${hrs(row.balanceMinutes)} h` },
+    { label: "Accrual Rate", value: rateLabel },
+    { label: "Accrued This Year", value: `${hrs(row.accruedMinutes)} h` },
+    isFiltered && toDate
+      ? {
+          label: `Balance as at ${fmtDate(toDate)}`,
+          value: result ? `${hrs(asOfBalance)} h` : "—",
+        }
+      : {
+          label: "Available",
+          value: `${hrs(available)} h`,
+          color: available < 0 ? "var(--text-error)" : undefined,
+        },
+  ];
+
+  // Newest first, the way the ledger is read. The opening balance is the foot
+  // of the table rather than another row in it — it is where the column starts
+  // from, not something that happened.
+  const newestFirst = [...entries].reverse();
 
   return (
-    <div className="border-b border-zinc-100 py-3 last:border-0 dark:border-zinc-800">
-      {/* Clickable tile: name + metrics */}
+    <Card
+      title={`Ledger — ${row.leaveTypeName}`}
+      subtitle={[
+        row.policyName ?? "No policy",
+        gap === null && row.expectedAccrualMinutes !== null ? "accrual on track" : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
+      padding={0}
+      actions={
+        <>
+          <SegmentedControl
+            size="sm"
+            ariaLabel="Accrual year"
+            items={years.map((y) => ({ value: String(y), label: String(y) }))}
+            value={String(selectedYear)}
+            onChange={(v) => setSelectedYear(Number(v))}
+          />
+          {canManage && (
+            <Button
+              size="sm"
+              hierarchy="secondary"
+              leadingIcon={<Plus className="h-3.5 w-3.5" />}
+              onClick={() => { setAddOpen((v) => !v); setFixOpen(false); }}
+            >
+              {addOpen ? "Cancel" : "Add entry"}
+            </Button>
+          )}
+        </>
+      }
+    >
       <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setLedgerOpen((v) => !v)}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setLedgerOpen((v) => !v)}
-        className="cursor-pointer select-none rounded-md -mx-1 px-1 py-0.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/30"
+        className="grid gap-4 px-4 py-3.5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr))]"
+        style={{ borderBottom: "1px solid var(--stroke-divider)" }}
       >
-        <div className="flex items-center gap-1">
-          {ledgerOpen
-            ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-            : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-          }
-          <span className="text-sm font-medium text-zinc-900 dark:text-white">
-            {row.leaveTypeName}
-          </span>
-        </div>
-
-        {/* Summary metrics */}
-        <div className="mt-1.5 grid grid-cols-6 gap-3 pl-5 pr-2">
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-                {row.policyRateMode === "PER_POSTING" ? "Per Pay Period" : "Annual Total"}
-              </p>
-              <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
-                {row.policyAnnualHours != null
-                  ? row.policyRateMode === "PER_POSTING"
-                    ? fmtHours(Math.round(row.policyAnnualHours * 60))
-                    : `${Number.isInteger(row.policyAnnualHours) ? row.policyAnnualHours : row.policyAnnualHours.toFixed(1)}h`
-                  : <span className="text-xs font-normal text-zinc-400">No policy</span>
-                }
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Accrued</p>
-              <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">{fmtHours(row.accruedMinutes)}</p>
-            </div>
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Forecasted</p>
-              {row.forecastedMinutes != null
-                ? <p className="mt-0.5 text-sm font-semibold text-indigo-600 dark:text-indigo-400">+{fmtHours(row.forecastedMinutes)}</p>
-                : <p className="mt-0.5 text-sm font-semibold text-zinc-400 dark:text-zinc-600">N/A</p>
-              }
-            </div>
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Net Adj.</p>
-              {row.netAdjustmentMinutes !== null
-                ? <p className={`mt-0.5 text-sm font-semibold ${row.netAdjustmentMinutes > 0 ? "text-emerald-600 dark:text-emerald-400" : row.netAdjustmentMinutes < 0 ? "text-red-600 dark:text-red-400" : "text-zinc-700 dark:text-zinc-200"}`}>
-                    {row.netAdjustmentMinutes > 0 ? "+" : ""}{fmtHours(row.netAdjustmentMinutes)}
-                  </p>
-                : <p className="mt-0.5 text-sm font-semibold text-zinc-400 dark:text-zinc-600">N/A</p>
-              }
-            </div>
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Approved</p>
-              <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
-                {fmtHours(row.approvedMinutes + row.postedMinutes)}
-              </p>
-              {row.pendingMinutes > 0 && <p className="text-[10px] text-zinc-400">{fmtHours(row.pendingMinutes)} pend.</p>}
-              {row.postedMinutes > 0 && <p className="text-[10px] text-zinc-400">{fmtHours(row.postedMinutes)} timecard</p>}
-            </div>
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-                Available{isFiltered && toDate ? ` as of ${fmtDate(toDate)}` : ""}
-              </p>
-              <p className={`mt-0.5 text-sm font-semibold ${displayAvailable < 0 ? "text-red-600 dark:text-red-400" : "text-zinc-700 dark:text-zinc-200"}`}>
-                {isFiltered && filteredAvailable === null && !ledgerOpen
-                  ? <span className="text-zinc-400 text-xs">expand to see</span>
-                  : fmtHours(displayAvailable)
-                }
-              </p>
-              {!isFiltered && row.forecastApplyToAvailable && forecastForAvail > 0 && (
-                <p className="text-[10px] text-indigo-500 dark:text-indigo-400">incl. projected</p>
-              )}
-            </div>
-        </div>
+        {summary.map((s) => (
+          <div key={s.label} className="flex min-w-0 flex-col gap-0.5">
+            <span className="wms-label">{s.label}</span>
+            <span
+              className="tabular"
+              style={{
+                font: "var(--type-body1)",
+                fontWeight: "var(--weight-medium)",
+                color: s.color ?? "var(--text-primary)",
+              }}
+            >
+              {s.value}
+            </span>
+          </div>
+        ))}
       </div>
 
-      {row.policyName && <RecalcSection row={row} employeeId={employeeId} />}
-
-      {/* Expanded ledger section */}
-      {ledgerOpen && (
-        <div className="mt-2">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Activity</span>
-            <button
-              type="button"
-              onClick={() => setAddOpen((v) => !v)}
-              className="flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-700"
-            >
-              <Plus className="h-3 w-3" />
-              {addOpen ? "Cancel" : "Add"}
-            </button>
-          </div>
-          {addOpen && (
-            <AddEntryForm row={row} employeeId={employeeId} onClose={() => setAddOpen(false)} />
-          )}
-          <LedgerDrillDown
-            employeeId={employeeId}
-            leaveTypeId={row.leaveTypeId}
-            defaultYear={row.year}
-            fromDate={fromDate}
-            toDate={toDate}
-            onFilteredBalance={onFilteredBalance}
+      {gap !== null && (
+        <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
+          <Banner
+            tone="warning"
+            title="Accrual does not match the policy"
+            body={`The policy should have posted ${hrs(row.expectedAccrualMinutes ?? 0)} h by now; the ledger has ${hrs(row.accruedMinutes)} h.`}
+            meta={`Difference ${delta(gap)} h`}
+            actions={
+              canManage && !fixOpen ? (
+                <Button size="sm" hierarchy="secondary" onClick={() => { setFixOpen(true); setAddOpen(false); }}>
+                  Post correction
+                </Button>
+              ) : undefined
+            }
           />
         </div>
       )}
-    </div>
+
+      {canManage && fixOpen && gap !== null && (
+        <CorrectionForm row={row} employeeId={employeeId} gap={gap} onClose={() => setFixOpen(false)} />
+      )}
+
+      {canManage && addOpen && (
+        <AddEntryForm row={row} employeeId={employeeId} onClose={() => setAddOpen(false)} />
+      )}
+
+      {loading && (
+        <p className="px-4 py-10 text-center" style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-tertiary)" }}>
+          Loading…
+        </p>
+      )}
+
+      {error && (
+        <div className="px-4 py-3">
+          <Banner tone="error" title="The ledger could not be loaded" body={error} />
+        </div>
+      )}
+
+      {!loading && !error && result && (
+        newestFirst.length === 0 ? (
+          <EmptyState
+            icon={<Hourglass className="h-8 w-8" />}
+            title={isFiltered ? "No activity in this date range" : `No activity in ${selectedYear}`}
+            body={
+              isFiltered
+                ? `Nothing posted, used or adjusted between the dates you chose. The balance carried into the range was ${hrs(openingBalance)} h.`
+                : "Postings, leave taken and adjustments all appear here as they happen."
+            }
+          />
+        ) : (
+          <>
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Date</TH>
+                  <TH>Entry</TH>
+                  <TH>Detail</TH>
+                  <TH numeric>Change</TH>
+                  <TH numeric>Balance</TH>
+                  <TH>By</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {newestFirst.map((e) => (
+                  // Projected rows are dimmed rather than dropped: the running
+                  // balance after them is what somebody booking leave in
+                  // November is actually spending.
+                  <TR key={e.id} style={e.isFuture ? { opacity: 0.6 } : undefined}>
+                    <TD className="tabular" style={{ color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                      {fmtDate(e.date)}
+                    </TD>
+                    <TD>
+                      <span className="flex items-center gap-2">
+                        <span>{e.label}</span>
+                        {e.isFuture && <Badge size="sm">Projected</Badge>}
+                        {e.status === "PENDING" && (
+                          <Badge tone={leaveTone("PENDING")} size="sm">Pending</Badge>
+                        )}
+                      </span>
+                    </TD>
+                    <TD style={{ color: "var(--text-secondary)" }} title={e.note ?? undefined}>
+                      {/* Clamped on a block inside the cell: the table sizes to
+                          max-content, so a max-width on the td is ignored and
+                          one long note widens every column after it. */}
+                      <div className="max-w-[260px] truncate">
+                        {e.note ?? <span style={{ color: "var(--text-tertiary)" }}>—</span>}
+                      </div>
+                    </TD>
+                    <TD numeric style={{ fontWeight: "var(--weight-medium)", color: deltaColor(e.deltaMinutes) }}>
+                      {delta(e.deltaMinutes)}
+                    </TD>
+                    <TD numeric style={{ fontWeight: "var(--weight-semibold)", color: "var(--text-secondary)" }}>
+                      {hrs(e.runningBalance)}
+                    </TD>
+                    <TD style={{ color: "var(--text-tertiary)" }}>
+                      {e.createdByName ?? "—"}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+              <TFoot>
+                <TR>
+                  <TD style={{ color: "var(--text-tertiary)" }}>—</TD>
+                  <TD colSpan={2} style={{ fontWeight: "var(--weight-medium)", color: "var(--text-secondary)" }}>
+                    {isFiltered ? "Balance carried into range" : "Opening balance"}
+                  </TD>
+                  <TD numeric style={{ color: "var(--text-tertiary)" }}>—</TD>
+                  <TD numeric style={{ fontWeight: "var(--weight-semibold)", color: "var(--text-secondary)" }}>
+                    {hrs(openingBalance)}
+                  </TD>
+                  <TD />
+                </TR>
+              </TFoot>
+            </Table>
+            <TableFooter
+              shown={newestFirst.length}
+              total={isFiltered ? allEntries.length : newestFirst.length}
+              label="entries"
+            />
+          </>
+        )
+      )}
+    </Card>
   );
 }
 
-// ─── Past-year row (simplified) ───────────────────────────────────────────────
+// ─── Balances table row ───────────────────────────────────────────────────────
 
-function PastYearRowItem({
+function BalanceTableRow({
   row,
-  employeeId,
-  year,
+  selected,
+  onSelect,
 }: {
-  row: PastYearRow;
-  employeeId: string;
-  year: number;
+  row: BalanceRow;
+  selected: boolean;
+  onSelect: () => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const gap = accrualGap(row);
+  const available = availableMinutes(row);
+  const forecastInAvailable =
+    row.forecastApplyToAvailable && row.forecastedMinutes != null && row.forecastedMinutes > 0;
 
   return (
-    <div className="border-b border-zinc-100 py-3 last:border-0 dark:border-zinc-800">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setOpen((v) => !v)}
-        className="-mx-1 cursor-pointer select-none rounded-md px-1 py-0.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/30"
-      >
-        <div className="flex items-center gap-1">
-          {open
-            ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-            : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-          }
-          <span className="text-sm font-medium text-zinc-900 dark:text-white">{row.leaveTypeName}</span>
-        </div>
-        <div className="mt-1.5 grid grid-cols-5 gap-3 pl-5 pr-2">
-          <div>
-            <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Carry-over</p>
-            <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
-              {row.carryOverMinutes > 0 ? `+${fmtHours(row.carryOverMinutes)}` : fmtHours(row.carryOverMinutes)}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Accrued</p>
-            <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">{fmtHours(row.accruedMinutes)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Net Adj.</p>
-            <p className={`mt-0.5 text-sm font-semibold ${row.adjustedMinutes > 0 ? "text-emerald-600 dark:text-emerald-400" : row.adjustedMinutes < 0 ? "text-red-600 dark:text-red-400" : "text-zinc-700 dark:text-zinc-200"}`}>
-              {row.adjustedMinutes > 0 ? "+" : ""}{fmtHours(row.adjustedMinutes)}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Used</p>
-            <p className="mt-0.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200">{row.usedMinutes > 0 ? "-" : ""}{fmtHours(row.usedMinutes)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Final Balance</p>
-            <p className={`mt-0.5 text-sm font-semibold ${row.finalBalanceMinutes < 0 ? "text-red-600 dark:text-red-400" : "text-zinc-700 dark:text-zinc-200"}`}>
-              {fmtHours(row.finalBalanceMinutes)}
-            </p>
-          </div>
-        </div>
-      </div>
-      {open && (
-        <div className="mt-2">
-          <LedgerDrillDown employeeId={employeeId} leaveTypeId={row.leaveTypeId} defaultYear={year} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Past-year accordion section ──────────────────────────────────────────────
-
-function PastYearSection({ year, employeeId }: { year: number; employeeId: string }) {
-  const [open, setOpen] = useState(false);
-  const [rows, setRows] = useState<PastYearRow[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  function toggle() {
-    if (!open && rows === null && !loading) {
-      setLoading(true);
-      setError(null);
-      getAccrualYearSummary({ employeeId, year })
-        .then((res) => {
-          if (res.success) setRows(res.data as PastYearRow[]);
-          else setError((res as { success: false; error: string }).error);
-        })
-        .catch(() => setError("Failed to load"))
-        .finally(() => setLoading(false));
-    }
-    setOpen((v) => !v);
-  }
-
-  const tracked   = rows?.filter((r) => r.accrualTracked) ?? [];
-  const untracked = rows?.filter((r) => !r.accrualTracked) ?? [];
-
-  return (
-    <div className="border-t border-zinc-100 dark:border-zinc-800">
-      <button
-        type="button"
-        onClick={toggle}
-        className="my-3 flex w-full items-center gap-2 text-left"
-      >
-        {open
-          ? <ChevronDown className="h-3.5 w-3.5 text-zinc-400" />
-          : <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />
-        }
-        <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{year}</span>
-        <div className="flex-1 border-t border-zinc-100 dark:border-zinc-800" />
-      </button>
-      {open && (
-        <div>
-          {loading && <p className="pb-3 text-xs text-zinc-400">Loading…</p>}
-          {error   && <p className="pb-3 text-xs text-red-500">{error}</p>}
-          {rows !== null && rows.length === 0 && (
-            <p className="pb-3 text-xs text-zinc-400">No accrual data for {year}.</p>
+    <TR onClick={onSelect} selected={selected}>
+      <TD>
+        <span className="flex items-center gap-2">
+          <span style={{ fontWeight: "var(--weight-medium)", whiteSpace: "nowrap" }}>
+            {row.leaveTypeName}
+          </span>
+          {gap !== null && (
+            <Badge tone="warning" size="sm">
+              {gap > 0 ? "Behind" : "Ahead"}
+            </Badge>
           )}
-          {tracked.map((row) => (
-            <PastYearRowItem key={row.leaveTypeId} row={row} employeeId={employeeId} year={year} />
-          ))}
-          {untracked.length > 0 && (
-            <div className="mt-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
-              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-400">Other Leave Types</p>
-              {untracked.map((row) => (
-                <PastYearRowItem key={row.leaveTypeId} row={row} employeeId={employeeId} year={year} />
-              ))}
-            </div>
+        </span>
+      </TD>
+
+      <TD style={{ color: "var(--text-secondary)" }}>
+        {row.policyName ? (
+          <span className="flex flex-col">
+            <span style={{ whiteSpace: "nowrap" }}>{row.policyName}</span>
+            <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+              {row.policyRateMode === "PER_POSTING" ? "Per pay period" : "Per year"}
+            </span>
+          </span>
+        ) : (
+          <span style={{ color: "var(--text-tertiary)" }}>No policy</span>
+        )}
+      </TD>
+
+      <TD numeric style={{ color: "var(--text-secondary)" }}>
+        {row.policyAnnualHours != null
+          ? row.policyAnnualHours.toFixed(2)
+          : <span style={{ color: "var(--text-tertiary)" }}>—</span>}
+      </TD>
+
+      <TD numeric>{hrs(row.accruedMinutes)}</TD>
+
+      <TD numeric style={{ color: "var(--text-accent)" }}>
+        {row.forecastedMinutes != null
+          ? delta(row.forecastedMinutes)
+          : <span style={{ color: "var(--text-tertiary)" }}>—</span>}
+      </TD>
+
+      <TD
+        numeric
+        style={{
+          color:
+            row.netAdjustmentMinutes !== null
+              ? deltaColor(row.netAdjustmentMinutes)
+              : "var(--text-tertiary)",
+        }}
+      >
+        {row.netAdjustmentMinutes !== null ? delta(row.netAdjustmentMinutes) : "—"}
+      </TD>
+
+      <TD numeric>
+        <span className="flex flex-col items-end">
+          <span>{hrs(row.approvedMinutes + row.postedMinutes)}</span>
+          {row.pendingMinutes > 0 && (
+            <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+              {hrs(row.pendingMinutes)} pending
+            </span>
           )}
-        </div>
-      )}
-    </div>
+          {row.postedMinutes > 0 && (
+            <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+              {hrs(row.postedMinutes)} on timecards
+            </span>
+          )}
+        </span>
+      </TD>
+
+      <TD numeric style={{ fontWeight: "var(--weight-semibold)" }}>
+        <span className="flex flex-col items-end">
+          <span style={{ color: available < 0 ? "var(--text-error)" : "var(--text-primary)" }}>
+            {hrs(available)}
+          </span>
+          {forecastInAvailable && (
+            <span style={{ font: "var(--type-caption1)", fontWeight: "var(--weight-regular)", color: "var(--text-accent)" }}>
+              incl. projected
+            </span>
+          )}
+        </span>
+      </TD>
+
+      <TD align="right" style={{ width: 40 }}>
+        <ChevronRight
+          className="h-4 w-4"
+          style={{ color: selected ? "var(--icon-accent)" : "var(--icon-tertiary)" }}
+          aria-hidden="true"
+        />
+      </TD>
+    </TR>
   );
 }
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
-export function LeaveBalancesPanel({ employeeId, balances }: Props) {
+export function LeaveBalancesPanel({ employeeId, balances, canManage }: Props) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [otherOpen, setOtherOpen] = useState(false);
   const [inputFrom, setInputFrom] = useState("");
   const [inputTo, setInputTo] = useState("");
@@ -876,97 +864,168 @@ export function LeaveBalancesPanel({ employeeId, balances }: Props) {
 
   const tracked   = balances.filter((r) => r.accrualTracked);
   const untracked = balances.filter((r) => !r.accrualTracked);
+  const selected  = balances.find((r) => r.leaveTypeId === selectedId) ?? null;
+  const year = balances[0]?.year;
+
+  const shown = tracked.length + (otherOpen ? untracked.length : 0);
 
   return (
-    <div>
-      {/* Date range filter */}
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 dark:border-zinc-700 dark:bg-zinc-800/50">
-        <span className="text-xs font-medium text-zinc-500">Filter by date range</span>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-zinc-400">From</span>
-          <input
-            type="date"
-            value={inputFrom}
-            onChange={(e) => setInputFrom(e.target.value)}
-            className={inputCls}
-          />
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-zinc-400">To</span>
-          <input
-            type="date"
-            value={inputTo}
-            onChange={(e) => setInputTo(e.target.value)}
-            className={inputCls}
-          />
-        </div>
-        <button
-          type="button"
-          onClick={applyFilter}
-          disabled={!inputFrom && !inputTo}
-          className={btnCls}
-        >
-          Apply Filter
-        </button>
-        {isFiltered && (
-          <button
-            type="button"
-            onClick={clearFilter}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-700"
-          >
-            Clear Filter
-          </button>
-        )}
-        {isFiltered && (
-          <span className="text-xs text-amber-600 dark:text-amber-400">
-            Showing activity{activeFrom ? ` from ${fmtDate(activeFrom)}` : ""}
-            {activeTo ? ` to ${fmtDate(activeTo)}` : ""}. Expand a leave type to see the filtered ledger and as-of balance.
-          </span>
-        )}
-      </div>
-
-      {balances.length === 0 ? (
-        <p className="py-3 text-sm text-zinc-400">
-          No active leave types configured. Add leave types in{" "}
-          <a href="/admin/leave-types" className="text-blue-600 hover:underline">Admin → Leave Types</a>.
-        </p>
-      ) : (
-        <>
-          {tracked.map((row) => (
-            <BalanceRowItem
-              key={row.leaveTypeId}
-              row={row}
-              employeeId={employeeId}
-              fromDate={activeFrom || undefined}
-              toDate={activeTo || undefined}
+    <>
+      <Card
+        title="Date Range"
+        subtitle="Narrows the ledger below and reports the balance as at the end date."
+      >
+        <div className="flex flex-wrap items-end gap-3">
+          <div style={{ width: 180 }}>
+            <Input
+              label="From"
+              type="date"
+              value={inputFrom}
+              onChange={(e) => setInputFrom(e.target.value)}
             />
-          ))}
-          {untracked.length > 0 && (
-            <>
-              <button
-                type="button"
-                onClick={() => setOtherOpen((v) => !v)}
-                className="my-3 flex w-full items-center gap-2 text-left"
-              >
-                {otherOpen ? <ChevronDown className="h-3.5 w-3.5 text-zinc-400" /> : <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />}
-                <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-                  Other Leave Types ({untracked.length})
-                </span>
-                <div className="flex-1 border-t border-zinc-100 dark:border-zinc-800" />
-              </button>
-              {otherOpen && untracked.map((row) => (
-                <BalanceRowItem
-                  key={row.leaveTypeId}
-                  row={row}
-                  employeeId={employeeId}
-                  fromDate={activeFrom || undefined}
-                  toDate={activeTo || undefined}
-                />
-              ))}
-            </>
+          </div>
+          <div style={{ width: 180 }}>
+            <Input
+              label="To"
+              type="date"
+              value={inputTo}
+              onChange={(e) => setInputTo(e.target.value)}
+            />
+          </div>
+          <Button onClick={applyFilter} disabled={!inputFrom && !inputTo}>
+            Apply
+          </Button>
+          {isFiltered && (
+            <Button hierarchy="secondary" onClick={clearFilter}>
+              Clear
+            </Button>
           )}
-        </>
+          {isFiltered && (
+            <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+              Showing activity
+              {activeFrom ? ` from ${fmtDate(activeFrom)}` : ""}
+              {activeTo ? ` to ${fmtDate(activeTo)}` : ""}.
+            </span>
+          )}
+        </div>
+      </Card>
+
+      <Card
+        title="Leave Balances"
+        subtitle={
+          balances.length > 0
+            ? `Hours${year ? ` · ${year} accrual year` : ""} · open a row for its ledger`
+            : undefined
+        }
+        padding={0}
+      >
+        {balances.length === 0 ? (
+          <EmptyState
+            icon={<Hourglass className="h-8 w-8" />}
+            title="No active leave types"
+            body="Nothing can accrue until at least one leave type exists."
+            action={
+              canManage ? (
+                <LinkButton href="/admin/site-settings?tab=leave-types" hierarchy="secondary" size="sm">
+                  Leave Types
+                </LinkButton>
+              ) : undefined
+            }
+          />
+        ) : (
+          <>
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Leave Type</TH>
+                  <TH>Policy</TH>
+                  <TH numeric>Rate</TH>
+                  <TH numeric>Accrued</TH>
+                  <TH numeric>Forecast</TH>
+                  <TH numeric>Net Adj.</TH>
+                  <TH numeric>Booked</TH>
+                  <TH numeric>Available</TH>
+                  <TH align="right" />
+                </TR>
+              </THead>
+              <TBody>
+                {tracked.map((row) => (
+                  <BalanceTableRow
+                    key={row.leaveTypeId}
+                    row={row}
+                    selected={row.leaveTypeId === selectedId}
+                    onSelect={() => setSelectedId(row.leaveTypeId)}
+                  />
+                ))}
+
+                {untracked.length > 0 && (
+                  <TR>
+                    {/* A section break inside the table rather than a second
+                        card: these are leave types with the same columns, and
+                        splitting them out made the footer count below stop
+                        matching what the page shows. */}
+                    <TD
+                      colSpan={BALANCE_COLS}
+                      style={{ padding: 0, background: "var(--surface-secondary)" }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setOtherOpen((v) => !v)}
+                        className="flex w-full items-center gap-2 px-3.5 py-2 text-left"
+                        style={{ background: "transparent", border: 0, cursor: "pointer" }}
+                      >
+                        {otherOpen
+                          ? <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--icon-tertiary)" }} />
+                          : <ChevronRight className="h-3.5 w-3.5" style={{ color: "var(--icon-tertiary)" }} />}
+                        <span className="wms-overline">
+                          Other leave types ({untracked.length})
+                        </span>
+                        <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                          not accrual-tracked
+                        </span>
+                      </button>
+                    </TD>
+                  </TR>
+                )}
+
+                {otherOpen &&
+                  untracked.map((row) => (
+                    <BalanceTableRow
+                      key={row.leaveTypeId}
+                      row={row}
+                      selected={row.leaveTypeId === selectedId}
+                      onSelect={() => setSelectedId(row.leaveTypeId)}
+                    />
+                  ))}
+              </TBody>
+            </Table>
+            <TableFooter shown={shown} total={balances.length} label="leave types" />
+          </>
+        )}
+      </Card>
+
+      {selected ? (
+        <LedgerCard
+          // Keyed on the leave type so switching rows starts a fresh year
+          // selection and cache rather than inheriting the previous one.
+          key={selected.leaveTypeId}
+          row={selected}
+          employeeId={employeeId}
+          canManage={canManage}
+          fromDate={activeFrom || undefined}
+          toDate={activeTo || undefined}
+        />
+      ) : (
+        balances.length > 0 && (
+          <Card title="Ledger" subtitle="Every posting, usage and adjustment" padding={0}>
+            <EmptyState
+              icon={<Hourglass className="h-8 w-8" />}
+              title="Pick a leave type"
+              body="Choose a row above to see how its balance was arrived at, entry by entry."
+            />
+          </Card>
+        )
       )}
-    </div>
+    </>
   );
 }

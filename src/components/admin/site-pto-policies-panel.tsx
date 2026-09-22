@@ -62,7 +62,7 @@ export function SitePtoPoliciesPanel({ siteId, leaveTypes, policies, assignments
 
           return (
             <div key={lt.id} className="flex items-center gap-3 rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50">
-              <span className="w-32 text-sm font-medium text-zinc-700 dark:text-zinc-300 shrink-0">
+              <span className="w-32 text-sm font-medium text-[var(--text-secondary)] shrink-0">
                 {lt.name}
               </span>
               <select

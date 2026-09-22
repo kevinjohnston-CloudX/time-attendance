@@ -1,12 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { Settings, Clock, BookOpen, CalendarClock, ChevronRight } from "lucide-react";
+import { Settings, Clock, BookOpen, CalendarClock } from "lucide-react";
 import { RuleSetsManager } from "@/components/admin/rule-sets-manager";
 import { ShiftsManager } from "@/components/admin/shifts-manager";
 import { HolidayRulesManager } from "@/components/admin/holiday-rules-manager";
 import { PtoPoliciesManager } from "@/components/admin/pto-policies-manager";
 import type { RuleSet } from "@prisma/client";
+
+/**
+ * Rules Setup — four editors behind one screen.
+ *
+ * <p>Laid out like the Administration hub it is reached from, and like its
+ * sibling Company Setup: the areas in a card at the top, the open one below
+ * it. The previous left rail put the editors on --surface-card while every
+ * manager below builds its rows out of .ta-card, so the rows read as cards on
+ * a card. On the page background they read as panels again.
+ *
+ * <p>The area is React state rather than a query parameter. Switching it does
+ * not re-query: the server component above already fetched all six datasets in
+ * one round, so a link per area would re-run six server actions to reveal rows
+ * the browser is already holding. `?tab=` still chooses the area on arrival,
+ * which is what the hub links and the accrual screen's "open this policy" link
+ * depend on.
+ */
 
 type Tab = "rule-sets" | "shifts" | "holiday-rules" | "leave-policies";
 
@@ -16,13 +33,6 @@ interface TabDef {
   icon: React.ElementType;
   title: string;
   description?: string;
-  group?: string;
-}
-
-interface GroupDef {
-  id: string;
-  label: string;
-  icon: React.ElementType;
 }
 
 const TABS: TabDef[] = [
@@ -71,6 +81,7 @@ interface Props {
   payCodes: any[];
   initialTab?: string;
   initialPolicyId?: string;
+  initialRuleSetView?: string;
 }
 
 export function RulesSetupClient({
@@ -82,68 +93,102 @@ export function RulesSetupClient({
   payCodes,
   initialTab,
   initialPolicyId,
+  initialRuleSetView,
 }: Props) {
   const defaultTab =
-    initialTab && TABS.some((t) => t.id === initialTab)
-      ? (initialTab as Tab)
-      : TABS[0].id;
+    initialTab && TABS.some((t) => t.id === initialTab) ? (initialTab as Tab) : TABS[0].id;
 
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
 
   const current = TABS.find((t) => t.id === activeTab);
 
+  /** How many rows sit behind each area, so the rail says what is in there. */
+  const counts: Record<Tab, number> = {
+    "rule-sets": ruleSets.length,
+    shifts: shifts.length,
+    "holiday-rules": holidayRules.length,
+    "leave-policies": ptoPolicies.length,
+  };
+
   return (
-    <div
-      className="mt-6 flex overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800"
-      style={{ minHeight: "600px" }}
-    >
-      {/* ── Left nav ─────────────────────────────────────────────────── */}
-      <nav className="w-48 shrink-0 border-r border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
-        <ul className="py-2">
+    <div className="flex flex-col gap-4">
+      <section className="ta-card flex flex-col gap-2.5 rounded-xl p-4">
+        <span className="wms-overline">Rule areas</span>
+        <div className="grid gap-1 [grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))]">
           {TABS.map((tab) => {
             const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
+            const active = activeTab === tab.id;
             return (
-              <li key={tab.id}>
-                <button
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex w-full items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
-                    isActive
-                      ? "bg-blue-50 font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
-                      : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-                  }`}
+              <button
+                key={tab.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setActiveTab(tab.id)}
+                className="ta-hoverable flex items-center gap-2.5 rounded-lg px-3 py-2 text-left"
+                data-active={active ? "true" : undefined}
+                style={{
+                  border: "none",
+                  cursor: "pointer",
+                  background: active ? "var(--wms-color-primary-50)" : "transparent",
+                  color: active ? "var(--text-accent)" : "var(--text-primary)",
+                  font: "var(--type-body1)",
+                  fontWeight: active ? "var(--weight-semibold)" : "var(--weight-medium)",
+                }}
+              >
+                <Icon
+                  className="h-[18px] w-[18px] flex-none"
+                  style={{ color: active ? "var(--icon-accent)" : "var(--icon-tertiary)" }}
+                />
+                <span className="min-w-0 flex-1 truncate">{tab.label}</span>
+                <span
+                  className="tabular flex-none"
+                  style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
                 >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {tab.label}
-                </button>
-              </li>
+                  {counts[tab.id]}
+                </span>
+              </button>
             );
           })}
-        </ul>
-      </nav>
+        </div>
+      </section>
 
-      {/* ── Right content ─────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-auto bg-white p-6 dark:bg-zinc-950">
-        {current && (
-          <>
-            <h2 className="text-xl font-bold text-zinc-900 dark:text-white">{current.title}</h2>
+      {/* No gap on this stack: each manager opens with its own top margin, and
+          three of the four are owned elsewhere — adding a gap here would space
+          them differently from every other settings screen. */}
+      {current && (
+        <div className="flex flex-col">
+          <div className="flex flex-col gap-0.5">
+            <h2 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>
+              {current.title}
+            </h2>
             {current.description && (
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{current.description}</p>
+              <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)", textWrap: "pretty" }}>
+                {current.description}
+              </p>
             )}
+          </div>
 
-            {activeTab === "rule-sets" && (
-              <RuleSetsManager ruleSets={ruleSets as RuleSet[]} payCodes={payCodes} />
-            )}
-            {activeTab === "shifts" && <ShiftsManager shifts={shifts} />}
-            {activeTab === "holiday-rules" && (
-              <HolidayRulesManager rules={holidayRules} payCodes={payCodes} />
-            )}
-            {activeTab === "leave-policies" && (
-              <PtoPoliciesManager policies={ptoPolicies} leaveTypes={leaveTypes} payCodes={payCodes} initialPolicyId={initialPolicyId} />
-            )}
-          </>
-        )}
-      </div>
+          {activeTab === "rule-sets" && (
+            <RuleSetsManager
+              ruleSets={ruleSets as RuleSet[]}
+              payCodes={payCodes}
+              initialView={initialRuleSetView}
+            />
+          )}
+          {activeTab === "shifts" && <ShiftsManager shifts={shifts} />}
+          {activeTab === "holiday-rules" && (
+            <HolidayRulesManager rules={holidayRules} payCodes={payCodes} />
+          )}
+          {activeTab === "leave-policies" && (
+            <PtoPoliciesManager
+              policies={ptoPolicies}
+              leaveTypes={leaveTypes}
+              payCodes={payCodes}
+              initialPolicyId={initialPolicyId}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

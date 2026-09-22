@@ -1,36 +1,58 @@
 "use client";
 
 import { useState, useRef, useEffect, useTransition } from "react";
-import {
-  Folder,
-  FolderPlus,
-  Pencil,
-  Trash2,
-  ChevronRight,
-} from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ChevronRight, Folder, FolderPlus, Pencil, Trash2 } from "lucide-react";
+import { Button, Card } from "@/components/ui";
+import { fieldCls } from "@/components/ui/form-classes";
 import {
   createFolder,
   renameFolder,
   deleteFolder,
 } from "@/actions/report.actions";
 
-interface FolderTreeProps {
-  folders: {
-    id: string;
-    name: string;
-    parentId: string | null;
-    _count: { reports: number };
-    children: { id: string; name: string }[];
-  }[];
-  selectedFolderId: string | null;
-  onSelectFolder: (folderId: string | null) => void;
+/**
+ * The folder rail beside the reports list.
+ *
+ * <p>The design's reports screen is a flat list with no rail, but folders here
+ * are a real owned hierarchy with create, rename and delete server actions
+ * behind them, and this is the only screen that reaches any of the three.
+ * Dropping the rail to match the drawing would have deleted three working
+ * features, so it stays — restyled onto the kit, at the width the admin hub
+ * uses for its own rail.
+ *
+ * <p>Picking a folder is a link, not a click handler. Every other filter on
+ * this screen lives in the query string so a narrowed list can be reloaded and
+ * sent to somebody; a folder that only existed in React state would be the one
+ * filter that vanished on a refresh, and it is the one that most changes what
+ * you are looking at.
+ */
+
+export interface FolderNode {
+  id: string;
+  name: string;
+  parentId: string | null;
+  /** The list URL with this folder applied — built on the server. */
+  href: string;
+  reportCount: number;
+  children: { id: string; name: string }[];
 }
 
 export function FolderTree({
   folders,
   selectedFolderId,
-  onSelectFolder,
-}: FolderTreeProps) {
+  allHref,
+  totalReports,
+}: {
+  folders: FolderNode[];
+  selectedFolderId: string | null;
+  /** The same list with no folder applied. */
+  allHref: string;
+  totalReports: number;
+}) {
+  const router = useRouter();
+
   const [isCreating, setIsCreating] = useState(false);
   const [creatingParentId, setCreatingParentId] = useState<string | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
@@ -56,21 +78,13 @@ export function FolderTree({
     }
   }, [renamingId]);
 
-  const totalReports = folders.reduce(
-    (sum, f) => sum + f._count.reports,
-    0
-  );
-
   const rootFolders = folders.filter((f) => f.parentId === null);
 
   function toggleExpand(folderId: string) {
     setExpandedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(folderId)) {
-        next.delete(folderId);
-      } else {
-        next.add(folderId);
-      }
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
       return next;
     });
   }
@@ -123,9 +137,10 @@ export function FolderTree({
     startTransition(async () => {
       await deleteFolder({ id: folderId });
       setDeletingId(null);
-      if (selectedFolderId === folderId) {
-        onSelectFolder(null);
-      }
+      // The folder is gone but the URL still names it, which would leave the
+      // list filtered to a folder that no longer exists — an empty list with
+      // no visible reason. Go back to everything.
+      if (selectedFolderId === folderId) router.replace(allHref);
     });
   }
 
@@ -134,12 +149,14 @@ export function FolderTree({
     onChange: (v: string) => void,
     onSubmit: () => void,
     onCancel: () => void,
-    ref: React.RefObject<HTMLInputElement | null>
+    ref: React.RefObject<HTMLInputElement | null>,
+    ariaLabel: string
   ) {
     return (
       <input
         ref={ref}
         type="text"
+        aria-label={ariaLabel}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
@@ -147,16 +164,13 @@ export function FolderTree({
           if (e.key === "Escape") onCancel();
         }}
         onBlur={onSubmit}
-        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+        className={fieldCls}
         disabled={isPending}
       />
     );
   }
 
-  function renderFolder(
-    folder: FolderTreeProps["folders"][number],
-    depth: number = 0
-  ) {
+  function renderFolder(folder: FolderNode, depth = 0) {
     const isSelected = selectedFolderId === folder.id;
     const isExpanded = expandedIds.has(folder.id);
     const hasChildren = folder.children.length > 0;
@@ -166,29 +180,31 @@ export function FolderTree({
     return (
       <div key={folder.id}>
         <div
-          className={`group flex items-center gap-1 rounded-lg px-3 py-2 text-sm transition-colors ${
-            isSelected
-              ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-white"
-              : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          }`}
-          style={{ paddingLeft: `${depth * 16 + 12}px` }}
+          className="group flex items-center gap-1 rounded-md py-1 pr-1.5"
+          style={{
+            paddingLeft: depth * 14 + 6,
+            background: isSelected ? "var(--surface-info)" : undefined,
+          }}
         >
           {hasChildren ? (
             <button
+              type="button"
               onClick={() => toggleExpand(folder.id)}
-              className="flex-shrink-0 p-0.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+              aria-expanded={isExpanded}
+              aria-label={`${isExpanded ? "Collapse" : "Expand"} ${folder.name}`}
+              className="flex-none rounded p-0.5"
+              style={{ color: "var(--icon-tertiary)", cursor: "pointer" }}
             >
               <ChevronRight
-                className={`h-3.5 w-3.5 transition-transform ${
-                  isExpanded ? "rotate-90" : ""
-                }`}
+                className="h-3.5 w-3.5 transition-transform"
+                style={{ transform: isExpanded ? "rotate(90deg)" : undefined }}
               />
             </button>
           ) : (
-            <span className="w-4.5 flex-shrink-0" />
+            <span className="h-[18px] w-[18px] flex-none" />
           )}
 
-          <Folder className="h-4 w-4 flex-shrink-0 text-zinc-400" />
+          <Folder className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} />
 
           {isRenaming ? (
             <div className="min-w-0 flex-1">
@@ -197,61 +213,80 @@ export function FolderTree({
                 setRenameValue,
                 handleRenameSubmit,
                 () => setRenamingId(null),
-                renameInputRef
+                renameInputRef,
+                `Rename ${folder.name}`
               )}
             </div>
           ) : isDeleting ? (
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="flex min-w-0 flex-1 items-center gap-1">
+              <span
+                className="min-w-0 flex-1 truncate"
+                style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+              >
                 Delete &ldquo;{folder.name}&rdquo;?
               </span>
-              <button
-                onClick={() => handleDelete(folder.id)}
+              <Button
+                size="sm"
+                hierarchy="tertiary"
+                tone="error"
                 disabled={isPending}
-                className="rounded px-1.5 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                onClick={() => handleDelete(folder.id)}
               >
                 Yes
-              </button>
-              <button
-                onClick={() => setDeletingId(null)}
-                className="rounded px-1.5 py-0.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              >
+              </Button>
+              <Button size="sm" hierarchy="tertiary" onClick={() => setDeletingId(null)}>
                 No
-              </button>
+              </Button>
             </div>
           ) : (
             <>
-              <button
-                onClick={() => onSelectFolder(folder.id)}
+              {/* Double-click still starts a rename, as it always has. It now
+                  navigates as well, but only to the folder being renamed, so
+                  the shortcut costs nothing to keep. */}
+              <Link
+                href={folder.href}
+                scroll={false}
                 onDoubleClick={() => handleStartRename(folder)}
-                className="min-w-0 flex-1 truncate text-left"
+                className="min-w-0 flex-1 truncate"
+                style={{
+                  font: "var(--type-body1)",
+                  fontWeight: isSelected ? "var(--weight-semibold)" : undefined,
+                  color: isSelected ? "var(--text-accent)" : "var(--text-primary)",
+                  textDecoration: "none",
+                }}
               >
                 {folder.name}
-              </button>
-              <span className="flex-shrink-0 text-xs text-zinc-400">
-                {folder._count.reports}
+              </Link>
+              <span
+                className="tabular flex-none"
+                style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+              >
+                {folder.reportCount}
               </span>
-              <div className="flex flex-shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleStartRename(folder);
-                  }}
-                  className="rounded p-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-                  title="Rename folder"
+              {/* Rename and delete appear on hover, but focus has to reveal
+                  them too or they are unreachable from the keyboard. */}
+              <div className="flex flex-none items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                <Button
+                  size="sm"
+                  hierarchy="tertiary"
+                  iconOnly
+                  title={`Rename ${folder.name}`}
+                  aria-label={`Rename ${folder.name}`}
+                  onClick={() => handleStartRename(folder)}
                 >
-                  <Pencil className="h-3 w-3" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeletingId(folder.id);
-                  }}
-                  className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
-                  title="Delete folder"
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  hierarchy="tertiary"
+                  tone="error"
+                  iconOnly
+                  title={`Delete ${folder.name}`}
+                  aria-label={`Delete ${folder.name}`}
+                  onClick={() => setDeletingId(folder.id)}
                 >
-                  <Trash2 className="h-3 w-3" />
-                </button>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
               </div>
             </>
           )}
@@ -261,82 +296,104 @@ export function FolderTree({
           <div>
             {folder.children.map((child) => {
               const childFolder = folders.find((f) => f.id === child.id);
-              if (!childFolder) return null;
-              return renderFolder(childFolder, depth + 1);
+              return childFolder ? renderFolder(childFolder, depth + 1) : null;
             })}
           </div>
         )}
 
-        {isExpanded &&
-          isCreating &&
-          creatingParentId === folder.id && (
-            <div
-              className="flex items-center gap-1 px-3 py-1"
-              style={{ paddingLeft: `${(depth + 1) * 16 + 12}px` }}
-            >
-              <Folder className="h-4 w-4 flex-shrink-0 text-zinc-400" />
-              <div className="min-w-0 flex-1">
-                {renderInlineInput(
-                  newFolderName,
-                  setNewFolderName,
-                  handleCreateSubmit,
-                  () => setIsCreating(false),
-                  createInputRef
-                )}
-              </div>
+        {isExpanded && isCreating && creatingParentId === folder.id && (
+          <div
+            className="flex items-center gap-1.5 py-1 pr-1.5"
+            style={{ paddingLeft: (depth + 1) * 14 + 6 }}
+          >
+            <Folder className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} />
+            <div className="min-w-0 flex-1">
+              {renderInlineInput(
+                newFolderName,
+                setNewFolderName,
+                handleCreateSubmit,
+                () => setIsCreating(false),
+                createInputRef,
+                `New folder in ${folder.name}`
+              )}
             </div>
-          )}
+          </div>
+        )}
       </div>
     );
   }
 
   return (
-    <nav className="flex flex-col gap-1">
-      <div className="flex items-center justify-between px-3 py-1">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-          Folders
-        </h2>
-        <button
-          onClick={() => handleStartCreate(null)}
-          className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+    <Card
+      title="Folders"
+      padding={8}
+      actions={
+        <Button
+          size="sm"
+          hierarchy="tertiary"
+          iconOnly
           title="New folder"
+          aria-label="New folder"
+          onClick={() => handleStartCreate(null)}
         >
           <FolderPlus className="h-4 w-4" />
-        </button>
-      </div>
-
-      {/* All Reports */}
-      <button
-        onClick={() => onSelectFolder(null)}
-        className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-          selectedFolderId === null
-            ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-white"
-            : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-        }`}
-      >
-        <Folder className="h-4 w-4 text-zinc-400" />
-        <span className="flex-1 text-left">All Reports</span>
-        <span className="text-xs text-zinc-400">{totalReports}</span>
-      </button>
-
-      {/* Root folders */}
-      {rootFolders.map((folder) => renderFolder(folder))}
-
-      {/* Inline create at root level */}
-      {isCreating && creatingParentId === null && (
-        <div className="flex items-center gap-2 px-3 py-1">
-          <Folder className="h-4 w-4 flex-shrink-0 text-zinc-400" />
-          <div className="min-w-0 flex-1">
-            {renderInlineInput(
-              newFolderName,
-              setNewFolderName,
-              handleCreateSubmit,
-              () => setIsCreating(false),
-              createInputRef
-            )}
-          </div>
+        </Button>
+      }
+    >
+      <nav className="flex flex-col gap-0.5">
+        <div
+          className="flex items-center gap-1.5 rounded-md py-1 pl-1.5 pr-1.5"
+          style={{ background: selectedFolderId === null ? "var(--surface-info)" : undefined }}
+        >
+          <Folder className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} />
+          <Link
+            href={allHref}
+            scroll={false}
+            className="min-w-0 flex-1 truncate"
+            style={{
+              font: "var(--type-body1)",
+              fontWeight: selectedFolderId === null ? "var(--weight-semibold)" : undefined,
+              color: selectedFolderId === null ? "var(--text-accent)" : "var(--text-primary)",
+              textDecoration: "none",
+            }}
+          >
+            All reports
+          </Link>
+          <span
+            className="tabular flex-none"
+            style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+          >
+            {totalReports}
+          </span>
         </div>
-      )}
-    </nav>
+
+        {rootFolders.map((folder) => renderFolder(folder))}
+
+        {isCreating && creatingParentId === null && (
+          <div className="flex items-center gap-1.5 py-1 pl-1.5 pr-1.5">
+            <Folder className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} />
+            <div className="min-w-0 flex-1">
+              {renderInlineInput(
+                newFolderName,
+                setNewFolderName,
+                handleCreateSubmit,
+                () => setIsCreating(false),
+                createInputRef,
+                "New folder name"
+              )}
+            </div>
+          </div>
+        )}
+
+        {folders.length === 0 && !isCreating && (
+          <p
+            className="px-1.5 py-1"
+            style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+          >
+            No folders yet.
+          </p>
+        )}
+      </nav>
+    </Card>
   );
 }

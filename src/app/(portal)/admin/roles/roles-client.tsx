@@ -37,7 +37,7 @@ type BuiltinRoleSummary = {
 };
 
 const btnPrimary =
-  "rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
+  "rounded-lg bg-[var(--fill-accent)] px-4 py-2 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--fill-accent-hover)]";
 
 const RESOURCE_LABELS: Record<string, string> = {
   punch: "Punches",
@@ -76,16 +76,16 @@ function PermissionModal({ role, onClose }: { role: BuiltinRoleSummary; onClose:
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[5vh]">
-      <div className="w-full max-w-4xl rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+      <div className="w-full max-w-4xl rounded-xl ta-modal">
 
         {/* Header */}
         <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900 dark:text-white">
+            <h2 className="wms-card-title">
               {role.name}
             </h2>
             {role.description && (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">{role.description}</p>
+              <p className="text-sm text-[var(--text-tertiary)]">{role.description}</p>
             )}
           </div>
           <div className="flex items-center gap-3">
@@ -104,19 +104,19 @@ function PermissionModal({ role, onClose }: { role: BuiltinRoleSummary; onClose:
         {/* Body */}
         <div className="px-6 py-4">
           {role.key === "SUPER_ADMIN" ? (
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="text-sm text-[var(--text-tertiary)]">
               Super Admin bypasses all permission checks — unrestricted access to every resource and action.
             </p>
           ) : (
             <div>
-              <h3 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+              <h3 className="mb-3 text-sm font-semibold text-[var(--text-secondary)]">
                 Permissions
               </h3>
-              <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+              <div className="overflow-x-auto rounded-lg border border-[var(--stroke-secondary)]">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/50">
-                      <th className="px-4 py-2 text-left font-medium text-zinc-600 dark:text-zinc-400">
+                      <th className="px-4 py-2 text-left font-medium text-[var(--text-secondary)]">
                         Resource
                       </th>
                       {ACTIONS.map((action) => (
@@ -135,8 +135,8 @@ function PermissionModal({ role, onClose }: { role: BuiltinRoleSummary; onClose:
                         SCOPES.map((scope) => (
                           <th
                             key={`${action}-${scope}`}
-                            className={`px-2 py-1 text-center text-xs font-normal text-zinc-500 dark:text-zinc-500 ${
-                              scope === "own" ? "border-l border-zinc-200 dark:border-zinc-700" : ""
+                            className={`px-2 py-1 text-center text-xs font-normal text-[var(--text-tertiary)] ${
+                              scope === "own" ? "border-l border-[var(--stroke-secondary)]" : ""
                             }`}
                           >
                             {SCOPE_LABELS[scope]}
@@ -151,7 +151,7 @@ function PermissionModal({ role, onClose }: { role: BuiltinRoleSummary; onClose:
                         key={resource}
                         className="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
                       >
-                        <td className="px-4 py-2.5 font-medium text-zinc-700 dark:text-zinc-300">
+                        <td className="px-4 py-2.5 font-medium text-[var(--text-secondary)]">
                           {RESOURCE_LABELS[resource]}
                         </td>
                         {ACTIONS.map((action) =>
@@ -162,7 +162,7 @@ function PermissionModal({ role, onClose }: { role: BuiltinRoleSummary; onClose:
                                 key={`${resource}-${action}-${scope}`}
                                 className={`px-2 py-2.5 text-center ${
                                   scope === "own"
-                                    ? "border-l border-zinc-200 dark:border-zinc-700"
+                                    ? "border-l border-[var(--stroke-secondary)]"
                                     : ""
                                 }`}
                               >
@@ -226,22 +226,22 @@ export function RolesClient({ roles, builtinRoles }: { roles: RoleSummary[]; bui
         </button>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
+      <div className="overflow-hidden rounded-xl border border-[var(--stroke-secondary)]">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/50">
-              <th className="px-4 py-3 text-left font-medium text-zinc-600 dark:text-zinc-400">Role</th>
-              <th className="px-4 py-3 text-left font-medium text-zinc-600 dark:text-zinc-400">Description</th>
-              <th className="px-4 py-3 text-center font-medium text-zinc-600 dark:text-zinc-400">Rank</th>
-              <th className="px-4 py-3 text-center font-medium text-zinc-600 dark:text-zinc-400">Employees</th>
-              <th className="px-4 py-3 text-center font-medium text-zinc-600 dark:text-zinc-400">Type</th>
-              <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">Actions</th>
+              <th className="px-4 py-3 text-left font-medium text-[var(--text-secondary)]">Role</th>
+              <th className="px-4 py-3 text-left font-medium text-[var(--text-secondary)]">Description</th>
+              <th className="px-4 py-3 text-center font-medium text-[var(--text-secondary)]">Rank</th>
+              <th className="px-4 py-3 text-center font-medium text-[var(--text-secondary)]">Employees</th>
+              <th className="px-4 py-3 text-center font-medium text-[var(--text-secondary)]">Type</th>
+              <th className="px-4 py-3 text-right font-medium text-[var(--text-secondary)]">Actions</th>
             </tr>
           </thead>
           <tbody>
             {/* ── System + Custom roles ── */}
             <tr className="border-b border-zinc-200 bg-zinc-50/80 dark:border-zinc-700 dark:bg-zinc-800/40">
-              <td colSpan={6} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+              <td colSpan={6} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
                 Roles
               </td>
             </tr>
@@ -250,12 +250,12 @@ export function RolesClient({ roles, builtinRoles }: { roles: RoleSummary[]; bui
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <Shield className="h-4 w-4 text-zinc-400" />
-                    <span className="font-medium text-zinc-900 dark:text-white">{role.name}</span>
+                    <span className="font-medium text-[var(--text-primary)]">{role.name}</span>
                   </div>
                 </td>
-                <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">{role.description ?? "—"}</td>
-                <td className="px-4 py-3 text-center text-zinc-600 dark:text-zinc-400">{role.rank}</td>
-                <td className="px-4 py-3 text-center text-zinc-600 dark:text-zinc-400">{role._count.employees}</td>
+                <td className="px-4 py-3 text-[var(--text-tertiary)]">{role.description ?? "—"}</td>
+                <td className="px-4 py-3 text-center text-[var(--text-secondary)]">{role.rank}</td>
+                <td className="px-4 py-3 text-center text-[var(--text-secondary)]">{role._count.employees}</td>
                 <td className="px-4 py-3 text-center">
                   {role.isSystem ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">

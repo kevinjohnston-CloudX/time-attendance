@@ -4,9 +4,25 @@ import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getEmployeeById } from "@/actions/admin.actions";
 import { LeaveBalancesPanel } from "@/components/admin/leave-balances-panel";
+import { Card, LinkButton, PageHeader } from "@/components/ui";
 import { db } from "@/lib/db";
 import { format, differenceInMonths, differenceInDays, addMonths } from "date-fns";
 
+/**
+ * One employee's accruals, on the design's doc template: the policies that
+ * earn for them, the balances those policies produced, and the ledger behind
+ * whichever balance is being questioned.
+ *
+ * <p>Everything below the header is computed here and handed down. The
+ * expected-accrual and forecast arithmetic in particular has to run on the
+ * server — it walks a policy's tiers posting by posting, and it is the number
+ * somebody disputes when a balance looks wrong, so it is worked out once from
+ * the policy rather than re-derived by a component.
+ *
+ * <p>The page used to be capped at max-w-2xl. The ledger is a six-column table
+ * of hours and it was being read through a 672px window; the doc template's
+ * own default is full width, which is what it gets.
+ */
 export default async function EmployeeAccrualsPage({
   params,
 }: {
@@ -506,74 +522,96 @@ export default async function EmployeeAccrualsPage({
   // Suppress unused variable warning — pastYears available for future year-selector feature
   void pastYears;
 
-  return (
-    <div className="max-w-2xl">
-      {canViewTeam ? (
-        <Link href="/accruals" className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white">
-          ← Accruals
-        </Link>
-      ) : null}
-
-      <div className="mt-2 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
-            {employee.user.name}
-          </h1>
-          <p className="mt-0.5 text-sm text-zinc-500">
-            {employee.employeeCode} · Hired {format(employee.hireDate, "MMM d, yyyy")}
-          </p>
-        </div>
-        {canManageEmployee && (
-          <Link
-            href={`/admin/employees/${id}`}
-            className="text-sm text-blue-600 hover:underline dark:text-blue-400"
-          >
-            Edit Employee
-          </Link>
-        )}
+  /** The tile body, shared so the linked and unlinked policies read identically. */
+  const policyTiles = Array.from(policyMap.entries()).map(([name, types]) => {
+    const policyId = policyIdMap.get(name);
+    const body = (
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span
+          style={{
+            font: "var(--type-body1)",
+            fontWeight: "var(--weight-medium)",
+            color: "var(--text-primary)",
+          }}
+        >
+          {name}
+        </span>
+        <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" }}>
+          {types.join(", ")}
+        </span>
+      </span>
+    );
+    const frame = "flex items-start gap-2.5 rounded-lg p-3";
+    const framing = {
+      border: "1px solid var(--stroke-secondary)",
+      background: "var(--surface-card)",
+    };
+    // Only somebody who can edit the policy gets a link to it. For everyone
+    // else the tile is still the answer to "why is this leave type earning
+    // nothing" — it just does not pretend to be a way in.
+    return canManageEmployee && policyId ? (
+      <Link
+        key={name}
+        href={`/admin/rules-setup?tab=leave-policies&policy=${policyId}`}
+        className={`ta-hub-card ${frame}`}
+        style={framing}
+      >
+        {body}
+      </Link>
+    ) : (
+      <div key={name} className={frame} style={framing}>
+        {body}
       </div>
+    );
+  });
 
-      <div className="mt-6">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-white">
-          Leave Balances
-        </h2>
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title={employee.user.name}
+        subtitle={`${employee.employeeCode} · Hired ${format(employee.hireDate, "MMM d, yyyy")} · ${year} accrual year`}
+        actions={
+          <>
+            {/* Somebody with own-scope only is redirected off the list page
+                straight back to here, so the back link would be a loop. */}
+            {canViewTeam && (
+              <LinkButton href="/accruals" hierarchy="tertiary">
+                ← Accruals
+              </LinkButton>
+            )}
+            {canManageEmployee && (
+              <LinkButton href={`/admin/employees/${id}`} hierarchy="secondary">
+                Edit Employee
+              </LinkButton>
+            )}
+          </>
+        }
+      />
 
+      <Card
+        title="PTO Policies"
+        subtitle={
+          policyMap.size > 0
+            ? "What earns each leave type, and at whose rate"
+            : "Nothing is currently earning for this employee"
+        }
+      >
         {policyMap.size > 0 ? (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {Array.from(policyMap.entries()).map(([name, types]) => {
-              const policyId = policyIdMap.get(name);
-              const tileContent = (
-                <>
-                  <span className="text-xs font-medium text-zinc-700 dark:text-zinc-200">{name}</span>
-                  <span className="ml-1.5 text-xs text-zinc-400">{types.join(", ")}</span>
-                </>
-              );
-              const baseCls = "rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 dark:border-zinc-700 dark:bg-zinc-800/50";
-              return canManageEmployee && policyId ? (
-                <Link
-                  key={name}
-                  href={`/admin/rules-setup?tab=leave-policies${policyId ? `&policy=${policyId}` : ""}`}
-                  className={`${baseCls} transition-colors hover:border-blue-400 hover:bg-blue-50 dark:hover:border-blue-500 dark:hover:bg-blue-950/40`}
-                >
-                  {tileContent}
-                </Link>
-              ) : (
-                <div key={name} className={baseCls}>
-                  {tileContent}
-                </div>
-              );
-            })}
+          <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))]">
+            {policyTiles}
           </div>
         ) : (
-          <p className="mt-2 text-xs text-zinc-400">
+          <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
             No PTO policies applied — assign policies to this employee&apos;s pay category.
           </p>
         )}
+      </Card>
 
-        <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-          <LeaveBalancesPanel employeeId={employee.id} balances={balances} />
-        </div>
-      </div>
+      <LeaveBalancesPanel
+        employeeId={employee.id}
+        balances={balances}
+        canManage={canManageEmployee}
+      />
     </div>
   );
 }

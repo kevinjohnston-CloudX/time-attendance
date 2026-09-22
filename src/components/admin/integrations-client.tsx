@@ -1,9 +1,32 @@
 "use client";
 
 import { useState } from "react";
-import { KeyRound, BookOpen } from "lucide-react";
+import {
+  Banner,
+  Button,
+  Card,
+  LinkButton,
+  PageHeader,
+  SegmentedLinks,
+} from "@/components/ui";
 import { ApiKeysManager } from "@/components/admin/api-keys-manager";
 import { ApiDocumentation } from "@/components/admin/api-documentation";
+
+/**
+ * Integrations, on the portal design's doc template: the warning about what a
+ * key is, then the keys themselves.
+ *
+ * <p>The two panes are links, not local state. `?tab=api-docs` was already in
+ * the URL contract — the server page reads it — but it was only ever an initial
+ * value, so clicking the second pane left the address bar claiming you were on
+ * the first. As anchors, the docs pane can be linked to and reloaded, which
+ * matters because the API documentation is the thing people paste to a vendor.
+ *
+ * <p>This component owns the page header as well. "New Key" is a page action in
+ * the design and it opens the create form inside {@link ApiKeysManager}, so the
+ * form's open state is held here and passed down rather than being reached into
+ * from a server-rendered header.
+ */
 
 type ApiKey = {
   id: string;
@@ -14,76 +37,73 @@ type ApiKey = {
   isActive: boolean;
 };
 
-type Tab = "api-keys" | "api-docs";
+export type IntegrationsTab = "api-keys" | "api-docs";
 
-const TABS = [
-  {
-    id: "api-keys" as Tab,
-    label: "API Keys",
-    icon: KeyRound,
-    title: "API Keys",
-    description: "Generate and manage API keys for external integrations. Keys are shown once at creation — store them securely.",
-  },
-  {
-    id: "api-docs" as Tab,
-    label: "API Documentation",
-    icon: BookOpen,
-    title: "API Documentation",
-    description: "Reference for the external REST API — authentication, endpoints, and example requests.",
-  },
+const TABS: { value: IntegrationsTab; label: string; href: string }[] = [
+  { value: "api-keys", label: "API Keys", href: "/admin/api-keys" },
+  { value: "api-docs", label: "API Documentation", href: "/admin/api-keys?tab=api-docs" },
 ];
 
 interface Props {
   apiKeys: ApiKey[];
-  initialTab?: string;
+  tab: IntegrationsTab;
+  /** Set when the key list could not be read, so an empty table is not read as "no keys". */
+  loadError?: string | null;
 }
 
-export function IntegrationsClient({ apiKeys, initialTab }: Props) {
-  const defaultTab = TABS.some((t) => t.id === initialTab) ? (initialTab as Tab) : "api-keys";
-  const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
-
-  const current = TABS.find((t) => t.id === activeTab);
+export function IntegrationsClient({ apiKeys, tab, loadError }: Props) {
+  const [createOpen, setCreateOpen] = useState(false);
 
   return (
-    <div className="mt-6 flex overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800" style={{ minHeight: "500px" }}>
-      {/* Left nav */}
-      <nav className="w-48 shrink-0 border-r border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
-        <ul className="py-2">
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <li key={tab.id}>
-                <button
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex w-full items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
-                    isActive
-                      ? "bg-blue-50 font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
-                      : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-                  }`}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {tab.label}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
-
-      {/* Right content */}
-      <div className="flex-1 overflow-auto bg-white p-6 dark:bg-zinc-950">
-        {current && (
+    <>
+      <PageHeader
+        title="Integrations"
+        subtitle="Keys used by timeclocks and exports"
+        actions={
           <>
-            <h2 className="text-xl font-bold text-zinc-900 dark:text-white">{current.title}</h2>
-            {current.description && (
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{current.description}</p>
+            <LinkButton href="/admin" hierarchy="tertiary">
+              ← Administration
+            </LinkButton>
+            {/* Only on the keys pane — a "New Key" button above the API
+                reference would generate something you cannot see. */}
+            {tab === "api-keys" && (
+              <Button hierarchy="primary" onClick={() => setCreateOpen(true)}>
+                New Key
+              </Button>
             )}
-            {activeTab === "api-keys" && <ApiKeysManager apiKeys={apiKeys} />}
-            {activeTab === "api-docs" && <ApiDocumentation />}
           </>
+        }
+      />
+
+      <div className="flex flex-col gap-4">
+        <SegmentedLinks items={TABS} active={tab} ariaLabel="Integrations view" />
+
+        {loadError && (
+          <Banner tone="error" title="Could not load the API keys" body={loadError} />
+        )}
+
+        {tab === "api-keys" ? (
+          <>
+            <Banner
+              tone="warning"
+              title="A key is shown once, at creation"
+              body="Every key here unlocks this company's whole external API — there is no per-site or read-only scope. Rotate a key rather than sharing one, and revoke anything you cannot account for."
+            />
+            <ApiKeysManager
+              apiKeys={apiKeys}
+              createOpen={createOpen}
+              onCreateOpenChange={setCreateOpen}
+            />
+          </>
+        ) : (
+          <Card
+            title="External REST API"
+            subtitle="Authentication, endpoints and example requests for the integrations above"
+          >
+            <ApiDocumentation />
+          </Card>
         )}
       </div>
-    </div>
+    </>
   );
 }

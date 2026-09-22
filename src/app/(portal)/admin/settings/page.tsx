@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { format, addDays } from "date-fns";
 import { auth } from "@/lib/auth";
+import { Banner, Button, Card, Input, LinkButton, PageHeader, Select } from "@/components/ui";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import {
   getTenantSettings,
@@ -10,12 +10,31 @@ import {
 } from "@/actions/pay-period.actions";
 import type { PayFrequency } from "@prisma/client";
 
+/**
+ * Company Settings, on the portal design's document template: a callout that
+ * says when a change takes effect, then one card per group of fields.
+ *
+ * <p>Only two settings live here, and between them they decide where every pay
+ * period in the product starts and ends. That is why the page carries a banner
+ * rather than a bare form — the fields look like preferences and are not.
+ */
+
 const FREQ_LABELS: Record<PayFrequency, string> = {
   WEEKLY: "Weekly (every 7 days)",
   BIWEEKLY: "Bi-weekly (every 14 days)",
   SEMIMONTHLY: "Semi-monthly (1st–15th and 16th–end)",
   MONTHLY: "Monthly (1st–end of month)",
 };
+
+/**
+ * The field grid from the design's document template.
+ *
+ * <p>`auto-fit` rather than a fixed two columns: this card has two fields and
+ * the next one may have four, and a fixed count leaves a hole in the first and
+ * squeezes the second.
+ */
+const FIELD_GRID =
+  "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,48%)),1fr))]";
 
 export default async function CompanySettingsPage() {
   const session = await auth();
@@ -79,109 +98,94 @@ export default async function CompanySettingsPage() {
   }
 
   return (
-    <div className="max-w-2xl">
-      <Link href="/admin" className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white">
-        ← Admin
-      </Link>
-      <h1 className="mt-1 text-2xl font-bold text-zinc-900 dark:text-white">
-        Company Settings
-      </h1>
-      <p className="mt-1 text-sm text-zinc-500">{name}</p>
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title="Company Settings"
+        subtitle={name}
+        actions={
+          <LinkButton href="/admin" hierarchy="tertiary">
+            ← Administration
+          </LinkButton>
+        }
+      />
 
-      {/* Pay Period Config */}
-      <section className="mt-8 rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-white">
-          Pay Period Configuration
-        </h2>
-        <p className="mt-1 text-sm text-zinc-500">
-          Set the pay frequency and a known anchor date. The anchor can be any
-          historical pay period start date — the system uses it to calculate all
-          past and future periods automatically.
-        </p>
+      <div className="flex flex-col gap-4" style={{ maxWidth: 1080 }}>
+        <Banner
+          tone="info"
+          body="Saving these does not move pay periods that already exist — it decides how the next ones are generated."
+        />
 
-        <form action={handleSave} className="mt-6 space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Pay Frequency
-            </label>
-            <select
-              name="payFrequency"
-              defaultValue={payFrequency}
-              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
-            >
-              {(Object.keys(FREQ_LABELS) as PayFrequency[]).map((f) => (
-                <option key={f} value={f}>{FREQ_LABELS[f]}</option>
-              ))}
-            </select>
+        <Card
+          title="Pay Period Configuration"
+          subtitle="The frequency and one real start date; every other period is calculated from the pair"
+        >
+          <form action={handleSave} className="flex flex-col gap-4">
+            <div className={FIELD_GRID}>
+              <label className="flex w-full flex-col gap-1.5">
+                <span className="wms-label">Pay Frequency</span>
+                <Select name="payFrequency" defaultValue={payFrequency} style={{ width: "100%" }}>
+                  {(Object.keys(FREQ_LABELS) as PayFrequency[]).map((f) => (
+                    <option key={f} value={f}>{FREQ_LABELS[f]}</option>
+                  ))}
+                </Select>
+              </label>
+
+              <Input
+                label="Anchor Date"
+                name="payPeriodAnchorDate"
+                type="date"
+                defaultValue={anchorStr}
+                required
+                hint="Any Monday (weekly/bi-weekly) or 1st/16th (semi-monthly) that really was a period start."
+              />
+            </div>
+
+            <div>
+              <Button type="submit" hierarchy="primary">
+                Save Settings
+              </Button>
+            </div>
+          </form>
+        </Card>
+
+        <Card
+          title="Generate Next Pay Period"
+          subtitle="Creates the next consecutive period after the most recent one in the system"
+          actions={
+            <LinkButton href="/payroll/pay-periods" hierarchy="link" size="sm">
+              View all pay periods
+            </LinkButton>
+          }
+        >
+          <div className="flex flex-col gap-4">
+            {nextPreview && (
+              <div className="flex flex-col gap-0.5">
+                <span className="wms-label">Next period</span>
+                <span
+                  className="tabular"
+                  style={{
+                    font: "var(--type-body1)",
+                    fontWeight: "var(--weight-medium)",
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  {format(nextPreview.startDate, "MMM d, yyyy")} –{" "}
+                  {format(nextPreview.endDate, "MMM d, yyyy")}
+                </span>
+              </div>
+            )}
+
+            {!payPeriodAnchorDate && (
+              <Banner tone="warning" body="Save an anchor date above before generating." />
+            )}
+
+            <form action={handleGenerate}>
+              <Button type="submit" hierarchy="primary" disabled={!payPeriodAnchorDate}>
+                Generate Pay Period
+              </Button>
+            </form>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Anchor Date{" "}
-              <span className="font-normal text-zinc-400">(a known pay period start date)</span>
-            </label>
-            <input
-              name="payPeriodAnchorDate"
-              type="date"
-              defaultValue={anchorStr}
-              required
-              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
-            />
-            <p className="mt-1 text-xs text-zinc-400">
-              Pick any Monday (weekly/bi-weekly) or the 1st/16th (semi-monthly) that was a real
-              pay period start date for your company.
-            </p>
-          </div>
-
-          <button
-            type="submit"
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"
-          >
-            Save Settings
-          </button>
-        </form>
-      </section>
-
-      {/* Generate Next Period */}
-      <section className="mt-6 rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-white">
-          Generate Next Pay Period
-        </h2>
-        <p className="mt-1 text-sm text-zinc-500">
-          Creates the next consecutive pay period after the most recent one in
-          the system (or the current period if none exist).
-        </p>
-
-        {nextPreview && (
-          <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm dark:border-zinc-700 dark:bg-zinc-800">
-            <span className="text-zinc-500 dark:text-zinc-400">Next period: </span>
-            <span className="font-medium text-zinc-900 dark:text-white">
-              {format(nextPreview.startDate, "MMM d, yyyy")} –{" "}
-              {format(nextPreview.endDate, "MMM d, yyyy")}
-            </span>
-          </div>
-        )}
-
-        <form action={handleGenerate} className="mt-4">
-          <button
-            type="submit"
-            disabled={!payPeriodAnchorDate}
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"
-          >
-            Generate Pay Period
-          </button>
-          {!payPeriodAnchorDate && (
-            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-              Save an anchor date above before generating.
-            </p>
-          )}
-        </form>
-      </section>
-
-      <div className="mt-4 text-sm text-zinc-500">
-        <Link href="/payroll/pay-periods" className="hover:text-zinc-900 dark:hover:text-white">
-          View all pay periods →
-        </Link>
+        </Card>
       </div>
     </div>
   );

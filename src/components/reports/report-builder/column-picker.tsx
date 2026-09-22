@@ -1,12 +1,22 @@
 "use client";
 
+import { Button, Checkbox } from "@/components/ui";
+
 interface Column {
   id: string;
   label: string;
   type: string;
-  defaultVisible?: boolean;
 }
 
+/**
+ * Which fields the report carries, as the design's column section: a wrapped
+ * grid of checkboxes, three across when there is room.
+ *
+ * <p>The column's type is shown beside its name because two of the data
+ * sources offer both a number and a string for the same idea — "Duration
+ * (min)" and "Duration" — and picking the wrong one produces a report that
+ * cannot be summed.
+ */
 export function ColumnPicker({
   columns,
   selected,
@@ -32,38 +42,40 @@ export function ColumnPicker({
   }
 
   return (
-    <div>
-      <div className="mb-3 flex items-center gap-3">
-        <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
-          <input
-            type="checkbox"
-            checked={allSelected}
-            onChange={toggleAll}
-            className="rounded border-zinc-300 dark:border-zinc-600"
-          />
-          Select all
-        </label>
-        <span className="text-xs text-zinc-400">
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <Button size="sm" hierarchy="secondary" onClick={toggleAll}>
+          {allSelected ? "Clear all" : "Select all"}
+        </Button>
+        {/* The count is the only thing that says a report with no columns
+            cannot be run, before the Save button silently refuses. */}
+        <span
+          className="tabular"
+          style={{
+            font: "var(--type-body2)",
+            color: selected.length === 0 ? "var(--text-error)" : "var(--text-secondary)",
+          }}
+        >
           {selected.length} of {columns.length} selected
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+
+      <div className="grid gap-x-4 gap-y-1 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,30%)),1fr))]">
         {columns.map((col) => (
-          <label
-            key={col.id}
-            className="flex items-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-700"
-          >
-            <input
-              type="checkbox"
+          <div key={col.id} className="flex items-center gap-2.5 py-1.5">
+            <Checkbox
               checked={selected.includes(col.id)}
               onChange={() => toggle(col.id)}
-              className="rounded border-zinc-300 dark:border-zinc-600"
+              label={
+                <span className="inline-flex items-baseline gap-1.5">
+                  {col.label}
+                  <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                    {col.type}
+                  </span>
+                </span>
+              }
             />
-            <span className="text-zinc-800 dark:text-zinc-200">
-              {col.label}
-            </span>
-            <span className="text-[10px] text-zinc-400">{col.type}</span>
-          </label>
+          </div>
         ))}
       </div>
     </div>

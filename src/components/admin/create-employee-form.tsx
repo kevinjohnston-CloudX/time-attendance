@@ -1,9 +1,24 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type ReactNode, type SelectHTMLAttributes } from "react";
 import { useRouter } from "next/navigation";
 import { createEmployee } from "@/actions/admin.actions";
 import type { Site, Department, RuleSet } from "@prisma/client";
+import { Banner, Button, Input, SegmentedControl, Select } from "@/components/ui";
+import { X } from "lucide-react";
+
+/**
+ * "Add Employee" — the design's primary action on the employee list.
+ *
+ * <p>The design opens the empty doc screen for this; here it stays a modal,
+ * because the record cannot exist until it has a site, a department and a rule
+ * set, and a half-filled employee page with no id to save against would need a
+ * draft state the server has no concept of.
+ *
+ * <p>The tabs are visual only — every field stays mounted, so one submit sends
+ * the whole record. Hiding a tab must not drop the fields on it; a new hire
+ * created without a pay category is a timecard that will not export.
+ */
 
 type EmployeeOption = { id: string; user: { name: string | null } };
 
@@ -37,9 +52,61 @@ function fmtTime(hhmm: string): string {
   return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${ampm}`;
 }
 
-const inputCls =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400";
+/**
+ * A labelled select, matching the kit's `Input` stack.
+ *
+ * <p>Deliberately a local copy rather than an addition to `@/components/ui`:
+ * the kit is shared across every screen in the product and this is the shape
+ * two forms need, not a component the design system asked for.
+ */
+function SelectField({
+  label,
+  required,
+  children,
+  id,
+  ...rest
+}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; children: ReactNode }) {
+  const fieldId = id ?? `c-${label.replace(/\s+/g, "-").toLowerCase()}`;
+  return (
+    <div className="flex w-full flex-col gap-1.5">
+      <label htmlFor={fieldId} style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>
+        {label}
+        {required && (
+          <span aria-hidden="true" style={{ color: "var(--text-error)", marginLeft: 3 }}>
+            *
+          </span>
+        )}
+      </label>
+      <Select id={fieldId} required={required} {...rest}>
+        {children}
+      </Select>
+    </div>
+  );
+}
+
+/** A full-width rule inside the field grid. */
+function GroupHeading({ children }: { children: ReactNode }) {
+  return (
+    <p
+      className="wms-overline"
+      style={{
+        gridColumn: "1 / -1",
+        margin: 0,
+        paddingBottom: 4,
+        borderBottom: "1px solid var(--stroke-divider)",
+      }}
+    >
+      {children}
+    </p>
+  );
+}
+
+/** Two across in the modal's width, one when it has none to give. */
+const FIELD_GRID: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, max(200px, 48%)), 1fr))",
+  gap: 12,
+};
 
 export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes }: Props) {
   const router = useRouter();
@@ -118,344 +185,232 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
     });
   }
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "general",  label: "General" },
-    { id: "personal", label: "Personal" },
-    { id: "pay",      label: "Pay" },
+  const tabs: { value: Tab; label: string }[] = [
+    { value: "general",  label: "General" },
+    { value: "personal", label: "Personal" },
+    { value: "pay",      label: "Pay" },
   ];
+
+  /**
+   * A tab's panel.
+   *
+   * <p>The inactive tabs are switched off in the same inline style that carries
+   * the grid, not with a `hidden` class — an inline `display: grid` beats any
+   * utility class, and the three panels would all be on screen at once. They
+   * stay in the DOM either way: `display: none` fields are still submitted, and
+   * dropping them would create employees with no pay category.
+   */
+  const panelStyle = (tab: Tab): React.CSSProperties => ({
+    ...FIELD_GRID,
+    display: activeTab === tab ? "grid" : "none",
+  });
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-      >
-        + Add Employee
-      </button>
+      <Button onClick={() => setOpen(true)}>Add Employee</Button>
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
         >
-          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-              <h3 className="text-base font-semibold text-zinc-900 dark:text-white">New Employee</h3>
-              <button
-                type="button"
+          <div className="ta-modal flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl">
+            <div
+              className="flex items-center justify-between gap-3 px-6 py-4"
+              style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+            >
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <h3 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>
+                  New Employee
+                </h3>
+                <p style={{ margin: 0, font: "var(--type-subtitle)", color: "var(--text-secondary)" }}>
+                  All three tabs are submitted together
+                </p>
+              </div>
+              <Button
+                hierarchy="tertiary"
+                size="sm"
+                iconOnly
                 onClick={handleClose}
-                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-              >
-                ✕
-              </button>
+                aria-label="Close"
+                leadingIcon={<X className="h-4 w-4" />}
+              />
             </div>
 
-            {/* Tabs */}
-            <div className="flex gap-1 border-b border-zinc-200 px-6 dark:border-zinc-700">
-              {tabs.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setActiveTab(t.id)}
-                  className={`px-4 py-2 text-sm font-medium transition-colors ${
-                    activeTab === t.id
-                      ? "border-b-2 border-zinc-900 text-zinc-900 dark:border-white dark:text-white"
-                      : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
+            {/* Single form — the tabs only hide fields, they never unmount them */}
+            <form onSubmit={handleSubmit} className="flex min-h-0 flex-col">
+              <div className="flex flex-col gap-4 overflow-y-auto px-6 py-5">
+                <SegmentedControl
+                  ariaLabel="Employee details"
+                  items={tabs}
+                  value={activeTab}
+                  onChange={(v) => setActiveTab(v as Tab)}
+                />
 
-            {/* Form — single form, tabs are visual only so all fields submit together */}
-            <form onSubmit={handleSubmit} className="flex flex-col overflow-hidden">
-              <div className="flex-1 overflow-y-auto px-6 py-5">
-                {error && (
-                  <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-                    {error}
-                  </p>
-                )}
+                {error && <Banner tone="error" body={error} />}
 
                 {/* ── General ───────────────────────────────────────────── */}
-                <div className={activeTab !== "general" ? "hidden" : ""}>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className={labelCls}>Full Name</label>
-                      <input name="name" required className={inputCls} />
-                    </div>
+                <div style={panelStyle("general")}>
+                  <Input label="Full Name" name="name" required />
+                  <Input label="Email (Google login)" name="email" type="email" required />
+                  <Input label="Employee Code" name="employeeCode" required />
+                  <Input label="Hire Date" name="hireDate" type="date" required />
 
-                    <div>
-                      <label className={labelCls}>Email (Google login)</label>
-                      <input name="email" type="email" required className={inputCls} />
-                    </div>
+                  <SelectField label="Role" name="role">
+                    {BUILTIN_ROLES.map((r) => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
+                    {customRoles.map((r) => (
+                      <option key={r.id} value={`custom:${r.id}`}>{r.name}</option>
+                    ))}
+                  </SelectField>
 
-                    <div>
-                      <label className={labelCls}>Employee Code</label>
-                      <input name="employeeCode" required className={inputCls} />
-                    </div>
+                  <SelectField
+                    label="Site"
+                    name="siteId"
+                    value={selectedSiteId}
+                    onChange={(e) => setSelectedSiteId(e.target.value)}
+                  >
+                    {sites.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </SelectField>
 
-                    <div>
-                      <label className={labelCls}>Hire Date</label>
-                      <input name="hireDate" type="date" required className={inputCls} />
-                    </div>
+                  <SelectField label="Department" name="departmentId" required>
+                    {filteredDepts.map((d) => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </SelectField>
 
-                    <div>
-                      <label className={labelCls}>Role</label>
-                      <select name="role" className={inputCls}>
-                        {BUILTIN_ROLES.map((r) => (
-                          <option key={r.value} value={r.value}>{r.label}</option>
-                        ))}
-                        {customRoles.map((r) => (
-                          <option key={r.id} value={`custom:${r.id}`}>{r.name}</option>
-                        ))}
-                      </select>
-                    </div>
+                  <SelectField label="Supervisor" name="supervisorId">
+                    <option value="">— None —</option>
+                    {employees.map((emp) => (
+                      <option key={emp.id} value={emp.id}>{emp.user.name}</option>
+                    ))}
+                  </SelectField>
 
-                    <div>
-                      <label className={labelCls}>Site</label>
-                      <select
-                        name="siteId"
-                        value={selectedSiteId}
-                        onChange={(e) => setSelectedSiteId(e.target.value)}
-                        className={inputCls}
-                      >
-                        {sites.map((s) => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className={labelCls}>Department</label>
-                      <select name="departmentId" required className={inputCls}>
-                        {filteredDepts.map((d) => (
-                          <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className={labelCls}>Supervisor</label>
-                      <select name="supervisorId" className={inputCls}>
-                        <option value="">— None —</option>
-                        {employees.map((emp) => (
-                          <option key={emp.id} value={emp.id}>{emp.user.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className={labelCls}>Job Title</label>
-                      <input name="jobTitle" className={inputCls} />
-                    </div>
-
-                    <div>
-                      <label className={labelCls}>Badge ID (WMS)</label>
-                      <input name="wmsId" placeholder="QR code badge ID" className={inputCls} />
-                    </div>
-
-                    <div>
-                      <label className={labelCls}>ADP Worker ID</label>
-                      <input name="adpWorkerId" placeholder="ADP Workforce Now ID" className={inputCls} />
-                    </div>
-                  </div>
+                  <Input label="Job Title" name="jobTitle" />
+                  <Input label="Badge ID (WMS)" name="wmsId" placeholder="QR code badge ID" />
+                  <Input label="ADP Worker ID" name="adpWorkerId" placeholder="ADP Workforce Now ID" />
                 </div>
 
                 {/* ── Personal ──────────────────────────────────────────── */}
-                <div className={activeTab !== "personal" ? "hidden" : ""}>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className={labelCls}>Gender</label>
-                      <input name="gender" className={inputCls} />
-                    </div>
+                <div style={panelStyle("personal")}>
+                  <Input label="Gender" name="gender" />
 
-                    <div>
-                      <label className={labelCls}>Marital Status</label>
-                      <select name="maritalStatus" className={inputCls}>
-                        <option value="">— Select —</option>
-                        <option value="Single">Single</option>
-                        <option value="Married">Married</option>
-                        <option value="Divorced">Divorced</option>
-                        <option value="Widowed">Widowed</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
+                  <SelectField label="Marital Status" name="maritalStatus">
+                    <option value="">— Select —</option>
+                    <option value="Single">Single</option>
+                    <option value="Married">Married</option>
+                    <option value="Divorced">Divorced</option>
+                    <option value="Widowed">Widowed</option>
+                    <option value="Other">Other</option>
+                  </SelectField>
 
-                    <div>
-                      <label className={labelCls}>Phone 1</label>
-                      <input name="phone" type="tel" className={inputCls} />
-                    </div>
+                  <Input label="Phone 1" name="phone" type="tel" />
+                  <Input label="Phone 2" name="phone2" type="tel" />
 
-                    <div>
-                      <label className={labelCls}>Phone 2</label>
-                      <input name="phone2" type="tel" className={inputCls} />
-                    </div>
+                  <GroupHeading>Emergency Contact</GroupHeading>
 
-                    <p className="col-span-full -mb-1 border-b border-zinc-200 pb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-700">
-                      Emergency Contact
-                    </p>
+                  <Input label="Contact Name" name="emergencyContact" />
+                  <Input label="Contact Phone" name="emergencyPhone" type="tel" />
+                  <Input label="Relationship" name="emergencyRelationship" placeholder="e.g. Spouse" />
 
-                    <div>
-                      <label className={labelCls}>Contact Name</label>
-                      <input name="emergencyContact" className={inputCls} />
-                    </div>
+                  <GroupHeading>Address</GroupHeading>
 
-                    <div>
-                      <label className={labelCls}>Contact Phone</label>
-                      <input name="emergencyPhone" type="tel" className={inputCls} />
-                    </div>
-
-                    <div>
-                      <label className={labelCls}>Relationship</label>
-                      <input name="emergencyRelationship" placeholder="e.g. Spouse" className={inputCls} />
-                    </div>
-
-                    <p className="col-span-full -mb-1 border-b border-zinc-200 pb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-700">
-                      Address
-                    </p>
-
-                    <div className="col-span-full">
-                      <label className={labelCls}>Address Line 1</label>
-                      <input name="address1" className={inputCls} />
-                    </div>
-
-                    <div className="col-span-full">
-                      <label className={labelCls}>Address Line 2</label>
-                      <input name="address2" className={inputCls} />
-                    </div>
-
-                    <div>
-                      <label className={labelCls}>City</label>
-                      <input name="city" className={inputCls} />
-                    </div>
-
-                    <div>
-                      <label className={labelCls}>State / Province</label>
-                      <input name="state" className={inputCls} />
-                    </div>
-
-                    <div>
-                      <label className={labelCls}>Zip Code</label>
-                      <input name="zipCode" className={inputCls} />
-                    </div>
-
-                    <div>
-                      <label className={labelCls}>Country</label>
-                      <input name="country" className={inputCls} />
-                    </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <Input label="Address Line 1" name="address1" />
                   </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <Input label="Address Line 2" name="address2" />
+                  </div>
+
+                  <Input label="City" name="city" />
+                  <Input label="State / Province" name="state" />
+                  <Input label="Zip Code" name="zipCode" />
+                  <Input label="Country" name="country" />
                 </div>
 
                 {/* ── Pay ───────────────────────────────────────────────── */}
-                <div className={activeTab !== "pay" ? "hidden" : ""}>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className={labelCls}>Rule Set</label>
-                      <select name="ruleSetId" required className={inputCls}>
-                        {ruleSets.map((rs) => (
-                          <option key={rs.id} value={rs.id}>{rs.name}</option>
-                        ))}
-                      </select>
-                    </div>
+                <div style={panelStyle("pay")}>
+                  <SelectField label="Rule Set" name="ruleSetId" required>
+                    {ruleSets.map((rs) => (
+                      <option key={rs.id} value={rs.id}>{rs.name}</option>
+                    ))}
+                  </SelectField>
 
-                    <div>
-                      <label className={labelCls}>Shift</label>
-                      <select name="shiftId" className={inputCls}>
-                        <option value="">— None —</option>
-                        {shifts.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name} ({fmtTime(s.startTime)} – {fmtTime(s.endTime)})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                  <SelectField label="Shift" name="shiftId">
+                    <option value="">— None —</option>
+                    {shifts.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({fmtTime(s.startTime)} – {fmtTime(s.endTime)})
+                      </option>
+                    ))}
+                  </SelectField>
 
-                    <div>
-                      <label className={labelCls}>Holiday Rule</label>
-                      <select name="holidayRuleId" className={inputCls}>
-                        <option value="">— None —</option>
-                        {holidayRules.map((r) => (
-                          <option key={r.id} value={r.id}>{r.name}</option>
-                        ))}
-                      </select>
-                    </div>
+                  <SelectField label="Holiday Rule" name="holidayRuleId">
+                    <option value="">— None —</option>
+                    {holidayRules.map((r) => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </SelectField>
 
-                    <div>
-                      <label className={labelCls}>Pay Category</label>
-                      <select name="payCategoryId" className={inputCls}>
-                        <option value="">— None —</option>
-                        {payCategories.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.number}{c.description ? ` — ${c.description}` : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                  <SelectField label="Pay Category" name="payCategoryId">
+                    <option value="">— None —</option>
+                    {payCategories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.number}{c.description ? ` — ${c.description}` : ""}
+                      </option>
+                    ))}
+                  </SelectField>
 
-                    <div>
-                      <label className={labelCls}>Pay Type</label>
-                      <select name="payTypeId" className={inputCls}>
-                        <option value="">— None —</option>
-                        {payTypes.map((pt) => (
-                          <option key={pt.id} value={pt.id}>
-                            {pt.number}{pt.description ? ` — ${pt.description}` : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                  <SelectField label="Pay Type" name="payTypeId">
+                    <option value="">— None —</option>
+                    {payTypes.map((pt) => (
+                      <option key={pt.id} value={pt.id}>
+                        {pt.number}{pt.description ? ` — ${pt.description}` : ""}
+                      </option>
+                    ))}
+                  </SelectField>
 
-                    <div>
-                      <label className={labelCls}>Pay Method</label>
-                      <select
-                        name="payType"
-                        value={payType}
-                        onChange={(e) => setPayType(e.target.value)}
-                        className={inputCls}
-                      >
-                        <option value="">— Not set —</option>
-                        <option value="HOURLY">Hourly</option>
-                        <option value="SALARY">Salary</option>
-                      </select>
-                    </div>
+                  <SelectField
+                    label="Pay Method"
+                    name="payType"
+                    value={payType}
+                    onChange={(e) => setPayType(e.target.value)}
+                  >
+                    <option value="">— Not set —</option>
+                    <option value="HOURLY">Hourly</option>
+                    <option value="SALARY">Salary</option>
+                  </SelectField>
 
-                    <div>
-                      <label className={labelCls}>
-                        Pay Rate{" "}
-                        <span className="font-normal text-zinc-400">
-                          {payType === "HOURLY" ? "($/hr)" : payType === "SALARY" ? "($/yr)" : ""}
-                        </span>
-                      </label>
-                      <input
-                        name="payRate"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        className={inputCls}
-                      />
-                    </div>
-                  </div>
+                  <Input
+                    label={
+                      payType === "HOURLY"
+                        ? "Pay Rate ($/hr)"
+                        : payType === "SALARY"
+                          ? "Pay Rate ($/yr)"
+                          : "Pay Rate"
+                    }
+                    name="payRate"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                  />
                 </div>
               </div>
 
-              {/* Footer */}
-              <div className="flex gap-3 border-t border-zinc-200 px-6 py-4 dark:border-zinc-700">
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-                >
+              <div
+                className="flex items-center gap-2 px-6 py-4"
+                style={{ borderTop: "1px solid var(--stroke-divider)" }}
+              >
+                <Button type="submit" disabled={isPending}>
                   {isPending ? "Creating…" : "Create Employee"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleClose}
-                  className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300"
-                >
+                </Button>
+                <Button type="button" hierarchy="secondary" onClick={handleClose}>
                   Cancel
-                </button>
+                </Button>
               </div>
             </form>
           </div>

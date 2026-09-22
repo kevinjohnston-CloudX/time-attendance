@@ -2,8 +2,42 @@
 
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { FolderOpen, X } from "lucide-react";
+import type { ReactNode, SelectHTMLAttributes } from "react";
 import { createDepartment, updateDepartment } from "@/actions/admin.actions";
 import type { Site, Department } from "@prisma/client";
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  Checkbox,
+  EmptyState,
+  Input,
+  Select,
+  Table,
+  TBody,
+  THead,
+  TR,
+  TH,
+  TD,
+  TableFooter,
+  Toolbar,
+  statusTone,
+} from "@/components/ui";
+
+/**
+ * Departments, on the design's list template.
+ *
+ * <p>The design's Departments list carries Cost Centre, Manager, Default Shift
+ * and a head count. A Department in this schema is a name, a set of sites and
+ * an active flag — nothing else — so those four columns are left out rather
+ * than filled in with placeholders.
+ *
+ * <p>A department with no site is the one row that matters here: employees are
+ * scoped by site, so an unsited department is invisible to every supervisor.
+ * It gets the tertiary "No sites" instead of an empty cell.
+ */
 
 type DepartmentWithSites = Department & { sites: { site: Site }[] };
 
@@ -12,39 +46,59 @@ interface Props {
   sites: Site[];
 }
 
-const inputCls = "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const saveBtnCls = "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
-const cancelBtnCls = "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
+/** Field grid from the design's doc template, at two columns. */
+const FIELD_GRID = "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,48%)),1fr))]";
 
-function SiteCheckboxes({ sites, selected, onChange }: { sites: Site[]; selected: string[]; onChange: (ids: string[]) => void }) {
+function SelectField({
+  label,
+  children,
+  ...rest
+}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; children: ReactNode }) {
+  return (
+    <label className="flex w-full flex-col gap-1.5">
+      <span className="wms-label">{label}</span>
+      <Select {...rest}>{children}</Select>
+    </label>
+  );
+}
+
+/**
+ * Which sites a department exists at.
+ *
+ * <p>The kit's Checkbox is itself a label, so these are laid out as a plain
+ * row rather than wrapped in bordered pills — a label inside a label toggles
+ * twice on one click.
+ */
+function SiteCheckboxes({
+  sites,
+  selected,
+  onChange,
+}: {
+  sites: Site[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
   function toggle(id: string) {
     onChange(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id]);
   }
   return (
-    <div className="flex flex-wrap gap-2">
-      {sites.map((s) => {
-        const checked = selected.includes(s.id);
-        return (
-          <label
+    <div className="flex w-full flex-col gap-1.5">
+      <span className="wms-label">Sites</span>
+      <div className="flex flex-wrap gap-x-5 gap-y-2">
+        {sites.map((s) => (
+          <Checkbox
             key={s.id}
-            className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors ${
-              checked
-                ? "border-blue-400 bg-blue-50 text-blue-700 dark:border-blue-600 dark:bg-blue-900/20 dark:text-blue-300"
-                : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
-            }`}
-          >
-            <input type="checkbox" className="h-3.5 w-3.5 accent-blue-600" checked={checked} onChange={() => toggle(s.id)} />
-            {s.name}
-          </label>
-        );
-      })}
+            checked={selected.includes(s.id)}
+            onChange={() => toggle(s.id)}
+            label={s.name}
+          />
+        ))}
+      </div>
     </div>
   );
 }
 
-// ─── Modal ────────────────────────────────────────────────────────────────────
-
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
     document.addEventListener("keydown", onKey);
@@ -53,25 +107,48 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.4)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <h3 className="text-base font-semibold text-zinc-900 dark:text-white">{title}</h3>
-          <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" aria-label="Close">
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div className="px-6 py-5">{children}</div>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="ta-modal max-h-[90vh] w-full max-w-lg overflow-y-auto"
+        style={{ borderRadius: "var(--radius-l)" }}
+      >
+        <header
+          className="flex items-center justify-between gap-3 px-5 py-3.5"
+          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+        >
+          <h3 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>{title}</h3>
+          <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
+            <X className="h-4 w-4" />
+          </Button>
+        </header>
+        <div className="px-5 py-4">{children}</div>
       </div>
     </div>
   );
 }
 
-// ─── Main manager ─────────────────────────────────────────────────────────────
+function FormActions({
+  submitLabel,
+  pending,
+  onCancel,
+}: {
+  submitLabel: string;
+  pending: boolean;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="mt-5 flex gap-2 pt-4" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+      <Button type="submit" disabled={pending}>{pending ? "Saving…" : submitLabel}</Button>
+      <Button type="button" hierarchy="secondary" onClick={onCancel}>Cancel</Button>
+    </div>
+  );
+}
 
 export function DepartmentsManager({ departments, sites }: Props) {
   const router = useRouter();
@@ -140,95 +217,93 @@ export function DepartmentsManager({ departments, sites }: Props) {
   }
 
   return (
-    <div className="mt-6">
-      <div className="flex flex-col gap-2">
-        {departments.map((dept) => (
-          <button
-            key={dept.id}
-            type="button"
-            onClick={() => openEdit(dept)}
-            className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className={`font-medium ${dept.isActive ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"}`}>
-                  {dept.name}
-                </span>
-                <span className="text-xs text-zinc-400">
-                  {dept.sites.length === 0 ? "No sites" : dept.sites.map((ds) => ds.site.name).join(", ")}
-                </span>
-                {!dept.isActive && (
-                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">Inactive</span>
-                )}
-              </div>
-              <span className="text-xs text-zinc-400">Click to edit →</span>
-            </div>
-          </button>
-        ))}
-      </div>
+    <div className="mt-4 flex flex-col gap-2.5">
+      <Toolbar count={departments.length} countLabel="department">
+        <Button onClick={openCreate}>New Department</Button>
+      </Toolbar>
 
-      <button
-        onClick={openCreate}
-        className="mt-4 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-600"
-      >
-        + Add Department
-      </button>
+      <Card padding={0}>
+        {departments.length === 0 ? (
+          <EmptyState
+            icon={<FolderOpen className="h-8 w-8" />}
+            title="No departments"
+            body="Departments group employees inside a site and decide who a supervisor sees."
+            action={<Button size="sm" onClick={openCreate}>New Department</Button>}
+          />
+        ) : (
+          <>
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Department</TH>
+                  <TH>Sites</TH>
+                  <TH>Status</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {departments.map((dept) => (
+                  <TR key={dept.id} onClick={() => openEdit(dept)}>
+                    <TD style={{ fontWeight: "var(--weight-medium)" }}>{dept.name}</TD>
+                    <TD style={{ color: "var(--text-secondary)" }}>
+                      {dept.sites.length === 0 ? (
+                        <span style={{ color: "var(--text-tertiary)" }}>No sites</span>
+                      ) : (
+                        dept.sites.map((ds) => ds.site.name).join(", ")
+                      )}
+                    </TD>
+                    <TD>
+                      {dept.isActive ? (
+                        <Badge tone={statusTone("ACTIVE")} size="sm" dot>Active</Badge>
+                      ) : (
+                        // statusTone would answer "warning" here; an amber pill
+                        // on a department nobody is in reads as something to
+                        // action. Neutral is Badge's own default.
+                        <Badge size="sm">Inactive</Badge>
+                      )}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+            <TableFooter
+              shown={departments.length}
+              total={departments.length}
+              label={departments.length === 1 ? "department" : "departments"}
+            />
+          </>
+        )}
+      </Card>
 
-      {/* Create modal */}
       {showCreate && (
         <Modal title="New Department" onClose={closeCreate}>
-          {error && (
-            <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>
-          )}
+          {error && <div className="mb-4"><Banner tone="error" body={error} /></div>}
           <form onSubmit={handleCreate}>
             <div className="flex flex-col gap-3">
-              <div>
-                <label className="mb-1 block text-xs text-zinc-500">Name</label>
-                <input name="name" required placeholder="e.g. Operations" className={inputCls} />
+              <div className={FIELD_GRID}>
+                <Input label="Name" name="name" required placeholder="e.g. Operations" />
               </div>
-              <div>
-                <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">Sites</p>
-                <SiteCheckboxes sites={sites} selected={createSiteIds} onChange={setCreateSiteIds} />
-              </div>
+              <SiteCheckboxes sites={sites} selected={createSiteIds} onChange={setCreateSiteIds} />
             </div>
-            <div className="mt-6 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-              <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Creating…" : "Create"}</button>
-              <button type="button" onClick={closeCreate} className={cancelBtnCls}>Cancel</button>
-            </div>
+            <FormActions submitLabel="Create" pending={isPending} onCancel={closeCreate} />
           </form>
         </Modal>
       )}
 
-      {/* Edit modal */}
       {editingDept && (
         <Modal title={`Edit: ${editingDept.name}`} onClose={closeEdit}>
-          {error && (
-            <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>
-          )}
+          {error && <div className="mb-4"><Banner tone="error" body={error} /></div>}
           <form onSubmit={(e) => handleUpdate(editingDept, e)}>
             <div className="flex flex-col gap-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs text-zinc-500">Name</label>
-                  <input name="name" defaultValue={editingDept.name} required placeholder="Name" className={inputCls} />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-zinc-500">Status</label>
-                  <select name="isActive" defaultValue={editingDept.isActive ? "true" : "false"} className={inputCls}>
-                    <option value="true">Active</option>
-                    <option value="false">Inactive</option>
-                  </select>
-                </div>
+              <div className={FIELD_GRID}>
+                <Input label="Name" name="name" defaultValue={editingDept.name} required />
+                <SelectField label="Status" name="isActive" defaultValue={editingDept.isActive ? "true" : "false"}>
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </SelectField>
               </div>
-              <div>
-                <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">Sites</p>
-                <SiteCheckboxes sites={sites} selected={editSiteIds} onChange={setEditSiteIds} />
-              </div>
+              <SiteCheckboxes sites={sites} selected={editSiteIds} onChange={setEditSiteIds} />
             </div>
-            <div className="mt-6 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-              <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Saving…" : "Save changes"}</button>
-              <button type="button" onClick={closeEdit} className={cancelBtnCls}>Cancel</button>
-            </div>
+            <FormActions submitLabel="Save changes" pending={isPending} onCancel={closeEdit} />
           </form>
         </Modal>
       )}

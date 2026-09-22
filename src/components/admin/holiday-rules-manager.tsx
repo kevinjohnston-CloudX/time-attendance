@@ -2,20 +2,51 @@
 
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { CalendarCheck, ChevronDown, X } from "lucide-react";
+import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
 import { createHolidayRule, updateHolidayRule, deleteHolidayRule } from "@/actions/holiday-rule.actions";
 import type { HolidayRule } from "@prisma/client";
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  Checkbox,
+  EmptyState,
+  Input,
+  SearchInput,
+  Select,
+  SegmentedControl,
+  Table,
+  TBody,
+  THead,
+  TR,
+  TH,
+  TD,
+  TableFooter,
+  Toolbar,
+  statusTone,
+} from "@/components/ui";
+
+/**
+ * Holiday rules — the list on the design's list template, the editor in a
+ * dialog behind it.
+ *
+ * <p>The editor is not on the design's field grid, and deliberately so. These
+ * rules are sentences with numbers in them — "must work at least 3 days within
+ * the last 2 weeks before the holiday" — and breaking each clause into a
+ * labelled field loses the sentence, which is the only thing that says what the
+ * rule does. The controls are the design system's; the layout is prose with
+ * fields in it.
+ *
+ * <p>Several numeric fields are disabled rather than hidden when their switch
+ * is off. That is load-bearing: a disabled input is not submitted, and the
+ * passthrough hidden fields on the other tabs are what the action reads
+ * instead. Removing a `disabled` here would change what gets saved.
+ */
 
 type PayCodeOption = { id: string; code: string; label: string };
 interface Props { rules: HolidayRule[]; payCodes?: PayCodeOption[] }
-
-const inputCls =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const saveBtnCls =
-  "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
-const cancelBtnCls =
-  "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
-const dangerBtnCls =
-  "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50";
 
 const CREDIT_METHOD_LABELS: Record<string, string> = {
   FIXED_HOURS:     "Fixed Hours",
@@ -23,11 +54,17 @@ const CREDIT_METHOD_LABELS: Record<string, string> = {
   SCHEDULED_HOURS: "Scheduled Hours",
 };
 
-const PAY_BUCKET_OPTIONS = [
-  { value: "HOLIDAY", label: "Holiday" },
-  { value: "REG",     label: "Regular" },
-  { value: "OT",      label: "Overtime" },
-  { value: "DT",      label: "Double Time" },
+type View = "all" | "active" | "inactive";
+
+const VIEWS = [
+  { value: "all", label: "All" },
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+];
+
+const YES_NO = [
+  { value: "true", label: "Yes" },
+  { value: "false", label: "No" },
 ];
 
 function formatCredit(rule: HolidayRule): string {
@@ -38,8 +75,15 @@ function formatCredit(rule: HolidayRule): string {
   return CREDIT_METHOD_LABELS[rule.creditMethod] ?? rule.creditMethod;
 }
 
-function formatPremium(rule: HolidayRule): string {
-  return `${(rule.workingPremium / 100).toFixed(2)}× working premium`;
+/** What a rule demands of the employee, in the words the editor uses. */
+function formatEligibility(rule: HolidayRule): string | null {
+  const parts = [
+    rule.requireDayBefore && "day before",
+    rule.requireDayAfter && "day after",
+    rule.requireDayBeforeOrAfter && "day before or after",
+    rule.mustNotWorkOnHoliday && "must not work the day",
+  ].filter(Boolean) as string[];
+  return parts.length ? parts.join(" · ") : null;
 }
 
 type HolidayRuleTab = "general" | "holiday" | "prorate";
@@ -47,22 +91,104 @@ type HolidayRuleTab = "general" | "holiday" | "prorate";
 interface AssignedHoliday { id: string; name: string; date: string | Date }
 interface OverrideRow { date: string; hours: string; payCodeId: string }
 
-function CollapsibleSection({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
+/**
+ * A control sized to sit inside a sentence.
+ *
+ * <p>The kit's Input is a 32px labelled field; six of them on one line would
+ * break the clause they belong to. This is the design system's 24px field with
+ * its border, hover and focus ring, sized by the caller.
+ */
+function InlineInput({ width = 64, ...rest }: InputHTMLAttributes<HTMLInputElement> & { width?: number }) {
+  return (
+    <input
+      {...rest}
+      className="ta-field rounded px-2 py-1 disabled:opacity-40"
+      style={{
+        width,
+        border: "1px solid var(--stroke-secondary)",
+        background: "var(--surface-card)",
+        color: "var(--text-primary)",
+        font: "var(--type-body2)",
+        fontVariantNumeric: "tabular-nums",
+        textAlign: rest.type === "number" ? "right" : "left",
+        outline: "none",
+      }}
+    />
+  );
+}
+
+/** The select half of the same pair. */
+function InlineSelect({ children, ...rest }: SelectHTMLAttributes<HTMLSelectElement> & { children: ReactNode }) {
+  return (
+    <Select {...rest} style={{ height: 26, font: "var(--type-body2)", padding: "0 6px" }}>
+      {children}
+    </Select>
+  );
+}
+
+/** A labelled Select, matching the kit Input's label. */
+function SelectField({
+  label,
+  children,
+  ...rest
+}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; children: ReactNode }) {
+  return (
+    <label className="flex w-full flex-col gap-1.5">
+      <span className="wms-label">{label}</span>
+      <Select {...rest}>{children}</Select>
+    </label>
+  );
+}
+
+/**
+ * One clause of a rule: a checkbox, the words that switch on with it, and any
+ * fields the clause carries.
+ *
+ * <p>`label` goes inside the checkbox so clicking the words toggles it — on a
+ * form of thirty switches, a label that is not a hit target is thirty small
+ * misses. Anything in `children` sits beside it, because a select inside a
+ * label toggles the checkbox every time you open it.
+ */
+function Clause({
+  checked,
+  onChange,
+  label,
+  children,
+  indent = false,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  label: ReactNode;
+  children?: ReactNode;
+  indent?: boolean;
+}) {
+  return (
+    <div
+      className={`flex flex-wrap items-center gap-2 ${indent ? "pl-6" : ""}`}
+      style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
+    >
+      <Checkbox checked={checked} onChange={onChange} label={label} />
+      {children}
+    </div>
+  );
+}
+
+function CollapsibleSection({ title, children, defaultOpen = false }: { title: string; children: ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div>
       <button
         type="button"
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between border-b border-zinc-100 pb-1.5 text-left dark:border-zinc-800"
+        className="flex w-full items-center justify-between pb-1.5 text-left"
+        style={{ border: "none", borderBottom: "1px solid var(--stroke-divider)", background: "transparent", cursor: "pointer" }}
       >
-        <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{title}</span>
-        <svg
-          className={`h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform duration-150 ${open ? "" : "-rotate-90"}`}
-          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
+        <span className="wms-overline">{title}</span>
+        <ChevronDown
+          className={`h-3.5 w-3.5 shrink-0 transition-transform duration-150 ${open ? "" : "-rotate-90"}`}
+          style={{ color: "var(--icon-tertiary)" }}
+        />
       </button>
       <div className={open ? "mt-3" : "hidden"}>{children}</div>
     </div>
@@ -74,6 +200,7 @@ function HolidayRuleFields({ rule, isEdit, payCodes = [] }: { rule?: HolidayRule
   const [creditMethod, setCreditMethod] = useState<string>(rule?.creditMethod ?? "FIXED_HOURS");
   const [tenureEnabled, setTenureEnabled] = useState(rule?.tenureRequiredEnabled ?? false);
   const [avgOnly, setAvgOnly] = useState(rule?.dailyWeeklyAveragingOnly ?? false);
+  const [includeOnProbation, setIncludeOnProbation] = useState(rule?.includeOnProbation ?? false);
 
   // Holiday tab state
   const [birthdayIsHoliday, setBirthdayIsHoliday] = useState(rule?.birthdayIsHoliday ?? false);
@@ -101,6 +228,7 @@ function HolidayRuleFields({ rule, isEdit, payCodes = [] }: { rule?: HolidayRule
   const [prorateEnabled, setProrateEnabled] = useState(rule?.prorateEnabled ?? false);
   const [prorateUseCustomRange, setProrateUseCustomRange] = useState(rule?.prorateUseCustomRange ?? false);
   const [prorateAppliedRule, setProrateAppliedRule] = useState(rule?.prorateAppliedRule ?? "AVERAGE_DAILY");
+  const [prorateExcludeOt, setProrateExcludeOt] = useState(rule?.prorateExcludeOt ?? false);
 
   // Other rules state
   const [payNonWorkingHolidayOnly, setPayNonWorkingHolidayOnly] = useState(rule?.payNonWorkingHolidayOnly ?? false);
@@ -127,553 +255,558 @@ function HolidayRuleFields({ rule, isEdit, payCodes = [] }: { rule?: HolidayRule
 
   return (
     <div>
-      {/* Tab bar */}
-      <div className="mb-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-700">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              tab === t.key
-                ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-white"
-                : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* Tab bar. The design system has no underline tab: a set this small
+          and this mutually exclusive is a segmented control. */}
+      <div className="mb-4">
+        <SegmentedControl
+          items={tabs.map((t) => ({ value: t.key, label: t.label }))}
+          value={tab}
+          onChange={(v) => setTab(v as typeof tab)}
+        />
       </div>
 
       {/* ── General tab ── */}
       <div className={tab !== "general" ? "hidden" : "flex flex-col gap-5"}>
 
-          {/* Number + Name + Status */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(160px,24%)),1fr))]">
+          <Input label="Rule Number" name="number" type="number" min="1" max="99999" defaultValue={rule?.number ?? ""} placeholder="e.g. 10" />
+          <Input label="Rule Name" name="name" required defaultValue={rule?.name ?? ""} placeholder="e.g. Standard Holiday" />
+          {isEdit && (
+            <SelectField label="Status" name="isActive" defaultValue={rule?.isActive ? "true" : "false"}>
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </SelectField>
+          )}
+        </div>
+
+        <CollapsibleSection title="Holiday Pay Hours">
+          <div className="flex flex-col gap-3">
+
+            <Clause
+              checked={creditMethod === "SCHEDULED_HOURS"}
+              onChange={(on) => setCreditMethod(on ? "SCHEDULED_HOURS" : "FIXED_HOURS")}
+              label="Use scheduled hours as holiday pay hours"
+            />
+            <input type="hidden" name="creditMethod" value={creditMethod} />
+
+            <div
+              className="flex flex-wrap items-center gap-3"
+              style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
+            >
+              <span>Use a Fixed number of Pay Hours:</span>
+              {/* Disabled, not hidden: a disabled field is not submitted, and
+                  the Holiday tab's passthrough copy of creditHours is what the
+                  action then reads. */}
+              <InlineInput
+                name="creditHours"
+                type="number" step="0.25" min="0" max="24"
+                defaultValue={rule ? rule.creditMinutes / 60 : 8}
+                disabled={creditMethod === "SCHEDULED_HOURS"}
+                width={88}
+              />
+              <span style={{ color: "var(--text-tertiary)" }}>Maximum:</span>
+              <InlineInput
+                name="maxCreditHours"
+                type="number" step="0.25" min="0" max="24"
+                defaultValue={rule ? rule.maxCreditMinutes / 60 : 0}
+                width={88}
+              />
+              <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>(0 = no cap)</span>
+            </div>
+
+            <div
+              className="flex flex-wrap items-center gap-3"
+              style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
+            >
+              <span>Pay Code:</span>
+              <InlineSelect name="payCodeId" defaultValue={rule?.payCodeId ?? ""}>
+                <option value="">— None —</option>
+                {payCodes.map((pc) => (
+                  <option key={pc.id} value={pc.id}>{pc.code}{pc.label ? ` — ${pc.label}` : ""}</option>
+                ))}
+              </InlineSelect>
+            </div>
+
+            <Clause checked={includeOnProbation} onChange={setIncludeOnProbation} label="Include employees on probation" />
+            <input type="hidden" name="includeOnProbation" value={includeOnProbation ? "true" : "false"} />
+
             <div>
-              <label className="mb-1 block text-xs text-zinc-500">Rule Number</label>
-              <input name="number" type="number" min="1" max="99999" defaultValue={rule?.number ?? ""} placeholder="e.g. 10" className={inputCls} />
+              <Clause checked={tenureEnabled} onChange={setTenureEnabled} label="Employee">
+                <InlineSelect name="tenureRequiredBasis" defaultValue={rule?.tenureRequiredBasis ?? "HIRE_DATE"}>
+                  <option value="HIRE_DATE">Hire Date</option>
+                  <option value="ADJUSTED_HIRE_DATE">Adjusted Hire Date</option>
+                </InlineSelect>
+                <span>must be at least</span>
+                <InlineInput
+                  name="tenureRequiredDays" type="number" min="0"
+                  defaultValue={rule?.tenureRequiredDays ?? 90}
+                  disabled={!tenureEnabled}
+                />
+                <InlineSelect name="tenureRequiredUnit" defaultValue={rule?.tenureRequiredUnit ?? "DAYS"}>
+                  <option value="DAYS">Days</option>
+                  <option value="MONTHS">Months</option>
+                </InlineSelect>
+                <span>before the holiday</span>
+              </Clause>
+              <input type="hidden" name="tenureRequiredEnabled" value={tenureEnabled ? "true" : "false"} />
             </div>
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-xs text-zinc-500">Rule Name</label>
-              <input name="name" required defaultValue={rule?.name ?? ""} placeholder="e.g. Standard Holiday" className={inputCls} />
+
+            <div>
+              <Clause
+                checked={avgOnly}
+                onChange={setAvgOnly}
+                indent
+                label="Only include employees currently assigned to and active with Daily/Weekly Averaging"
+              />
+              <input type="hidden" name="dailyWeeklyAveragingOnly" value={avgOnly ? "true" : "false"} />
             </div>
-            {isEdit && (
-              <div>
-                <label className="mb-1 block text-xs text-zinc-500">Status</label>
-                <select name="isActive" defaultValue={rule?.isActive ? "true" : "false"} className={inputCls}>
-                  <option value="true">Active</option>
-                  <option value="false">Inactive</option>
-                </select>
-              </div>
-            )}
+
           </div>
+        </CollapsibleSection>
 
-          <CollapsibleSection title="Holiday Pay Hours">
-            <div className="flex flex-col gap-3">
+        <CollapsibleSection title="Eligibility Rules">
+          <div className="flex flex-col gap-2.5">
+            <p style={{ margin: 0, font: "var(--type-caption1)", fontStyle: "italic", color: "var(--text-tertiary)", textWrap: "pretty" }}>
+              All calculated pay codes and all non-calculated pay codes configured to count as attendance count that day as a work day.
+            </p>
 
-              {/* Use scheduled hours checkbox */}
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                <input
-                  type="checkbox"
-                  checked={creditMethod === "SCHEDULED_HOURS"}
-                  onChange={(e) => setCreditMethod(e.target.checked ? "SCHEDULED_HOURS" : "FIXED_HOURS")}
-                  className="rounded"
+            <Clause checked={requireDayBefore} onChange={setRequireDayBefore} label="Must work the scheduled day before holiday" />
+            <input type="hidden" name="requireDayBefore" value={requireDayBefore ? "true" : "false"} />
+
+            <Clause checked={requireDayAfter} onChange={setRequireDayAfter} label="Must work the scheduled day after holiday" />
+            <input type="hidden" name="requireDayAfter" value={requireDayAfter ? "true" : "false"} />
+
+            <Clause
+              checked={requireDayBeforeOrAfter}
+              onChange={setRequireDayBeforeOrAfter}
+              label="Must work the scheduled day before OR scheduled day after a holiday"
+            />
+            <input type="hidden" name="requireDayBeforeOrAfter" value={requireDayBeforeOrAfter ? "true" : "false"} />
+
+            <div>
+              <Clause checked={requireDaysWorkedEnabled} onChange={setRequireDaysWorkedEnabled} label="Must work at least">
+                <InlineInput
+                  name="requireDaysWorkedCount" type="number" min="0" max="365"
+                  defaultValue={rule?.requireDaysWorkedCount ?? 0}
+                  disabled={!requireDaysWorkedEnabled}
                 />
-                Use scheduled hours as holiday pay hours
-              </label>
-              <input type="hidden" name="creditMethod" value={creditMethod} />
-
-              {/* Fixed hours + maximum row */}
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-sm text-zinc-600 dark:text-zinc-400">Use a Fixed number of Pay Hours:</span>
-                <input
-                  name="creditHours"
-                  type="number" step="0.25" min="0" max="24"
-                  defaultValue={rule ? rule.creditMinutes / 60 : 8}
-                  disabled={creditMethod === "SCHEDULED_HOURS"}
-                  className={`w-24 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white text-right ${creditMethod === "SCHEDULED_HOURS" ? "opacity-40" : ""}`}
+                <span>days within the last</span>
+                <InlineInput
+                  name="requireDaysWorkedPeriod" type="number" min="0" max="365"
+                  defaultValue={rule?.requireDaysWorkedPeriod ?? 0}
+                  disabled={!requireDaysWorkedEnabled}
                 />
-                <span className="text-sm text-zinc-400">Maximum:</span>
-                <input
-                  name="maxCreditHours"
-                  type="number" step="0.25" min="0" max="24"
-                  defaultValue={rule ? rule.maxCreditMinutes / 60 : 0}
-                  className="w-24 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white text-right"
-                />
-                <span className="text-xs text-zinc-400">(0 = no cap)</span>
-              </div>
-
-              {/* Pay Code */}
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-zinc-600 dark:text-zinc-400">Pay Code:</span>
-                <select name="payCodeId" defaultValue={rule?.payCodeId ?? ""} className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white">
-                  <option value="">— None —</option>
-                  {payCodes.map((pc) => (
-                    <option key={pc.id} value={pc.id}>{pc.code}{pc.label ? ` — ${pc.label}` : ""}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Include on probation */}
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                <input type="checkbox" name="includeOnProbation" value="true"
-                  defaultChecked={rule?.includeOnProbation ?? false} className="rounded" />
-                Include employees on probation
-              </label>
-
-              {/* Tenure requirement */}
-              <div>
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                  <input type="checkbox" checked={tenureEnabled}
-                    onChange={(e) => setTenureEnabled(e.target.checked)} className="rounded" />
-                  <span>Employee</span>
-                  <select name="tenureRequiredBasis" defaultValue={rule?.tenureRequiredBasis ?? "HIRE_DATE"}
-                    className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white">
-                    <option value="HIRE_DATE">Hire Date</option>
-                    <option value="ADJUSTED_HIRE_DATE">Adjusted Hire Date</option>
-                  </select>
-                  <span>must be at least</span>
-                  <input name="tenureRequiredDays" type="number" min="0"
-                    defaultValue={rule?.tenureRequiredDays ?? 90}
-                    disabled={!tenureEnabled}
-                    className={`w-16 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-right focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white ${!tenureEnabled ? "opacity-40" : ""}`} />
-                  <select name="tenureRequiredUnit" defaultValue={rule?.tenureRequiredUnit ?? "DAYS"}
-                    className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white">
-                    <option value="DAYS">Days</option>
-                    <option value="MONTHS">Months</option>
-                  </select>
-                  <span>before the holiday</span>
-                </label>
-                <input type="hidden" name="tenureRequiredEnabled" value={tenureEnabled ? "true" : "false"} />
-              </div>
-
-              {/* Daily/Weekly Averaging */}
-              <div className="pl-6">
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                  <input type="checkbox" checked={avgOnly}
-                    onChange={(e) => setAvgOnly(e.target.checked)} className="rounded" />
-                  Only include employees currently assigned to and active with Daily/Weekly Averaging
-                </label>
-                <input type="hidden" name="dailyWeeklyAveragingOnly" value={avgOnly ? "true" : "false"} />
-              </div>
-
-            </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection title="Eligibility Rules">
-            <div className="flex flex-col gap-2.5">
-              <p className="text-xs italic text-zinc-400">All calculated pay codes and all non-calculated pay codes configured to count as attendance count that day as a work day.</p>
-
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                <input type="checkbox" checked={requireDayBefore} onChange={(e) => setRequireDayBefore(e.target.checked)} className="rounded" />
-                Must work the scheduled day before holiday
-              </label>
-              <input type="hidden" name="requireDayBefore" value={requireDayBefore ? "true" : "false"} />
-
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                <input type="checkbox" checked={requireDayAfter} onChange={(e) => setRequireDayAfter(e.target.checked)} className="rounded" />
-                Must work the scheduled day after holiday
-              </label>
-              <input type="hidden" name="requireDayAfter" value={requireDayAfter ? "true" : "false"} />
-
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                <input type="checkbox" checked={requireDayBeforeOrAfter} onChange={(e) => setRequireDayBeforeOrAfter(e.target.checked)} className="rounded" />
-                Must work the scheduled day before OR scheduled day after a holiday
-              </label>
-              <input type="hidden" name="requireDayBeforeOrAfter" value={requireDayBeforeOrAfter ? "true" : "false"} />
-
-              {/* Must work N days within N day/week period */}
-              <div>
-                <label className="flex flex-wrap cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                  <input type="checkbox" checked={requireDaysWorkedEnabled} onChange={(e) => setRequireDaysWorkedEnabled(e.target.checked)} className="rounded" />
-                  <span>Must work at least</span>
-                  <input name="requireDaysWorkedCount" type="number" min="0" max="365"
-                    defaultValue={rule?.requireDaysWorkedCount ?? 0}
-                    disabled={!requireDaysWorkedEnabled}
-                    className={`w-16 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-right focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white ${!requireDaysWorkedEnabled ? "opacity-40" : ""}`} />
-                  <span>days within the last</span>
-                  <input name="requireDaysWorkedPeriod" type="number" min="0" max="365"
-                    defaultValue={rule?.requireDaysWorkedPeriod ?? 0}
-                    disabled={!requireDaysWorkedEnabled}
-                    className={`w-16 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-right focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white ${!requireDaysWorkedEnabled ? "opacity-40" : ""}`} />
-                  <select name="requireDaysWorkedPeriodUnit" defaultValue={rule?.requireDaysWorkedPeriodUnit ?? "DAY"}
-                    disabled={!requireDaysWorkedEnabled}
-                    className={`rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white ${!requireDaysWorkedEnabled ? "opacity-40" : ""}`}>
-                    <option value="DAY">Day</option>
-                    <option value="WEEK">Week</option>
-                  </select>
-                  <span>period before the holiday</span>
-                </label>
-                <input type="hidden" name="requireDaysWorkedEnabled" value={requireDaysWorkedEnabled ? "true" : "false"} />
-                {requireDaysWorkedEnabled && (
-                  <div className="mt-1.5 flex items-center gap-2 pl-6">
-                    <span className="text-xs text-zinc-500">Minimum required daily hours to count as a work day:</span>
-                    <input name="requireDaysWorkedMinDailyHours" type="number" step="0.25" min="0"
-                      defaultValue={Number(rule?.requireDaysWorkedMinDailyHours ?? 0)}
-                      className="w-20 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-right focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" />
-                  </div>
-                )}
-              </div>
-
-              {/* N% of scheduled hours */}
-              <div>
-                <label className="flex flex-wrap cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                  <input type="checkbox" checked={requireScheduledHoursPct} onChange={(e) => setRequireScheduledHoursPct(e.target.checked)} className="rounded" />
-                  <span>Must work at least</span>
-                  <input name="requireScheduledHoursPctValue" type="number" min="0" max="100"
-                    defaultValue={rule?.requireScheduledHoursPctValue ?? 50}
-                    disabled={!requireScheduledHoursPct}
-                    className={`w-16 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-right focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white ${!requireScheduledHoursPct ? "opacity-40" : ""}`} />
-                  <span>% of scheduled calculated pay code hours on eligible workday(s)</span>
-                </label>
-                <input type="hidden" name="requireScheduledHoursPct" value={requireScheduledHoursPct ? "true" : "false"} />
-              </div>
-
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                <input type="checkbox" checked={mustNotWorkOnHoliday} onChange={(e) => setMustNotWorkOnHoliday(e.target.checked)} className="rounded" />
-                Must NOT work on the holiday
-              </label>
-              <input type="hidden" name="mustNotWorkOnHoliday" value={mustNotWorkOnHoliday ? "true" : "false"} />
-
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                <input type="checkbox" checked={useDynamicSchedules} onChange={(e) => setUseDynamicSchedules(e.target.checked)} className="rounded" />
-                Look at all dynamic schedules for the day when determining eligibility rules (multiple in a day)
-              </label>
-              <input type="hidden" name="useDynamicSchedules" value={useDynamicSchedules ? "true" : "false"} />
-
-              {/* Days of week excluded */}
-              <div>
-                <p className="mb-1.5 text-xs text-zinc-500">Days of week Excluded from Eligibility:</p>
-                <div className="flex flex-wrap gap-3">
-                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, i) => (
-                    <label key={i} className="flex cursor-pointer items-center gap-1.5 text-sm text-zinc-700 dark:text-zinc-300">
-                      <input
-                        type="checkbox"
-                        checked={excludedWeekDays.includes(i)}
-                        onChange={(e) =>
-                          setExcludedWeekDays((prev) =>
-                            e.target.checked ? [...prev, i].sort((a, b) => a - b) : prev.filter((d) => d !== i)
-                          )
-                        }
-                        className="rounded"
-                      />
-                      {day}
-                    </label>
-                  ))}
+                <InlineSelect
+                  name="requireDaysWorkedPeriodUnit"
+                  defaultValue={rule?.requireDaysWorkedPeriodUnit ?? "DAY"}
+                  disabled={!requireDaysWorkedEnabled}
+                >
+                  <option value="DAY">Day</option>
+                  <option value="WEEK">Week</option>
+                </InlineSelect>
+                <span>period before the holiday</span>
+              </Clause>
+              <input type="hidden" name="requireDaysWorkedEnabled" value={requireDaysWorkedEnabled ? "true" : "false"} />
+              {requireDaysWorkedEnabled && (
+                <div
+                  className="mt-1.5 flex flex-wrap items-center gap-2 pl-6"
+                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                >
+                  <span>Minimum required daily hours to count as a work day:</span>
+                  <InlineInput
+                    name="requireDaysWorkedMinDailyHours" type="number" step="0.25" min="0"
+                    defaultValue={Number(rule?.requireDaysWorkedMinDailyHours ?? 0)}
+                    width={80}
+                  />
                 </div>
-                <input type="hidden" name="excludedWeekDays" value={excludedWeekDays.join(",")} />
-              </div>
+              )}
+            </div>
 
-              <label className="flex cursor-pointer items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                <input type="checkbox" checked={bypassAfterEligibility} onChange={(e) => setBypassAfterEligibility(e.target.checked)} className="mt-0.5 rounded" />
-                <span>
+            <div>
+              <Clause checked={requireScheduledHoursPct} onChange={setRequireScheduledHoursPct} label="Must work at least">
+                <InlineInput
+                  name="requireScheduledHoursPctValue" type="number" min="0" max="100"
+                  defaultValue={rule?.requireScheduledHoursPctValue ?? 50}
+                  disabled={!requireScheduledHoursPct}
+                />
+                <span>% of scheduled calculated pay code hours on eligible workday(s)</span>
+              </Clause>
+              <input type="hidden" name="requireScheduledHoursPct" value={requireScheduledHoursPct ? "true" : "false"} />
+            </div>
+
+            <Clause checked={mustNotWorkOnHoliday} onChange={setMustNotWorkOnHoliday} label="Must NOT work on the holiday" />
+            <input type="hidden" name="mustNotWorkOnHoliday" value={mustNotWorkOnHoliday ? "true" : "false"} />
+
+            <Clause
+              checked={useDynamicSchedules}
+              onChange={setUseDynamicSchedules}
+              label="Look at all dynamic schedules for the day when determining eligibility rules (multiple in a day)"
+            />
+            <input type="hidden" name="useDynamicSchedules" value={useDynamicSchedules ? "true" : "false"} />
+
+            <div>
+              <p className="wms-label mb-1.5">Days of week Excluded from Eligibility:</p>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, i) => (
+                  <Checkbox
+                    key={day}
+                    checked={excludedWeekDays.includes(i)}
+                    onChange={(on) =>
+                      setExcludedWeekDays((prev) =>
+                        on ? [...prev, i].sort((a, b) => a - b) : prev.filter((d) => d !== i)
+                      )
+                    }
+                    label={day}
+                  />
+                ))}
+              </div>
+              <input type="hidden" name="excludedWeekDays" value={excludedWeekDays.join(",")} />
+            </div>
+
+            <Clause
+              checked={bypassAfterEligibility}
+              onChange={setBypassAfterEligibility}
+              label={
+                <span style={{ textWrap: "pretty" }}>
                   Enable the bypass of scheduled workday &ldquo;after&rdquo; eligibility for select holidays
-                  <span className="ml-1 text-xs text-zinc-400">(Post Holiday bypass option also requires activation in Holidays setup)</span>
+                  <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                    {" "}(Post Holiday bypass option also requires activation in Holidays setup)
+                  </span>
                 </span>
-              </label>
-              <input type="hidden" name="bypassAfterEligibility" value={bypassAfterEligibility ? "true" : "false"} />
+              }
+            />
+            <input type="hidden" name="bypassAfterEligibility" value={bypassAfterEligibility ? "true" : "false"} />
 
-              {/* Min period hours */}
-              <div className="flex items-center gap-3 pt-1">
-                <span className="text-sm text-zinc-600 dark:text-zinc-400">Minimum period hours to qualify <span className="text-zinc-400">(0 = none):</span></span>
-                <input name="minPeriodHours" type="number" step="0.5" min="0"
-                  defaultValue={rule ? rule.minPeriodMinutes / 60 : 0}
-                  className="w-20 rounded border border-zinc-300 bg-white px-2 py-1 text-sm text-right focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" />
-              </div>
-
+            <div
+              className="flex flex-wrap items-center gap-3 pt-1"
+              style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
+            >
+              <span>
+                Minimum period hours to qualify{" "}
+                <span style={{ color: "var(--text-tertiary)" }}>(0 = none):</span>
+              </span>
+              <InlineInput
+                name="minPeriodHours" type="number" step="0.5" min="0"
+                defaultValue={rule ? rule.minPeriodMinutes / 60 : 0}
+                width={80}
+              />
             </div>
-          </CollapsibleSection>
 
-          <CollapsibleSection title="Other Rules">
-            <div className="flex flex-col gap-2.5">
+          </div>
+        </CollapsibleSection>
 
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                <input type="checkbox" checked={payNonWorkingHolidayOnly} onChange={(e) => setPayNonWorkingHolidayOnly(e.target.checked)} className="rounded" />
-                Pay Non Working Holiday Hours Only
-              </label>
-              <input type="hidden" name="payNonWorkingHolidayOnly" value={payNonWorkingHolidayOnly ? "true" : "false"} />
+        <CollapsibleSection title="Other Rules">
+          <div className="flex flex-col gap-2.5">
 
-              {/* Post Working Hours to Accrual */}
-              <div>
-                <label className="flex flex-wrap cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                  <input type="checkbox" checked={postWorkingHoursToAccrual} onChange={(e) => setPostWorkingHoursToAccrual(e.target.checked)} className="rounded" />
-                  <span>Post Working Hours to Accrual</span>
-                  <span className="text-zinc-400">Up to</span>
-                  <input name="postWorkingHoursMax" type="number" step="0.25" min="0"
-                    defaultValue={Number(rule?.postWorkingHoursMax ?? 0)}
-                    disabled={!postWorkingHoursToAccrual}
-                    className={`w-20 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-right focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white ${!postWorkingHoursToAccrual ? "opacity-40" : ""}`} />
-                  <span className="text-zinc-400">Hours</span>
-                </label>
-                <input type="hidden" name="postWorkingHoursToAccrual" value={postWorkingHoursToAccrual ? "true" : "false"} />
+            <Clause checked={payNonWorkingHolidayOnly} onChange={setPayNonWorkingHolidayOnly} label="Pay Non Working Holiday Hours Only" />
+            <input type="hidden" name="payNonWorkingHolidayOnly" value={payNonWorkingHolidayOnly ? "true" : "false"} />
 
-                {postWorkingHoursToAccrual && (
-                  <div className="mt-1.5 pl-6 flex flex-col gap-2">
-                    <label className="flex flex-wrap cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                      <input type="checkbox" checked={postWorkingHoursExcessEnabled} onChange={(e) => setPostWorkingHoursExcessEnabled(e.target.checked)} className="rounded" />
-                      <span>Only post hours in excess of</span>
-                      <input name="postWorkingHoursExcessMin" type="number" step="0.25" min="0"
-                        defaultValue={Number(rule?.postWorkingHoursExcessMin ?? 0)}
-                        disabled={!postWorkingHoursExcessEnabled}
-                        className={`w-20 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-right focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white ${!postWorkingHoursExcessEnabled ? "opacity-40" : ""}`} />
-                      <span className="text-zinc-400">Hours</span>
-                    </label>
-                    <input type="hidden" name="postWorkingHoursExcessEnabled" value={postWorkingHoursExcessEnabled ? "true" : "false"} />
+            <div>
+              <Clause checked={postWorkingHoursToAccrual} onChange={setPostWorkingHoursToAccrual} label="Post Working Hours to Accrual">
+                <span style={{ color: "var(--text-tertiary)" }}>Up to</span>
+                <InlineInput
+                  name="postWorkingHoursMax" type="number" step="0.25" min="0"
+                  defaultValue={Number(rule?.postWorkingHoursMax ?? 0)}
+                  disabled={!postWorkingHoursToAccrual}
+                  width={80}
+                />
+                <span style={{ color: "var(--text-tertiary)" }}>Hours</span>
+              </Clause>
+              <input type="hidden" name="postWorkingHoursToAccrual" value={postWorkingHoursToAccrual ? "true" : "false"} />
 
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm text-zinc-600 dark:text-zinc-400">Accrual Code:</label>
-                      <input name="accrualCode" type="text" placeholder="e.g. VAC"
-                        defaultValue={rule?.accrualCode ?? ""}
-                        className="w-40 rounded border border-zinc-300 bg-white px-2 py-1 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" />
-                    </div>
+              {postWorkingHoursToAccrual && (
+                <div className="mt-1.5 flex flex-col gap-2 pl-6">
+                  <Clause checked={postWorkingHoursExcessEnabled} onChange={setPostWorkingHoursExcessEnabled} label="Only post hours in excess of">
+                    <InlineInput
+                      name="postWorkingHoursExcessMin" type="number" step="0.25" min="0"
+                      defaultValue={Number(rule?.postWorkingHoursExcessMin ?? 0)}
+                      disabled={!postWorkingHoursExcessEnabled}
+                      width={80}
+                    />
+                    <span style={{ color: "var(--text-tertiary)" }}>Hours</span>
+                  </Clause>
+                  <input type="hidden" name="postWorkingHoursExcessEnabled" value={postWorkingHoursExcessEnabled ? "true" : "false"} />
+
+                  <div
+                    className="flex flex-wrap items-center gap-2"
+                    style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
+                  >
+                    <span>Accrual Code:</span>
+                    <InlineInput name="accrualCode" type="text" placeholder="e.g. VAC" defaultValue={rule?.accrualCode ?? ""} width={160} />
                   </div>
-                )}
-              </div>
-
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                <input type="checkbox" checked={includeNonCalcAttendance} onChange={(e) => setIncludeNonCalcAttendance(e.target.checked)} className="rounded" />
-                Include Non-Calculated Attendance Paycodes
-              </label>
-              <input type="hidden" name="includeNonCalcAttendance" value={includeNonCalcAttendance ? "true" : "false"} />
-
+                </div>
+              )}
             </div>
-          </CollapsibleSection>
 
-          {/* Hidden — fields removed from UI; preserve existing DB values */}
-          <input type="hidden" name="payBucket" value={rule?.payBucket ?? "HOLIDAY"} />
-          <input type="hidden" name="workingPremium" value={rule ? (rule.workingPremium / 100).toFixed(2) : "1.00"} />
-          <input type="hidden" name="countTowardOt" value={rule?.countTowardOt !== false ? "true" : "false"} />
+            <Clause checked={includeNonCalcAttendance} onChange={setIncludeNonCalcAttendance} label="Include Non-Calculated Attendance Paycodes" />
+            <input type="hidden" name="includeNonCalcAttendance" value={includeNonCalcAttendance ? "true" : "false"} />
+
+          </div>
+        </CollapsibleSection>
+
+        {/* Hidden — fields removed from UI; preserve existing DB values */}
+        <input type="hidden" name="payBucket" value={rule?.payBucket ?? "HOLIDAY"} />
+        <input type="hidden" name="workingPremium" value={rule ? (rule.workingPremium / 100).toFixed(2) : "1.00"} />
+        <input type="hidden" name="countTowardOt" value={rule?.countTowardOt !== false ? "true" : "false"} />
 
       </div>
 
       {/* ── Holiday tab ── */}
       <div className={tab !== "holiday" ? "hidden" : "flex flex-col gap-5"}>
 
-          {/* Assigned holidays — read-only */}
-          <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Assigned Holidays</p>
-            {(rule?.assignedHolidays ?? []).length === 0 ? (
-              <p className="text-sm italic text-zinc-400">No holidays assigned. Assign holidays from the Holidays page.</p>
-            ) : (
-              <div className="max-h-52 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
-                {(rule?.assignedHolidays ?? []).map(({ holiday: h }) => (
-                  <div key={h.id} className="flex items-center gap-3 border-b border-zinc-100 px-3 py-1.5 last:border-0 dark:border-zinc-800">
-                    <span className="font-mono text-xs text-zinc-400">
-                      {new Date(h.date).toLocaleDateString("en-US", { timeZone: "UTC", month: "2-digit", day: "2-digit", year: "numeric" })}
-                    </span>
-                    <span className="text-sm text-zinc-700 dark:text-zinc-300">{h.name}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Holiday Overrides */}
-          <CollapsibleSection title="Holiday Overrides">
-            <div className="flex flex-col gap-3">
-
-              <div className="flex items-center gap-6">
-                <span className="text-sm text-zinc-600 dark:text-zinc-400">Apply Holiday Overrides?</span>
-                <label className="flex cursor-pointer items-center gap-1.5 text-sm text-zinc-700 dark:text-zinc-300">
-                  <input type="radio" checked={holidayOverridesEnabled} onChange={() => setHolidayOverridesEnabled(true)} className="accent-zinc-900 dark:accent-white" />
-                  Yes
-                </label>
-                <label className="flex cursor-pointer items-center gap-1.5 text-sm text-zinc-700 dark:text-zinc-300">
-                  <input type="radio" checked={!holidayOverridesEnabled} onChange={() => setHolidayOverridesEnabled(false)} className="accent-zinc-900 dark:accent-white" />
-                  No
-                </label>
-              </div>
-              <input type="hidden" name="holidayOverridesEnabled" value={holidayOverridesEnabled ? "true" : "false"} />
-
-              {holidayOverridesEnabled && (
-                <>
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm text-zinc-600 dark:text-zinc-400">Number of overrides:</label>
-                    <select
-                      value={numOverrides}
-                      onChange={(e) => setNumOverridesAndResize(Number(e.target.value))}
-                      className="rounded border border-zinc-300 bg-white px-2 py-1 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                    >
-                      {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                        <option key={n} value={n}>{n}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    {overrides.slice(0, numOverrides).map((o, i) => (
-                      <div key={i} className="flex flex-wrap items-center gap-2">
-                        <span className="w-20 text-sm text-zinc-500">Override {i + 1}:</span>
-                        <input
-                          type="date"
-                          value={o.date}
-                          onChange={(e) => setOverrides((prev) => prev.map((r, j) => j === i ? { ...r, date: e.target.value } : r))}
-                          className="rounded border border-zinc-300 bg-white px-2 py-1 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                        />
-                        <span className="text-sm text-zinc-500">Hours:</span>
-                        <input
-                          type="number" step="0.001" min="0"
-                          value={o.hours}
-                          onChange={(e) => setOverrides((prev) => prev.map((r, j) => j === i ? { ...r, hours: e.target.value } : r))}
-                          className="w-24 rounded border border-zinc-300 bg-white px-2 py-1 text-sm text-right focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                        />
-                        <span className="text-sm text-zinc-500">Pay Code:</span>
-                        <select
-                          value={o.payCodeId}
-                          onChange={(e) => setOverrides((prev) => prev.map((r, j) => j === i ? { ...r, payCodeId: e.target.value } : r))}
-                          className="rounded border border-zinc-300 bg-white px-2 py-1 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                        >
-                          <option value="">— Select —</option>
-                          {payCodes.map((pc) => (
-                            <option key={pc.id} value={pc.id}>{pc.code}{pc.label ? ` — ${pc.label}` : ""}</option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-              <input type="hidden" name="holidayOverrides" value={JSON.stringify(overrides.slice(0, numOverrides))} />
-
+        <div>
+          <p className="wms-overline mb-2">Assigned Holidays</p>
+          {(rule?.assignedHolidays ?? []).length === 0 ? (
+            <p style={{ margin: 0, font: "var(--type-body1)", fontStyle: "italic", color: "var(--text-tertiary)" }}>
+              No holidays assigned. Assign holidays from the Holidays page.
+            </p>
+          ) : (
+            <div
+              className="max-h-52 overflow-y-auto rounded-lg"
+              style={{ border: "1px solid var(--stroke-secondary)" }}
+            >
+              {(rule?.assignedHolidays ?? []).map(({ holiday: h }) => (
+                <div
+                  key={h.id}
+                  className="flex items-center gap-3 px-3 py-1.5"
+                  style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+                >
+                  <span
+                    className="tabular"
+                    style={{ font: "var(--type-body2)", fontFamily: "var(--font-mono)", color: "var(--text-tertiary)" }}
+                  >
+                    {new Date(h.date).toLocaleDateString("en-US", { timeZone: "UTC", month: "2-digit", day: "2-digit", year: "numeric" })}
+                  </span>
+                  <span style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>{h.name}</span>
+                </div>
+              ))}
             </div>
-          </CollapsibleSection>
+          )}
+        </div>
 
-          {/* Birthday */}
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-            <input type="checkbox" checked={birthdayIsHoliday} onChange={(e) => setBirthdayIsHoliday(e.target.checked)} className="rounded" />
-            Employee Birthdays are considered a Holiday
-          </label>
-          <input type="hidden" name="birthdayIsHoliday" value={birthdayIsHoliday ? "true" : "false"} />
+        <CollapsibleSection title="Holiday Overrides">
+          <div className="flex flex-col gap-3">
 
-          {/* Passthrough fields not on this tab */}
-          <input type="hidden" name="creditMethod" value={creditMethod} />
-          <input type="hidden" name="creditHours" value={rule ? rule.creditMinutes / 60 : 8} />
-          <input type="hidden" name="maxCreditHours" value={rule ? rule.maxCreditMinutes / 60 : 0} />
-          <input type="hidden" name="payBucket" value={rule?.payBucket ?? "HOLIDAY"} />
-          <input type="hidden" name="workingPremium" value={rule ? (rule.workingPremium / 100).toFixed(2) : "1.00"} />
-          <input type="hidden" name="countTowardOt" value={rule?.countTowardOt !== false ? "true" : "false"} />
+            <div className="flex flex-wrap items-center gap-3">
+              <span style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>Apply Holiday Overrides?</span>
+              <SegmentedControl
+                items={YES_NO}
+                value={holidayOverridesEnabled ? "true" : "false"}
+                onChange={(v) => setHolidayOverridesEnabled(v === "true")}
+                size="sm"
+                ariaLabel="Apply holiday overrides"
+              />
+            </div>
+            <input type="hidden" name="holidayOverridesEnabled" value={holidayOverridesEnabled ? "true" : "false"} />
+
+            {holidayOverridesEnabled && (
+              <>
+                <div className="flex flex-wrap items-center gap-3" style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>
+                  <span>Number of overrides:</span>
+                  <InlineSelect
+                    aria-label="Number of overrides"
+                    value={numOverrides}
+                    onChange={(e) => setNumOverridesAndResize(Number(e.target.value))}
+                  >
+                    {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </InlineSelect>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  {overrides.slice(0, numOverrides).map((o, i) => (
+                    <div
+                      key={i}
+                      className="flex flex-wrap items-center gap-2"
+                      style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                    >
+                      <span className="w-20">Override {i + 1}:</span>
+                      <InlineInput
+                        type="date"
+                        aria-label={`Override ${i + 1} date`}
+                        value={o.date}
+                        onChange={(e) => setOverrides((prev) => prev.map((r, j) => j === i ? { ...r, date: e.target.value } : r))}
+                        width={140}
+                      />
+                      <span>Hours:</span>
+                      <InlineInput
+                        type="number" step="0.001" min="0"
+                        aria-label={`Override ${i + 1} hours`}
+                        value={o.hours}
+                        onChange={(e) => setOverrides((prev) => prev.map((r, j) => j === i ? { ...r, hours: e.target.value } : r))}
+                        width={88}
+                      />
+                      <span>Pay Code:</span>
+                      <InlineSelect
+                        aria-label={`Override ${i + 1} pay code`}
+                        value={o.payCodeId}
+                        onChange={(e) => setOverrides((prev) => prev.map((r, j) => j === i ? { ...r, payCodeId: e.target.value } : r))}
+                      >
+                        <option value="">— Select —</option>
+                        {payCodes.map((pc) => (
+                          <option key={pc.id} value={pc.id}>{pc.code}{pc.label ? ` — ${pc.label}` : ""}</option>
+                        ))}
+                      </InlineSelect>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            <input type="hidden" name="holidayOverrides" value={JSON.stringify(overrides.slice(0, numOverrides))} />
+
+          </div>
+        </CollapsibleSection>
+
+        <Clause checked={birthdayIsHoliday} onChange={setBirthdayIsHoliday} label="Employee Birthdays are considered a Holiday" />
+        <input type="hidden" name="birthdayIsHoliday" value={birthdayIsHoliday ? "true" : "false"} />
+
+        {/* Passthrough fields not on this tab */}
+        <input type="hidden" name="creditMethod" value={creditMethod} />
+        <input type="hidden" name="creditHours" value={rule ? rule.creditMinutes / 60 : 8} />
+        <input type="hidden" name="maxCreditHours" value={rule ? rule.maxCreditMinutes / 60 : 0} />
+        <input type="hidden" name="payBucket" value={rule?.payBucket ?? "HOLIDAY"} />
+        <input type="hidden" name="workingPremium" value={rule ? (rule.workingPremium / 100).toFixed(2) : "1.00"} />
+        <input type="hidden" name="countTowardOt" value={rule?.countTowardOt !== false ? "true" : "false"} />
 
       </div>
 
       {/* ── Prorate Rule tab ── */}
       <div className={tab !== "prorate" ? "hidden" : "flex flex-col gap-5"}>
 
-          {/* Apply toggle */}
-          <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Apply Holiday Prorate Rule?</p>
-            <div className="flex gap-6">
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                <input type="radio" name="prorateEnabled" value="true"
-                  checked={prorateEnabled}
-                  onChange={() => setProrateEnabled(true)}
-                  className="accent-zinc-900 dark:accent-white" />
-                Yes
-              </label>
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                <input type="radio" name="prorateEnabled" value="false"
-                  checked={!prorateEnabled}
-                  onChange={() => setProrateEnabled(false)}
-                  className="accent-zinc-900 dark:accent-white" />
-                No
-              </label>
-            </div>
-            <input type="hidden" name="prorateEnabled" value={prorateEnabled ? "true" : "false"} />
-          </div>
+        <div className="flex flex-col gap-2">
+          <p className="wms-overline">Apply Holiday Prorate Rule?</p>
+          <span className="self-start">
+            <SegmentedControl
+              items={YES_NO}
+              value={prorateEnabled ? "true" : "false"}
+              onChange={(v) => setProrateEnabled(v === "true")}
+              size="sm"
+              ariaLabel="Apply holiday prorate rule"
+            />
+          </span>
+          <input type="hidden" name="prorateEnabled" value={prorateEnabled ? "true" : "false"} />
+        </div>
 
-          {prorateEnabled && (
-            <>
-              {/* Day Range */}
-              <CollapsibleSection title="Day Range" defaultOpen={true}>
-                <div className="flex flex-col gap-3">
+        {prorateEnabled && (
+          <>
+            <CollapsibleSection title="Day Range" defaultOpen={true}>
+              <div className="flex flex-col gap-3">
 
-                  <label className="flex flex-wrap cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                    <input type="radio" checked={!prorateUseCustomRange}
-                      onChange={() => setProrateUseCustomRange(false)}
-                      className="accent-zinc-900 dark:accent-white" />
-                    <span>Look Back</span>
-                    <input name="prorateLookbackDays" type="number" min="1" max="365"
-                      defaultValue={rule?.prorateLookbackDays ?? 28}
-                      className="w-16 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-right focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white" />
-                    <span>days</span>
-                    <select name="prorateIncludeCurrentWeek"
-                      defaultValue={rule?.prorateIncludeCurrentWeek !== false ? "true" : "false"}
-                      className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white">
-                      <option value="true">include current week</option>
-                      <option value="false">exclude current week</option>
-                    </select>
-                    <span>to determine total worked hours</span>
-                  </label>
+                <label
+                  className="flex cursor-pointer flex-wrap items-center gap-2"
+                  style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
+                >
+                  <input
+                    type="radio"
+                    checked={!prorateUseCustomRange}
+                    onChange={() => setProrateUseCustomRange(false)}
+                    className="accent-[var(--fill-accent)]"
+                  />
+                  <span>Look Back</span>
+                  <InlineInput
+                    name="prorateLookbackDays" type="number" min="1" max="365"
+                    defaultValue={rule?.prorateLookbackDays ?? 28}
+                  />
+                  <span>days</span>
+                  <InlineSelect
+                    name="prorateIncludeCurrentWeek"
+                    defaultValue={rule?.prorateIncludeCurrentWeek !== false ? "true" : "false"}
+                  >
+                    <option value="true">include current week</option>
+                    <option value="false">exclude current week</option>
+                  </InlineSelect>
+                  <span>to determine total worked hours</span>
+                </label>
 
-                  <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                    <input type="radio" checked={prorateUseCustomRange}
-                      onChange={() => setProrateUseCustomRange(true)}
-                      className="accent-zinc-900 dark:accent-white" />
-                    Custom day range to determine total worked hours
-                  </label>
-                  <input type="hidden" name="prorateUseCustomRange" value={prorateUseCustomRange ? "true" : "false"} />
+                <label
+                  className="flex cursor-pointer items-center gap-2"
+                  style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
+                >
+                  <input
+                    type="radio"
+                    checked={prorateUseCustomRange}
+                    onChange={() => setProrateUseCustomRange(true)}
+                    className="accent-[var(--fill-accent)]"
+                  />
+                  Custom day range to determine total worked hours
+                </label>
+                <input type="hidden" name="prorateUseCustomRange" value={prorateUseCustomRange ? "true" : "false"} />
 
-                </div>
-              </CollapsibleSection>
+              </div>
+            </CollapsibleSection>
 
-              {/* Applied Rule */}
-              <CollapsibleSection title="Applied Rule" defaultOpen={true}>
-                <div className="flex flex-col gap-4">
+            <CollapsibleSection title="Applied Rule" defaultOpen={true}>
+              <div className="flex flex-col gap-4">
 
-                  <label className="flex cursor-pointer items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                    <input type="radio" checked={prorateAppliedRule === "THRESHOLD"}
-                      onChange={() => setProrateAppliedRule("THRESHOLD")}
-                      className="mt-0.5 accent-zinc-900 dark:accent-white" />
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span>Worked hours are greater or equal</span>
-                        <input name="prorateThresholdHours" type="number" step="0.001" min="0"
-                          defaultValue={Number(rule?.prorateThresholdHours ?? 0).toFixed(3)}
-                          disabled={prorateAppliedRule !== "THRESHOLD"}
-                          className={`w-24 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-right focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white ${prorateAppliedRule !== "THRESHOLD" ? "opacity-40" : ""}`} />
-                        <span>hours, then employee will get the full amount holiday pay,</span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-zinc-500">otherwise prorate total worked hours by multiplying by</span>
-                        <input name="prorateMultiplier" type="number" step="0.0000001" min="0"
-                          defaultValue={Number(rule?.prorateMultiplier ?? 0).toFixed(7)}
-                          disabled={prorateAppliedRule !== "THRESHOLD"}
-                          className={`w-32 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-right focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white ${prorateAppliedRule !== "THRESHOLD" ? "opacity-40" : ""}`} />
-                      </div>
-                    </div>
-                  </label>
+                <label
+                  className="flex cursor-pointer items-start gap-2"
+                  style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
+                >
+                  <input
+                    type="radio"
+                    checked={prorateAppliedRule === "THRESHOLD"}
+                    onChange={() => setProrateAppliedRule("THRESHOLD")}
+                    className="mt-1 accent-[var(--fill-accent)]"
+                  />
+                  <span className="flex flex-col gap-1.5">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span>Worked hours are greater or equal</span>
+                      <InlineInput
+                        name="prorateThresholdHours" type="number" step="0.001" min="0"
+                        defaultValue={Number(rule?.prorateThresholdHours ?? 0).toFixed(3)}
+                        disabled={prorateAppliedRule !== "THRESHOLD"}
+                        width={88}
+                      />
+                      <span>hours, then employee will get the full amount holiday pay,</span>
+                    </span>
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span style={{ color: "var(--text-tertiary)" }}>otherwise prorate total worked hours by multiplying by</span>
+                      <InlineInput
+                        name="prorateMultiplier" type="number" step="0.0000001" min="0"
+                        defaultValue={Number(rule?.prorateMultiplier ?? 0).toFixed(7)}
+                        disabled={prorateAppliedRule !== "THRESHOLD"}
+                        width={128}
+                      />
+                    </span>
+                  </span>
+                </label>
 
-                  <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                    <input type="radio" checked={prorateAppliedRule === "AVERAGE_DAILY"}
-                      onChange={() => setProrateAppliedRule("AVERAGE_DAILY")}
-                      className="accent-zinc-900 dark:accent-white" />
-                    <span>Pay Average daily worked hours up to</span>
-                    <input name="prorateAverageDailyMaxHours" type="number" step="0.001" min="0" max="24"
-                      defaultValue={Number(rule?.prorateAverageDailyMaxHours ?? 8).toFixed(3)}
-                      disabled={prorateAppliedRule !== "AVERAGE_DAILY"}
-                      className={`w-24 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-right focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white ${prorateAppliedRule !== "AVERAGE_DAILY" ? "opacity-40" : ""}`} />
-                  </label>
-                  <input type="hidden" name="prorateAppliedRule" value={prorateAppliedRule} />
+                <label
+                  className="flex cursor-pointer flex-wrap items-center gap-2"
+                  style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
+                >
+                  <input
+                    type="radio"
+                    checked={prorateAppliedRule === "AVERAGE_DAILY"}
+                    onChange={() => setProrateAppliedRule("AVERAGE_DAILY")}
+                    className="accent-[var(--fill-accent)]"
+                  />
+                  <span>Pay Average daily worked hours up to</span>
+                  <InlineInput
+                    name="prorateAverageDailyMaxHours" type="number" step="0.001" min="0" max="24"
+                    defaultValue={Number(rule?.prorateAverageDailyMaxHours ?? 8).toFixed(3)}
+                    disabled={prorateAppliedRule !== "AVERAGE_DAILY"}
+                    width={88}
+                  />
+                </label>
+                <input type="hidden" name="prorateAppliedRule" value={prorateAppliedRule} />
 
-                </div>
-              </CollapsibleSection>
+              </div>
+            </CollapsibleSection>
 
-              {/* Exclude OT */}
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                <input type="checkbox" name="prorateExcludeOt" value="true"
-                  defaultChecked={rule?.prorateExcludeOt ?? false} className="rounded" />
-                Exclude Overtime when calculating Work hours
-              </label>
-            </>
-          )}
+            <Clause checked={prorateExcludeOt} onChange={setProrateExcludeOt} label="Exclude Overtime when calculating Work hours" />
+            <input type="hidden" name="prorateExcludeOt" value={prorateExcludeOt ? "true" : "false"} />
+          </>
+        )}
 
-          {/* Always submit prorate fields so they're not lost when prorateEnabled=false */}
-          {!prorateEnabled && (
-            <>
-              <input type="hidden" name="prorateUseCustomRange" value="false" />
-              <input type="hidden" name="prorateAppliedRule" value={prorateAppliedRule} />
-            </>
-          )}
+        {/* Always submit prorate fields so they're not lost when prorateEnabled=false */}
+        {!prorateEnabled && (
+          <>
+            <input type="hidden" name="prorateUseCustomRange" value="false" />
+            <input type="hidden" name="prorateAppliedRule" value={prorateAppliedRule} />
+          </>
+        )}
 
       </div>
 
@@ -681,9 +814,7 @@ function HolidayRuleFields({ rule, isEdit, payCodes = [] }: { rule?: HolidayRule
   );
 }
 
-// ─── Modal ────────────────────────────────────────────────────────────────────
-
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
     document.addEventListener("keydown", onKey);
@@ -692,25 +823,31 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.4)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <h3 className="text-base font-semibold text-zinc-900 dark:text-white">{title}</h3>
-          <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" aria-label="Close">
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div className="px-6 py-5">{children}</div>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="ta-modal max-h-[90vh] w-full max-w-3xl overflow-y-auto"
+        style={{ borderRadius: "var(--radius-l)" }}
+      >
+        <header
+          className="flex items-center justify-between gap-3 px-5 py-3.5"
+          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+        >
+          <h3 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>{title}</h3>
+          <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
+            <X className="h-4 w-4" />
+          </Button>
+        </header>
+        <div className="px-5 py-4">{children}</div>
       </div>
     </div>
   );
 }
-
-// ─── Main manager ─────────────────────────────────────────────────────────────
 
 export function HolidayRulesManager({ rules, payCodes = [] }: Props) {
   const router = useRouter();
@@ -719,11 +856,12 @@ export function HolidayRulesManager({ rules, payCodes = [] }: Props) {
   const [editingRule, setEditingRule] = useState<HolidayRule | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [showInactive, setShowInactive] = useState(false);
+  const [view, setView] = useState<View>("active");
   const [search, setSearch] = useState("");
 
   const searchLower = search.trim().toLowerCase();
-  const visible = (showInactive ? rules : rules.filter((r) => r.isActive))
+  const visible = rules
+    .filter((r) => (view === "all" ? true : view === "active" ? r.isActive : !r.isActive))
     .filter((r) => !searchLower || r.name.toLowerCase().includes(searchLower));
 
   function openEdit(rule: HolidayRule) { setEditingRule(rule); setConfirmDeleteId(null); setError(null); }
@@ -822,118 +960,125 @@ export function HolidayRulesManager({ rules, payCodes = [] }: Props) {
   }
 
   return (
-    <div className="mt-6">
-      {error && !editingRule && !showCreate && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>
-      )}
+    <div className="mt-4 flex flex-col gap-2.5">
+      {error && !editingRule && !showCreate && <Banner tone="error" body={error} />}
 
-      <div className="mb-3 flex items-center gap-3">
-        <div className="relative max-w-xs flex-1">
-          <svg className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search rules…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm text-zinc-700 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:placeholder-zinc-500"
+      <Toolbar count={visible.length} countLabel="rule">
+        <SegmentedControl
+          items={VIEWS}
+          value={view}
+          onChange={(v) => setView(v as View)}
+          size="sm"
+          ariaLabel="Which holiday rules to show"
+        />
+        <SearchInput value={search} onValueChange={setSearch} placeholder="Search rules…" width={220} />
+        <Button onClick={openCreate}>New Holiday Rule</Button>
+      </Toolbar>
+
+      <Card padding={0}>
+        {visible.length === 0 ? (
+          <EmptyState
+            icon={<CalendarCheck className="h-8 w-8" />}
+            title={searchLower ? `No rules match “${search}”` : view === "active" ? "No active holiday rules" : "No holiday rules"}
+            body="A holiday rule decides who is paid for a holiday and how many hours they get."
+            action={
+              searchLower
+                ? <Button size="sm" hierarchy="secondary" onClick={() => setSearch("")}>Clear search</Button>
+                : <Button size="sm" onClick={openCreate}>New Holiday Rule</Button>
+            }
           />
-        </div>
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-500">
-          <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="rounded" />
-          Show inactive
-        </label>
-        <button
-          onClick={openCreate}
-          className="ml-auto rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          + Add Holiday Rule
-        </button>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        {visible.length === 0 && (
-          <p className="text-sm text-zinc-400">
-            {searchLower ? `No rules match "${search}".` : "No holiday rules yet."}
-          </p>
+        ) : (
+          <>
+            <Table>
+              <THead>
+                <TR>
+                  <TH numeric style={{ width: 56 }}>#</TH>
+                  <TH>Rule</TH>
+                  <TH>Holiday Pay</TH>
+                  <TH numeric>Working Premium</TH>
+                  <TH>Must Work</TH>
+                  <TH>Status</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {visible.map((rule) => {
+                  const eligibility = formatEligibility(rule);
+                  return (
+                    <TR key={rule.id} onClick={() => openEdit(rule)}>
+                      <TD numeric style={{ color: "var(--text-secondary)" }}>
+                        {rule.number ?? <span style={{ color: "var(--text-tertiary)" }}>—</span>}
+                      </TD>
+                      <TD style={{ fontWeight: "var(--weight-medium)" }}>{rule.name}</TD>
+                      <TD style={{ color: "var(--text-secondary)" }}>{formatCredit(rule)}</TD>
+                      <TD numeric style={{ color: "var(--text-secondary)" }}>
+                        {(rule.workingPremium / 100).toFixed(2)}×
+                      </TD>
+                      <TD style={{ color: "var(--text-secondary)" }}>
+                        {eligibility ?? <span style={{ color: "var(--text-tertiary)" }}>No condition</span>}
+                      </TD>
+                      <TD>
+                        {rule.isActive ? (
+                          <Badge tone={statusTone("ACTIVE")} size="sm" dot>Active</Badge>
+                        ) : (
+                          // statusTone would answer "warning"; a rule that is
+                          // switched off is not something to go and fix.
+                          <Badge size="sm">Inactive</Badge>
+                        )}
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+            <TableFooter
+              shown={visible.length}
+              total={rules.length}
+              label={rules.length === 1 ? "rule" : "rules"}
+            />
+          </>
         )}
+      </Card>
 
-        {visible.map((rule) => (
-          <button
-            key={rule.id}
-            type="button"
-            onClick={() => openEdit(rule)}
-            className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex flex-wrap items-center gap-3">
-                {rule.number != null && (
-                  <span className="font-mono text-sm text-zinc-400">{rule.number}</span>
-                )}
-                <p className={`font-medium ${rule.isActive ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"}`}>
-                  {rule.name}
-                </p>
-                <p className="text-sm text-zinc-500">{formatCredit(rule)}</p>
-                {rule.workingPremium > 100 && <p className="text-sm text-zinc-400">{formatPremium(rule)}</p>}
-                {(rule.requireDayBefore || rule.requireDayAfter) && (
-                  <p className="text-xs text-zinc-400">
-                    Requires: {[rule.requireDayBefore && "day before", rule.requireDayAfter && "day after"].filter(Boolean).join(" & ")}
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`rounded-full px-2 py-0.5 text-xs ${rule.isActive ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800"}`}>
-                  {rule.isActive ? "Active" : "Inactive"}
-                </span>
-                <span className="text-xs text-zinc-400">Click to edit →</span>
-              </div>
-            </div>
-          </button>
-        ))}
-      </div>
-
-      {/* Create modal */}
       {showCreate && (
         <Modal title="New Holiday Rule" onClose={closeCreate}>
-          {error && (
-            <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>
-          )}
+          {error && <div className="mb-4"><Banner tone="error" body={error} /></div>}
           <form onSubmit={handleCreate}>
             <HolidayRuleFields payCodes={payCodes} />
-            <div className="mt-6 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-              <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Creating…" : "Create"}</button>
-              <button type="button" onClick={closeCreate} className={cancelBtnCls}>Cancel</button>
+            <div className="mt-5 flex gap-2 pt-4" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+              <Button type="submit" disabled={isPending}>{isPending ? "Creating…" : "Create"}</Button>
+              <Button type="button" hierarchy="secondary" onClick={closeCreate}>Cancel</Button>
             </div>
           </form>
         </Modal>
       )}
 
-      {/* Edit modal */}
       {editingRule && (
         <Modal title={`Edit: ${editingRule.name}`} onClose={closeEdit}>
-          {error && (
-            <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>
-          )}
+          {error && <div className="mb-4"><Banner tone="error" body={error} /></div>}
           <form onSubmit={(e) => handleUpdate(editingRule, e)}>
             <HolidayRuleFields rule={editingRule} isEdit payCodes={payCodes} />
-            <div className="mt-6 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-700">
+            <div
+              className="mt-5 flex flex-wrap items-center justify-between gap-3 pt-4"
+              style={{ borderTop: "1px solid var(--stroke-divider)" }}
+            >
               <div className="flex gap-2">
-                <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Saving…" : "Save changes"}</button>
-                <button type="button" onClick={closeEdit} className={cancelBtnCls}>Cancel</button>
+                <Button type="submit" disabled={isPending}>{isPending ? "Saving…" : "Save changes"}</Button>
+                <Button type="button" hierarchy="secondary" onClick={closeEdit}>Cancel</Button>
               </div>
               {confirmDeleteId === editingRule.id ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-500">Are you sure?</span>
-                  <button type="button" onClick={() => handleDelete(editingRule.id)} disabled={isPending} className={dangerBtnCls}>
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>Are you sure?</span>
+                  <Button type="button" tone="error" size="sm" onClick={() => handleDelete(editingRule.id)} disabled={isPending}>
                     {isPending ? "Deleting…" : "Yes, delete"}
-                  </button>
-                  <button type="button" onClick={() => setConfirmDeleteId(null)} className={cancelBtnCls}>Cancel</button>
+                  </Button>
+                  <Button type="button" hierarchy="secondary" size="sm" onClick={() => setConfirmDeleteId(null)}>
+                    Cancel
+                  </Button>
                 </div>
               ) : (
-                <button type="button" onClick={() => setConfirmDeleteId(editingRule.id)} className="text-xs text-red-500 hover:underline dark:text-red-400">
+                <Button type="button" hierarchy="link" tone="error" size="sm" onClick={() => setConfirmDeleteId(editingRule.id)}>
                   Delete rule
-                </button>
+                </Button>
               )}
             </div>
           </form>

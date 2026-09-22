@@ -4,7 +4,22 @@ import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import { format } from "date-fns";
 import { TeamPunchHistoryViewer } from "@/components/supervisor/team-punch-history-viewer";
+import { PageHeader } from "@/components/ui";
 
+/**
+ * Team Punch History, on the portal design's list template.
+ *
+ * <p>Header, then the filter card, the toolbar and the chips, then the records
+ * — the difference from the design's flat table is that the records are one
+ * employee's at a time, so the list of people is a pane rather than a column.
+ * The composition lives in the viewer; this file stays what it was, which is
+ * the five query parameters and the permission-scoped queries they drive.
+ *
+ * <p>The design's Export action is not here. Nothing in this codebase exports
+ * punches, and a button that queues an export that never arrives is worse on
+ * this screen than on most: it is the screen people open when a punch is
+ * already in dispute.
+ */
 export default async function TeamPunchHistoryPage({
   searchParams,
 }: {
@@ -29,6 +44,11 @@ export default async function TeamPunchHistoryPage({
   // Determine date range — use URL params or default to the current pay period
   let startDate: string;
   let endDate: string;
+
+  // Whether the range was asked for or merely defaulted to. The chip that
+  // clears it only makes sense in the first case: on the default range there is
+  // nothing to go back to.
+  const isCustomRange = !!(sp.startDate && sp.endDate);
 
   if (sp.startDate && sp.endDate) {
     startDate = sp.startDate;
@@ -108,11 +128,19 @@ export default async function TeamPunchHistoryPage({
       })
     : [];
 
+  // Payroll sees the whole tenant; a supervisor sees the people who report to
+  // them, and the design says so in the subtitle rather than making them count
+  // the column.
+  const scopeLabel = isPayroll
+    ? `${employees.length} employee${employees.length === 1 ? "" : "s"}`
+    : `${employees.length} direct report${employees.length === 1 ? "" : "s"}`;
+
   return (
-    <div>
-      <h1 className="mb-4 text-2xl font-bold text-zinc-900 dark:text-white">
-        Team Punch History
-      </h1>
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title="Team Punch History"
+        subtitle={`${scopeLabel} · every punch, where it came from and whether it has been approved`}
+      />
       <TeamPunchHistoryViewer
         employees={employees.map((emp) => ({
           id: emp.id,
@@ -133,6 +161,7 @@ export default async function TeamPunchHistoryPage({
         }))}
         startDate={startDate}
         endDate={endDate}
+        isCustomRange={isCustomRange}
         isPayroll={isPayroll}
         sites={sites}
         selectedSiteId={selectedSiteId}

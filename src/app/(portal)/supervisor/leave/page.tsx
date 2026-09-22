@@ -5,6 +5,22 @@ import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getTeamLeaveRequests, getUpcomingTeamLeave, getHrPendingLeave } from "@/actions/supervisor.actions";
 import { LeaveTabs } from "@/components/supervisor/leave-tabs";
 
+/**
+ * Team Leave — the list screen, as the portal design lays it out.
+ *
+ * <p>Three queues, not one list: what is waiting on this supervisor, what has
+ * gone up to HR, and what is already approved and still to come. They are
+ * separate queries because they are separately permission-scoped — a
+ * supervisor sees their own reports, payroll sees the site — so the tabs in
+ * {@link LeaveTabs} switch between rows already fetched rather than re-running
+ * anything. A tab that re-queried would quietly change whose leave you are
+ * looking at.
+ *
+ * <p>`siteId` and `departmentId` are read from the query string and passed
+ * into every one of the three, so a filtered view survives a reload and can be
+ * sent to somebody. The department list is scoped to the chosen site for the
+ * same reason the filter chips clear together.
+ */
 export default async function SupervisorLeavePage({
   searchParams,
 }: {

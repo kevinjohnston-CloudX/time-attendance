@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getRoles } from "@/actions/role.actions";
@@ -8,6 +7,30 @@ import { ROLES, ROLE_RANK } from "@/lib/rbac/roles";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { db } from "@/lib/db";
 import { RolesClient } from "@/components/admin/roles-client";
+
+/**
+ * Roles &amp; Permissions.
+ *
+ * <p>Two things are loaded: the tenant's roles, which are what the list shows,
+ * and the built-in role definitions, which are only templates — the editor
+ * offers them under "load permissions from a built-in role". They are not rows
+ * in the table: the seed writes every built-in as a real role with
+ * `isSystem: true`, so listing both would show the same six roles twice.
+ *
+ * <p>The header and its actions are rendered inside {@link RolesClient},
+ * because the primary action opens the editor and the editor is client state.
+ */
+
+/** What the list needs off a role; the editor fetches the rest when it opens. */
+type RoleRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  rank: number;
+  isSystem: boolean;
+  isActive: boolean;
+  _count: { employees: number };
+};
 
 const BUILTIN_LABELS: Record<string, string> = {
   EMPLOYEE:      "Employee",
@@ -53,22 +76,9 @@ export default async function RolesPage() {
   }));
 
   return (
-    <div className="max-w-5xl">
-      <Link
-        href="/admin"
-        className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white"
-      >
-        ← Admin
-      </Link>
-      <h1 className="mt-1 text-2xl font-bold text-zinc-900 dark:text-white">Roles &amp; Permissions</h1>
-      <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-        Manage roles and assign permissions to control access across the system.
-      </p>
-
-      <RolesClient
-        roles={rolesResult.success ? (rolesResult as { success: true; data: any[] }).data : []}
-        builtinRoles={builtinRoles}
-      />
-    </div>
+    <RolesClient
+      roles={rolesResult.success ? (rolesResult as { success: true; data: RoleRow[] }).data : []}
+      builtinRoles={builtinRoles}
+    />
   );
 }

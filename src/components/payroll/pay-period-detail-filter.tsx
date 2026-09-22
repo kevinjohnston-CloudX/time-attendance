@@ -1,10 +1,23 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { Select } from "@/components/ui";
 
 type Site = { id: string; name: string };
 type Dept = { id: string; name: string };
 
+/**
+ * Site and department narrowing for the timesheet table, as the design's
+ * card-header controls.
+ *
+ * <p>Both live in the query string rather than in state. A payroll clerk
+ * working one warehouse sends the link to that warehouse's supervisor, and a
+ * filter held in React would arrive showing every site.
+ *
+ * <p>Picking a site clears the department: the department list the page offers
+ * is scoped to the chosen site, so keeping the old one would leave a filter
+ * applied that is no longer in the dropdown that set it.
+ */
 export function PayPeriodDetailFilter({
   payPeriodId,
   currentFilter,
@@ -30,15 +43,12 @@ export function PayPeriodDetailFilter({
     return `/payroll/pay-periods?${params}`;
   }
 
-  const selectClass =
-    "h-7 rounded-md border border-zinc-200 bg-white px-2 text-xs text-zinc-700 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
-
   return (
     <div className="flex items-center gap-2">
-      <select
+      <Select
+        aria-label="Filter timesheets by site"
         value={selectedSiteId ?? ""}
         onChange={(e) => router.push(buildUrl(e.target.value || null, null))}
-        className={selectClass}
       >
         <option value="">All Sites</option>
         {sites.map((s) => (
@@ -46,13 +56,11 @@ export function PayPeriodDetailFilter({
             {s.name}
           </option>
         ))}
-      </select>
-      <select
+      </Select>
+      <Select
+        aria-label="Filter timesheets by department"
         value={selectedDepartmentId ?? ""}
-        onChange={(e) =>
-          router.push(buildUrl(selectedSiteId ?? null, e.target.value || null))
-        }
-        className={selectClass}
+        onChange={(e) => router.push(buildUrl(selectedSiteId ?? null, e.target.value || null))}
       >
         <option value="">All Departments</option>
         {departments.map((d) => (
@@ -60,7 +68,7 @@ export function PayPeriodDetailFilter({
             {d.name}
           </option>
         ))}
-      </select>
+      </Select>
     </div>
   );
 }

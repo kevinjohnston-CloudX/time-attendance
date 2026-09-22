@@ -3,6 +3,21 @@
 import { useState, useTransition } from "react";
 import { addManualPunchPair, addPayrollLeaveEntry } from "@/actions/timecard-entry.actions";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
+import { Banner, Button, Input, SegmentedControl, Select } from "@/components/ui";
+
+/**
+ * The inline "add an entry to this day" panel that opens inside a timecard row.
+ *
+ * <p>Two kinds of entry, not two forms on one screen: a manual punch pair needs
+ * a reason because somebody is writing hours a clock never recorded, and a
+ * leave entry needs a type and a duration because nobody was at work at all.
+ * The segmented control is the design system's, so the choice reads as a view
+ * of one panel rather than two competing submit buttons.
+ *
+ * <p>The wrapper swallows clicks. This panel is rendered inside a table row
+ * whose own click handler expands and collapses the day, and without the guard
+ * every keystroke in here would fold the panel away underneath itself.
+ */
 
 type LeaveTypeOption = {
   id: string;
@@ -83,123 +98,98 @@ export function AddTimecardEntry({
     });
   }
 
+  const leavePreview =
+    durationHours && !isNaN(parseFloat(durationHours))
+      ? `${minutesToHoursDecimal(Math.round(parseFloat(durationHours) * 60))} h will be credited`
+      : undefined;
+
   return (
     <div
-      className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 dark:border-blue-900/60 dark:bg-blue-950/20"
+      className="flex flex-col gap-3 rounded-lg p-3.5"
+      style={{ border: "1px solid var(--stroke-accent-focus)", background: "var(--surface-info)" }}
       onClick={(e) => e.stopPropagation()}
     >
-      {/* Tabs */}
-      <div className="mb-3 flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => { setTab("time"); setError(null); }}
-          className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
-            tab === "time"
-              ? "bg-blue-600 text-white"
-              : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-          }`}
-        >
-          Add Time
-        </button>
-        <button
-          type="button"
-          onClick={() => { setTab("leave"); setError(null); }}
-          className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
-            tab === "leave"
-              ? "bg-violet-600 text-white"
-              : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-          }`}
-        >
-          Add Leave
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="ml-auto text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-        >
+      <div className="flex flex-wrap items-center gap-2.5">
+        <SegmentedControl
+          size="sm"
+          ariaLabel="Kind of entry"
+          value={tab}
+          onChange={(next) => {
+            setTab(next as "time" | "leave");
+            setError(null);
+          }}
+          items={[
+            { value: "time", label: "Add Time" },
+            { value: "leave", label: "Add Leave" },
+          ]}
+        />
+        <div className="flex-1" />
+        <Button hierarchy="link" size="sm" onClick={onClose}>
           Cancel
-        </button>
+        </Button>
       </div>
 
-      {/* Add Time form */}
+      {error && <Banner tone="error" body={error} />}
+
       {tab === "time" && (
-        <form onSubmit={handleAddTime} className="flex flex-wrap items-end gap-2">
-          <label className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-              In
-            </span>
-            <input
+        <form onSubmit={handleAddTime} className="flex flex-wrap items-end gap-2.5">
+          <div className="w-[196px] flex-none">
+            <Input
+              label="In"
               type="datetime-local"
               value={inTime}
               onChange={(e) => setInTime(e.target.value)}
               required
-              className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
             />
-          </label>
-          <label className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-              Out
-            </span>
-            <input
+          </div>
+          <div className="w-[196px] flex-none">
+            <Input
+              label="Out"
               type="datetime-local"
               value={outTime}
               onChange={(e) => setOutTime(e.target.value)}
               required
-              className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
             />
-          </label>
-          <label className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-              Reason
-            </span>
-            <input
-              type="text"
+          </div>
+          <div className="min-w-[220px] flex-1">
+            <Input
+              label="Reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Why is this being added manually?"
               required
-              className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
             />
-          </label>
-          <button
-            type="submit"
-            disabled={isPending || !reason.trim()}
-            className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          >
+          </div>
+          <Button type="submit" disabled={isPending || !reason.trim()}>
             {isPending ? "Saving…" : "Add"}
-          </button>
-          {error && <span className="w-full text-xs text-red-500">{error}</span>}
+          </Button>
         </form>
       )}
 
-      {/* Add Leave form */}
       {tab === "leave" && (
-        <form onSubmit={handleAddLeave} className="flex flex-wrap items-end gap-2">
-          <label className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+        <form onSubmit={handleAddLeave} className="flex flex-wrap items-end gap-2.5">
+          <label className="flex w-[220px] flex-none flex-col gap-1.5">
+            <span style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>
               Leave Type
             </span>
-            <select
+            <Select
               value={leaveTypeId}
               onChange={(e) => setLeaveTypeId(e.target.value)}
               required
-              className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+              style={{ width: "100%" }}
             >
-              {leaveTypes.length === 0 && (
-                <option value="">No leave types configured</option>
-              )}
+              {leaveTypes.length === 0 && <option value="">No leave types configured</option>}
               {leaveTypes.map((lt) => (
                 <option key={lt.id} value={lt.id}>
-                  {lt.name}{lt.isPaid ? "" : " (Unpaid)"}
+                  {lt.name}
+                  {lt.isPaid ? "" : " (Unpaid)"}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
-          <label className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-              Hours
-            </span>
-            <input
+          <div className="w-[120px] flex-none">
+            <Input
+              label="Hours"
               type="number"
               min="0.25"
               max="24"
@@ -207,36 +197,31 @@ export function AddTimecardEntry({
               value={durationHours}
               onChange={(e) => setDurationHours(e.target.value)}
               required
-              className="w-20 rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
             />
-          </label>
-          <label className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-              Note (optional)
-            </span>
-            <input
-              type="text"
+          </div>
+          <div className="min-w-[220px] flex-1">
+            <Input
+              label="Note (optional)"
               value={leaveNote}
               onChange={(e) => setLeaveNote(e.target.value)}
               placeholder="e.g. FMLA paperwork ref #…"
-              className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
             />
-          </label>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] text-zinc-400">
-              {durationHours && !isNaN(parseFloat(durationHours))
-                ? `= ${minutesToHoursDecimal(Math.round(parseFloat(durationHours) * 60))}h`
-                : ""}
-            </span>
-            <button
-              type="submit"
-              disabled={isPending || !leaveTypeId || !durationHours}
-              className="rounded bg-violet-600 px-3 py-1 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50"
-            >
-              {isPending ? "Saving…" : "Add"}
-            </button>
           </div>
-          {error && <span className="w-full text-xs text-red-500">{error}</span>}
+          <Button type="submit" disabled={isPending || !leaveTypeId || !durationHours}>
+            {isPending ? "Saving…" : "Add"}
+          </Button>
+          {/* Decimal hours are what lands in the ledger, so they are echoed back
+              rather than left for the reader to work out from "7.25". On its own
+              line: a hint under the 120px field would push that field out of
+              line with the rest of the row. */}
+          {leavePreview && (
+            <span
+              className="tabular w-full"
+              style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+            >
+              {leavePreview}
+            </span>
+          )}
         </form>
       )}
     </div>

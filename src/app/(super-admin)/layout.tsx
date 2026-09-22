@@ -12,18 +12,32 @@ export default async function SuperAdminLayout({
   if (session.user.role !== "SUPER_ADMIN") redirect("/dashboard");
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      {/* Top nav */}
-      <header className="border-b border-zinc-800 bg-zinc-900">
+    /*
+     * Pinned to the design system's dark theme with data-theme, rather than
+     * hand-rolled from zinc.
+     *
+     * <p>Super-admin is deliberately dark — it is how you know you are in the
+     * area that can act across every tenant. Before, that was a second,
+     * separate dark palette that happened to look similar to the real one and
+     * drifted from it. Setting data-theme="dark" makes every semantic token
+     * flip, so this area is the product in dark mode rather than a lookalike,
+     * and it stays correct when the dark tokens change.
+     */
+    <div data-theme="dark" className="min-h-screen" style={{ background: "var(--surface-page)", color: "var(--text-primary)" }}>
+      <header style={{ background: "var(--surface-card)", borderBottom: "1px solid var(--stroke-secondary)" }}>
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
           <div className="flex items-center gap-6">
-            <span className="text-sm font-semibold tracking-widest text-zinc-400 uppercase">
+            <span
+              className="uppercase"
+              style={{ font: "var(--type-overline)", letterSpacing: "0.12em", color: "var(--text-tertiary)" }}
+            >
               Super Admin
             </span>
             <nav className="flex gap-4">
               <Link
                 href="/super-admin/tenants"
-                className="text-sm text-zinc-300 hover:text-white"
+                className="ta-hoverable rounded-md px-2 py-1"
+                style={{ font: "var(--type-button1)", color: "var(--text-secondary)", textDecoration: "none" }}
               >
                 Tenants
               </Link>
@@ -37,7 +51,8 @@ export default async function SuperAdminLayout({
           >
             <button
               type="submit"
-              className="text-sm text-zinc-400 hover:text-white"
+              className="ta-hoverable rounded-md px-2 py-1"
+              style={{ font: "var(--type-button1)", color: "var(--text-secondary)" }}
             >
               Sign out
             </button>

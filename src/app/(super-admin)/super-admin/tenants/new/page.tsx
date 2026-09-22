@@ -1,8 +1,68 @@
-import Link from "next/link";
+import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { createTenant } from "@/actions/super-admin.actions";
+import { Banner, Button, Card, Input, LinkButton, PageHeader, Select } from "@/components/ui";
 
-export default function NewTenantPage() {
+const TIMEZONES = [
+  { value: "America/New_York", label: "Eastern (ET)" },
+  { value: "America/Chicago", label: "Central (CT)" },
+  { value: "America/Denver", label: "Mountain (MT)" },
+  { value: "America/Los_Angeles", label: "Pacific (PT)" },
+  { value: "America/Anchorage", label: "Alaska (AKT)" },
+  { value: "Pacific/Honolulu", label: "Hawaii (HT)" },
+];
+
+/**
+ * The design's field grid: columns collapse rather than shrink past 200px,
+ * which is the width at which "America/Los_Angeles" stops being readable in a
+ * select. 96 rather than 100 leaves room for the 12px gap.
+ */
+function fieldGrid(cols: number) {
+  return `repeat(auto-fit, minmax(min(100%, max(200px, ${(96 / cols).toFixed(0)}%)), 1fr))`;
+}
+
+/**
+ * `Select` from the kit is the bare control — it has no label, because in a
+ * list toolbar the surrounding row says what it filters. In a form it needs
+ * one, and it has to be the same 12px medium as `Input`'s or the two sit at
+ * different heights in the same grid row.
+ */
+function SelectField({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex w-full flex-col gap-1.5">
+      <label htmlFor={htmlFor} className="wms-label">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Creating a tenant, on the design's doc template: a back link and the submit
+ * in the header, then the form as a stack of labelled cards in a single
+ * column.
+ *
+ * <p>One transaction stands behind this form and it creates six things — the
+ * tenant, its first site, a General department, a Default rule set, a user and
+ * that user's System Admin employee record. The cards are grouped the way the
+ * transaction is, so a half-filled form is obviously half-filled.
+ */
+export default async function NewTenantPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = (await searchParams) ?? {};
+
   async function handleCreate(formData: FormData) {
     "use server";
     const result = await createTenant({
@@ -23,145 +83,88 @@ export default function NewTenantPage() {
   }
 
   return (
-    <div className="max-w-xl">
-      <Link
-        href="/super-admin/tenants"
-        className="text-sm text-zinc-500 hover:text-white"
-      >
-        ← Tenants
-      </Link>
-      <h1 className="mt-2 text-2xl font-bold text-white">New Tenant</h1>
-      <p className="mt-1 text-sm text-zinc-400">
-        Creates a tenant, first site, default rule set, and a System Admin user.
-      </p>
+    <form action={handleCreate} className="flex flex-col gap-4">
+      <PageHeader
+        title="New Tenant"
+        subtitle="Creates the tenant, its first site, a default rule set and a System Admin who can sign in."
+        actions={
+          <>
+            <LinkButton href="/super-admin/tenants" hierarchy="tertiary">
+              ← Tenants
+            </LinkButton>
+            <Button type="submit" hierarchy="primary">
+              Create Tenant
+            </Button>
+          </>
+        }
+      />
 
-      <form action={handleCreate} className="mt-6 space-y-6">
-        {/* Tenant */}
-        <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-          <h2 className="mb-4 text-sm font-semibold text-zinc-300">Tenant</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-zinc-400 mb-1">
-                Company Name
-              </label>
-              <input
-                name="name"
-                required
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
-                placeholder="Bergen Logistics LLC"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-zinc-400 mb-1">
-                Slug <span className="text-zinc-500">(lowercase, hyphens only)</span>
-              </label>
-              <input
-                name="slug"
-                required
-                pattern="[a-z0-9-]+"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
-                placeholder="bergen-logistics"
-              />
-            </div>
+      <div className="flex flex-col gap-4" style={{ maxWidth: 840 }}>
+        {error && (
+          // The action throws the reason away on its way back here, so this
+          // says what is actually checkable rather than guessing: both of the
+          // uniqueness constraints it can trip are deployment-wide.
+          <Banner
+            tone="error"
+            title="Nothing was created"
+            body="The slug and the admin username must each be unique across every tenant on this deployment. Change whichever one is already taken and submit again."
+          />
+        )}
+
+        <Card title="Tenant" subtitle="The company itself. Everything else hangs off this record.">
+          <div className="grid gap-3" style={{ gridTemplateColumns: fieldGrid(2) }}>
+            <Input name="name" label="Company Name" required placeholder="Bergen Logistics LLC" />
+            <Input
+              name="slug"
+              label="Slug"
+              required
+              pattern="[a-z0-9-]+"
+              placeholder="bergen-logistics"
+              hint="Lowercase letters, numbers and hyphens. It appears in URLs and cannot be changed later."
+            />
           </div>
-        </section>
+        </Card>
 
-        {/* Site */}
-        <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-          <h2 className="mb-4 text-sm font-semibold text-zinc-300">First Site</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">
-                Site Name
-              </label>
-              <input
-                name="siteName"
-                required
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
-                placeholder="Main Office"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">
-                Timezone
-              </label>
-              <select
+        <Card title="First Site" subtitle="The time zone decides how this site's punches are stamped.">
+          <div className="grid gap-3" style={{ gridTemplateColumns: fieldGrid(2) }}>
+            <Input name="siteName" label="Site Name" required placeholder="Main Office" />
+            <SelectField label="Timezone" htmlFor="siteTimezone">
+              <Select
+                id="siteTimezone"
                 name="siteTimezone"
                 defaultValue="America/New_York"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white focus:border-zinc-500 focus:outline-none"
+                style={{ width: "100%" }}
               >
-                <option value="America/New_York">Eastern (ET)</option>
-                <option value="America/Chicago">Central (CT)</option>
-                <option value="America/Denver">Mountain (MT)</option>
-                <option value="America/Los_Angeles">Pacific (PT)</option>
-                <option value="America/Anchorage">Alaska (AKT)</option>
-                <option value="Pacific/Honolulu">Hawaii (HT)</option>
-              </select>
-            </div>
+                {TIMEZONES.map((tz) => (
+                  <option key={tz.value} value={tz.value}>
+                    {tz.label}
+                  </option>
+                ))}
+              </Select>
+            </SelectField>
           </div>
-        </section>
+        </Card>
 
-        {/* System Admin */}
-        <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-          <h2 className="mb-4 text-sm font-semibold text-zinc-300">System Admin User</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">
-                Full Name
-              </label>
-              <input
-                name="adminName"
-                required
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
-                placeholder="Jane Smith"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">
-                Employee Code
-              </label>
-              <input
-                name="adminEmployeeCode"
-                required
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
-                placeholder="ADMIN001"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">
-                Username
-              </label>
-              <input
-                name="adminUsername"
-                required
-                minLength={3}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
-                placeholder="jsmith"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">
-                Password
-              </label>
-              <input
-                name="adminPassword"
-                type="password"
-                required
-                minLength={8}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
-                placeholder="min 8 characters"
-              />
-            </div>
-          </div>
-        </section>
-
-        <button
-          type="submit"
-          className="w-full rounded-lg bg-white py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-100"
+        <Card
+          title="System Admin User"
+          subtitle="The first person who can sign in and set everything else up."
         >
-          Create Tenant
-        </button>
-      </form>
-    </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: fieldGrid(2) }}>
+            <Input name="adminName" label="Full Name" required placeholder="Jane Smith" />
+            <Input name="adminEmployeeCode" label="Employee Code" required placeholder="ADMIN001" />
+            <Input name="adminUsername" label="Username" required minLength={3} placeholder="jsmith" />
+            <Input
+              name="adminPassword"
+              label="Password"
+              type="password"
+              required
+              minLength={8}
+              placeholder="At least 8 characters"
+              hint="Give this to them directly; it is not emailed."
+            />
+          </div>
+        </Card>
+      </div>
+    </form>
   );
 }

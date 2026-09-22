@@ -1,47 +1,58 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { useTheme } from "next-themes";
 import { Sun, Moon, Monitor } from "lucide-react";
 
 const THEMES = [
   { value: "system", icon: Monitor, label: "System" },
-  { value: "light",  icon: Sun,     label: "Light"  },
-  { value: "dark",   icon: Moon,    label: "Dark"   },
+  { value: "light", icon: Sun, label: "Light" },
+  { value: "dark", icon: Moon, label: "Dark" },
 ] as const;
 
-export function ThemeToggle({ iconOnly = false }: { iconOnly?: boolean }) {
-  const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+/**
+ * True once this is running in the browser, false while rendering on the
+ * server and during hydration.
+ *
+ * <p>Nothing to subscribe to — the answer only ever changes once, and
+ * useSyncExternalStore is what turns "the server and the client see different
+ * things" into a supported re-render rather than a setState inside an effect.
+ */
+const noSubscribe = () => () => {};
+const useHydrated = () => useSyncExternalStore(noSubscribe, () => true, () => false);
 
-  // Avoid hydration mismatch — render nothing until client knows the theme
-  useEffect(() => setMounted(true), []);
-  if (!mounted) return null;
+/**
+ * Cycles system -> light -> dark, as a 28px outlined control in the top bar.
+ *
+ * <p>Shape taken from the portal design, which puts it beside the other
+ * header controls. It used to be a full-width labelled row in the sidebar
+ * footer, where it took as much space as a destination without being one.
+ */
+export function ThemeToggle() {
+  const { theme, setTheme } = useTheme();
+  const hydrated = useHydrated();
+
+  // The server has no idea which theme this browser will pick, so rendering
+  // the icon before hydration guarantees a mismatch. A fixed-size placeholder
+  // keeps the header from shifting when the real control appears.
+  if (!hydrated) return <span className="h-7 w-[38px]" aria-hidden />;
 
   const currentIdx = THEMES.findIndex((t) => t.value === theme);
   const current = THEMES[currentIdx === -1 ? 0 : currentIdx];
   const next = THEMES[(currentIdx + 1) % THEMES.length];
 
-  if (iconOnly) {
-    return (
-      <button
-        onClick={() => setTheme(next.value)}
-        title={`Switch to ${next.label} mode`}
-        className="rounded-lg p-2 text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
-      >
-        <current.icon className="h-4 w-4" />
-      </button>
-    );
-  }
-
   return (
     <button
       onClick={() => setTheme(next.value)}
-      title={`Switch to ${next.label} mode`}
-      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
+      title={`${current.label} theme — switch to ${next.label}`}
+      className="ta-outlined inline-flex h-7 items-center gap-1.5 rounded-md px-2"
+      style={{
+        border: "1px solid var(--stroke-secondary)",
+        background: "var(--surface-card)",
+        color: "var(--text-secondary)",
+      }}
     >
-      <current.icon className="h-4 w-4 shrink-0" />
-      {current.label}
+      <current.icon className="h-4 w-4" />
     </button>
   );
 }

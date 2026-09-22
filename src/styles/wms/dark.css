@@ -1,0 +1,88 @@
+/* ============================================================
+   CloudX WMS — Dark theme aliases
+   Ported verbatim from the "Time & Attendance Portal" design
+   handoff, which declares them under [data-theme="dark"].
+
+   Keyed on BOTH selectors on purpose:
+     .dark               — what next-themes sets (attribute="class")
+     [data-theme="dark"] — what the design system's own components
+                           and any future _ds_bundle drop-in expect
+   so a component lifted straight from the handoff theme-switches
+   without being rewired.
+
+   Primitives are NOT redefined here. Only the semantic layer flips,
+   which is the whole reason components are told to consume
+   the semantic layer (--text-primary, --surface-card, --fill-accent,
+   --stroke-divider) and never a raw ramp step.
+   ============================================================ */
+
+/* Qualified with :root — which is the same <html> element next-themes puts
+   the class on — purely to win a specificity tie. globals.css defines the
+   product-chrome variables (--ta-rail, --ta-row-hover, --ta-track and the
+   brand tokens) in a plain :root block *after* this file is imported, and a
+   bare .dark scores the same (0,1,0), so source order handed every one of
+   them back to its light value the moment the theme flipped. Nobody caught it
+   because the three that existed before are near-blacks against near-blacks. */
+:root.dark,
+:root[data-theme="dark"] {
+  /* Surfaces — near-black page, gray-900 cards. */
+  --surface-page:      rgb(3, 7, 18);
+  --surface-card:      rgb(17, 24, 39);
+  --surface-secondary: rgb(17, 24, 39);
+  --surface-tertiary:  rgb(31, 41, 55);
+  --surface-inverse:   var(--wms-color-gray-100);
+  --surface-info:      var(--wms-color-primary-950);
+  --surface-success:   var(--wms-color-emerald-950);
+  --surface-warning:   var(--wms-color-amber-950);
+  --surface-error:     var(--wms-color-red-950);
+
+  /* Text */
+  --text-primary:   rgb(249, 250, 251);
+  --text-secondary: rgb(206, 211, 217);
+  --text-tertiary:  rgb(156, 163, 175);
+  --text-disabled:  rgb(107, 114, 128);
+  --text-accent:    var(--wms-color-primary-300);
+  --text-error:     var(--wms-color-red-300);
+  --text-success:   var(--wms-color-emerald-300);
+  --text-warning:   var(--wms-color-amber-300);
+
+  /* Fills */
+  --fill-hover:    rgb(31, 41, 55);
+  --fill-pressed:  rgb(55, 65, 81);
+  --fill-disabled: rgb(31, 41, 55);
+  --fill-readonly: rgb(17, 24, 39);
+
+  /* Strokes */
+  --stroke-default:   rgb(55, 65, 81);
+  --stroke-secondary: rgb(31, 41, 55);
+  --stroke-divider:   rgb(31, 41, 55);
+  --stroke-readonly:  rgb(31, 41, 55);
+  --stroke-hover:     rgb(75, 85, 99);
+  --stroke-wrapper:   rgb(31, 41, 55);
+
+  /* Icons */
+  --icon-default:   var(--wms-color-gray-200);
+  --icon-secondary: var(--wms-color-gray-400);
+  --icon-tertiary:  var(--wms-color-gray-300);
+  --icon-accent:    var(--wms-color-primary-400);
+  --icon-disabled:  var(--wms-color-gray-600);
+
+  /* Links */
+  --link-primary:      var(--wms-color-gray-200);
+  --link-accent:       var(--wms-color-primary-300);
+  --link-accent-hover: var(--wms-color-primary-200);
+
+  /* Product chrome — the portal design's own additions on top of the DS. */
+  /* The tile is a fixed brand asset, so the blue and orange are not
+     re-tinted here. Only the wordmark moves: the handoff rules out the blue
+     "Cloud" against a dark background, and this theme is that case. */
+  --ta-wordmark-cloud: var(--text-primary);
+  --ta-rail:      rgb(3, 7, 18);
+  --ta-row-hover: rgb(31, 41, 55);
+  --ta-track:     rgb(55, 65, 81);
+
+  /* The card shadow's inset hairline is a light-mode gray; in dark it has to
+     ride the dark divider or every panel gets a pale outline. */
+  --shadow-xs:   inset 0 0 0 1px var(--stroke-divider), 0px 1px 2px 0px rgba(0, 0, 0, 0.30);
+  --shadow-card: inset 0 0 0 1px var(--stroke-divider), 0px 2px 12px 0px rgba(0, 0, 0, 0.24);
+}

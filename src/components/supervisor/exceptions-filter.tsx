@@ -1,22 +1,24 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { Select } from "@/components/ui";
+
+/**
+ * The scope controls for the Exceptions screen: which pay period, which site,
+ * which department.
+ *
+ * <p>The exception *type* used to be a fourth dropdown here and is now the
+ * chip row above the list — same query parameter, same values, but a type you
+ * can see and take off in one click rather than one you have to open a select
+ * to discover.
+ *
+ * <p>These sit in the page header rather than in a filter card because the
+ * pane below them is height-bound: it scrolls its two halves independently, so
+ * every row above it comes straight out of the list of people.
+ */
 
 type Site = { id: string; name: string };
 type Department = { id: string; name: string };
-
-const EXCEPTION_TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: "MISSING_PUNCH",    label: "Missing Punch" },
-  { value: "LONG_SHIFT",       label: "Long Shift" },
-  { value: "SHORT_BREAK",      label: "Short Break" },
-  { value: "MISSED_MEAL",      label: "Missed Meal" },
-  { value: "UNSCHEDULED_OT",   label: "Unscheduled OT" },
-  { value: "CONSECUTIVE_DAYS", label: "Consecutive Days" },
-  { value: "ABSENT",           label: "Absent" },
-  { value: "LATE_IN",          label: "Late In" },
-  { value: "EARLY_OUT",        label: "Early Out" },
-];
-
 type PayPeriodOption = { id: string; label: string };
 
 type Props = {
@@ -55,71 +57,51 @@ export function ExceptionsFilter({
     router.push(`/supervisor/exceptions${qs ? `?${qs}` : ""}`);
   }
 
-  const hasFilters = selectedSiteId || selectedDepartmentId || selectedExceptionType || selectedPayPeriodId;
-
   return (
     <div className="flex flex-wrap items-center gap-2">
       {payPeriods.length > 0 && (
-        <select
+        <Select
+          aria-label="Pay period"
           value={selectedPayPeriodId ?? ""}
           onChange={(e) =>
             navigate(selectedSiteId, selectedDepartmentId, selectedExceptionType, e.target.value || undefined)
           }
-          className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
         >
           <option value="">All Pay Periods</option>
           {payPeriods.map((pp) => (
             <option key={pp.id} value={pp.id}>{pp.label}</option>
           ))}
-        </select>
+        </Select>
       )}
       {sites.length > 0 && (
-        <select
+        <Select
+          aria-label="Site"
           value={selectedSiteId ?? ""}
+          // Departments are listed per site, so the one that was picked may
+          // not exist under the new site — dropping it beats filtering to a
+          // department this site does not have and reading that as "clean".
           onChange={(e) =>
             navigate(e.target.value || undefined, undefined, selectedExceptionType, selectedPayPeriodId)
           }
-          className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
         >
           <option value="">All Sites</option>
           {sites.map((s) => (
             <option key={s.id} value={s.id}>{s.name}</option>
           ))}
-        </select>
+        </Select>
       )}
-      <select
+      <Select
+        aria-label="Department"
         value={selectedDepartmentId ?? ""}
         onChange={(e) =>
           navigate(selectedSiteId, e.target.value || undefined, selectedExceptionType, selectedPayPeriodId)
         }
-        className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
       >
         <option value="">All Departments</option>
         {departments.map((d) => (
           <option key={d.id} value={d.id}>{d.name}</option>
         ))}
-      </select>
-      <select
-        value={selectedExceptionType ?? ""}
-        onChange={(e) =>
-          navigate(selectedSiteId, selectedDepartmentId, e.target.value || undefined, selectedPayPeriodId)
-        }
-        className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-      >
-        <option value="">All Types</option>
-        {EXCEPTION_TYPE_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-      {hasFilters && (
-        <button
-          type="button"
-          onClick={() => navigate()}
-          className="text-sm text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
-        >
-          Clear
-        </button>
-      )}
+      </Select>
     </div>
   );
 }

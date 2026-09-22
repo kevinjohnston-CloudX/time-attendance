@@ -1,7 +1,18 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { Button } from "@/components/ui";
 import { reverseLeaveApproval } from "@/actions/leave.actions";
+
+/**
+ * Undo an approval that has already been given.
+ *
+ * <p>Confirmed rather than immediate, because this is not undoing a click: the
+ * request goes back to pending and the hours go back onto the balance, and
+ * somebody may already have planned a shift around the day being covered.
+ * The warning tone is the honest one — nothing is destroyed, but a settled
+ * record stops being settled.
+ */
 
 interface Props {
   leaveRequestId: string;
@@ -24,43 +35,33 @@ export function LeaveReverseButton({ leaveRequestId, label = "Reverse Approval" 
 
   if (confirm) {
     return (
-      <div className="flex flex-col gap-2 mt-2">
-        {error && <p className="text-xs text-red-500">{error}</p>}
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          This will move the request back to pending and restore the balance.
+      <div className="flex flex-col gap-2">
+        {error && (
+          <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-error)" }}>{error}</p>
+        )}
+        <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+          This moves the request back to pending and restores the balance.
         </p>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setConfirm(false)}
-            className="text-sm text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-          >
+          <Button hierarchy="tertiary" size="sm" onClick={() => setConfirm(false)}>
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleReverse}
-            disabled={isPending}
-            className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-          >
+          </Button>
+          <Button size="sm" tone="warning" onClick={handleReverse} disabled={isPending}>
             {isPending ? "Saving…" : "Confirm"}
-          </button>
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="mt-2">
-      {error && <p className="text-xs text-red-500 mb-1">{error}</p>}
-      <button
-        type="button"
-        onClick={() => setConfirm(true)}
-        disabled={isPending}
-        className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
-      >
+    <div className="flex flex-wrap items-center gap-2">
+      <Button hierarchy="secondary" size="sm" onClick={() => setConfirm(true)} disabled={isPending}>
         {label}
-      </button>
+      </Button>
+      {error && (
+        <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-error)" }}>{error}</p>
+      )}
     </div>
   );
 }

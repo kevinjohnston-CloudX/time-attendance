@@ -2,7 +2,38 @@
 
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { Layers, X } from "lucide-react";
+import type { ReactNode, SelectHTMLAttributes } from "react";
 import { createPayCategory, updatePayCategory, deletePayCategory } from "@/actions/pay-category.actions";
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  Checkbox,
+  EmptyState,
+  Input,
+  Select,
+  SegmentedControl,
+  Table,
+  TBody,
+  THead,
+  TR,
+  TH,
+  TD,
+  TableFooter,
+  Toolbar,
+  statusTone,
+} from "@/components/ui";
+
+/**
+ * Pay categories, on the design's list template.
+ *
+ * <p>A category is the number payroll classifies somebody by, and what it
+ * carries is the set of PTO policies that come with it — so that set is the
+ * column, not a count. Two categories that both say "2 policies" are the
+ * question this screen exists to answer.
+ */
 
 type PolicyRule = { leaveTypeId: string; leaveType: { id: string; name: string } };
 type PolicyOption = { id: string; name: string; rules: PolicyRule[] };
@@ -24,32 +55,75 @@ interface Props {
   leaveTypes: LeaveTypeOption[];
 }
 
-const inputCls =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const saveBtnCls =
-  "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
-const cancelBtnCls =
-  "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
-const dangerBtnCls =
-  "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50";
+type View = "all" | "active" | "inactive";
+
+const VIEWS = [
+  { value: "all", label: "All" },
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+];
+
+/** Field grid from the design's doc template, at two columns. */
+const FIELD_GRID = "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,48%)),1fr))]";
+
+function SelectField({
+  label,
+  children,
+  ...rest
+}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; children: ReactNode }) {
+  return (
+    <label className="flex w-full flex-col gap-1.5">
+      <span className="wms-label">{label}</span>
+      <Select {...rest}>{children}</Select>
+    </label>
+  );
+}
+
+/** A section inside the form dialog, where a nested Card would be a panel on a panel. */
+function FormSection({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex flex-col gap-0.5">
+        <span className="wms-overline">{label}</span>
+        {hint && <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{hint}</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
 
 function CategoryFields({ category, defaultNumber }: { category?: CategoryWithPolicies; defaultNumber?: number }) {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <div>
-        <label className="mb-1 block text-xs text-zinc-500">Category Number</label>
-        <input name="number" type="number" min="1" max="9999" required defaultValue={category?.number ?? defaultNumber ?? ""} placeholder="e.g. 100" className={inputCls} />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs text-zinc-500">Description</label>
-        <input name="description" maxLength={255} defaultValue={category?.description ?? ""} placeholder="e.g. Full-Time Hourly" className={inputCls} />
-      </div>
+    <div className={FIELD_GRID}>
+      <Input
+        label="Category Number"
+        name="number"
+        type="number"
+        min="1"
+        max="9999"
+        required
+        defaultValue={category?.number ?? defaultNumber ?? ""}
+        placeholder="e.g. 100"
+      />
+      <Input
+        label="Description"
+        name="description"
+        maxLength={255}
+        defaultValue={category?.description ?? ""}
+        placeholder="e.g. Full-Time Hourly"
+      />
     </div>
   );
 }
 
-// ─── Policy picker sub-component ──────────────────────────────────────────────
-
+/**
+ * Which PTO policies come with this category.
+ *
+ * <p>Two policies covering the same leave type would both try to accrue it, so
+ * the overlap is refused here with the leave types named. The server refuses
+ * it too; this is so the person adding the policy learns which one already
+ * covers Vacation rather than that something went wrong.
+ */
 function PolicyPicker({
   assigned,
   allPolicies,
@@ -91,61 +165,112 @@ function PolicyPicker({
   }
 
   return (
-    <div className="mt-4">
-      <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-zinc-500">Leave Policies</label>
-
-      {assigned.length === 0 && (
-        <p className="mb-2 text-xs text-zinc-400">No policies assigned to this category.</p>
-      )}
-
-      <div className="mb-3 flex flex-col gap-2">
-        {assigned.map((p) => (
-          <div key={p.id} className="flex items-start justify-between rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800/50">
-            <div>
-              <span className="text-sm font-medium text-zinc-900 dark:text-white">{p.name}</span>
-              {p.rules.length > 0 && (
-                <p className="mt-0.5 text-xs text-zinc-400">
-                  {p.rules.map((r) => r.leaveType.name).join(", ")}
-                </p>
-              )}
+    <FormSection label="Leave Policies">
+      {assigned.length === 0 ? (
+        <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+          No policies assigned to this category.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {assigned.map((p) => (
+            <div
+              key={p.id}
+              className="flex items-start justify-between gap-3 rounded-lg px-3 py-2"
+              style={{ border: "1px solid var(--stroke-secondary)", background: "var(--surface-secondary)" }}
+            >
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-primary)" }}>
+                  {p.name}
+                </span>
+                {p.rules.length > 0 && (
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                    {p.rules.map((r) => r.leaveType.name).join(", ")}
+                  </span>
+                )}
+              </div>
+              <Button type="button" hierarchy="link" tone="error" size="sm" onClick={() => handleRemove(p.id)}>
+                Remove
+              </Button>
             </div>
-            <button type="button" onClick={() => handleRemove(p.id)} className="ml-3 shrink-0 text-xs text-red-500 hover:underline dark:text-red-400">
-              Remove
-            </button>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {available.length > 0 && (
         <div className="flex gap-2">
-          <select value={pickerId} onChange={(e) => { setPickerId(e.target.value); setOverlapError(null); }} className={inputCls}>
+          <Select
+            aria-label="Add a policy"
+            value={pickerId}
+            onChange={(e) => { setPickerId(e.target.value); setOverlapError(null); }}
+            style={{ flex: 1 }}
+          >
             <option value="">— Add a policy —</option>
             {available.map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
-          </select>
-          <button
-            type="button"
-            onClick={handleAdd}
-            disabled={!pickerId}
-            className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
+          </Select>
+          <Button type="button" hierarchy="secondary" onClick={handleAdd} disabled={!pickerId}>
             Add
-          </button>
+          </Button>
         </div>
       )}
 
-      {overlapError && (
-        <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-400">
-          {overlapError}
-        </p>
-      )}
+      {overlapError && <Banner tone="warning" body={overlapError} />}
+    </FormSection>
+  );
+}
+
+/** One half of the picker: a titled box whose rows move to the other side. */
+function LeaveTypeBox({
+  title,
+  tone,
+  items,
+  onPick,
+}: {
+  title: string;
+  tone: string;
+  items: LeaveTypeOption[];
+  onPick: (id: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span style={{ font: "var(--type-button2)", color: tone }}>{title}</span>
+      <div
+        className="flex min-h-[120px] flex-col gap-1 rounded-lg p-2"
+        style={{ border: "1px solid var(--stroke-secondary)", background: "var(--surface-secondary)" }}
+      >
+        {items.length === 0 && (
+          <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>None</span>
+        )}
+        {items.map((lt) => (
+          <button
+            key={lt.id}
+            type="button"
+            onClick={() => onPick(lt.id)}
+            className="ta-hoverable w-full rounded px-2 py-1.5 text-left"
+            style={{
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              font: "var(--type-body1)",
+              color: "var(--text-primary)",
+            }}
+          >
+            {lt.name}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
 
-// ─── Leave type dual-box picker ───────────────────────────────────────────────
-
+/**
+ * Which leave types this category may request.
+ *
+ * <p>Two boxes rather than a checklist: the question a payroll admin asks here
+ * is "what can these people not book", and a list of ticks answers it only by
+ * reading every row.
+ */
 function LeaveTypePicker({
   allLeaveTypes,
   initialAvailableIds,
@@ -173,44 +298,17 @@ function LeaveTypePicker({
   const availableList   = allLeaveTypes.filter((lt) =>  availableIds.has(lt.id));
   const unavailableList = allLeaveTypes.filter((lt) => !availableIds.has(lt.id));
 
-  const boxCls = "min-h-[120px] rounded-lg border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-700 dark:bg-zinc-800/50 flex flex-col gap-1";
-  const itemCls = "w-full rounded px-2 py-1.5 text-left text-sm text-zinc-700 hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-700 transition-colors";
-
   return (
-    <div className="mt-4">
-      <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-zinc-500">Available for Leave Request</label>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <p className="mb-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">Available</p>
-          <div className={boxCls}>
-            {availableList.length === 0 && <p className="text-xs text-zinc-400">None</p>}
-            {availableList.map((lt) => (
-              <button key={lt.id} type="button" onClick={() => move(lt.id, false)} className={itemCls} title="Click to make unavailable">
-                {lt.name}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">Unavailable</p>
-          <div className={boxCls}>
-            {unavailableList.length === 0 && <p className="text-xs text-zinc-400">None</p>}
-            {unavailableList.map((lt) => (
-              <button key={lt.id} type="button" onClick={() => move(lt.id, true)} className={itemCls} title="Click to make available">
-                {lt.name}
-              </button>
-            ))}
-          </div>
-        </div>
+    <FormSection label="Available for Leave Request" hint="Click a leave type to move it between boxes.">
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(160px,48%)),1fr))]">
+        <LeaveTypeBox title="Available" tone="var(--text-success)" items={availableList} onPick={(id) => move(id, false)} />
+        <LeaveTypeBox title="Unavailable" tone="var(--text-tertiary)" items={unavailableList} onPick={(id) => move(id, true)} />
       </div>
-      <p className="mt-1.5 text-xs text-zinc-400">Click a leave type to move it between boxes.</p>
-    </div>
+    </FormSection>
   );
 }
 
-// ─── Modal ────────────────────────────────────────────────────────────────────
-
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
     document.addEventListener("keydown", onKey);
@@ -219,25 +317,31 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.4)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <h3 className="text-base font-semibold text-zinc-900 dark:text-white">{title}</h3>
-          <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" aria-label="Close">
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div className="px-6 py-5">{children}</div>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="ta-modal max-h-[90vh] w-full max-w-xl overflow-y-auto"
+        style={{ borderRadius: "var(--radius-l)" }}
+      >
+        <header
+          className="flex items-center justify-between gap-3 px-5 py-3.5"
+          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+        >
+          <h3 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>{title}</h3>
+          <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
+            <X className="h-4 w-4" />
+          </Button>
+        </header>
+        <div className="px-5 py-4">{children}</div>
       </div>
     </div>
   );
 }
-
-// ─── Main manager ─────────────────────────────────────────────────────────────
 
 export function PayCategoriesManager({ categories, ptoPolicies, leaveTypes }: Props) {
   const router = useRouter();
@@ -246,7 +350,7 @@ export function PayCategoriesManager({ categories, ptoPolicies, leaveTypes }: Pr
   const [editingCat, setEditingCat] = useState<CategoryWithPolicies | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [showInactive, setShowInactive] = useState(false);
+  const [view, setView] = useState<View>("active");
 
   const [createPolicies, setCreatePolicies] = useState<PolicyOption[]>([]);
   const [editPolicies,   setEditPolicies]   = useState<PolicyOption[]>([]);
@@ -259,7 +363,9 @@ export function PayCategoriesManager({ categories, ptoPolicies, leaveTypes }: Pr
   );
   const [editAvailableLeaveTypeIds, setEditAvailableLeaveTypeIds] = useState<string[]>([]);
 
-  const visible = showInactive ? categories : categories.filter((c) => c.isActive);
+  const visible = categories.filter((c) =>
+    view === "all" ? true : view === "active" ? c.isActive : !c.isActive,
+  );
 
   function openEdit(cat: CategoryWithPolicies) {
     setEditingCat(cat);
@@ -332,71 +438,83 @@ export function PayCategoriesManager({ categories, ptoPolicies, leaveTypes }: Pr
   }
 
   return (
-    <div className="mt-6">
-      <div className="mb-3 flex items-center gap-3">
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-500">
-          <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="rounded" />
-          Show inactive
-        </label>
-      </div>
+    <div className="mt-4 flex flex-col gap-2.5">
+      <Toolbar count={visible.length} countLabel="pay category">
+        <SegmentedControl
+          items={VIEWS}
+          value={view}
+          onChange={(v) => setView(v as View)}
+          size="sm"
+          ariaLabel="Which pay categories to show"
+        />
+        <Button onClick={openCreate}>New Pay Category</Button>
+      </Toolbar>
 
-      <div className="flex flex-col gap-2">
-        {visible.length === 0 && <p className="text-sm text-zinc-400">No pay categories yet. Add one below.</p>}
+      <Card padding={0}>
+        {visible.length === 0 ? (
+          <EmptyState
+            icon={<Layers className="h-8 w-8" />}
+            title={view === "active" ? "No active pay categories" : view === "inactive" ? "No retired pay categories" : "No pay categories"}
+            body="A pay category classifies an employee for payroll and carries the PTO policies that come with it."
+            action={<Button size="sm" onClick={openCreate}>New Pay Category</Button>}
+          />
+        ) : (
+          <>
+            <Table>
+              <THead>
+                <TR>
+                  <TH numeric style={{ width: 96 }}>Category</TH>
+                  <TH>Description</TH>
+                  <TH>Leave Policies</TH>
+                  <TH>Status</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {visible.map((cat) => (
+                  <TR key={cat.id} onClick={() => openEdit(cat)}>
+                    <TD numeric style={{ fontWeight: "var(--weight-semibold)" }}>{cat.number}</TD>
+                    <TD style={{ fontWeight: "var(--weight-medium)" }}>
+                      {cat.description || <span style={{ color: "var(--text-tertiary)", fontWeight: "var(--weight-regular)" }}>—</span>}
+                    </TD>
+                    <TD style={{ color: "var(--text-secondary)" }}>
+                      {cat.ptoPolicies.length === 0
+                        ? <span style={{ color: "var(--text-tertiary)" }}>None</span>
+                        : cat.ptoPolicies.map((link) => link.ptoPolicy.name).join(" · ")}
+                    </TD>
+                    <TD>
+                      {cat.isActive ? (
+                        <Badge tone={statusTone("ACTIVE")} size="sm" dot>Active</Badge>
+                      ) : (
+                        // statusTone would answer "warning"; a retired category
+                        // is not something to go and fix.
+                        <Badge size="sm">Inactive</Badge>
+                      )}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+            <TableFooter
+              shown={visible.length}
+              total={categories.length}
+              label={categories.length === 1 ? "pay category" : "pay categories"}
+            />
+          </>
+        )}
+      </Card>
 
-        {visible.map((cat) => (
-          <button
-            key={cat.id}
-            type="button"
-            onClick={() => openEdit(cat)}
-            className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <span className={`font-mono font-semibold ${cat.isActive ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"}`}>
-                  {cat.number}
-                </span>
-                {cat.description && <span className="text-sm text-zinc-500">{cat.description}</span>}
-                {!cat.isActive && (
-                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">Inactive</span>
-                )}
-              </div>
-              <div className="flex items-center gap-3">
-                {cat.ptoPolicies.length > 0 && (
-                  <span className="text-xs text-zinc-400">
-                    {cat.ptoPolicies.length} {cat.ptoPolicies.length === 1 ? "policy" : "policies"}
-                  </span>
-                )}
-                <span className="text-xs text-zinc-400">Click to edit →</span>
-              </div>
-            </div>
-          </button>
-        ))}
-      </div>
-
-      <button
-        onClick={openCreate}
-        className="mt-4 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-600"
-      >
-        + Add Pay Category
-      </button>
-
-      {/* Create modal */}
       {showCreate && (
         <Modal title="New Pay Category" onClose={closeCreate}>
-          <form onSubmit={handleCreate}>
+          <form onSubmit={handleCreate} className="flex flex-col gap-4">
             <CategoryFields defaultNumber={Math.max(0, ...categories.map((c) => c.number)) + 1} />
             <PolicyPicker assigned={createPolicies} allPolicies={ptoPolicies} onChange={setCreatePolicies} />
             {leaveTypes.length > 0 && (
-              <div className="mt-4">
-                <label className="flex cursor-pointer items-center gap-2.5">
-                  <input
-                    type="checkbox"
-                    checked={createLimitLeaveTypes}
-                    onChange={(e) => setCreateLimitLeaveTypes(e.target.checked)}
-                    className="h-4 w-4 rounded border-zinc-300"
-                  />
-                  <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Limit leave request options</span>
-                </label>
+              <div className="flex flex-col gap-3">
+                <Checkbox
+                  checked={createLimitLeaveTypes}
+                  onChange={setCreateLimitLeaveTypes}
+                  label="Limit leave request options"
+                />
                 {createLimitLeaveTypes && (
                   <LeaveTypePicker
                     allLeaveTypes={leaveTypes}
@@ -406,41 +524,33 @@ export function PayCategoriesManager({ categories, ptoPolicies, leaveTypes }: Pr
                 )}
               </div>
             )}
-            {error && (
-              <p className="mt-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>
-            )}
-            <div className="mt-4 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-              <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Creating…" : "Create"}</button>
-              <button type="button" onClick={closeCreate} className={cancelBtnCls}>Cancel</button>
+            {error && <Banner tone="error" body={error} />}
+            <div className="flex gap-2 pt-4" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+              <Button type="submit" disabled={isPending}>{isPending ? "Creating…" : "Create"}</Button>
+              <Button type="button" hierarchy="secondary" onClick={closeCreate}>Cancel</Button>
             </div>
           </form>
         </Modal>
       )}
 
-      {/* Edit modal */}
       {editingCat && (
         <Modal title={`Edit: ${editingCat.number}${editingCat.description ? ` — ${editingCat.description}` : ""}`} onClose={closeEdit}>
-          <form onSubmit={(e) => handleUpdate(editingCat, e)}>
+          <form onSubmit={(e) => handleUpdate(editingCat, e)} className="flex flex-col gap-4">
             <CategoryFields category={editingCat} />
-            <div className="mt-3 w-32">
-              <label className="mb-1 block text-xs text-zinc-500">Status</label>
-              <select name="isActive" defaultValue={editingCat.isActive ? "true" : "false"} className={inputCls}>
+            <div className={FIELD_GRID}>
+              <SelectField label="Status" name="isActive" defaultValue={editingCat.isActive ? "true" : "false"}>
                 <option value="true">Active</option>
                 <option value="false">Inactive</option>
-              </select>
+              </SelectField>
             </div>
             <PolicyPicker assigned={editPolicies} allPolicies={ptoPolicies} onChange={setEditPolicies} />
             {leaveTypes.length > 0 && (
-              <div className="mt-4">
-                <label className="flex cursor-pointer items-center gap-2.5">
-                  <input
-                    type="checkbox"
-                    checked={editLimitLeaveTypes}
-                    onChange={(e) => setEditLimitLeaveTypes(e.target.checked)}
-                    className="h-4 w-4 rounded border-zinc-300"
-                  />
-                  <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Limit leave request options</span>
-                </label>
+              <div className="flex flex-col gap-3">
+                <Checkbox
+                  checked={editLimitLeaveTypes}
+                  onChange={setEditLimitLeaveTypes}
+                  label="Limit leave request options"
+                />
                 {editLimitLeaveTypes && (
                   <LeaveTypePicker
                     key={editingCat.id}
@@ -455,26 +565,29 @@ export function PayCategoriesManager({ categories, ptoPolicies, leaveTypes }: Pr
                 )}
               </div>
             )}
-            {error && (
-              <p className="mt-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>
-            )}
-            <div className="mt-4 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-700">
+            {error && <Banner tone="error" body={error} />}
+            <div
+              className="flex flex-wrap items-center justify-between gap-3 pt-4"
+              style={{ borderTop: "1px solid var(--stroke-divider)" }}
+            >
               <div className="flex gap-2">
-                <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Saving…" : "Save changes"}</button>
-                <button type="button" onClick={closeEdit} className={cancelBtnCls}>Cancel</button>
+                <Button type="submit" disabled={isPending}>{isPending ? "Saving…" : "Save changes"}</Button>
+                <Button type="button" hierarchy="secondary" onClick={closeEdit}>Cancel</Button>
               </div>
               {confirmDeleteId === editingCat.id ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-500">Are you sure?</span>
-                  <button type="button" onClick={() => handleDelete(editingCat.id)} disabled={isPending} className={dangerBtnCls}>
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>Are you sure?</span>
+                  <Button type="button" tone="error" size="sm" onClick={() => handleDelete(editingCat.id)} disabled={isPending}>
                     {isPending ? "Deleting…" : "Yes, delete"}
-                  </button>
-                  <button type="button" onClick={() => setConfirmDeleteId(null)} className={cancelBtnCls}>Cancel</button>
+                  </Button>
+                  <Button type="button" hierarchy="secondary" size="sm" onClick={() => setConfirmDeleteId(null)}>
+                    Cancel
+                  </Button>
                 </div>
               ) : (
-                <button type="button" onClick={() => setConfirmDeleteId(editingCat.id)} className="text-xs text-red-500 hover:underline dark:text-red-400">
+                <Button type="button" hierarchy="link" tone="error" size="sm" onClick={() => setConfirmDeleteId(editingCat.id)}>
                   Delete category
-                </button>
+                </Button>
               )}
             </div>
           </form>

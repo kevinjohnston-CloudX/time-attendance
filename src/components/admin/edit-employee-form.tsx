@@ -1,11 +1,44 @@
 "use client";
 
-import { useTransition, useState } from "react";
+import { useTransition, useState, type ReactNode, type SelectHTMLAttributes } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { updateEmployee, updateHrSiteAccess } from "@/actions/admin.actions";
 import { setTemporaryPassword } from "@/actions/password.actions";
 import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
+import {
+  Banner,
+  Button,
+  Card,
+  Checkbox,
+  EmptyState,
+  Input,
+  SegmentedControl,
+  Select,
+  Table,
+  THead,
+  TBody,
+  TR,
+  TH,
+  TD,
+} from "@/components/ui";
+import { History } from "lucide-react";
+
+/**
+ * The employee record, on the design's doc template: one column of sections
+ * instead of the five tabs this used to be.
+ *
+ * <p>The tabs went because they were hiding, not organising. Three of them —
+ * General, Personal and Pay — each posted their own `updateEmployee` call with
+ * their own fields, so "Save Changes" meant something different depending on
+ * which tab happened to be open, and there was no way to see that from the
+ * button. As sections, each save sits under the fields it writes and says so.
+ *
+ * <p>The three calls are still three calls. Merging them into one form would
+ * mean a single save writing pay rate, address and site assignment together,
+ * and on a record two people edit in the same afternoon that turns a
+ * one-field correction into an overwrite of everything else.
+ */
 
 type EmployeeWithRelations = Omit<Employee, "payRate"> & {
   payRate: number | null;
@@ -37,24 +70,100 @@ interface Props {
   actorRole: string;
 }
 
+/** Which section a save belongs to, so its result lands on the right card. */
+type Section = "general" | "personal" | "pay" | "site-access";
+
 function fmtTime(hhmm: string): string {
   const [h, m] = hhmm.split(":").map(Number);
   const ampm = h >= 12 ? "PM" : "AM";
   return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${ampm}`;
 }
 
-const inputCls =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400";
+/**
+ * The doc template's field grid: columns that drop out rather than squeeze.
+ *
+ * <p>`auto-fit` with a `min(100%, max(200px, …))` floor is what keeps a
+ * three-across form readable in the 440px the sidebar leaves on a laptop — the
+ * columns collapse to one instead of producing three 130px selects whose
+ * options are all elided.
+ */
+function fieldGrid(cols: number): React.CSSProperties {
+  return {
+    display: "grid",
+    gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, max(200px, ${Math.floor(96 / cols)}%)), 1fr))`,
+    gap: 12,
+  };
+}
 
-type Tab = "general" | "personal" | "pay" | "logs" | "site-access";
+/**
+ * A labelled select.
+ *
+ * <p>The kit ships `Input` with its own label/hint stack but `Select` as a bare
+ * control, and the kit is shared and not ours to change. This wraps `Select` in
+ * the same 6px stack so a select and a text input side by side in the grid sit
+ * on the same baseline instead of one riding 18px high.
+ */
+function SelectField({
+  label,
+  children,
+  id,
+  ...rest
+}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; children: ReactNode }) {
+  const fieldId = id ?? `s-${label.replace(/\s+/g, "-").toLowerCase()}`;
+  return (
+    <div className="flex w-full flex-col gap-1.5">
+      <label htmlFor={fieldId} style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>
+        {label}
+      </label>
+      <Select id={fieldId} {...rest}>
+        {children}
+      </Select>
+    </div>
+  );
+}
+
+/** One label-over-value pair in a read-only card, as the design draws them. */
+function Kv({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span className="wms-overline">{label}</span>
+      <span
+        className="tabular"
+        style={{
+          font: "var(--weight-semibold) 16px/22px var(--font-sans)",
+          color: "var(--text-primary)",
+          overflowWrap: "anywhere",
+        }}
+      >
+        {children}
+      </span>
+    </div>
+  );
+}
+
+/** A full-width rule inside a field grid, for the groups within one form. */
+function GroupHeading({ children }: { children: ReactNode }) {
+  return (
+    <p
+      className="wms-overline"
+      style={{
+        gridColumn: "1 / -1",
+        margin: 0,
+        paddingBottom: 4,
+        borderBottom: "1px solid var(--stroke-divider)",
+      }}
+    >
+      {children}
+    </p>
+  );
+}
 
 export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, logs, hrSiteAccess, actorRole }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>("general");
+  const [feedback, setFeedback] = useState<{ section: Section; tone: "error" | "success"; text: string } | null>(null);
+  /** Which section's save is in flight — the three share one transition. */
+  const [savingSection, setSavingSection] = useState<Section | null>(null);
   const [selectedSiteId, setSelectedSiteId] = useState(employee.siteId);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [tempPassword, setTempPasswordValue] = useState("");
@@ -68,24 +177,23 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
   const [logDays, setLogDays] = useState(0);
   const [selectedSiteAccess, setSelectedSiteAccess] = useState<Set<string>>(new Set(hrSiteAccess));
   const [siteAccessSaving, setSiteAccessSaving] = useState(false);
-  const [siteAccessMsg, setSiteAccessMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  // Site access tab is only shown when the employee being edited is HR_ADMIN or SYSTEM_ADMIN
+  // Site access section is only shown when the employee being edited is HR_ADMIN or SYSTEM_ADMIN
   const employeeIsHrOrSysAdmin = ["HR_ADMIN", "SYSTEM_ADMIN"].includes(employee.role);
   // Only HR_ADMIN / SYSTEM_ADMIN actors can manage site access
   const canManageSiteAccess = ["HR_ADMIN", "SYSTEM_ADMIN"].includes(actorRole);
 
   const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === selectedSiteId));
 
-  function save(fields: Record<string, unknown>) {
-    setError(null);
-    setSuccess(false);
+  function save(section: Section, fields: Record<string, unknown>) {
+    setFeedback(null);
+    setSavingSection(section);
     startTransition(async () => {
       const result = await updateEmployee({ employeeId: employee.id, ...fields } as Parameters<typeof updateEmployee>[0]);
       if (!result.success) {
-        setError(result.error);
+        setFeedback({ section, tone: "error", text: result.error });
       } else {
-        setSuccess(true);
+        setFeedback({ section, tone: "success", text: "Saved." });
         router.refresh();
       }
     });
@@ -94,7 +202,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
   function handleGeneral(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    save({
+    save("general", {
       name: fd.get("name") as string,
       email: fd.get("email") as string,
       customRoleId: (fd.get("customRoleId") as string) || null,
@@ -116,7 +224,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
   function handlePersonal(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    save({
+    save("personal", {
       gender: fd.get("gender") as string,
       maritalStatus: fd.get("maritalStatus") as string,
       phone: fd.get("phone") as string,
@@ -137,7 +245,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const rateStr = fd.get("payRate") as string;
-    save({
+    save("pay", {
       ruleSetId: fd.get("ruleSetId") as string,
       shiftId: (fd.get("shiftId") as string) || null,
       holidayRuleId: (fd.get("holidayRuleId") as string) || null,
@@ -155,559 +263,544 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
     .map((e) => ({ ...e, fields: logField ? e.fields.filter((f) => f.field === logField) : e.fields }))
     .filter((e) => e.fields.length > 0);
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "general", label: "General" },
-    { id: "personal", label: "Personal" },
-    { id: "pay", label: "Pay" },
-    { id: "logs", label: "Logs" },
-    ...(employeeIsHrOrSysAdmin ? [{ id: "site-access" as Tab, label: "Site Access" }] : []),
-  ];
+  /** The result of the last save, when it belongs to this section. */
+  const feedbackFor = (section: Section) =>
+    feedback?.section === section ? (
+      <Banner tone={feedback.tone} body={feedback.text} />
+    ) : null;
+
+  /**
+   * All three saves share one transition, so every button is disabled while any
+   * of them is in flight — two concurrent `updateEmployee` calls on one record
+   * is exactly the overwrite the sections exist to avoid. Only the button that
+   * was actually pressed says "Saving…", though; three buttons announcing a save
+   * nobody asked them for is how a supervisor concludes the page saved
+   * everything at once.
+   */
+  const saveLabel = (section: Section) =>
+    isPending && savingSection === section ? "Saving…" : "Save Changes";
 
   return (
     <>
-    <div className="mt-6">
-      {/* Tab header */}
-      <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-700">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => { setActiveTab(t.id); setError(null); setSuccess(false); }}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === t.id
-                ? "border-b-2 border-zinc-900 text-zinc-900 dark:border-white dark:text-white"
-                : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Feedback */}
-      {error && (
-        <p className="mt-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-          {error}
-        </p>
-      )}
-      {success && (
-        <p className="mt-3 rounded-lg bg-green-50 px-4 py-2 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">
-          Saved successfully.
-        </p>
-      )}
-
-      {/* ── General tab ─────────────────────────────────────────────────── */}
-      {activeTab === "general" && (
-        <form onSubmit={handleGeneral} className="mt-5 flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>Full Name</label>
-              <input name="name" defaultValue={employee.user.name ?? ""} required className={inputCls} />
-            </div>
-
-            <div>
-              <label className={labelCls}>Email (Google login)</label>
-              <input name="email" type="email" defaultValue={employee.user.email ?? ""} className={inputCls} />
-            </div>
-
-            <div>
-              <label className={labelCls}>Role</label>
-              <select
-                name="customRoleId"
-                defaultValue={
-                  employee.customRoleId ??
-                  customRoles.find((r) => r.isSystem && r.name === { EMPLOYEE: "Employee", SUPERVISOR: "Supervisor", PAYROLL_ADMIN: "Payroll Admin", HR_ADMIN: "HR Admin", SYSTEM_ADMIN: "System Admin", SUPER_ADMIN: "Super Admin" }[employee.role])?.id ??
-                  customRoles[0]?.id ??
-                  ""
-                }
-                className={inputCls}
-              >
-                {customRoles.filter((r) => r.isSystem).map((r) => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
-                ))}
-                {customRoles.some((r) => !r.isSystem) && (
-                  <optgroup label="────────────────">
-                    {customRoles.filter((r) => !r.isSystem).map((r) => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-            </div>
-
-            <div>
-              <label className={labelCls}>Site</label>
-              <select
-                name="siteId"
-                value={selectedSiteId}
-                onChange={(e) => setSelectedSiteId(e.target.value)}
-                className={inputCls}
-              >
-                {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className={labelCls}>Department</label>
-              <select name="departmentId" defaultValue={employee.departmentId} className={inputCls}>
-                {filteredDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className={labelCls}>Supervisor</label>
-              <select name="supervisorId" defaultValue={employee.supervisorId ?? ""} className={inputCls}>
-                <option value="">— None —</option>
-                {employees
-                  .filter((e) => e.id !== employee.id)
-                  .map((e) => <option key={e.id} value={e.id}>{e.user.name}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className={labelCls}>Job Title</label>
-              <input name="jobTitle" defaultValue={employee.jobTitle ?? ""} className={inputCls} />
-            </div>
-
-            <div>
-              <label className={labelCls}>Hire Date</label>
-              <input
-                value={format(employee.hireDate, "MMM d, yyyy")}
-                readOnly
-                className={`${inputCls} cursor-default bg-zinc-50 dark:bg-zinc-900`}
-              />
-            </div>
-
-            <div>
-              <label className={labelCls}>Adjusted Hire Date</label>
-              <input
-                type="date"
-                name="adjustedHireDate"
-                defaultValue={employee.adjustedHireDate ? format(employee.adjustedHireDate, "yyyy-MM-dd") : ""}
-                className={inputCls}
-              />
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                Seniority date override — used for leave tier calculations when the policy&apos;s service basis is &ldquo;Adjusted Hire Date&rdquo;.
-              </p>
-            </div>
-
-            <div>
-              <label className={labelCls}>Badge ID (WMS)</label>
-              <input name="wmsId" defaultValue={employee.wmsId ?? ""} placeholder="QR code badge ID" className={inputCls} />
-            </div>
-
-            <div>
-              <label className={labelCls}>Badge barcode</label>
-              <input
-                name="barcode"
-                defaultValue={employee.barcode ?? ""}
-                placeholder="10-digit code on the badge"
-                className={inputCls}
-              />
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                {employee.barcodeOverride
-                  ? "Set by hand — the Oracle sync will not overwrite this."
-                  : employee.barcodeSyncedAt
-                    ? `Synced from Oracle ${format(employee.barcodeSyncedAt, "MMM d, h:mm a")}.`
-                    : "Not yet synced. Only needed when the badge encodes a different number than the Badge ID."}
-                {" "}Kiosks accept either value.
-              </p>
-            </div>
-
-            <div>
-              <label className={labelCls}>ADP Worker ID</label>
-              <input name="adpWorkerId" defaultValue={employee.adpWorkerId ?? ""} placeholder="ADP Workforce Now ID" className={inputCls} />
-            </div>
-
-            <div>
-              <label className={labelCls}>Status</label>
-              <select
-                name="status"
-                value={status}
-                onChange={(e) => setStatus(e.target.value as "active" | "on-leave" | "inactive")}
-                className={inputCls}
-              >
-                <option value="active">Active</option>
-                <option value="on-leave">On Leave</option>
-                <option value="inactive">Inactive</option>
-              </select>
-            </div>
-
-            {status === "inactive" && (
-              <div>
-                <label className={labelCls}>Termination Reason</label>
-                <input name="terminationReason" defaultValue={employee.terminationReason ?? ""} className={inputCls} />
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button type="submit" disabled={isPending} className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900">
-              {isPending ? "Saving…" : "Save Changes"}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setShowPasswordModal(true); setTempStatus("idle"); setTempMessage(""); setTempPasswordValue(""); }}
-              className="rounded-lg border border-zinc-300 dark:border-zinc-600 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-            >
-              Set Temporary Password
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* ── Personal tab ────────────────────────────────────────────────── */}
-      {activeTab === "personal" && (
-        <form onSubmit={handlePersonal} className="mt-5 flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>Gender</label>
-              <input name="gender" defaultValue={employee.gender ?? ""} className={inputCls} />
-            </div>
-
-            <div>
-              <label className={labelCls}>Marital Status</label>
-              <select name="maritalStatus" defaultValue={employee.maritalStatus ?? ""} className={inputCls}>
-                <option value="">— Select —</option>
-                <option value="Single">Single</option>
-                <option value="Married">Married</option>
-                <option value="Divorced">Divorced</option>
-                <option value="Widowed">Widowed</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-
-            <div>
-              <label className={labelCls}>Phone 1</label>
-              <input name="phone" type="tel" defaultValue={employee.phone ?? ""} className={inputCls} />
-            </div>
-
-            <div>
-              <label className={labelCls}>Phone 2</label>
-              <input name="phone2" type="tel" defaultValue={employee.phone2 ?? ""} className={inputCls} />
-            </div>
-
-            <p className="col-span-full -mb-1 border-b border-zinc-200 pb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-700">
-              Emergency Contact
-            </p>
-
-            <div>
-              <label className={labelCls}>Contact Name</label>
-              <input name="emergencyContact" defaultValue={employee.emergencyContact ?? ""} className={inputCls} />
-            </div>
-
-            <div>
-              <label className={labelCls}>Contact Phone</label>
-              <input name="emergencyPhone" type="tel" defaultValue={employee.emergencyPhone ?? ""} className={inputCls} />
-            </div>
-
-            <div>
-              <label className={labelCls}>Relationship</label>
-              <input name="emergencyRelationship" defaultValue={employee.emergencyRelationship ?? ""} placeholder="e.g. Spouse" className={inputCls} />
-            </div>
-
-            <p className="col-span-full -mb-1 border-b border-zinc-200 pb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-700">
-              Address
-            </p>
-
-            <div className="col-span-full">
-              <label className={labelCls}>Address Line 1</label>
-              <input name="address1" defaultValue={employee.address1 ?? ""} className={inputCls} />
-            </div>
-
-            <div className="col-span-full">
-              <label className={labelCls}>Address Line 2</label>
-              <input name="address2" defaultValue={employee.address2 ?? ""} className={inputCls} />
-            </div>
-
-            <div>
-              <label className={labelCls}>City</label>
-              <input name="city" defaultValue={employee.city ?? ""} className={inputCls} />
-            </div>
-
-            <div>
-              <label className={labelCls}>State / Province</label>
-              <input name="state" defaultValue={employee.state ?? ""} className={inputCls} />
-            </div>
-
-            <div>
-              <label className={labelCls}>Zip Code</label>
-              <input name="zipCode" defaultValue={employee.zipCode ?? ""} className={inputCls} />
-            </div>
-
-            <div>
-              <label className={labelCls}>Country</label>
-              <input name="country" defaultValue={employee.country ?? ""} className={inputCls} />
-            </div>
-          </div>
-
-          <div>
-            <button type="submit" disabled={isPending} className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900">
-              {isPending ? "Saving…" : "Save Changes"}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* ── Pay tab ─────────────────────────────────────────────────────── */}
-      {activeTab === "pay" && (
-        <>
-        <form onSubmit={handlePay} className="mt-5 flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>Rule Set</label>
-              <select name="ruleSetId" defaultValue={employee.ruleSetId} className={inputCls}>
-                {ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className={labelCls}>Shift</label>
-              <select name="shiftId" defaultValue={employee.shiftId ?? ""} className={inputCls}>
-                <option value="">— None —</option>
-                {shifts.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({fmtTime(s.startTime)} – {fmtTime(s.endTime)})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className={labelCls}>Holiday Rule</label>
-              <select name="holidayRuleId" defaultValue={employee.holidayRuleId ?? ""} className={inputCls}>
-                <option value="">— None —</option>
-                {holidayRules.map((r) => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className={labelCls}>Pay Category</label>
-              <select name="payCategoryId" defaultValue={(employee as any).payCategoryId ?? ""} className={inputCls}>
-                <option value="">— None —</option>
-                {payCategories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.number}{c.description ? ` — ${c.description}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className={labelCls}>Pay Type</label>
-              <select name="payTypeId" defaultValue={(employee as any).payTypeId ?? ""} className={inputCls}>
-                <option value="">— None —</option>
-                {payTypes.map((pt) => (
-                  <option key={pt.id} value={pt.id}>
-                    {pt.number}{pt.description ? ` — ${pt.description}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className={labelCls}>Pay Method</label>
-              <select
-                name="payType"
-                value={payType}
-                onChange={(e) => setPayType(e.target.value)}
-                className={inputCls}
-              >
-                <option value="HOURLY">Hourly</option>
-                <option value="SALARY">Salary</option>
-              </select>
-            </div>
-
-            <div>
-              <label className={labelCls}>
-                Pay Rate{" "}
-                <span className="font-normal text-zinc-400">
-                  {payType === "HOURLY" ? "($/hr)" : "($/yr)"}
-                </span>
-              </label>
-              <input
-                name="payRate"
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={employee.payRate != null ? Number(employee.payRate) : ""}
-                placeholder="0.00"
-                className={inputCls}
-              />
-            </div>
-          </div>
-
-          <div>
-            <button type="submit" disabled={isPending} className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900">
-              {isPending ? "Saving…" : "Save Changes"}
-            </button>
-          </div>
-        </form>
-
-        </>
-      )}
-
-      {/* ── Logs tab ────────────────────────────────────────────────────── */}
-      {activeTab === "logs" && (
-        <div className="mt-5">
-          {logs.length === 0 ? (
-            <p className="text-sm text-zinc-400">No changes recorded yet.</p>
-          ) : (
-            <>
-              {/* Filters */}
-              <div className="mb-5 flex flex-wrap items-center gap-3">
-                <select
-                  value={logField}
-                  onChange={(e) => setLogField(e.target.value)}
-                  className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+      <div className="flex flex-col gap-4" style={{ maxWidth: 1080 }}>
+        {/* ── Identity ─────────────────────────────────────────────────────
+            Everything here is either assigned once or derived; the editable
+            copies of the same facts live in the sections below. */}
+        <Card title="Identity" subtitle="Assigned on creation and used for seniority">
+          <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr))]">
+            <Kv label="Employee Code">{employee.employeeCode}</Kv>
+            <Kv label="Hire Date">{format(employee.hireDate, "MMM d, yyyy")}</Kv>
+            {/* The date leave tiers are actually measured from: the override
+                when one is set, the hire date otherwise. Showing only the hire
+                date is how somebody rehired in 2024 gets credited with a year
+                they did not serve. */}
+            <Kv label="Seniority Date">
+              {format(employee.adjustedHireDate ?? employee.hireDate, "MMM d, yyyy")}
+              {employee.adjustedHireDate && (
+                <span
+                  className="ml-1.5"
+                  style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}
                 >
-                  <option value="">All fields</option>
-                  {allLogFieldNames.map((name) => (
-                    <option key={name} value={name}>{name}</option>
-                  ))}
-                </select>
+                  adjusted
+                </span>
+              )}
+            </Kv>
+            <Kv label="Last Change">
+              {logs.length > 0 ? (
+                <>
+                  {format(new Date(logs[0].createdAt), "MMM d, yyyy")}
+                  <span
+                    className="ml-1.5"
+                    style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}
+                  >
+                    by {logs[0].actorName}
+                  </span>
+                </>
+              ) : (
+                <span style={{ color: "var(--text-tertiary)" }}>—</span>
+              )}
+            </Kv>
+          </div>
+        </Card>
 
-                <div className="flex overflow-hidden rounded-lg border border-zinc-300 text-sm dark:border-zinc-600">
-                  {([{ label: "All time", days: 0 }, { label: "30 days", days: 30 }, { label: "7 days", days: 7 }] as const).map(({ label, days }) => (
-                    <button
-                      key={days}
-                      type="button"
-                      onClick={() => setLogDays(days)}
-                      className={`px-3 py-1.5 transition-colors ${
-                        logDays === days
-                          ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                          : "bg-white text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                      }`}
-                    >
-                      {label}
-                    </button>
+        {/* ── Profile & assignment ────────────────────────────────────────── */}
+        <form onSubmit={handleGeneral}>
+          <Card
+            title="Profile & Assignment"
+            subtitle="Site, department and supervisor decide whose queue this person's timesheets land in"
+          >
+            <div className="flex flex-col gap-4">
+              {feedbackFor("general")}
+
+              <div style={fieldGrid(3)}>
+                <Input label="Full Name" name="name" defaultValue={employee.user.name ?? ""} required />
+                <Input label="Email (Google login)" name="email" type="email" defaultValue={employee.user.email ?? ""} />
+                <Input label="Job Title" name="jobTitle" defaultValue={employee.jobTitle ?? ""} />
+
+                <SelectField
+                  label="Role"
+                  name="customRoleId"
+                  defaultValue={
+                    employee.customRoleId ??
+                    customRoles.find((r) => r.isSystem && r.name === { EMPLOYEE: "Employee", SUPERVISOR: "Supervisor", PAYROLL_ADMIN: "Payroll Admin", HR_ADMIN: "HR Admin", SYSTEM_ADMIN: "System Admin", SUPER_ADMIN: "Super Admin" }[employee.role])?.id ??
+                    customRoles[0]?.id ??
+                    ""
+                  }
+                >
+                  {customRoles.filter((r) => r.isSystem).map((r) => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
                   ))}
-                </div>
+                  {customRoles.some((r) => !r.isSystem) && (
+                    <optgroup label="────────────────">
+                      {customRoles.filter((r) => !r.isSystem).map((r) => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </SelectField>
+
+                <SelectField
+                  label="Site"
+                  name="siteId"
+                  value={selectedSiteId}
+                  onChange={(e) => setSelectedSiteId(e.target.value)}
+                >
+                  {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </SelectField>
+
+                <SelectField label="Department" name="departmentId" defaultValue={employee.departmentId}>
+                  {filteredDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </SelectField>
+
+                <SelectField label="Supervisor" name="supervisorId" defaultValue={employee.supervisorId ?? ""}>
+                  <option value="">— None —</option>
+                  {employees
+                    .filter((e) => e.id !== employee.id)
+                    .map((e) => <option key={e.id} value={e.id}>{e.user.name}</option>)}
+                </SelectField>
+
+                <SelectField
+                  label="Status"
+                  name="status"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as "active" | "on-leave" | "inactive")}
+                >
+                  <option value="active">Active</option>
+                  <option value="on-leave">On Leave</option>
+                  <option value="inactive">Inactive</option>
+                </SelectField>
+
+                {status === "inactive" && (
+                  <Input
+                    label="Termination Reason"
+                    name="terminationReason"
+                    defaultValue={employee.terminationReason ?? ""}
+                  />
+                )}
+
+                <Input
+                  label="Adjusted Hire Date"
+                  name="adjustedHireDate"
+                  type="date"
+                  defaultValue={employee.adjustedHireDate ? format(employee.adjustedHireDate, "yyyy-MM-dd") : ""}
+                  hint="Seniority override — used for leave tiers when the policy's service basis is Adjusted Hire Date."
+                />
+
+                <GroupHeading>Badges & External IDs</GroupHeading>
+
+                <Input
+                  label="Badge ID (WMS)"
+                  name="wmsId"
+                  defaultValue={employee.wmsId ?? ""}
+                  placeholder="QR code badge ID"
+                />
+
+                <Input
+                  label="Badge barcode"
+                  name="barcode"
+                  defaultValue={employee.barcode ?? ""}
+                  placeholder="10-digit code on the badge"
+                  hint={
+                    (employee.barcodeOverride
+                      ? "Set by hand — the Oracle sync will not overwrite this."
+                      : employee.barcodeSyncedAt
+                        ? `Synced from Oracle ${format(employee.barcodeSyncedAt, "MMM d, h:mm a")}.`
+                        : "Not yet synced. Only needed when the badge encodes a different number than the Badge ID.") +
+                    " Kiosks accept either value."
+                  }
+                />
+
+                <Input
+                  label="ADP Worker ID"
+                  name="adpWorkerId"
+                  defaultValue={employee.adpWorkerId ?? ""}
+                  placeholder="ADP Workforce Now ID"
+                />
               </div>
 
-              {filteredLogs.length === 0 ? (
-                <p className="text-sm text-zinc-400">No entries match the current filters.</p>
-              ) : (
-                <ol className="relative border-l border-zinc-200 dark:border-zinc-700">
-                  {filteredLogs.map((entry) => (
-                    <li key={entry.id} className="mb-6 ml-4">
-                      <div className="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full border-2 border-white bg-zinc-400 dark:border-zinc-900 dark:bg-zinc-500" />
-                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                        <time className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                          {new Date(entry.createdAt).toLocaleString("en-US", {
-                            month: "short", day: "numeric", year: "numeric",
-                            hour: "numeric", minute: "2-digit", hour12: true,
-                          })}
-                        </time>
-                        <span className="text-xs text-zinc-400">by {entry.actorName}</span>
-                      </div>
-                      <ul className="mt-2 space-y-1">
-                        {entry.fields.map((f, i) => (
-                          <li key={i} className="grid grid-cols-[auto_1fr] gap-x-3 text-sm">
-                            <span className="font-medium text-zinc-600 dark:text-zinc-400 whitespace-nowrap">{f.field}</span>
-                            <span className="text-zinc-500 dark:text-zinc-400">
-                              <span className="line-through text-zinc-400 dark:text-zinc-500">{f.before}</span>
-                              {" → "}
-                              <span className="text-zinc-800 dark:text-zinc-200">{f.after}</span>
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ── Site Access tab ─────────────────────────────────────────────── */}
-      {activeTab === "site-access" && (
-        <div className="mt-5">
-          <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
-            Control which sites this HR user can see employees from.
-            Leave all unchecked to grant access to <strong>all sites</strong>.
-          </p>
-          <div className="flex flex-col gap-2">
-            {sites.map((s) => (
-              <label key={s.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-4 py-3 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/50">
-                <input
-                  type="checkbox"
-                  disabled={!canManageSiteAccess}
-                  checked={selectedSiteAccess.has(s.id)}
-                  onChange={(e) => {
-                    const next = new Set(selectedSiteAccess);
-                    if (e.target.checked) next.add(s.id);
-                    else next.delete(s.id);
-                    setSelectedSiteAccess(next);
-                    setSiteAccessMsg(null);
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="submit" disabled={isPending}>
+                  {saveLabel("general")}
+                </Button>
+                <Button
+                  type="button"
+                  hierarchy="secondary"
+                  onClick={() => {
+                    setShowPasswordModal(true);
+                    setTempStatus("idle");
+                    setTempMessage("");
+                    setTempPasswordValue("");
                   }}
-                  className="h-4 w-4 rounded border-zinc-300 text-zinc-900"
+                >
+                  Set Temporary Password
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </form>
+
+        {/* ── Personal & contact ──────────────────────────────────────────── */}
+        <form onSubmit={handlePersonal}>
+          <Card
+            title="Personal & Contact"
+            subtitle="Held encrypted and only read back on this screen"
+          >
+            <div className="flex flex-col gap-4">
+              {feedbackFor("personal")}
+
+              <div style={fieldGrid(3)}>
+                <Input label="Gender" name="gender" defaultValue={employee.gender ?? ""} />
+
+                <SelectField label="Marital Status" name="maritalStatus" defaultValue={employee.maritalStatus ?? ""}>
+                  <option value="">— Select —</option>
+                  <option value="Single">Single</option>
+                  <option value="Married">Married</option>
+                  <option value="Divorced">Divorced</option>
+                  <option value="Widowed">Widowed</option>
+                  <option value="Other">Other</option>
+                </SelectField>
+
+                <Input label="Phone 1" name="phone" type="tel" defaultValue={employee.phone ?? ""} />
+                <Input label="Phone 2" name="phone2" type="tel" defaultValue={employee.phone2 ?? ""} />
+
+                <GroupHeading>Emergency Contact</GroupHeading>
+
+                <Input label="Contact Name" name="emergencyContact" defaultValue={employee.emergencyContact ?? ""} />
+                <Input label="Contact Phone" name="emergencyPhone" type="tel" defaultValue={employee.emergencyPhone ?? ""} />
+                <Input
+                  label="Relationship"
+                  name="emergencyRelationship"
+                  defaultValue={employee.emergencyRelationship ?? ""}
+                  placeholder="e.g. Spouse"
                 />
-                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{s.name}</span>
-              </label>
-            ))}
-          </div>
-          {selectedSiteAccess.size === 0 && (
-            <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-              No sites selected — this user has access to all sites.
-            </p>
-          )}
-          {canManageSiteAccess && (
-            <div className="mt-5 flex items-center gap-4">
-              <button
-                type="button"
-                disabled={siteAccessSaving}
-                onClick={async () => {
-                  setSiteAccessSaving(true);
-                  setSiteAccessMsg(null);
-                  const result = await updateHrSiteAccess({
-                    employeeId: employee.id,
-                    siteIds: Array.from(selectedSiteAccess),
-                  });
-                  setSiteAccessSaving(false);
-                  if (result.success) {
-                    setSiteAccessMsg({ ok: true, text: "Site access saved." });
-                    router.refresh();
-                  } else {
-                    setSiteAccessMsg({ ok: false, text: result.error ?? "Failed to save." });
-                  }
-                }}
-                className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-              >
-                {siteAccessSaving ? "Saving…" : "Save Site Access"}
-              </button>
-              {siteAccessMsg && (
-                <p className={`text-sm ${siteAccessMsg.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
-                  {siteAccessMsg.text}
+
+                <GroupHeading>Address</GroupHeading>
+
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <Input label="Address Line 1" name="address1" defaultValue={employee.address1 ?? ""} />
+                </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <Input label="Address Line 2" name="address2" defaultValue={employee.address2 ?? ""} />
+                </div>
+
+                <Input label="City" name="city" defaultValue={employee.city ?? ""} />
+                <Input label="State / Province" name="state" defaultValue={employee.state ?? ""} />
+                <Input label="Zip Code" name="zipCode" defaultValue={employee.zipCode ?? ""} />
+                <Input label="Country" name="country" defaultValue={employee.country ?? ""} />
+              </div>
+
+              <div>
+                <Button type="submit" disabled={isPending}>
+                  {saveLabel("personal")}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </form>
+
+        {/* ── Pay & rules ─────────────────────────────────────────────────── */}
+        <form onSubmit={handlePay}>
+          <Card
+            title="Pay & Rules"
+            subtitle="The rule set computes the hours; the pay method decides whether punches drive pay at all"
+          >
+            <div className="flex flex-col gap-4">
+              {feedbackFor("pay")}
+
+              <div style={fieldGrid(3)}>
+                <SelectField label="Rule Set" name="ruleSetId" defaultValue={employee.ruleSetId}>
+                  {ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>)}
+                </SelectField>
+
+                <SelectField label="Shift" name="shiftId" defaultValue={employee.shiftId ?? ""}>
+                  <option value="">— None —</option>
+                  {shifts.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({fmtTime(s.startTime)} – {fmtTime(s.endTime)})
+                    </option>
+                  ))}
+                </SelectField>
+
+                <SelectField label="Holiday Rule" name="holidayRuleId" defaultValue={employee.holidayRuleId ?? ""}>
+                  <option value="">— None —</option>
+                  {holidayRules.map((r) => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </SelectField>
+
+                <SelectField label="Pay Category" name="payCategoryId" defaultValue={employee.payCategoryId ?? ""}>
+                  <option value="">— None —</option>
+                  {payCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.number}{c.description ? ` — ${c.description}` : ""}
+                    </option>
+                  ))}
+                </SelectField>
+
+                <SelectField label="Pay Type" name="payTypeId" defaultValue={employee.payTypeId ?? ""}>
+                  <option value="">— None —</option>
+                  {payTypes.map((pt) => (
+                    <option key={pt.id} value={pt.id}>
+                      {pt.number}{pt.description ? ` — ${pt.description}` : ""}
+                    </option>
+                  ))}
+                </SelectField>
+
+                <SelectField
+                  label="Pay Method"
+                  name="payType"
+                  value={payType}
+                  onChange={(e) => setPayType(e.target.value)}
+                >
+                  <option value="HOURLY">Hourly</option>
+                  <option value="SALARY">Salary</option>
+                </SelectField>
+
+                <Input
+                  label={payType === "HOURLY" ? "Pay Rate ($/hr)" : "Pay Rate ($/yr)"}
+                  name="payRate"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={employee.payRate != null ? Number(employee.payRate) : ""}
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div>
+                <Button type="submit" disabled={isPending}>
+                  {saveLabel("pay")}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </form>
+
+        {/* ── Site access ─────────────────────────────────────────────────── */}
+        {employeeIsHrOrSysAdmin && (
+          <Card
+            title="Site Access"
+            subtitle="Which sites this HR user can see employees from"
+          >
+            <div className="flex flex-col gap-4">
+              {feedbackFor("site-access")}
+
+              <Banner
+                tone="info"
+                body={
+                  selectedSiteAccess.size === 0
+                    ? "No sites selected — this user can see employees at every site."
+                    : "Only the checked sites are visible to this user. Uncheck them all to grant every site."
+                }
+              />
+
+              <div className="grid gap-2 gap-x-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,30%)),1fr))]">
+                {sites.map((s) => (
+                  <div key={s.id} className="flex items-center py-1.5">
+                    <Checkbox
+                      id={`site-access-${s.id}`}
+                      label={s.name}
+                      disabled={!canManageSiteAccess}
+                      checked={selectedSiteAccess.has(s.id)}
+                      onChange={(next) => {
+                        const updated = new Set(selectedSiteAccess);
+                        if (next) updated.add(s.id);
+                        else updated.delete(s.id);
+                        setSelectedSiteAccess(updated);
+                        // Only this section's own result is stale now. Clearing
+                        // unconditionally would wipe the "Saved." a pay or
+                        // profile save just put on a card further up the page.
+                        setFeedback((f) => (f?.section === "site-access" ? null : f));
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {canManageSiteAccess ? (
+                <div>
+                  <Button
+                    type="button"
+                    disabled={siteAccessSaving}
+                    onClick={async () => {
+                      setSiteAccessSaving(true);
+                      setFeedback(null);
+                      const result = await updateHrSiteAccess({
+                        employeeId: employee.id,
+                        siteIds: Array.from(selectedSiteAccess),
+                      });
+                      setSiteAccessSaving(false);
+                      if (result.success) {
+                        setFeedback({ section: "site-access", tone: "success", text: "Site access saved." });
+                        router.refresh();
+                      } else {
+                        setFeedback({
+                          section: "site-access",
+                          tone: "error",
+                          text: result.error ?? "Failed to save.",
+                        });
+                      }
+                    }}
+                  >
+                    {siteAccessSaving ? "Saving…" : "Save Site Access"}
+                  </Button>
+                </div>
+              ) : (
+                <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                  Only HR Admin or System Admin users can edit site access.
                 </p>
               )}
             </div>
-          )}
-          {!canManageSiteAccess && (
-            <p className="mt-4 text-xs text-zinc-400">Only HR Admin or System Admin users can edit site access.</p>
-          )}
-        </div>
-      )}
-    </div>
+          </Card>
+        )}
 
-      {/* ── Temp password modal ─────────────────────────────────────────── */}
+        {/* ── Change history ──────────────────────────────────────────────── */}
+        <Card
+          title="Change History"
+          subtitle="Every field this record has had edited, newest first"
+          padding={0}
+        >
+          {/* The filters sit in a row of their own rather than in the card
+              header: the header does not wrap, and a select plus a three-way
+              switch next to the title is clipped the moment the sidebar is
+              open on a laptop. */}
+          {logs.length > 0 && (
+            <div
+              className="flex flex-wrap items-center gap-2.5 px-4 py-3"
+              style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+            >
+              <Select
+                aria-label="Field"
+                value={logField}
+                onChange={(e) => setLogField(e.target.value)}
+              >
+                <option value="">All fields</option>
+                {allLogFieldNames.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </Select>
+              {/* Local, not a URL parameter: the whole history is already on
+                  the client and nobody links to "this record, last 7 days". */}
+              <SegmentedControl
+                ariaLabel="Date range"
+                size="sm"
+                items={[
+                  { value: "0", label: "All time" },
+                  { value: "30", label: "30 days" },
+                  { value: "7", label: "7 days" },
+                ]}
+                value={String(logDays)}
+                onChange={(v) => setLogDays(Number(v))}
+              />
+              <span
+                className="tabular ml-auto"
+                style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+              >
+                {filteredLogs.length} {filteredLogs.length === 1 ? "change" : "changes"}
+              </span>
+            </div>
+          )}
+
+          {filteredLogs.length === 0 ? (
+            <EmptyState
+              icon={<History className="h-8 w-8" />}
+              title={logs.length === 0 ? "No changes recorded yet" : "No changes in this range"}
+              body={
+                logs.length === 0
+                  ? "Edits made from this screen are written to the audit log and will appear here."
+                  : "Widen the date range, or switch back to all fields."
+              }
+            />
+          ) : (
+            <Table>
+              <THead>
+                <TR>
+                  <TH>When</TH>
+                  <TH>Changed By</TH>
+                  <TH>Change</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {filteredLogs.map((entry) => (
+                  <TR key={entry.id}>
+                    {/* One row per save, not per field: the fields that moved
+                        together moved for one reason, and splitting them makes
+                        a site transfer look like four unrelated edits. */}
+                    <TD
+                      numeric
+                      align="left"
+                      style={{ height: "auto", padding: "10px 14px", verticalAlign: "top", whiteSpace: "nowrap", color: "var(--text-secondary)" }}
+                    >
+                      {format(new Date(entry.createdAt), "MMM d, yyyy HH:mm")}
+                    </TD>
+                    <TD style={{ height: "auto", padding: "10px 14px", verticalAlign: "top", whiteSpace: "nowrap" }}>
+                      {entry.actorName}
+                    </TD>
+                    <TD style={{ height: "auto", padding: "10px 14px", verticalAlign: "top" }}>
+                      <span className="flex flex-col gap-1">
+                        {entry.fields.map((f, i) => (
+                          <span key={i} className="flex flex-wrap items-baseline gap-x-2">
+                            <span
+                              style={{
+                                font: "var(--type-body2)",
+                                fontWeight: "var(--weight-medium)",
+                                color: "var(--text-secondary)",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {f.field}
+                            </span>
+                            <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                              <span style={{ textDecoration: "line-through" }}>{f.before}</span>
+                              {" → "}
+                              <span style={{ color: "var(--text-primary)" }}>{f.after}</span>
+                            </span>
+                          </span>
+                        ))}
+                      </span>
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          )}
+        </Card>
+      </div>
+
+      {/* ── Temp password modal ───────────────────────────────────────────── */}
       {showPasswordModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           onClick={(e) => { if (e.target === e.currentTarget) setShowPasswordModal(false); }}
         >
-          <div className="w-full max-w-sm rounded-xl bg-white dark:bg-zinc-800 p-6 shadow-xl">
-            <h2 className="mb-1 text-base font-semibold text-zinc-900 dark:text-white">Set Temporary Password</h2>
-            <p className="mb-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <div className="ta-modal w-full max-w-sm rounded-xl p-6">
+            <h2 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>
+              Set Temporary Password
+            </h2>
+            <p className="mt-1" style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
               The employee will be required to change this on first login.
             </p>
-            <p className="mb-4 text-xs text-zinc-400 dark:text-zinc-500">
-              Requirements: 8+ characters, uppercase letter, number, special character.
-            </p>
+
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
@@ -718,37 +811,33 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
                 setTempMessage(result.message);
                 if (result.success) setTempPasswordValue("");
               }}
-              className="flex flex-col gap-3"
+              className="mt-4 flex flex-col gap-3"
             >
-              <input
+              {/* Shown as text, not dots: whoever sets this has to read it back
+                  to the employee, and a masked field they cannot check is how a
+                  typo becomes a locked-out badge on a Monday morning. */}
+              <Input
+                label="Temporary password"
                 type="text"
                 value={tempPassword}
                 onChange={(e) => setTempPasswordValue(e.target.value)}
                 placeholder="Enter temporary password"
                 minLength={8}
                 required
-                className={inputCls}
+                hint="8+ characters, with an uppercase letter, a number and a special character."
               />
+
               {tempMessage && (
-                <p className={`text-sm ${tempStatus === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
-                  {tempMessage}
-                </p>
+                <Banner tone={tempStatus === "error" ? "error" : "success"} body={tempMessage} />
               )}
-              <div className="flex justify-end gap-2 mt-1">
-                <button
-                  type="button"
-                  onClick={() => setShowPasswordModal(false)}
-                  className="rounded-lg border border-zinc-300 dark:border-zinc-600 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
-                >
+
+              <div className="mt-1 flex justify-end gap-2">
+                <Button type="button" hierarchy="secondary" onClick={() => setShowPasswordModal(false)}>
                   Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={tempStatus === "loading"}
-                  className="rounded-lg bg-zinc-900 dark:bg-white px-4 py-2 text-sm font-semibold text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 disabled:opacity-50"
-                >
+                </Button>
+                <Button type="submit" disabled={tempStatus === "loading"}>
                   {tempStatus === "loading" ? "Saving…" : "Set Password"}
-                </button>
+                </Button>
               </div>
             </form>
           </div>

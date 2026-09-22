@@ -5,6 +5,21 @@ import { useRouter } from "next/navigation";
 import { format, addDays } from "date-fns";
 import { ChevronLeft, ChevronRight, Calendar, CalendarCheck } from "lucide-react";
 import { parseUtcDate } from "@/lib/utils/date";
+import { Button, Select } from "@/components/ui";
+
+/**
+ * How the pay period rail is narrowed and stepped through.
+ *
+ * <p>Everything here writes to the query string. A payroll clerk chasing one
+ * period sends the URL to the supervisor who owns the blocking timesheet, and
+ * a scope held in React state would arrive on the current period instead —
+ * which is a different set of hours with the same layout.
+ *
+ * <p>Two navigation modes share one pair of arrows. Normally they step through
+ * the filtered list of periods; once a month has been picked they step through
+ * months that actually contain a period. Stepping by month through months with
+ * nothing in them is how you end up convinced the periods were never generated.
+ */
 
 type FilterValue = "all" | "current" | "ytd";
 type StatusFilter = "all" | "open" | "ready" | "locked";
@@ -206,6 +221,8 @@ export function PayPeriodsFilter({
     : -1;
   const selectedMonthYear = monthParam ? parseInt(monthParam.slice(0, 4)) : -1;
 
+  const narrowed = currentFilter !== "all" || statusFilter !== "all" || inMonthMode;
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
@@ -217,75 +234,96 @@ export function PayPeriodsFilter({
   }, [showPicker]);
 
   return (
-    <div className="relative shrink-0 space-y-1.5 border-b border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-800 dark:bg-zinc-900">
-      {/* Scope + Status filters + Today button */}
+    <div
+      className="relative flex shrink-0 flex-col gap-2 p-2.5"
+      style={{
+        background: "var(--surface-secondary)",
+        borderBottom: "1px solid var(--stroke-divider)",
+      }}
+    >
+      {/* Scope + status + jump-to-today */}
       <div className="flex items-center gap-1.5">
-        <select
+        <Select
+          aria-label="Pay period scope"
           value={currentFilter}
           onChange={(e) => applyFilter(e.target.value as FilterValue, selectedId)}
-          className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+          style={{ flex: "1 1 0", minWidth: 0 }}
         >
           <option value="all">All</option>
           <option value="current">Current</option>
           <option value="ytd">Year to Date</option>
-        </select>
-        <select
+        </Select>
+        <Select
+          aria-label="Pay period status"
           value={statusFilter}
           onChange={(e) => applyFilter(currentFilter, selectedId, e.target.value as StatusFilter)}
-          className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+          style={{ flex: "1 1 0", minWidth: 0 }}
         >
           <option value="all">All Status</option>
           <option value="open">Open</option>
           <option value="ready">Ready</option>
           <option value="locked">Locked</option>
-        </select>
-        <button
-          type="button"
+        </Select>
+        <Button
+          hierarchy="secondary"
+          iconOnly
           onClick={jumpToCurrent}
           disabled={isOnCurrentPeriod}
           title="Jump to current pay period"
-          className="shrink-0 rounded-lg border border-zinc-300 bg-white p-1 text-zinc-500 hover:border-blue-400 hover:text-blue-600 disabled:cursor-default disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-blue-500 dark:hover:text-blue-400"
+          aria-label="Jump to current pay period"
         >
-          <CalendarCheck className="h-3.5 w-3.5" />
-        </button>
+          <CalendarCheck className="h-4 w-4" />
+        </Button>
       </div>
 
-      {/* Prev / Next + label + month/year picker */}
+      {/* Step through periods — or, once a month is picked, through months */}
       <div className="flex items-center gap-0.5">
-        <button
-          type="button"
+        <Button
+          hierarchy="tertiary"
+          size="sm"
+          iconOnly
           disabled={!hasPrev}
           onClick={() => {
             if (inMonthMode) navigateMonth(-1);
             else if (currentIndex > 0) applyFilter(currentFilter, filtered[currentIndex - 1].id);
           }}
-          className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
           title={inMonthMode ? "Previous month" : "Previous pay period"}
+          aria-label={inMonthMode ? "Previous month" : "Previous pay period"}
         >
-          <ChevronLeft className="h-3.5 w-3.5" />
-        </button>
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
 
-        <span className="flex-1 text-center text-xs font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
+        <span
+          className="tabular flex-1 truncate text-center"
+          style={{
+            font: "var(--type-body2)",
+            fontWeight: "var(--weight-medium)",
+            color: "var(--text-secondary)",
+          }}
+        >
           {label}
         </span>
 
-        <button
-          type="button"
+        <Button
+          hierarchy="tertiary"
+          size="sm"
+          iconOnly
           disabled={!hasNext}
           onClick={() => {
             if (inMonthMode) navigateMonth(1);
             else if (currentIndex < filtered.length - 1) applyFilter(currentFilter, filtered[currentIndex + 1].id);
           }}
-          className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
           title={inMonthMode ? "Next month" : "Next pay period"}
+          aria-label={inMonthMode ? "Next month" : "Next pay period"}
         >
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
+          <ChevronRight className="h-4 w-4" />
+        </Button>
 
-        {/* Month/year picker */}
         <div className="relative" ref={pickerRef}>
-          <button
-            type="button"
+          <Button
+            hierarchy="tertiary"
+            size="sm"
+            iconOnly
             onClick={() => {
               if (!showPicker) {
                 setPickerYear(
@@ -298,64 +336,79 @@ export function PayPeriodsFilter({
               }
               setShowPicker((v) => !v);
             }}
-            className={`rounded p-1 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200 ${
-              inMonthMode
-                ? "text-blue-600 dark:text-blue-400"
-                : "text-zinc-500 dark:text-zinc-400"
-            }`}
             title="Jump to month"
+            aria-label="Jump to month"
+            aria-expanded={showPicker}
+            style={inMonthMode ? { color: "var(--text-accent)" } : undefined}
           >
-            <Calendar className="h-3.5 w-3.5" />
-          </button>
+            <Calendar className="h-4 w-4" />
+          </Button>
 
           {showPicker && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
-              {/* Year navigation */}
+            <div className="ta-modal absolute right-0 top-full z-50 mt-1 w-52 rounded-lg p-3">
               <div className="mb-2.5 flex items-center justify-between">
-                <button
-                  type="button"
+                <Button
+                  hierarchy="tertiary"
+                  size="sm"
+                  iconOnly
                   onClick={() => setPickerYear((y) => y - 1)}
-                  className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                  aria-label="Previous year"
                 >
                   <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                </Button>
+                <span
+                  className="tabular"
+                  style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}
+                >
                   {pickerYear}
                 </span>
-                <button
-                  type="button"
+                <Button
+                  hierarchy="tertiary"
+                  size="sm"
+                  iconOnly
                   onClick={() => setPickerYear((y) => y + 1)}
-                  className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                  aria-label="Next year"
                 >
                   <ChevronRight className="h-4 w-4" />
-                </button>
+                </Button>
               </div>
 
-              {/* Month grid */}
+              {/* A month with no period is disabled rather than hidden: the gap
+                  in the grid is itself the answer to "were those generated?" */}
               <div className="grid grid-cols-4 gap-1">
-                {MONTHS.map((label, idx) => {
+                {MONTHS.map((m, idx) => {
                   const hasPeriod = monthsWithPeriods.has(idx);
                   const isSelected = pickerYear === selectedMonthYear && idx === selectedMonthIdx;
                   const isCurrentMonth =
                     pickerYear === new Date().getFullYear() && idx === new Date().getMonth();
                   return (
                     <button
-                      key={label}
+                      key={m}
                       type="button"
                       disabled={!hasPeriod}
                       onClick={() => handleMonthSelect(idx)}
-                      className={`rounded py-1.5 text-xs font-medium transition-colors
-                        ${isSelected
-                          ? "bg-blue-600 text-white"
+                      className={hasPeriod && !isSelected ? "ta-hoverable" : undefined}
+                      style={{
+                        border: "none",
+                        borderRadius: "var(--radius-s)",
+                        padding: "6px 0",
+                        font: "var(--type-button2)",
+                        cursor: hasPeriod ? "pointer" : "default",
+                        background: isSelected
+                          ? "var(--fill-accent)"
                           : isCurrentMonth && hasPeriod
-                            ? "bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-400 dark:hover:bg-blue-950/50"
-                            : hasPeriod
-                              ? "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700"
-                              : "cursor-default text-zinc-300 dark:text-zinc-600"
-                        }
-                      `}
+                            ? "var(--surface-info)"
+                            : "transparent",
+                        color: isSelected
+                          ? "var(--text-on-accent)"
+                          : !hasPeriod
+                            ? "var(--text-disabled)"
+                            : isCurrentMonth
+                              ? "var(--text-accent)"
+                              : "var(--text-secondary)",
+                      }}
                     >
-                      {label}
+                      {m}
                     </button>
                   );
                 })}
@@ -364,6 +417,17 @@ export function PayPeriodsFilter({
           )}
         </div>
       </div>
+
+      {/* One way back to the unfiltered rail. Without it, undoing a scope, a
+          status and a month is three separate controls, and the usual outcome
+          is a clerk who believes half the periods no longer exist. */}
+      {narrowed && (
+        <div className="flex justify-end">
+          <Button hierarchy="link" size="sm" onClick={() => applyFilter("all", selectedId, "all")}>
+            Clear filters
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

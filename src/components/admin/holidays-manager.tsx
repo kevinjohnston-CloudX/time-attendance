@@ -3,7 +3,42 @@
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
+import { CalendarDays, X } from "lucide-react";
+import type { ReactNode, SelectHTMLAttributes } from "react";
 import { createHoliday, updateHoliday, deleteHoliday } from "@/actions/holiday.actions";
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  Checkbox,
+  EmptyState,
+  Input,
+  Select,
+  SegmentedControl,
+  Table,
+  TBody,
+  THead,
+  TR,
+  TH,
+  TD,
+  TableFooter,
+  Toolbar,
+  statusTone,
+} from "@/components/ui";
+
+/**
+ * Holidays, on the design's list template.
+ *
+ * <p>The design's Holidays list carries Sites, Pay Code and Hours. All three
+ * live on the holiday *rule*, not the holiday — one holiday can be assigned to
+ * several rules that credit different hours — so this table shows how many
+ * rules pick the day up and leaves the rest to the rule editor.
+ *
+ * <p>Year and status are local state, like the tab this manager sits in. The
+ * whole screen was fetched in one round, so a filter in the query string would
+ * re-run ten server actions to hide rows the browser already holds.
+ */
 
 interface HolidayRule { id: string; name: string; number?: number | null }
 
@@ -22,14 +57,13 @@ interface Props {
   holidayRules: HolidayRule[];
 }
 
-const inputCls =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const saveBtnCls =
-  "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
-const cancelBtnCls =
-  "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
-const dangerBtnCls =
-  "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50";
+type View = "all" | "active" | "inactive";
+
+const VIEWS = [
+  { value: "all", label: "All" },
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+];
 
 function toDateInputValue(date: Date | string): string {
   const d = typeof date === "string" ? parseISO(date) : date;
@@ -44,7 +78,20 @@ function formatUTCDate(date: Date | string, fmt: string): string {
   return format(utc, fmt);
 }
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function SelectField({
+  label,
+  children,
+  ...rest
+}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; children: ReactNode }) {
+  return (
+    <label className="flex w-full flex-col gap-1.5">
+      <span className="wms-label">{label}</span>
+      <Select {...rest}>{children}</Select>
+    </label>
+  );
+}
+
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
     document.addEventListener("keydown", onKey);
@@ -53,25 +100,39 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.4)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <h3 className="text-base font-semibold text-zinc-900 dark:text-white">{title}</h3>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-            aria-label="Close"
-          >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div className="px-6 py-5">{children}</div>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="ta-modal max-h-[90vh] w-full max-w-2xl overflow-y-auto"
+        style={{ borderRadius: "var(--radius-l)" }}
+      >
+        <header
+          className="flex items-center justify-between gap-3 px-5 py-3.5"
+          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+        >
+          <h3 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>{title}</h3>
+          <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
+            <X className="h-4 w-4" />
+          </Button>
+        </header>
+        <div className="px-5 py-4">{children}</div>
       </div>
     </div>
+  );
+}
+
+/** A section inside the form dialog, where a nested Card would be a panel on a panel. */
+function FormSection({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <span className="wms-overline">{label}</span>
+      {children}
+    </section>
   );
 }
 
@@ -79,6 +140,69 @@ function ruleLabel(r: HolidayRule) {
   return r.number != null ? `${r.number} [${r.name}]` : r.name;
 }
 
+/** One side of the rule picker. */
+function RuleList({
+  title,
+  rules,
+  selected,
+  emptyLabel,
+  onToggle,
+}: {
+  title: string;
+  rules: HolidayRule[];
+  selected: string[];
+  emptyLabel: string;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <div className="min-w-0 flex-1">
+      <p className="wms-label mb-1">{title}</p>
+      <div
+        className="h-40 w-full overflow-y-auto rounded-lg"
+        style={{ border: "1px solid var(--stroke-default)", background: "var(--surface-card)" }}
+      >
+        {rules.length === 0 && (
+          <p
+            className="px-2.5 py-1"
+            style={{ margin: 0, font: "var(--type-body2)", fontStyle: "italic", color: "var(--text-tertiary)" }}
+          >
+            {emptyLabel}
+          </p>
+        )}
+        {rules.map((r) => {
+          const on = selected.includes(r.id);
+          return (
+            <button
+              key={r.id}
+              type="button"
+              aria-pressed={on}
+              className={on ? "w-full px-2.5 py-1 text-left" : "ta-hoverable w-full px-2.5 py-1 text-left"}
+              style={{
+                border: "none",
+                cursor: "pointer",
+                userSelect: "none",
+                font: "var(--type-body1)",
+                background: on ? "var(--fill-accent)" : "transparent",
+                color: on ? "var(--text-on-accent)" : "var(--text-primary)",
+              }}
+              onClick={() => onToggle(r.id)}
+            >
+              {ruleLabel(r)}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Which holiday rules pick this day up.
+ *
+ * <p>A two-list picker rather than a checklist: a rule set can run to dozens of
+ * rules, and the question asked here — "which of these already covers
+ * Christmas" — is one a column of ticks answers only by reading every row.
+ */
 function DualListbox({
   allRules,
   selectedIds,
@@ -93,6 +217,10 @@ function DualListbox({
 
   const available = allRules.filter((r) => !selectedIds.includes(r.id));
   const chosen = allRules.filter((r) => selectedIds.includes(r.id));
+
+  function toggle(setter: (fn: (prev: string[]) => string[]) => void, id: string) {
+    setter((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
 
   function moveToChosen() {
     onChange([...selectedIds, ...availSel]);
@@ -114,98 +242,38 @@ function DualListbox({
     setChosenSel([]);
   }
 
-  const listCls =
-    "h-40 w-full overflow-y-auto rounded-lg border border-zinc-300 bg-white text-sm dark:border-zinc-600 dark:bg-zinc-800";
-  const optCls = (sel: boolean) =>
-    `cursor-pointer select-none px-2.5 py-1 ${sel ? "bg-blue-600 text-white" : "text-zinc-800 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-700"}`;
-
   return (
     <div className="flex items-center gap-2">
-      {/* Available */}
-      <div className="flex-1">
-        <p className="mb-1 text-xs text-zinc-500">Available Items</p>
-        <div className={listCls}>
-          {available.length === 0 && (
-            <p className="px-2.5 py-1 text-xs italic text-zinc-400">All rules assigned</p>
-          )}
-          {available.map((r) => (
-            <div
-              key={r.id}
-              className={optCls(availSel.includes(r.id))}
-              onClick={() =>
-                setAvailSel((prev) =>
-                  prev.includes(r.id) ? prev.filter((x) => x !== r.id) : [...prev, r.id]
-                )
-              }
-            >
-              {ruleLabel(r)}
-            </div>
-          ))}
-        </div>
-      </div>
+      <RuleList
+        title="Available Items"
+        rules={available}
+        selected={availSel}
+        emptyLabel="All rules assigned"
+        onToggle={(id) => toggle(setAvailSel, id)}
+      />
 
-      {/* Buttons */}
-      <div className="flex flex-col items-center gap-1">
-        <button
-          type="button"
-          title="Add selected"
-          onClick={moveToChosen}
-          disabled={availSel.length === 0}
-          className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-        >
+      <div className="flex flex-none flex-col items-center gap-1">
+        <Button type="button" hierarchy="secondary" size="sm" title="Add selected" onClick={moveToChosen} disabled={availSel.length === 0}>
           &gt;
-        </button>
-        <button
-          type="button"
-          title="Add all"
-          onClick={moveAllToChosen}
-          disabled={available.length === 0}
-          className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-        >
+        </Button>
+        <Button type="button" hierarchy="secondary" size="sm" title="Add all" onClick={moveAllToChosen} disabled={available.length === 0}>
           &gt;&gt;
-        </button>
-        <button
-          type="button"
-          title="Remove selected"
-          onClick={moveToAvailable}
-          disabled={chosenSel.length === 0}
-          className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-        >
+        </Button>
+        <Button type="button" hierarchy="secondary" size="sm" title="Remove selected" onClick={moveToAvailable} disabled={chosenSel.length === 0}>
           &lt;
-        </button>
-        <button
-          type="button"
-          title="Remove all"
-          onClick={moveAllToAvailable}
-          disabled={chosen.length === 0}
-          className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-        >
+        </Button>
+        <Button type="button" hierarchy="secondary" size="sm" title="Remove all" onClick={moveAllToAvailable} disabled={chosen.length === 0}>
           &lt;&lt;
-        </button>
+        </Button>
       </div>
 
-      {/* Selected */}
-      <div className="flex-1">
-        <p className="mb-1 text-xs text-zinc-500">Selected Items</p>
-        <div className={listCls}>
-          {chosen.length === 0 && (
-            <p className="px-2.5 py-1 text-xs italic text-zinc-400">No rules assigned</p>
-          )}
-          {chosen.map((r) => (
-            <div
-              key={r.id}
-              className={optCls(chosenSel.includes(r.id))}
-              onClick={() =>
-                setChosenSel((prev) =>
-                  prev.includes(r.id) ? prev.filter((x) => x !== r.id) : [...prev, r.id]
-                )
-              }
-            >
-              {ruleLabel(r)}
-            </div>
-          ))}
-        </div>
-      </div>
+      <RuleList
+        title="Selected Items"
+        rules={chosen}
+        selected={chosenSel}
+        emptyLabel="No rules assigned"
+        onToggle={(id) => toggle(setChosenSel, id)}
+      />
     </div>
   );
 }
@@ -220,76 +288,47 @@ function HolidayFields({
   initialRuleIds: string[];
 }) {
   const [selectedRuleIds, setSelectedRuleIds] = useState<string[]>(initialRuleIds);
+  const [bypass, setBypass] = useState<boolean>(h?.bypassAfterEligibility ?? false);
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Basic fields */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="sm:col-span-2">
-          <label className="mb-1 block text-xs text-zinc-500">Holiday Name</label>
-          <input
-            name="name"
-            required
-            defaultValue={h?.name ?? ""}
-            placeholder="e.g. Christmas Day"
-            className={inputCls}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs text-zinc-500">Date</label>
-          <input
-            name="date"
-            type="date"
-            required
-            defaultValue={h ? toDateInputValue(h.date) : ""}
-            className={inputCls}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs text-zinc-500">
-            Observed On <span className="text-zinc-400">(optional)</span>
-          </label>
-          <input
-            name="observedDate"
-            type="date"
-            defaultValue={h?.observedDate ? toDateInputValue(h.observedDate) : ""}
-            className={inputCls}
-          />
-        </div>
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,32%)),1fr))]">
+        <Input label="Holiday Name" name="name" required defaultValue={h?.name ?? ""} placeholder="e.g. Christmas Day" />
+        <Input label="Date" name="date" type="date" required defaultValue={h ? toDateInputValue(h.date) : ""} />
+        <Input
+          label="Observed On"
+          name="observedDate"
+          type="date"
+          defaultValue={h?.observedDate ? toDateInputValue(h.observedDate) : ""}
+          hint="Optional — when the day off is taken instead"
+        />
       </div>
 
-      {/* Options */}
-      <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Options</p>
-        <label className="flex cursor-pointer items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-          <input
-            type="checkbox"
-            name="bypassAfterEligibility"
-            value="true"
-            defaultChecked={h?.bypassAfterEligibility ?? false}
-            className="mt-0.5 rounded"
-          />
-          <span>
-            Enable the bypass of scheduled workday &ldquo;after&rdquo; eligibility
-            <span className="ml-1 text-xs text-zinc-400">
-              (Post Holiday bypass option also requires activation in Holiday Rule setup)
+      <FormSection label="Options">
+        {/* The kit's Checkbox carries no name — its real input is visually
+            hidden and exists for the keyboard — so the value reaches the form
+            through the hidden input beside it. */}
+        <Checkbox
+          checked={bypass}
+          onChange={setBypass}
+          label={
+            <span style={{ textWrap: "pretty" }}>
+              Enable the bypass of scheduled workday &ldquo;after&rdquo; eligibility
+              <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                {" "}(Post Holiday bypass option also requires activation in Holiday Rule setup)
+              </span>
             </span>
-          </span>
-        </label>
-      </div>
+          }
+        />
+        <input type="hidden" name="bypassAfterEligibility" value={bypass ? "true" : "false"} />
+      </FormSection>
 
-      {/* Holiday Rule assignment */}
       {allRules.length > 0 && (
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Holiday Rules</p>
-          <DualListbox
-            allRules={allRules}
-            selectedIds={selectedRuleIds}
-            onChange={setSelectedRuleIds}
-          />
+        <FormSection label="Holiday Rules">
+          <DualListbox allRules={allRules} selectedIds={selectedRuleIds} onChange={setSelectedRuleIds} />
           {/* Hidden input carries selected rule IDs to the form */}
           <input type="hidden" name="ruleIds" value={selectedRuleIds.join(",")} />
-        </div>
+        </FormSection>
       )}
     </div>
   );
@@ -302,7 +341,7 @@ export function HolidaysManager({ holidays, holidayRules }: Props) {
   const [editingHoliday, setEditingHoliday] = useState<HolidayWithRules | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [showInactive, setShowInactive] = useState(false);
+  const [view, setView] = useState<View>("active");
 
   const currentYear = new Date().getFullYear();
   const [yearFilter, setYearFilter] = useState(String(currentYear));
@@ -313,7 +352,7 @@ export function HolidaysManager({ holidays, holidayRules }: Props) {
   if (!years.includes(currentYear)) years.unshift(currentYear);
 
   const visible = holidays
-    .filter((h) => showInactive || h.isActive)
+    .filter((h) => (view === "all" ? true : view === "active" ? h.isActive : !h.isActive))
     .filter((h) => !yearFilter || new Date(h.date).getUTCFullYear() === Number(yearFilter));
 
   function openEdit(h: HolidayWithRules) {
@@ -385,167 +424,140 @@ export function HolidaysManager({ holidays, holidayRules }: Props) {
   }
 
   return (
-    <div className="mt-6">
-      <div className="mb-3 flex flex-wrap items-center gap-3">
-        <select
-          value={yearFilter}
-          onChange={(e) => setYearFilter(e.target.value)}
-          className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-        >
-          <option value="">All Years</option>
+    <div className="mt-4 flex flex-col gap-2.5">
+      <Toolbar count={visible.length} countLabel="holiday">
+        <SegmentedControl
+          items={VIEWS}
+          value={view}
+          onChange={(v) => setView(v as View)}
+          size="sm"
+          ariaLabel="Which holidays to show"
+        />
+        <Select aria-label="Year" value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}>
+          <option value="">All years</option>
           {years.map((y) => (
             <option key={y} value={String(y)}>{y}</option>
           ))}
-        </select>
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-500">
-          <input
-            type="checkbox"
-            checked={showInactive}
-            onChange={(e) => setShowInactive(e.target.checked)}
-            className="rounded"
+        </Select>
+        <Button onClick={openCreate}>New Holiday</Button>
+      </Toolbar>
+
+      <Card padding={0}>
+        {visible.length === 0 ? (
+          <EmptyState
+            icon={<CalendarDays className="h-8 w-8" />}
+            title={yearFilter ? `No holidays in ${yearFilter}` : "No holidays"}
+            body={
+              yearFilter
+                ? "Pick another year, or add the day and assign it to the rules that should credit it."
+                : "A holiday is a date; what it pays comes from the holiday rules it is assigned to."
+            }
+            action={<Button size="sm" onClick={openCreate}>New Holiday</Button>}
           />
-          Show inactive
-        </label>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        {visible.length === 0 && (
-          <p className="text-sm text-zinc-400">No holidays for this period. Add one below.</p>
+        ) : (
+          <>
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Holiday</TH>
+                  <TH>Date</TH>
+                  <TH>Observed</TH>
+                  <TH numeric>Rules</TH>
+                  <TH>Status</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {visible.map((h) => {
+                  const assignedCount = h.holidayRules?.length ?? 0;
+                  return (
+                    <TR key={h.id} onClick={() => openEdit(h)}>
+                      <TD style={{ fontWeight: "var(--weight-medium)" }}>{h.name}</TD>
+                      <TD className="tabular" style={{ color: "var(--text-secondary)" }}>
+                        {formatUTCDate(h.date, "MMM d, yyyy")}
+                      </TD>
+                      <TD className="tabular" style={{ color: "var(--text-secondary)" }}>
+                        {h.observedDate
+                          ? formatUTCDate(h.observedDate, "MMM d")
+                          : <span style={{ color: "var(--text-tertiary)" }}>—</span>}
+                      </TD>
+                      <TD numeric style={{ color: assignedCount === 0 ? "var(--text-warning)" : "var(--text-secondary)" }}>
+                        {/* Zero is the one worth seeing: a holiday no rule picks
+                            up is a day nobody gets paid for. */}
+                        {assignedCount}
+                      </TD>
+                      <TD>
+                        {h.isActive ? (
+                          <Badge tone={statusTone("ACTIVE")} size="sm" dot>Active</Badge>
+                        ) : (
+                          // statusTone would answer "warning"; a holiday that is
+                          // switched off is not something to go and fix.
+                          <Badge size="sm">Inactive</Badge>
+                        )}
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+            <TableFooter
+              shown={visible.length}
+              total={holidays.length}
+              label={holidays.length === 1 ? "holiday" : "holidays"}
+            />
+          </>
         )}
-        {visible.map((h) => {
-          const assignedCount = h.holidayRules?.length ?? 0;
-          return (
-            <button
-              key={h.id}
-              type="button"
-              onClick={() => openEdit(h)}
-              className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="w-24 shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-center text-xs font-mono font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                    {formatUTCDate(h.date, "MMM d, yyyy")}
-                  </span>
-                  <span
-                    className={`font-medium ${h.isActive ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"}`}
-                  >
-                    {h.name}
-                  </span>
-                  {h.observedDate && (
-                    <span className="text-xs text-zinc-400">
-                      Observed {formatUTCDate(h.observedDate, "MMM d")}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {assignedCount > 0 && (
-                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                      {assignedCount} rule{assignedCount !== 1 ? "s" : ""}
-                    </span>
-                  )}
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs ${h.isActive ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800"}`}
-                  >
-                    {h.isActive ? "Active" : "Inactive"}
-                  </span>
-                  <span className="text-xs text-zinc-400">Click to edit →</span>
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
+      </Card>
 
-      <button
-        onClick={openCreate}
-        className="mt-4 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-600"
-      >
-        + Add Holiday
-      </button>
-
-      {/* Create modal */}
       {showCreate && (
         <Modal title="New Holiday" onClose={closeCreate}>
-          {error && (
-            <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-              {error}
-            </p>
-          )}
+          {error && <div className="mb-4"><Banner tone="error" body={error} /></div>}
           <form onSubmit={handleCreate}>
             <HolidayFields allRules={holidayRules} initialRuleIds={[]} />
-            <div className="mt-6 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-              <button type="submit" disabled={isPending} className={saveBtnCls}>
-                {isPending ? "Creating…" : "Create"}
-              </button>
-              <button type="button" onClick={closeCreate} className={cancelBtnCls}>
-                Cancel
-              </button>
+            <div className="mt-5 flex gap-2 pt-4" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+              <Button type="submit" disabled={isPending}>{isPending ? "Creating…" : "Create"}</Button>
+              <Button type="button" hierarchy="secondary" onClick={closeCreate}>Cancel</Button>
             </div>
           </form>
         </Modal>
       )}
 
-      {/* Edit modal */}
       {editingHoliday && (
         <Modal title={`Edit: ${editingHoliday.name}`} onClose={closeEdit}>
-          {error && (
-            <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-              {error}
-            </p>
-          )}
+          {error && <div className="mb-4"><Banner tone="error" body={error} /></div>}
           <form onSubmit={(e) => handleUpdate(editingHoliday, e)}>
             <HolidayFields
               h={editingHoliday}
               allRules={holidayRules}
               initialRuleIds={(editingHoliday.holidayRules ?? []).map((r) => r.holidayRuleId)}
             />
-            <div className="mt-3">
-              <label className="mb-1 block text-xs text-zinc-500">Status</label>
-              <select
-                name="isActive"
-                defaultValue={editingHoliday.isActive ? "true" : "false"}
-                className={`${inputCls} max-w-[160px]`}
-              >
+            <div className="mt-3 max-w-[200px]">
+              <SelectField label="Status" name="isActive" defaultValue={editingHoliday.isActive ? "true" : "false"}>
                 <option value="true">Active</option>
                 <option value="false">Inactive</option>
-              </select>
+              </SelectField>
             </div>
-            <div className="mt-6 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-700">
+            <div
+              className="mt-5 flex flex-wrap items-center justify-between gap-3 pt-4"
+              style={{ borderTop: "1px solid var(--stroke-divider)" }}
+            >
               <div className="flex gap-2">
-                <button type="submit" disabled={isPending} className={saveBtnCls}>
-                  {isPending ? "Saving…" : "Save changes"}
-                </button>
-                <button type="button" onClick={closeEdit} className={cancelBtnCls}>
-                  Cancel
-                </button>
+                <Button type="submit" disabled={isPending}>{isPending ? "Saving…" : "Save changes"}</Button>
+                <Button type="button" hierarchy="secondary" onClick={closeEdit}>Cancel</Button>
               </div>
               {confirmDeleteId === editingHoliday.id ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-500">Are you sure?</span>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(editingHoliday.id)}
-                    disabled={isPending}
-                    className={dangerBtnCls}
-                  >
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>Are you sure?</span>
+                  <Button type="button" tone="error" size="sm" onClick={() => handleDelete(editingHoliday.id)} disabled={isPending}>
                     {isPending ? "Deleting…" : "Yes, delete"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDeleteId(null)}
-                    className={cancelBtnCls}
-                  >
+                  </Button>
+                  <Button type="button" hierarchy="secondary" size="sm" onClick={() => setConfirmDeleteId(null)}>
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setConfirmDeleteId(editingHoliday.id)}
-                  className="text-xs text-red-500 hover:underline dark:text-red-400"
-                >
+                <Button type="button" hierarchy="link" tone="error" size="sm" onClick={() => setConfirmDeleteId(editingHoliday.id)}>
                   Delete holiday
-                </button>
+                </Button>
               )}
             </div>
           </form>

@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
@@ -12,7 +11,28 @@ import {
 import { getPayCodes } from "@/actions/pay-code.actions";
 import { getReasonCodes } from "@/actions/reason-code.actions";
 import { TimecardViewer } from "@/components/payroll/timecard-viewer";
+import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
+import { addDays, format } from "date-fns";
+import { parseUtcDate } from "@/lib/utils/date";
+import { Users } from "lucide-react";
 
+/**
+ * Timecards, as the portal design lays it out: the list template for choosing
+ * whose hours you are looking at, and the timesheet grid for the hours
+ * themselves.
+ *
+ * <p>This page owns the two filters that belong in the URL — site and
+ * department. They are query parameters rather than component state because a
+ * payroll screen narrowed to one department is something people send each
+ * other, and because the employee list is re-queried per site: the scope of
+ * that query is what the filter changes, not which of the loaded rows are
+ * shown.
+ *
+ * <p>Everything below the header is rendered by {@link TimecardViewer}. The
+ * toolbar, the view segments and the filter chips live there rather than here
+ * because they sit on the same state as the employee picker, and splitting a
+ * toolbar from the list it filters is how the two drift apart.
+ */
 export default async function TimecardsPage({
   searchParams,
 }: {
@@ -70,12 +90,45 @@ export default async function TimecardsPage({
   const employees = employeesResult.success ? employeesResult.data : [];
 
   if (employees.length === 0) {
+    const narrowed = Boolean(sp.siteId || sp.departmentId || sp.periodId);
+    const narrowedBy = [
+      sp.siteId && sites.find((s) => s.id === sp.siteId)?.name,
+      sp.departmentId && departments.find((d) => d.id === sp.departmentId)?.name,
+    ]
+      .filter(Boolean)
+      .join(" · ");
     return (
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
-          Timecards
-        </h1>
-        <p className="mt-2 text-sm text-zinc-500">No active employees found.</p>
+      <div className="flex flex-col gap-4">
+        {/* The subtitle names the filters that produced the empty list. "No
+            employees" and "no employees in Shipping at the Newark DC" look
+            identical without it, and the difference is whether somebody
+            concludes a site has nobody to pay. */}
+        <PageHeader
+          title="Timecards"
+          subtitle={narrowedBy || (narrowed ? "Filtered" : undefined)}
+          actions={
+            narrowed ? (
+              <LinkButton href="/payroll/timecards" hierarchy="secondary">
+                Clear Filters
+              </LinkButton>
+            ) : (
+              <LinkButton href="/payroll/pay-periods" hierarchy="secondary">
+                Pay Periods
+              </LinkButton>
+            )
+          }
+        />
+        <Card padding={0}>
+          <EmptyState
+            icon={<Users className="h-8 w-8" />}
+            title={narrowed ? "No employees match these filters" : "No active employees"}
+            body={
+              narrowed
+                ? "There may be employees outside the site, department or pay period selected."
+                : "Nobody at this tenant is active, so there is nothing to show hours for."
+            }
+          />
+        </Card>
       </div>
     );
   }
@@ -194,21 +247,40 @@ export default async function TimecardsPage({
       }
     : null;
 
+  // Which period is on screen, spelled out. A screen of hours is only
+  // readable if you know the fortnight they belong to, and until now that was
+  // only visible by reading a dropdown.
+  // Read the same way the period bar inside the viewer reads it: parseUtcDate,
+  // because these columns arrive as UTC midnight and a plain `new Date` shows
+  // the day before anywhere west of UTC; and endDate minus a day, because the
+  // stored end is the boundary, not the last day worked. The two sit forty
+  // pixels apart on this screen, and a header naming a different fortnight
+  // than the grid under it is worse than no header at all.
+  const shownPeriod = periods.find((p) => p.id === selectedPeriodId);
+  const shownStart = shownPeriod ? parseUtcDate(shownPeriod.startDate) : null;
+  const shownEnd = shownPeriod ? addDays(parseUtcDate(shownPeriod.endDate), -1) : null;
+  const subtitle = [
+    shownStart && shownEnd
+      ? `${format(shownStart, "MMM d")} – ${format(shownEnd, "MMM d, yyyy")}`
+      : null,
+    `${employees.length} ${employees.length === 1 ? "employee" : "employees"}`,
+    canEdit ? null : "Read only",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <div>
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
-            Timecards
-          </h1>
-        </div>
-        <Link
-          href="/payroll/pay-periods"
-          className="text-sm text-blue-600 hover:underline dark:text-blue-400"
-        >
-          Pay Periods
-        </Link>
-      </div>
+    <div className="flex flex-col gap-4">
+      {/* The design gives this header a "Send to ADP" action. The export exists
+          (pushPayrollToAdp) but it refuses anything except a locked pay period
+          and is one-shot per period, so its home is the pay period screen where
+          locking happens — a button here would be disabled on every timecard
+          anybody is still editing. The link goes there instead. */}
+      <PageHeader
+        title="Timecards"
+        subtitle={subtitle}
+        actions={<LinkButton href="/payroll/pay-periods">Pay Periods</LinkButton>}
+      />
 
       <TimecardViewer
         payPeriods={periods}

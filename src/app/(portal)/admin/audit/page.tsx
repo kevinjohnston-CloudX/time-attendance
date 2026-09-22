@@ -1,9 +1,39 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getAuditLogs } from "@/actions/admin.actions";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  LinkButton,
+  PageHeader,
+  Select,
+  Table,
+  THead,
+  TBody,
+  TR,
+  TH,
+  TD,
+  Toolbar,
+  FilterBar,
+  FilterChip,
+} from "@/components/ui";
 import { format } from "date-fns";
+import { FileSearch } from "lucide-react";
+
+const ENTITY_TYPES = [
+  "USER",
+  "EMPLOYEE",
+  "PUNCH",
+  "TIMESHEET",
+  "PAY_PERIOD",
+  "LEAVE_REQUEST",
+  "LEAVE_BALANCE",
+  "RULE_SET",
+  "DOCUMENT",
+];
 
 export default async function AuditLogPage({
   searchParams,
@@ -22,117 +52,119 @@ export default async function AuditLogPage({
   if (!result.success) redirect("/admin");
 
   const { logs, total, pages } = result.data;
-
-  const ENTITY_TYPES = [
-    "USER","EMPLOYEE","PUNCH","TIMESHEET","PAY_PERIOD","LEAVE_REQUEST","LEAVE_BALANCE","RULE_SET","DOCUMENT"
-  ];
+  const pageHref = (n: number) => `/admin/audit?page=${n}${entityType ? `&entityType=${entityType}` : ""}`;
 
   return (
-    <div>
-      <Link href="/admin" className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white">
-        ← Admin
-      </Link>
-      <div className="mt-1 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Audit Log</h1>
-        <p className="text-sm text-zinc-400">{total} entries</p>
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title="Audit Log"
+        subtitle={
+          entityType
+            ? `${total.toLocaleString()} ${entityType} entries`
+            : `${total.toLocaleString()} entries · every configuration and timecard change`
+        }
+      />
+
+      <div className="flex flex-col gap-2.5">
+        {/* Plain GET form, so a filtered view is a URL somebody can send. */}
+        <Toolbar count={total} countLabel="entry">
+          <form method="GET" className="flex flex-wrap items-center gap-2">
+            <Select name="entityType" defaultValue={entityType ?? ""}>
+              <option value="">All types</option>
+              {ENTITY_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </Select>
+            <Button type="submit" hierarchy="secondary">
+              Filter
+            </Button>
+          </form>
+        </Toolbar>
+
+        <FilterBar clearHref="/admin/audit">
+          {entityType ? (
+            <FilterChip key="entityType" label="Type" value={entityType} clearHref="/admin/audit" />
+          ) : null}
+        </FilterBar>
       </div>
 
-      {/* Filter */}
-      <form method="GET" className="mt-4 flex items-center gap-3">
-        <select
-          name="entityType"
-          defaultValue={entityType ?? ""}
-          className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-        >
-          <option value="">All types</option>
-          {ENTITY_TYPES.map((t) => (
-            <option key={t} value={t}>{t}</option>
-          ))}
-        </select>
-        <button
-          type="submit"
-          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300"
-        >
-          Filter
-        </button>
-        {entityType && (
-          <Link
-            href="/admin/audit"
-            className="text-sm text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
-          >
-            Clear
-          </Link>
+      <Card padding={0}>
+        {logs.length === 0 ? (
+          <EmptyState
+            icon={<FileSearch className="h-8 w-8" />}
+            title={entityType ? `No ${entityType} entries` : "No audit entries"}
+            body={
+              entityType
+                ? "Nothing of this type has been changed in the range held by the log."
+                : "Nothing has been recorded yet."
+            }
+            action={entityType ? <LinkButton href="/admin/audit" size="sm">Show all types</LinkButton> : undefined}
+          />
+        ) : (
+          <Table>
+            <THead>
+              <TR>
+                <TH>When</TH>
+                <TH>Actor</TH>
+                <TH>Action</TH>
+                <TH>Entity</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {logs.map((log) => (
+                <TR key={log.id}>
+                  {/* The timestamp is the column this table is read by, so it
+                      gets tabular figures — the seconds have to line up. */}
+                  <TD numeric align="left" style={{ color: "var(--text-secondary)" }}>
+                    {format(log.createdAt, "MMM d, yyyy HH:mm:ss")}
+                  </TD>
+                  <TD>{log.actor?.user?.name ?? log.actorId ?? "System"}</TD>
+                  <TD style={{ fontFamily: "var(--font-mono)", font: "var(--type-body2)" }}>{log.action}</TD>
+                  <TD>
+                    <span className="inline-flex items-center gap-2">
+                      <Badge size="sm">{log.entityType}</Badge>
+                      <span
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          font: "var(--type-caption1)",
+                          color: "var(--text-tertiary)",
+                        }}
+                      >
+                        {log.entityId.slice(0, 8)}…
+                      </span>
+                    </span>
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
         )}
-      </form>
 
-      {/* Log table */}
-      <div className="mt-4 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-        <table className="w-full text-sm">
-          <thead className="bg-zinc-50 dark:bg-zinc-900">
-            <tr>
-              <th className="px-4 py-3 text-left font-medium text-zinc-500">When</th>
-              <th className="px-4 py-3 text-left font-medium text-zinc-500">Actor</th>
-              <th className="px-4 py-3 text-left font-medium text-zinc-500">Action</th>
-              <th className="px-4 py-3 text-left font-medium text-zinc-500">Entity</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-950">
-            {logs.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-zinc-400">
-                  No audit entries found.
-                </td>
-              </tr>
-            )}
-            {logs.map((log) => (
-              <tr key={log.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/40">
-                <td className="whitespace-nowrap px-4 py-3 text-xs text-zinc-400">
-                  {format(log.createdAt, "MMM d, yyyy HH:mm:ss")}
-                </td>
-                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
-                  {log.actor?.user?.name ?? log.actorId ?? "System"}
-                </td>
-                <td className="px-4 py-3 font-mono text-xs text-zinc-700 dark:text-zinc-300">
-                  {log.action}
-                </td>
-                <td className="px-4 py-3 text-xs">
-                  <span className="rounded bg-zinc-100 px-1.5 py-0.5 dark:bg-zinc-800">
-                    {log.entityType}
-                  </span>
-                  <span className="ml-1 font-mono text-zinc-400">
-                    {log.entityId.slice(0, 8)}…
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      {pages > 1 && (
-        <div className="mt-4 flex items-center gap-2">
-          {page > 1 && (
-            <Link
-              href={`/admin/audit?page=${page - 1}${entityType ? `&entityType=${entityType}` : ""}`}
-              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300"
-            >
-              ← Prev
-            </Link>
-          )}
-          <span className="text-sm text-zinc-400">
-            Page {page} of {pages}
-          </span>
-          {page < pages && (
-            <Link
-              href={`/admin/audit?page=${page + 1}${entityType ? `&entityType=${entityType}` : ""}`}
-              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300"
-            >
-              Next →
-            </Link>
-          )}
-        </div>
-      )}
+        {pages > 1 && (
+          <div
+            className="flex items-center justify-between gap-3 px-4 py-2.5"
+            style={{ borderTop: "1px solid var(--stroke-divider)" }}
+          >
+            <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)", fontVariantNumeric: "tabular-nums" }}>
+              Page {page} of {pages}
+            </span>
+            <div className="flex items-center gap-2">
+              {page > 1 && (
+                <LinkButton href={pageHref(page - 1)} size="sm">
+                  ← Prev
+                </LinkButton>
+              )}
+              {page < pages && (
+                <LinkButton href={pageHref(page + 1)} size="sm">
+                  Next →
+                </LinkButton>
+              )}
+            </div>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

@@ -1,12 +1,28 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getMyReports, getMyFolders } from "@/actions/report.actions";
-import { Plus, FileText } from "lucide-react";
-import { ReportsDashboard } from "@/components/reports/reports-dashboard";
+import { Plus } from "lucide-react";
+import { ReportsList } from "@/components/reports/reports-list";
+import { LinkButton, PageHeader } from "@/components/ui";
 
-export default async function ReportsPage() {
+/**
+ * Reports, as the portal design's list screen.
+ *
+ * <p>What you can see is still decided entirely by `getMyReports`, which is
+ * permission-scoped and returns your own reports, the ones shared with you and
+ * the ones published to the tenant. The search, type, year and folder below
+ * narrow those rows. They never widen them, and no tab re-queries.
+ *
+ * <p>All four live in the query string rather than in React state: a narrowed
+ * list of reports is something one person sends another, and the previous
+ * folder filter was lost on every reload.
+ */
+export default async function ReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; type?: string; year?: string; folder?: string }>;
+}) {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "REPORT_MANAGE")) redirect("/dashboard");
@@ -22,22 +38,28 @@ export default async function ReportsPage() {
 
   const folders = foldersResult.success ? foldersResult.data : [];
 
-  return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
-          Reports
-        </h1>
-        <Link
-          href="/reports/new"
-          className="flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          <Plus className="h-4 w-4" />
-          New Report
-        </Link>
-      </div>
+  const sp = (await searchParams) ?? {};
 
-      <ReportsDashboard reports={reports} folders={folders} />
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title="Reports"
+        subtitle="Saved and scheduled payroll reports"
+        actions={
+          <LinkButton href="/reports/new" hierarchy="primary" leadingIcon={<Plus className="h-4 w-4" />}>
+            New Report
+          </LinkButton>
+        }
+      />
+
+      <ReportsList
+        reports={reports}
+        folders={folders}
+        q={sp.q ?? ""}
+        type={sp.type ?? ""}
+        year={sp.year ?? ""}
+        folder={sp.folder ?? ""}
+      />
     </div>
   );
 }

@@ -2,24 +2,63 @@
 
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { CalendarClock, X } from "lucide-react";
+import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
 import { createShift, updateShift, deleteShift } from "@/actions/shift.actions";
 import type { DayScheduleRow, MealConfig, BreakConfig, DifferentialConfig } from "@/actions/shift.actions";
 import type { Shift } from "@prisma/client";
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  Checkbox,
+  EmptyState,
+  Input,
+  SearchInput,
+  Select,
+  SegmentedControl,
+  Table,
+  TBody,
+  THead,
+  TR,
+  TH,
+  TD,
+  TableFooter,
+  Toolbar,
+  statusTone,
+} from "@/components/ui";
+
+/**
+ * Shifts — the list on the design's list template, the editor in a dialog
+ * behind it.
+ *
+ * <p>Times are shown as they are stored, on the 24-hour clock. The employee
+ * list shows them the same way, and a night shift written "10:00 PM" on one
+ * screen and "22:00" on the next is how the wrong one gets assigned.
+ *
+ * <p>The editor keeps its five tabs. Properties stays mounted when another tab
+ * is showing — its inputs are uncontrolled, and unmounting the tab would throw
+ * away everything typed into it. The other four tabs hold their state in this
+ * component and reach the form as serialized JSON, so they can unmount safely.
+ */
 
 interface Props { shifts: Shift[] }
 
-const inputCls =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const cellInputCls =
-  "w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const saveBtnCls =
-  "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
-const cancelBtnCls =
-  "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
-const dangerBtnCls =
-  "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50";
-
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+type View = "all" | "active" | "inactive";
+
+const VIEWS = [
+  { value: "all", label: "All" },
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+];
+
+const YES_NO = [
+  { value: "true", label: "Yes" },
+  { value: "false", label: "No" },
+];
 
 function defaultDaySchedule(shift?: Shift): DayScheduleRow[] {
   const existingSchedule = shift?.daySchedule as DayScheduleRow[] | null | undefined;
@@ -39,14 +78,6 @@ function defaultDaySchedule(shift?: Shift): DayScheduleRow[] {
   }));
 }
 
-function formatTime(hhmm: string | null | undefined): string {
-  if (!hhmm) return "";
-  const [h, m] = hhmm.split(":").map(Number);
-  const ampm = h >= 12 ? "PM" : "AM";
-  const hour = h % 12 || 12;
-  return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
-}
-
 function formatWorkDays(workDays: number[]): string {
   if (workDays.length === 0) return "No days";
   if (workDays.length === 7) return "Every day";
@@ -56,10 +87,110 @@ function formatWorkDays(workDays: number[]): string {
   return sorted.map((d) => DAY_NAMES[d]).join(", ");
 }
 
+function titleCase(s: string): string {
+  return s.charAt(0) + s.slice(1).toLowerCase();
+}
+
 function toDateInputValue(d: Date | string | null | undefined): string {
   if (!d) return "";
   const dt = typeof d === "string" ? new Date(d) : d;
   return dt.toISOString().slice(0, 10);
+}
+
+// ─── Shared form pieces ───────────────────────────────────────────────────────
+
+/**
+ * A control sized to sit inside a sentence or a grid cell.
+ *
+ * <p>The kit's Input is a 32px labelled field; the meal rules are sentences
+ * with numbers in them and the schedule is a seven-row grid, and a full field
+ * in either breaks the line it belongs to.
+ */
+function InlineInput({ width, ...rest }: InputHTMLAttributes<HTMLInputElement> & { width?: number | string }) {
+  return (
+    <input
+      {...rest}
+      className="ta-field rounded px-2 py-1 disabled:opacity-40"
+      style={{
+        width: width ?? 80,
+        border: "1px solid var(--stroke-secondary)",
+        background: "var(--surface-card)",
+        color: "var(--text-primary)",
+        font: "var(--type-body2)",
+        fontVariantNumeric: "tabular-nums",
+        textAlign: rest.type === "number" ? "right" : "left",
+        outline: "none",
+      }}
+    />
+  );
+}
+
+/** A labelled Select, matching the kit Input's label. */
+function SelectField({
+  label,
+  children,
+  ...rest
+}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; children: ReactNode }) {
+  return (
+    <label className="flex w-full flex-col gap-1.5">
+      <span className="wms-label">{label}</span>
+      <Select {...rest}>{children}</Select>
+    </label>
+  );
+}
+
+/** A section inside the dialog, where a nested Card would be a panel on a panel. */
+function FormSection({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <span className="wms-overline">{label}</span>
+      {hint && <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{hint}</span>}
+      {children}
+    </section>
+  );
+}
+
+/**
+ * One option of a set that is not a simple yes/no.
+ *
+ * <p>Radios rather than a segmented control wherever the options carry a line
+ * of explanation: five segments of prose is a paragraph cut into buttons.
+ */
+function Radio({
+  checked,
+  onChange,
+  label,
+  detail,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+  detail?: string;
+}) {
+  return (
+    <label
+      className="flex cursor-pointer items-start gap-2"
+      style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
+    >
+      <input type="radio" checked={checked} onChange={onChange} className="mt-1 accent-[var(--fill-accent)]" />
+      <span className="flex flex-col gap-0.5">
+        <span>{label}</span>
+        {detail && <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{detail}</span>}
+      </span>
+    </label>
+  );
+}
+
+/** A rule written as a sentence with fields in it. */
+function Sentence({ children }: { children: ReactNode }) {
+  return (
+    <p
+      className="flex flex-wrap items-center gap-2"
+      style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}
+    >
+      {children}
+    </p>
+  );
 }
 
 // ─── Definition table ─────────────────────────────────────────────────────────
@@ -86,119 +217,123 @@ function DefinitionTable({
 
   return (
     <div>
-      {/* Quick-fill bar */}
-      <div className="mb-3 flex items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800/60">
-        <span className="shrink-0 text-xs text-zinc-500">Apply to workdays:</span>
-        <input type="time" value={fillStart} onChange={(e) => setFillStart(e.target.value)} className={cellInputCls} />
-        <span className="text-xs text-zinc-400">–</span>
-        <input type="time" value={fillEnd} onChange={(e) => setFillEnd(e.target.value)} className={cellInputCls} />
-        <button
-          type="button"
-          onClick={applyFill}
-          className="ml-1 rounded bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700"
-        >
-          Apply
-        </button>
+      {/* Quick-fill bar. Seven rows of the same two times is the common case,
+          and typing them fourteen times is where a Wednesday ends up wrong. */}
+      <div
+        className="mb-3 flex flex-wrap items-center gap-2 rounded-md px-3 py-2"
+        style={{ border: "1px solid var(--stroke-secondary)", background: "var(--surface-secondary)" }}
+      >
+        <span className="shrink-0 wms-label">Apply to workdays:</span>
+        <InlineInput type="time" aria-label="Fill start time" value={fillStart} onChange={(e) => setFillStart(e.target.value)} width={120} />
+        <span style={{ color: "var(--text-tertiary)" }}>–</span>
+        <InlineInput type="time" aria-label="Fill end time" value={fillEnd} onChange={(e) => setFillEnd(e.target.value)} width={120} />
+        <Button size="sm" onClick={applyFill}>Apply</Button>
       </div>
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="border-b border-zinc-200 dark:border-zinc-700">
-            <th className="pb-2 text-left font-medium uppercase tracking-wide text-zinc-400" style={{width:"10%"}}>Day</th>
-            <th className="pb-2 text-center font-medium uppercase tracking-wide text-zinc-400" style={{width:"10%"}}>Workday</th>
-            <th className="pb-2 text-center font-medium uppercase tracking-wide text-zinc-400" style={{width:"28%"}}>Day Window</th>
-            <th className="pb-2 text-center font-medium uppercase tracking-wide text-zinc-400" style={{width:"22%"}}>Start Time</th>
-            <th className="pb-2 text-center font-medium uppercase tracking-wide text-zinc-400" style={{width:"22%"}}>End Time</th>
-            <th className="pb-2 text-center font-medium uppercase tracking-wide text-zinc-400" style={{width:"8%"}}>Meal</th>
-          </tr>
-        </thead>
-        <tbody>
+
+      <Table>
+        <THead>
+          <TR>
+            <TH style={{ width: "10%" }}>Day</TH>
+            <TH align="center" style={{ width: "10%" }}>Workday</TH>
+            <TH align="center" style={{ width: "28%" }}>Day Window</TH>
+            <TH align="center" style={{ width: "22%" }}>Start Time</TH>
+            <TH align="center" style={{ width: "22%" }}>End Time</TH>
+            <TH align="center" style={{ width: "8%" }}>Meal</TH>
+          </TR>
+        </THead>
+        <TBody>
           {schedule.map((row) => (
-            <tr key={row.day} className="border-b border-zinc-100 dark:border-zinc-800">
-              {/* Day */}
-              <td className={`py-2 font-medium ${row.isWorkday ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"}`}>
+            <TR key={row.day}>
+              <TD
+                style={{
+                  fontWeight: "var(--weight-medium)",
+                  color: row.isWorkday ? "var(--text-primary)" : "var(--text-tertiary)",
+                }}
+              >
                 {DAY_NAMES[row.day]}
-              </td>
+              </TD>
 
-              {/* Workday checkbox */}
-              <td className="py-2 text-center">
-                <input
-                  type="checkbox"
-                  checked={row.isWorkday}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    update(row.day, {
-                      isWorkday: checked,
-                      startTime: checked ? (row.startTime ?? "08:00") : null,
-                      endTime: checked ? (row.endTime ?? "17:00") : null,
-                    });
-                  }}
-                  className="h-4 w-4 cursor-pointer rounded"
-                />
-              </td>
+              <TD align="center">
+                <span className="inline-flex">
+                  <Checkbox
+                    checked={row.isWorkday}
+                    onChange={(checked) =>
+                      update(row.day, {
+                        isWorkday: checked,
+                        startTime: checked ? (row.startTime ?? "08:00") : null,
+                        endTime: checked ? (row.endTime ?? "17:00") : null,
+                      })
+                    }
+                  />
+                </span>
+              </TD>
 
-              {/* Day Window (Start – End combined) */}
-              <td className="py-2 pr-2">
+              <TD>
                 <div className="flex items-center gap-1">
-                  <input
+                  <InlineInput
                     type="time"
+                    aria-label={`${DAY_NAMES[row.day]} window start`}
                     value={row.dayStart}
                     onChange={(e) => update(row.day, { dayStart: e.target.value })}
-                    className={cellInputCls}
+                    width="100%"
                   />
-                  <span className="shrink-0 text-zinc-400">–</span>
-                  <input
+                  <span className="shrink-0" style={{ color: "var(--text-tertiary)" }}>–</span>
+                  <InlineInput
                     type="time"
+                    aria-label={`${DAY_NAMES[row.day]} window end`}
                     value={row.dayEnd}
                     onChange={(e) => update(row.day, { dayEnd: e.target.value })}
-                    className={cellInputCls}
+                    width="100%"
                   />
                 </div>
-              </td>
+              </TD>
 
-              {/* Start Time */}
-              <td className="py-2 pr-2">
+              <TD>
                 {row.isWorkday ? (
-                  <input
+                  <InlineInput
                     type="time"
+                    aria-label={`${DAY_NAMES[row.day]} start time`}
                     value={row.startTime ?? ""}
                     onChange={(e) => update(row.day, { startTime: e.target.value || null })}
-                    className={cellInputCls}
+                    width="100%"
                   />
                 ) : (
-                  <span className="text-zinc-300 dark:text-zinc-600">—</span>
+                  <span style={{ color: "var(--text-disabled)" }}>—</span>
                 )}
-              </td>
+              </TD>
 
-              {/* End Time */}
-              <td className="py-2 pr-2">
+              <TD>
                 {row.isWorkday ? (
-                  <input
+                  <InlineInput
                     type="time"
+                    aria-label={`${DAY_NAMES[row.day]} end time`}
                     value={row.endTime ?? ""}
                     onChange={(e) => update(row.day, { endTime: e.target.value || null })}
-                    className={cellInputCls}
+                    width="100%"
                   />
                 ) : (
-                  <span className="text-zinc-300 dark:text-zinc-600">—</span>
+                  <span style={{ color: "var(--text-disabled)" }}>—</span>
                 )}
-              </td>
+              </TD>
 
-              {/* Meal minutes */}
-              <td className="py-2">
-                <input
+              <TD>
+                <InlineInput
                   type="number"
                   min={0}
                   max={480}
+                  aria-label={`${DAY_NAMES[row.day]} meal minutes`}
                   value={row.mealMinutes}
                   onChange={(e) => update(row.day, { mealMinutes: parseInt(e.target.value, 10) || 0 })}
-                  className={`${cellInputCls} text-right`}
+                  width="100%"
                 />
-              </td>
-            </tr>
+              </TD>
+            </TR>
           ))}
-        </tbody>
-      </table>
-      <p className="mt-2 text-[10px] text-zinc-400">Day Window = punch eligibility window for that day (default 00:00 – 23:59). Meal = scheduled break in minutes.</p>
+        </TBody>
+      </Table>
+      <p className="mt-2" style={{ margin: 0, font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+        Day Window = punch eligibility window for that day (default 00:00 – 23:59). Meal = scheduled break in minutes.
+      </p>
     </div>
   );
 }
@@ -252,18 +387,10 @@ function MealTab({ cfg, onChange }: { cfg: MealConfig; onChange: (c: MealConfig)
     onChange({ ...cfg, meals });
   }
 
-  const checkboxLabelCls = "flex cursor-pointer items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300";
-  const subFieldCls = "ml-6 mt-2";
-  const numInputCls = "w-20 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white text-right";
-  const radioLabelCls = "flex items-center gap-2 cursor-pointer text-sm text-zinc-700 dark:text-zinc-300";
-  const sectionLabelCls = "mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400";
-
   return (
     <div className="flex flex-col gap-5">
 
-      {/* Deduction Method */}
-      <div>
-        <p className={sectionLabelCls}>Deduction Method</p>
+      <FormSection label="Deduction Method">
         <div className="flex flex-col gap-1.5">
           {([
             ["HOURS_WORKED", "Hours Worked"],
@@ -272,237 +399,252 @@ function MealTab({ cfg, onChange }: { cfg: MealConfig; onChange: (c: MealConfig)
             ["ALLOWANCE_BY_HOURS", "Allowance by Hours"],
             ["ALLOWANCE_BY_TIME", "Allowance by Time"],
           ] as const).map(([val, label]) => (
-            <label key={val} className={radioLabelCls}>
-              <input type="radio" checked={cfg.deductionMethod === val}
-                onChange={() => set("deductionMethod", val)}
-                className="accent-zinc-900 dark:accent-zinc-100" />
-              {label}
-            </label>
+            <Radio key={val} checked={cfg.deductionMethod === val} onChange={() => set("deductionMethod", val)} label={label} />
           ))}
         </div>
-      </div>
+      </FormSection>
 
-      {/* Punch gap */}
-      <div>
-        <p className={sectionLabelCls}>Rules</p>
-        <p className="mb-3 text-xs text-zinc-500">
-          Meal punch recognized when punch gap is between{" "}
-          <input type="number" min={1} max={60} value={cfg.minMealMinutes}
+      <FormSection label="Rules">
+        <Sentence>
+          <span>Meal punch recognized when punch gap is between</span>
+          <InlineInput
+            type="number" min={1} max={60}
+            aria-label="Minimum meal minutes"
+            value={cfg.minMealMinutes}
             onChange={(e) => set("minMealMinutes", parseInt(e.target.value) || 15)}
-            className={numInputCls} />{" "}
-          and{" "}
-          <input type="number" min={1} max={480} value={cfg.maxMealMinutes}
+          />
+          <span>and</span>
+          <InlineInput
+            type="number" min={1} max={480}
+            aria-label="Maximum meal minutes"
+            value={cfg.maxMealMinutes}
             onChange={(e) => set("maxMealMinutes", parseInt(e.target.value) || 180)}
-            className={numInputCls} />{" "}
-          minutes
-        </p>
+          />
+          <span>minutes</span>
+        </Sentence>
 
-        {/* Allow Pay Reimbursement */}
-        <div className="mb-2">
-          <label className={checkboxLabelCls}>
-            <input type="checkbox" checked={cfg.reimbursementEnabled}
-              onChange={(e) => set("reimbursementEnabled", e.target.checked)} className="mt-0.5 rounded" />
-            Allow Pay Reimbursement
-          </label>
-          {cfg.reimbursementEnabled && (
-            <div className={`${subFieldCls} flex flex-col gap-2`}>
-              <p className="text-xs text-zinc-500">
-                Up to{" "}
-                <input type="number" min={0} value={cfg.reimbursementMinutes}
-                  onChange={(e) => set("reimbursementMinutes", parseInt(e.target.value) || 0)}
-                  className={numInputCls} />{" "}
-                min &nbsp;|&nbsp; Daily limit{" "}
-                <input type="number" min={0} value={cfg.dailyReimbursementLimitMinutes}
-                  onChange={(e) => set("dailyReimbursementLimitMinutes", parseInt(e.target.value) || 0)}
-                  className={numInputCls} />{" "}
-                min
-              </p>
-              <label className={checkboxLabelCls}>
-                <input type="checkbox" checked={cfg.doesNotAffectLongMealException}
-                  onChange={(e) => set("doesNotAffectLongMealException", e.target.checked)} className="rounded" />
-                Does not affect long meal exception
-              </label>
-            </div>
-          )}
-        </div>
-
-        {/* Auto deduct */}
-        <div className="mb-2">
-          <label className={checkboxLabelCls}>
-            <input type="checkbox" checked={cfg.autoDeduct}
-              onChange={(e) => set("autoDeduct", e.target.checked)} className="mt-0.5 rounded" />
-            Automatically deduct the established minimum meal below
-          </label>
-        </div>
-
-        {/* No Meal Punch Bonus */}
-        <div className="mb-2">
-          <label className={checkboxLabelCls}>
-            <input type="checkbox" checked={cfg.noMealPunchBonusEnabled}
-              onChange={(e) => set("noMealPunchBonusEnabled", e.target.checked)} className="mt-0.5 rounded" />
-            No Meal Punch Bonus
-          </label>
-          {cfg.noMealPunchBonusEnabled && (
-            <p className={`${subFieldCls} text-xs text-zinc-500`}>
-              <input type="number" min={0} value={cfg.noMealPunchBonusMinutes}
-                onChange={(e) => set("noMealPunchBonusMinutes", parseInt(e.target.value) || 0)}
-                className={numInputCls} />{" "}
-              minutes if employee works more than{" "}
-              <input type="number" min={0} step={0.5} value={cfg.noMealPunchBonusWorkHours}
-                onChange={(e) => set("noMealPunchBonusWorkHours", parseFloat(e.target.value) || 0)}
-                className={numInputCls} />{" "}
-              hours
-            </p>
-          )}
-        </div>
-
-        {/* Disable min deduction */}
-        <div className="mb-2">
-          <label className={checkboxLabelCls}>
-            <input type="checkbox" checked={cfg.disableMinDeduction}
-              onChange={(e) => set("disableMinDeduction", e.target.checked)} className="mt-0.5 rounded" />
-            Disable minimum deduction (use actual meal time)
-          </label>
-        </div>
-
-        {/* Use Meal Window for auto deduct */}
-        <div className="mb-2">
-          <label className={checkboxLabelCls}>
-            <input type="checkbox" checked={cfg.useMealWindowForAutoDeduct}
-              onChange={(e) => set("useMealWindowForAutoDeduct", e.target.checked)} className="mt-0.5 rounded" />
-            Use Meal Window for auto deduct
-          </label>
-        </div>
-
-        {/* Create meal deduction */}
-        <div className="mb-2">
-          <label className={checkboxLabelCls}>
-            <input type="checkbox" checked={cfg.createMealDeductionEnabled}
-              onChange={(e) => set("createMealDeductionEnabled", e.target.checked)} className="mt-0.5 rounded" />
-            Create meal deduction
-          </label>
-          {cfg.createMealDeductionEnabled && (
-            <div className={`${subFieldCls} flex flex-col gap-2`}>
-              <p className="text-xs text-zinc-500">
-                <input type="number" min={0} step={0.5} value={cfg.createMealDeductionHours}
-                  onChange={(e) => set("createMealDeductionHours", parseFloat(e.target.value) || 0)}
-                  className={numInputCls} />{" "}
-                hours after punching in
-              </p>
-              <label className={checkboxLabelCls}>
-                <input type="checkbox" checked={cfg.doNotSplitPunch}
-                  onChange={(e) => set("doNotSplitPunch", e.target.checked)} className="rounded" />
-                Do not split punch
-              </label>
-              <div className="flex gap-4">
-                {([["IN_OUT_PAIR", "In/Out Pair"], ["WORKING_HOURS", "Working Hours"]] as const).map(([val, label]) => (
-                  <label key={val} className={radioLabelCls}>
-                    <input type="radio" checked={cfg.createMealBasis === val}
-                      onChange={() => set("createMealBasis", val)}
-                      className="accent-zinc-900 dark:accent-zinc-100" />
-                    {label}
-                  </label>
-                ))}
+        <div className="flex flex-col gap-2.5">
+          <div>
+            <Checkbox
+              checked={cfg.reimbursementEnabled}
+              onChange={(v) => set("reimbursementEnabled", v)}
+              label="Allow Pay Reimbursement"
+            />
+            {cfg.reimbursementEnabled && (
+              <div className="ml-6 mt-2 flex flex-col gap-2">
+                <Sentence>
+                  <span>Up to</span>
+                  <InlineInput
+                    type="number" min={0}
+                    aria-label="Reimbursement minutes"
+                    value={cfg.reimbursementMinutes}
+                    onChange={(e) => set("reimbursementMinutes", parseInt(e.target.value) || 0)}
+                  />
+                  <span>min · Daily limit</span>
+                  <InlineInput
+                    type="number" min={0}
+                    aria-label="Daily reimbursement limit"
+                    value={cfg.dailyReimbursementLimitMinutes}
+                    onChange={(e) => set("dailyReimbursementLimitMinutes", parseInt(e.target.value) || 0)}
+                  />
+                  <span>min</span>
+                </Sentence>
+                <Checkbox
+                  checked={cfg.doesNotAffectLongMealException}
+                  onChange={(v) => set("doesNotAffectLongMealException", v)}
+                  label="Does not affect long meal exception"
+                />
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
 
-        {/* Absolute deduction window */}
-        <div className="mb-2">
-          <label className={checkboxLabelCls}>
-            <input type="checkbox" checked={cfg.absoluteDeductionWindow}
-              onChange={(e) => set("absoluteDeductionWindow", e.target.checked)} className="mt-0.5 rounded" />
-            Absolute deduction window
-          </label>
-        </div>
+          <Checkbox
+            checked={cfg.autoDeduct}
+            onChange={(v) => set("autoDeduct", v)}
+            label="Automatically deduct the established minimum meal below"
+          />
 
-        {/* Always use scheduled meals */}
-        <div className="mb-2">
-          <label className={checkboxLabelCls}>
-            <input type="checkbox" checked={cfg.alwaysUseScheduledMeals}
-              onChange={(e) => set("alwaysUseScheduledMeals", e.target.checked)} className="mt-0.5 rounded" />
-            Always use scheduled meals
-          </label>
-        </div>
+          <div>
+            <Checkbox
+              checked={cfg.noMealPunchBonusEnabled}
+              onChange={(v) => set("noMealPunchBonusEnabled", v)}
+              label="No Meal Punch Bonus"
+            />
+            {cfg.noMealPunchBonusEnabled && (
+              <div className="ml-6 mt-2">
+                <Sentence>
+                  <InlineInput
+                    type="number" min={0}
+                    aria-label="Bonus minutes"
+                    value={cfg.noMealPunchBonusMinutes}
+                    onChange={(e) => set("noMealPunchBonusMinutes", parseInt(e.target.value) || 0)}
+                  />
+                  <span>minutes if employee works more than</span>
+                  <InlineInput
+                    type="number" min={0} step={0.5}
+                    aria-label="Bonus work hours"
+                    value={cfg.noMealPunchBonusWorkHours}
+                    onChange={(e) => set("noMealPunchBonusWorkHours", parseFloat(e.target.value) || 0)}
+                  />
+                  <span>hours</span>
+                </Sentence>
+              </div>
+            )}
+          </div>
 
-        {/* Late Out to Meal */}
-        <div className="mb-2">
-          <label className={checkboxLabelCls}>
-            <input type="checkbox" checked={cfg.lateOutToMealEnabled}
-              onChange={(e) => set("lateOutToMealEnabled", e.target.checked)} className="mt-0.5 rounded" />
-            Late Out to Meal
-          </label>
-          {cfg.lateOutToMealEnabled && (
-            <p className={`${subFieldCls} text-xs text-zinc-500`}>
-              After{" "}
-              <input type="number" min={0} step={0.5} value={cfg.lateOutToMealHours}
-                onChange={(e) => set("lateOutToMealHours", parseFloat(e.target.value) || 0)}
-                className={numInputCls} />{" "}
-              hours
-            </p>
-          )}
-        </div>
+          <Checkbox
+            checked={cfg.disableMinDeduction}
+            onChange={(v) => set("disableMinDeduction", v)}
+            label="Disable minimum deduction (use actual meal time)"
+          />
 
-        {/* Send waived hours to pay code */}
-        <div className="mb-2">
-          <label className={checkboxLabelCls}>
-            <input type="checkbox" checked={cfg.sendWaivedToPayCode}
-              onChange={(e) => set("sendWaivedToPayCode", e.target.checked)} className="mt-0.5 rounded" />
-            Send waived hours to pay code
-          </label>
-          {cfg.sendWaivedToPayCode && (
-            <div className={subFieldCls}>
-              <input type="text" placeholder="Pay code ID"
-                value={cfg.waivedPayCodeId}
-                onChange={(e) => set("waivedPayCodeId", e.target.value)}
-                className={`${numInputCls} w-40`} />
-            </div>
-          )}
-        </div>
-      </div>
+          <Checkbox
+            checked={cfg.useMealWindowForAutoDeduct}
+            onChange={(v) => set("useMealWindowForAutoDeduct", v)}
+            label="Use Meal Window for auto deduct"
+          />
 
-      {/* Meal table */}
-      <div>
-        <p className={sectionLabelCls}>Meal Schedule</p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-zinc-200 dark:border-zinc-700">
-                <th className="pb-2 text-left font-medium uppercase tracking-wide text-zinc-400 w-20">Meal</th>
-                <th className="pb-2 text-center font-medium uppercase tracking-wide text-zinc-400 w-36">Meal Before (hrs)</th>
-                <th className="pb-2 text-center font-medium uppercase tracking-wide text-zinc-400 w-36">Work At Least (hrs)</th>
-                <th className="pb-2 text-center font-medium uppercase tracking-wide text-zinc-400 w-28">Deduct (min)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {MEAL_LABELS.map((label, i) => (
-                <tr key={i} className="border-b border-zinc-100 dark:border-zinc-800">
-                  <td className="py-2 font-medium text-zinc-600 dark:text-zinc-400">{label}</td>
-                  <td className="py-2 px-2 text-center">
-                    <input type="number" min={0} step={0.25} value={cfg.meals[i].mealBeforeHours}
-                      onChange={(e) => setMeal(i, { mealBeforeHours: parseFloat(e.target.value) || 0 })}
-                      className={`${numInputCls} w-full`} />
-                  </td>
-                  <td className="py-2 px-2 text-center">
-                    <input type="number" min={0} step={0.25} value={cfg.meals[i].workAtLeastHours}
-                      onChange={(e) => setMeal(i, { workAtLeastHours: parseFloat(e.target.value) || 0 })}
-                      className={`${numInputCls} w-full`} />
-                  </td>
-                  <td className="py-2 px-2 text-center">
-                    <input type="number" min={0} value={cfg.meals[i].deductMinutes}
-                      onChange={(e) => setMeal(i, { deductMinutes: parseInt(e.target.value) || 0 })}
-                      className={`${numInputCls} w-full`} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div>
+            <Checkbox
+              checked={cfg.createMealDeductionEnabled}
+              onChange={(v) => set("createMealDeductionEnabled", v)}
+              label="Create meal deduction"
+            />
+            {cfg.createMealDeductionEnabled && (
+              <div className="ml-6 mt-2 flex flex-col gap-2">
+                <Sentence>
+                  <InlineInput
+                    type="number" min={0} step={0.5}
+                    aria-label="Hours after punching in"
+                    value={cfg.createMealDeductionHours}
+                    onChange={(e) => set("createMealDeductionHours", parseFloat(e.target.value) || 0)}
+                  />
+                  <span>hours after punching in</span>
+                </Sentence>
+                <Checkbox
+                  checked={cfg.doNotSplitPunch}
+                  onChange={(v) => set("doNotSplitPunch", v)}
+                  label="Do not split punch"
+                />
+                <SegmentedControl
+                  items={[
+                    { value: "IN_OUT_PAIR", label: "In/Out Pair" },
+                    { value: "WORKING_HOURS", label: "Working Hours" },
+                  ]}
+                  value={cfg.createMealBasis}
+                  onChange={(v) => set("createMealBasis", v as MealConfig["createMealBasis"])}
+                  size="sm"
+                  ariaLabel="Create meal deduction basis"
+                />
+              </div>
+            )}
+          </div>
+
+          <Checkbox
+            checked={cfg.absoluteDeductionWindow}
+            onChange={(v) => set("absoluteDeductionWindow", v)}
+            label="Absolute deduction window"
+          />
+
+          <Checkbox
+            checked={cfg.alwaysUseScheduledMeals}
+            onChange={(v) => set("alwaysUseScheduledMeals", v)}
+            label="Always use scheduled meals"
+          />
+
+          <div>
+            <Checkbox
+              checked={cfg.lateOutToMealEnabled}
+              onChange={(v) => set("lateOutToMealEnabled", v)}
+              label="Late Out to Meal"
+            />
+            {cfg.lateOutToMealEnabled && (
+              <div className="ml-6 mt-2">
+                <Sentence>
+                  <span>After</span>
+                  <InlineInput
+                    type="number" min={0} step={0.5}
+                    aria-label="Late out hours"
+                    value={cfg.lateOutToMealHours}
+                    onChange={(e) => set("lateOutToMealHours", parseFloat(e.target.value) || 0)}
+                  />
+                  <span>hours</span>
+                </Sentence>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <Checkbox
+              checked={cfg.sendWaivedToPayCode}
+              onChange={(v) => set("sendWaivedToPayCode", v)}
+              label="Send waived hours to pay code"
+            />
+            {cfg.sendWaivedToPayCode && (
+              <div className="ml-6 mt-2">
+                <InlineInput
+                  type="text"
+                  placeholder="Pay code ID"
+                  aria-label="Waived pay code ID"
+                  value={cfg.waivedPayCodeId}
+                  onChange={(e) => set("waivedPayCodeId", e.target.value)}
+                  width={160}
+                />
+              </div>
+            )}
+          </div>
         </div>
-        <p className="mt-2 text-[10px] text-zinc-400">
-          Meal Before = meal window starts before scheduled end. Work At Least = minimum hours worked to trigger deduction.
-        </p>
-      </div>
+      </FormSection>
+
+      <FormSection
+        label="Meal Schedule"
+        hint="Meal Before = meal window starts before scheduled end. Work At Least = minimum hours worked to trigger deduction."
+      >
+        <Table>
+          <THead>
+            <TR>
+              <TH style={{ width: 80 }}>Meal</TH>
+              <TH align="center" style={{ width: 144 }}>Meal Before (hrs)</TH>
+              <TH align="center" style={{ width: 144 }}>Work At Least (hrs)</TH>
+              <TH align="center" style={{ width: 112 }}>Deduct (min)</TH>
+            </TR>
+          </THead>
+          <TBody>
+            {MEAL_LABELS.map((label, i) => (
+              <TR key={label}>
+                <TD style={{ fontWeight: "var(--weight-medium)", color: "var(--text-secondary)" }}>{label}</TD>
+                <TD>
+                  <InlineInput
+                    type="number" min={0} step={0.25}
+                    aria-label={`${label} meal — meal before hours`}
+                    value={cfg.meals[i].mealBeforeHours}
+                    onChange={(e) => setMeal(i, { mealBeforeHours: parseFloat(e.target.value) || 0 })}
+                    width="100%"
+                  />
+                </TD>
+                <TD>
+                  <InlineInput
+                    type="number" min={0} step={0.25}
+                    aria-label={`${label} meal — work at least hours`}
+                    value={cfg.meals[i].workAtLeastHours}
+                    onChange={(e) => setMeal(i, { workAtLeastHours: parseFloat(e.target.value) || 0 })}
+                    width="100%"
+                  />
+                </TD>
+                <TD>
+                  <InlineInput
+                    type="number" min={0}
+                    aria-label={`${label} meal — deduct minutes`}
+                    value={cfg.meals[i].deductMinutes}
+                    onChange={(e) => setMeal(i, { deductMinutes: parseInt(e.target.value) || 0 })}
+                    width="100%"
+                  />
+                </TD>
+              </TR>
+            ))}
+          </TBody>
+        </Table>
+      </FormSection>
 
     </div>
   );
@@ -526,79 +668,57 @@ function BreakTab({ cfg, onChange }: { cfg: BreakConfig; onChange: (c: BreakConf
     onChange({ ...cfg, [key]: val });
   }
 
-  const radioLabelCls = "flex items-center gap-2 cursor-pointer text-sm text-zinc-700 dark:text-zinc-300";
-  const sectionLabelCls = "mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400";
-  const numInputCls =
-    "w-20 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white text-right";
-
   return (
     <div className="flex flex-col gap-5">
 
-      {/* Apply paid break */}
-      <div>
-        <p className={sectionLabelCls}>Apply Paid Break?</p>
-        <div className="flex gap-4">
-          <label className={radioLabelCls}>
-            <input type="radio" checked={cfg.applyPaidBreak}
-              onChange={() => set("applyPaidBreak", true)}
-              className="accent-zinc-900 dark:accent-zinc-100" />
-            Yes
-          </label>
-          <label className={radioLabelCls}>
-            <input type="radio" checked={!cfg.applyPaidBreak}
-              onChange={() => set("applyPaidBreak", false)}
-              className="accent-zinc-900 dark:accent-zinc-100" />
-            No
-          </label>
-        </div>
-      </div>
+      <FormSection label="Apply Paid Break?">
+        <span className="self-start">
+          <SegmentedControl
+            items={YES_NO}
+            value={cfg.applyPaidBreak ? "true" : "false"}
+            onChange={(v) => set("applyPaidBreak", v === "true")}
+            size="sm"
+            ariaLabel="Apply paid break"
+          />
+        </span>
+      </FormSection>
 
       {cfg.applyPaidBreak && (
         <>
-          {/* Pay Method */}
-          <div>
-            <p className={sectionLabelCls}>Pay Method</p>
+          <FormSection label="Pay Method">
             <div className="flex flex-col gap-1.5">
               {([
                 ["OFF_CLOCK_MINS", "Off-Clock Mins", "Pay based on how long the employee was actually punched out"],
                 ["TIME_PERIOD", "Time Period", "Pay a fixed break duration regardless of actual punch gap"],
                 ["WORK_HOURS", "Work Hours", "Allocate break pay based on total hours worked"],
-              ] as const).map(([val, label, desc]) => (
-                <label key={val} className="flex cursor-pointer items-start gap-2">
-                  <input type="radio" checked={cfg.payMethod === val}
-                    onChange={() => set("payMethod", val)}
-                    className="mt-0.5 accent-zinc-900 dark:accent-zinc-100" />
-                  <span>
-                    <span className="text-sm text-zinc-700 dark:text-zinc-300">{label}</span>
-                    <span className="ml-2 text-xs text-zinc-400">{desc}</span>
-                  </span>
-                </label>
+              ] as const).map(([val, label, detail]) => (
+                <Radio key={val} checked={cfg.payMethod === val} onChange={() => set("payMethod", val)} label={label} detail={detail} />
               ))}
             </div>
-          </div>
+          </FormSection>
 
-          {/* Punch window + pay cap */}
-          <div className="flex flex-col gap-3">
-            <p className={sectionLabelCls}>Break Recognition</p>
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">
-              Considered a paid break when punch-out is within{" "}
-              <input
-                type="number" min={0} max={480} value={cfg.punchOutWithinMinutes}
+          <FormSection label="Break Recognition">
+            <Sentence>
+              <span>Considered a paid break when punch-out is within</span>
+              <InlineInput
+                type="number" min={0} max={480}
+                aria-label="Punch-out within minutes"
+                value={cfg.punchOutWithinMinutes}
                 onChange={(e) => set("punchOutWithinMinutes", parseInt(e.target.value) || 0)}
-                className={numInputCls}
-              />{" "}
-              min
-            </p>
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">
-              Pay up to{" "}
-              <input
-                type="number" min={0} max={480} value={cfg.payUpToMinutes}
+              />
+              <span>min</span>
+            </Sentence>
+            <Sentence>
+              <span>Pay up to</span>
+              <InlineInput
+                type="number" min={0} max={480}
+                aria-label="Pay up to minutes"
+                value={cfg.payUpToMinutes}
                 onChange={(e) => set("payUpToMinutes", parseInt(e.target.value) || 0)}
-                className={numInputCls}
-              />{" "}
-              min
-            </p>
-          </div>
+              />
+              <span>min</span>
+            </Sentence>
+          </FormSection>
         </>
       )}
 
@@ -619,55 +739,36 @@ function DifferentialTab({ cfg, onChange }: { cfg: DifferentialConfig; onChange:
     onChange({ ...cfg, [key]: val });
   }
 
-  const radioLabelCls = "flex items-center gap-2 cursor-pointer text-sm text-zinc-700 dark:text-zinc-300";
-  const sectionLabelCls = "mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400";
-
   return (
     <div className="flex flex-col gap-5">
 
-      {/* Apply differential */}
-      <div>
-        <p className={sectionLabelCls}>Apply Pay Differential?</p>
-        <div className="flex gap-4">
-          <label className={radioLabelCls}>
-            <input type="radio" checked={cfg.applyDifferential}
-              onChange={() => set("applyDifferential", true)}
-              className="accent-zinc-900 dark:accent-zinc-100" />
-            Yes
-          </label>
-          <label className={radioLabelCls}>
-            <input type="radio" checked={!cfg.applyDifferential}
-              onChange={() => set("applyDifferential", false)}
-              className="accent-zinc-900 dark:accent-zinc-100" />
-            No
-          </label>
-        </div>
-      </div>
+      <FormSection label="Apply Pay Differential?">
+        <span className="self-start">
+          <SegmentedControl
+            items={YES_NO}
+            value={cfg.applyDifferential ? "true" : "false"}
+            onChange={(v) => set("applyDifferential", v === "true")}
+            size="sm"
+            ariaLabel="Apply pay differential"
+          />
+        </span>
+      </FormSection>
 
       {cfg.applyDifferential && (
-        <div>
-          <p className={sectionLabelCls}>Pay Method</p>
-          <p className="mb-3 text-xs text-zinc-400">
-            If no Global Template is found, the system will use the Time Segment settings.
-          </p>
+        <FormSection
+          label="Pay Method"
+          hint="If no Global Template is found, the system will use the Time Segment settings."
+        >
           <div className="flex flex-col gap-1.5">
             {([
               ["TIME_SEGMENT", "Time Segment", "Differential applied to each time segment worked (e.g. overnight hours)"],
               ["SHIFT_PERIOD", "Shift Period", "Differential applied to the entire shift period"],
               ["GLOBAL_DIFFERENTIAL", "Global Differential", "Uses a global differential template"],
-            ] as const).map(([val, label, desc]) => (
-              <label key={val} className="flex cursor-pointer items-start gap-2">
-                <input type="radio" checked={cfg.payMethod === val}
-                  onChange={() => set("payMethod", val)}
-                  className="mt-0.5 accent-zinc-900 dark:accent-zinc-100" />
-                <span>
-                  <span className="text-sm text-zinc-700 dark:text-zinc-300">{label}</span>
-                  <span className="ml-2 text-xs text-zinc-400">{desc}</span>
-                </span>
-              </label>
+            ] as const).map(([val, label, detail]) => (
+              <Radio key={val} checked={cfg.payMethod === val} onChange={() => set("payMethod", val)} label={label} detail={detail} />
             ))}
           </div>
-        </div>
+        </FormSection>
       )}
 
     </div>
@@ -698,147 +799,128 @@ function ShiftFields({ shift, isEdit }: { shift?: Shift; isEdit?: boolean }) {
     { key: "differential", label: "Differential" },
   ];
 
-  const radioLabelCls = "flex items-center gap-2 cursor-pointer text-sm text-zinc-700 dark:text-zinc-300";
-  const sectionLabelCls = "mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400";
-
   return (
     <div>
-      {/* Tab bar */}
-      <div className="mb-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-700">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              tab === t.key
-                ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-white"
-                : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* Tab bar. The design system has no underline tab: a set this small
+          and this mutually exclusive is a segmented control. */}
+      <div className="mb-4">
+        <SegmentedControl
+          items={tabs.map((t) => ({ value: t.key, label: t.label }))}
+          value={tab}
+          onChange={(v) => setTab(v as typeof tab)}
+        />
       </div>
 
       {/* Properties tab — always mounted so defaultValue inputs survive tab switches */}
       <div className={tab !== "properties" ? "hidden" : "flex flex-col gap-4"}>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs text-zinc-500">Shift Name</label>
-              <input name="name" required defaultValue={shift?.name ?? ""} placeholder="e.g. Morning Shift" className={inputCls} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-zinc-500">Shift Number</label>
-              <input name="number" type="number" min={1} defaultValue={shift?.number ?? ""} placeholder="e.g. 1" className={inputCls} />
-            </div>
-          </div>
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,48%)),1fr))]">
+          <Input label="Shift Name" name="name" required defaultValue={shift?.name ?? ""} placeholder="e.g. Morning Shift" />
+          <Input label="Shift Number" name="number" type="number" min={1} defaultValue={shift?.number ?? ""} placeholder="e.g. 1" />
+        </div>
 
-          {isEdit && (
-            <div className="w-40">
-              <label className="mb-1 block text-xs text-zinc-500">Status</label>
-              <select name="isActive" defaultValue={shift?.isActive ? "true" : "false"} className={inputCls}>
-                <option value="true">Active</option>
-                <option value="false">Inactive</option>
-              </select>
+        {isEdit && (
+          <div className="w-44">
+            <SelectField label="Status" name="isActive" defaultValue={shift?.isActive ? "true" : "false"}>
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </SelectField>
+          </div>
+        )}
+
+        {/* The three choices below reach the action through hidden inputs
+            rather than the segments themselves — a segmented control is a set
+            of buttons, and buttons do not submit. */}
+        <FormSection label="Employee Setup">
+          <span className="self-start">
+            <SegmentedControl
+              items={[
+                { value: "false", label: "Include" },
+                { value: "true", label: "Exclude" },
+              ]}
+              value={excludeFromSetup ? "true" : "false"}
+              onChange={(v) => setExcludeFromSetup(v === "true")}
+              size="sm"
+              ariaLabel="Employee setup visibility"
+            />
+          </span>
+          <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+            {excludeFromSetup
+              ? "Hidden from the employee assignment list."
+              : "Visible in the employee assignment list."}
+          </span>
+          <input type="hidden" name="excludeFromSetup" value={excludeFromSetup ? "true" : "false"} />
+        </FormSection>
+
+        <FormSection label="Shift Cycle">
+          <span className="self-start">
+            <SegmentedControl
+              items={[
+                { value: "WEEKLY", label: "Weekly" },
+                { value: "CUSTOM", label: "Custom" },
+              ]}
+              value={shiftCycle}
+              onChange={(v) => setShiftCycle(v as "WEEKLY" | "CUSTOM")}
+              size="sm"
+              ariaLabel="Shift cycle"
+            />
+          </span>
+          <input type="hidden" name="shiftCycle" value={shiftCycle} />
+          {shiftCycle === "CUSTOM" && (
+            <div className="grid gap-3 pl-6 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(180px,48%)),1fr))]">
+              <Input label="Cycle Days" name="cycleDays" type="number" min={1} max={365} defaultValue={shift?.cycleDays ?? 7} />
+              <Input label="Reference Date" name="cycleReferenceDate" type="date" defaultValue={toDateInputValue(shift?.cycleReferenceDate)} />
             </div>
           )}
+        </FormSection>
 
-          {/* Employee Setup */}
-          <div>
-            <p className={sectionLabelCls}>Employee Setup</p>
-            <div className="flex flex-col gap-1.5">
-              <label className={radioLabelCls}>
-                <input type="radio" name="excludeFromSetup" value="false" checked={!excludeFromSetup}
-                  onChange={() => setExcludeFromSetup(false)} className="accent-zinc-900 dark:accent-zinc-100" />
-                Include — visible in employee assignment list
-              </label>
-              <label className={radioLabelCls}>
-                <input type="radio" name="excludeFromSetup" value="true" checked={excludeFromSetup}
-                  onChange={() => setExcludeFromSetup(true)} className="accent-zinc-900 dark:accent-zinc-100" />
-                Exclude — hidden from assignment list
-              </label>
+        <FormSection label="Shift Type">
+          <span className="self-start">
+            <SegmentedControl
+              items={(["FIXED", "FLEXIBLE", "DYNAMIC"] as const).map((t) => ({ value: t, label: titleCase(t) }))}
+              value={shiftType}
+              onChange={(v) => setShiftType(v as "FIXED" | "FLEXIBLE" | "DYNAMIC")}
+              size="sm"
+              ariaLabel="Shift type"
+            />
+          </span>
+          <input type="hidden" name="shiftType" value={shiftType} />
+          {shiftType === "DYNAMIC" && (
+            <div className="pl-6">
+              <Checkbox
+                checked={useGroupQualifiers}
+                onChange={setUseGroupQualifiers}
+                label="Use Schedule Group Qualifiers"
+              />
             </div>
-          </div>
+          )}
+          <input type="hidden" name="useScheduleGroupQualifiers" value={useGroupQualifiers ? "true" : "false"} />
+        </FormSection>
 
-          {/* Shift Cycle */}
-          <div>
-            <p className={sectionLabelCls}>Shift Cycle</p>
-            <div className="flex flex-col gap-1.5">
-              <label className={radioLabelCls}>
-                <input type="radio" name="shiftCycle" value="WEEKLY" checked={shiftCycle === "WEEKLY"}
-                  onChange={() => setShiftCycle("WEEKLY")} className="accent-zinc-900 dark:accent-zinc-100" />
-                Weekly
-              </label>
-              <label className={radioLabelCls}>
-                <input type="radio" name="shiftCycle" value="CUSTOM" checked={shiftCycle === "CUSTOM"}
-                  onChange={() => setShiftCycle("CUSTOM")} className="accent-zinc-900 dark:accent-zinc-100" />
-                Custom
-              </label>
-            </div>
-            {shiftCycle === "CUSTOM" && (
-              <div className="mt-3 grid grid-cols-2 gap-3 pl-6">
-                <div>
-                  <label className="mb-1 block text-xs text-zinc-500">Cycle Days</label>
-                  <input name="cycleDays" type="number" min={1} max={365} defaultValue={shift?.cycleDays ?? 7} className={inputCls} />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-zinc-500">Reference Date</label>
-                  <input name="cycleReferenceDate" type="date" defaultValue={toDateInputValue(shift?.cycleReferenceDate)} className={inputCls} />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Shift Type */}
-          <div>
-            <p className={sectionLabelCls}>Shift Type</p>
-            <div className="flex flex-col gap-1.5">
-              {(["FIXED", "FLEXIBLE", "DYNAMIC"] as const).map((type) => (
-                <label key={type} className={radioLabelCls}>
-                  <input type="radio" name="shiftType" value={type} checked={shiftType === type}
-                    onChange={() => setShiftType(type)} className="accent-zinc-900 dark:accent-zinc-100" />
-                  {type.charAt(0) + type.slice(1).toLowerCase()}
-                </label>
-              ))}
-            </div>
-            {shiftType === "DYNAMIC" && (
-              <label className="mt-2 flex cursor-pointer items-center gap-2 pl-6 text-sm text-zinc-700 dark:text-zinc-300">
-                <input type="checkbox" checked={useGroupQualifiers}
-                  onChange={(e) => setUseGroupQualifiers(e.target.checked)} className="rounded" />
-                Use Schedule Group Qualifiers
-              </label>
-            )}
-            <input type="hidden" name="useScheduleGroupQualifiers" value={useGroupQualifiers ? "true" : "false"} />
-          </div>
-
-          {/* Average Hours */}
-          <div className="w-40">
-            <label className="mb-1 block text-xs text-zinc-500">Average Hours</label>
-            <input name="averageHours" type="number" min={0} max={24} step={0.25}
-              defaultValue={shift?.averageHours != null ? Number(shift.averageHours) : ""}
-              placeholder="0.00" className={inputCls} />
-          </div>
+        <div className="w-44">
+          <Input
+            label="Average Hours"
+            name="averageHours"
+            type="number" min={0} max={24} step={0.25}
+            defaultValue={shift?.averageHours != null ? Number(shift.averageHours) : ""}
+            placeholder="0.00"
+          />
+        </div>
 
       </div>
 
-      {/* Definition tab */}
       {tab === "definition" && (
         <DefinitionTable schedule={schedule} onChange={setSchedule} />
       )}
 
-      {/* Meal tab */}
       {tab === "meal" && (
         <MealTab cfg={mealConfig} onChange={setMealConfig} />
       )}
 
-      {/* Break tab */}
       {tab === "break" && (
         <BreakTab cfg={breakConfig} onChange={setBreakConfig} />
       )}
 
-      {/* Differential tab */}
       {tab === "differential" && (
         <DifferentialTab cfg={differentialConfig} onChange={setDifferentialConfig} />
       )}
@@ -854,7 +936,7 @@ function ShiftFields({ shift, isEdit }: { shift?: Shift; isEdit?: boolean }) {
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
     document.addEventListener("keydown", onKey);
@@ -863,21 +945,27 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.4)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <h3 className="text-base font-semibold text-zinc-900 dark:text-white">{title}</h3>
-          <button onClick={onClose}
-            className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-            aria-label="Close">
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div className="px-6 py-5">{children}</div>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="ta-modal max-h-[90vh] w-full max-w-3xl overflow-y-auto"
+        style={{ borderRadius: "var(--radius-l)" }}
+      >
+        <header
+          className="flex items-center justify-between gap-3 px-5 py-3.5"
+          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+        >
+          <h3 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>{title}</h3>
+          <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
+            <X className="h-4 w-4" />
+          </Button>
+        </header>
+        <div className="px-5 py-4">{children}</div>
       </div>
     </div>
   );
@@ -935,13 +1023,14 @@ export function ShiftsManager({ shifts }: Props) {
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [showInactive, setShowInactive] = useState(false);
+  const [view, setView] = useState<View>("active");
   const [search, setSearch] = useState("");
 
   function openCreate() { setShowCreate(true); setError(null); }
   function closeCreate() { setShowCreate(false); setError(null); }
   const searchLower = search.trim().toLowerCase();
-  const visible = (showInactive ? shifts : shifts.filter((s) => s.isActive))
+  const visible = shifts
+    .filter((s) => (view === "all" ? true : view === "active" ? s.isActive : !s.isActive))
     .filter((s) => !searchLower || s.name.toLowerCase().includes(searchLower));
 
   function openEdit(shift: Shift) { setEditingShift(shift); setConfirmDeleteId(null); setError(null); }
@@ -985,88 +1074,98 @@ export function ShiftsManager({ shifts }: Props) {
   }
 
   return (
-    <div className="mt-6">
-      {error && !editingShift && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>
-      )}
+    <div className="mt-4 flex flex-col gap-2.5">
+      {error && !editingShift && !showCreate && <Banner tone="error" body={error} />}
 
-      <div className="mb-3 flex items-center gap-3">
-        <div className="relative max-w-xs flex-1">
-          <svg className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search shifts…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm text-zinc-700 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:placeholder-zinc-500"
+      <Toolbar count={visible.length} countLabel="shift">
+        <SegmentedControl
+          items={VIEWS}
+          value={view}
+          onChange={(v) => setView(v as View)}
+          size="sm"
+          ariaLabel="Which shifts to show"
+        />
+        <SearchInput value={search} onValueChange={setSearch} placeholder="Search shifts…" width={220} />
+        <Button onClick={openCreate}>New Shift</Button>
+      </Toolbar>
+
+      <Card padding={0}>
+        {visible.length === 0 ? (
+          <EmptyState
+            icon={<CalendarClock className="h-8 w-8" />}
+            title={searchLower ? `No shifts match “${search}”` : view === "active" ? "No active shifts" : "No shifts"}
+            body="A shift is the pattern an employee is scheduled against — the days, the hours and the meal rules."
+            action={
+              searchLower
+                ? <Button size="sm" hierarchy="secondary" onClick={() => setSearch("")}>Clear search</Button>
+                : <Button size="sm" onClick={openCreate}>New Shift</Button>
+            }
           />
-        </div>
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-500">
-          <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="rounded" />
-          Show inactive
-        </label>
-        <button
-          onClick={openCreate}
-          className="ml-auto rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          + Add Shift
-        </button>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        {visible.length === 0 && (
-          <p className="text-sm text-zinc-400">
-            {searchLower ? `No shifts match "${search}".` : "No shifts yet."}
-          </p>
+        ) : (
+          <>
+            <Table>
+              <THead>
+                <TR>
+                  <TH numeric style={{ width: 56 }}>#</TH>
+                  <TH>Shift</TH>
+                  <TH align="center">Start</TH>
+                  <TH align="center">End</TH>
+                  <TH>Days</TH>
+                  <TH>Type</TH>
+                  <TH>Status</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {visible.map((shift) => {
+                  const sched = shift.daySchedule as DayScheduleRow[] | null;
+                  const workDays = sched ? sched.filter((r) => r.isWorkday).map((r) => r.day) : shift.workDays;
+                  // The per-day schedule is the truth once a shift has one; the
+                  // top-level startTime/endTime are the legacy pair kept for
+                  // shifts nobody has opened since the day grid arrived.
+                  const firstWork = sched?.find((r) => r.isWorkday && r.startTime && r.endTime);
+                  const start = firstWork?.startTime ?? shift.startTime;
+                  const end = firstWork?.endTime ?? shift.endTime;
+                  return (
+                    <TR key={shift.id} onClick={() => openEdit(shift)}>
+                      <TD numeric style={{ color: "var(--text-secondary)" }}>
+                        {shift.number ?? <span style={{ color: "var(--text-tertiary)" }}>—</span>}
+                      </TD>
+                      <TD style={{ fontWeight: "var(--weight-medium)" }}>{shift.name}</TD>
+                      <TD align="center" className="tabular" style={{ color: "var(--text-secondary)" }}>{start}</TD>
+                      <TD align="center" className="tabular" style={{ color: "var(--text-secondary)" }}>{end}</TD>
+                      <TD style={{ color: "var(--text-secondary)" }}>{formatWorkDays(workDays)}</TD>
+                      <TD style={{ color: "var(--text-secondary)" }}>{titleCase(shift.shiftType)}</TD>
+                      <TD>
+                        {shift.isActive ? (
+                          <Badge tone={statusTone("ACTIVE")} size="sm" dot>Active</Badge>
+                        ) : (
+                          // statusTone would answer "warning"; a retired shift
+                          // is not something to go and fix.
+                          <Badge size="sm">Inactive</Badge>
+                        )}
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+            <TableFooter
+              shown={visible.length}
+              total={shifts.length}
+              label={shifts.length === 1 ? "shift" : "shifts"}
+            />
+          </>
         )}
-
-        {visible.map((shift) => {
-          const sched = shift.daySchedule as DayScheduleRow[] | null;
-          const workDays = sched ? sched.filter((r) => r.isWorkday).map((r) => r.day) : shift.workDays;
-          const firstWork = sched?.find((r) => r.isWorkday && r.startTime && r.endTime);
-          return (
-            <button key={shift.id} type="button" onClick={() => openEdit(shift)}
-              className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <p className={`font-medium ${shift.isActive ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"}`}>
-                    {shift.number != null && <span className="mr-2 text-sm text-zinc-400">#{shift.number}</span>}
-                    {shift.name}
-                  </p>
-                  {firstWork ? (
-                    <p className="text-sm text-zinc-500">
-                      {formatTime(firstWork.startTime)} – {formatTime(firstWork.endTime)}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-zinc-500">
-                      {formatTime(shift.startTime)} – {formatTime(shift.endTime)}
-                    </p>
-                  )}
-                  <p className="text-sm text-zinc-400">{formatWorkDays(workDays)}</p>
-                  <span className="text-xs text-zinc-400">{shift.shiftType.charAt(0) + shift.shiftType.slice(1).toLowerCase()}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`rounded-full px-2 py-0.5 text-xs ${shift.isActive ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800"}`}>
-                    {shift.isActive ? "Active" : "Inactive"}
-                  </span>
-                  <span className="text-xs text-zinc-400">Click to edit →</span>
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
+      </Card>
 
       {showCreate && (
         <Modal title="New Shift" onClose={closeCreate}>
-          {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
+          {error && <div className="mb-4"><Banner tone="error" body={error} /></div>}
           <form onSubmit={handleCreate}>
             <ShiftFields />
-            <div className="mt-6 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-              <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Creating…" : "Create"}</button>
-              <button type="button" onClick={closeCreate} className={cancelBtnCls}>Cancel</button>
+            <div className="mt-5 flex gap-2 pt-4" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+              <Button type="submit" disabled={isPending}>{isPending ? "Creating…" : "Create"}</Button>
+              <Button type="button" hierarchy="secondary" onClick={closeCreate}>Cancel</Button>
             </div>
           </form>
         </Modal>
@@ -1074,26 +1173,31 @@ export function ShiftsManager({ shifts }: Props) {
 
       {editingShift && (
         <Modal title={`Edit: ${editingShift.name}`} onClose={closeModal}>
-          {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
+          {error && <div className="mb-4"><Banner tone="error" body={error} /></div>}
           <form onSubmit={(e) => handleUpdate(editingShift, e)}>
             <ShiftFields shift={editingShift} isEdit />
-            <div className="mt-6 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-700">
+            <div
+              className="mt-5 flex flex-wrap items-center justify-between gap-3 pt-4"
+              style={{ borderTop: "1px solid var(--stroke-divider)" }}
+            >
               <div className="flex gap-2">
-                <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Saving…" : "Save changes"}</button>
-                <button type="button" onClick={closeModal} className={cancelBtnCls}>Cancel</button>
+                <Button type="submit" disabled={isPending}>{isPending ? "Saving…" : "Save changes"}</Button>
+                <Button type="button" hierarchy="secondary" onClick={closeModal}>Cancel</Button>
               </div>
               {confirmDeleteId === editingShift.id ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-500">Are you sure?</span>
-                  <button type="button" onClick={() => handleDelete(editingShift.id)} disabled={isPending} className={dangerBtnCls}>
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>Are you sure?</span>
+                  <Button type="button" tone="error" size="sm" onClick={() => handleDelete(editingShift.id)} disabled={isPending}>
                     {isPending ? "Deleting…" : "Yes, delete"}
-                  </button>
-                  <button type="button" onClick={() => setConfirmDeleteId(null)} className={cancelBtnCls}>Cancel</button>
+                  </Button>
+                  <Button type="button" hierarchy="secondary" size="sm" onClick={() => setConfirmDeleteId(null)}>
+                    Cancel
+                  </Button>
                 </div>
               ) : (
-                <button type="button" onClick={() => setConfirmDeleteId(editingShift.id)} className="text-xs text-red-500 hover:underline dark:text-red-400">
+                <Button type="button" hierarchy="link" tone="error" size="sm" onClick={() => setConfirmDeleteId(editingShift.id)}>
                   Delete shift
-                </button>
+                </Button>
               )}
             </div>
           </form>

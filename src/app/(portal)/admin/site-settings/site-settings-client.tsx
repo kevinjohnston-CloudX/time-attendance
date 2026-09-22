@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, FolderOpen, Palmtree, Calendar, Tag, MessageSquare, CalendarClock, Layers, ChevronRight } from "lucide-react";
+import { Building2, FolderOpen, Palmtree, Calendar, Tag, MessageSquare, Layers } from "lucide-react";
 import { SitesManager } from "@/components/admin/sites-manager";
 import { DepartmentsManager } from "@/components/admin/departments-manager";
 import { HolidaysManager } from "@/components/admin/holidays-manager";
@@ -11,6 +11,23 @@ import { ReasonCodesManager } from "@/components/admin/reason-codes-manager";
 import { PayCategoriesManager } from "@/components/admin/pay-categories-manager";
 import { PayTypesManager } from "@/components/admin/pay-types-manager";
 import type { Site, Department } from "@prisma/client";
+
+/**
+ * Company Setup — eight editors behind one screen.
+ *
+ * <p>Laid out like the Administration hub it is reached from: the areas in a
+ * card at the top, the open one below it. The previous split pane put the
+ * editors on --surface-card, and every manager below builds its rows out of
+ * .ta-card — cards on a card, told apart only by a shadow. On the page
+ * background they read as panels again, which is how the same rows look on
+ * every other screen in the product.
+ *
+ * <p>The area is React state rather than a query parameter. Switching it does
+ * not re-query: the server component above already fetched all eight datasets
+ * in one round, so a link per area would refetch ten server actions to reveal
+ * rows the browser is holding. `?tab=` still chooses the area on arrival,
+ * which is what the hub links depend on.
+ */
 
 type DepartmentWithSites = Department & { sites: { site: Site }[] };
 
@@ -98,74 +115,88 @@ export function SiteSettingsClient({
 
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
 
-  const current = TABS.find((t) => t.id === activeTab);
+  // Resolved against the visible tabs, not all of them, so an area this
+  // viewer may not manage can never end up open.
+  const current = visibleTabs.find((t) => t.id === activeTab);
 
   return (
-    <div className="mt-6 flex overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800" style={{ minHeight: "600px" }}>
-      {/* ── Left nav ─────────────────────────────────────────────────── */}
-      <nav className="w-48 shrink-0 border-r border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
-        <ul className="py-2">
+    <div className="flex flex-col gap-4">
+      <section className="ta-card flex flex-col gap-2.5 rounded-xl p-4">
+        <span className="wms-overline">Setup areas</span>
+        <div className="grid gap-1 [grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))]">
           {visibleTabs.map((tab) => {
             const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
+            const active = activeTab === tab.id;
             return (
-              <li key={tab.id}>
-                <button
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex w-full items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
-                    isActive
-                      ? "bg-blue-50 font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
-                      : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-                  }`}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {tab.label}
-                </button>
-              </li>
+              <button
+                key={tab.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setActiveTab(tab.id)}
+                className="ta-hoverable flex items-center gap-2.5 rounded-lg px-3 py-2 text-left"
+                data-active={active ? "true" : undefined}
+                style={{
+                  border: "none",
+                  cursor: "pointer",
+                  background: active ? "var(--wms-color-primary-50)" : "transparent",
+                  color: active ? "var(--text-accent)" : "var(--text-primary)",
+                  font: "var(--type-body1)",
+                  fontWeight: active ? "var(--weight-semibold)" : "var(--weight-medium)",
+                }}
+              >
+                <Icon
+                  className="h-[18px] w-[18px] flex-none"
+                  style={{ color: active ? "var(--icon-accent)" : "var(--icon-tertiary)" }}
+                />
+                <span className="min-w-0 flex-1 truncate">{tab.label}</span>
+              </button>
             );
           })}
-        </ul>
-      </nav>
+        </div>
+      </section>
 
-      {/* ── Right content ─────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-auto bg-white p-6 dark:bg-zinc-950">
-        {current && (
-          <>
-            <h2 className="text-xl font-bold text-zinc-900 dark:text-white">{current.title}</h2>
+      {current && (
+        <div className="flex flex-col">
+          <div className="flex flex-col gap-0.5">
+            <h2 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>
+              {current.title}
+            </h2>
             {current.description && (
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{current.description}</p>
+              <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)", textWrap: "pretty" }}>
+                {current.description}
+              </p>
             )}
+          </div>
 
-            {activeTab === "sites" && (
-              <SitesManager sites={sites as Site[]} />
-            )}
-            {activeTab === "departments" && (
-              <DepartmentsManager
-                departments={departments as DepartmentWithSites[]}
-                sites={sites as Site[]}
-              />
-            )}
-            {activeTab === "holidays" && (
-              <HolidaysManager holidays={holidays} holidayRules={holidayRules} />
-            )}
-            {activeTab === "leave-types" && (
-              <LeaveTypesManager leaveTypes={leaveTypes} payCodes={payCodes} />
-            )}
-            {activeTab === "pay-categories" && (
-              <PayCategoriesManager categories={payCategories} ptoPolicies={ptoPolicies} leaveTypes={leaveTypes} />
-            )}
-            {activeTab === "pay-types" && (
-              <PayTypesManager payTypes={payTypes} />
-            )}
-            {activeTab === "pay-codes" && (
-              <PayCodesManager payCodes={payCodes} />
-            )}
-            {activeTab === "reason-codes" && (
-              <ReasonCodesManager reasonCodes={reasonCodes} />
-            )}
-          </>
-        )}
-      </div>
+          {activeTab === "sites" && (
+            <SitesManager sites={sites as Site[]} />
+          )}
+          {activeTab === "departments" && (
+            <DepartmentsManager
+              departments={departments as DepartmentWithSites[]}
+              sites={sites as Site[]}
+            />
+          )}
+          {activeTab === "holidays" && (
+            <HolidaysManager holidays={holidays} holidayRules={holidayRules} />
+          )}
+          {activeTab === "leave-types" && (
+            <LeaveTypesManager leaveTypes={leaveTypes} payCodes={payCodes} />
+          )}
+          {activeTab === "pay-categories" && (
+            <PayCategoriesManager categories={payCategories} ptoPolicies={ptoPolicies} leaveTypes={leaveTypes} />
+          )}
+          {activeTab === "pay-types" && (
+            <PayTypesManager payTypes={payTypes} />
+          )}
+          {activeTab === "pay-codes" && (
+            <PayCodesManager payCodes={payCodes} />
+          )}
+          {activeTab === "reason-codes" && (
+            <ReasonCodesManager reasonCodes={reasonCodes} />
+          )}
+        </div>
+      )}
     </div>
   );
 }

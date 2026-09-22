@@ -6,6 +6,33 @@ import { createRole, updateRole, deleteRole, duplicateRole } from "@/actions/rol
 import { RESOURCES, ACTIONS, SCOPES, type PermissionEntry } from "@/lib/validators/role.schema";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { Trash2, Copy, Save, X, CopyCheck, Info } from "lucide-react";
+import {
+  Badge,
+  Banner,
+  Button,
+  Checkbox,
+  Input,
+  Select,
+  Switch,
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+} from "@/components/ui";
+
+/**
+ * The role editor, as the portal design's document template lays it out:
+ * labelled sections stacked in one column, the permission matrix as a real
+ * table, and the destructive action kept apart from the save.
+ *
+ * <p>The matrix is the whole screen. Every cell it draws exists in the schema,
+ * but only the ones in {@link ACTIVE_CELLS} are read by a server check, so the
+ * rest are disabled rather than hidden — a permission that is simply absent
+ * reads as "we forgot it", and someone grants a role something the server
+ * will never honour.
+ */
 
 // Only these cells map to an enforced server-side permission check.
 // All others are rendered but non-functional — disable them in the UI.
@@ -165,12 +192,12 @@ type BuiltinRoleOption = {
   permissions: { resource: string; action: string; scope: string }[];
 };
 
-const btnPrimary =
-  "rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
-const btnSecondary =
-  "rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800";
-const btnDanger =
-  "rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30";
+/** The design's field grid: two per row, one per row once a column drops under 200px. */
+const FIELD_GRID =
+  "grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,48%)),1fr))]";
+
+/** Matrix cells are on a 9-column grid, so they take less side padding than a list table's. */
+const MATRIX_CELL = { padding: "0 8px" } as const;
 
 function permKey(resource: string, action: string, scope: string) {
   return `${resource}:${action}:${scope}`;
@@ -222,7 +249,6 @@ function autoCheckHigherScopes(
 
 export function RoleEditor({
   role,
-  allRoles,
   builtinRoles = [],
   onClose,
 }: {
@@ -326,280 +352,309 @@ export function RoleEditor({
   }
 
   return (
+    // The scrim stays a literal black wash in both themes: it is the absence
+    // of the page rather than a surface, and a token that lightened in dark
+    // mode would stop the dialog reading as modal.
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[5vh]">
-      <div className="w-full max-w-4xl rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-white">
-            {isEditing ? `Edit Role: ${role.name}` : "Create New Role"}
-          </h2>
-          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="px-6 py-4 space-y-6">
-          {/* Basic fields */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="col-span-2">
-              <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Name
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                disabled={isSystem}
-                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white disabled:opacity-50"
-                placeholder="e.g. Shift Lead"
-              />
-              {isSystem && (
-                <p className="mt-1 text-xs text-zinc-400">System roles cannot be renamed</p>
-              )}
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Rank
-              </label>
-              <input
-                type="number"
-                value={rank}
-                onChange={(e) => setRank(Number(e.target.value))}
-                min={0}
-                max={100}
-                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-              />
-              <p className="mt-1 text-xs text-zinc-400">Higher rank = more privileged</p>
-            </div>
+      <div className="ta-modal w-full max-w-4xl rounded-xl">
+        <header
+          className="flex items-center justify-between gap-3 px-6 py-4"
+          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+        >
+          <div className="flex min-w-0 items-center gap-2.5">
+            <h2 className="wms-card-title truncate">
+              {isEditing ? `Edit Role: ${role.name}` : "Create New Role"}
+            </h2>
+            {isSystem && (
+              <Badge tone="info" size="sm">
+                System
+              </Badge>
+            )}
           </div>
+          <Button hierarchy="tertiary" iconOnly onClick={onClose} aria-label="Close">
+            <X className="h-5 w-5" />
+          </Button>
+        </header>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Description
-            </label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-              placeholder="Brief description of this role"
+        <div className="flex flex-col gap-5 px-6 py-5">
+          <div className={FIELD_GRID}>
+            <Input
+              label="Name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={isSystem}
+              hint={isSystem ? "System roles cannot be renamed" : undefined}
+              placeholder="e.g. Shift Lead"
+            />
+            <Input
+              label="Rank"
+              type="number"
+              value={rank}
+              onChange={(e) => setRank(Number(e.target.value))}
+              min={0}
+              max={100}
+              hint="Higher rank = more privileged"
             />
           </div>
 
-          {/* View-as toggle */}
-          <div className="flex items-center justify-between rounded-lg border border-zinc-200 px-4 py-3 dark:border-zinc-700">
-            <div>
-              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Allow View As</p>
-              <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                Users with this role can simulate other roles with a lower rank to preview their experience.
-              </p>
+          <Input
+            label="Description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Brief description of this role"
+          />
+
+          <div
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3"
+            style={{ border: "1px solid var(--stroke-secondary)" }}
+          >
+            <div className="flex min-w-[240px] flex-1 flex-col gap-0.5">
+              <span className="wms-label">Allow View As</span>
+              <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)", textWrap: "pretty" }}>
+                Users with this role can simulate other roles with a lower rank to preview their
+                experience.
+              </span>
             </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={canViewAs}
-              onClick={() => setCanViewAs((v) => !v)}
-              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 ${
-                canViewAs ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-200 dark:bg-zinc-700"
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-                  canViewAs ? "translate-x-4" : "translate-x-1"
-                }`}
-              />
-            </button>
+            <Switch checked={canViewAs} onChange={setCanViewAs} />
           </div>
 
-          {/* Mimic built-in role */}
           {builtinRoles.length > 0 && (
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/40">
-              <p className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Load permissions from a built-in role
-              </p>
-              <div className="flex items-center gap-2">
-                <select
+            <div
+              className="flex flex-col gap-2 rounded-lg px-4 py-3"
+              style={{
+                border: "1px solid var(--stroke-secondary)",
+                background: "var(--surface-secondary)",
+              }}
+            >
+              <span className="wms-label">Load permissions from a built-in role</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
                   value={selectedBuiltinKey}
                   onChange={(e) => setSelectedBuiltinKey(e.target.value)}
-                  className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                  style={{ flex: "1 1 220px" }}
                 >
                   <option value="">— Select a built-in role —</option>
                   {builtinRoles.map((r) => (
                     <option key={r.key} value={r.key}>{r.name}</option>
                   ))}
-                </select>
-                <button
-                  type="button"
+                </Select>
+                <Button
+                  hierarchy="secondary"
                   onClick={handleMimicBuiltin}
                   disabled={!selectedBuiltinKey}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                  leadingIcon={<CopyCheck className="h-4 w-4" />}
                 >
-                  <CopyCheck className="h-4 w-4" />
                   Apply
-                </button>
+                </Button>
               </div>
-              <p className="mt-1.5 text-xs text-zinc-400 dark:text-zinc-500">
-                This will replace the current permission selection with the chosen built-in role&apos;s permissions.
-              </p>
+              <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                This will replace the current permission selection with the chosen built-in
+                role&apos;s permissions.
+              </span>
             </div>
           )}
 
-          {/* Permission Matrix */}
-          <div>
-            <h3 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-              Permissions
-            </h3>
-            <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/50">
-                    <th className="px-4 py-2 text-left font-medium text-zinc-600 dark:text-zinc-400">
-                      Resource
-                    </th>
+          <div className="flex flex-col gap-2">
+            <span className="wms-label">Permissions</span>
+            <div
+              className="rounded-lg"
+              style={{ border: "1px solid var(--stroke-secondary)", overflow: "hidden" }}
+            >
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Resource</TH>
                     {ACTIONS.map((action) => (
-                      <th
+                      <TH
                         key={action}
-                        colSpan={3}
-                        className="border-l border-zinc-200 px-2 py-2 text-center font-medium text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
+                        colSpan={SCOPES.length}
+                        align="center"
+                        style={{ ...MATRIX_CELL, borderLeft: "1px solid var(--stroke-secondary)" }}
                       >
                         {ACTION_LABELS[action]}
-                      </th>
+                      </TH>
                     ))}
-                  </tr>
-                  <tr className="border-b border-zinc-200 bg-zinc-50/50 dark:border-zinc-700 dark:bg-zinc-800/30">
-                    <th />
+                  </TR>
+                  <TR>
+                    {/* The scope row repeats under every action, so it carries no
+                        uppercase weight of its own — it labels the column below,
+                        not a second header. */}
+                    <TH />
                     {ACTIONS.map((action) =>
                       SCOPES.map((scope) => (
-                        <th
+                        <TH
                           key={`${action}-${scope}`}
-                          className={`px-2 py-1 text-center text-xs font-normal text-zinc-500 dark:text-zinc-500 ${
-                            scope === "own" ? "border-l border-zinc-200 dark:border-zinc-700" : ""
-                          }`}
+                          align="center"
+                          style={{
+                            ...MATRIX_CELL,
+                            textTransform: "none",
+                            letterSpacing: "normal",
+                            font: "var(--type-body2)",
+                            color: "var(--text-tertiary)",
+                            borderLeft:
+                              scope === "own" ? "1px solid var(--stroke-secondary)" : undefined,
+                          }}
                         >
                           {SCOPE_LABELS[scope]}
-                        </th>
+                        </TH>
                       ))
                     )}
-                  </tr>
-                </thead>
-                <tbody>
+                  </TR>
+                </THead>
+                <TBody>
                   {RESOURCES.map((resource) => {
                     const info = RESOURCE_INFO[resource];
                     const isExpanded = expandedResource === resource;
                     const totalCols = 1 + ACTIONS.length * SCOPES.length;
                     return (
                       <React.Fragment key={resource}>
-                        <tr
-                          className="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
-                        >
-                          <td className="px-4 py-2.5 font-medium text-zinc-700 dark:text-zinc-300">
-                            <div className="flex items-center gap-1.5">
+                        <TR>
+                          <TD style={{ fontWeight: "var(--weight-medium)" }}>
+                            <span className="flex items-center gap-1.5">
                               {RESOURCE_LABELS[resource]}
                               {info && (
-                                <button
-                                  type="button"
+                                <Button
+                                  hierarchy="tertiary"
+                                  size="sm"
+                                  iconOnly
+                                  aria-expanded={isExpanded}
                                   onClick={() => setExpandedResource(isExpanded ? null : resource)}
-                                  className="rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
                                   title="About this permission"
                                 >
-                                  <Info className="h-3.5 w-3.5" />
-                                </button>
+                                  <Info
+                                    className="h-3.5 w-3.5"
+                                    style={{ color: "var(--icon-tertiary)" }}
+                                  />
+                                </Button>
                               )}
-                            </div>
-                          </td>
+                            </span>
+                          </TD>
                           {ACTIONS.map((action) =>
                             SCOPES.map((scope) => {
                               const key = permKey(resource, action, scope);
                               const checked = permSet.has(key);
                               const isActive = ACTIVE_CELLS.has(key);
                               return (
-                                <td
+                                <TD
                                   key={`${resource}-${action}-${scope}`}
-                                  className={`px-2 py-2.5 text-center ${
-                                    scope === "own"
-                                      ? "border-l border-zinc-200 dark:border-zinc-700"
-                                      : ""
-                                  } ${!isActive ? "bg-zinc-50 dark:bg-zinc-800/40" : ""}`}
+                                  align="center"
+                                  style={{
+                                    ...MATRIX_CELL,
+                                    borderLeft:
+                                      scope === "own"
+                                        ? "1px solid var(--stroke-secondary)"
+                                        : undefined,
+                                    background: isActive ? undefined : "var(--surface-secondary)",
+                                  }}
                                 >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() => handleToggle(resource, action, scope)}
-                                    disabled={!isActive}
-                                    title={!isActive ? "Not enforced — no server action checks this permission" : undefined}
-                                    className={`h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 ${
-                                      !isActive ? "cursor-not-allowed opacity-20" : ""
-                                    }`}
-                                  />
-                                </td>
+                                  <span
+                                    className="inline-flex"
+                                    title={
+                                      isActive
+                                        ? undefined
+                                        : "Not enforced — no server action checks this permission"
+                                    }
+                                  >
+                                    <Checkbox
+                                      checked={checked}
+                                      disabled={!isActive}
+                                      onChange={() => handleToggle(resource, action, scope)}
+                                    />
+                                  </span>
+                                </TD>
                               );
                             })
                           )}
-                        </tr>
+                        </TR>
                         {isExpanded && info && (
-                          <tr className="border-b border-zinc-100 bg-blue-50/60 dark:border-zinc-800 dark:bg-blue-950/20">
-                            <td colSpan={totalCols} className="px-4 pb-3 pt-2">
-                              <p className="mb-2 text-xs text-zinc-600 dark:text-zinc-400">{info.summary}</p>
-                              <ul className="space-y-1">
+                          <TR>
+                            <TD
+                              colSpan={totalCols}
+                              style={{
+                                height: "auto",
+                                padding: "10px 14px 12px",
+                                background: "var(--surface-info)",
+                              }}
+                            >
+                              <p
+                                className="mb-2"
+                                style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                              >
+                                {info.summary}
+                              </p>
+                              <ul className="m-0 flex list-none flex-col gap-1 p-0">
                                 {Object.entries(info.cells).map(([cellKey, desc]) => {
                                   const [action, scope] = cellKey.split(":");
                                   return (
-                                    <li key={cellKey} className="flex items-start gap-2 text-xs text-zinc-500 dark:text-zinc-500">
-                                      <span className="mt-0.5 shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 font-mono text-[10px] uppercase leading-none text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400">
+                                    <li key={cellKey} className="flex items-start gap-2">
+                                      <Badge tone="neutral" size="sm">
                                         {ACTION_LABELS[action]} / {SCOPE_LABELS[scope]}
+                                      </Badge>
+                                      <span
+                                        style={{
+                                          font: "var(--type-body2)",
+                                          color: "var(--text-secondary)",
+                                          textWrap: "pretty",
+                                        }}
+                                      >
+                                        {desc}
                                       </span>
-                                      <span>{desc}</span>
                                     </li>
                                   );
                                 })}
                               </ul>
-                            </td>
-                          </tr>
+                            </TD>
+                          </TR>
                         )}
                       </React.Fragment>
                     );
                   })}
-                </tbody>
-              </table>
+                </TBody>
+              </Table>
             </div>
           </div>
 
-          {/* Error */}
-          {error && (
-            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-400">
-              {error}
-            </div>
-          )}
+          {error && <Banner tone="error" body={error} />}
         </div>
 
-        {/* Footer actions */}
-        <div className="flex items-center justify-between border-t border-zinc-200 px-6 py-4 dark:border-zinc-700">
+        <footer
+          className="flex flex-wrap items-center justify-between gap-2 px-6 py-4"
+          style={{ borderTop: "1px solid var(--stroke-divider)" }}
+        >
           <div className="flex gap-2">
             {isEditing && !isSystem && (
-              <button onClick={handleDelete} className={btnDanger + " flex items-center gap-1.5"}>
-                <Trash2 className="h-4 w-4" /> Delete
-              </button>
+              <Button
+                hierarchy="secondary"
+                tone="error"
+                onClick={handleDelete}
+                leadingIcon={<Trash2 className="h-4 w-4" />}
+              >
+                Delete
+              </Button>
             )}
             {isEditing && (
-              <button onClick={handleDuplicate} className={btnSecondary + " flex items-center gap-1.5"}>
-                <Copy className="h-4 w-4" /> Duplicate
-              </button>
+              <Button
+                hierarchy="secondary"
+                onClick={handleDuplicate}
+                leadingIcon={<Copy className="h-4 w-4" />}
+              >
+                Duplicate
+              </Button>
             )}
           </div>
           <div className="flex gap-2">
-            <button onClick={onClose} className={btnSecondary}>
+            <Button hierarchy="secondary" onClick={onClose}>
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={handleSave}
               disabled={saving || !name.trim()}
-              className={btnPrimary + " flex items-center gap-1.5"}
+              leadingIcon={<Save className="h-4 w-4" />}
             >
-              <Save className="h-4 w-4" />
-              {saving ? "Saving..." : isEditing ? "Update Role" : "Create Role"}
-            </button>
+              {saving ? "Saving…" : isEditing ? "Update Role" : "Create Role"}
+            </Button>
           </div>
-        </div>
+        </footer>
       </div>
     </div>
   );

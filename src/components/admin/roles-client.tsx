@@ -3,8 +3,40 @@
 import { useState } from "react";
 import { getRoleById } from "@/actions/role.actions";
 import { RoleEditor } from "@/components/admin/role-editor";
-import { RESOURCES, ACTIONS, SCOPES } from "@/lib/validators/role.schema";
-import { Shield, Lock, Plus, Pencil, X } from "lucide-react";
+import { Lock, Pencil, Plus, Shield } from "lucide-react";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  LinkButton,
+  PageHeader,
+  SearchInput,
+  Table,
+  TableFooter,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+  Toolbar,
+  statusTone,
+} from "@/components/ui";
+
+/**
+ * Roles &amp; Permissions, as the portal design's list template lays it out:
+ * header and actions, a toolbar carrying the search box and the record count,
+ * then one card holding the table.
+ *
+ * <p>The page header lives in here rather than in the server component above
+ * because "New Role" opens the editor, and the editor is client state. Putting
+ * the title in the page and the button in the body would have been the one
+ * screen in the product whose primary action is not in the header.
+ *
+ * <p>Search filters the rows already in the browser. The list is a handful of
+ * roles fetched in one query, so a query-string filter would mean a server
+ * round trip to hide rows the page is already holding.
+ */
 
 type RoleSummary = {
   id: string;
@@ -36,137 +68,31 @@ type BuiltinRoleSummary = {
   employeeCount: number;
 };
 
-const btnPrimary =
-  "rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
-
-const RESOURCE_LABELS: Record<string, string> = {
-  punch: "Punches",
-  timesheet: "Timesheets",
-  leave: "Leave",
-  accrual: "Accruals",
-  payroll: "Payroll",
-  employee: "Employees",
-  rules: "Rule Sets",
-  site: "Sites",
-  document: "Documents",
-  report: "Reports",
-  audit: "Audit Log",
-  role: "Roles",
-};
-
-const ACTION_LABELS: Record<string, string> = {
-  read: "Read",
-  write: "Write",
-  execute: "Execute",
-};
-
-const SCOPE_LABELS: Record<string, string> = {
-  own: "Own",
-  team: "Team",
-  all: "All",
-};
-
-function permKey(resource: string, action: string, scope: string) {
-  return `${resource}:${action}:${scope}`;
-}
-
-function PermissionModal({ role, onClose }: { role: BuiltinRoleSummary; onClose: () => void }) {
-  const permSet = new Set(role.permissions.map((p) => permKey(p.resource, p.action, p.scope)));
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[5vh]">
-      <div className="w-full max-w-4xl rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <div>
-            <h2 className="text-lg font-semibold text-zinc-900 dark:text-white">{role.name}</h2>
-            {role.description && (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">{role.description}</p>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-              <Lock className="h-3 w-3" /> Built-in · Read only
-            </span>
-            <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-
-        <div className="px-6 py-4">
-          {role.key === "SUPER_ADMIN" ? (
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              Super Admin bypasses all permission checks — unrestricted access to every resource and action.
-            </p>
-          ) : (
-            <div>
-              <h3 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300">Permissions</h3>
-              <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/50">
-                      <th className="px-4 py-2 text-left font-medium text-zinc-600 dark:text-zinc-400">Resource</th>
-                      {ACTIONS.map((action) => (
-                        <th key={action} colSpan={3} className="border-l border-zinc-200 px-2 py-2 text-center font-medium text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
-                          {ACTION_LABELS[action]}
-                        </th>
-                      ))}
-                    </tr>
-                    <tr className="border-b border-zinc-200 bg-zinc-50/50 dark:border-zinc-700 dark:bg-zinc-800/30">
-                      <th />
-                      {ACTIONS.map((action) =>
-                        SCOPES.map((scope) => (
-                          <th key={`${action}-${scope}`} className={`px-2 py-1 text-center text-xs font-normal text-zinc-500 dark:text-zinc-500 ${scope === "own" ? "border-l border-zinc-200 dark:border-zinc-700" : ""}`}>
-                            {SCOPE_LABELS[scope]}
-                          </th>
-                        ))
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {RESOURCES.map((resource) => (
-                      <tr key={resource} className="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
-                        <td className="px-4 py-2.5 font-medium text-zinc-700 dark:text-zinc-300">
-                          {RESOURCE_LABELS[resource]}
-                        </td>
-                        {ACTIONS.map((action) =>
-                          SCOPES.map((scope) => {
-                            const checked = permSet.has(permKey(resource, action, scope));
-                            return (
-                              <td key={`${resource}-${action}-${scope}`} className={`px-2 py-2.5 text-center ${scope === "own" ? "border-l border-zinc-200 dark:border-zinc-700" : ""}`}>
-                                <input type="checkbox" checked={checked} readOnly className="h-4 w-4 cursor-default rounded border-zinc-300 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800" />
-                              </td>
-                            );
-                          })
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between border-t border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <p className="text-xs text-zinc-400">
-            Built-in roles cannot be edited. Create a custom role to define custom permissions.
-          </p>
-          <button onClick={onClose} className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function RolesClient({ roles, builtinRoles }: { roles: RoleSummary[]; builtinRoles: BuiltinRoleSummary[] }) {
+export function RolesClient({
+  roles,
+  builtinRoles,
+}: {
+  roles: RoleSummary[];
+  builtinRoles: BuiltinRoleSummary[];
+}) {
   const [editingRole, setEditingRole] = useState<RoleDetail | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
+  const q = search.trim().toLowerCase();
+  const visible = q
+    ? roles.filter(
+        (r) =>
+          r.name.toLowerCase().includes(q) || (r.description ?? "").toLowerCase().includes(q),
+      )
+    : roles;
 
+  /**
+   * The list query does not carry permissions, so the editor has to fetch the
+   * role it is about to open. The row is disabled while that is in flight —
+   * a second click would open the editor twice on the same role.
+   */
   async function handleEdit(roleId: string) {
     setLoading(roleId);
     const res = await getRoleById({ id: roleId });
@@ -174,85 +100,141 @@ export function RolesClient({ roles, builtinRoles }: { roles: RoleSummary[]; bui
     if (res.success) setEditingRole(res.data as RoleDetail);
   }
 
-  return (
-    <div className="mt-6">
-      <div className="mb-4 flex items-center justify-end">
-        <button onClick={() => setShowCreate(true)} className={btnPrimary + " flex items-center gap-1.5"}>
-          <Plus className="h-4 w-4" /> New Role
-        </button>
-      </div>
+  /** Templates the editor can copy permissions from; Super Admin bypasses every check. */
+  const editorTemplates = builtinRoles.filter((r) => r.key !== "SUPER_ADMIN");
+  const editorRoles = roles.map((r) => ({ id: r.id, name: r.name, isSystem: r.isSystem }));
 
-      <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/50">
-              <th className="px-4 py-3 text-left font-medium text-zinc-600 dark:text-zinc-400">Role</th>
-              <th className="px-4 py-3 text-left font-medium text-zinc-600 dark:text-zinc-400">Description</th>
-              <th className="px-4 py-3 text-center font-medium text-zinc-600 dark:text-zinc-400">Rank</th>
-              <th className="px-4 py-3 text-center font-medium text-zinc-600 dark:text-zinc-400">Employees</th>
-              <th className="px-4 py-3 text-center font-medium text-zinc-600 dark:text-zinc-400">Type</th>
-              <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="border-b border-zinc-200 bg-zinc-50/80 dark:border-zinc-700 dark:bg-zinc-800/40">
-              <td colSpan={6} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-                Roles
-              </td>
-            </tr>
-            {roles.map((role) => (
-              <tr key={role.id} className="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-zinc-400" />
-                    <span className="font-medium text-zinc-900 dark:text-white">{role.name}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">{role.description ?? "—"}</td>
-                <td className="px-4 py-3 text-center text-zinc-600 dark:text-zinc-400">{role.rank}</td>
-                <td className="px-4 py-3 text-center text-zinc-600 dark:text-zinc-400">{role._count.employees}</td>
-                <td className="px-4 py-3 text-center">
-                  {role.isSystem ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                      <Lock className="h-3 w-3" /> System
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                      Custom
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <button onClick={() => handleEdit(role.id)} disabled={loading === role.id} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
-                    <Pencil className="h-3.5 w-3.5" />
-                    {loading === role.id ? "Loading..." : "Edit"}
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {roles.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-zinc-400">
-                  No custom roles yet. Create one to get started.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title="Roles & Permissions"
+        subtitle="Who can see and approve what"
+        actions={
+          <>
+            <LinkButton href="/admin" hierarchy="tertiary">
+              ← Administration
+            </LinkButton>
+            <Button
+              onClick={() => setShowCreate(true)}
+              leadingIcon={<Plus className="h-4 w-4" />}
+            >
+              New Role
+            </Button>
+          </>
+        }
+      />
+
+      <Toolbar count={visible.length} countLabel="role">
+        <SearchInput value={search} onValueChange={setSearch} placeholder="Role or description" />
+      </Toolbar>
+
+      <Card padding={0}>
+        {visible.length === 0 ? (
+          /* "No roles" and "no roles matching this search" are different
+             answers, and only the first one means create one. */
+          <EmptyState
+            icon={<Shield className="h-8 w-8" />}
+            title={roles.length === 0 ? "No roles yet" : "No roles match that search"}
+            body={
+              roles.length === 0
+                ? "Roles decide what each person can see and approve. Create one to get started."
+                : `Nothing in this list matches "${search}". Clear the search to see all ${roles.length} roles.`
+            }
+            action={
+              roles.length === 0 ? (
+                <Button
+                  size="sm"
+                  onClick={() => setShowCreate(true)}
+                  leadingIcon={<Plus className="h-3.5 w-3.5" />}
+                >
+                  New Role
+                </Button>
+              ) : (
+                <Button hierarchy="secondary" size="sm" onClick={() => setSearch("")}>
+                  Clear search
+                </Button>
+              )
+            }
+          />
+        ) : (
+          <>
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Role</TH>
+                  <TH>Description</TH>
+                  <TH numeric>Rank</TH>
+                  <TH numeric>Employees</TH>
+                  <TH align="center">Type</TH>
+                  <TH align="center">Status</TH>
+                  <TH align="right">Actions</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {visible.map((role) => (
+                  <TR key={role.id}>
+                    <TD>
+                      <span className="flex items-center gap-2">
+                        <Shield
+                          className="h-4 w-4 flex-none"
+                          style={{ color: "var(--icon-secondary)" }}
+                        />
+                        <span style={{ fontWeight: "var(--weight-medium)" }}>{role.name}</span>
+                      </span>
+                    </TD>
+                    <TD style={{ color: "var(--text-secondary)" }}>{role.description ?? "—"}</TD>
+                    {/* Rank is the hierarchy check: a role may only act on roles
+                        below its own number, so it is read down the column. */}
+                    <TD numeric style={{ color: "var(--text-secondary)" }}>{role.rank}</TD>
+                    <TD numeric style={{ color: "var(--text-secondary)" }}>
+                      {role._count.employees}
+                    </TD>
+                    <TD align="center">
+                      {role.isSystem ? (
+                        <Badge tone="info" size="sm">
+                          <Lock className="h-3 w-3" /> System
+                        </Badge>
+                      ) : (
+                        <Badge size="sm">Custom</Badge>
+                      )}
+                    </TD>
+                    <TD align="center">
+                      <Badge tone={statusTone(role.isActive ? "ACTIVE" : "INACTIVE")} size="sm">
+                        {role.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                    </TD>
+                    <TD align="right">
+                      <Button
+                        size="sm"
+                        hierarchy="secondary"
+                        onClick={() => handleEdit(role.id)}
+                        disabled={loading === role.id}
+                        leadingIcon={<Pencil className="h-3.5 w-3.5" />}
+                      >
+                        {loading === role.id ? "Loading…" : "Edit"}
+                      </Button>
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+            <TableFooter shown={visible.length} total={roles.length} label="roles" />
+          </>
+        )}
+      </Card>
 
       {editingRole && (
         <RoleEditor
           role={editingRole}
-          allRoles={roles.map((r) => ({ id: r.id, name: r.name, isSystem: r.isSystem }))}
-          builtinRoles={builtinRoles.filter((r) => r.key !== "SUPER_ADMIN")}
+          allRoles={editorRoles}
+          builtinRoles={editorTemplates}
           onClose={() => setEditingRole(null)}
         />
       )}
       {showCreate && (
         <RoleEditor
-          allRoles={roles.map((r) => ({ id: r.id, name: r.name, isSystem: r.isSystem }))}
-          builtinRoles={builtinRoles.filter((r) => r.key !== "SUPER_ADMIN")}
+          allRoles={editorRoles}
+          builtinRoles={editorTemplates}
           onClose={() => setShowCreate(false)}
         />
       )}

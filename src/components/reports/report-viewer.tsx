@@ -2,32 +2,50 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { format } from "date-fns";
+import {
+  ArrowLeft,
+  Copy,
+  Download,
+  Play,
+  Share2,
+  Trash2,
+} from "lucide-react";
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  EmptyState,
+  LinkButton,
+  PageHeader,
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+  statusTone,
+} from "@/components/ui";
 import { ResultsTable } from "./report-results/results-table";
 import { DateRangePicker } from "./report-builder/date-range-picker";
 import { ShareDialog } from "./report-list/share-dialog";
 import { ScheduleForm } from "./schedule-form";
+import { dataSourceLabel } from "./data-source-label";
 import { runReport, deleteReport, duplicateReport } from "@/actions/report.actions";
 import type { ReportResult } from "@/lib/reports/data-sources";
 import type { DateRange } from "@/lib/validators/report.schema";
-import {
-  Play,
-  Download,
-  Trash2,
-  Copy,
-  ArrowLeft,
-  Share2,
-  Clock,
-} from "lucide-react";
-import Link from "next/link";
 
-const SOURCE_LABELS: Record<string, string> = {
-  HOURS_SUMMARY: "Hours Summary",
-  ATTENDANCE_DETAIL: "Attendance Detail",
-  LEAVE_SUMMARY: "Leave Summary",
-  LEAVE_BALANCE: "Leave Balances",
-  PUNCH_AUDIT: "Punch Audit",
-  EXCEPTION_REPORT: "Exception Report",
-};
+/**
+ * A saved report, as the portal design's doc screen: the record's own title,
+ * a tertiary way back, and then stacked cards — what the report is, the window
+ * it will run over, the rows it produced, and how it has been delivered.
+ *
+ * <p>Running is the page's primary action and lives in the header, which is
+ * why the date range is a card of its own rather than a strip with its own Run
+ * button: there is one Run on the screen, and it always runs what the card
+ * says.
+ */
 
 interface ReportData {
   id: string;
@@ -40,19 +58,54 @@ interface ReportData {
   owner: { id: string; name: string | null };
   shares: { id: string; user: { id: string; name: string | null; email: string | null }; canEdit: boolean }[];
   schedules: { id: string; cronExpr: string; isActive: boolean; format: string; recipients: unknown; timezone: string }[];
-  runs: { id: string; status: string; startedAt: string | Date; rowCount: number | null }[];
+  runs: {
+    id: string;
+    status: string;
+    startedAt: string | Date;
+    rowCount: number | null;
+    triggeredBy: string;
+    error: string | null;
+  }[];
 }
 
 interface FilterOptions {
   payPeriods: { id: string; startDate: string | Date; endDate: string | Date; status: string }[];
 }
 
-const btnPrimary =
-  "rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
-const btnSecondary =
-  "rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800";
-const btnDanger =
-  "rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30";
+const VISIBILITY_LABEL: Record<string, string> = {
+  PRIVATE: "Private",
+  SHARED: "Shared",
+  TENANT: "Everyone in the tenant",
+};
+
+const RUN_STATE_LABEL: Record<string, string> = {
+  PENDING: "Pending",
+  RUNNING: "Running",
+  COMPLETED: "Completed",
+  FAILED: "Failed",
+};
+
+/**
+ * A run's state written in the vocabulary `statusTone` speaks.
+ *
+ * <p>Not a colour map: the tones still come from the shared helper. That
+ * helper's vocabulary is timesheets and leave, where a finished thing is
+ * RESOLVED and a started one is IN_PROGRESS — a report run calls those two
+ * states COMPLETED and RUNNING, so they fall out of the helper's default
+ * branch as amber, and an amber "Completed" on a payroll report reads as
+ * something that needs looking at.
+ */
+const RUN_STATE_AS_STATUS: Record<string, string> = {
+  COMPLETED: "RESOLVED",
+  RUNNING: "IN_PROGRESS",
+};
+
+const TRIGGER_LABEL: Record<string, string> = {
+  MANUAL: "Manual",
+  SCHEDULE: "Scheduled",
+};
+
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function getSavedDateRange(config: unknown): DateRange | null {
   if (!config || typeof config !== "object") return null;
@@ -61,6 +114,63 @@ function getSavedDateRange(config: unknown): DateRange | null {
     return c.dateRange as DateRange;
   }
   return null;
+}
+
+/**
+ * A cron expression as a sentence.
+ *
+ * <p>Only the shapes the schedule form can build are translated; anything
+ * hand-written falls back to the expression itself, because a wrong sentence
+ * about when a payroll report goes out is worse than five numbers.
+ */
+function describeCron(expr: string, timezone: string): string {
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) return expr;
+
+  const [min, hr, dom, , dow] = parts;
+  const h = Number(hr);
+  const m = Number(min);
+  if (!Number.isInteger(h) || !Number.isInteger(m)) return expr;
+  const at = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  const zone = timezoneAbbr(timezone);
+
+  let when: string;
+  if (dom === "*" && dow === "*") when = "Daily";
+  else if (dom === "*" && DAY_NAMES[Number(dow)]) when = `Weekly · ${DAY_NAMES[Number(dow)]}`;
+  else if (dom === "1,15" && dow === "*") when = "Twice monthly · 1st & 15th";
+  else if (dow === "*" && Number.isInteger(Number(dom))) when = `Monthly · day ${Number(dom)}`;
+  else return expr;
+
+  return `${when} · ${at}${zone ? ` ${zone}` : ""}`;
+}
+
+/**
+ * The short name of a timezone, asked of the platform rather than kept in a
+ * table here — a second copy of the schedule form's list would be one more
+ * thing to remember when a site opens in a new zone.
+ */
+function timezoneAbbr(timezone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      timeZoneName: "short",
+    }).formatToParts(new Date());
+    return parts.find((p) => p.type === "timeZoneName")?.value ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** The chosen window, in the words the picker offers it in. */
+function describeRange(range: DateRange, filterOptions: FilterOptions | null): string {
+  if (range.type === "relative") return `Last ${range.relativeDays} days`;
+  if (range.type === "custom") {
+    if (!range.startDate || !range.endDate) return "Custom range — not set";
+    return `${range.startDate} – ${range.endDate}`;
+  }
+  const pp = filterOptions?.payPeriods.find((p) => p.id === range.payPeriodId);
+  if (!pp) return "Pay period";
+  return `${format(new Date(pp.startDate), "MMM d")} – ${format(new Date(pp.endDate), "MMM d, yyyy")}`;
 }
 
 export function ReportViewer({
@@ -150,208 +260,271 @@ export function ReportViewer({
         cronExpr: report.schedules[0].cronExpr,
         timezone: report.schedules[0].timezone,
         format: report.schedules[0].format,
-        recipients: report.schedules[0].recipients as string[],
+        // Recipients are a JSON column, so the cast is a claim about a value
+        // the database does not enforce. Anything that is not a list of
+        // addresses becomes an empty one rather than crashing the screen the
+        // schedule is edited from.
+        recipients: Array.isArray(report.schedules[0].recipients)
+          ? (report.schedules[0].recipients as string[])
+          : [],
         isActive: report.schedules[0].isActive,
       }
     : undefined;
 
+  const lastRun = report.runs[0];
+  const sourceLabel = dataSourceLabel(report.dataSource);
+
+  const subtitle = [sourceLabel, report.owner.name && `owned by ${report.owner.name}`, report.description]
+    .filter(Boolean)
+    .join(" · ");
+
+  const facts: { label: string; value: string }[] = [
+    { label: "Data Source", value: sourceLabel },
+    { label: "Range", value: describeRange(dateRange, filterOptions) },
+    {
+      label: "Schedule",
+      value: existingSchedule
+        ? describeCron(existingSchedule.cronExpr, existingSchedule.timezone) +
+          (existingSchedule.isActive ? "" : " · paused")
+        : "On demand only",
+    },
+    {
+      label: "Last Run",
+      value: lastRun
+        ? `${format(new Date(lastRun.startedAt), "MMM d · HH:mm")} · ${RUN_STATE_LABEL[lastRun.status] ?? lastRun.status}`
+        : "Never run",
+    },
+    { label: "Visibility", value: VISIBILITY_LABEL[report.visibility] ?? report.visibility },
+    {
+      label: "Shared With",
+      value:
+        report.shares.length > 0
+          ? report.shares.map((s) => s.user.name ?? s.user.email ?? "Unnamed").join(", ")
+          : "Nobody",
+    },
+  ];
+
   return (
-    <div>
-      {/* Header */}
-      <div className="mb-6">
-        <Link
-          href="/reports"
-          className="mb-2 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          All Reports
-        </Link>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
-              {report.name}
-            </h1>
-            {report.description && (
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                {report.description}
-              </p>
-            )}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                {SOURCE_LABELS[report.dataSource] ?? report.dataSource}
-              </span>
-              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                {report.visibility}
-              </span>
-              {report.owner.name && (
-                <span className="text-xs text-zinc-400">
-                  by {report.owner.name}
-                </span>
-              )}
-              {existingSchedule && (
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                  existingSchedule.isActive
-                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                    : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
-                }`}>
-                  {existingSchedule.isActive ? "Scheduled" : "Schedule paused"}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Actions (non-run) */}
-          <div className="flex flex-shrink-0 gap-2">
-            {result && (
-              <>
-                <button
-                  onClick={handleExportCsv}
-                  className={btnSecondary + " flex items-center gap-1.5"}
-                >
-                  <Download className="h-4 w-4" />
-                  CSV
-                </button>
-                <a
-                  href={`/api/reports/${report.id}/export?format=pdf`}
-                  className={btnSecondary + " flex items-center gap-1.5"}
-                >
-                  PDF
-                </a>
-                <a
-                  href={`/api/reports/${report.id}/export?format=xlsx`}
-                  className={btnSecondary + " flex items-center gap-1.5"}
-                >
-                  XLSX
-                </a>
-              </>
-            )}
-            <button
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title={report.name}
+        subtitle={subtitle}
+        actions={
+          <>
+            <LinkButton
+              href="/reports"
+              hierarchy="tertiary"
+              leadingIcon={<ArrowLeft className="h-4 w-4" />}
+            >
+              Reports
+            </LinkButton>
+            <Button
+              hierarchy="secondary"
               onClick={() => setShowShareDialog(true)}
-              className={btnSecondary + " flex items-center gap-1.5"}
-              title="Share"
+              leadingIcon={<Share2 className="h-4 w-4" />}
             >
-              <Share2 className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setShowScheduleForm(true)}
-              className={btnSecondary + " flex items-center gap-1.5"}
-              title="Schedule"
+              Share
+            </Button>
+            <Button
+              hierarchy="primary"
+              onClick={handleRun}
+              disabled={isRunning}
+              leadingIcon={<Play className="h-4 w-4" />}
             >
-              <Clock className="h-4 w-4" />
-            </button>
-            <button
-              onClick={handleDuplicate}
-              className={btnSecondary + " flex items-center gap-1.5"}
-              title="Duplicate"
-            >
-              <Copy className="h-4 w-4" />
-            </button>
-            {!report.isTemplate && (
-              <button
-                onClick={handleDelete}
-                className={btnDanger + " flex items-center gap-1.5"}
-                title="Delete"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+              {isRunning ? "Running…" : "Run Now"}
+            </Button>
+          </>
+        }
+      />
 
-      {/* Date Range + Run */}
-      <div className="mb-6 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
-        <div className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          Select date range and run
-        </div>
-        <div className="flex items-end gap-4">
-          <div className="min-w-0 flex-1">
-            <DateRangePicker
-              value={dateRange}
-              onChange={setDateRange}
-              payPeriods={filterOptions?.payPeriods ?? []}
-            />
-          </div>
-          <button
-            onClick={handleRun}
-            disabled={isRunning}
-            className={btnPrimary + " flex flex-shrink-0 items-center gap-1.5"}
-          >
-            <Play className="h-4 w-4" />
-            {isRunning ? "Running..." : "Run Report"}
-          </button>
-        </div>
-      </div>
-
-      {/* Shared with */}
-      {report.shares.length > 0 && (
-        <div className="mb-4 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-          <Share2 className="h-3.5 w-3.5" />
-          Shared with: {report.shares.map((s) => s.user.name ?? s.user.email).join(", ")}
-        </div>
-      )}
-
-      {/* Error */}
       {error && (
-        <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-400">
-          {error}
-        </div>
-      )}
-
-      {/* Results */}
-      {result ? (
-        <ResultsTable
-          columns={result.columns}
-          rows={result.rows}
-          totalRows={result.totalRows}
-          isLoading={isRunning}
+        <Banner
+          tone="error"
+          title="The report did not run"
+          body={error}
+          // Not "in the history below": the failure is written to ReportRun,
+          // but nothing on this screen re-reads it, so the table underneath
+          // will not show the run until the page is loaded again.
+          meta="The failure is recorded against this report — reload the page to see it in the run history."
         />
-      ) : (
-        <div className="rounded-lg border border-dashed border-zinc-300 p-12 text-center dark:border-zinc-700">
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            Choose a date range above and click <strong>Run Report</strong>.
-          </p>
-        </div>
       )}
 
-      {/* Run History */}
-      {report.runs.length > 0 && (
-        <div className="mt-8">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-            Run History
-          </h2>
-          <div className="space-y-1">
-            {report.runs.map((run) => (
-              <div
-                key={run.id}
-                className="flex items-center gap-4 rounded-lg px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400"
+      <Card
+        title="Report"
+        subtitle={report.isTemplate ? "A built-in template — it cannot be deleted" : undefined}
+        actions={
+          <>
+            <Button size="sm" hierarchy="secondary" onClick={handleDuplicate} leadingIcon={<Copy className="h-3.5 w-3.5" />}>
+              Duplicate
+            </Button>
+            {!report.isTemplate && (
+              <Button
+                size="sm"
+                hierarchy="secondary"
+                tone="error"
+                onClick={handleDelete}
+                leadingIcon={<Trash2 className="h-3.5 w-3.5" />}
               >
-                <span
-                  className={`inline-block h-2 w-2 rounded-full ${
-                    run.status === "COMPLETED"
-                      ? "bg-green-500"
-                      : run.status === "FAILED"
-                        ? "bg-red-500"
-                        : "bg-amber-500"
-                  }`}
-                />
-                <span>
-                  {new Date(run.startedAt).toLocaleString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
-                </span>
-                <span>{run.status}</span>
-                {run.rowCount !== null && <span>{run.rowCount} rows</span>}
-              </div>
-            ))}
-          </div>
+                Delete
+              </Button>
+            )}
+          </>
+        }
+      >
+        <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr))]">
+          {facts.map((f) => (
+            <div key={f.label} className="flex min-w-0 flex-col gap-0.5">
+              <span className="wms-overline">{f.label}</span>
+              <span
+                className="tabular"
+                style={{
+                  font: "var(--weight-semibold) 16px/22px var(--font-sans)",
+                  color: "var(--text-primary)",
+                  overflowWrap: "anywhere",
+                }}
+              >
+                {f.value}
+              </span>
+            </div>
+          ))}
         </div>
-      )}
+      </Card>
 
-      {/* Share Dialog */}
+      <Card title="Date Range" subtitle="Run Now uses this window, whatever the report was saved with">
+        <DateRangePicker
+          value={dateRange}
+          onChange={setDateRange}
+          payPeriods={filterOptions?.payPeriods ?? []}
+        />
+      </Card>
+
+      <Card
+        title="Results"
+        subtitle={
+          result
+            ? `${result.totalRows.toLocaleString()} row${result.totalRows === 1 ? "" : "s"} · ${describeRange(dateRange, filterOptions)} · PDF and XLSX re-run the report's saved range`
+            : "Nothing has been run on this screen yet"
+        }
+        padding={0}
+        actions={
+          result ? (
+            <>
+              <Button
+                size="sm"
+                hierarchy="secondary"
+                onClick={handleExportCsv}
+                leadingIcon={<Download className="h-3.5 w-3.5" />}
+              >
+                CSV
+              </Button>
+              {/* PDF and XLSX are generated server-side from the report's
+                  *saved* configuration, so they ignore the range picked above.
+                  Said out loud in the subtitle, because a spreadsheet covering
+                  a different fortnight than the screen is a payroll number
+                  nobody can reconcile. */}
+              <ExportLink href={`/api/reports/${report.id}/export?format=pdf`} label="PDF" />
+              <ExportLink href={`/api/reports/${report.id}/export?format=xlsx`} label="XLSX" />
+            </>
+          ) : undefined
+        }
+      >
+        {result ? (
+          <ResultsTable
+            columns={result.columns}
+            rows={result.rows}
+            totalRows={result.totalRows}
+            isLoading={isRunning}
+          />
+        ) : (
+          <EmptyState
+            icon={<Play className="h-8 w-8" />}
+            title="Not run yet"
+            body="Pick a date range above, then press Run Now. The rows appear here and can be exported."
+          />
+        )}
+      </Card>
+
+      <Card
+        title="Run History"
+        subtitle={
+          existingSchedule
+            ? `Last ten runs · ${describeCron(existingSchedule.cronExpr, existingSchedule.timezone)} to ${existingSchedule.recipients.length} recipient${existingSchedule.recipients.length === 1 ? "" : "s"}`
+            : "Last ten runs · this report is not scheduled"
+        }
+        padding={0}
+        actions={
+          <>
+            {existingSchedule && (
+              <Badge tone={statusTone(existingSchedule.isActive ? "ACTIVE" : "OPEN")} size="sm">
+                {existingSchedule.isActive ? "Active" : "Paused"}
+              </Badge>
+            )}
+            <Button size="sm" hierarchy="secondary" onClick={() => setShowScheduleForm(true)}>
+              {existingSchedule ? "Edit Schedule" : "Schedule"}
+            </Button>
+          </>
+        }
+      >
+        {report.runs.length === 0 ? (
+          <EmptyState
+            title="No runs recorded"
+            body="Every run from this screen and every scheduled delivery is listed here with the rows it returned."
+          />
+        ) : (
+          <Table>
+            <THead>
+              <TR>
+                <TH>Run</TH>
+                <TH>Trigger</TH>
+                <TH numeric>Rows</TH>
+                <TH>Status</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {report.runs.map((run) => (
+                <TR key={run.id}>
+                  {/* Tabular figures: this column is read down, to find the run
+                      somebody is asking about. */}
+                  <TD numeric align="left">
+                    {format(new Date(run.startedAt), "MMM d · HH:mm")}
+                  </TD>
+                  <TD style={{ color: "var(--text-secondary)" }}>
+                    {TRIGGER_LABEL[run.triggeredBy] ?? run.triggeredBy}
+                  </TD>
+                  <TD numeric style={{ color: "var(--text-secondary)" }}>
+                    {run.rowCount ?? "—"}
+                  </TD>
+                  <TD>
+                    <div className="flex min-w-0 flex-col gap-0.5 py-1.5">
+                      <Badge
+                        tone={statusTone(RUN_STATE_AS_STATUS[run.status] ?? run.status)}
+                        size="sm"
+                      >
+                        {RUN_STATE_LABEL[run.status] ?? run.status}
+                      </Badge>
+                      {/* A failed run with no reason on the row is a support
+                          ticket. The reason is already stored; it was just
+                          never shown. */}
+                      {run.error && (
+                        <span
+                          style={{
+                            font: "var(--type-body2)",
+                            color: "var(--text-error)",
+                            textWrap: "pretty",
+                          }}
+                        >
+                          {run.error}
+                        </span>
+                      )}
+                    </div>
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        )}
+      </Card>
+
       {showShareDialog && (
         <ShareDialog
           reportId={report.id}
@@ -363,7 +536,6 @@ export function ReportViewer({
         />
       )}
 
-      {/* Schedule Form */}
       {showScheduleForm && (
         <ScheduleForm
           reportId={report.id}
@@ -376,5 +548,38 @@ export function ReportViewer({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * A server-generated export.
+ *
+ * <p>Stays a plain anchor rather than a LinkButton: the file streams out of an
+ * API route, so there is no page for the router to prefetch or transition to,
+ * and a new tab leaves the results on screen behind the download. It borrows
+ * the secondary button's palette variables so it hovers like the real thing.
+ */
+function ExportLink({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`Download ${label}`}
+      className="wms-btn inline-flex h-6 flex-none items-center gap-1.5 rounded-md px-2.5"
+      style={{
+        ["--bg" as string]: "var(--surface-card)",
+        ["--bg-h" as string]: "var(--fill-hover)",
+        ["--bg-a" as string]: "var(--fill-pressed)",
+        ["--fg" as string]: "var(--text-primary)",
+        ["--fg-h" as string]: "var(--text-primary)",
+        border: "1px solid var(--stroke-default)",
+        font: "var(--type-button2)",
+        textDecoration: "none",
+      }}
+    >
+      <Download className="h-3.5 w-3.5" />
+      {label}
+    </a>
   );
 }

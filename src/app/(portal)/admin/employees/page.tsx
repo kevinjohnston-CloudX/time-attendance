@@ -1,17 +1,33 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
+import { LinkButton, PageHeader } from "@/components/ui";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getEmployees, getAdminRefData } from "@/actions/admin.actions";
 import { CreateEmployeeForm } from "@/components/admin/create-employee-form";
 import { CsvUploadForm } from "@/components/admin/csv-upload-form";
 import { EmployeesTable } from "@/components/admin/employees-table";
 
-interface Props {
+/**
+ * Employees, on the portal design's list template.
+ *
+ * <p>The header carries the four actions the design gives this screen, in its
+ * order: back to the hub, Import CSV, Sync ADP, Add Employee. Sync ADP is a
+ * link to the ADP screen rather than a button that starts a sync — that screen
+ * is where the sync is configured and where its last result is shown, and a
+ * one-click sync from a list is how 214 records get overwritten by accident.
+ *
+ * <p>The design's All / Active / Terminated view tabs are **not** here.
+ * `getEmployees` filters on site, department, role and a search term and
+ * nothing else, so an "Active" tab could only hide inactive rows from the one
+ * page already fetched. The record count would then describe the fetch rather
+ * than the filter, which on a 100-row page with 800 behind it is worse than no
+ * tab at all.
+ */
+export default async function EmployeesPage({
+  searchParams,
+}: {
   searchParams?: Promise<{ page?: string; q?: string; site?: string; dept?: string; role?: string }>;
-}
-
-export default async function EmployeesPage({ searchParams }: Props) {
+}) {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
@@ -34,35 +50,37 @@ export default async function EmployeesPage({ searchParams }: Props) {
   const { sites, departments, ruleSets, employees: allEmps, customRoles, shifts, holidayRules, payCategories, payTypes } = refDataResult.data;
 
   return (
-    <div>
-      <div className="flex items-center justify-between">
-        <div>
-          <Link href="/admin" className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white">
-            ← Admin
-          </Link>
-          <h1 className="mt-1 text-2xl font-bold text-zinc-900 dark:text-white">
-            Employees
-          </h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <CsvUploadForm
-            sites={sites.map((s) => s.name)}
-            departments={departments.map((d) => d.name)}
-            ruleSets={ruleSets.map((r) => r.name)}
-          />
-          <CreateEmployeeForm
-            sites={sites}
-            departments={departments}
-            ruleSets={ruleSets}
-            employees={allEmps}
-            customRoles={customRoles}
-            shifts={shifts}
-            holidayRules={holidayRules}
-            payCategories={payCategories ?? []}
-            payTypes={payTypes ?? []}
-          />
-        </div>
-      </div>
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title="Employees"
+        subtitle="Profiles, badge numbers, assignments and pay"
+        actions={
+          <>
+            <LinkButton href="/admin" hierarchy="tertiary">
+              ← Administration
+            </LinkButton>
+            <CsvUploadForm
+              sites={sites.map((s) => s.name)}
+              departments={departments.map((d) => d.name)}
+              ruleSets={ruleSets.map((r) => r.name)}
+            />
+            <LinkButton href="/admin/adp" hierarchy="secondary">
+              Sync ADP
+            </LinkButton>
+            <CreateEmployeeForm
+              sites={sites}
+              departments={departments}
+              ruleSets={ruleSets}
+              employees={allEmps}
+              customRoles={customRoles}
+              shifts={shifts}
+              holidayRules={holidayRules}
+              payCategories={payCategories ?? []}
+              payTypes={payTypes ?? []}
+            />
+          </>
+        }
+      />
 
       <EmployeesTable
         employees={employees}
@@ -71,6 +89,11 @@ export default async function EmployeesPage({ searchParams }: Props) {
         pageSize={pageSize}
         sites={[...new Set(sites.map((s) => s.name))].sort()}
         departments={[...new Set(departments.map((d) => d.name))].sort()}
+        // The shift column is a lookup against reference data this page already
+        // loads for the create form, not a second read — `getEmployees` returns
+        // shiftId but does not join the shift, and widening that join would be
+        // a query change.
+        shifts={shifts}
         currentFilters={{ q, site, dept, role }}
       />
     </div>

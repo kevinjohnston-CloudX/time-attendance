@@ -2,6 +2,17 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Download, FileSpreadsheet, Clock, AlertTriangle, X, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui";
+
+/**
+ * The three CSV reports a closed period is usually asked for.
+ *
+ * <p>A menu rather than three buttons in the header: they are the same action
+ * at three levels of detail, and only one of them is ever wanted at a time.
+ * The description under each is load-bearing — "Punch Detail" and "Timesheet
+ * Summary" are the same hours, and picking the wrong one means a reconciliation
+ * against a file that cannot answer the question.
+ */
 
 interface Props {
   payPeriodId: string;
@@ -14,24 +25,21 @@ const OPTIONS = [
     icon: FileSpreadsheet,
     title: "Timesheet Summary",
     description: "One row per employee — REG, OT, and DT hours totals",
-    color: "text-blue-600 dark:text-blue-400",
-    bg: "bg-blue-50 dark:bg-blue-950/30",
+    color: "var(--icon-accent)",
   },
   {
     format: "punches",
     icon: Clock,
     title: "Punch Detail",
     description: "Every individual punch with date, time, type, and source",
-    color: "text-violet-600 dark:text-violet-400",
-    bg: "bg-violet-50 dark:bg-violet-950/30",
+    color: "var(--icon-secondary)",
   },
   {
     format: "exceptions",
     icon: AlertTriangle,
     title: "Exceptions Report",
     description: "All exceptions — resolved and unresolved — for this period",
-    color: "text-amber-600 dark:text-amber-400",
-    bg: "bg-amber-50 dark:bg-amber-950/30",
+    color: "var(--icon-warning)",
   },
 ] as const;
 
@@ -57,64 +65,98 @@ export function PayPeriodDownload({ payPeriodId, label }: Props) {
 
   return (
     <>
-      {/* Backdrop */}
-      {open && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={() => setOpen(false)}
-        />
-      )}
+      {/* A transparent catcher rather than an outside-click listener: the
+          trigger sits inside the page header, and a document-level mousedown
+          handler would close the menu on the same click that opened it. */}
+      {open && <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />}
 
       <div className="relative" ref={ref}>
-        <button
-          type="button"
+        <Button
+          hierarchy="secondary"
           onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+          aria-expanded={open}
+          aria-haspopup="menu"
+          leadingIcon={<Download className="h-4 w-4" />}
         >
-          <Download className="h-4 w-4" />
           Reports
-        </button>
+        </Button>
 
         {open && (
-          <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
-              <div>
-                <p className="text-sm font-semibold text-zinc-900 dark:text-white">Reports</p>
-                <p className="text-xs text-zinc-500">{label}</p>
+          <div
+            role="menu"
+            aria-label="Pay period reports"
+            className="ta-modal absolute right-0 top-full z-50 mt-2 w-80 rounded-xl"
+          >
+            <div
+              className="flex items-center justify-between gap-3 px-4 py-3"
+              style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+            >
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>Reports</span>
+                <span style={{ font: "var(--type-subtitle)", color: "var(--text-secondary)" }}>
+                  {label}
+                </span>
               </div>
-              <button
-                type="button"
+              <Button
+                hierarchy="tertiary"
+                size="sm"
+                iconOnly
+                aria-label="Close"
                 onClick={() => setOpen(false)}
-                className="rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
               >
                 <X className="h-4 w-4" />
-              </button>
+              </Button>
             </div>
 
-            {/* Options */}
-            <div className="p-2">
-              {OPTIONS.map(({ format, icon: Icon, title, description, color, bg }) => (
+            <div className="flex flex-col p-2">
+              {OPTIONS.map(({ format, icon: Icon, title, description, color }) => (
                 <button
                   key={format}
                   type="button"
+                  role="menuitem"
                   onClick={() => handleDownload(format)}
-                  className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                  className="ta-hoverable flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left"
+                  style={{ border: "none", background: "transparent", cursor: "pointer" }}
                 >
-                  <div className={`shrink-0 rounded-lg p-2 ${bg}`}>
-                    <Icon className={`h-4 w-4 ${color}`} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-zinc-900 dark:text-white">{title}</p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">{description}</p>
-                  </div>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-zinc-300 transition-colors group-hover:text-zinc-500 dark:text-zinc-600 dark:group-hover:text-zinc-400" />
+                  <span
+                    className="flex flex-none items-center justify-center rounded-lg p-2"
+                    style={{ background: "var(--surface-secondary)" }}
+                  >
+                    <Icon className="h-4 w-4" style={{ color }} />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span
+                      style={{
+                        font: "var(--type-body1)",
+                        fontWeight: "var(--weight-medium)",
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      {title}
+                    </span>
+                    <span
+                      style={{
+                        font: "var(--type-body2)",
+                        color: "var(--text-tertiary)",
+                        textWrap: "pretty",
+                      }}
+                    >
+                      {description}
+                    </span>
+                  </span>
+                  <ChevronRight
+                    className="h-4 w-4 flex-none"
+                    style={{ color: "var(--icon-disabled)" }}
+                    aria-hidden="true"
+                  />
                 </button>
               ))}
             </div>
 
-            <div className="border-t border-zinc-100 px-4 py-2.5 dark:border-zinc-800">
-              <p className="text-xs text-zinc-400">All exports are CSV format</p>
+            <div className="px-4 py-2.5" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+              <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                All exports are CSV format
+              </p>
             </div>
           </div>
         )}

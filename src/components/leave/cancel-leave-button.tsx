@@ -2,11 +2,20 @@
 
 import { useState, useTransition } from "react";
 import { cancelLeaveRequest } from "@/actions/leave.actions";
+import { Button } from "@/components/ui";
 
 interface Props {
   leaveRequestId: string;
 }
 
+/**
+ * Cancel one of your own pending requests.
+ *
+ * <p>A link-weight error button rather than a filled red one: it sits in the
+ * last cell of every pending row, and a table of red buttons reads as a table
+ * of problems. The confirm stays — the request is gone from the supervisor's
+ * queue the moment this succeeds.
+ */
 export function CancelLeaveButton({ leaveRequestId }: Props) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -21,15 +30,19 @@ export function CancelLeaveButton({ leaveRequestId }: Props) {
   }
 
   return (
-    <div>
-      <button
-        onClick={handleCancel}
+    <div className="inline-flex flex-col items-end gap-0.5">
+      <Button
+        hierarchy="link"
+        tone="error"
+        size="sm"
         disabled={isPending}
-        className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50 dark:text-red-400 dark:hover:text-red-300"
+        onClick={handleCancel}
       >
         {isPending ? "Cancelling…" : "Cancel request"}
-      </button>
-      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+      </Button>
+      {error && (
+        <span style={{ font: "var(--type-caption1)", color: "var(--text-error)" }}>{error}</span>
+      )}
     </div>
   );
 }

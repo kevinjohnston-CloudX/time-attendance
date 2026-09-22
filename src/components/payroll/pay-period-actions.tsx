@@ -3,6 +3,21 @@
 import { useState, useTransition } from "react";
 import { markPayPeriodReady, lockPayPeriod, reopenPayPeriod, submitOpenTimesheets } from "@/actions/pay-period.actions";
 import { pushPayrollToAdp } from "@/actions/adp.actions";
+import { Button } from "@/components/ui";
+
+/**
+ * The close controls that ride in the pay period's page header.
+ *
+ * <p>Which buttons exist is the period's state machine, not a preference:
+ * OPEN offers Mark Ready, READY offers Reopen and Lock, LOCKED offers Unlock
+ * and — once ADP is configured — the payroll push. Rendering the whole set and
+ * disabling the wrong ones would invite someone to click Lock on a period
+ * still taking punches.
+ *
+ * <p>Outcomes print under the buttons rather than in a toast. "412 pushed, 3
+ * skipped" is a number somebody has to reconcile against ADP, and a message
+ * that disappears after three seconds is a number they have to ask for again.
+ */
 
 interface PayrollRun {
   id: string;
@@ -19,6 +34,24 @@ interface Props {
   isPast: boolean;
   adpConfigured?: boolean;
   payrollRun?: PayrollRun | null;
+}
+
+/** One line of outcome under the buttons, in the tone of what happened. */
+function Note({ tone, children }: { tone: "error" | "success" | "muted"; children: React.ReactNode }) {
+  const color =
+    tone === "error"
+      ? "var(--text-error)"
+      : tone === "success"
+        ? "var(--text-success)"
+        : "var(--text-secondary)";
+  return (
+    <p
+      className="text-right"
+      style={{ margin: 0, font: "var(--type-body2)", color, textWrap: "pretty" }}
+    >
+      {children}
+    </p>
+  );
 }
 
 export function PayPeriodActions({ payPeriodId, status, isReady, isPast, adpConfigured, payrollRun }: Props) {
@@ -92,60 +125,45 @@ export function PayPeriodActions({ payPeriodId, status, isReady, isPast, adpConf
 
     return (
       <div className="flex flex-col items-end gap-2">
-        {error && <p className="text-sm text-red-500">{error}</p>}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleReopen}
-            disabled={isPending}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
+        <div className="flex items-center gap-2">
+          <Button hierarchy="secondary" onClick={handleReopen} disabled={isPending}>
             Unlock
-          </button>
+          </Button>
 
           {adpConfigured && !alreadyPushed && !pushResult && (
-            <button
-              onClick={handlePushToAdp}
-              disabled={isPending}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-            >
+            <Button onClick={handlePushToAdp} disabled={isPending}>
               {isPending ? "Pushing…" : "Push to ADP"}
-            </button>
+            </Button>
           )}
         </div>
 
+        {error && <Note tone="error">{error}</Note>}
+
         {adpConfigured && alreadyPushed && !pushResult && (
-          <div className="text-right">
-            <p className="text-sm font-medium text-green-600 dark:text-green-400">
-              Pushed to ADP
-            </p>
-            <p className="text-xs text-zinc-500">
-              {new Date(payrollRun!.exportedAt!).toLocaleString()}
+          <div className="flex flex-col items-end gap-0.5">
+            <Note tone="success">Pushed to ADP</Note>
+            <Note tone="muted">
+              <span className="tabular">{new Date(payrollRun!.exportedAt!).toLocaleString()}</span>
               {" · "}
               {payrollRun!.pushedCount} pushed, {payrollRun!.skippedCount} skipped
               {payrollRun!.errorCount > 0 && `, ${payrollRun!.errorCount} errors`}
-            </p>
+            </Note>
           </div>
         )}
 
-        {pushError && (
-          <p className="text-sm text-red-500">{pushError}</p>
-        )}
+        {pushError && <Note tone="error">{pushError}</Note>}
 
         {pushResult && (
-          <div className="text-right">
-            <p className="text-sm font-medium text-green-600 dark:text-green-400">
-              Pushed to ADP successfully
-            </p>
-            <p className="text-xs text-zinc-500">
+          <div className="flex flex-col items-end gap-0.5">
+            <Note tone="success">Pushed to ADP successfully</Note>
+            <Note tone="muted">
               {pushResult.pushed} pushed, {pushResult.skipped} skipped
-            </p>
-            {pushResult.errors.length > 0 && (
-              <div className="mt-1">
-                {pushResult.errors.map((err, i) => (
-                  <p key={i} className="text-xs text-red-500">{err}</p>
-                ))}
-              </div>
-            )}
+            </Note>
+            {pushResult.errors.map((err, i) => (
+              <Note key={i} tone="error">
+                {err}
+              </Note>
+            ))}
           </div>
         )}
       </div>
@@ -154,52 +172,49 @@ export function PayPeriodActions({ payPeriodId, status, isReady, isPast, adpConf
 
   return (
     <div className="flex flex-col items-end gap-2">
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      <div className="flex items-center gap-2">
+        {status === "OPEN" && isPast && (
+          <Button hierarchy="secondary" onClick={handleSubmitOpen} disabled={isPending}>
+            {isPending ? "Approving…" : "Approve Open Timesheets"}
+          </Button>
+        )}
+        {status === "OPEN" && (
+          /* Amber, not accent: marking a period ready is the step that stops
+             supervisors editing it, and the design reserves the accent fill for
+             the safe default action.
+
+             Disabled until the close checklist is clear, with the reason in the
+             tooltip — a button that is simply grey is how someone concludes
+             the screen is broken. */
+          <Button
+            tone="warning"
+            onClick={handleMarkReady}
+            disabled={isPending || !isReady}
+            title={isReady ? undefined : "Clear every blocking item below before marking the period ready"}
+          >
+            {isPending ? "Saving…" : "Mark Ready"}
+          </Button>
+        )}
+        {status === "READY" && (
+          <>
+            <Button hierarchy="secondary" onClick={handleReopen} disabled={isPending}>
+              Reopen
+            </Button>
+            <Button tone="success" onClick={handleLock} disabled={isPending}>
+              {isPending ? "Locking…" : "Lock Pay Period"}
+            </Button>
+          </>
+        )}
+      </div>
+
+      {error && <Note tone="error">{error}</Note>}
       {submitResult && (
-        <p className="text-sm text-green-600 dark:text-green-400">
+        <Note tone="success">
           {submitResult.submitted === 0
             ? "No open timesheets found."
             : `${submitResult.submitted} timesheet${submitResult.submitted !== 1 ? "s" : ""} moved to pending.`}
-        </p>
+        </Note>
       )}
-      <div className="flex items-center gap-3">
-      {status === "OPEN" && isPast && (
-        <button
-          onClick={handleSubmitOpen}
-          disabled={isPending}
-          className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-        >
-          {isPending ? "Approving…" : "Approve Open Timesheets"}
-        </button>
-      )}
-      {status === "OPEN" && (
-        <button
-          onClick={handleMarkReady}
-          disabled={isPending || !isReady}
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isPending ? "Saving…" : "Mark Ready"}
-        </button>
-      )}
-      {status === "READY" && (
-        <>
-          <button
-            onClick={handleReopen}
-            disabled={isPending}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
-            Reopen
-          </button>
-          <button
-            onClick={handleLock}
-            disabled={isPending}
-            className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
-          >
-            {isPending ? "Locking…" : "Lock Pay Period"}
-          </button>
-        </>
-      )}
-      </div>
     </div>
   );
 }

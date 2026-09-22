@@ -1,18 +1,27 @@
+import { Banner } from "@/components/ui";
+import { AuthScreen } from "../auth-screen";
+
+/**
+ * There is no self-serve reset on this deployment.
+ *
+ * <p>The design draws this screen with a Work Email field and a "Send Reset
+ * Link" button, but the only thing that issues a reset token here is
+ * `sendPasswordInvite`, and that refuses anyone who is not an HR, payroll or
+ * system admin. A field and a button that cannot post anywhere would leave
+ * someone waiting on an email that is never sent, so this says who to ask
+ * instead.
+ */
 export default function ForgotPasswordPage() {
   return (
-    <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-zinc-800 p-8 shadow-lg">
-      <div className="mb-8 text-center">
-        <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Reset Password</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Contact your administrator to reset your password.
-        </p>
-      </div>
-      <a
-        href="/login"
-        className="block text-center text-sm text-zinc-600 hover:underline dark:text-zinc-400"
-      >
-        Back to sign in
-      </a>
-    </div>
+    <AuthScreen
+      title="Forgot password"
+      sub="Password resets are issued by an administrator — there is no self-serve reset here."
+      note="Kiosk-only users have no portal password at all: your badge is what identifies you at the timeclock."
+    >
+      <Banner
+        tone="info"
+        body="Ask your supervisor or the HR team. They can set you a new password, or send you a setup link that works for 24 hours."
+      />
+    </AuthScreen>
   );
 }

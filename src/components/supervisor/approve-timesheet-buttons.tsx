@@ -2,6 +2,23 @@
 
 import { useState, useTransition } from "react";
 import { approveTimesheet, rejectTimesheet } from "@/actions/timesheet.actions";
+import { Button } from "@/components/ui";
+
+/**
+ * The approve / reject pair that sits at the end of a queue row.
+ *
+ * <p>Both buttons were hand-rolled zinc-and-green Tailwind with their own
+ * `dark:` variants, which is why the green here matched no other green in the
+ * product and why the pair sat a few pixels taller than every other control on
+ * the screen. They are the design system's Button now, at `sm` so the row
+ * keeps its 40px.
+ *
+ * <p>Which button a row gets is unchanged — a supervisor acts on SUBMITTED,
+ * payroll on SUP_APPROVED — and so is the note prompt. A modal would be the
+ * design's answer to asking for a rejection reason, but swapping the prompt
+ * changes what happens when somebody dismisses it, and that is the difference
+ * between a returned timesheet and a silently untouched one.
+ */
 
 interface Props {
   timesheetId: string;
@@ -37,25 +54,24 @@ export function ApproveTimesheetButtons({ timesheetId, status, isPayroll }: Prop
   }
 
   return (
-    <div className="flex items-center gap-2">
-      {error && <p className="text-sm text-red-500">{error}</p>}
-      {canReject && (
-        <button
-          onClick={handleReject}
-          disabled={isPending}
-          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+    <div className="flex items-center justify-end gap-2">
+      {error && (
+        <span
+          role="alert"
+          style={{ font: "var(--type-caption1)", color: "var(--text-error)", textWrap: "pretty" }}
         >
+          {error}
+        </span>
+      )}
+      {canReject && (
+        <Button hierarchy="secondary" size="sm" disabled={isPending} onClick={handleReject}>
           Reject
-        </button>
+        </Button>
       )}
       {canApprove && (
-        <button
-          onClick={handleApprove}
-          disabled={isPending}
-          className="rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
-        >
+        <Button size="sm" disabled={isPending} onClick={handleApprove}>
           {isPending ? "Saving…" : "Approve"}
-        </button>
+        </Button>
       )}
     </div>
   );

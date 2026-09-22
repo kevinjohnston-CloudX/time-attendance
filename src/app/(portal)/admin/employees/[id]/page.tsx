@@ -1,11 +1,20 @@
 import { redirect, notFound } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getEmployeeById, getAdminRefData, getEmployeeAuditLogs, getHrSiteAccess } from "@/actions/admin.actions";
 import { EditEmployeeForm } from "@/components/admin/edit-employee-form";
-import { format } from "date-fns";
+import { LinkButton, PageHeader } from "@/components/ui";
 
+/**
+ * One employee, on the design's doc template: a header with the way back and
+ * the related screen, then a single column of sections.
+ *
+ * <p>There is no page-level "Save Changes". The record is written by three
+ * different calls — assignment, personal details and pay each go up on their
+ * own — and one header button could only ever fire one of them. Each section
+ * carries the save that belongs to it, so the button you press is next to the
+ * fields it writes.
+ */
 export default async function EditEmployeePage({
   params,
 }: {
@@ -33,31 +42,21 @@ export default async function EditEmployeePage({
   const { sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes } = refResult.data;
 
   return (
-    <div className="max-w-2xl">
-      <Link
-        href="/admin/employees"
-        className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white"
-      >
-        ← Employees
-      </Link>
-
-      <div className="mt-2 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
-            {employee.user.name}
-          </h1>
-          <p className="mt-0.5 text-sm text-zinc-500">
-            {employee.user.email ?? employee.user.username} · Code: {employee.employeeCode} · Hired{" "}
-            {format(employee.hireDate, "MMM d, yyyy")}
-          </p>
-        </div>
-        <Link
-          href={`/admin/accruals/${id}`}
-          className="text-sm text-blue-600 hover:underline dark:text-blue-400"
-        >
-          View Accruals
-        </Link>
-      </div>
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title={employee.user.name}
+        subtitle={`${employee.employeeCode} · ${employee.department.name} · ${employee.site.name}`}
+        actions={
+          <>
+            <LinkButton href="/admin/employees" hierarchy="tertiary">
+              ← Employees
+            </LinkButton>
+            <LinkButton href={`/admin/accruals/${id}`} hierarchy="secondary">
+              View Accruals
+            </LinkButton>
+          </>
+        }
+      />
 
       <EditEmployeeForm
         employee={employee}
@@ -74,7 +73,6 @@ export default async function EditEmployeePage({
         hrSiteAccess={hrSiteAccess}
         actorRole={actorRole ?? "EMPLOYEE"}
       />
-
     </div>
   );
 }

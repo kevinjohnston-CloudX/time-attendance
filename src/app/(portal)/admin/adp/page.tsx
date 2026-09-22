@@ -1,11 +1,19 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getAdpSyncStatus } from "@/actions/adp.actions";
 import { getAdminRefData } from "@/actions/admin.actions";
 import { AdpSyncPanel } from "@/components/admin/adp-sync-panel";
 
+/**
+ * ADP Sync, on the portal design's doc template.
+ *
+ * <p>The page header is rendered by {@link AdpSyncPanel} rather than here. The
+ * design makes "Sync Now" a page action, and a sync runs with the three mapping
+ * defaults chosen further down the page — a header on this side would have to
+ * reach into that component's state to know what to send, so the header goes
+ * where the state already is.
+ */
 export default async function AdpSyncPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -21,28 +29,13 @@ export default async function AdpSyncPage() {
   const { sites, departments, ruleSets } = refResult.data;
 
   return (
-    <div className="max-w-2xl">
-      <Link
-        href="/admin"
-        className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white"
-      >
-        ← Admin
-      </Link>
-      <h1 className="mt-1 text-2xl font-bold text-zinc-900 dark:text-white">
-        ADP Sync
-      </h1>
-      <p className="mt-1 text-sm text-zinc-500">
-        Sync employee data from ADP Workforce Now into this system.
-      </p>
-
-      <div className="mt-6">
-        <AdpSyncPanel
-          status={statusResult.data}
-          sites={sites}
-          departments={departments}
-          ruleSets={ruleSets}
-        />
-      </div>
+    <div className="flex flex-col gap-4">
+      <AdpSyncPanel
+        status={statusResult.data}
+        sites={sites}
+        departments={departments}
+        ruleSets={ruleSets}
+      />
     </div>
   );
 }

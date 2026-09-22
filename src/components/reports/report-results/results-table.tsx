@@ -1,5 +1,8 @@
 "use client";
 
+import { EmptyState, Table, TableFooter, TBody, TD, TH, THead, TR } from "@/components/ui";
+import { Loader2, SearchX } from "lucide-react";
+
 interface Column {
   id: string;
   label: string;
@@ -21,6 +24,13 @@ function formatCell(value: unknown, type: string): string {
   return String(value);
 }
 
+/**
+ * The rows a report produced.
+ *
+ * <p>Renders the table and its count and nothing else — no panel, no heading.
+ * Both callers put it inside a `Card padding={0}`, and a component that
+ * brought its own surface would sit a second elevation inside the first.
+ */
 export function ResultsTable({
   columns,
   rows,
@@ -34,60 +44,56 @@ export function ResultsTable({
 }) {
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12 text-sm text-zinc-400">
-        Running report...
-      </div>
+      <EmptyState icon={<Loader2 className="h-8 w-8 animate-spin" />} title="Running report…" />
     );
   }
 
   if (rows.length === 0) {
     return (
-      <div className="flex items-center justify-center py-12 text-sm text-zinc-400">
-        No results found
-      </div>
+      <EmptyState
+        icon={<SearchX className="h-8 w-8" />}
+        title="No results"
+        body="Nothing matched this report's filters and date range."
+      />
     );
   }
 
   return (
-    <div>
-      <div className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
-        {totalRows.toLocaleString()} row{totalRows !== 1 ? "s" : ""}
-      </div>
-      <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
-              {columns.map((col) => (
-                <th
-                  key={col.id}
-                  className="whitespace-nowrap px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400"
-                >
-                  {col.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-950">
-            {rows.map((row, i) => (
-              <tr
-                key={i}
-                className="hover:bg-zinc-50 dark:hover:bg-zinc-900/40"
-              >
-                {columns.map((col) => (
-                  <td
-                    key={col.id}
-                    className={`whitespace-nowrap px-4 py-2 text-zinc-700 dark:text-zinc-300 ${
-                      col.type === "number" ? "text-right tabular-nums" : ""
-                    }`}
-                  >
-                    {formatCell(row[col.id], col.type)}
-                  </td>
-                ))}
-              </tr>
+    <>
+      <Table>
+        <THead>
+          <TR>
+            {columns.map((col) => (
+              <TH key={col.id} numeric={col.type === "number"}>
+                {col.label}
+              </TH>
             ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+          </TR>
+        </THead>
+        <TBody>
+          {rows.map((row, i) => (
+            <TR key={i}>
+              {columns.map((col) => (
+                // Numbers right-aligned with tabular figures: a report column
+                // of hours is read down, and the decimal points have to line
+                // up for that to be possible.
+                <TD key={col.id} numeric={col.type === "number"} style={{ whiteSpace: "nowrap" }}>
+                  {formatCell(row[col.id], col.type)}
+                </TD>
+              ))}
+            </TR>
+          ))}
+        </TBody>
+      </Table>
+
+      {/* Rows returned against rows the query matched. A report capped at its
+          row limit looks complete without this line, and a total that is short
+          by the cap is a number somebody would put in a payroll email. */}
+      <TableFooter
+        shown={rows.length}
+        total={totalRows}
+        label={totalRows === 1 ? "row" : "rows"}
+      />
+    </>
   );
 }

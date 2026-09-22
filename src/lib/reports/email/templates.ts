@@ -43,7 +43,7 @@ export function generateReportEmailHtml(params: ReportEmailParams): string {
             </table>
           </div>
 
-          <p style="margin: 0; font-size: 12px; color: #a1a1aa;">This is an automated email from Time &amp; Attendance. Please do not reply.</p>
+          <p style="margin: 0; font-size: 12px; color: #a1a1aa;">This is an automated email from CloudTime. Please do not reply.</p>
         </div>
       </div>
     </body>

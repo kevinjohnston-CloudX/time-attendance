@@ -1,17 +1,37 @@
-import Link from "next/link";
+import { LinkButton } from "@/components/ui";
+import { BrandLockup } from "@/components/layout/brand-mark";
 
 export default function NotFound() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-900">
-      <div className="text-center">
-        <h1 className="text-6xl font-bold text-zinc-900 dark:text-white">404</h1>
-        <p className="mt-2 text-lg text-zinc-600 dark:text-zinc-400">Page not found</p>
-        <Link
-          href="/dashboard"
-          className="mt-6 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900"
-        >
+    <div
+      className="flex min-h-screen items-center justify-center px-6"
+      style={{ background: "var(--surface-page)" }}
+    >
+      <div className="flex w-full max-w-sm flex-col items-start gap-6">
+        <BrandLockup />
+        <div className="flex flex-col gap-1.5">
+          <p
+            style={{
+              margin: 0,
+              font: "var(--type-overline)",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              color: "var(--text-tertiary)",
+            }}
+          >
+            404
+          </p>
+          <h1 style={{ margin: 0, font: "var(--type-h1)", letterSpacing: "-0.02em", color: "var(--text-primary)" }}>
+            Page not found
+          </h1>
+          <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
+            That address does not exist. If you followed a link from inside the product, it is worth
+            telling someone — it means a page is pointing somewhere that is not there.
+          </p>
+        </div>
+        <LinkButton href="/dashboard" hierarchy="primary">
           Go to Dashboard
-        </Link>
+        </LinkButton>
       </div>
     </div>
   );

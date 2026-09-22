@@ -3,6 +3,9 @@ import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Sidebar } from "@/components/layout/sidebar";
+import { TopBar } from "@/components/layout/top-bar";
+import { CommandPalette, type Destination } from "@/components/layout/command-palette";
+import { SECTIONS, ADMIN_GROUPS, INACTIVE_ALLOWED_HREFS } from "@/components/layout/nav-model";
 import { InactiveRouteGuard } from "@/components/layout/inactive-route-guard";
 import { exitTenant } from "@/actions/super-admin.actions";
 import { SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
@@ -110,8 +113,50 @@ export default async function PortalLayout({
     }
   }
 
+  /**
+   * What ⌘K can reach.
+   *
+   * <p>Built here rather than in the palette so the filtering happens on the
+   * server: the browser is only ever handed pages this person can already
+   * open from the nav. An inactive employee gets the same restricted set the
+   * sidebar shows them.
+   *
+   * <p>Uses `userPermissions`, the same list the sidebar is given, which is
+   * resolved from a custom role where one exists. Worth knowing: the
+   * Administration hub filters with `hasPermission(effectiveRole, …)` instead,
+   * which reads the built-in role only — so for a user on a custom role the
+   * two can disagree about which admin pages to list. That is pre-existing and
+   * I have not changed it; the destination pages enforce their own access
+   * either way.
+   */
+  const can = (permission?: string | string[]) => {
+    if (!permission) return true;
+    if (Array.isArray(permission)) return permission.some((p) => userPermissions.includes(p));
+    return userPermissions.includes(permission);
+  };
+
+  const destinations: Destination[] = isEmployeeActive
+    ? [
+        ...SECTIONS.flatMap((s) =>
+          s.items.filter((i) => can(i.permission)).map((i) => ({ label: i.label, href: i.href, group: s.label })),
+        ),
+        ...ADMIN_GROUPS.flatMap((g) =>
+          g.items
+            .filter((i) => can(i.permission))
+            .map((i) => ({ label: i.label, href: i.href, group: g.label, detail: i.detail })),
+        ),
+      ]
+    : SECTIONS.flatMap((s) =>
+        s.items
+          .filter((i) => INACTIVE_ALLOWED_HREFS.includes(i.href))
+          .map((i) => ({ label: i.label, href: i.href, group: s.label })),
+      );
+
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-zinc-50 dark:bg-zinc-950">
+    <div
+      className="flex h-screen flex-col overflow-hidden"
+      style={{ background: "var(--surface-page)" }}
+    >
       {tenantBannerName && (
         <div className="flex shrink-0 items-center justify-between bg-amber-400 px-4 py-2 text-sm font-medium text-amber-950">
           <span>Super Admin — viewing as: <strong>{tenantBannerName}</strong></span>
@@ -141,11 +186,21 @@ export default async function PortalLayout({
           viewAsOptions={viewAsOptions.map((r) => ({ id: r.id, name: r.name }))}
           isInactive={!isEmployeeActive}
         />
-        <main className="flex-1 overflow-y-auto">
-          <InactiveRouteGuard isInactive={!isEmployeeActive} />
-          <div className="px-6 py-8">{children}</div>
-        </main>
+        {/* Breadcrumb bar sits inside the content column, not above the
+            sidebar, so the sidebar header and the top bar meet at the same
+            56px line. */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <TopBar />
+          <main className="min-h-0 flex-1 overflow-y-auto">
+            <InactiveRouteGuard isInactive={!isEmployeeActive} />
+            {/* --space-content: the design moved main padding from 24px to
+                16px so tables get the width back. */}
+            <div className="px-4 pb-6 pt-4">{children}</div>
+          </main>
+        </div>
       </div>
+
+      <CommandPalette destinations={destinations} />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import {
   type TimesheetStatusValue,
 } from "@/lib/state-machines/labels";
 import { Download, Search, Columns3 } from "lucide-react";
+import { Table, THead, TBody, TFoot, TR, TH, TD } from "@/components/ui";
 
 export type ReportRow = {
   employeeId: string;
@@ -169,7 +170,7 @@ export function HoursReportTable({ rows, periodLabel }: Props) {
   return (
     <>
       <div className="mt-6 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+        <h2 className="text-sm font-semibold text-[var(--text-secondary)]">
           Hours Summary — {periodLabel}
         </h2>
         <div className="flex items-center gap-3">
@@ -183,7 +184,7 @@ export function HoursReportTable({ rows, periodLabel }: Props) {
               Columns
             </button>
             {colMenuOpen && (
-              <div className="absolute right-0 top-full z-10 mt-1 w-44 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+              <div className="absolute right-0 top-full z-10 mt-1 w-44 rounded-lg ta-modal py-1">
                 {COLUMNS.map((col) => (
                   <label
                     key={col.key}
@@ -193,9 +194,9 @@ export function HoursReportTable({ rows, periodLabel }: Props) {
                       type="checkbox"
                       checked={visibleCols.has(col.key)}
                       onChange={() => toggleColumn(col.key)}
-                      className="rounded border-zinc-300 dark:border-zinc-600"
+                      className="rounded border-[var(--stroke-default)]"
                     />
-                    <span className="text-zinc-700 dark:text-zinc-300">
+                    <span className="text-[var(--text-secondary)]">
                       {col.label}
                     </span>
                   </label>
@@ -268,170 +269,130 @@ export function HoursReportTable({ rows, periodLabel }: Props) {
       </div>
 
       {/* Table */}
-      <div className="mt-3 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-        <table className="w-full text-sm">
-          <thead className="bg-zinc-50 dark:bg-zinc-900">
-            <tr>
-              {show("employee") && (
-                <th className="px-4 py-3 text-left font-medium text-zinc-500">
-                  Employee
-                </th>
-              )}
-              {show("department") && (
-                <th className="px-4 py-3 text-left font-medium text-zinc-500">
-                  Department
-                </th>
-              )}
-              {show("reg") && (
-                <th className="px-4 py-3 text-right font-medium text-zinc-500">
-                  REG
-                </th>
-              )}
-              {show("ot") && (
-                <th className="px-4 py-3 text-right font-medium text-zinc-500">
-                  OT
-                </th>
-              )}
-              {show("dt") && (
-                <th className="px-4 py-3 text-right font-medium text-zinc-500">
-                  DT
-                </th>
-              )}
-              {show("pto") && (
-                <th className="px-4 py-3 text-right font-medium text-zinc-500">
-                  PTO
-                </th>
-              )}
-              {show("total") && (
-                <th className="px-4 py-3 text-right font-medium text-zinc-500">
-                  Total
-                </th>
-              )}
-              {show("status") && (
-                <th className="px-4 py-3 text-left font-medium text-zinc-500">
-                  Status
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-950">
+      <div
+        className="mt-3"
+        style={{ borderRadius: "var(--radius-l)", overflow: "hidden", boxShadow: "var(--shadow-card)" }}
+      >
+        <Table>
+          <THead>
+            <TR>
+              {show("employee") && <TH>Employee</TH>}
+              {show("department") && <TH>Department</TH>}
+              {show("reg") && <TH numeric>REG</TH>}
+              {show("ot") && <TH numeric>OT</TH>}
+              {show("dt") && <TH numeric>DT</TH>}
+              {show("pto") && <TH numeric>PTO</TH>}
+              {show("total") && <TH numeric>Total</TH>}
+              {show("status") && <TH>Status</TH>}
+            </TR>
+          </THead>
+          <TBody>
             {filtered.length === 0 && (
-              <tr>
-                <td
-                  colSpan={visibleColCount}
-                  className="px-4 py-8 text-center text-zinc-400"
-                >
+              <TR>
+                <TD colSpan={visibleColCount} align="center" style={{ color: "var(--text-tertiary)", height: 72 }}>
+                  {/* Which of the two it is. "No timesheets" while a filter is
+                      set reads as a clean period when it is not one. */}
                   {rows.length === 0
                     ? "No timesheets for this pay period."
                     : "No employees match the current filters."}
-                </td>
-              </tr>
+                </TD>
+              </TR>
             )}
             {filtered.map((r) => (
-              <tr
-                key={r.employeeId}
-                className="hover:bg-zinc-50 dark:hover:bg-zinc-900/40"
-              >
-                {show("employee") && (
-                  <td className="px-4 py-3 font-medium text-zinc-900 dark:text-white">
-                    {r.name}
-                  </td>
-                )}
-                {show("department") && (
-                  <td className="px-4 py-3 text-zinc-500">{r.department}</td>
-                )}
-                {show("reg") && (
-                  <td className="px-4 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
-                    {minutesToHoursDecimal(r.regMinutes)}
-                  </td>
-                )}
+              <TR key={r.employeeId}>
+                {show("employee") && <TD style={{ fontWeight: "var(--weight-medium)" }}>{r.name}</TD>}
+                {show("department") && <TD style={{ color: "var(--text-secondary)" }}>{r.department}</TD>}
+                {show("reg") && <TD numeric style={{ color: "var(--text-secondary)" }}>{minutesToHoursDecimal(r.regMinutes)}</TD>}
+
+                {/* Zero is dimmed and anything above it is coloured, so a
+                    period's overtime and doubletime can be found by scanning
+                    the column rather than reading every figure. */}
                 {show("ot") && (
-                  <td
-                    className={`px-4 py-3 text-right tabular-nums ${
+                  <TD
+                    numeric
+                    style={
                       r.otMinutes > 0
-                        ? "font-medium text-amber-600"
-                        : "text-zinc-400"
-                    }`}
+                        ? { color: "var(--text-warning)", fontWeight: "var(--weight-medium)" }
+                        : { color: "var(--text-tertiary)" }
+                    }
                   >
                     {minutesToHoursDecimal(r.otMinutes)}
-                  </td>
+                  </TD>
                 )}
                 {show("dt") && (
-                  <td
-                    className={`px-4 py-3 text-right tabular-nums ${
+                  <TD
+                    numeric
+                    style={
                       r.dtMinutes > 0
-                        ? "font-medium text-red-600"
-                        : "text-zinc-400"
-                    }`}
+                        ? { color: "var(--text-error)", fontWeight: "var(--weight-medium)" }
+                        : { color: "var(--text-tertiary)" }
+                    }
                   >
                     {minutesToHoursDecimal(r.dtMinutes)}
-                  </td>
+                  </TD>
                 )}
                 {show("pto") && (
-                  <td
-                    className={`px-4 py-3 text-right tabular-nums ${
+                  <TD
+                    numeric
+                    style={
                       r.ptoMinutes > 0
-                        ? "font-medium text-purple-600 dark:text-purple-400"
-                        : "text-zinc-400"
-                    }`}
+                        ? { color: "var(--wms-color-violet-600)", fontWeight: "var(--weight-medium)" }
+                        : { color: "var(--text-tertiary)" }
+                    }
                   >
                     {minutesToHoursDecimal(r.ptoMinutes)}
-                  </td>
+                  </TD>
                 )}
                 {show("total") && (
-                  <td className="px-4 py-3 text-right font-semibold tabular-nums text-zinc-900 dark:text-white">
+                  <TD numeric style={{ fontWeight: "var(--weight-semibold)" }}>
                     {minutesToHoursDecimal(r.totalMinutes)}
-                  </td>
+                  </TD>
                 )}
                 {show("status") && (
-                  <td className="px-4 py-3 text-xs text-zinc-400">
-                    {TIMESHEET_STATUS_LABEL[r.status as TimesheetStatusValue] ??
-                      r.status}
-                  </td>
+                  <TD style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                    {TIMESHEET_STATUS_LABEL[r.status as TimesheetStatusValue] ?? r.status}
+                  </TD>
                 )}
-              </tr>
+              </TR>
             ))}
-          </tbody>
+          </TBody>
+
           {filtered.length > 0 && (
-            <tfoot className="border-t border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-              <tr>
-                <td
-                  colSpan={totalsColspan}
-                  className="px-4 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300"
-                >
-                  Totals ({filtered.length} employee
-                  {filtered.length !== 1 && "s"})
-                </td>
+            <TFoot>
+              <TR>
+                <TD colSpan={totalsColspan} style={{ fontWeight: "var(--weight-semibold)", borderBottom: "none" }}>
+                  Totals ({filtered.length} employee{filtered.length !== 1 && "s"})
+                </TD>
                 {show("reg") && (
-                  <td className="px-4 py-3 text-right font-semibold tabular-nums text-zinc-900 dark:text-white">
+                  <TD numeric style={{ fontWeight: "var(--weight-semibold)", borderBottom: "none" }}>
                     {minutesToHoursDecimal(totals.reg)}
-                  </td>
+                  </TD>
                 )}
                 {show("ot") && (
-                  <td className="px-4 py-3 text-right font-semibold tabular-nums text-amber-600">
+                  <TD numeric style={{ fontWeight: "var(--weight-semibold)", color: "var(--text-warning)", borderBottom: "none" }}>
                     {minutesToHoursDecimal(totals.ot)}
-                  </td>
+                  </TD>
                 )}
                 {show("dt") && (
-                  <td className="px-4 py-3 text-right font-semibold tabular-nums text-red-600">
+                  <TD numeric style={{ fontWeight: "var(--weight-semibold)", color: "var(--text-error)", borderBottom: "none" }}>
                     {minutesToHoursDecimal(totals.dt)}
-                  </td>
+                  </TD>
                 )}
                 {show("pto") && (
-                  <td className="px-4 py-3 text-right font-semibold tabular-nums text-purple-600 dark:text-purple-400">
+                  <TD numeric style={{ fontWeight: "var(--weight-semibold)", color: "var(--wms-color-violet-600)", borderBottom: "none" }}>
                     {minutesToHoursDecimal(totals.pto)}
-                  </td>
+                  </TD>
                 )}
                 {show("total") && (
-                  <td className="px-4 py-3 text-right font-bold tabular-nums text-zinc-900 dark:text-white">
+                  <TD numeric style={{ fontWeight: "var(--weight-bold)", borderBottom: "none" }}>
                     {minutesToHoursDecimal(totals.total)}
-                  </td>
+                  </TD>
                 )}
-                {show("status") && <td />}
-              </tr>
-            </tfoot>
+                {show("status") && <TD style={{ borderBottom: "none" }} />}
+              </TR>
+            </TFoot>
           )}
-        </table>
+        </Table>
       </div>
     </>
   );

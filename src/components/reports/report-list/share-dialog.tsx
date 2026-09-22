@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useTransition, useMemo } from "react";
-import { X, UserPlus, Trash2, Shield, Globe, Lock } from "lucide-react";
+import { Trash2, UserPlus, X } from "lucide-react";
+import {
+  Button,
+  Input,
+  SegmentedControl,
+  Switch,
+} from "@/components/ui";
 import { shareReport, unshareReport, updateReport } from "@/actions/report.actions";
 
 interface ShareDialogProps {
@@ -17,14 +23,30 @@ interface ShareDialogProps {
   onClose: () => void;
 }
 
-const VISIBILITY_OPTIONS = [
-  { value: "PRIVATE", label: "Private", icon: Lock, description: "Only you can access" },
-  { value: "SHARED", label: "Shared", icon: Shield, description: "Shared with specific users" },
-  { value: "TENANT", label: "Everyone", icon: Globe, description: "All users in your organization" },
-] as const;
+/**
+ * Who else can open a report.
+ *
+ * <p>Visibility is a SegmentedControl because the three settings are one
+ * choice, not three switches — the previous three tiles could each look
+ * "pressed" and nothing said that picking one un-picked the others.
+ *
+ * <p>The named-people list stays underneath whatever visibility says, because
+ * it does not disappear when visibility changes: a report set back to Private
+ * still carries its shares, and hiding them would make it look as though they
+ * had been revoked.
+ */
 
-const inputClass =
-  "rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
+const VISIBILITY_ITEMS = [
+  { value: "PRIVATE", label: "Private" },
+  { value: "SHARED", label: "Shared" },
+  { value: "TENANT", label: "Everyone" },
+];
+
+const VISIBILITY_HINT: Record<string, string> = {
+  PRIVATE: "Only you can open it. People named below keep their access.",
+  SHARED: "Only the people named below can open it.",
+  TENANT: "Everyone in your organisation with Reports access can open it.",
+};
 
 export function ShareDialog({
   reportId,
@@ -103,149 +125,176 @@ export function ShareDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.5)" }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="mx-4 w-full max-w-lg rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-700">
-          <div>
-            <h2 className="text-base font-semibold text-zinc-900 dark:text-white">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Share ${reportName}`}
+        className="ta-modal w-full max-w-lg overflow-hidden"
+        style={{ borderRadius: "var(--radius-l)" }}
+      >
+        <header
+          className="flex items-center gap-3 px-5 py-3.5"
+          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+        >
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <h2 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
               Share Report
             </h2>
-            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            <p
+              className="truncate"
+              style={{ margin: 0, font: "var(--type-subtitle)", color: "var(--text-secondary)" }}
+            >
               {reportName}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-          >
+          <Button hierarchy="tertiary" iconOnly onClick={onClose} aria-label="Close" title="Close">
             <X className="h-4 w-4" />
-          </button>
-        </div>
+          </Button>
+        </header>
 
-        <div className="space-y-5 px-5 py-4">
-          {/* Visibility */}
-          <div>
-            <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Visibility
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {VISIBILITY_OPTIONS.map((opt) => {
-                const Icon = opt.icon;
-                const active = visibility === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    onClick={() => handleVisibilityChange(opt.value)}
-                    disabled={isPending}
-                    className={`flex flex-col items-center gap-1.5 rounded-lg border px-3 py-2.5 text-center transition-colors ${
-                      active
-                        ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-300 dark:bg-zinc-300 dark:text-zinc-900"
-                        : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-750"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span className="text-xs font-medium">{opt.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <p className="mt-1.5 text-xs text-zinc-400 dark:text-zinc-500">
-              {VISIBILITY_OPTIONS.find((o) => o.value === visibility)?.description}
+        <div className="flex flex-col gap-5 px-5 py-4">
+          <div className="flex flex-col gap-1.5">
+            <span className="wms-overline">Visibility</span>
+            <SegmentedControl
+              items={VISIBILITY_ITEMS}
+              value={visibility}
+              onChange={handleVisibilityChange}
+              fullWidth
+              ariaLabel="Who can open this report"
+            />
+            <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+              {VISIBILITY_HINT[visibility] ?? ""}
             </p>
           </div>
 
-          {/* Search & Add Users */}
-          <div>
-            <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Share with users
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search by name or email…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className={`${inputClass} w-full`}
-              />
-              {filteredUsers.length > 0 && (
-                <ul className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
-                  {filteredUsers.map((user) => (
-                    <li key={user.id}>
-                      <button
-                        onClick={() => handleShare(user.id)}
-                        disabled={isPending}
-                        className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-700"
-                      >
-                        <UserPlus className="h-4 w-4 shrink-0 text-zinc-400" />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium text-zinc-900 dark:text-white">
-                            {user.name ?? "Unnamed"}
-                          </p>
-                          {user.email && (
-                            <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                              {user.email}
-                            </p>
-                          )}
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+          <div className="relative flex flex-col gap-1.5">
+            <Input
+              label="Share with"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name or email…"
+              leadingIcon={<UserPlus className="h-4 w-4" />}
+            />
+            {filteredUsers.length > 0 && (
+              <ul
+                className="ta-modal absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto"
+                style={{ borderRadius: "var(--radius-m)", listStyle: "none", margin: 0, padding: 4 }}
+              >
+                {filteredUsers.map((user) => (
+                  <li key={user.id}>
+                    <button
+                      type="button"
+                      onClick={() => handleShare(user.id)}
+                      disabled={isPending}
+                      // The hover fill is a utility and the background is not
+                      // an inline style: .ta-row only lifts rows inside a
+                      // tbody, and an inline background would beat the
+                      // utility anyway — between them these rows had no hover
+                      // at all, on the one list whose whole purpose is being
+                      // clicked.
+                      className="flex w-full items-center gap-3 rounded-md bg-transparent px-3 py-2 text-left transition-colors hover:bg-[var(--ta-row-hover)]"
+                      style={{ border: 0, cursor: "pointer" }}
+                    >
+                      <div className="flex min-w-0 flex-1 flex-col">
+                        <span
+                          className="truncate"
+                          style={{
+                            font: "var(--type-body1)",
+                            fontWeight: "var(--weight-medium)",
+                            color: "var(--text-primary)",
+                          }}
+                        >
+                          {user.name ?? "Unnamed"}
+                        </span>
+                        {user.email && (
+                          <span
+                            className="truncate"
+                            style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+                          >
+                            {user.email}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
-          {/* Current Shares */}
           {shares.length > 0 && (
-            <div>
-              <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Shared with
-              </label>
-              <ul className="divide-y divide-zinc-100 rounded-lg border border-zinc-200 dark:divide-zinc-700 dark:border-zinc-700">
-                {shares.map((share) => (
+            <div className="flex flex-col gap-1.5">
+              <span className="wms-overline">Shared with</span>
+              <ul
+                className="flex flex-col"
+                style={{
+                  listStyle: "none",
+                  margin: 0,
+                  padding: 0,
+                  border: "1px solid var(--stroke-divider)",
+                  borderRadius: "var(--radius-m)",
+                }}
+              >
+                {shares.map((share, i) => (
                   <li
                     key={share.id}
-                    className="flex items-center gap-3 px-3 py-2.5"
+                    className="flex flex-wrap items-center gap-3 px-3 py-2.5"
+                    style={{ borderTop: i === 0 ? undefined : "1px solid var(--stroke-divider)" }}
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-zinc-900 dark:text-white">
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span
+                        className="truncate"
+                        style={{
+                          font: "var(--type-body1)",
+                          fontWeight: "var(--weight-medium)",
+                          color: "var(--text-primary)",
+                        }}
+                      >
                         {share.user.name ?? "Unnamed"}
-                      </p>
+                      </span>
                       {share.user.email && (
-                        <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                        <span
+                          className="truncate"
+                          style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+                        >
                           {share.user.email}
-                        </p>
+                        </span>
                       )}
                     </div>
 
-                    <button
-                      onClick={() =>
-                        handleToggleEdit(share.user.id, !share.canEdit)
+                    {/* A switch, not a pill that toggles on click: whether
+                        somebody can change a shared report is the kind of thing
+                        that should look like a setting, not like a label. */}
+                    <Switch
+                      size="sm"
+                      checked={share.canEdit}
+                      disabled={isPending}
+                      onChange={(next) => handleToggleEdit(share.user.id, next)}
+                      label={
+                        <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                          Can edit
+                        </span>
                       }
-                      disabled={isPending}
-                      title={share.canEdit ? "Can edit — click to make view-only" : "View only — click to allow editing"}
-                      className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-                        share.canEdit
-                          ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50"
-                          : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                      }`}
-                    >
-                      {share.canEdit ? "Can edit" : "View only"}
-                    </button>
+                    />
 
-                    <button
-                      onClick={() => handleUnshare(share.user.id)}
+                    <Button
+                      hierarchy="tertiary"
+                      tone="error"
+                      size="sm"
+                      iconOnly
                       disabled={isPending}
-                      className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                      title="Remove access"
+                      onClick={() => handleUnshare(share.user.id)}
+                      title={`Remove ${share.user.name ?? share.user.email ?? "this person"}`}
+                      aria-label={`Remove ${share.user.name ?? share.user.email ?? "this person"}`}
                     >
                       <Trash2 className="h-4 w-4" />
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -253,15 +302,14 @@ export function ShareDialog({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex justify-end border-t border-zinc-200 px-5 py-3 dark:border-zinc-700">
-          <button
-            onClick={onClose}
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          >
+        <footer
+          className="flex justify-end px-5 py-3"
+          style={{ borderTop: "1px solid var(--stroke-divider)" }}
+        >
+          <Button hierarchy="primary" onClick={onClose}>
             Done
-          </button>
-        </div>
+          </Button>
+        </footer>
       </div>
     </div>
   );

@@ -1,0 +1,62 @@
+/* ============================================================
+   CloudX WMS — Spacing, Radii, Borders, Shadows
+   Spacing uses a 2px base step (2,4,6,8,10,12,14,16,20,24…).
+   The WMS interface is tight — most internal gaps fall in the 6–16px band.
+   ============================================================ */
+
+:root {
+  /* ---- Spacing scale (px) ---- */
+  --space-0:  0px;
+  --space-1:  2px;
+  --space-2:  4px;
+  --space-3:  6px;
+  --space-4:  8px;
+  --space-5:  10px;
+  --space-6:  12px;
+  --space-7:  14px;
+  --space-8:  16px;
+  --space-10: 20px;
+  --space-12: 24px;
+  --space-16: 32px;
+  --space-20: 40px;
+  --space-24: 48px;
+  --space-32: 64px;
+  --space-40: 80px;
+
+  /* ---- Layout aliases ---- */
+  /* Horizontal padding of main content areas (BOL build #34982; was 24px). */
+  --space-content: 16px;
+
+  /* ---- Border radius ---- */
+  --radius-s:    4px;   /* chips, tags, checkboxes, small controls */
+  --radius-m:    8px;   /* fields, buttons, cards, menus */
+  --radius-l:    12px;  /* large cards, modals, wrappers */
+  --radius-full: 9999px;
+
+  /* ---- Border widths ---- */
+  --border-thin:  1px;
+  --border-thick: 1.5px;
+
+  /* ---- Shadows / elevation ----
+     The WMS look pairs a hairline inset ring (--stroke-divider) with a soft
+     ambient drop. Cards read as crisp, low-contrast panels, not floating. */
+  --shadow-xs:    inset 0 0 0 1px var(--wms-color-gray-100), 0px 1px 2px 0px rgba(0,0,0,0.05);
+  --shadow-card:  inset 0 0 0 1px var(--wms-color-gray-100), 0px 2px 12px 0px rgba(0,0,0,0.03);
+  --shadow-pop:   0px 1px 3px 0px rgba(0,0,0,0.10), 0px 1px 2px 0px rgba(0,0,0,0.06);
+  --shadow-menu:  0px 8px 24px -6px rgba(0,0,0,0.12), 0px 2px 6px -2px rgba(0,0,0,0.06);
+  --shadow-md:    0px 4px 6px -1px rgba(0,0,0,0.10), 0px 2px 4px -1px rgba(0,0,0,0.06);
+  --shadow-modal: 0px 24px 48px -12px rgba(0,0,0,0.25);
+  /* Focus ring — soft blue glow used on focused inputs/controls */
+  --focus-ring:   0px 0px 0px 1px var(--wms-color-base-white), 0px 0px 5px 1px var(--wms-color-primary-500);
+  --focus-ring-tight: 0 0 0 3px var(--wms-color-primary-100);
+}
+
+/* Icon sizes and their stroke widths (Tabler outline, stroke scales with size) */
+:root {
+  --icon-size-16: 16px; --icon-stroke-16: 1.33;
+  --icon-size-18: 18px; --icon-stroke-18: 1.5;
+  --icon-size-20: 20px; --icon-stroke-20: 1.67;
+  --icon-size-24: 24px; --icon-stroke-24: 2;
+  --icon-size-32: 32px; --icon-stroke-32: 2.3;
+  --icon-size-48: 48px; --icon-stroke-48: 2.6;
+}

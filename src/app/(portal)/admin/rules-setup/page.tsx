@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
+import { LinkButton, PageHeader } from "@/components/ui";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getRuleSets, getLeaveTypesAdmin } from "@/actions/admin.actions";
 import { getAllPayCodes } from "@/actions/pay-code.actions";
@@ -9,10 +9,18 @@ import { getShifts } from "@/actions/shift.actions";
 import { getHolidayRules } from "@/actions/holiday-rule.actions";
 import { RulesSetupClient } from "./rules-setup-client";
 
+/**
+ * Rules Setup — the pay rules screen from the portal design.
+ *
+ * <p>Everything the four editors need is fetched here in one round, so the
+ * area rail below can switch without another server trip. The query string
+ * carries where to start: `tab` picks the area, `policy` opens one accrual
+ * policy, `view` preselects the rule-set status filter.
+ */
 export default async function RulesSetupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; policy?: string }>;
+  searchParams: Promise<{ tab?: string; policy?: string; view?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -20,7 +28,7 @@ export default async function RulesSetupPage({
   const hasRulesManage = await userHasPermission(session.user, "RULES_MANAGE");
   if (!hasRulesManage) redirect("/dashboard");
 
-  const { tab, policy } = (await searchParams) ?? {};
+  const { tab, policy, view } = (await searchParams) ?? {};
 
   const [ruleSetsResult, shiftsResult, holidayRulesResult, ptoPoliciesResult, leaveTypesResult, payCodesResult] =
     await Promise.all([
@@ -38,11 +46,16 @@ export default async function RulesSetupPage({
   }
 
   return (
-    <div>
-      <Link href="/dashboard" className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white">
-        ← Dashboard
-      </Link>
-      <h1 className="mt-1 text-2xl font-bold text-zinc-900 dark:text-white">Rules Setup</h1>
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title="Rules Setup"
+        subtitle="Overtime, rounding, meal and holiday rules by rule set"
+        actions={
+          <LinkButton href="/admin" hierarchy="tertiary">
+            ← Administration
+          </LinkButton>
+        }
+      />
       <RulesSetupClient
         ruleSets={serialize(ruleSetsResult.success ? ruleSetsResult.data : [])}
         shifts={serialize(shiftsResult.success ? shiftsResult.data : [])}
@@ -52,6 +65,7 @@ export default async function RulesSetupPage({
         payCodes={serialize(payCodesResult.success ? payCodesResult.data : [])}
         initialTab={tab}
         initialPolicyId={policy}
+        initialRuleSetView={view}
       />
     </div>
   );

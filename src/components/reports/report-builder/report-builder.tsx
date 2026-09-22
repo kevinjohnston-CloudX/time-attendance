@@ -2,6 +2,18 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowLeft, Play, Save, Table2 } from "lucide-react";
+import {
+  Banner,
+  Button,
+  Card,
+  EmptyState,
+  Input,
+  LinkButton,
+  PageHeader,
+  SegmentedControl,
+  Textarea,
+} from "@/components/ui";
 import { DataSourcePicker } from "./data-source-picker";
 import { ColumnPicker } from "./column-picker";
 import { FilterBuilder } from "./filter-builder";
@@ -16,7 +28,20 @@ import type {
   DateRange,
 } from "@/lib/validators/report.schema";
 import type { ReportResult } from "@/lib/reports/data-sources";
-import { Save, Play } from "lucide-react";
+
+/**
+ * The report builder, as the portal design's doc screen: a stack of labelled
+ * cards down a narrow column, with the page's own actions in the header.
+ *
+ * <p>The header carries them — not a button bar at the bottom of the last tab
+ * — because Save applies to the whole form and used to live inside the Preview
+ * tab, where it could only be reached by running a preview first. Its two
+ * prerequisites, a name and a data source, are the two things the first card
+ * asks for, so the button is never disabled for a reason that is off screen.
+ *
+ * <p>This component owns the PageHeader rather than the route, since Preview
+ * and Save both act on state that only exists here.
+ */
 
 interface DataSourceMeta {
   id: DataSourceId;
@@ -38,10 +63,8 @@ interface FilterOptions {
 const TABS = ["Source", "Columns", "Filters", "Date Range", "Group & Sort", "Preview"] as const;
 type Tab = (typeof TABS)[number];
 
-const btnPrimary =
-  "rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
-const btnSecondary =
-  "rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800";
+/** The design's doc width for this screen. */
+const DOC_WIDTH = 900;
 
 export function ReportBuilder({
   dataSources,
@@ -148,180 +171,235 @@ export function ReportBuilder({
   }
 
   const canPreview = !!dataSource && selectedColumns.length > 0;
+  const canSave = canPreview && reportName.trim().length > 0;
+
+  /** What the first card says it still needs before Save will do anything. */
+  const missing = [
+    !reportName.trim() && "a name",
+    !dataSource && "a data source",
+    dataSource && selectedColumns.length === 0 && "at least one column",
+  ].filter(Boolean) as string[];
 
   return (
-    <div>
-      {/* Tab navigation */}
-      <div className="mb-6 flex gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-700">
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className={`whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === tab
-                ? "border-zinc-900 text-zinc-900 dark:border-white dark:text-white"
-                : "border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title="New Report"
+        subtitle="Pick a data source, shape the columns, schedule delivery"
+        actions={
+          <>
+            <LinkButton
+              href="/reports"
+              hierarchy="tertiary"
+              leadingIcon={<ArrowLeft className="h-4 w-4" />}
+            >
+              Reports
+            </LinkButton>
+            <Button
+              hierarchy="secondary"
+              disabled={!canPreview || isRunning}
+              onClick={() => {
+                setActiveTab("Preview");
+                void handleRunPreview();
+              }}
+              leadingIcon={<Play className="h-4 w-4" />}
+            >
+              {isRunning ? "Running…" : "Preview"}
+            </Button>
+            <Button
+              hierarchy="primary"
+              disabled={!canSave || isPending}
+              onClick={handleSave}
+              leadingIcon={<Save className="h-4 w-4" />}
+            >
+              {isPending ? "Saving…" : "Save Report"}
+            </Button>
+          </>
+        }
+      />
 
-      {/* Tab content */}
-      <div className="min-h-[300px]">
+      {saveError && <Banner tone="error" title="The report was not saved" body={saveError} />}
+
+      <div
+        className="flex flex-col gap-4"
+        // The design fixes this screen at 900px, which is right for a form and
+        // wrong for a hundred-row preview, so the results tab takes the width
+        // it needs rather than scrolling a table inside a narrow column.
+        style={{ maxWidth: activeTab === "Preview" ? undefined : DOC_WIDTH }}
+      >
+        <Card
+          title="Report"
+          subtitle={
+            missing.length > 0
+              ? `Still needs ${missing.join(" and ")} before it can be saved.`
+              : "Ready to save — Preview first if you want to see the rows."
+          }
+        >
+          <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,46%)),1fr))]">
+            <Input
+              label="Report Name"
+              required
+              value={reportName}
+              onChange={(e) => setReportName(e.target.value)}
+              placeholder="Overtime by Department"
+            />
+            <Textarea
+              label="Description"
+              rows={2}
+              value={reportDesc}
+              onChange={(e) => setReportDesc(e.target.value)}
+              placeholder="What this report answers, and for whom"
+            />
+          </div>
+        </Card>
+
+        <div className="overflow-x-auto">
+          <SegmentedControl
+            items={TABS.map((tab) => ({ value: tab, label: tab }))}
+            value={activeTab}
+            onChange={(v) => setActiveTab(v as Tab)}
+            ariaLabel="Builder step"
+          />
+        </div>
+
         {activeTab === "Source" && (
-          <div>
-            <h2 className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Choose a data source
-            </h2>
+          <Card
+            title="Data Source"
+            subtitle="Decides which columns, filters and groupings the rest of this form can offer"
+          >
             <DataSourcePicker
               sources={dataSources}
               selected={dataSource}
               onSelect={handleDataSourceChange}
             />
-          </div>
+          </Card>
         )}
 
-        {activeTab === "Columns" && currentSource && (
-          <div>
-            <h2 className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Select columns for {currentSource.label}
-            </h2>
-            <ColumnPicker
-              columns={currentSource.columns}
-              selected={selectedColumns}
-              onChange={setSelectedColumns}
-            />
-          </div>
+        {activeTab === "Columns" && (
+          <Card title="Columns" subtitle="Pick what appears, in order.">
+            {currentSource ? (
+              <ColumnPicker
+                columns={currentSource.columns}
+                selected={selectedColumns}
+                onChange={setSelectedColumns}
+              />
+            ) : (
+              <NeedsSource onGo={() => setActiveTab("Source")} />
+            )}
+          </Card>
         )}
 
-        {activeTab === "Filters" && currentSource && (
-          <div>
-            <h2 className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Filter data
-            </h2>
-            <FilterBuilder
-              filterFields={currentSource.filters}
-              filters={filters}
-              onChange={setFilters}
-              filterOptions={filterOptions}
-            />
-          </div>
+        {activeTab === "Filters" && (
+          <Card
+            title="Filters"
+            subtitle="Every row narrows the report further — they are combined with AND"
+          >
+            {currentSource ? (
+              <FilterBuilder
+                filterFields={currentSource.filters}
+                filters={filters}
+                onChange={setFilters}
+                filterOptions={filterOptions}
+              />
+            ) : (
+              <NeedsSource onGo={() => setActiveTab("Source")} />
+            )}
+          </Card>
         )}
 
         {activeTab === "Date Range" && (
-          <div>
-            <h2 className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Select date range
-            </h2>
+          <Card
+            title="Date Range"
+            subtitle="The window the report covers. A saved report can be re-run over any other window."
+          >
             <DateRangePicker
               value={dateRange}
               onChange={setDateRange}
               payPeriods={filterOptions.payPeriods}
             />
-          </div>
+          </Card>
         )}
 
-        {activeTab === "Group & Sort" && currentSource && (
-          <GroupSortConfig
-            columns={currentSource.columns}
-            groupableFields={currentSource.groupableFields}
-            groupBy={groupBy}
-            onGroupByChange={setGroupBy}
-            sortBy={sortBy}
-            onSortByChange={setSortBy}
-          />
+        {activeTab === "Group & Sort" && (
+          <Card title="Group & Sort" subtitle="How the rows are rolled up, and what order they come out in">
+            {currentSource ? (
+              <GroupSortConfig
+                columns={currentSource.columns}
+                groupableFields={currentSource.groupableFields}
+                groupBy={groupBy}
+                onGroupByChange={setGroupBy}
+                sortBy={sortBy}
+                onSortByChange={setSortBy}
+              />
+            ) : (
+              <NeedsSource onGo={() => setActiveTab("Source")} />
+            )}
+          </Card>
         )}
 
         {activeTab === "Preview" && (
-          <div className="space-y-4">
-            {/* Run button */}
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleRunPreview}
-                disabled={!canPreview || isRunning}
-                className={btnPrimary + " flex items-center gap-2"}
-              >
-                <Play className="h-4 w-4" />
-                {isRunning ? "Running..." : "Run Preview"}
-              </button>
-              {previewResult && (
-                <span className="text-xs text-zinc-500">
-                  Showing up to 100 rows
-                </span>
-              )}
-            </div>
-
+          <>
             {previewError && (
-              <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-400">
-                {previewError}
-              </div>
+              <Banner tone="error" title="The preview did not run" body={previewError} />
             )}
 
-            {previewResult && (
-              <ResultsTable
-                columns={previewResult.columns}
-                rows={previewResult.rows}
-                totalRows={previewResult.totalRows}
-              />
-            )}
-
-            {/* Save section */}
-            <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
-              <h3 className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Save this report
-              </h3>
-              <div className="flex flex-col gap-3 sm:max-w-md">
-                <input
-                  type="text"
-                  value={reportName}
-                  onChange={(e) => setReportName(e.target.value)}
-                  placeholder="Report name"
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+            <Card
+              title="Preview"
+              subtitle="Capped at 100 rows — a saved report runs up to 5,000"
+              padding={0}
+              actions={
+                <Button
+                  size="sm"
+                  hierarchy="secondary"
+                  disabled={!canPreview || isRunning}
+                  onClick={handleRunPreview}
+                  leadingIcon={<Play className="h-3.5 w-3.5" />}
+                >
+                  {isRunning ? "Running…" : "Run Preview"}
+                </Button>
+              }
+            >
+              {previewResult ? (
+                <ResultsTable
+                  columns={previewResult.columns}
+                  rows={previewResult.rows}
+                  totalRows={previewResult.totalRows}
+                  isLoading={isRunning}
                 />
-                <textarea
-                  value={reportDesc}
-                  onChange={(e) => setReportDesc(e.target.value)}
-                  placeholder="Description (optional)"
-                  rows={2}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+              ) : (
+                <EmptyState
+                  icon={<Table2 className="h-8 w-8" />}
+                  title={canPreview ? "Not previewed yet" : "Pick a data source and columns first"}
+                  body={
+                    canPreview
+                      ? "Run the preview to see the first hundred rows this report would return."
+                      : "A preview needs a data source and at least one column."
+                  }
                 />
-                {saveError && (
-                  <p className="text-sm text-red-600">{saveError}</p>
-                )}
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleSave}
-                    disabled={!reportName.trim() || !canPreview || isPending}
-                    className={btnPrimary + " flex items-center gap-2"}
-                  >
-                    <Save className="h-4 w-4" />
-                    {isPending ? "Saving..." : "Save Report"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => router.push("/reports")}
-                    className={btnSecondary}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Show prompt if tab needs data source but none selected */}
-        {!currentSource && activeTab !== "Source" && activeTab !== "Date Range" && activeTab !== "Preview" && (
-          <div className="flex items-center justify-center py-12 text-sm text-zinc-400">
-            Please select a data source first
-          </div>
+              )}
+            </Card>
+          </>
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * What a tab shows before a data source has been chosen.
+ *
+ * <p>Says which step is missing and takes you there, rather than the previous
+ * grey line of text that named a prerequisite and left you to find it.
+ */
+function NeedsSource({ onGo }: { onGo: () => void }) {
+  return (
+    <EmptyState
+      title="No data source yet"
+      body="The columns, filters and groupings on offer depend on which table the report reads."
+      action={
+        <Button size="sm" hierarchy="secondary" onClick={onGo}>
+          Choose a data source
+        </Button>
+      }
+    />
   );
 }

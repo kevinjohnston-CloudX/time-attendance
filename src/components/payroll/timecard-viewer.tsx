@@ -14,6 +14,26 @@ const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov
 import { parseUtcDate } from "@/lib/utils/date";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
 import {
+  Badge,
+  Banner,
+  Button,
+  Checkbox,
+  EmptyState,
+  FilterBar,
+  FilterChip,
+  Input,
+  SearchInput,
+  SegmentedControl,
+  Select,
+  TH,
+  THead,
+  TR,
+  Textarea,
+  Toolbar,
+  statusTone,
+  type BannerTone,
+} from "@/components/ui";
+import {
   PAY_BUCKET_LABEL,
   ALL_PAY_BUCKETS,
   type PayBucketValue,
@@ -47,7 +67,6 @@ import { setDayReasonCode } from "@/actions/reason-code.actions";
 import { ensureTimesheet } from "@/actions/timecard.actions";
 import { AddTimecardEntry } from "@/components/payroll/add-timecard-entry";
 import {
-  Search,
   ChevronRight,
   ChevronLeft,
   Pencil,
@@ -60,7 +79,29 @@ import {
   StickyNote,
   Check,
   RefreshCw,
+  Users,
 } from "lucide-react";
+
+/**
+ * The Timecards workspace, as the portal design lays it out.
+ *
+ * <p>Two of the design's templates meet on this screen. The employee picker is
+ * the list template — a toolbar carrying the view segments, the search box and
+ * the record count, then the filters that are actually applied as chips you can
+ * clear one at a time. The sheet beside it is the timesheet grid: two header
+ * rows, a vertical rule between the punches and the hours the engine calculated
+ * from them, and the grouped summary underneath.
+ *
+ * <p>The two live inside one full-height pane rather than stacked down a
+ * scrolling page because the job here is comparing a row of hours against the
+ * punches that produced it, and a picker that scrolls away takes the next
+ * employee with it.
+ *
+ * <p>Nothing in here calculates. Every figure on screen is read back from the
+ * segments and buckets the rules engine wrote; the editable cells queue changes
+ * and Save Changes sends them. That separation is why a restyle of this file
+ * cannot move a payroll number.
+ */
 
 // ─── Serialized prop types (dates as ISO strings) ────────────────────────────
 
@@ -268,25 +309,77 @@ function parseTimeInput(str: string): { hours: number; minutes: number } | null 
   return null;
 }
 
-const STATUS_DOT: Record<string, string> = {
-  LOCKED: "bg-zinc-400",
-  PAYROLL_APPROVED: "bg-emerald-500",
-  SUP_APPROVED: "bg-blue-500",
-  SUBMITTED: "bg-sky-400",
-  OPEN: "bg-zinc-300 dark:bg-zinc-600",
-  REJECTED: "bg-red-500",
-};
+/**
+ * A pay-code or reason-code dropdown inside the grid.
+ *
+ * <p>Amber while the pick is queued. This grid does not write on change — Save
+ * Changes does — and a cell that looked identical before and after you chose a
+ * code is how somebody walks away from a correction believing it landed.
+ *
+ * <p>Sized rather than full-width: four of these sit in a row with the punch
+ * cells, and a select that filled its column would make the grid a wall of
+ * boxes, which is the thing `.ta-cell` exists to avoid.
+ */
+function gridSelectStyle(pending: boolean, width: number): React.CSSProperties {
+  return {
+    width,
+    height: 24,
+    padding: "0 4px",
+    boxSizing: "border-box",
+    borderRadius: "var(--radius-s)",
+    border: `1px solid ${pending ? "var(--stroke-warning)" : "var(--stroke-secondary)"}`,
+    background: pending ? "var(--surface-warning)" : "var(--surface-card)",
+    color: "var(--text-primary)",
+    font: "var(--type-body2)",
+    cursor: "pointer",
+  };
+}
 
-const STATUS_BADGE: Record<string, string> = {
-  OPEN: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
-  SUBMITTED: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300",
-  SUP_APPROVED:
-    "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-  PAYROLL_APPROVED:
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
-  LOCKED: "bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300",
-  REJECTED: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
-};
+/**
+ * The bare button a grid cell is made of: no chrome until the cursor is on it,
+ * so a fortnight of rows reads as a column of times rather than a keyboard.
+ *
+ * <p>The hover fill comes from `.ta-hoverable` rather than a `hover:bg-*`
+ * utility. These cells carry their colour inline from tokens, and an inline
+ * style beats a utility class — the utility would have rendered a grid where no
+ * time ever lit up under the cursor, on the one screen where knowing a cell is
+ * editable is the whole point.
+ */
+const gridCellButtonClass = "ta-hoverable rounded bg-transparent px-1 py-0.5";
+
+/**
+ * A punch time sitting in the grid.
+ *
+ * <p>Amber means an edit to it is queued and not yet written. That is the one
+ * piece of state the grid must never lose: everything else on this screen is
+ * read back from the database, and these are the cells that disagree with it.
+ */
+function punchCellStyle(pending: boolean, editable: boolean): React.CSSProperties {
+  return {
+    font: "var(--type-body1)",
+    fontVariantNumeric: "tabular-nums",
+    fontWeight: pending ? "var(--weight-medium)" : undefined,
+    color: pending ? "var(--text-warning)" : "var(--text-primary)",
+    border: 0,
+    cursor: editable ? "pointer" : "default",
+  };
+}
+
+/**
+ * The three views the design gives this screen, expressed as the timesheet
+ * statuses behind them.
+ *
+ * <p>"Ready to pay" is SUP_APPROVED, not PAYROLL_APPROVED: the phrase names the
+ * queue this screen exists to clear. A supervisor has signed the hours off and
+ * payroll has not, which is exactly the set the approve button on each row can
+ * act on. Payroll-approved cards are already done, and a tab of finished work
+ * is not a tab anybody opens twice.
+ */
+const VIEW_SEGMENTS: { value: string; label: string }[] = [
+  { value: "ALL", label: "All" },
+  { value: "SUBMITTED", label: "Submitted" },
+  { value: "SUP_APPROVED", label: "Ready to pay" },
+];
 
 // ─── Recalculate button ──────────────────────────────────────────────────────
 
@@ -308,18 +401,22 @@ function RecalculateButton({ timesheetId }: { timesheetId: string }) {
   }
 
   return (
-    <div className="flex items-center gap-1">
-      <button
-        type="button"
+    <div className="flex items-center gap-2">
+      <Button
+        hierarchy="secondary"
+        size="sm"
         onClick={handleRecalculate}
         disabled={isPending}
         title="Recalculate segments and overtime"
-        className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        leadingIcon={
+          <RefreshCw className={`h-3.5 w-3.5 ${isPending ? "animate-spin" : ""}`} />
+        }
       >
-        <RefreshCw className={`h-3.5 w-3.5 ${isPending ? "animate-spin" : ""}`} />
         {isPending ? "Recalculating…" : "Recalculate"}
-      </button>
-      {error && <span className="text-xs text-red-500">{error}</span>}
+      </Button>
+      {error && (
+        <span style={{ font: "var(--type-body2)", color: "var(--text-error)" }}>{error}</span>
+      )}
     </div>
   );
 }
@@ -329,6 +426,16 @@ const PAID_LEAVE_BUCKETS = new Set(["PTO", "SICK", "HOLIDAY", "FMLA", "BEREAVEME
 
 // ─── Summary Row Helper ─────────────────────────────────────────────────────
 
+/**
+ * One line of the grouped summary under the grid.
+ *
+ * <p>Only two figures are ever coloured — overtime and double time, and only
+ * when they are non-zero. Those are the two numbers that cost money nobody
+ * planned to spend; colouring the rest would make the row a rainbow and the
+ * premiums stop standing out. The totals line takes the design's footer fill
+ * instead of a colour, so it reads as a summary of the column rather than
+ * another record in it.
+ */
 function SummaryRow({
   label,
   reg,
@@ -337,7 +444,6 @@ function SummaryRow({
   total,
   rate,
   isBold,
-  className,
 }: {
   label: string;
   reg: number;
@@ -346,7 +452,6 @@ function SummaryRow({
   total: number;
   rate: number | null;
   isBold?: boolean;
-  className?: string;
 }) {
   const fmt = (m: number) => minutesToHoursDecimal(m);
   const fmtMoney = (v: number) => `$${v.toFixed(2)}`;
@@ -355,57 +460,46 @@ function SummaryRow({
   const dtPay = rate ? (dt / 60) * rate * 2 : 0;
   const totalPay = regPay + otPay + dtPay;
 
-  const base = isBold
-    ? "border-t-2 border-zinc-300 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900"
-    : "";
-  const text = isBold
-    ? "font-bold text-zinc-900 dark:text-white"
-    : className ?? "text-zinc-700 dark:text-zinc-300";
+  const cell: React.CSSProperties = {
+    padding: "0 12px",
+    height: isBold ? 40 : 34,
+    font: "var(--type-body1)",
+    fontVariantNumeric: "tabular-nums",
+    textAlign: "right",
+    color: isBold ? "var(--text-primary)" : "var(--text-secondary)",
+    fontWeight: isBold ? "var(--weight-semibold)" : undefined,
+  };
+  const emphasis = (on: boolean, color: string): React.CSSProperties =>
+    on ? { ...cell, color, fontWeight: "var(--weight-semibold)" } : cell;
+  const strong: React.CSSProperties = {
+    ...cell,
+    color: "var(--text-primary)",
+    fontWeight: "var(--weight-semibold)",
+  };
 
   return (
-    <tr className={base}>
-      <td className={`px-4 py-1.5 ${text}`}>{label}</td>
-      <td className={`px-3 py-1.5 text-right tabular-nums ${text}`}>
-        {reg > 0 ? fmt(reg) : "—"}
-      </td>
-      <td
-        className={`px-3 py-1.5 text-right tabular-nums ${
-          ot > 0
-            ? "font-semibold text-amber-600 dark:text-amber-400"
-            : text
-        }`}
-      >
-        {ot > 0 ? fmt(ot) : "—"}
-      </td>
-      <td
-        className={`px-3 py-1.5 text-right tabular-nums ${
-          dt > 0
-            ? "font-semibold text-red-600 dark:text-red-400"
-            : text
-        }`}
-      >
-        {dt > 0 ? fmt(dt) : "—"}
-      </td>
-      <td className={`px-3 py-1.5 text-right tabular-nums ${isBold ? text : "font-semibold text-zinc-900 dark:text-white"}`}>
-        {fmt(total)}
-      </td>
+    <tr
+      style={
+        isBold
+          ? {
+              background: "var(--surface-tertiary)",
+              borderTop: "1px solid var(--stroke-secondary)",
+            }
+          : { borderTop: "1px solid var(--stroke-divider)" }
+      }
+    >
+      <td style={{ ...cell, textAlign: "left", fontVariantNumeric: "normal" }}>{label}</td>
+      <td style={cell}>{reg > 0 ? fmt(reg) : "—"}</td>
+      <td style={emphasis(ot > 0, "var(--text-warning)")}>{ot > 0 ? fmt(ot) : "—"}</td>
+      <td style={emphasis(dt > 0, "var(--text-error)")}>{dt > 0 ? fmt(dt) : "—"}</td>
+      <td style={isBold ? cell : strong}>{fmt(total)}</td>
       {rate !== null && (
         <>
-          <td className={`px-3 py-1.5 text-right tabular-nums ${text}`}>
-            {fmtMoney(rate)}
-          </td>
-          <td className={`px-3 py-1.5 text-right tabular-nums ${text}`}>
-            {regPay > 0 ? fmtMoney(regPay) : "—"}
-          </td>
-          <td className={`px-3 py-1.5 text-right tabular-nums ${text}`}>
-            {otPay > 0 ? fmtMoney(otPay) : "—"}
-          </td>
-          <td className={`px-3 py-1.5 text-right tabular-nums ${text}`}>
-            {dtPay > 0 ? fmtMoney(dtPay) : "—"}
-          </td>
-          <td className={`px-3 py-1.5 text-right tabular-nums ${isBold ? text : "font-semibold text-zinc-900 dark:text-white"}`}>
-            {fmtMoney(totalPay)}
-          </td>
+          <td style={cell}>{fmtMoney(rate)}</td>
+          <td style={cell}>{regPay > 0 ? fmtMoney(regPay) : "—"}</td>
+          <td style={cell}>{otPay > 0 ? fmtMoney(otPay) : "—"}</td>
+          <td style={cell}>{dtPay > 0 ? fmtMoney(dtPay) : "—"}</td>
+          <td style={isBold ? cell : strong}>{fmtMoney(totalPay)}</td>
         </>
       )}
     </tr>
@@ -431,6 +525,10 @@ function InlinePunchEdit({
   return (
     <div className="flex flex-col gap-0.5">
       <div className="flex items-center gap-1">
+        {/* .ta-cell is the design's grid cell: quiet until you touch it, so a
+            week of rows reads as times rather than as a wall of boxes. The
+            explicit width overrides the class's 100%, which would otherwise
+            stretch the field across the column. */}
         <input
           ref={inputRef}
           value={timeStr}
@@ -442,13 +540,23 @@ function InlinePunchEdit({
           }}
           autoFocus
           placeholder="8:30"
-          className="w-16 rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+          className="ta-cell"
+          style={{ width: 70, minWidth: 0, height: 24, borderColor: "var(--stroke-accent)" }}
         />
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
           onClick={onAmPmToggle}
-          className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+          style={{
+            height: 24,
+            padding: "0 6px",
+            border: "1px solid var(--stroke-default)",
+            borderRadius: "var(--radius-s)",
+            background: "var(--surface-card)",
+            color: "var(--text-primary)",
+            font: "var(--type-button2)",
+            cursor: "pointer",
+          }}
         >
           {amPm}
         </button>
@@ -465,14 +573,17 @@ function InlinePunchEdit({
               deletingRef.current = false;
               onDelete();
             }}
-            className="rounded p-0.5 text-red-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-950/30"
+            className="rounded p-0.5 disabled:opacity-40"
+            style={{ color: "var(--icon-error)", background: "transparent", border: 0, cursor: "pointer" }}
             title="Remove punch"
           >
             <Trash2 className="h-3 w-3" />
           </button>
         )}
       </div>
-      {error && <span className="text-xs text-red-500">{error}</span>}
+      {error && (
+        <span style={{ font: "var(--type-caption1)", color: "var(--text-error)" }}>{error}</span>
+      )}
     </div>
   );
 }
@@ -1184,7 +1295,15 @@ export function TimecardViewer({
     });
   }
 
-  const hasPendingChanges = pendingPayCodes.size > 0 || pendingReasonCodes.size > 0 || pendingPunchEdits.size > 0 || pendingNewPunches.length > 0 || pendingWaiverToggles.size > 0 || pendingDeletions.length > 0 || pendingHoursEntries.length > 0;
+  const pendingChangeCount =
+    pendingPayCodes.size +
+    pendingReasonCodes.size +
+    pendingPunchEdits.size +
+    pendingNewPunches.length +
+    pendingWaiverToggles.size +
+    pendingDeletions.length +
+    pendingHoursEntries.length;
+  const hasPendingChanges = pendingChangeCount > 0;
 
   function handleDiscardChanges() {
     setPendingPayCodes(new Map());
@@ -1385,6 +1504,14 @@ export function TimecardViewer({
   // +1 if pay codes column exists, +1 if reason codes column exists, +1 if delete column shown
   const colCount = 9 + (payCodes.length > 0 ? 1 : 0) + (reasonCodes.length > 0 ? 1 : 0) + (timecard?.employee.ruleSet.autoDeductMeal ? 1 : 0) + (canDeleteManual ? 1 : 0);
 
+  // The three column groups the grid's first header row spans: what the day is
+  // (chevron, date, codes, notes), what was punched, and what was calculated —
+  // then whatever trails after. Derived from the same optional columns as
+  // colCount so the two can never drift apart.
+  const leadColSpan = 3 + (payCodes.length > 0 ? 1 : 0) + (reasonCodes.length > 0 ? 1 : 0);
+  const trailColSpan =
+    (timecard?.employee.ruleSet.autoDeductMeal ? 1 : 0) + (canDeleteManual ? 1 : 0);
+
   const canApprove =
     timecard &&
     (timecard.status === "SUBMITTED" || timecard.status === "SUP_APPROVED");
@@ -1392,41 +1519,171 @@ export function TimecardViewer({
     timecard &&
     (timecard.status === "SUBMITTED" || timecard.status === "SUP_APPROVED");
 
+  // Overtime the rules engine produced on a rule set that will not pay it until
+  // somebody signs for it. Read twice below — once to say so, once to offer the
+  // button — and the two must never disagree about whether there is any.
+  const hasUnauthorizedOt = Boolean(
+    timecard &&
+      timecard.employee.ruleSet.overtimeRequiresAuth &&
+      !timecard.otAuthorized &&
+      timecard.overtimeBuckets.some(
+        (b) => (b.bucket === "OT" || b.bucket === "DT") && b.totalMinutes > 0,
+      ),
+  );
+  const canAuthorizeOt =
+    hasUnauthorizedOt && !!timecard?.employee.ruleSet.allowTimesheetOtAuth;
+
+  /**
+   * The same URL {@link navigate} pushes, as an href.
+   *
+   * <p>The filter chips have to be links rather than click handlers: a payroll
+   * list narrowed to one department is something people send each other, and a
+   * chip that only mutated component state could not be middle-clicked, copied
+   * or reloaded. Clearing the site clears the department with it, because the
+   * departments offered are the ones at that site — exactly what the site
+   * dropdown already does.
+   */
+  function filterHref(sid: string | null, did: string | null) {
+    const params = new URLSearchParams();
+    if (selectedEmployeeId) params.set("employeeId", selectedEmployeeId);
+    if (selectedPeriodId) params.set("periodId", selectedPeriodId);
+    if (sid) params.set("siteId", sid);
+    if (did) params.set("departmentId", did);
+    return `/payroll/timecards?${params.toString()}`;
+  }
+
+  const siteName = sites.find((s) => s.id === selectedSiteId)?.name ?? null;
+  const departmentName =
+    departments.find((d) => d.id === selectedDepartmentId)?.name ?? null;
+
+  /**
+   * The banner over the grid: where this timecard sits, and what is stopping it.
+   *
+   * <p>Only shown when there is something to say. An open, clean timecard gets
+   * none — the status badge beside the name already carries that, and a banner
+   * on every employee you click through would be a strip of colour people learn
+   * to read past, which is exactly the banner you do not want them reading past
+   * on the locked one.
+   */
+  const sheetNotice: { tone: BannerTone; title: string; body: string } | null = (() => {
+    if (!timecard) return null;
+
+    const blockers = [
+      timecard.exceptionCount > 0 &&
+        `${timecard.exceptionCount} exception${timecard.exceptionCount === 1 ? "" : "s"} on this timecard`,
+      hasUnauthorizedOt && "overtime on it is not authorized",
+    ].filter(Boolean) as string[];
+
+    switch (timecard.status) {
+      case "LOCKED":
+        return {
+          tone: "info",
+          title: "Locked",
+          body: "This pay period is closed. The hours are final and cannot be changed here.",
+        };
+      case "PAYROLL_APPROVED":
+        return {
+          tone: "success",
+          title: "Payroll approved",
+          body: "Approved for pay. Reopen the pay period to change anything on it.",
+        };
+      case "REJECTED":
+        return {
+          tone: "error",
+          title: "Returned",
+          body: "This timecard was sent back and is open for edits again.",
+        };
+      case "SUP_APPROVED":
+        return {
+          tone: blockers.length > 0 ? "warning" : "info",
+          title: "Ready to pay",
+          body:
+            blockers.length > 0
+              ? `A supervisor signed this off, but ${blockers.join(" and ")}.`
+              : "A supervisor signed this off. It is waiting on payroll approval.",
+        };
+      case "SUBMITTED":
+        return {
+          tone: blockers.length > 0 ? "warning" : "info",
+          title: "Submitted",
+          body:
+            blockers.length > 0
+              ? `Waiting on a supervisor, and ${blockers.join(" and ")}.`
+              : "Waiting on a supervisor to approve it.",
+        };
+      default:
+        if (blockers.length > 0) {
+          return {
+            tone: "warning",
+            title: "Needs attention",
+            body: `This timecard is still open, and ${blockers.join(" and ")}.`,
+          };
+        }
+        return readOnly
+          ? {
+              tone: "info",
+              title: "Read only",
+              body: "You can see these hours but your role cannot change them.",
+            }
+          : null;
+    }
+  })();
+
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 h-[calc(100vh-7.25rem)]">
-      {/* ── Top bar: pay period filter bar ─────────────────────────── */}
-      <div className="shrink-0 flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-1.5 dark:border-zinc-800 dark:bg-zinc-900">
-        {/* Pay frequency indicator */}
-        <span className="inline-flex items-center rounded-md bg-blue-100 px-1.5 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-          {PAY_FREQUENCY_LABEL[payFrequency as PayFrequencyValue] ??
-            payFrequency}
-        </span>
+    <div
+      className="ta-card flex h-[calc(100vh-7.25rem)] flex-col overflow-hidden rounded-xl"
+      style={{ border: "1px solid var(--stroke-secondary)" }}
+    >
+      {/* ── Period bar: which fortnight is on screen, and how to move ───
+          Kept on its own row above the toolbar. The period is not a filter on
+          the list — it is what every number under it means, and putting it
+          beside the search box is how it gets read as one more way to narrow
+          rows. */}
+      <div
+        className="shrink-0 flex flex-wrap items-center gap-2 px-4 py-2"
+        style={{
+          borderBottom: "1px solid var(--stroke-divider)",
+          background: "var(--surface-tertiary)",
+        }}
+      >
+        <Badge tone="info" size="sm">
+          {PAY_FREQUENCY_LABEL[payFrequency as PayFrequencyValue] ?? payFrequency}
+        </Badge>
 
         {/* Jump to current pay period */}
-        <button
-          type="button"
+        <Button
+          hierarchy="tertiary"
+          size="sm"
+          iconOnly
           onClick={() => currentPeriod && navigate(selectedEmployeeId, currentPeriod.id)}
           disabled={!currentPeriod || selectedPeriodId === currentPeriod.id}
           title="Jump to current pay period"
-          className="rounded p-1.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:cursor-default disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
         >
           <CalendarCheck className="h-4 w-4" />
-        </button>
+        </Button>
 
         {/* Previous / Next arrows with date display */}
         <div className="flex items-center gap-1">
-          <button
-            type="button"
+          <Button
+            hierarchy="tertiary"
+            size="sm"
+            iconOnly
             disabled={!hasPrev}
             onClick={() =>
               hasPrev && navigate(selectedEmployeeId, sortedPeriods[currentIndex - 1].id)
             }
-            className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
             title="Previous pay period"
           >
             <ChevronLeft className="h-4 w-4" />
-          </button>
-          <span className="min-w-[220px] text-center text-xs font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
+          </Button>
+          <span
+            className="tabular min-w-[220px] text-center"
+            style={{
+              font: "var(--type-body2)",
+              fontWeight: "var(--weight-medium)",
+              color: "var(--text-secondary)",
+            }}
+          >
             {(() => {
               const sel = sortedPeriods[currentIndex];
               if (!sel) return "—";
@@ -1435,57 +1692,53 @@ export function TimecardViewer({
               return `${format(s, "MM/dd/yyyy")} (${format(s, "EEE")}) – ${format(e, "MM/dd/yyyy")} (${format(e, "EEE")})`;
             })()}
           </span>
-          <button
-            type="button"
+          <Button
+            hierarchy="tertiary"
+            size="sm"
+            iconOnly
             disabled={!hasNext}
             onClick={() =>
               hasNext && navigate(selectedEmployeeId, sortedPeriods[currentIndex + 1].id)
             }
-            className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
             title="Next pay period"
           >
             <ChevronRight className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
 
         {/* Month/year jump picker */}
         <div className="relative" ref={calendarRef}>
-          <button
-            type="button"
+          <Button
+            hierarchy="tertiary"
+            size="sm"
+            iconOnly
             onClick={() => {
               if (!showCalendar && selectedPp) {
                 setPickerYear(parseUtcDate(selectedPp.startDate).getFullYear());
               }
               setShowCalendar((v) => !v);
             }}
-            className="rounded p-1.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
             title="Jump to month"
           >
             <Calendar className="h-4 w-4" />
-          </button>
+          </Button>
           {showCalendar && (
-            <div className="absolute left-0 top-full z-50 mt-1 w-52 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+            <div className="ta-modal absolute left-0 top-full z-50 mt-1 w-52 rounded-lg p-3">
               {/* Year navigation */}
               <div className="mb-2.5 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setPickerYear((y) => y - 1)}
-                  className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                >
+                <Button hierarchy="tertiary" size="sm" iconOnly onClick={() => setPickerYear((y) => y - 1)} title="Previous year">
                   <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                </Button>
+                <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>
                   {pickerYear}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setPickerYear((y) => y + 1)}
-                  className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                >
+                <Button hierarchy="tertiary" size="sm" iconOnly onClick={() => setPickerYear((y) => y + 1)} title="Next year">
                   <ChevronRight className="h-4 w-4" />
-                </button>
+                </Button>
               </div>
-              {/* Month grid */}
+              {/* Month grid. A month with no pay period is disabled rather than
+                  hidden — the gap is information, and a grid that reflowed
+                  would move January under your cursor. */}
               <div className="grid grid-cols-4 gap-1">
                 {MONTHS.map((label, idx) => {
                   const hasPeriod = monthsWithPeriods.has(idx);
@@ -1498,15 +1751,26 @@ export function TimecardViewer({
                       type="button"
                       disabled={!hasPeriod}
                       onClick={() => handleMonthSelect(idx)}
-                      className={`rounded py-1.5 text-xs font-medium transition-colors
-                        ${isSelected
-                          ? "bg-blue-600 text-white"
+                      className={hasPeriod ? "ta-field" : undefined}
+                      style={{
+                        padding: "6px 0",
+                        borderRadius: "var(--radius-s)",
+                        border: "1px solid transparent",
+                        font: "var(--type-button2)",
+                        cursor: hasPeriod ? "pointer" : "default",
+                        background: isSelected
+                          ? "var(--fill-accent)"
                           : isCurrentMonth && hasPeriod
-                            ? "bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-400 dark:hover:bg-blue-950/50"
-                            : hasPeriod
-                              ? "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700"
-                              : "cursor-default text-zinc-300 dark:text-zinc-600"
-                        }`}
+                            ? "var(--surface-info)"
+                            : "transparent",
+                        color: isSelected
+                          ? "var(--text-on-accent)"
+                          : !hasPeriod
+                            ? "var(--text-disabled)"
+                            : isCurrentMonth
+                              ? "var(--text-accent)"
+                              : "var(--text-primary)",
+                      }}
                     >
                       {label}
                     </button>
@@ -1517,57 +1781,118 @@ export function TimecardViewer({
           )}
         </div>
 
-        {/* Site filter */}
+        <div className="flex-1" />
+
+        {/* Site and department. Both are query parameters, so a list narrowed
+            to one department survives a reload and can be sent to somebody —
+            and the chips under this row are what take them off again. */}
         {sites.length > 0 && (
-          <select
-            value={selectedSiteId ?? ""}
-            onChange={(e) => navigate(null, selectedPeriodId, e.target.value || null, null)}
-            className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-          >
-            <option value="">All Sites</option>
-            {sites.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
+          <label className="flex items-center gap-2">
+            <span className="wms-overline">Site</span>
+            <Select
+              value={selectedSiteId ?? ""}
+              onChange={(e) => navigate(null, selectedPeriodId, e.target.value || null, null)}
+              aria-label="Site"
+            >
+              <option value="">All Sites</option>
+              {sites.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </Select>
+          </label>
         )}
 
-        {/* Department filter */}
-        <select
-          value={selectedDepartmentId ?? ""}
-          onChange={(e) => navigate(selectedEmployeeId, selectedPeriodId, selectedSiteId, e.target.value || null)}
-          className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-        >
-          <option value="">All Departments</option>
-          {departments.map((d) => (
-            <option key={d.id} value={d.id}>{d.name}</option>
-          ))}
-        </select>
+        <label className="flex items-center gap-2">
+          <span className="wms-overline">Dept</span>
+          <Select
+            value={selectedDepartmentId ?? ""}
+            onChange={(e) =>
+              navigate(selectedEmployeeId, selectedPeriodId, selectedSiteId, e.target.value || null)
+            }
+            aria-label="Department"
+          >
+            <option value="">All Departments</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </Select>
+        </label>
+      </div>
 
-        <span className="ml-auto text-xs text-zinc-400">
-          {employees.length} employee{employees.length !== 1 && "s"}
-        </span>
+      {/* ── Toolbar: which view, what you are searching, how many matched ──
+          The count is the filtered one, not the tenant total. "No employees"
+          and "no employees matching Submitted at this site" look identical
+          without it, and the difference is whether somebody concludes a
+          department has nothing left to approve. */}
+      <div
+        className="shrink-0 flex flex-col gap-2 px-4 py-2.5"
+        style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+      >
+        <Toolbar count={filteredEmployees.length} countLabel="employee">
+          <SegmentedControl
+            size="sm"
+            ariaLabel="Timecard view"
+            items={VIEW_SEGMENTS}
+            // A status picked in the rail that no segment names — Open, Locked,
+            // Payroll Approved — lights none of them, which is honest: you are
+            // not looking at any of the three views.
+            value={VIEW_SEGMENTS.some((v) => v.value === statusFilter) ? statusFilter : ""}
+            onChange={setStatusFilter}
+          />
+          <SearchInput
+            value={search}
+            onValueChange={setSearch}
+            placeholder="Search employees…"
+            width={240}
+          />
+        </Toolbar>
+
+        {/* A chip appears whenever the parameter is set, even when the name
+            behind it cannot be resolved — a site that has since been
+            deactivated still filters the list, and a filter with no chip is a
+            filter nobody can take off. */}
+        <FilterBar clearHref={selectedSiteId || selectedDepartmentId ? filterHref(null, null) : undefined}>
+          {selectedSiteId && (
+            <FilterChip
+              key="site"
+              label="Site"
+              value={siteName ?? "Filtered"}
+              clearHref={filterHref(null, null)}
+            />
+          )}
+          {selectedDepartmentId && (
+            <FilterChip
+              key="dept"
+              label="Department"
+              value={departmentName ?? "Filtered"}
+              clearHref={filterHref(selectedSiteId, null)}
+            />
+          )}
+        </FilterBar>
       </div>
 
       {/* ── Split pane ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-[260px_1fr] flex-1 min-h-0">
+      <div className="grid grid-cols-[264px_1fr] flex-1 min-h-0">
         {/* ── Left: employee list ─────────────────────────────────────── */}
-        <div className="flex flex-col min-h-0 border-r border-zinc-200 dark:border-zinc-800">
-          <div className="shrink-0 space-y-2 border-b border-zinc-200 p-2.5 dark:border-zinc-800">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
-              <input
-                type="text"
-                placeholder="Search employees…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-              />
-            </div>
-            {/* Status filter */}
-            <select
+        <div
+          className="flex flex-col min-h-0"
+          style={{ borderRight: "1px solid var(--stroke-secondary)" }}
+        >
+          {/* The refinements the three view segments do not cover. Status is
+              here in full rather than only as the segments: four of its values
+              — Open, Excluding Open, Payroll Approved, Locked — are how payroll
+              finds the cards that are *not* ready, and dropping them to fit
+              three tabs would have taken away the only way to ask "who has not
+              submitted yet". Both controls write the same state. */}
+          <div
+            className="shrink-0 flex flex-col gap-2 p-2.5"
+            style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+          >
+            <Select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+              aria-label="Timesheet status"
+              style={{ width: "100%" }}
             >
               <option value="ALL">All Statuses</option>
               <option value="ALL_EXCLUDING_OPEN">Excluding Open</option>
@@ -1576,22 +1901,22 @@ export function TimecardViewer({
               <option value="SUP_APPROVED">Supervisor Approved</option>
               <option value="PAYROLL_APPROVED">Payroll Approved</option>
               <option value="LOCKED">Locked</option>
-            </select>
-            {/* Pay type filter */}
-            <select
+            </Select>
+            <Select
               value={payTypeFilter}
               onChange={(e) => setPayTypeFilter(e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+              aria-label="Pay type"
+              style={{ width: "100%" }}
             >
               <option value="ALL">All Pay Types</option>
               <option value="HOURLY">Hourly</option>
               <option value="SALARY">Salary</option>
-            </select>
-            {/* Exception filter */}
-            <select
+            </Select>
+            <Select
               value={exceptionFilter}
               onChange={(e) => setExceptionFilter(e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+              aria-label="Exception type"
+              style={{ width: "100%" }}
             >
               <option value="ALL">All</option>
               <option value="ALL_EXCEPTIONS">All Exceptions</option>
@@ -1604,24 +1929,24 @@ export function TimecardViewer({
               <option value="ABSENT">Absent</option>
               <option value="LATE_IN">Late In</option>
               <option value="EARLY_OUT">Early Out</option>
-            </select>
-            {/* Active only toggle */}
-            <label className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-              <input
-                type="checkbox"
-                checked={activeOnly}
-                onChange={(e) => setActiveOnly(e.target.checked)}
-                className="rounded border-zinc-300 dark:border-zinc-600"
-              />
-              Active only
-            </label>
+            </Select>
+            <Checkbox checked={activeOnly} onChange={setActiveOnly} label="Active only" />
           </div>
 
-          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-950">
+          <div className="flex-1 overflow-y-auto" style={{ background: "var(--surface-card)" }}>
             {filteredEmployees.length === 0 && (
-              <p className="p-4 text-center text-sm text-zinc-400">
-                No employees found.
-              </p>
+              // Says which of the two empty lists this is. "No employees" after
+              // narrowing to Submitted reads as "this site is clean", and that
+              // is how a pay period gets closed on somebody's unfinished card.
+              <EmptyState
+                icon={<Users className="h-7 w-7" />}
+                title="No employees match"
+                body={
+                  search.trim()
+                    ? `Nothing here matches “${search.trim()}”.`
+                    : "Nobody is left once these filters are applied."
+                }
+              />
             )}
             {(() => {
               // Group employees by site, preserving alphabetical order within each group
@@ -1640,10 +1965,14 @@ export function TimecardViewer({
               return groups.map((group) => (
                 <React.Fragment key={group.siteName}>
                   {showHeaders && (
-                    <div className="sticky top-0 z-10 border-b border-zinc-200 bg-zinc-100 px-3 py-1.5 dark:border-zinc-700 dark:bg-zinc-800/80">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                        {group.siteName}
-                      </span>
+                    <div
+                      className="sticky top-0 z-10 px-3 py-1.5"
+                      style={{
+                        background: "var(--surface-tertiary)",
+                        borderBottom: "1px solid var(--stroke-secondary)",
+                      }}
+                    >
+                      <span className="wms-overline">{group.siteName}</span>
                     </div>
                   )}
                   {group.employees.map((emp) => {
@@ -1658,56 +1987,73 @@ export function TimecardViewer({
                         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(emp.employeeId); }}
                         tabIndex={0}
                         role="button"
-                        className={`flex w-full cursor-pointer flex-col border-b border-zinc-100 px-3 py-2.5 text-left transition-colors dark:border-zinc-800/60 ${
-                          isSelected
-                            ? "bg-blue-50 dark:bg-blue-950/30"
-                            : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
-                        }`}
+                        aria-current={isSelected ? "true" : undefined}
+                        // The selected row carries an accent rail as well as the
+                        // tint: on a list scrolled past the fold, a tint alone
+                        // is easy to lose against the hover state next to it.
+                        className={`flex w-full cursor-pointer flex-col px-3 py-2.5 text-left transition-colors ${isSelected ? "" : "hover:bg-[var(--ta-row-hover)]"}`}
+                        style={{
+                          borderBottom: "1px solid var(--stroke-divider)",
+                          borderLeft: `3px solid ${isSelected ? "var(--fill-accent)" : "transparent"}`,
+                          paddingLeft: 9,
+                          background: isSelected ? "var(--surface-info)" : undefined,
+                        }}
                       >
                         <div className="flex w-full items-center justify-between gap-2">
                           <p
-                            className={`flex min-w-0 items-center gap-1.5 truncate text-sm font-medium ${
-                              isSelected
-                                ? "text-zinc-900 dark:text-white"
-                                : "text-zinc-700 dark:text-zinc-300"
-                            }`}
+                            className="m-0 flex min-w-0 items-center gap-1.5 truncate"
+                            style={{
+                              font: "var(--type-body1)",
+                              fontWeight: "var(--weight-medium)",
+                              color: isSelected ? "var(--text-primary)" : "var(--text-secondary)",
+                            }}
                           >
                             {empExceptions.length > 0 && (
                               <span
                                 title={`${empExceptions.length} exception${empExceptions.length !== 1 ? "s" : ""}`}
-                                className="inline-block h-2 w-2 shrink-0 rounded-full bg-amber-400 dark:bg-amber-500"
+                                className="inline-block h-2 w-2 shrink-0 rounded-full"
+                                style={{ background: "var(--fill-warning)" }}
                               />
                             )}
                             {emp.name}
                           </p>
                           <div className="flex shrink-0 items-center gap-1.5">
                             {emp.totalMinutes !== undefined && (
-                              <span className="text-xs tabular-nums text-zinc-400">
+                              <span
+                                className="tabular"
+                                style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+                              >
                                 {minutesToHoursDecimal(emp.totalMinutes)}h
                               </span>
                             )}
                             {canQuickApprove && (
-                              <button
-                                type="button"
+                              <Button
+                                hierarchy="primary"
+                                tone="success"
+                                size="sm"
+                                iconOnly
                                 onClick={(e) => { e.stopPropagation(); handleQuickApprove(emp as EmployeeListItem & { timesheetId: string; status: string }); }}
                                 disabled={approvingId === emp.timesheetId}
                                 title={empStatus === "SUP_APPROVED" ? "Payroll Approve" : "Approve"}
-                                className="rounded bg-green-600 p-0.5 text-white hover:bg-green-700 disabled:opacity-50"
+                                style={{ width: 20, height: 20 }}
                               >
-                                {approvingId === emp.timesheetId
-                                  ? <span className="block w-3 text-center text-xs leading-none">…</span>
-                                  : <Check className="h-3 w-3" />}
-                              </button>
+                                {approvingId === emp.timesheetId ? "…" : <Check className="h-3 w-3" />}
+                              </Button>
                             )}
                           </div>
                         </div>
                         <div className="mt-1 flex items-center justify-between gap-2">
-                          <p className="truncate text-xs text-zinc-400">
+                          <p
+                            className="m-0 truncate"
+                            style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+                          >
                             {emp.employeeCode} · {emp.department}
                           </p>
                           {emp.status && (
-                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[empStatus] ?? STATUS_BADGE.OPEN}`}>
-                              {TIMESHEET_STATUS_LABEL[empStatus as TimesheetStatusValue] ?? empStatus}
+                            <span className="shrink-0">
+                              <Badge tone={statusTone(empStatus)} size="sm">
+                                {TIMESHEET_STATUS_LABEL[empStatus as TimesheetStatusValue] ?? empStatus}
+                              </Badge>
                             </span>
                           )}
                         </div>
@@ -1721,12 +2067,14 @@ export function TimecardViewer({
         </div>
 
         {/* ── Right: timecard detail ──────────────────────────────────── */}
-        <div className="flex flex-col min-h-0 bg-white dark:bg-zinc-950">
+        <div className="flex flex-col min-h-0" style={{ background: "var(--surface-card)" }}>
           {!selectedEmployeeId || !days ? (
             <div className="flex flex-1 items-center justify-center">
-              <p className="text-sm text-zinc-400">
-                Select an employee to view their timecard.
-              </p>
+              <EmptyState
+                icon={<Users className="h-8 w-8" />}
+                title="No timecard open"
+                body="Pick somebody from the list to see their punches and the hours calculated from them."
+              />
             </div>
           ) : (
             <>
@@ -1738,80 +2086,69 @@ export function TimecardViewer({
                 const displayDept = timecard?.employee.department.name ?? listEmp?.department ?? "";
                 const displayPayType = timecard?.employee.payType ?? null;
                 return (
-              <div className="shrink-0 flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-                <div className="flex items-center gap-3">
+              <div
+                className="shrink-0 flex flex-wrap items-center justify-between gap-3 px-5 py-3"
+                style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+              >
+                <div className="flex flex-wrap items-center gap-3">
                   <div>
                     <div className="flex items-center gap-1.5">
-                      <h2 className="text-base font-bold text-zinc-900 dark:text-white">
+                      <h2 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
                         {displayName}
                       </h2>
                       {selectedEmployeeId && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            router.push(
-                              `/admin/employees/${selectedEmployeeId}`
-                            )
-                          }
+                        <Button
+                          hierarchy="tertiary"
+                          size="sm"
+                          iconOnly
+                          onClick={() => router.push(`/admin/employees/${selectedEmployeeId}`)}
                           title="Go to employee profile"
-                          className="rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-blue-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-blue-400"
+                          style={{ width: 24, height: 24 }}
                         >
-                          <UserCircle className="h-4 w-4" />
-                        </button>
+                          <UserCircle className="h-4 w-4" style={{ color: "var(--icon-secondary)" }} />
+                        </Button>
                       )}
                     </div>
-                    <p className="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <p
+                      className="m-0 flex items-center gap-1.5"
+                      style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                    >
                       {displayCode} · {displayDept}
+                      {/* Pay type is not a status, so it takes no tone. A salary
+                          card and an hourly card are two kinds of record, not
+                          two severities, and giving them colours competes with
+                          the approval badge sitting next to them. */}
                       {displayPayType && (
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          displayPayType === "SALARY"
-                            ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
-                            : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                        }`}>
+                        <Badge size="sm">
                           {displayPayType === "SALARY" ? "Salary" : "Hourly"}
-                        </span>
+                        </Badge>
                       )}
                     </p>
                   </div>
                   {timecard ? (
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        STATUS_BADGE[timecard.status] ?? STATUS_BADGE.OPEN
-                      }`}
-                    >
+                    <Badge tone={statusTone(timecard.status)} size="sm">
                       {TIMESHEET_STATUS_LABEL[
                         timecard.status as TimesheetStatusValue
                       ] ?? timecard.status}
-                    </span>
+                    </Badge>
                   ) : (
-                    <span className="inline-flex items-center rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                      No Punches
-                    </span>
+                    <Badge size="sm">No Punches</Badge>
                   )}
-                  {timecard && timecard.exceptionCount > 0 && (
-                    <span className="text-xs text-amber-500">
-                      {timecard.exceptionCount} exception
-                      {timecard.exceptionCount !== 1 && "s"}
-                    </span>
-                  )}
-                  {timecard &&
-                    timecard.employee.ruleSet.overtimeRequiresAuth &&
-                    !timecard.otAuthorized &&
-                    (timecard.overtimeBuckets.some((b) => b.bucket === "OT" && b.totalMinutes > 0) ||
-                      timecard.overtimeBuckets.some((b) => b.bucket === "DT" && b.totalMinutes > 0)) && (
-                    <span className="inline-flex items-center rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                      OT Unauthorized
-                    </span>
-                  )}
+                  {/* Exceptions and unauthorised overtime are spelled out in the
+                      banner below rather than as two more pills up here — this
+                      row is already carrying the name, the code, the department,
+                      the pay type and the status. */}
                 </div>
 
                 {/* Approval / Reject */}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {canEdit && (
                     <>
                       {timecard && <RecalculateButton timesheetId={timecard.timesheetId} />}
-                      <button
-                        type="button"
+                      <Button
+                        hierarchy="secondary"
+                        size="sm"
+                        leadingIcon={<Plus className="h-3.5 w-3.5" />}
                         onClick={() => {
                           setNewEntryDate(format(new Date(), "yyyy-MM-dd"));
                           setNewInTimeStr("");
@@ -1826,102 +2163,107 @@ export function TimecardViewer({
                           setNewEntryMode("time");
                           setShowAddEntryModal(true);
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
                       >
-                        <Plus className="h-3.5 w-3.5" />
                         Add Entry
-                      </button>
+                      </Button>
                     </>
                   )}
                   {canEdit && hasPendingChanges && (
                     <>
-                      <button
-                        type="button"
+                      <Button
+                        hierarchy="secondary"
+                        size="sm"
                         onClick={handleDiscardChanges}
                         disabled={isPending}
-                        className="rounded-lg border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
                       >
                         Discard
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSaveChanges}
-                        disabled={isPending}
-                        className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                      >
+                      </Button>
+                      <Button size="sm" onClick={handleSaveChanges} disabled={isPending}>
                         {isPending ? "Saving…" : "Save Changes"}
-                      </button>
+                      </Button>
                     </>
                   )}
-                  {actionError && <p className="text-xs text-red-500">{actionError}</p>}
-                  {showRejectForm ? (
-                    <form
-                      onSubmit={handleReject}
-                      className="flex items-center gap-2"
+                  {actionError && (
+                    <p
+                      className="m-0"
+                      style={{ font: "var(--type-body2)", color: "var(--text-error)" }}
                     >
+                      {actionError}
+                    </p>
+                  )}
+                  {showRejectForm ? (
+                    <form onSubmit={handleReject} className="flex items-center gap-2">
                       <input
                         value={rejectNote}
                         onChange={(e) => setRejectNote(e.target.value)}
                         placeholder="Reason for rejection…"
                         required
-                        className="w-48 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
                         autoFocus
+                        className="ta-field w-48 rounded-md px-2.5"
+                        style={{
+                          height: 24,
+                          border: "1px solid var(--stroke-default)",
+                          background: "var(--surface-card)",
+                          color: "var(--text-primary)",
+                          font: "var(--type-body2)",
+                          outline: "none",
+                        }}
                       />
-                      <button
+                      <Button
                         type="submit"
+                        size="sm"
+                        tone="error"
                         disabled={isPending || !rejectNote.trim()}
-                        className="rounded-lg bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
                       >
                         {isPending ? "…" : "Confirm"}
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        hierarchy="link"
+                        size="sm"
                         onClick={() => {
                           setShowRejectForm(false);
                           setRejectNote("");
                         }}
-                        className="text-xs text-zinc-500 hover:text-zinc-700"
                       >
                         Cancel
-                      </button>
+                      </Button>
                     </form>
                   ) : (
                     <>
                       {canReject && (
-                        <button
+                        <Button
+                          hierarchy="secondary"
+                          size="sm"
+                          tone="error"
                           onClick={() => setShowRejectForm(true)}
                           disabled={isPending}
-                          className="rounded-lg border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
                         >
                           Reject
-                        </button>
+                        </Button>
                       )}
-                      {timecard &&
-                        timecard.employee.ruleSet.overtimeRequiresAuth &&
-                        timecard.employee.ruleSet.allowTimesheetOtAuth &&
-                        !timecard.otAuthorized &&
-                        (timecard.overtimeBuckets.some((b) => b.bucket === "OT" && b.totalMinutes > 0) ||
-                          timecard.overtimeBuckets.some((b) => b.bucket === "DT" && b.totalMinutes > 0)) && (
-                        <button
+                      {canAuthorizeOt && (
+                        <Button
+                          size="sm"
+                          tone="warning"
                           onClick={handleAuthorizeOt}
                           disabled={isPending}
-                          className="rounded-lg bg-orange-500 px-3 py-1 text-xs font-medium text-white hover:bg-orange-600 disabled:opacity-50"
                         >
                           {isPending ? "Saving…" : "Authorize OT"}
-                        </button>
+                        </Button>
                       )}
                       {canApprove && (
-                        <button
+                        <Button
+                          size="sm"
+                          tone="success"
                           onClick={handleApprove}
                           disabled={isPending}
-                          className="rounded-lg bg-green-600 px-3 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
                         >
                           {isPending
                             ? "Saving…"
                             : timecard.status === "SUP_APPROVED"
                               ? "Payroll Approve"
                               : "Approve"}
-                        </button>
+                        </Button>
                       )}
                     </>
                   )}
@@ -1930,32 +2272,104 @@ export function TimecardViewer({
                 );
               })()}
 
+              {/* The sheet's state, as the timesheet template opens with it.
+                  Only rendered when there is something to say — see sheetNotice. */}
+              {sheetNotice && (
+                <div className="shrink-0 px-5 py-3">
+                  <Banner
+                    tone={sheetNotice.tone}
+                    title={sheetNotice.title}
+                    body={sheetNotice.body}
+                  />
+                </div>
+              )}
+
+              {/* What the grid will and will not do, said once. Edits here are
+                  queued rather than written on blur, and a screen that looks
+                  like a spreadsheet but is not one is how somebody navigates
+                  away believing a correction was saved. */}
+              <div
+                className="shrink-0 flex flex-wrap items-center gap-3 px-5 py-2"
+                style={{
+                  borderBottom: "1px solid var(--stroke-divider)",
+                  background: "var(--surface-secondary)",
+                }}
+              >
+                <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                  {canEdit
+                    ? "Click a time, an hours figure or a code to change it. Nothing is written until you press Save Changes."
+                    : "Read only — these hours cannot be changed from here."}
+                </span>
+                <div className="flex-1" />
+                {hasPendingChanges && (
+                  <Badge tone="warning" size="sm">
+                    {pendingChangeCount} unsaved
+                  </Badge>
+                )}
+              </div>
+
               {/* ── Scrollable timecard table + summary ──────────────── */}
               <div className="flex-1 overflow-y-auto">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 border-b-2 border-zinc-400 bg-zinc-300 dark:border-zinc-500 dark:bg-zinc-700">
-                    <tr>
-                      <th className="w-7 pl-2 pr-0 py-1.5" />
-                      <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Date</th>
-                      {payCodes.length > 0 && (
-                        <th className="px-2 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Code</th>
+                  {/* Two header rows, as the timesheet template draws them. The
+                      vertical rules are what make "Punches" and "Calculated
+                      Hours" read as two different kinds of number rather than
+                      one wide row: the left group is what somebody recorded, the
+                      right group is what the rules engine made of it, and only
+                      one of the two is worth arguing with.
+
+                      Row two sticks 24px down so both rows stay visible over a
+                      fortnight of scrolling — a group label that scrolls away
+                      takes the meaning of the columns with it. */}
+                  <THead>
+                    <TR>
+                      <TH colSpan={leadColSpan} style={{ height: 24, borderBottom: 0, padding: "6px 12px 0" }} />
+                      <TH
+                        colSpan={2}
+                        align="center"
+                        style={{
+                          height: 24,
+                          borderBottom: 0,
+                          padding: "6px 4px 0",
+                          color: "var(--text-tertiary)",
+                          borderLeft: "1px solid var(--stroke-secondary)",
+                        }}
+                      >
+                        Punches
+                      </TH>
+                      <TH
+                        colSpan={4}
+                        align="center"
+                        style={{
+                          height: 24,
+                          borderBottom: 0,
+                          padding: "6px 12px 0",
+                          color: "var(--text-tertiary)",
+                          borderLeft: "1px solid var(--stroke-secondary)",
+                        }}
+                      >
+                        Calculated Hours
+                      </TH>
+                      {trailColSpan > 0 && (
+                        <TH colSpan={trailColSpan} style={{ height: 24, borderBottom: 0 }} />
                       )}
-                      {reasonCodes.length > 0 && (
-                        <th className="px-2 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Reason</th>
-                      )}
-                      <th className="w-7 px-1 py-1.5 text-center text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Notes</th>
-                      <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">In</th>
-                      <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Out</th>
-                      <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Reg</th>
-                      <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">OT</th>
-                      <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">DT</th>
-                      <th className="pl-3 pr-8 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Total</th>
-                      {timecard?.employee.ruleSet.autoDeductMeal && (
-                        <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Meal</th>
-                      )}
-                      {canDeleteManual && <th className="w-8 px-1 py-1.5" />}
-                    </tr>
-                  </thead>
+                    </TR>
+                    <TR>
+                      <TH style={{ width: 28, padding: "0 0 0 8px", top: 24 }} />
+                      <TH style={{ top: 24 }}>Date</TH>
+                      {payCodes.length > 0 && <TH style={{ paddingLeft: 8, paddingRight: 8, top: 24 }}>Code</TH>}
+                      {reasonCodes.length > 0 && <TH style={{ paddingLeft: 8, paddingRight: 8, top: 24 }}>Reason</TH>}
+                      <TH align="center" style={{ width: 28, paddingLeft: 4, paddingRight: 4, top: 24 }}>Notes</TH>
+                      <TH style={{ top: 24, borderLeft: "1px solid var(--stroke-secondary)" }}>In</TH>
+                      <TH style={{ top: 24 }}>Out</TH>
+                      <TH numeric style={{ top: 24, borderLeft: "1px solid var(--stroke-secondary)" }}>Reg</TH>
+                      <TH numeric style={{ top: 24 }}>OT</TH>
+                      <TH numeric style={{ top: 24 }}>DT</TH>
+                      <TH numeric style={{ paddingRight: 32, top: 24 }}>Total</TH>
+                      {timecard?.employee.ruleSet.autoDeductMeal && <TH style={{ top: 24 }}>Meal</TH>}
+                      {canDeleteManual && <TH style={{ width: 32, paddingLeft: 4, paddingRight: 4, top: 24 }} />}
+                    </TR>
+                  </THead>
                   <tbody>
                     {(() => {
                       const listEmpForSalary = employees.find((e) => e.employeeId === selectedEmployeeId);
@@ -1971,7 +2385,11 @@ export function TimecardViewer({
                       const isTodayRow = isToday(day);
                       // Show a week separator before each Monday (except the very first row)
                       const isMonday = day.getDay() === 1;
-                      const isFirstDay = days[0].toISOString() === dayKey;
+                      // Compared in the same yyyy-MM-dd form dayKey is built in.
+                      // The previous test put an ISO timestamp against a date
+                      // string, so it never matched and a period starting on a
+                      // Monday opened with a week rule above its first row.
+                      const isFirstDay = format(days[0], "yyyy-MM-dd") === dayKey;
                       const showWeekSeparator = isMonday && !isFirstDay;
 
                       const buckets: Record<string, number> = {};
@@ -2043,27 +2461,39 @@ export function TimecardViewer({
                           {/* Week separator */}
                           {showWeekSeparator && (
                             <tr aria-hidden>
-                              <td colSpan={colCount} className="h-0 border-t-2 border-zinc-300 dark:border-zinc-600 p-0" />
+                              <td
+                                colSpan={colCount}
+                                className="h-0 p-0"
+                                style={{ borderTop: "2px solid var(--stroke-default)" }}
+                              />
                             </tr>
                           )}
 
-                          {/* Day summary row */}
+                          {/* Day summary row.
+                              One tint per row, and the order is severity: absent
+                              beats an exception beats today beats the weekend.
+                              A day with no hours on it is the one that costs
+                              somebody money, so it outranks the rest. */}
                           <tr
-                            className={`border-b border-zinc-200 dark:border-zinc-700 transition-colors ${
-                              isMainRowPendingDelete
-                                ? "opacity-40 line-through"
-                                : isAbsent
-                                  ? "bg-red-100 dark:bg-red-950/40"
-                                  : hasException
-                                    ? "bg-amber-50 dark:bg-amber-950/30"
-                                    : isTodayRow
-                                      ? "bg-blue-50/60 dark:bg-blue-950/20"
-                                      : isWeekend
-                                        ? "bg-zinc-50/70 dark:bg-zinc-900/40"
-                                        : hasActivity
-                                          ? "hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
-                                          : "hover:bg-zinc-50/50 dark:hover:bg-zinc-900/20"
+                            className={`transition-colors ${isMainRowPendingDelete ? "opacity-40 line-through" : ""} ${
+                              !isMainRowPendingDelete && !isAbsent && !hasException && !isTodayRow && !isWeekend
+                                ? "hover:bg-[var(--ta-row-hover)]"
+                                : ""
                             } ${hasActivity ? "cursor-pointer" : ""}`}
+                            style={{
+                              borderBottom: "1px solid var(--stroke-secondary)",
+                              background: isMainRowPendingDelete
+                                ? undefined
+                                : isAbsent
+                                  ? "var(--surface-error)"
+                                  : hasException
+                                    ? "var(--surface-warning)"
+                                    : isTodayRow
+                                      ? "var(--surface-info)"
+                                      : isWeekend
+                                        ? "var(--surface-tertiary)"
+                                        : undefined,
+                            }}
                             onClick={
                               hasActivity
                                 ? () => toggleDay(dayKey)
@@ -2074,25 +2504,34 @@ export function TimecardViewer({
                             <td className="w-7 pl-2 pr-0 text-center">
                               {hasActivity ? (
                                 <ChevronRight
-                                  className={`inline h-3.5 w-3.5 text-zinc-400 transition-transform ${
+                                  className={`inline h-3.5 w-3.5 transition-transform ${
                                     isExpanded ? "rotate-90" : ""
                                   }`}
+                                  style={{ color: "var(--icon-secondary)" }}
                                 />
                               ) : isTodayRow ? (
-                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-400" />
+                                <span
+                                  className="inline-block h-1.5 w-1.5 rounded-full"
+                                  style={{ background: "var(--fill-accent)" }}
+                                />
                               ) : null}
                             </td>
 
                             {/* Date (EEE MM/dd/yyyy) */}
-                            <td className={`px-3 py-1.5 text-sm font-medium tabular-nums ${
-                              isAbsent
-                                ? "text-red-800 dark:text-red-300"
-                                : isTodayRow
-                                  ? "text-blue-700 dark:text-blue-400"
-                                  : isWeekend
-                                    ? "text-zinc-400 dark:text-zinc-500"
-                                    : "text-zinc-700 dark:text-zinc-300"
-                            }`}>
+                            <td
+                              className="tabular px-3 py-1.5"
+                              style={{
+                                font: "var(--type-body1)",
+                                fontWeight: "var(--weight-medium)",
+                                color: isAbsent
+                                  ? "var(--text-error)"
+                                  : isTodayRow
+                                    ? "var(--text-accent)"
+                                    : isWeekend
+                                      ? "var(--text-tertiary)"
+                                      : "var(--text-secondary)",
+                              }}
+                            >
                               <span className="inline-flex items-center gap-1">
                                 <span className={`${isWeekend ? "" : "font-semibold"} mr-0.5`}>
                                   {format(day, "EEE")}
@@ -2116,8 +2555,6 @@ export function TimecardViewer({
                                   // Excludes today — an open clock-in (still working) is not a missed punch.
                                   const isMissedPunchDay = !isTodayRow && dayPunches.length > 0 && daySegments.filter(s => s.segmentType === "WORK").length === 0 && !isMarker;
 
-                                  const absentDropdownClass = (pending: boolean) =>
-                                    `w-24 rounded border px-1 py-0.5 text-xs focus:outline-none ${pending ? "border-amber-400 bg-amber-50/50 text-zinc-700 dark:border-amber-600 dark:bg-amber-950/10 dark:text-zinc-300" : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"}`;
 
                                   if (isAbsent || isMarker || isMissedPunchDay || (isSalaryVirtualDay && daySegments.length === 0)) {
                                     if (canEdit) {
@@ -2139,7 +2576,8 @@ export function TimecardViewer({
                                           onChange={(e) =>
                                             handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)
                                           }
-                                          className={absentDropdownClass(absentPending)}
+                                          className="ta-field"
+                                          style={gridSelectStyle(absentPending, 96)}
                                         >
                                           <option value="">Absent</option>
                                           {payCodes.map((pc) => (
@@ -2152,9 +2590,9 @@ export function TimecardViewer({
                                     }
                                     // Read-only locked view
                                     if (isMarker && workSeg.payCode) {
-                                      return <span className="text-xs text-zinc-700 dark:text-zinc-200">{workSeg.payCode.code}[{workSeg.payCode.label}]</span>;
+                                      return <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{workSeg.payCode.code}[{workSeg.payCode.label}]</span>;
                                     }
-                                    return <span className="text-xs text-red-400 dark:text-red-600">Absent</span>;
+                                    return <span style={{ font: "var(--type-body2)", color: "var(--text-error)" }}>Absent</span>;
                                   }
 
                                   // Non-working day (weekend or not scheduled): show blank dropdown like REASON.
@@ -2168,7 +2606,8 @@ export function TimecardViewer({
                                         <select
                                           value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : (dayMarker?.payCode?.id ?? "")}
                                           onChange={(e) => handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)}
-                                          className={absentDropdownClass(absentPending)}
+                                          className="ta-field"
+                                          style={gridSelectStyle(absentPending, 96)}
                                         >
                                           <option value="">—</option>
                                           {payCodes.map((pc) => (
@@ -2179,7 +2618,7 @@ export function TimecardViewer({
                                     }
                                     const dayMarker = daySegments.find((s) => s.segmentType === "LEAVE" && s.durationMinutes === 0);
                                     return dayMarker?.payCode
-                                      ? <span className="text-xs text-zinc-500">{dayMarker.payCode.code}[{dayMarker.payCode.label}]</span>
+                                      ? <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{dayMarker.payCode.code}[{dayMarker.payCode.label}]</span>
                                       : null;
                                   }
 
@@ -2188,7 +2627,7 @@ export function TimecardViewer({
                                   if (!workSeg) {
                                     const holidaySeg = daySegments.find((s) => s.segmentType === "HOLIDAY" && s.durationMinutes > 0);
                                     if (holidaySeg?.payCode) {
-                                      return <span className="text-xs text-zinc-700 dark:text-zinc-200">{holidaySeg.payCode.code}[{holidaySeg.payCode.label}]</span>;
+                                      return <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{holidaySeg.payCode.code}[{holidaySeg.payCode.label}]</span>;
                                     }
                                   }
 
@@ -2207,7 +2646,8 @@ export function TimecardViewer({
                                           onChange={(e) =>
                                             handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)
                                           }
-                                          className={absentDropdownClass(absentPending)}
+                                          className="ta-field"
+                                          style={gridSelectStyle(absentPending, 96)}
                                         >
                                           <option value="">—</option>
                                           {payCodes.map((pc) => (
@@ -2226,7 +2666,8 @@ export function TimecardViewer({
                                     <select
                                       value={workSegPending ? (pendingPayCodes.get(workSeg.id) ?? "") : (workSeg.payCode?.id ?? "")}
                                       onChange={(e) => handlePayCodeChange(workSeg.id, e.target.value)}
-                                      className={`w-24 rounded border px-1 py-0.5 text-xs focus:outline-none ${workSegPending ? "border-amber-400 bg-amber-50/50 text-zinc-700 dark:border-amber-600 dark:bg-amber-950/10 dark:text-zinc-300" : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"}`}
+                                      className="ta-field"
+                                      style={gridSelectStyle(workSegPending, 96)}
                                     >
                                       <option value="">—</option>
                                       {payCodes.map((pc) => (
@@ -2236,7 +2677,7 @@ export function TimecardViewer({
                                       ))}
                                     </select>
                                   ) : workSeg.payCode ? (
-                                    <span className="text-xs text-zinc-700 dark:text-zinc-200">
+                                    <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                                       {workSeg.payCode.code}[{workSeg.payCode.label}]
                                     </span>
                                   ) : null;
@@ -2264,7 +2705,8 @@ export function TimecardViewer({
                                       <select
                                         value={reasonPending ? (pendingReasonCodes.get(dayStr) ?? "") : (dayReason?.reasonCodeId ?? "")}
                                         onChange={(e) => handleDayReasonCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)}
-                                        className={`w-28 rounded border px-1 py-0.5 text-xs focus:outline-none ${reasonPending ? "border-amber-400 bg-amber-50/50 text-zinc-700 dark:border-amber-600 dark:bg-amber-950/10 dark:text-zinc-300" : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"}`}
+                                        className="ta-field"
+                                        style={gridSelectStyle(reasonPending, 112)}
                                       >
                                         <option value="">—</option>
                                         {reasonCodes.map((rc) => (
@@ -2276,7 +2718,7 @@ export function TimecardViewer({
                                     );
                                   }
                                   return dayReason ? (
-                                    <span className="text-xs text-zinc-500">{dayReason.reasonCode.code}[{dayReason.reasonCode.label}]</span>
+                                    <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{dayReason.reasonCode.code}[{dayReason.reasonCode.label}]</span>
                                   ) : null;
                                 })()}
                               </td>
@@ -2298,15 +2740,23 @@ export function TimecardViewer({
                                     type="button"
                                     onClick={() => handleOpenNote(dayStr)}
                                     title={allNotes > 0 ? `${allNotes} note${allNotes !== 1 ? "s" : ""}` : "Add note"}
-                                    className={`relative rounded p-0.5 ${
-                                      dayNoteCount > 0
-                                        ? "text-amber-500 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20"
-                                        : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                                    }`}
+                                    className="relative rounded bg-transparent p-0.5 ta-hoverable"
+                                    style={{
+                                      border: 0,
+                                      cursor: "pointer",
+                                      color: dayNoteCount > 0 ? "var(--icon-warning)" : "var(--icon-secondary)",
+                                    }}
                                   >
                                     <StickyNote className="h-4 w-4" />
                                     {dayNoteCount > 1 && (
-                                      <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white">
+                                      <span
+                                        className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full"
+                                        style={{
+                                          background: "var(--fill-warning)",
+                                          color: "var(--text-on-accent)",
+                                          font: "var(--weight-bold) 9px/1 var(--font-sans)",
+                                        }}
+                                      >
                                         {dayNoteCount}
                                       </span>
                                     )}
@@ -2316,9 +2766,16 @@ export function TimecardViewer({
                             </td>
 
                             {/* In time */}
-                            <td className={`px-2 py-1 font-mono text-sm ${
-                              isAbsent ? "text-red-700 dark:text-red-400" : "text-zinc-700 dark:text-zinc-300"
-                            }`} onClick={(e) => e.stopPropagation()}>
+                            <td
+                              className="px-2 py-1"
+                              style={{
+                                font: "var(--type-body1)",
+                                fontVariantNumeric: "tabular-nums",
+                                color: isAbsent ? "var(--text-error)" : "var(--text-secondary)",
+                                borderLeft: "1px solid var(--stroke-secondary)",
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               {addingPunch?.dayKey === dayKey && addingPunch.pairIndex === 0 && addingPunch.punchType === "CLOCK_IN" ? (
                                 <InlinePunchEdit
                                   timeStr={editTimeStr} amPm={editAmPm} error={editError} isPending={isPending}
@@ -2341,7 +2798,7 @@ export function TimecardViewer({
                                   type="button"
                                   onClick={() => startEditing(firstIn)}
                                   disabled={!canEdit}
-                                  className={canEdit ? `rounded px-1 py-0.5 ${pendingPunchEdits.has(firstIn.id) ? "text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30" : "hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"}` : ""}
+                                  className={canEdit ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(firstIn.id), canEdit)}
                                 >
                                   {pendingPunchEdits.has(firstIn.id) ? format(pendingPunchEdits.get(firstIn.id)!, "h:mm a") : format(parseISO(firstIn.roundedTime), "h:mm a")}
                                 </button>
@@ -2349,36 +2806,42 @@ export function TimecardViewer({
                                 const pendingNewIn = pendingNewPunches.find((p) => p.dayKey === dayKey && p.pairIndex === 0 && p.punchType === "CLOCK_IN");
                                 if (pendingNewIn) return (
                                   <div className="flex items-center gap-0.5">
-                                    <span className="font-mono text-xs text-amber-600 dark:text-amber-400">{format(pendingNewIn.punchDate, "h:mm a")}</span>
-                                    <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === 0 && p.punchType === "CLOCK_IN")))} className="rounded p-0.5 text-zinc-400 hover:text-red-500" title="Remove pending"><X className="h-2.5 w-2.5" /></button>
+                                    <span className="tabular" style={{ font: "var(--type-body2)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>{format(pendingNewIn.punchDate, "h:mm a")}</span>
+                                    <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === 0 && p.punchType === "CLOCK_IN")))} className="rounded bg-transparent p-0.5 ta-hoverable" style={{ border: 0, cursor: "pointer", color: "var(--icon-error)" }} title="Remove pending"><X className="h-2.5 w-2.5" /></button>
                                   </div>
                                 );
                                 return hasMissingPunch && canEdit ? (
                                   <button
                                     type="button"
                                     onClick={() => startAddingPunch(dayKey, 0, "CLOCK_IN", day, lastOut ? parseISO(lastOut.roundedTime) : null)}
-                                    className="rounded px-1 py-0.5 font-medium text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/30"
+                                    className={gridCellButtonClass}
+                                    style={{ ...punchCellStyle(true, true), fontWeight: "var(--weight-medium)" }}
                                   >
                                     Missed
                                   </button>
                                 ) : hasMissingPunch ? (
-                                  <span className="font-medium text-amber-600 dark:text-amber-400">Missed</span>
+                                  <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>Missed</span>
                                 ) : canEdit ? (
                                   <button
                                     type="button"
                                     onClick={() => startAddingPunch(dayKey, 0, "CLOCK_IN", day)}
-                                    className="rounded px-1 py-0.5 text-zinc-300 hover:bg-blue-50 hover:text-blue-500 dark:text-zinc-700 dark:hover:bg-blue-950/30 dark:hover:text-blue-400"
+                                    className={gridCellButtonClass}
+                                    style={{ ...punchCellStyle(false, true), color: "var(--text-disabled)" }}
                                   >
                                     —
                                   </button>
                                 ) : (
-                                  <span className="text-zinc-300 dark:text-zinc-700">—</span>
+                                  <span style={{ color: "var(--text-disabled)" }}>—</span>
                                 );
                               })()}
                             </td>
 
                             {/* Out time */}
-                            <td className="px-2 py-1 font-mono text-sm text-zinc-700 dark:text-zinc-300" onClick={(e) => e.stopPropagation()}>
+                            <td
+                              className="px-2 py-1"
+                              style={{ font: "var(--type-body1)", fontVariantNumeric: "tabular-nums", color: "var(--text-secondary)" }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               {addingPunch?.dayKey === dayKey && addingPunch.pairIndex === 0 && addingPunch.punchType === "CLOCK_OUT" ? (
                                 <InlinePunchEdit
                                   timeStr={editTimeStr} amPm={editAmPm} error={editError} isPending={isPending}
@@ -2401,7 +2864,7 @@ export function TimecardViewer({
                                   type="button"
                                   onClick={() => startEditing(lastOut)}
                                   disabled={!canEdit}
-                                  className={canEdit ? `rounded px-1 py-0.5 ${pendingPunchEdits.has(lastOut.id) ? "text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30" : "hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"}` : ""}
+                                  className={canEdit ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(lastOut.id), canEdit)}
                                 >
                                   {pendingPunchEdits.has(lastOut.id) ? format(pendingPunchEdits.get(lastOut.id)!, "h:mm a") : format(parseISO(lastOut.roundedTime), "h:mm a")}
                                 </button>
@@ -2409,25 +2872,27 @@ export function TimecardViewer({
                                 const pendingNewOut = pendingNewPunches.find((p) => p.dayKey === dayKey && p.pairIndex === 0 && p.punchType === "CLOCK_OUT");
                                 if (pendingNewOut) return (
                                   <div className="flex items-center gap-0.5">
-                                    <span className="font-mono text-xs text-amber-600 dark:text-amber-400">{format(pendingNewOut.punchDate, "h:mm a")}</span>
-                                    <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === 0 && p.punchType === "CLOCK_OUT")))} className="rounded p-0.5 text-zinc-400 hover:text-red-500" title="Remove pending"><X className="h-2.5 w-2.5" /></button>
+                                    <span className="tabular" style={{ font: "var(--type-body2)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>{format(pendingNewOut.punchDate, "h:mm a")}</span>
+                                    <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === 0 && p.punchType === "CLOCK_OUT")))} className="rounded bg-transparent p-0.5 ta-hoverable" style={{ border: 0, cursor: "pointer", color: "var(--icon-error)" }} title="Remove pending"><X className="h-2.5 w-2.5" /></button>
                                   </div>
                                 );
                                 return hasMissingPunch && canEdit ? (
                                   <button
                                     type="button"
                                     onClick={() => startAddingPunch(dayKey, 0, "CLOCK_OUT", day, firstIn ? parseISO(firstIn.roundedTime) : null)}
-                                    className="rounded px-1 py-0.5 font-medium text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/30"
+                                    className={gridCellButtonClass}
+                                    style={{ ...punchCellStyle(true, true), fontWeight: "var(--weight-medium)" }}
                                   >
                                     Missed
                                   </button>
                                 ) : hasMissingPunch ? (
-                                  <span className="font-medium text-amber-600 dark:text-amber-400">Missed</span>
+                                  <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>Missed</span>
                                 ) : canEdit ? (
                                   <button
                                     type="button"
                                     onClick={() => startAddingPunch(dayKey, 0, "CLOCK_OUT", day)}
-                                    className="rounded px-1 py-0.5 text-zinc-300 hover:bg-blue-50 hover:text-blue-500 dark:text-zinc-700 dark:hover:bg-blue-950/30 dark:hover:text-blue-400"
+                                    className={gridCellButtonClass}
+                                    style={{ ...punchCellStyle(false, true), color: "var(--text-disabled)" }}
                                   >
                                     —
                                   </button>
@@ -2442,15 +2907,18 @@ export function TimecardViewer({
                               const pendingHours = pendingHoursEntries.find((e) => e.dayKey === dayKey)?.hours;
                               return (
                                 <td
-                                  className={`px-3 py-1.5 text-right tabular-nums text-sm ${
-                                    isAbsent
-                                      ? "text-red-400 dark:text-red-700"
+                                  className="tabular px-3 py-1.5 text-right"
+                                  style={{
+                                    font: "var(--type-body1)",
+                                    borderLeft: "1px solid var(--stroke-secondary)",
+                                    color: isAbsent
+                                      ? "var(--text-error)"
                                       : hasMissingPunch
-                                        ? "text-amber-400 dark:text-amber-600"
-                                        : (reg > 0 || isSalaryVirtualDay)
-                                          ? "text-zinc-700 dark:text-zinc-300"
-                                          : "text-zinc-300 dark:text-zinc-700"
-                                  }`}
+                                        ? "var(--text-warning)"
+                                        : reg > 0 || isSalaryVirtualDay
+                                          ? "var(--text-secondary)"
+                                          : "var(--text-disabled)",
+                                  }}
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   {isEditingThis ? (
@@ -2467,20 +2935,24 @@ export function TimecardViewer({
                                             if (e.key === "Escape") { e.preventDefault(); setEditingHours(null); setHoursError(null); }
                                           }}
                                           placeholder="0.00"
-                                          className="w-14 rounded border border-blue-400 bg-white px-1 py-0.5 text-right text-xs dark:border-blue-600 dark:bg-zinc-800 dark:text-white"
+                                          className="ta-cell"
+                                          style={{ width: 56, minWidth: 0, height: 24, textAlign: "right", borderColor: "var(--stroke-accent)" }}
                                         />
-                                        <span className="text-xs text-zinc-400">h</span>
+                                        <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>h</span>
                                       </div>
-                                      {hoursError && <span className="text-xs text-red-500">{hoursError}</span>}
+                                      {hoursError && (
+                                        <span style={{ font: "var(--type-caption1)", color: "var(--text-error)" }}>{hoursError}</span>
+                                      )}
                                     </div>
                                   ) : pendingHours !== undefined ? (
-                                    <span className="font-medium text-amber-500 dark:text-amber-400">{pendingHours.toFixed(2)}</span>
+                                    <span style={{ fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>{pendingHours.toFixed(2)}</span>
                                   ) : canAddHours ? (
                                     <button
                                       type="button"
                                       title="Add manual hours"
                                       onClick={() => { setEditingHours({ dayKey, value: "" }); setHoursError(null); }}
-                                      className={`rounded px-1 py-0.5 ${isAbsent ? "hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/20 dark:hover:text-red-400" : "hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}
+                                      className={gridCellButtonClass}
+                                      style={{ ...punchCellStyle(false, true), color: "inherit" }}
                                     >
                                       {isAbsent ? "0.00" : "—"}
                                     </button>
@@ -2492,41 +2964,59 @@ export function TimecardViewer({
                             })()}
 
                             {/* OT */}
-                            <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
-                              isAbsent
-                                ? "text-red-400 dark:text-red-700"
-                                : hasMissingPunch
-                                  ? "text-amber-400 dark:text-amber-600"
-                                  : ot > 0
-                                    ? "font-semibold text-amber-600 dark:text-amber-400"
-                                    : "text-zinc-300 dark:text-zinc-700"
-                            }`}>
+                            <td
+                              className="tabular px-3 py-1.5 text-right"
+                              style={{
+                                font: "var(--type-body1)",
+                                fontWeight: ot > 0 && !isAbsent && !hasMissingPunch ? "var(--weight-semibold)" : undefined,
+                                color: isAbsent
+                                  ? "var(--text-error)"
+                                  : hasMissingPunch
+                                    ? "var(--text-warning)"
+                                    : ot > 0
+                                      ? "var(--text-warning)"
+                                      : "var(--text-disabled)",
+                              }}
+                            >
                               {hasMissingPunch ? "—" : ot > 0 ? minutesToHoursDecimal(ot) : "—"}
                             </td>
 
                             {/* DT */}
-                            <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
-                              isAbsent
-                                ? "text-red-400 dark:text-red-700"
-                                : hasMissingPunch
-                                  ? "text-amber-400 dark:text-amber-600"
-                                  : dt > 0
-                                    ? "font-semibold text-red-600 dark:text-red-400"
-                                    : "text-zinc-300 dark:text-zinc-700"
-                            }`}>
+                            <td
+                              className="tabular px-3 py-1.5 text-right"
+                              style={{
+                                font: "var(--type-body1)",
+                                fontWeight: dt > 0 && !isAbsent && !hasMissingPunch ? "var(--weight-semibold)" : undefined,
+                                color: isAbsent
+                                  ? "var(--text-error)"
+                                  : hasMissingPunch
+                                    ? "var(--text-warning)"
+                                    : dt > 0
+                                      ? "var(--text-error)"
+                                      : "var(--text-disabled)",
+                              }}
+                            >
                               {hasMissingPunch ? "—" : dt > 0 ? minutesToHoursDecimal(dt) : "—"}
                             </td>
 
                             {/* Total */}
-                            <td className={`pl-3 pr-8 py-1.5 text-right tabular-nums text-sm ${
-                              isAbsent
-                                ? "font-bold text-red-800 dark:text-red-300"
-                                : hasMissingPunch
-                                  ? "font-bold text-amber-500 dark:text-amber-500"
-                                  : (dailyTotal > 0 || isSalaryVirtualDay)
-                                    ? "font-bold text-zinc-900 dark:text-white"
-                                    : "text-zinc-300 dark:text-zinc-700"
-                            }`}>
+                            <td
+                              className="tabular py-1.5 pl-3 pr-8 text-right"
+                              style={{
+                                font: "var(--type-body1)",
+                                fontWeight:
+                                  isAbsent || hasMissingPunch || dailyTotal > 0 || isSalaryVirtualDay
+                                    ? "var(--weight-bold)"
+                                    : undefined,
+                                color: isAbsent
+                                  ? "var(--text-error)"
+                                  : hasMissingPunch
+                                    ? "var(--text-warning)"
+                                    : dailyTotal > 0 || isSalaryVirtualDay
+                                      ? "var(--text-primary)"
+                                      : "var(--text-disabled)",
+                              }}
+                            >
                               {isAbsent ? "0.00" : hasMissingPunch ? "—" : (dailyTotal > 0 || isSalaryVirtualDay) ? minutesToHoursDecimal(dailyTotal || SALARY_VIRTUAL_MINS) : "—"}
                             </td>
 
@@ -2541,7 +3031,7 @@ export function TimecardViewer({
                               return (
                                 <td className="px-3 py-1 text-left" onClick={(e) => e.stopPropagation()}>
                                   {totalWorkForThreshold <= (timecard?.employee.ruleSet.mealBreakAfterMinutes ?? 0) ? (
-                                    <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
+                                    <span style={{ font: "var(--type-body2)", color: "var(--text-disabled)" }}>—</span>
                                   ) : effectiveHasWaiver ? (
                                     <div className="flex items-center gap-1.5">
                                       {canEdit ? (
@@ -2549,30 +3039,47 @@ export function TimecardViewer({
                                           type="button"
                                           onClick={() => handleToggleWaiver(dayStr)}
                                           title="Click to remove waiver"
-                                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${waiverToggled ? "bg-amber-200 text-amber-800 hover:bg-red-100 hover:text-red-600 dark:bg-amber-800/40 dark:text-amber-300 dark:hover:bg-red-900/30 dark:hover:text-red-400" : "bg-amber-100 text-amber-700 hover:bg-red-100 hover:text-red-600 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"}`}
+                                          className="inline-flex items-center rounded-full px-2 py-0.5 transition-colors"
+                                          style={{
+                                            font: "var(--type-body2)",
+                                            fontWeight: "var(--weight-medium)",
+                                            background: "var(--surface-warning)",
+                                            color: "var(--text-warning)",
+                                            border: `1px solid ${waiverToggled ? "var(--stroke-warning)" : "transparent"}`,
+                                            cursor: "pointer",
+                                          }}
                                         >
                                           {waiverToggled ? "Waived*" : "Waived"}
                                         </button>
                                       ) : (
-                                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                                          Waived
-                                        </span>
+                                        <Badge tone="warning" size="sm">Waived</Badge>
                                       )}
-                                      {waiverError && <span className="text-xs text-red-500">{waiverError}</span>}
+                                      {waiverError && (
+                                        <span style={{ font: "var(--type-caption1)", color: "var(--text-error)" }}>{waiverError}</span>
+                                      )}
                                     </div>
                                   ) : canEdit ? (
                                     <div className="flex items-center gap-1.5">
                                       <button
                                         type="button"
                                         onClick={() => handleToggleWaiver(dayStr)}
-                                        className={`rounded px-2 py-0.5 text-xs ${waiverToggled ? "bg-amber-100 text-amber-700 hover:bg-zinc-100 hover:text-zinc-600 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" : "bg-zinc-100 text-zinc-600 hover:bg-amber-50 hover:text-amber-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-amber-900/20 dark:hover:text-amber-300"}`}
+                                        className="rounded-full px-2 py-0.5 transition-colors"
+                                        style={{
+                                          font: "var(--type-body2)",
+                                          background: waiverToggled ? "var(--surface-warning)" : "var(--fill-hover)",
+                                          color: waiverToggled ? "var(--text-warning)" : "var(--text-secondary)",
+                                          border: `1px solid ${waiverToggled ? "var(--stroke-warning)" : "transparent"}`,
+                                          cursor: "pointer",
+                                        }}
                                       >
                                         {waiverToggled ? "Waive*" : "Waive"}
                                       </button>
-                                      {waiverError && <span className="text-xs text-red-500">{waiverError}</span>}
+                                      {waiverError && (
+                                        <span style={{ font: "var(--type-caption1)", color: "var(--text-error)" }}>{waiverError}</span>
+                                      )}
                                     </div>
                                   ) : (
-                                    <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
+                                    <span style={{ font: "var(--type-body2)", color: "var(--text-disabled)" }}>—</span>
                                   )}
                                 </td>
                               );
@@ -2593,7 +3100,12 @@ export function TimecardViewer({
                                       disabled={isPending}
                                       onClick={() => queueDeleteManualPair(punchIds, dayKey, inTime, outTime)}
                                       title={isPendingDelete ? "Undo delete" : "Delete manual entry"}
-                                      className={`rounded p-0.5 disabled:opacity-50 ${isPendingDelete ? "text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30" : "text-zinc-300 hover:bg-red-50 hover:text-red-500 dark:text-zinc-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"}`}
+                                      className="rounded bg-transparent p-0.5 ta-hoverable disabled:opacity-50"
+                                      style={{
+                                        border: 0,
+                                        cursor: "pointer",
+                                        color: isPendingDelete ? "var(--icon-error)" : "var(--icon-disabled)",
+                                      }}
                                     >
                                       <Trash2 className="h-3.5 w-3.5" />
                                     </button>
@@ -2618,13 +3130,13 @@ export function TimecardViewer({
                             return (
                               <tr
                                 key={`${dayKey}-pair${pairIdx}`}
-                                className="border-b border-zinc-200 dark:border-zinc-700"
+                                style={{ borderBottom: "1px solid var(--stroke-secondary)" }}
                               >
                                 {/* Empty chevron */}
                                 <td className="w-7 pl-2 pr-0" />
                                 {/* Continuation date indicator */}
-                                <td className="px-3 py-1 text-xs text-zinc-400 dark:text-zinc-600">
-                                  <span className="ml-4 text-zinc-300 dark:text-zinc-700">↳</span>
+                                <td className="px-3 py-1">
+                                  <span className="ml-4" style={{ color: "var(--text-disabled)" }}>↳</span>
                                 </td>
                                 {/* Pay code DB cell */}
                                 {payCodes.length > 0 && (
@@ -2633,7 +3145,8 @@ export function TimecardViewer({
                                       <select
                                         value={pendingPayCodes.has(pairWorkSeg.id) ? (pendingPayCodes.get(pairWorkSeg.id) ?? "") : (pairWorkSeg.payCode?.id ?? "")}
                                         onChange={(e) => handlePayCodeChange(pairWorkSeg.id, e.target.value)}
-                                        className={`w-24 rounded border px-1 py-0.5 text-xs focus:outline-none ${pendingPayCodes.has(pairWorkSeg.id) ? "border-amber-400 bg-amber-50/50 text-zinc-700 dark:border-amber-600 dark:bg-amber-950/10 dark:text-zinc-300" : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"}`}
+                                        className="ta-field"
+                                        style={gridSelectStyle(pendingPayCodes.has(pairWorkSeg.id), 96)}
                                       >
                                         <option value="">—</option>
                                         {payCodes.map((pc) => (
@@ -2643,7 +3156,7 @@ export function TimecardViewer({
                                         ))}
                                       </select>
                                     ) : pairWorkSeg?.payCode ? (
-                                      <span className="text-xs text-zinc-700 dark:text-zinc-200">
+                                      <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                                         {pairWorkSeg.payCode.code}[{pairWorkSeg.payCode.label}]
                                       </span>
                                     ) : canEdit ? (() => {
@@ -2654,7 +3167,8 @@ export function TimecardViewer({
                                         <select
                                           value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : (pairWorkSeg?.payCode?.id ?? dayMarker?.payCode?.id ?? "")}
                                           onChange={(e) => handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayKey, e.target.value)}
-                                          className={`w-24 rounded border px-1 py-0.5 text-xs focus:outline-none ${absentPending ? "border-amber-400 bg-amber-50/50 text-zinc-700 dark:border-amber-600 dark:bg-amber-950/10 dark:text-zinc-300" : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"}`}
+                                          className="ta-field"
+                                          style={gridSelectStyle(absentPending, 96)}
                                         >
                                           <option value="">—</option>
                                           {payCodes.map((pc) => (
@@ -2681,11 +3195,12 @@ export function TimecardViewer({
                                         type="button"
                                         onClick={() => handleOpenNote(contDayStr)}
                                         title={contNoteCount > 0 ? `${contNoteCount} note${contNoteCount !== 1 ? "s" : ""}` : "Add note"}
-                                        className={`relative rounded p-0.5 ${
-                                          contNoteCount > 0
-                                            ? "text-amber-500 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20"
-                                            : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                                        }`}
+                                        className="relative rounded bg-transparent p-0.5 ta-hoverable"
+                                        style={{
+                                          border: 0,
+                                          cursor: "pointer",
+                                          color: contNoteCount > 0 ? "var(--icon-warning)" : "var(--icon-secondary)",
+                                        }}
                                       >
                                         <StickyNote className="h-4 w-4" />
                                       </button>
@@ -2693,7 +3208,16 @@ export function TimecardViewer({
                                   })()}
                                 </td>
                                 {/* In cell */}
-                                <td className="px-2 py-1 font-mono text-sm text-zinc-700 dark:text-zinc-300" onClick={(e) => e.stopPropagation()}>
+                                <td
+                                  className="px-2 py-1"
+                                  style={{
+                                    font: "var(--type-body1)",
+                                    fontVariantNumeric: "tabular-nums",
+                                    color: "var(--text-secondary)",
+                                    borderLeft: "1px solid var(--stroke-secondary)",
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
                                   {addingPunch?.dayKey === dayKey && addingPunch.pairIndex === pairIdx && addingPunch.punchType === "CLOCK_IN" ? (
                                     <InlinePunchEdit
                                       timeStr={editTimeStr} amPm={editAmPm} error={editError} isPending={isPending}
@@ -2712,24 +3236,29 @@ export function TimecardViewer({
                                       onDelete={() => deletePunchDirect(pairIn.id)}
                                     />
                                   ) : pairIn ? (
-                                    <button type="button" onClick={() => startEditing(pairIn)} disabled={!canEdit} className={canEdit ? `rounded px-1 py-0.5 ${pendingPunchEdits.has(pairIn.id) ? "text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30" : "hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"}` : ""}>{pendingPunchEdits.has(pairIn.id) ? format(pendingPunchEdits.get(pairIn.id)!, "h:mm a") : format(parseISO(pairIn.roundedTime), "h:mm a")}</button>
+                                    <button type="button" onClick={() => startEditing(pairIn)} disabled={!canEdit} className={canEdit ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(pairIn.id), canEdit)}>{pendingPunchEdits.has(pairIn.id) ? format(pendingPunchEdits.get(pairIn.id)!, "h:mm a") : format(parseISO(pairIn.roundedTime), "h:mm a")}</button>
                                   ) : (() => {
                                     const pendingNewPairIn = pendingNewPunches.find((p) => p.dayKey === dayKey && p.pairIndex === pairIdx && p.punchType === "CLOCK_IN");
                                     if (pendingNewPairIn) return (
                                       <div className="flex items-center gap-0.5">
-                                        <span className="font-mono text-xs text-amber-600 dark:text-amber-400">{format(pendingNewPairIn.punchDate, "h:mm a")}</span>
-                                        <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === pairIdx && p.punchType === "CLOCK_IN")))} className="rounded p-0.5 text-zinc-400 hover:text-red-500" title="Remove pending"><X className="h-2.5 w-2.5" /></button>
+                                        <span className="tabular" style={{ font: "var(--type-body2)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>{format(pendingNewPairIn.punchDate, "h:mm a")}</span>
+                                        <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === pairIdx && p.punchType === "CLOCK_IN")))} className="rounded bg-transparent p-0.5 ta-hoverable" style={{ border: 0, cursor: "pointer", color: "var(--icon-error)" }} title="Remove pending"><X className="h-2.5 w-2.5" /></button>
                                       </div>
                                     );
                                     return canEdit ? (
-                                      <button type="button" onClick={() => startAddingPunch(dayKey, pairIdx, "CLOCK_IN", day)} className="rounded px-1 py-0.5 text-zinc-300 hover:bg-blue-50 hover:text-blue-500 dark:text-zinc-700 dark:hover:bg-blue-950/30 dark:hover:text-blue-400">—</button>
+                                      <button type="button" onClick={() => startAddingPunch(dayKey, pairIdx, "CLOCK_IN", day)} className={gridCellButtonClass}
+                                    style={{ ...punchCellStyle(false, true), color: "var(--text-disabled)" }}>—</button>
                                     ) : (
-                                      <span className="text-zinc-300 dark:text-zinc-700">—</span>
+                                      <span style={{ color: "var(--text-disabled)" }}>—</span>
                                     );
                                   })()}
                                 </td>
                                 {/* Out cell */}
-                                <td className="px-2 py-1 font-mono text-sm text-zinc-700 dark:text-zinc-300" onClick={(e) => e.stopPropagation()}>
+                                <td
+                                  className="px-2 py-1"
+                                  style={{ font: "var(--type-body1)", fontVariantNumeric: "tabular-nums", color: "var(--text-secondary)" }}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
                                   {addingPunch?.dayKey === dayKey && addingPunch.pairIndex === pairIdx && addingPunch.punchType === "CLOCK_OUT" ? (
                                     <InlinePunchEdit
                                       timeStr={editTimeStr} amPm={editAmPm} error={editError} isPending={isPending}
@@ -2748,25 +3277,33 @@ export function TimecardViewer({
                                       onDelete={() => deletePunchDirect(pairOut.id)}
                                     />
                                   ) : pairOut ? (
-                                    <button type="button" onClick={() => startEditing(pairOut)} disabled={!canEdit} className={canEdit ? `rounded px-1 py-0.5 ${pendingPunchEdits.has(pairOut.id) ? "text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30" : "hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"}` : ""}>{pendingPunchEdits.has(pairOut.id) ? format(pendingPunchEdits.get(pairOut.id)!, "h:mm a") : format(parseISO(pairOut.roundedTime), "h:mm a")}</button>
+                                    <button type="button" onClick={() => startEditing(pairOut)} disabled={!canEdit} className={canEdit ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(pairOut.id), canEdit)}>{pendingPunchEdits.has(pairOut.id) ? format(pendingPunchEdits.get(pairOut.id)!, "h:mm a") : format(parseISO(pairOut.roundedTime), "h:mm a")}</button>
                                   ) : (() => {
                                     const pendingNewPairOut = pendingNewPunches.find((p) => p.dayKey === dayKey && p.pairIndex === pairIdx && p.punchType === "CLOCK_OUT");
                                     if (pendingNewPairOut) return (
                                       <div className="flex items-center gap-0.5">
-                                        <span className="font-mono text-xs text-amber-600 dark:text-amber-400">{format(pendingNewPairOut.punchDate, "h:mm a")}</span>
-                                        <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === pairIdx && p.punchType === "CLOCK_OUT")))} className="rounded p-0.5 text-zinc-400 hover:text-red-500" title="Remove pending"><X className="h-2.5 w-2.5" /></button>
+                                        <span className="tabular" style={{ font: "var(--type-body2)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>{format(pendingNewPairOut.punchDate, "h:mm a")}</span>
+                                        <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === pairIdx && p.punchType === "CLOCK_OUT")))} className="rounded bg-transparent p-0.5 ta-hoverable" style={{ border: 0, cursor: "pointer", color: "var(--icon-error)" }} title="Remove pending"><X className="h-2.5 w-2.5" /></button>
                                       </div>
                                     );
                                     return canEdit ? (
-                                      <button type="button" onClick={() => startAddingPunch(dayKey, pairIdx, "CLOCK_OUT", day)} className="rounded px-1 py-0.5 text-zinc-300 hover:bg-blue-50 hover:text-blue-500 dark:text-zinc-700 dark:hover:bg-blue-950/30 dark:hover:text-blue-400">—</button>
+                                      <button type="button" onClick={() => startAddingPunch(dayKey, pairIdx, "CLOCK_OUT", day)} className={gridCellButtonClass}
+                                    style={{ ...punchCellStyle(false, true), color: "var(--text-disabled)" }}>—</button>
                                     ) : null;
                                   })()}
                                 </td>
-                                {/* Hours: blank for continuation rows */}
-                                <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
-                                <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
-                                <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
-                                <td className="pl-3 pr-8 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
+                                {/* Hours: blank for continuation rows. The engine attributes a day's
+                                    hours to the day, not to each punch pair, so splitting
+                                    them across these rows would invent a number. */}
+                                <td
+                                  className="px-3 py-1.5 text-right"
+                                  style={{ font: "var(--type-body1)", color: "var(--text-disabled)", borderLeft: "1px solid var(--stroke-secondary)" }}
+                                >
+                                  —
+                                </td>
+                                <td className="px-3 py-1.5 text-right" style={{ font: "var(--type-body1)", color: "var(--text-disabled)" }}>—</td>
+                                <td className="px-3 py-1.5 text-right" style={{ font: "var(--type-body1)", color: "var(--text-disabled)" }}>—</td>
+                                <td className="py-1.5 pl-3 pr-8 text-right" style={{ font: "var(--type-body1)", color: "var(--text-disabled)" }}>—</td>
                                 {timecard?.employee.ruleSet.autoDeductMeal && <td />}
                                 {/* Delete manual pair — continuation row */}
                                 {canDeleteManual && (() => {
@@ -2783,7 +3320,12 @@ export function TimecardViewer({
                                           disabled={isPending}
                                           onClick={() => queueDeleteManualPair(punchIds, dayKey, inTime, outTime)}
                                           title={isPendingDelete ? "Undo delete" : "Delete manual entry"}
-                                          className={`rounded p-0.5 disabled:opacity-50 ${isPendingDelete ? "text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30" : "text-zinc-300 hover:bg-red-50 hover:text-red-500 dark:text-zinc-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"}`}
+                                          className="rounded bg-transparent p-0.5 ta-hoverable disabled:opacity-50"
+                                      style={{
+                                        border: 0,
+                                        cursor: "pointer",
+                                        color: isPendingDelete ? "var(--icon-error)" : "var(--icon-disabled)",
+                                      }}
                                         >
                                           <Trash2 className="h-3.5 w-3.5" />
                                         </button>
@@ -2797,48 +3339,71 @@ export function TimecardViewer({
 
                           {/* Leave rows — one per leave segment, shown only when expanded */}
                           {isExpanded && leaveSegments.map((seg) => (
-                            <tr key={`${dayKey}-leave-${seg.id}`} className="border-b border-zinc-100 bg-violet-50/30 dark:border-zinc-800 dark:bg-violet-950/10">
+                            <tr
+                              key={`${dayKey}-leave-${seg.id}`}
+                              style={{
+                                borderBottom: "1px solid var(--stroke-divider)",
+                                background: "var(--surface-secondary)",
+                              }}
+                            >
                               <td className="w-7 pl-2 pr-0 py-1.5" />
                               <td className="px-3 py-1 text-left">
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-100 pl-2 pr-1 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+                                <Badge tone="purple" size="sm" style={{ paddingRight: canEdit && seg.leaveRequest?.id ? 4 : undefined }}>
                                   {seg.leaveRequest?.leaveType.name ?? PAY_BUCKET_LABEL[seg.payBucket as PayBucketValue] ?? seg.payBucket}
                                   {canEdit && seg.leaveRequest?.id && (
                                     <button
                                       type="button"
                                       disabled={isPending}
                                       onClick={() => handleRemoveLeave(seg.leaveRequest!.id)}
-                                      className="rounded-full p-0.5 hover:bg-violet-200 disabled:opacity-50 dark:hover:bg-violet-800"
+                                      className="rounded-full p-0.5 disabled:opacity-50"
+                                      style={{ background: "transparent", border: 0, color: "inherit", cursor: "pointer", lineHeight: 0 }}
                                       title="Remove leave entry"
                                     >
                                       <X className="h-2.5 w-2.5" />
                                     </button>
                                   )}
-                                </span>
+                                </Badge>
                               </td>
                               {payCodes.length > 0 && (() => {
                                 const leavePayCode = seg.payCode ?? seg.leaveRequest?.leaveType.payCode ?? null;
                                 return (
                                   <td className="px-2 py-1">
                                     {leavePayCode ? (
-                                      <span className="text-xs text-zinc-500">
+                                      <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                                         {leavePayCode.code}[{leavePayCode.label}]
                                       </span>
                                     ) : (
-                                      <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
+                                      <span style={{ font: "var(--type-body2)", color: "var(--text-disabled)" }}>—</span>
                                     )}
                                   </td>
                                 );
                               })()}
                               {reasonCodes.length > 0 && <td className="px-2 py-1.5" />}
                               <td className="w-7 px-1 py-1.5" />
-                              <td className="px-2 py-1 font-mono text-sm text-zinc-300 dark:text-zinc-700">—</td>
-                              <td className="px-2 py-1 font-mono text-sm text-zinc-300 dark:text-zinc-700">—</td>
-                              <td className="px-3 py-1.5 text-right tabular-nums text-sm font-medium text-violet-700 dark:text-violet-300">
+                              <td
+                                className="px-2 py-1"
+                                style={{ font: "var(--type-body1)", color: "var(--text-disabled)", borderLeft: "1px solid var(--stroke-secondary)" }}
+                              >
+                                —
+                              </td>
+                              <td className="px-2 py-1" style={{ font: "var(--type-body1)", color: "var(--text-disabled)" }}>—</td>
+                              <td
+                                className="tabular px-3 py-1.5 text-right"
+                                style={{
+                                  font: "var(--type-body1)",
+                                  fontWeight: "var(--weight-medium)",
+                                  color: "var(--text-primary)",
+                                  borderLeft: "1px solid var(--stroke-secondary)",
+                                }}
+                              >
                                 {minutesToHoursDecimal(seg.durationMinutes)}
                               </td>
-                              <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
-                              <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
-                              <td className="pl-3 pr-8 py-1.5 text-right tabular-nums text-sm font-bold text-violet-700 dark:text-violet-300">
+                              <td className="px-3 py-1.5 text-right" style={{ font: "var(--type-body1)", color: "var(--text-disabled)" }}>—</td>
+                              <td className="px-3 py-1.5 text-right" style={{ font: "var(--type-body1)", color: "var(--text-disabled)" }}>—</td>
+                              <td
+                                className="tabular py-1.5 pl-3 pr-8 text-right"
+                                style={{ font: "var(--type-body1)", fontWeight: "var(--weight-bold)", color: "var(--text-primary)" }}
+                              >
                                 {minutesToHoursDecimal(seg.durationMinutes)}
                               </td>
                               {timecard?.employee.ruleSet.autoDeductMeal && <td />}
@@ -2869,7 +3434,10 @@ export function TimecardViewer({
                           {isExpanded && hasActivity && dayPunches.length > 0 && (
                             <tr
                               key={`${dayKey}-detail`}
-                              className="border-b border-zinc-200 bg-zinc-50/80 dark:border-zinc-700 dark:bg-zinc-900/40"
+                              style={{
+                                borderBottom: "1px solid var(--stroke-secondary)",
+                                background: "var(--surface-secondary)",
+                              }}
                             >
                               <td colSpan={colCount} className="px-5 py-2">
                                 <div className="flex flex-wrap items-start gap-2">
@@ -2879,9 +3447,20 @@ export function TimecardViewer({
                                       editingPunchId === punch.id ? (
                                         <div
                                           key={punch.id}
-                                          className="flex w-full items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2 dark:border-blue-900 dark:bg-blue-950/30"
+                                          className="flex w-full items-center gap-2 rounded-lg p-2"
+                                          style={{
+                                            border: "1px solid var(--stroke-accent-focus)",
+                                            background: "var(--surface-info)",
+                                          }}
                                         >
-                                          <span className="shrink-0 text-xs font-medium text-blue-800 dark:text-blue-300">
+                                          <span
+                                            className="shrink-0"
+                                            style={{
+                                              font: "var(--type-body2)",
+                                              fontWeight: "var(--weight-medium)",
+                                              color: "var(--text-accent)",
+                                            }}
+                                          >
                                             {PUNCH_TYPE_LABEL[punch.punchType as PunchTypeValue] ?? punch.punchType}
                                           </span>
                                           <InlinePunchEdit
@@ -2899,13 +3478,20 @@ export function TimecardViewer({
                                           type="button"
                                           onClick={() => startEditing(punch)}
                                           disabled={!canEdit}
-                                          className={`inline-flex items-center gap-1 rounded px-2 py-1 text-xs ${
-                                            canEdit
-                                              ? pendingPunchEdits.has(punch.id)
-                                                ? "bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/20 dark:text-amber-400 dark:hover:bg-amber-950/30"
-                                                : "bg-zinc-100 text-zinc-700 hover:bg-blue-50 hover:text-blue-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
-                                              : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-500"
-                                          }`}
+                                          className="inline-flex items-center gap-1 rounded px-2 py-1 transition-colors"
+                                          style={{
+                                            font: "var(--type-body2)",
+                                            border: 0,
+                                            cursor: canEdit ? "pointer" : "default",
+                                            background: pendingPunchEdits.has(punch.id)
+                                              ? "var(--surface-warning)"
+                                              : "var(--fill-hover)",
+                                            color: pendingPunchEdits.has(punch.id)
+                                              ? "var(--text-warning)"
+                                              : canEdit
+                                                ? "var(--text-primary)"
+                                                : "var(--text-secondary)",
+                                          }}
                                         >
                                           {PUNCH_TYPE_LABEL[punch.punchType as PunchTypeValue] ?? punch.punchType}{" "}
                                           {pendingPunchEdits.has(punch.id) ? format(pendingPunchEdits.get(punch.id)!, "h:mm a") : format(parseISO(punch.roundedTime), "h:mm a")}
@@ -2930,99 +3516,108 @@ export function TimecardViewer({
               <div className="shrink-0">
 
                 {/* ── Color Legend ──────────────────────────────────── */}
-                <div className="flex flex-wrap items-center gap-4 border-t-4 border-zinc-400 bg-zinc-200 px-4 py-2 dark:border-zinc-500 dark:bg-zinc-800/80">
-                  <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">Legend:</span>
-                  <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                    <span className="inline-block h-3 w-3 rounded border border-amber-500 bg-amber-200 dark:border-amber-700 dark:bg-amber-950/30" />
-                    Exception
-                  </span>
-                  <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                    <span className="inline-block h-3 w-3 rounded border border-red-500 bg-red-300 dark:border-red-800 dark:bg-red-950/40" />
-                    Absent
-                  </span>
-                  <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                    <span className="inline-block h-3 w-3 rounded border border-blue-500 bg-blue-200 dark:border-blue-700 dark:bg-blue-950/20" />
-                    Today
-                  </span>
-                  <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                    <span className="inline-block h-3 w-3 rounded border border-zinc-500 bg-zinc-300 dark:border-zinc-700 dark:bg-zinc-900/40" />
-                    Weekend
-                  </span>
+                <div
+                  className="flex flex-wrap items-center gap-4 px-4 py-2"
+                  style={{
+                    borderTop: "1px solid var(--stroke-secondary)",
+                    background: "var(--surface-tertiary)",
+                  }}
+                >
+                  <span className="wms-overline">Legend</span>
+                  {[
+                    { label: "Absent", fill: "var(--surface-error)", line: "var(--stroke-error)" },
+                    { label: "Exception", fill: "var(--surface-warning)", line: "var(--stroke-warning)" },
+                    { label: "Today", fill: "var(--surface-info)", line: "var(--stroke-accent-focus)" },
+                    { label: "Weekend", fill: "var(--surface-tertiary)", line: "var(--stroke-default)" },
+                  ].map((l) => (
+                    <span
+                      key={l.label}
+                      className="flex items-center gap-1.5"
+                      style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                    >
+                      <span
+                        className="inline-block h-3 w-3 rounded"
+                        style={{ background: l.fill, border: `1px solid ${l.line}` }}
+                      />
+                      {l.label}
+                    </span>
+                  ))}
                 </div>
 
                 {/* ── Summary with Group By ──────────────────────────── */}
-                <div className="border-t border-zinc-200 dark:border-zinc-800">
-                  {/* Summary header with Group By selector */}
-                  <div className="flex items-center justify-between bg-zinc-50 px-4 py-1 dark:bg-zinc-900">
-                    <span className="text-xs font-medium text-zinc-500">
-                      Timesheet Summary
-                    </span>
+                <div style={{ borderTop: "1px solid var(--stroke-secondary)" }}>
+                  {/* The summary card's header, as the timesheet template draws
+                      it: title and sub on the left, "Group by" on the right.
+                      Segments rather than a dropdown because there are three of
+                      them and the choice is a view, not a setting. Pay Code only
+                      appears when this tenant has codes to group by. */}
+                  <div
+                    className="flex flex-wrap items-center gap-3 px-4 py-2"
+                    style={{ background: "var(--surface-tertiary)" }}
+                  >
+                    <div className="flex flex-col gap-0.5">
+                      <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>
+                        Timesheet Summary
+                      </span>
+                      <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                        {summaryGroupBy === "week"
+                          ? "Each week in this pay period"
+                          : summaryGroupBy === "paycode"
+                            ? "Hours by the code they will be paid under"
+                            : "Everything in this pay period"}
+                      </span>
+                    </div>
+                    <div className="flex-1" />
                     <div className="flex items-center gap-2">
-                      <label className="text-xs text-zinc-400">Group By</label>
-                      <select
+                      <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                        Group by
+                      </span>
+                      <SegmentedControl
+                        size="sm"
+                        ariaLabel="Group the summary by"
                         value={summaryGroupBy}
-                        onChange={(e) =>
-                          setSummaryGroupBy(
-                            e.target.value as "total" | "week" | "paycode"
-                          )
+                        onChange={(next) =>
+                          setSummaryGroupBy(next as "total" | "week" | "paycode")
                         }
-                        className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                      >
-                        <option value="total">Total</option>
-                        <option value="week">Week</option>
-                        {payCodes.length > 0 && (
-                          <option value="paycode">Pay Code</option>
-                        )}
-                      </select>
+                        items={[
+                          { value: "total", label: "Total" },
+                          { value: "week", label: "Week" },
+                          ...(payCodes.length > 0
+                            ? [{ value: "paycode", label: "Pay Code" }]
+                            : []),
+                        ]}
+                      />
                     </div>
                   </div>
 
                   {/* Summary table */}
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
-                      <thead className="border-b border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/50">
-                        <tr>
-                          <th className="px-4 py-1.5 text-left text-xs font-medium text-zinc-500">
+                      <THead>
+                        <TR>
+                          <TH>
                             {summaryGroupBy === "week"
                               ? "Week"
                               : summaryGroupBy === "paycode"
                                 ? "Pay Code"
                                 : "Category"}
-                          </th>
-                          <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
-                            Reg Hrs
-                          </th>
-                          <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
-                            OT
-                          </th>
-                          <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
-                            DT
-                          </th>
-                          <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
-                            Total Hrs
-                          </th>
+                          </TH>
+                          <TH numeric>Reg Hrs</TH>
+                          <TH numeric>OT</TH>
+                          <TH numeric>DT</TH>
+                          <TH numeric>Total Hrs</TH>
                           {rate !== null && (
                             <>
-                              <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
-                                Rate
-                              </th>
-                              <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
-                                Reg Pay
-                              </th>
-                              <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
-                                OT Pay
-                              </th>
-                              <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
-                                DT Pay
-                              </th>
-                              <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
-                                Total Pay
-                              </th>
+                              <TH numeric>Rate</TH>
+                              <TH numeric>Reg Pay</TH>
+                              <TH numeric>OT Pay</TH>
+                              <TH numeric>DT Pay</TH>
+                              <TH numeric>Total Pay</TH>
                             </>
                           )}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                        </TR>
+                      </THead>
+                      <tbody>
                         {(() => {
                           const bucketMap: Record<string, number> =
                             Object.fromEntries(
@@ -3237,28 +3832,38 @@ export function TimecardViewer({
           onClick={() => { setNoteDay(null); setNoteText(""); }}
         >
           <div
-            className="flex w-full max-w-lg flex-col rounded-xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+            className="flex w-full max-w-lg flex-col rounded-xl ta-modal"
             style={{ maxHeight: "80vh" }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-700">
-              <div>
-                <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">Notes</h3>
-                <p className="mt-0.5 text-xs text-zinc-500">
+            <div
+              className="flex shrink-0 items-center justify-between gap-3 px-5 py-3.5"
+              style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+            >
+              <div className="flex flex-col gap-0.5">
+                <h3 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
+                  Notes
+                </h3>
+                <p
+                  className="m-0"
+                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                >
                   {(() => {
                     try { return format(parseISO(noteDay), "EEE MM/dd/yyyy"); } catch { return noteDay; }
                   })()}
                   {" · "}{timecard.employee.user?.name ?? timecard.employee.employeeCode}
                 </p>
               </div>
-              <button
-                type="button"
+              <Button
+                hierarchy="tertiary"
+                size="sm"
+                iconOnly
                 onClick={() => { setNoteDay(null); setNoteText(""); }}
-                className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                title="Close"
               >
                 <X className="h-4 w-4" />
-              </button>
+              </Button>
             </div>
 
             {/* Notes list */}
@@ -3267,25 +3872,42 @@ export function TimecardViewer({
                 const dayNotes = (timecard?.notes ?? []).filter((n) => n.noteDate === noteDay);
                 if (dayNotes.length === 0) {
                   return (
-                    <p className="px-5 py-6 text-center text-sm text-zinc-400">
-                      No notes yet for this date.
-                    </p>
+                    <EmptyState
+                      icon={<StickyNote className="h-7 w-7" />}
+                      title="No notes on this day"
+                      body="Anything saved here is kept with the timecard, so the next person can see why an entry looks the way it does."
+                    />
                   );
                 }
                 return (
-                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  <div className="flex flex-col">
                     {dayNotes.map((n) => (
-                      <div key={n.id} className="px-5 py-3.5">
-                        <div className="mb-1 flex items-center gap-2 text-xs text-zinc-400">
-                          <span className="font-medium text-zinc-600 dark:text-zinc-300">
+                      <div
+                        key={n.id}
+                        className="px-5 py-3.5"
+                        style={{ borderTop: "1px solid var(--stroke-divider)" }}
+                      >
+                        <div
+                          className="mb-1 flex items-center gap-2"
+                          style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+                        >
+                          <span
+                            style={{
+                              fontWeight: "var(--weight-medium)",
+                              color: "var(--text-secondary)",
+                            }}
+                          >
                             {n.createdByName ?? "Unknown"}
                           </span>
                           <span>·</span>
-                          <span>
+                          <span className="tabular">
                             {format(parseISO(n.createdAt), "MM/dd/yyyy h:mm a")}
                           </span>
                         </div>
-                        <p className="whitespace-pre-wrap text-sm text-zinc-800 dark:text-zinc-200">
+                        <p
+                          className="m-0 whitespace-pre-wrap"
+                          style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}
+                        >
                           {n.note}
                         </p>
                       </div>
@@ -3297,24 +3919,27 @@ export function TimecardViewer({
 
             {/* Add note form — only when timesheet is editable */}
             {canEdit && (
-              <div className="shrink-0 border-t border-zinc-200 bg-zinc-50 px-5 py-4 dark:border-zinc-700 dark:bg-zinc-800/50">
-                <textarea
+              <div
+                className="shrink-0 px-5 py-4"
+                style={{
+                  borderTop: "1px solid var(--stroke-divider)",
+                  background: "var(--surface-tertiary)",
+                }}
+              >
+                <Textarea
                   value={noteText}
                   onChange={(e) => setNoteText(e.target.value)}
                   placeholder="Add a note…"
                   rows={3}
                   autoFocus
-                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
                 />
                 <div className="mt-2 flex justify-end">
-                  <button
-                    type="button"
+                  <Button
                     onClick={handleSaveNote}
                     disabled={noteSaving || !noteText.trim()}
-                    className="rounded-lg bg-amber-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-40"
                   >
                     {noteSaving ? "Saving…" : "Add Note"}
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
@@ -3329,185 +3954,196 @@ export function TimecardViewer({
           onClick={() => { setShowAddEntryModal(false); setNewEntryError(null); }}
         >
           <div
-            className="w-full max-w-lg rounded-xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+            className="w-full max-w-lg rounded-xl ta-modal"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-700">
-              <div>
-                <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">Add Time Entry</h3>
-                <p className="mt-0.5 text-xs text-zinc-500">
+            <div
+              className="flex items-center justify-between gap-3 px-5 py-3.5"
+              style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+            >
+              <div className="flex flex-col gap-0.5">
+                <h3 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
+                  Add Time Entry
+                </h3>
+                <p
+                  className="m-0"
+                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                >
                   {timecard?.employee.user?.name ?? timecard?.employee.employeeCode ?? employees.find((e) => e.employeeId === selectedEmployeeId)?.name ?? selectedEmployeeId}
                 </p>
               </div>
-              <button
-                type="button"
+              <Button
+                hierarchy="tertiary"
+                size="sm"
+                iconOnly
                 onClick={() => { setShowAddEntryModal(false); setNewEntryError(null); }}
-                className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                title="Close"
               >
                 <X className="h-4 w-4" />
-              </button>
+              </Button>
             </div>
-            <form onSubmit={newEntryMode === "hours" ? handleAddHoursEntry : handleAddEntry} className="space-y-4 p-5">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={newEntryMode === "hours" ? handleAddHoursEntry : handleAddEntry} className="flex flex-col gap-4 p-5">
+              {/* The field grid the document template uses: auto-fit columns
+                  that collapse to one at narrow widths, rather than a fixed two
+                  that would put a 70px AM/PM select on its own row. */}
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,46%)),1fr))]">
                 {/* Date — full width */}
-                <div className="col-span-2 flex flex-col gap-1">
-                  <label className="text-xs font-medium text-zinc-500">Date</label>
-                  <input
+                <div className="col-span-full">
+                  <Input
+                    label="Date"
                     type="date"
                     value={newEntryDate}
                     onChange={(e) => setNewEntryDate(e.target.value)}
                     required
                     min={format(parseUtcDate((timecard?.payPeriod ?? payPeriods.find((pp) => pp.id === selectedPeriodId))?.startDate ?? new Date().toISOString()), "yyyy-MM-dd")}
                     max={format(parseUtcDate((timecard?.payPeriod ?? payPeriods.find((pp) => pp.id === selectedPeriodId))?.endDate ?? new Date().toISOString()), "yyyy-MM-dd")}
-                    className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
                   />
                 </div>
 
-                {/* Mode toggle */}
-                <div className="col-span-2 flex gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-800">
-                  <button
-                    type="button"
-                    onClick={() => { setNewEntryMode("time"); setNewEntryError(null); }}
-                    className={`flex-1 rounded-md px-3 py-1 text-xs font-medium transition-colors ${newEntryMode === "time" ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}
-                  >
-                    In / Out Times
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setNewEntryMode("hours"); setNewEntryError(null); }}
-                    className={`flex-1 rounded-md px-3 py-1 text-xs font-medium transition-colors ${newEntryMode === "hours" ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}
-                  >
-                    Reg Hours
-                  </button>
+                {/* Two ways to add the same day: the times somebody worked, or
+                    a flat number of hours when nobody knows what they were. */}
+                <div className="col-span-full">
+                  <SegmentedControl
+                    fullWidth
+                    ariaLabel="How to enter this day"
+                    value={newEntryMode}
+                    onChange={(next) => {
+                      setNewEntryMode(next as "time" | "hours");
+                      setNewEntryError(null);
+                    }}
+                    items={[
+                      { value: "time", label: "In / Out Times" },
+                      { value: "hours", label: "Reg Hours" },
+                    ]}
+                  />
                 </div>
 
                 {newEntryMode === "time" ? (
                   <>
                     {/* In Time */}
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-medium text-zinc-500">In Time</label>
-                      <div className="flex min-w-0 gap-1.5">
-                        <input
-                          value={newInTimeStr}
-                          onChange={(e) => setNewInTimeStr(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
-                          placeholder="8:00"
-                          className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                        />
-                        <select
-                          value={newInAmPm}
-                          onChange={(e) => setNewInAmPm(e.target.value as "AM" | "PM")}
-                          className="shrink-0 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                        >
-                          <option value="AM">AM</option>
-                          <option value="PM">PM</option>
-                        </select>
+                    <div className="flex items-end gap-1.5">
+                      <div className="min-w-0 flex-1">
+                      <Input
+                        label="In Time"
+                        value={newInTimeStr}
+                        onChange={(e) => setNewInTimeStr(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+                        placeholder="8:00"
+                      />
                       </div>
+                      <Select
+                        value={newInAmPm}
+                        onChange={(e) => setNewInAmPm(e.target.value as "AM" | "PM")}
+                        aria-label="In time AM or PM"
+                        style={{ flex: "none" }}
+                      >
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                      </Select>
                     </div>
                     {/* Out Time */}
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-medium text-zinc-500">Out Time</label>
-                      <div className="flex min-w-0 gap-1.5">
-                        <input
-                          value={newOutTimeStr}
-                          onChange={(e) => setNewOutTimeStr(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
-                          placeholder="5:00"
-                          className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                        />
-                        <select
-                          value={newOutAmPm}
-                          onChange={(e) => setNewOutAmPm(e.target.value as "AM" | "PM")}
-                          className="shrink-0 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                        >
-                          <option value="AM">AM</option>
-                          <option value="PM">PM</option>
-                        </select>
+                    <div className="flex items-end gap-1.5">
+                      <div className="min-w-0 flex-1">
+                      <Input
+                        label="Out Time"
+                        value={newOutTimeStr}
+                        onChange={(e) => setNewOutTimeStr(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+                        placeholder="5:00"
+                      />
                       </div>
+                      <Select
+                        value={newOutAmPm}
+                        onChange={(e) => setNewOutAmPm(e.target.value as "AM" | "PM")}
+                        aria-label="Out time AM or PM"
+                        style={{ flex: "none" }}
+                      >
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                      </Select>
                     </div>
                   </>
                 ) : (
                   /* Reg Hours */
-                  <div className="col-span-2 flex flex-col gap-1">
-                    <label className="text-xs font-medium text-zinc-500">Reg Hours</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="0.25"
-                        max="24"
-                        step="0.25"
-                        value={newEntryHours}
-                        onChange={(e) => setNewEntryHours(e.target.value)}
-                        placeholder="8.00"
-                        required
-                        className="w-28 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                      />
-                      <span className="text-sm text-zinc-400">hours</span>
-                    </div>
+                  <div className="col-span-full">
+                    <Input
+                      label="Reg Hours"
+                      type="number"
+                      min="0.25"
+                      max="24"
+                      step="0.25"
+                      value={newEntryHours}
+                      onChange={(e) => setNewEntryHours(e.target.value)}
+                      placeholder="8.00"
+                      required
+                      hint="Decimal hours, between 0.25 and 24."
+                    />
                   </div>
                 )}
 
                 {/* Pay Code */}
                 {payCodes.length > 0 && (
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-zinc-500">Pay Code</label>
-                    <select
+                  <label className="flex flex-col gap-1.5">
+                    <span style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>
+                      Pay Code
+                    </span>
+                    <Select
                       value={newEntryPayCodeId}
                       onChange={(e) => setNewEntryPayCodeId(e.target.value)}
-                      className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                      style={{ width: "100%" }}
                     >
                       <option value="">— Default —</option>
                       {payCodes.map((pc) => (
                         <option key={pc.id} value={pc.id}>{pc.code}[{pc.label}]</option>
                       ))}
-                    </select>
-                  </div>
+                    </Select>
+                  </label>
                 )}
                 {/* Reason code dropdown */}
                 {reasonCodes.length > 0 && (
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-zinc-500">Reason</label>
-                    <select
+                  <label className="flex flex-col gap-1.5">
+                    <span style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>
+                      Reason
+                    </span>
+                    <Select
                       value={newEntryReasonCodeId}
                       onChange={(e) => setNewEntryReasonCodeId(e.target.value)}
-                      className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                      style={{ width: "100%" }}
                     >
                       <option value="">—</option>
                       {reasonCodes.map((rc) => (
                         <option key={rc.id} value={rc.id}>{rc.code} — {rc.label}</option>
                       ))}
-                    </select>
-                  </div>
+                    </Select>
+                  </label>
                 )}
                 {/* Notes — full width, saved as timesheet note */}
-                <div className="col-span-2 flex flex-col gap-1">
-                  <label className="text-xs font-medium text-zinc-500">Notes</label>
-                  <input
+                <div className="col-span-full">
+                  <Input
+                    label="Notes"
                     value={newEntryNote}
                     onChange={(e) => setNewEntryNote(e.target.value)}
                     placeholder="Add a note for this entry…"
-                    className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
                   />
                 </div>
               </div>
-              {newEntryError && (
-                <p className="text-xs text-red-500">{newEntryError}</p>
-              )}
-              <div className="flex justify-end gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
-                <button
-                  type="button"
+              {newEntryError && <Banner tone="error" body={newEntryError} />}
+              <div
+                className="flex justify-end gap-2 pt-4"
+                style={{ borderTop: "1px solid var(--stroke-divider)" }}
+              >
+                <Button
+                  hierarchy="secondary"
                   onClick={() => { setShowAddEntryModal(false); setNewEntryError(null); }}
-                  className="rounded-lg border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
                   disabled={isPending || (newEntryMode === "time" ? (!newInTimeStr || !newOutTimeStr) : !newEntryHours)}
-                  className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
                 >
                   {isPending ? "Adding…" : "Add Entry"}
-                </button>
+                </Button>
               </div>
             </form>
           </div>

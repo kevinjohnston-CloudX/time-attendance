@@ -1,8 +1,54 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { format, parseISO, differenceInCalendarDays, eachDayOfInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, isToday } from "date-fns";
+import {
+  addMonths,
+  differenceInCalendarDays,
+  eachDayOfInterval,
+  endOfMonth,
+  endOfWeek,
+  format,
+  isToday,
+  parseISO,
+  startOfMonth,
+  startOfWeek,
+  subMonths,
+} from "date-fns";
+import { AlertTriangle, CalendarOff, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  EmptyState,
+  FilterBar,
+  FilterChip,
+  LinkButton,
+  PageHeader,
+  SegmentedControl,
+  Select,
+  Textarea,
+  Toolbar,
+  leaveTone,
+} from "@/components/ui";
+import { LeaveApprovalButtons } from "@/components/supervisor/leave-approval-buttons";
+import { LeaveReverseButton } from "@/components/supervisor/leave-reverse-button";
+import { HrApproveButtons } from "@/components/supervisor/hr-approve-buttons";
+import { LEAVE_STATUS_LABEL, type LeaveRequestStatusValue } from "@/lib/state-machines/labels";
+import { getTeamMembersForLeave, createLeaveRequestForEmployee } from "@/actions/leave.actions";
+import { LeaveDayPicker, type DaySelection, type ShiftInfo } from "@/components/leave/leave-day-picker";
+
+/**
+ * Team Leave, as the portal design lays it out: the list screen's header,
+ * toolbar and filter chips, then the requests beside the coverage calendar
+ * they have to be judged against.
+ *
+ * <p>The two sit side by side rather than on separate screens because the
+ * question this page answers is never "is this request reasonable" on its own
+ * — it is "who else is already off those days". Splitting them is what made
+ * approvals arrive at a Tuesday with three people out.
+ */
 
 // @db.Date fields arrive from the server as ISO strings at UTC midnight.
 // Extract YYYY-MM-DD and parseISO to get local midnight — avoids timezone day shift.
@@ -10,13 +56,6 @@ function parseLeaveDate(d: Date | string): Date {
   const s = (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
   return parseISO(s);
 }
-import { ChevronLeft, ChevronRight, X, Plus } from "lucide-react";
-import { LeaveApprovalButtons } from "@/components/supervisor/leave-approval-buttons";
-import { LeaveReverseButton } from "@/components/supervisor/leave-reverse-button";
-import { HrApproveButtons } from "@/components/supervisor/hr-approve-buttons";
-import { LEAVE_STATUS_LABEL, LEAVE_STATUS_BADGE, type LeaveRequestStatusValue } from "@/lib/state-machines/labels";
-import { getTeamMembersForLeave, createLeaveRequestForEmployee } from "@/actions/leave.actions";
-import { LeaveDayPicker, type DaySelection, type ShiftInfo } from "@/components/leave/leave-day-picker";
 
 interface LeaveRequestRow {
   id: string;
@@ -45,11 +84,46 @@ interface LeaveTabsProps {
   selectedDepartmentId?: string;
 }
 
+type Tab = "pending" | "hr-pending" | "upcoming";
+
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export function LeaveTabs({ pending, hrPending, upcoming, initialTab, canFilter, canHrApprove, canSubmitLeave, sites = [], departments = [], selectedSiteId, selectedDepartmentId }: LeaveTabsProps) {
+/**
+ * What a calendar day looks like once you know who is off on it.
+ *
+ * <p>Severity, not variety: a day where a pending request lands on top of
+ * somebody else's approved leave is the only one that needs a decision, so it
+ * is the only red. Everything else is a shade of "noted". The three entries
+ * are semantic token triples rather than colours, so the calendar flips with
+ * the theme along with everything else.
+ */
+const DAY_TONE = {
+  conflict: { bg: "var(--surface-error)",   line: "var(--stroke-error)",     fg: "var(--text-error)" },
+  pending:  { bg: "var(--surface-warning)", line: "var(--stroke-warning)",   fg: "var(--text-warning)" },
+  approved: { bg: "var(--surface-success)", line: "var(--stroke-success)",   fg: "var(--text-success)" },
+} as const;
+
+/** First name only — a calendar cell is about six characters wide. */
+function shortName(name: string): string {
+  return name.split(" ")[0];
+}
+
+export function LeaveTabs({
+  pending,
+  hrPending,
+  upcoming,
+  initialTab,
+  canFilter,
+  canHrApprove,
+  canSubmitLeave,
+  sites = [],
+  departments = [],
+  selectedSiteId,
+  selectedDepartmentId,
+}: LeaveTabsProps) {
   const router = useRouter();
-  const [tab, setTab] = useState<"pending" | "hr-pending" | "upcoming">(initialTab ?? "pending");
+  const [tab, setTab] = useState<Tab>(initialTab ?? "pending");
+
   type TeamEmployee = {
     id: string;
     wmsId: string | null;
@@ -140,13 +214,23 @@ export function LeaveTabs({ pending, hrPending, upcoming, initialTab, canFilter,
     });
   }
 
-  function navigate(siteId?: string, departmentId?: string) {
+  /**
+   * The site and department filters live in the query string, not in state.
+   * A filtered leave list has to survive a reload and be sendable to whoever
+   * asked "who is out in Packing next week" — React state is neither.
+   */
+  function hrefFor(next: { siteId?: string; departmentId?: string }) {
     const params = new URLSearchParams();
-    if (siteId) params.set("siteId", siteId);
-    if (departmentId) params.set("departmentId", departmentId);
+    if (next.siteId) params.set("siteId", next.siteId);
+    if (next.departmentId) params.set("departmentId", next.departmentId);
     params.set("tab", tab);
-    router.push(`/supervisor/leave?${params.toString()}`);
+    return `/supervisor/leave?${params.toString()}`;
   }
+
+  function navigate(siteId?: string, departmentId?: string) {
+    router.push(hrefFor({ siteId, departmentId }));
+  }
+
   const [calMonth, setCalMonth] = useState(() => new Date());
   const [tooltip, setTooltip] = useState<{
     top: number;
@@ -179,18 +263,24 @@ export function LeaveTabs({ pending, hrPending, upcoming, initialTab, canFilter,
     }
   }
 
-  // Which pending requests overlap with approved leave from a different employee
-  const conflictIds = new Set<string>();
+  /**
+   * Which pending requests overlap approved leave belonging to somebody else,
+   * and who that somebody is.
+   *
+   * <p>The screen used to say only that an overlap existed. "Overlap" with no
+   * name behind it sends you to the calendar to work out who, which is the one
+   * thing the supervisor was going to ask next every single time.
+   */
+  const conflictNames = new Map<string, string[]>();
   for (const req of pending) {
+    const names = new Set<string>();
     const days = eachDayOfInterval({ start: parseLeaveDate(req.startDate), end: parseLeaveDate(req.endDate) });
     for (const day of days) {
-      const key = format(day, "yyyy-MM-dd");
-      const approved = approvedMap.get(key) ?? [];
-      if (approved.some((a) => a.employeeId !== req.employeeId)) {
-        conflictIds.add(req.id);
-        break;
+      for (const a of approvedMap.get(format(day, "yyyy-MM-dd")) ?? []) {
+        if (a.employeeId !== req.employeeId) names.add(a.name);
       }
     }
+    if (names.size > 0) conflictNames.set(req.id, [...names]);
   }
 
   // Calendar grid spanning full weeks of the visible month
@@ -199,303 +289,391 @@ export function LeaveTabs({ pending, hrPending, upcoming, initialTab, canFilter,
     end: endOfWeek(endOfMonth(calMonth)),
   });
 
-  const btnBase = "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition";
-  const btnActive = "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-white";
-  const btnInactive = "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200";
+  const rows = tab === "pending" ? pending : tab === "hr-pending" ? hrPending : upcoming;
+  // The page only passes siteId/departmentId into the three queries when
+  // canFilter is true, so a ?siteId= left in the URL by somebody without that
+  // permission narrows nothing. A chip for it would claim a filter the rows
+  // underneath were never filtered by, and would turn a genuinely empty queue
+  // into "nothing matches your filters".
+  const isFiltered = !!(canFilter && (selectedSiteId || selectedDepartmentId));
+
+  const siteName = sites.find((s) => s.id === selectedSiteId)?.name ?? selectedSiteId;
+  const deptName = departments.find((d) => d.id === selectedDepartmentId)?.name ?? selectedDepartmentId;
+
+  const LIST_CARD: Record<Tab, { title: string; subtitle: string; empty: string; emptyBody: string }> = {
+    pending: {
+      title: "Awaiting Your Decision",
+      subtitle: "Oldest first — the ones people have been waiting on longest",
+      empty: "No pending leave requests",
+      emptyBody: "Nothing on your team is waiting for a decision right now.",
+    },
+    "hr-pending": {
+      title: "With HR",
+      subtitle: "Approved by a supervisor, waiting on the second signature",
+      empty: "Nothing awaiting HR review",
+      emptyBody: "Everything you have approved has been through HR.",
+    },
+    upcoming: {
+      title: "Approved & Upcoming",
+      subtitle: "Ending today or later",
+      empty: "No upcoming approved leave",
+      emptyBody: "Nobody on your team is booked off from today onwards.",
+    },
+  };
 
   return (
-    <div className="flex -mx-6 -my-8 h-screen">
-      {/* ── Left panel: list ─────────────────────────── */}
-      <div className="w-80 shrink-0 border-r border-zinc-200 dark:border-zinc-800 h-full overflow-y-auto flex flex-col">
-        <div className="px-4 pt-6 pb-3">
-          <a
-            href="/supervisor"
-            className="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
-          >
-            ← Team Portal
-          </a>
-          <div className="mt-1 flex items-center justify-between gap-2">
-            <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Team Leave</h1>
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title="Team Leave"
+        subtitle={`${pending.length} awaiting you · ${hrPending.length} with HR · ${upcoming.length} approved upcoming`}
+        actions={
+          <>
+            <LinkButton href="/supervisor" hierarchy="tertiary">
+              ← Team Portal
+            </LinkButton>
             {canSubmitLeave && (
-              <button
-                type="button"
-                onClick={openSubmitModal}
-                className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-              >
-                <Plus className="h-3.5 w-3.5" />
+              <Button onClick={openSubmitModal} leadingIcon={<Plus className="h-4 w-4" />}>
                 Submit Leave
-              </button>
+              </Button>
             )}
-          </div>
-        </div>
+          </>
+        }
+      />
+
+      <Toolbar count={rows.length} countLabel="request">
+        {/* Stays a SegmentedControl rather than the URL-backed SegmentedLinks:
+            each tab is a separate permission-scoped query that the server has
+            already run, so switching is a filter over rows in hand, not a
+            re-fetch. The ?tab= parameter still picks the opening tab, which is
+            what the dashboard's "Team Calendar" link relies on. */}
+        <SegmentedControl
+          ariaLabel="Leave view"
+          items={[
+            { value: "pending", label: "Pending", count: pending.length },
+            { value: "hr-pending", label: "HR Review", count: hrPending.length },
+            { value: "upcoming", label: "Upcoming", count: upcoming.length },
+          ]}
+          value={tab}
+          onChange={(v) => setTab(v as Tab)}
+        />
 
         {/* Site / Department filter — payroll+ only */}
-        {canFilter && (
-          <div className="flex flex-col gap-2 px-4 pb-3">
-            {sites.length > 0 && (
-              <select
-                value={selectedSiteId ?? ""}
-                onChange={(e) => navigate(e.target.value || undefined, undefined)}
-                className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-              >
-                <option value="">All Sites</option>
-                {sites.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            )}
-            <select
-              value={selectedDepartmentId ?? ""}
-              onChange={(e) => navigate(selectedSiteId, e.target.value || undefined)}
-              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-            >
-              <option value="">All Departments</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
-            {(selectedSiteId || selectedDepartmentId) && (
-              <button
-                type="button"
-                onClick={() => navigate()}
-                className="self-start text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
-              >
-                Clear filters
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Tab toggle */}
-        <div className="px-4 pb-3">
-          <div className="flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
-            <button
-              onClick={() => setTab("pending")}
-              className={`${btnBase} ${tab === "pending" ? btnActive : btnInactive}`}
-            >
-              Pending ({pending.length})
-            </button>
-            <button
-              onClick={() => setTab("hr-pending")}
-              className={`${btnBase} relative ${tab === "hr-pending" ? btnActive : btnInactive}`}
-            >
-              HR Review
-              {hrPending.length > 0 && (
-                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-semibold text-white">
-                  {hrPending.length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setTab("upcoming")}
-              className={`${btnBase} ${tab === "upcoming" ? btnActive : btnInactive}`}
-            >
-              Upcoming ({upcoming.length})
-            </button>
-          </div>
-        </div>
-
-        {/* List */}
-        <div className="flex-1 overflow-y-auto px-4 pb-6 flex flex-col gap-3">
-          {tab === "pending" && <PendingList requests={pending} conflictIds={conflictIds} />}
-          {tab === "hr-pending" && <HrPendingList requests={hrPending} canHrApprove={!!canHrApprove} />}
-          {tab === "upcoming" && <UpcomingList requests={upcoming} />}
-        </div>
-      </div>
-
-      {/* ── Right panel: calendar ─────────────────────── */}
-      <div className="flex-1 overflow-y-auto h-full p-6">
-        {/* Month navigation */}
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setCalMonth((m) => subMonths(m, 1))}
-              className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-white"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="min-w-[9rem] text-center text-base font-semibold text-zinc-900 dark:text-white">
-              {format(calMonth, "MMMM yyyy")}
-            </span>
-            <button
-              onClick={() => setCalMonth((m) => addMonths(m, 1))}
-              className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-white"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-          <button
-            onClick={() => setCalMonth(new Date())}
-            className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
+        {canFilter && sites.length > 0 && (
+          <Select
+            aria-label="Site"
+            value={selectedSiteId ?? ""}
+            onChange={(e) => navigate(e.target.value || undefined, undefined)}
           >
-            Current Month
-          </button>
-        </div>
+            <option value="">All Sites</option>
+            {sites.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </Select>
+        )}
+        {canFilter && (
+          <Select
+            aria-label="Department"
+            value={selectedDepartmentId ?? ""}
+            onChange={(e) => navigate(selectedSiteId, e.target.value || undefined)}
+          >
+            <option value="">All Departments</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </Select>
+        )}
+      </Toolbar>
 
-        {/* Day-of-week headers */}
-        <div className="mb-2 grid grid-cols-7 rounded-lg bg-zinc-800 dark:bg-zinc-600">
-          {WEEKDAYS.map((d, i) => (
-            <div
-              key={d}
-              className={`py-2 text-center text-xs font-semibold uppercase tracking-wide ${
-                i === 0 || i === 6 ? "text-zinc-400 dark:text-zinc-300" : "text-zinc-100 dark:text-white"
-              }`}
-            >
-              {d}
+      <FilterBar clearHref={isFiltered ? hrefFor({}) : undefined}>
+        {/* Clearing the site clears the department with it. The department list
+            the server offers is scoped to the chosen site, so a department left
+            behind would be filtering by something no longer on screen. */}
+        {canFilter && selectedSiteId ? (
+          <FilterChip label="Site" value={siteName} clearHref={hrefFor({})} />
+        ) : null}
+        {canFilter && selectedDepartmentId ? (
+          <FilterChip
+            label="Department"
+            value={deptName}
+            clearHref={hrefFor({ siteId: selectedSiteId })}
+          />
+        ) : null}
+      </FilterBar>
+
+      <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(360px,42%)),1fr))]">
+        {/* ── The requests ─────────────────────────────────────────────── */}
+        <Card
+          title={LIST_CARD[tab].title}
+          subtitle={LIST_CARD[tab].subtitle}
+          padding={0}
+        >
+          {rows.length === 0 ? (
+            <EmptyState
+              icon={<CalendarOff className="h-8 w-8" />}
+              title={LIST_CARD[tab].empty}
+              // "No pending requests" and "no pending requests in Packing at
+              // Site 2" look identical without this, and the difference is
+              // whether somebody stops looking.
+              body={
+                isFiltered
+                  ? "Nothing matches the site and department you have filtered to. Clear the filters to see the whole team."
+                  : LIST_CARD[tab].emptyBody
+              }
+            />
+          ) : (
+            <div className="flex flex-col">
+              {tab === "pending" && <PendingList requests={rows} conflictNames={conflictNames} />}
+              {tab === "hr-pending" && <HrPendingList requests={rows} canHrApprove={!!canHrApprove} />}
+              {tab === "upcoming" && <UpcomingList requests={rows} />}
             </div>
-          ))}
-        </div>
-
-        {/* Day grid */}
-        <div className="grid grid-cols-7 gap-1">
-          {gridDays.map((day) => {
-            const key = format(day, "yyyy-MM-dd");
-            const approvedEntries = approvedMap.get(key) ?? [];
-            const pendingEntries = tab === "pending" ? (pendingMap.get(key) ?? []) : [];
-            const inMonth = day.getMonth() === calMonth.getMonth();
-            const todayDay = isToday(day);
-
-            // Conflict = pending leave on this day AND approved leave from a different employee
-            const hasConflict =
-              pendingEntries.length > 0 &&
-              approvedEntries.some((a) => pendingEntries.some((p) => p.employeeId !== a.employeeId));
-
-            const hasPending = pendingEntries.length > 0;
-            const hasApproved = approvedEntries.length > 0;
-            const hasAny = hasPending || hasApproved;
-
-            let bgClass = "bg-zinc-50 border-zinc-200 dark:bg-zinc-800/50 dark:border-zinc-700";
-            if (hasPending && hasConflict) bgClass = "bg-red-50 border-transparent dark:bg-red-950/30 dark:border-transparent";
-            else if (hasPending) bgClass = "bg-amber-50 border-transparent dark:bg-amber-950/30 dark:border-transparent";
-            else if (hasApproved) bgClass = "bg-green-50 border-transparent dark:bg-green-950/30 dark:border-transparent";
-
-            let dateNumColor = inMonth ? "text-zinc-900 dark:text-white" : "text-zinc-300 dark:text-zinc-600";
-            if (inMonth && !todayDay) {
-              if (hasPending && hasConflict) dateNumColor = "text-red-700 dark:text-red-400";
-              else if (hasPending) dateNumColor = "text-amber-700 dark:text-amber-400";
-              else if (hasApproved) dateNumColor = "text-green-800 dark:text-green-300";
-            }
-
-            return (
-              <div
-                key={key}
-                className={`relative flex min-h-[4.5rem] flex-col rounded-lg border p-2 font-medium transition-colors ${bgClass}`}
-                onMouseEnter={
-                  hasAny
-                    ? (e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        setTooltip({
-                          top: rect.bottom + 6,
-                          left: Math.min(rect.left, window.innerWidth - 220),
-                          approved: approvedEntries.map((e) => ({ name: e.name, leaveType: e.leaveType })),
-                          pending: pendingEntries.map((e) => ({ name: e.name, leaveType: e.leaveType })),
-                          hasConflict,
-                          date: day,
-                        });
-                      }
-                    : undefined
-                }
-                onMouseLeave={() => setTooltip(null)}
-              >
-                <span
-                  className={`flex h-6 w-6 items-center justify-center rounded-full text-sm font-medium ${
-                    todayDay ? "bg-blue-600 text-white" : dateNumColor
-                  }`}
-                >
-                  {format(day, "d")}
-                </span>
-
-                <div className="mt-1 flex flex-col gap-0.5">
-                  {hasApproved && approvedEntries.slice(0, 2).map((e, i) => (
-                    <span key={`a${i}`} className="truncate rounded bg-green-200 px-1 text-xs text-green-800 dark:bg-green-900/60 dark:text-green-300">
-                      {e.name.split(" ")[0]}
-                    </span>
-                  ))}
-                  {hasApproved && approvedEntries.length > 2 && (
-                    <span className="text-xs text-green-600 dark:text-green-400">+{approvedEntries.length - 2} more</span>
-                  )}
-                  {hasPending && pendingEntries.slice(0, 2).map((e, i) => (
-                    <span key={`p${i}`} className={`truncate rounded px-1 text-xs ${
-                      hasConflict
-                        ? "bg-red-200 text-red-800 dark:bg-red-900/60 dark:text-red-300"
-                        : "bg-amber-200 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300"
-                    }`}>
-                      {e.name.split(" ")[0]}
-                    </span>
-                  ))}
-                  {hasPending && pendingEntries.length > 2 && (
-                    <span className={`text-xs ${hasConflict ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}>
-                      +{pendingEntries.length - 2} more
-                    </span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Legend */}
-        <div className="mt-4 flex flex-wrap gap-5 text-xs text-zinc-700 dark:text-zinc-300">
-          <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm bg-green-400 dark:bg-green-600" />
-            Approved Leave
-          </span>
-          {tab === "pending" && (
-            <>
-              <span className="flex items-center gap-1.5">
-                <span className="h-3 w-3 rounded-sm bg-amber-400 dark:bg-amber-600" />
-                Pending Leave
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-3 w-3 rounded-sm bg-red-400 dark:bg-red-600" />
-                Conflict (overlap with approved)
-              </span>
-            </>
           )}
-          <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-full bg-blue-600" />
-            Today
-          </span>
-        </div>
+        </Card>
+
+        {/* ── Coverage ─────────────────────────────────────────────────── */}
+        <Card
+          title="Coverage"
+          subtitle={
+            tab === "pending"
+              ? "Approved leave, with pending requests laid over it"
+              : "Approved leave for the team"
+          }
+          actions={
+            <div className="flex items-center gap-1">
+              <Button
+                hierarchy="secondary"
+                size="sm"
+                iconOnly
+                aria-label="Previous month"
+                onClick={() => setCalMonth((m) => subMonths(m, 1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span
+                className="text-center"
+                style={{ minWidth: 132, font: "var(--type-h4)", color: "var(--text-primary)" }}
+              >
+                {format(calMonth, "MMMM yyyy")}
+              </span>
+              <Button
+                hierarchy="secondary"
+                size="sm"
+                iconOnly
+                aria-label="Next month"
+                onClick={() => setCalMonth((m) => addMonths(m, 1))}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button hierarchy="tertiary" size="sm" onClick={() => setCalMonth(new Date())}>
+                Today
+              </Button>
+            </div>
+          }
+        >
+          <div className="flex flex-col gap-2.5">
+            <div className="grid grid-cols-7 gap-1">
+              {WEEKDAYS.map((d) => (
+                <div key={d} className="wms-overline py-1.5 text-center">
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 gap-1">
+              {gridDays.map((day) => {
+                const key = format(day, "yyyy-MM-dd");
+                const approvedEntries = approvedMap.get(key) ?? [];
+                const pendingEntries = tab === "pending" ? (pendingMap.get(key) ?? []) : [];
+                const inMonth = day.getMonth() === calMonth.getMonth();
+                const todayDay = isToday(day);
+
+                // Conflict = pending leave on this day AND approved leave from a different employee
+                const hasConflict =
+                  pendingEntries.length > 0 &&
+                  approvedEntries.some((a) => pendingEntries.some((p) => p.employeeId !== a.employeeId));
+
+                const total = approvedEntries.length + pendingEntries.length;
+                const tone = hasConflict
+                  ? DAY_TONE.conflict
+                  : pendingEntries.length > 0
+                    ? DAY_TONE.pending
+                    : approvedEntries.length > 0
+                      ? DAY_TONE.approved
+                      : null;
+
+                // Pending names come first because only two fit and they are the
+                // ones under decision — a cell that showed the two approved
+                // people and hid the request behind "+1 more" would hide the
+                // only name the supervisor is here to act on. The dot says
+                // which queue each one is in; the tint alone cannot.
+                const names = [
+                  ...pendingEntries.map((e) => ({
+                    name: e.name,
+                    dot: hasConflict ? "var(--fill-error)" : "var(--fill-warning)",
+                  })),
+                  ...approvedEntries.map((e) => ({ name: e.name, dot: "var(--fill-success)" })),
+                ];
+
+                return (
+                  <div
+                    key={key}
+                    className="flex min-h-[4.5rem] flex-col gap-1 rounded-md p-1.5"
+                    style={{
+                      border: `1px solid ${tone ? tone.line : "var(--stroke-secondary)"}`,
+                      background: tone ? tone.bg : inMonth ? "var(--surface-card)" : "transparent",
+                      // Out-of-month days are dimmed rather than hidden: a
+                      // request that runs over a month boundary has to stay
+                      // visible on both sides of it.
+                      opacity: inMonth ? 1 : total > 0 ? 0.6 : 0.4,
+                    }}
+                    onMouseEnter={
+                      total > 0
+                        ? (e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setTooltip({
+                              top: rect.bottom + 6,
+                              left: Math.min(rect.left, window.innerWidth - 220),
+                              approved: approvedEntries.map((x) => ({ name: x.name, leaveType: x.leaveType })),
+                              pending: pendingEntries.map((x) => ({ name: x.name, leaveType: x.leaveType })),
+                              hasConflict,
+                              date: day,
+                            });
+                          }
+                        : undefined
+                    }
+                    onMouseLeave={() => setTooltip(null)}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span
+                        className="tabular inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1"
+                        style={{
+                          font: "var(--type-body2)",
+                          fontWeight: todayDay || tone ? "var(--weight-semibold)" : undefined,
+                          background: todayDay ? "var(--fill-accent)" : undefined,
+                          color: todayDay
+                            ? "var(--text-on-accent)"
+                            : tone
+                              ? tone.fg
+                              : inMonth
+                                ? "var(--text-primary)"
+                                : "var(--text-tertiary)",
+                        }}
+                      >
+                        {format(day, "d")}
+                      </span>
+                      {total > 0 && (
+                        <span
+                          className="tabular ml-auto"
+                          style={{ font: "var(--type-caption2)", color: "var(--text-secondary)" }}
+                        >
+                          {total}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      {names.slice(0, 2).map((n, i) => (
+                        <span
+                          key={i}
+                          className="flex min-w-0 items-center gap-1"
+                          style={{ font: "var(--type-caption1)", color: "var(--text-secondary)" }}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="flex-none rounded-full"
+                            style={{ width: 5, height: 5, background: n.dot }}
+                          />
+                          <span className="truncate">{shortName(n.name)}</span>
+                        </span>
+                      ))}
+                      {names.length > 2 && (
+                        <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                          +{names.length - 2} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div
+              className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2.5"
+              style={{
+                borderTop: "1px solid var(--stroke-divider)",
+                font: "var(--type-body2)",
+                color: "var(--text-secondary)",
+              }}
+            >
+              <Swatch label="Approved" bg="var(--surface-success)" line="var(--stroke-success)" />
+              {tab === "pending" && (
+                <>
+                  <Swatch label="Pending" bg="var(--surface-warning)" line="var(--stroke-warning)" />
+                  <Swatch
+                    label="Overlaps approved leave"
+                    bg="var(--surface-error)"
+                    line="var(--stroke-error)"
+                  />
+                </>
+              )}
+              {/* Not "fully staffed": these queries know who has leave, not who is
+                  rostered, so an untinted day means nobody is booked off — it does
+                  not mean the floor is covered. */}
+              <Swatch label="Nobody off" bg="var(--surface-card)" line="var(--stroke-secondary)" />
+              <span className="ml-auto" style={{ color: "var(--text-tertiary)" }}>
+                {tab === "pending"
+                  ? "The number in a cell counts everyone off that day, approved and requested"
+                  : "The number in a cell is how many people are off that day"}
+              </span>
+            </div>
+          </div>
+        </Card>
       </div>
 
       {/* Submit Leave Modal */}
       {showSubmitModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4 dark:border-zinc-700 dark:bg-zinc-900">
-              <h2 className="text-base font-semibold text-zinc-900 dark:text-white">Submit Leave for Employee</h2>
-              <button type="button" onClick={closeModal} className="rounded-lg p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
+          <div className="ta-modal max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl">
+            <div
+              className="sticky top-0 z-10 flex items-center justify-between gap-3 px-6 py-4"
+              style={{
+                background: "var(--surface-card)",
+                borderBottom: "1px solid var(--stroke-divider)",
+              }}
+            >
+              <h2 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
+                Submit Leave for Employee
+              </h2>
+              <Button hierarchy="tertiary" size="sm" iconOnly aria-label="Close" onClick={closeModal}>
                 <X className="h-4 w-4" />
-              </button>
+              </Button>
             </div>
 
             {submitSuccess ? (
-              <div className="px-6 py-8 text-center">
-                <p className="text-sm font-medium text-green-600 dark:text-green-400">Leave request submitted successfully.</p>
-                <p className="mt-1 text-xs text-zinc-400">It is now in the HR Review queue.</p>
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-                >
-                  Close
-                </button>
+              <div className="flex flex-col gap-4 px-6 py-5">
+                <Banner
+                  tone="success"
+                  title="Leave request submitted"
+                  body="It is now in the HR Review queue."
+                />
+                <div className="flex justify-end">
+                  <Button onClick={closeModal}>Close</Button>
+                </div>
               </div>
             ) : loadingTeam ? (
-              <div className="px-6 py-8 text-center text-sm text-zinc-400">Loading team members…</div>
+              <p
+                className="px-6 py-8 text-center"
+                style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-tertiary)" }}
+              >
+                Loading team members…
+              </p>
             ) : (
-              <form onSubmit={handleSubmit} className="flex flex-col gap-5 px-6 py-5">
-                {/* Employee selector */}
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    Employee
-                  </label>
-                  <select
+              <form onSubmit={handleSubmit} className="flex flex-col gap-4 px-6 py-5">
+                <Field label="Employee">
+                  <Select
                     value={targetEmployeeId}
                     onChange={(e) => handleEmployeeChange(e.target.value)}
                     required
-                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                    style={{ width: "100%" }}
                   >
                     <option value="">Select employee…</option>
                     {teamEmployees.map((emp) => (
@@ -503,72 +681,54 @@ export function LeaveTabs({ pending, hrPending, upcoming, initialTab, canFilter,
                         {emp.user?.name ?? emp.wmsId ?? emp.id}
                       </option>
                     ))}
-                  </select>
-                </div>
+                  </Select>
+                </Field>
 
-                {/* Leave Type */}
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    Leave Type
-                  </label>
-                  <select
+                <Field label="Leave Type">
+                  <Select
                     value={leaveTypeId}
                     onChange={(e) => setLeaveTypeId(e.target.value)}
                     required
-                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                    style={{ width: "100%" }}
                   >
                     <option value="">Select type…</option>
                     {leaveTypes.map((lt) => (
                       <option key={lt.id} value={lt.id}>{lt.name}</option>
                     ))}
-                  </select>
-                </div>
+                  </Select>
+                </Field>
 
                 {/* Day picker — same as My Leave */}
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    Select Days
-                  </label>
-                  <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
+                <FieldGroup label="Select Days">
+                  <div
+                    className="rounded-lg p-3"
+                    style={{ border: "1px solid var(--stroke-secondary)" }}
+                  >
                     <LeaveDayPicker value={selectedDays} onChange={setSelectedDays} shift={shift} />
                   </div>
-                </div>
+                </FieldGroup>
 
-                {/* Note */}
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    Note <span className="font-normal text-zinc-400">(optional)</span>
-                  </label>
-                  <textarea
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    rows={2}
-                    placeholder="Reason or additional context…"
-                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                  />
-                </div>
+                <Textarea
+                  label="Note"
+                  hint="Optional — visible to the employee"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  rows={2}
+                  placeholder="Reason or additional context…"
+                />
 
-                {submitError && (
-                  <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-                    {submitError}
-                  </p>
-                )}
+                {submitError && <Banner tone="error" body={submitError} />}
 
                 <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={closeModal}
-                    className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                  >
+                  <Button hierarchy="tertiary" onClick={closeModal}>
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="submit"
                     disabled={isPending || !targetEmployeeId || !leaveTypeId || selectedDays.length === 0}
-                    className="rounded-lg bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
                   >
                     {isPending ? "Submitting…" : "Submit Request"}
-                  </button>
+                  </Button>
                 </div>
               </form>
             )}
@@ -580,34 +740,26 @@ export function LeaveTabs({ pending, hrPending, upcoming, initialTab, canFilter,
       {tooltip && (
         <div
           style={{ position: "fixed", top: tooltip.top, left: tooltip.left, zIndex: 100 }}
-          className="pointer-events-none min-w-[9rem] max-w-[14rem] rounded-xl border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+          className="ta-modal pointer-events-none flex min-w-[9rem] max-w-[14rem] flex-col gap-2 rounded-xl p-3"
         >
-          <p className="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+          <p
+            style={{
+              margin: 0,
+              font: "var(--type-overline)",
+              color: "var(--text-tertiary)",
+            }}
+          >
             {format(tooltip.date, "EEEE, MMM d")}
           </p>
           {tooltip.approved.length > 0 && (
-            <div className="mb-1.5">
-              <p className="mb-0.5 text-xs font-medium text-green-700 dark:text-green-400">Approved</p>
-              {tooltip.approved.map((e, i) => (
-                <div key={i} className={i > 0 ? "mt-1" : ""}>
-                  <p className="text-sm text-zinc-900 dark:text-white">{e.name}</p>
-                  <p className="text-xs text-zinc-400 dark:text-zinc-500">{e.leaveType}</p>
-                </div>
-              ))}
-            </div>
+            <TooltipGroup label="Approved" color="var(--text-success)" entries={tooltip.approved} />
           )}
           {tooltip.pending.length > 0 && (
-            <div>
-              <p className={`mb-0.5 text-xs font-medium ${tooltip.hasConflict ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}>
-                {tooltip.hasConflict ? "Pending (conflict)" : "Pending"}
-              </p>
-              {tooltip.pending.map((e, i) => (
-                <div key={i} className={i > 0 ? "mt-1" : ""}>
-                  <p className="text-sm text-zinc-900 dark:text-white">{e.name}</p>
-                  <p className="text-xs text-zinc-400 dark:text-zinc-500">{e.leaveType}</p>
-                </div>
-              ))}
-            </div>
+            <TooltipGroup
+              label={tooltip.hasConflict ? "Pending — overlaps approved leave" : "Pending"}
+              color={tooltip.hasConflict ? "var(--text-error)" : "var(--text-warning)"}
+              entries={tooltip.pending}
+            />
           )}
         </div>
       )}
@@ -615,173 +767,224 @@ export function LeaveTabs({ pending, hrPending, upcoming, initialTab, canFilter,
   );
 }
 
-function PendingList({ requests, conflictIds }: { requests: LeaveRequestRow[]; conflictIds: Set<string> }) {
-  if (requests.length === 0) {
-    return (
-      <p className="py-8 text-center text-sm text-zinc-400">No pending leave requests.</p>
-    );
-  }
+/** A labelled control, in the stack the design system's own fields use. */
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="flex w-full flex-col gap-1.5">
+      <FieldLabel>{label}</FieldLabel>
+      {children}
+    </label>
+  );
+}
 
-  const sorted = [...requests].sort((a, b) => {
-    const aDate = a.submittedAt ? new Date(a.submittedAt).getTime() : new Date(a.startDate).getTime();
-    const bDate = b.submittedAt ? new Date(b.submittedAt).getTime() : new Date(b.startDate).getTime();
-    return aDate - bDate;
-  });
+/**
+ * The same stack around something that is not one control.
+ *
+ * <p>The day picker is a month of buttons with hidden inputs behind them, and
+ * a <label> wrapping that does real damage: a click on the padding around the
+ * grid gets forwarded to the first labelable descendant, so tapping empty
+ * space inside the box would toggle a day nobody chose.
+ */
+function FieldGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex w-full flex-col gap-1.5" role="group" aria-label={label}>
+      <FieldLabel>{label}</FieldLabel>
+      {children}
+    </div>
+  );
+}
+
+function FieldLabel({ children }: { children: ReactNode }) {
+  return (
+    <span style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>{children}</span>
+  );
+}
+
+/** One key in the calendar legend. */
+function Swatch({ label, bg, line }: { label: string; bg: string; line: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        aria-hidden="true"
+        style={{ width: 12, height: 12, borderRadius: 3, background: bg, border: `1px solid ${line}` }}
+      />
+      {label}
+    </span>
+  );
+}
+
+function TooltipGroup({
+  label,
+  color,
+  entries,
+}: {
+  label: string;
+  color: string;
+  entries: { name: string; leaveType: string }[];
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span style={{ font: "var(--type-button2)", color }}>{label}</span>
+      {entries.map((e, i) => (
+        <div key={i} className="flex flex-col">
+          <span style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}>{e.name}</span>
+          <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+            {e.leaveType}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * One request, whichever queue it is in.
+ *
+ * <p>Four lines, always in the same order: who, what and when, the note, and
+ * when it was filed. The three lists used to draw this themselves and had
+ * drifted — the pending one was the only one that never showed the hours,
+ * which is the number the balance actually moves by.
+ */
+function RequestRow({
+  req,
+  conflictWith,
+  divider,
+  children,
+}: {
+  req: LeaveRequestRow;
+  conflictWith?: string[];
+  /** Rule above this row. The card header already rules off the first one. */
+  divider: boolean;
+  children?: ReactNode;
+}) {
+  const start = parseLeaveDate(req.startDate);
+  const end = parseLeaveDate(req.endDate);
+  const days = differenceInCalendarDays(end, start) + 1;
+  const status = req.status as LeaveRequestStatusValue;
+  const clashes = conflictWith ?? [];
 
   return (
-    <>
-      {sorted.map((req) => {
-        const days =
-          differenceInCalendarDays(parseLeaveDate(req.endDate), parseLeaveDate(req.startDate)) + 1;
-        const hasConflict = conflictIds.has(req.id);
+    <div
+      className="flex flex-col gap-1.5 px-4 py-3.5"
+      style={{
+        borderTop: divider ? "1px solid var(--stroke-divider)" : undefined,
+        // The tint is the row's conflict marker; the line below names who.
+        background: clashes.length > 0 ? "var(--surface-error)" : undefined,
+      }}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span
+          className="min-w-0 flex-1"
+          style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-primary)" }}
+        >
+          {req.employee.user?.name ?? `Employee ${req.employeeId}`}
+        </span>
+        <span className="flex-none">
+          <Badge tone={leaveTone(status)} size="sm">
+            {LEAVE_STATUS_LABEL[status] ?? status}
+          </Badge>
+        </span>
+      </div>
 
-        return (
-          <div
-            key={req.id}
-            className={`rounded-xl border p-4 ${
-              hasConflict
-                ? "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/20"
-                : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
-            }`}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <p className="font-medium text-zinc-900 dark:text-white">
-                {req.employee.user?.name ?? `Employee ${req.employeeId}`}
-              </p>
-              {hasConflict && (
-                <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-400">
-                  Overlap
-                </span>
-              )}
-            </div>
-            <p className="mt-0.5 text-sm text-zinc-500">
-              {req.leaveType.name} &middot;{" "}
-              {format(parseLeaveDate(req.startDate), "MMM d")} &ndash;{" "}
-              {format(parseLeaveDate(req.endDate), "MMM d, yyyy")} ({days} day
-              {days !== 1 ? "s" : ""})
-            </p>
-            {req.note && (
-              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                &ldquo;{req.note}&rdquo;
-              </p>
-            )}
-            {req.submittedAt && (
-              <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-                Submitted {format(new Date(req.submittedAt), "MMM d, yyyy 'at' h:mm a")}
-              </p>
-            )}
-            <div className="mt-3">
-              <LeaveApprovalButtons leaveRequestId={req.id} />
-            </div>
-          </div>
-        );
-      })}
+      <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+        {req.leaveType.name}
+        {" · "}
+        <span className="tabular">
+          {format(start, "MMM d")} – {format(end, "MMM d, yyyy")} · {days} day{days === 1 ? "" : "s"} ·{" "}
+          {(req.durationMinutes / 60).toFixed(1)} h
+        </span>
+      </p>
+
+      {clashes.length > 0 && (
+        <p
+          className="flex items-start gap-1.5"
+          style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-error)" }}
+        >
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" aria-hidden="true" />
+          <span style={{ textWrap: "pretty" }}>
+            Overlaps approved leave for {clashes.join(", ")}
+          </span>
+        </p>
+      )}
+
+      {req.note && (
+        <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-primary)", textWrap: "pretty" }}>
+          &ldquo;{req.note}&rdquo;
+        </p>
+      )}
+
+      {req.submittedAt && (
+        <p className="tabular" style={{ margin: 0, font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+          Filed {format(new Date(req.submittedAt), "MMM d, yyyy 'at' h:mm a")}
+        </p>
+      )}
+
+      {children && <div className="mt-1.5">{children}</div>}
+    </div>
+  );
+}
+
+/**
+ * Oldest first, by when it was filed.
+ *
+ * <p>Falling back to the start date matters: a request created for somebody
+ * else has no submittedAt, and sorting those to the top of the queue would put
+ * the ones nobody has waited on above the ones people have.
+ */
+function byAge(a: LeaveRequestRow, b: LeaveRequestRow) {
+  const aDate = a.submittedAt ? new Date(a.submittedAt).getTime() : new Date(a.startDate).getTime();
+  const bDate = b.submittedAt ? new Date(b.submittedAt).getTime() : new Date(b.startDate).getTime();
+  return aDate - bDate;
+}
+
+function PendingList({
+  requests,
+  conflictNames,
+}: {
+  requests: LeaveRequestRow[];
+  conflictNames: Map<string, string[]>;
+}) {
+  return (
+    <>
+      {[...requests].sort(byAge).map((req, i) => (
+        <RequestRow key={req.id} req={req} divider={i > 0} conflictWith={conflictNames.get(req.id)}>
+          <LeaveApprovalButtons leaveRequestId={req.id} />
+        </RequestRow>
+      ))}
     </>
   );
 }
 
-function HrPendingList({ requests, canHrApprove }: { requests: LeaveRequestRow[]; canHrApprove: boolean }) {
-  if (requests.length === 0) {
-    return (
-      <p className="py-8 text-center text-sm text-zinc-400">No leave requests awaiting HR review.</p>
-    );
-  }
-
-  const sorted = [...requests].sort((a, b) => {
-    const aDate = a.submittedAt ? new Date(a.submittedAt).getTime() : new Date(a.startDate).getTime();
-    const bDate = b.submittedAt ? new Date(b.submittedAt).getTime() : new Date(b.startDate).getTime();
-    return aDate - bDate;
-  });
-
+function HrPendingList({
+  requests,
+  canHrApprove,
+}: {
+  requests: LeaveRequestRow[];
+  canHrApprove: boolean;
+}) {
   return (
     <>
-      {sorted.map((req) => {
-        const days = differenceInCalendarDays(parseLeaveDate(req.endDate), parseLeaveDate(req.startDate)) + 1;
-        const hours = (req.durationMinutes / 60).toFixed(1);
-
-        return (
-          <div
-            key={req.id}
-            className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-950/20"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <p className="font-medium text-zinc-900 dark:text-white">
-                {req.employee.user?.name ?? `Employee ${req.employeeId}`}
-              </p>
-              <span className="shrink-0 inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                Pending HR
-              </span>
-            </div>
-            <p className="mt-0.5 text-sm text-zinc-500">
-              {req.leaveType.name} &middot;{" "}
-              {format(parseLeaveDate(req.startDate), "MMM d")} &ndash;{" "}
-              {format(parseLeaveDate(req.endDate), "MMM d, yyyy")}
-            </p>
-            <p className="text-xs text-zinc-400">
-              {days} day{days !== 1 ? "s" : ""} &middot; {hours}h
-            </p>
-            {req.note && (
-              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">&ldquo;{req.note}&rdquo;</p>
-            )}
-            {canHrApprove
-              ? <HrApproveButtons leaveRequestId={req.id} />
-              : <LeaveReverseButton leaveRequestId={req.id} label="Return to Supervisor Queue" />
-            }
-          </div>
-        );
-      })}
+      {[...requests].sort(byAge).map((req, i) => (
+        <RequestRow key={req.id} req={req} divider={i > 0}>
+          {canHrApprove ? (
+            <HrApproveButtons leaveRequestId={req.id} />
+          ) : (
+            <LeaveReverseButton leaveRequestId={req.id} label="Return to Supervisor Queue" />
+          )}
+        </RequestRow>
+      ))}
     </>
   );
 }
 
 function UpcomingList({ requests }: { requests: LeaveRequestRow[] }) {
-  if (requests.length === 0) {
-    return (
-      <p className="py-8 text-center text-sm text-zinc-400">No upcoming approved leave.</p>
-    );
-  }
-
   return (
     <>
-      {requests.map((req) => {
-        const days =
-          differenceInCalendarDays(parseLeaveDate(req.endDate), parseLeaveDate(req.startDate)) + 1;
-        const hours = (req.durationMinutes / 60).toFixed(1);
-        const status = req.status as LeaveRequestStatusValue;
-
-        return (
-          <div
-            key={req.id}
-            className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="font-medium text-zinc-900 dark:text-white">
-                  {req.employee.user?.name ?? `Employee ${req.employeeId}`}
-                </p>
-                <p className="mt-0.5 text-sm text-zinc-500">
-                  {req.leaveType.name} &middot;{" "}
-                  {format(parseLeaveDate(req.startDate), "MMM d")} &ndash;{" "}
-                  {format(parseLeaveDate(req.endDate), "MMM d, yyyy")}
-                </p>
-                <p className="text-xs text-zinc-400">
-                  {days} day{days !== 1 ? "s" : ""} &middot; {hours}h
-                </p>
-              </div>
-              <span
-                className={`shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                  LEAVE_STATUS_BADGE[status] ?? ""
-                }`}
-              >
-                {LEAVE_STATUS_LABEL[status] ?? status}
-              </span>
-            </div>
-            {status === "APPROVED" && (
-              <LeaveReverseButton leaveRequestId={req.id} />
-            )}
-          </div>
-        );
-      })}
+      {requests.map((req, i) => (
+        <RequestRow key={req.id} req={req} divider={i > 0}>
+          {req.status === "APPROVED" && <LeaveReverseButton leaveRequestId={req.id} />}
+        </RequestRow>
+      ))}
     </>
   );
 }

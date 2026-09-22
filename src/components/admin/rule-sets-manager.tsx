@@ -12,14 +12,53 @@ const PAY_FREQUENCIES = [
   { value: "MONTHLY", label: "Monthly (1st–end of month)" },
 ] as const;
 
-interface Props { ruleSets: RuleSet[]; payCodes: { id: string; code: number; label: string }[] }
+interface Props {
+  ruleSets: RuleSet[];
+  payCodes: { id: string; code: number; label: string }[];
+  /** `?view=` on arrival — see the note on the view state in RuleSetsManager. */
+  initialView?: string;
+}
 
-const inputCls = "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const smInputCls = "rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const saveBtnCls = "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
-const cancelBtnCls = "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
-const dangerBtnCls = "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50";
-const sectionHdrCls = "col-span-full mb-0.5 border-b border-zinc-200 pb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-700";
+// The rule-set form keeps the shared field classes: it is several hundred
+// inputs whose `name` attributes are what parseForm reads, and swapping them
+// for <Input> would touch every one of them. The buttons around it are the
+// design system's now, so only the fields still come from here.
+import {
+  fieldCls as inputCls,
+  smFieldCls as smInputCls,
+} from "@/components/ui/form-classes";
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  EmptyState,
+  SearchInput,
+  SegmentedControl,
+  Table,
+  TableFooter,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+  Toolbar,
+  statusTone,
+} from "@/components/ui";
+import { Plus, SlidersHorizontal, X } from "lucide-react";
+
+/** The status views the design gives this screen. */
+const RULE_SET_VIEWS = [
+  { value: "all", label: "All" },
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+] as const;
+
+type RuleSetView = (typeof RULE_SET_VIEWS)[number]["value"];
+
+function asView(raw: string | undefined): RuleSetView {
+  return RULE_SET_VIEWS.some((v) => v.value === raw) ? (raw as RuleSetView) : "all";
+}
 
 type AutoPayDaySchedule = { day: number; apply: boolean; minutes: number }[];
 type RSFields = Omit<RuleSet, "id" | "tenantId" | "createdAt" | "updatedAt" | "employees" | "payPeriods" | "isActive" | "payPeriodAnchorDate" | "otCycleAnchorDate" | "otCycle" | "mealPremiumRows" | "autoPayDaySchedule" | "flsaOtLevels" | "flsaIncludeAsRegular" | "flsaType" | "flsaDistributionFrequency" | "flsaWeeklyOtLevel" | "flsaOtRateComputation"> & { isActive?: boolean; payPeriodAnchorDate?: string | null; otCycleAnchorDate?: string | null; otCycle?: OtCycle | null; mealPremiumRows?: MealPremiumRow[]; autoPayDaySchedule?: AutoPayDaySchedule; flsaOtLevels?: string[]; flsaIncludeAsRegular?: string[]; flsaType: "FEDERAL" | "CALIFORNIA"; flsaDistributionFrequency: "PER_PERIOD" | "WEEKLY"; flsaWeeklyOtLevel: "OT1" | "OT2"; flsaOtRateComputation: "BASE_PLUS_AVG_HALF" | "AVG_RATE" | "BASE_RATE" };
@@ -69,6 +108,37 @@ function fmtMins(mins: number): string {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+/**
+ * The three columns that say what a rule set actually does.
+ *
+ * <p>These read the same fields the editor writes, so a row and the form
+ * behind it can never disagree. The thresholds are stored as minutes with
+ * sentinel values for "off" — 1440 daily, 86400 weekly — which is why every
+ * one of them is asked whether it is enabled before it is printed.
+ */
+function payCycleLabel(rs: RuleSet): string {
+  if (!rs.payFrequency) return "Tenant default";
+  return PAY_FREQUENCIES.find((f) => f.value === rs.payFrequency)?.label ?? rs.payFrequency;
+}
+
+function overtimeSummary(rs: RuleSet): string {
+  const parts: string[] = [];
+  if (rs.dailyOtMinutes < 1440) parts.push(`OT after ${fmtMins(rs.dailyOtMinutes)}/day`);
+  if (rs.dailyDtMinutes < 1440) parts.push(`DT after ${fmtMins(rs.dailyDtMinutes)}/day`);
+  if (rs.weeklyOtEnabled) parts.push(`OT after ${fmtMins(rs.weeklyOtMinutes)}/week`);
+  if (rs.consecutiveDayOtEnabled) parts.push(`Day ${rs.consecutiveDayOtDay} premium`);
+  return parts.length > 0 ? parts.join(" · ") : "No overtime rules";
+}
+
+function mealSummary(rs: RuleSet): string {
+  // Auto-deduct takes the meal off the clock whether or not it was punched, so
+  // it is the half of this setting someone reading the list needs to see.
+  const trigger = `after ${fmtMins(rs.mealBreakAfterMinutes)}`;
+  return rs.autoDeductMeal
+    ? `Auto-deduct ${rs.mealBreakMinutes}m ${trigger}`
+    : `${rs.mealBreakMinutes}m punched, ${trigger}`;
 }
 
 function parseForm(fd: FormData): RSFields {
@@ -227,9 +297,9 @@ function NumField({ name, label, defaultValue, unit, min = 0 }: { name: string; 
 
 function OtSectionHeader({ id, label, enabled, onToggle }: { id: string; label: string; enabled: boolean; onToggle: (v: boolean) => void }) {
   return (
-    <div className="flex items-center gap-2.5 px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-700 rounded-t-md">
+    <div className="flex items-center gap-2.5 px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800/60 border-b border-[var(--stroke-secondary)] rounded-t-md">
       <input type="checkbox" id={id} checked={enabled} onChange={(e) => onToggle(e.target.checked)} className="h-4 w-4 cursor-pointer rounded" />
-      <label htmlFor={id} className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">{label}</label>
+      <label htmlFor={id} className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">{label}</label>
     </div>
   );
 }
@@ -243,7 +313,7 @@ function DailyOtSection({ defaultOtMinutes, defaultDtMinutes, defaultDtMaxMinute
   const [dtHrs, setDtHrs] = useState(initEnabled ? Math.round(defaultDtMinutes / 60) : 12);
   const [dtMaxHrs, setDtMaxHrs] = useState(Math.round(defaultDtMaxMinutes / 60));
   return (
-    <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+    <div className="rounded-md border border-[var(--stroke-secondary)]">
       <OtSectionHeader id="dailyOtEnabled" label="Daily" enabled={enabled} onToggle={setEnabled} />
       {enabled ? (
         <div className="divide-y divide-zinc-100 px-4 dark:divide-zinc-800/60">
@@ -270,7 +340,7 @@ function WeeklyOtSection({ defaultEnabled, defaultOtMinutes, defaultDtMinutes, d
   const [dtHrs, setDtHrs] = useState(initDtHrs);
   const [dtMaxHrs, setDtMaxHrs] = useState(Math.round(defaultDtMaxMinutes / 60));
   return (
-    <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+    <div className="rounded-md border border-[var(--stroke-secondary)]">
       <OtSectionHeader id="weeklyOtEnabled" label="Weekly / Cycle" enabled={enabled} onToggle={setEnabled} />
       {enabled ? (
         <div className="divide-y divide-zinc-100 px-4 dark:divide-zinc-800/60">
@@ -298,7 +368,7 @@ function ConsecutiveDaySection({ defaultEnabled, defaultDay, defaultPayCycleOnly
   const [otMaxHrs, setOtMaxHrs] = useState(Math.round(defaultOtMaxMinutes / 60));
   const [dtMaxHrs, setDtMaxHrs] = useState(Math.round(defaultDtMaxMinutes / 60));
   return (
-    <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+    <div className="rounded-md border border-[var(--stroke-secondary)]">
       <OtSectionHeader id="consecutiveDayOtEnabled" label="Consecutive Day" enabled={enabled} onToggle={setEnabled} />
       {enabled ? (
         <div className="divide-y divide-zinc-100 px-4 dark:divide-zinc-800/60">
@@ -332,9 +402,9 @@ function RateMultipliersSection({ defaultOt, defaultDt }: { defaultOt: number; d
   const [otRate, setOtRate] = useState((defaultOt / 100).toFixed(4));
   const [dtRate, setDtRate] = useState((defaultDt / 100).toFixed(4));
   return (
-    <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
-      <div className="px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-700 rounded-t-md">
-        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Rate Multipliers</span>
+    <div className="rounded-md border border-[var(--stroke-secondary)]">
+      <div className="px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800/60 border-b border-[var(--stroke-secondary)] rounded-t-md">
+        <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Rate Multipliers</span>
       </div>
       <div className="divide-y divide-zinc-100 px-4 dark:divide-zinc-800/60">
         <div className="flex items-center gap-3 py-2">
@@ -360,10 +430,10 @@ function AuthorizationSection({ defaultRequiresAuth, defaultAllowTimesheet, defa
   const [requiresAuth, setRequiresAuth] = useState(defaultRequiresAuth);
   const [allowTimesheet, setAllowTimesheet] = useState(defaultAllowTimesheet);
   return (
-    <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
-      <div className="flex items-center gap-2.5 px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-700 rounded-t-md">
+    <div className="rounded-md border border-[var(--stroke-secondary)]">
+      <div className="flex items-center gap-2.5 px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800/60 border-b border-[var(--stroke-secondary)] rounded-t-md">
         <input type="checkbox" id="overtimeRequiresAuth" checked={requiresAuth} onChange={(e) => setRequiresAuth(e.target.checked)} className="h-4 w-4 cursor-pointer rounded" />
-        <label htmlFor="overtimeRequiresAuth" className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Authorization Required</label>
+        <label htmlFor="overtimeRequiresAuth" className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Authorization Required</label>
       </div>
       {requiresAuth ? (
         <div className="divide-y divide-zinc-100 px-4 dark:divide-zinc-800/60">
@@ -413,7 +483,7 @@ function StatePresetPicker({ onChange }: { onChange: (p: OtPreset) => void }) {
   }
   return (
     <div className="mb-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
-      <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+      <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">
         State OT Preset <span className="font-normal text-zinc-400">(optional — pre-fills OT fields)</span>
       </label>
       <select value={value} onChange={handleChange} className={inputCls}>
@@ -425,7 +495,7 @@ function StatePresetPicker({ onChange }: { onChange: (p: OtPreset) => void }) {
           {FEDERAL_STATES.map((n) => <option key={n} value={n}>{n}</option>)}
         </optgroup>
       </select>
-      {hint && <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">{hint}</p>}
+      {hint && <p className="mt-1.5 text-xs text-[var(--text-tertiary)]">{hint}</p>}
     </div>
   );
 }
@@ -509,21 +579,12 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
   return (
     <div>
       {/* Tab nav */}
-      <div className="mb-5 flex gap-1 border-b border-zinc-200 dark:border-zinc-700">
-        {rsTabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setActiveTab(t.id)}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === t.id
-                ? "border-b-2 border-zinc-900 text-zinc-900 dark:border-white dark:text-white"
-                : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="mb-5 overflow-x-auto">
+        <SegmentedControl
+          items={rsTabs.map((t) => ({ value: t.id, label: t.label }))}
+          value={activeTab}
+          onChange={(v) => setActiveTab(v as typeof activeTab)}
+        />
       </div>
 
       {/* All panels stay in the DOM so form fields are always included in FormData */}
@@ -740,7 +801,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
       {/* Rounding tab */}
       <div className={activeTab !== "rounding" ? "hidden" : "space-y-4"}>
         {/* Shift-aware rounding */}
-        <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+        <div className="rounded-md border border-[var(--stroke-secondary)]">
           <div className="flex items-center gap-2.5 rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-700 dark:bg-zinc-800/60">
             <input
               type="checkbox"
@@ -749,14 +810,14 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
               onChange={(e) => setShiftRoundingEnabled(e.target.checked)}
               className="h-4 w-4 cursor-pointer rounded"
             />
-            <label htmlFor="shiftRoundingEnabled" className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">
+            <label htmlFor="shiftRoundingEnabled" className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               Shift Time Rounding
             </label>
           </div>
           {/* A/B/C/D inputs stay in DOM even when hidden so FormData always includes them */}
           <div className={shiftRoundingEnabled ? "divide-y divide-zinc-100 px-4 dark:divide-zinc-800/60" : "hidden"}>
             <div className="py-3">
-              <p className="mb-2.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Clock-In</p>
+              <p className="mb-2.5 text-xs font-medium text-[var(--text-secondary)]">Clock-In</p>
               <div className="space-y-2">
                 <div className="flex items-center gap-3">
                   <span className="w-5 text-center text-xs font-bold text-zinc-400">A</span>
@@ -773,7 +834,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
               </div>
             </div>
             <div className="py-3">
-              <p className="mb-2.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Clock-Out</p>
+              <p className="mb-2.5 text-xs font-medium text-[var(--text-secondary)]">Clock-Out</p>
               <div className="space-y-2">
                 <div className="flex items-center gap-3">
                   <span className="w-5 text-center text-xs font-bold text-zinc-400">C</span>
@@ -797,9 +858,9 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
         </div>
 
         {/* In / Out Rounding */}
-        <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+        <div className="rounded-md border border-[var(--stroke-secondary)]">
           <div className="rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-700 dark:bg-zinc-800/60">
-            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">In / Out Rounding</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">In / Out Rounding</span>
           </div>
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
             {/* Clock-In */}
@@ -812,7 +873,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
                   onChange={(e) => setPunchRoundingInEnabled(e.target.checked)}
                   className="h-4 w-4 cursor-pointer rounded"
                 />
-                <label htmlFor="punchRoundingInEnabled" className="cursor-pointer select-none text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="punchRoundingInEnabled" className="cursor-pointer select-none text-xs font-medium text-[var(--text-secondary)]">
                   Round punch-in time
                 </label>
               </div>
@@ -852,7 +913,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
                   onChange={(e) => setPunchRoundingOutEnabled(e.target.checked)}
                   className="h-4 w-4 cursor-pointer rounded"
                 />
-                <label htmlFor="punchRoundingOutEnabled" className="cursor-pointer select-none text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="punchRoundingOutEnabled" className="cursor-pointer select-none text-xs font-medium text-[var(--text-secondary)]">
                   Round punch-out time
                 </label>
               </div>
@@ -886,7 +947,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
         </div>
 
         {/* In / Out Pair Rounding */}
-        <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+        <div className="rounded-md border border-[var(--stroke-secondary)]">
           <div className="flex items-center gap-2.5 rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-700 dark:bg-zinc-800/60">
             <input
               type="checkbox"
@@ -895,7 +956,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
               onChange={(e) => setPairRoundingEnabled(e.target.checked)}
               className="h-4 w-4 cursor-pointer rounded"
             />
-            <label htmlFor="pairRoundingEnabled" className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">
+            <label htmlFor="pairRoundingEnabled" className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               In / Out Pair Rounding
             </label>
           </div>
@@ -930,7 +991,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
 
       {/* Guaranteed Hours / Pay tab */}
       <div className={activeTab !== "guaranteed" ? "hidden" : "space-y-4"}>
-        <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+        <div className="rounded-md border border-[var(--stroke-secondary)]">
           <div className="flex items-center gap-2.5 rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-700 dark:bg-zinc-800/60">
             <input
               type="checkbox"
@@ -939,16 +1000,16 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
               onChange={(e) => setAutoPayEnabled(e.target.checked)}
               className="h-4 w-4 cursor-pointer rounded"
             />
-            <label htmlFor="autoPayEnabled" className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">
+            <label htmlFor="autoPayEnabled" className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
               Apply Guaranteed Auto-Pay
             </label>
           </div>
           <div className={autoPayEnabled ? "divide-y divide-zinc-100 dark:divide-zinc-800/60" : "hidden"}>
             {/* Hours source */}
             <div className="px-4 py-3">
-              <p className="mb-2.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Hours Source</p>
+              <p className="mb-2.5 text-xs font-medium text-[var(--text-secondary)]">Hours Source</p>
               <div className="space-y-2">
-                <label className="flex cursor-pointer items-center gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
+                <label className="flex cursor-pointer items-center gap-2.5 text-xs text-[var(--text-secondary)]">
                   <input
                     type="radio"
                     name="_autoPayModeRadio"
@@ -959,7 +1020,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
                   />
                   Policy Daily Hours
                 </label>
-                <label className="flex cursor-pointer items-center gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
+                <label className="flex cursor-pointer items-center gap-2.5 text-xs text-[var(--text-secondary)]">
                   <input
                     type="radio"
                     name="_autoPayModeRadio"
@@ -976,7 +1037,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
 
             {/* Per-day schedule — only for POLICY_HOURS */}
             <div className={autoPayMode === "POLICY_HOURS" ? "px-4 py-3" : "hidden"}>
-              <p className="mb-2.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Daily Schedule</p>
+              <p className="mb-2.5 text-xs font-medium text-[var(--text-secondary)]">Daily Schedule</p>
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-left text-zinc-400">
@@ -990,7 +1051,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
                     const dayName = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][row.day];
                     return (
                       <tr key={row.day}>
-                        <td className="py-1 text-zinc-600 dark:text-zinc-300">{dayName}</td>
+                        <td className="py-1 text-[var(--text-secondary)]">{dayName}</td>
                         <td className="py-1 text-center">
                           <input
                             type="checkbox"
@@ -1040,7 +1101,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
 
             {/* Overflow */}
             <div className="px-4 py-3">
-              <p className="mb-2.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Overflow</p>
+              <p className="mb-2.5 text-xs font-medium text-[var(--text-secondary)]">Overflow</p>
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
                   <span>When auto-pay total exceeds</span>
@@ -1077,7 +1138,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
       <div className={activeTab !== "miscellaneous" ? "hidden" : "space-y-4"}>
 
         {/* Expansion */}
-        <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+        <div className="rounded-md border border-[var(--stroke-secondary)]">
           <div className="flex items-start gap-2.5 rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/60">
             <input
               type="checkbox"
@@ -1086,10 +1147,10 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
               onChange={(e) => setWorkdayExpansionEnabled(e.target.checked)}
               className="mt-0.5 h-4 w-4 cursor-pointer rounded"
             />
-            <label htmlFor="workdayExpansionEnabled" className="cursor-pointer select-none text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+            <label htmlFor="workdayExpansionEnabled" className="cursor-pointer select-none text-xs leading-relaxed text-[var(--text-secondary)]">
               <span className="font-semibold uppercase tracking-wider">Expansion</span>
               <br />
-              <span className="font-normal text-zinc-500 dark:text-zinc-400">
+              <span className="font-normal text-[var(--text-tertiary)]">
                 Extend the workday window before and after the scheduled shift so late clock-outs are correctly attributed to the right shift rather than split at midnight.
               </span>
             </label>
@@ -1098,7 +1159,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
           <div className={workdayExpansionEnabled ? "divide-y divide-zinc-100 dark:divide-zinc-800/60" : "hidden"}>
             {/* Use workday definition */}
             <div className="px-4 py-3">
-              <p className="mb-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">Workday definition</p>
+              <p className="mb-2 text-xs font-medium text-[var(--text-secondary)]">Workday definition</p>
               <div className="flex flex-col gap-1.5">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1109,7 +1170,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
                     onChange={() => setWorkdayExpansionUseShiftDef(true)}
                     className="h-4 w-4"
                   />
-                  <span className="text-xs text-zinc-600 dark:text-zinc-300">Use workday definition (shift schedule)</span>
+                  <span className="text-xs text-[var(--text-secondary)]">Use workday definition (shift schedule)</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1120,7 +1181,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
                     onChange={() => setWorkdayExpansionUseShiftDef(false)}
                     className="h-4 w-4"
                   />
-                  <span className="text-xs text-zinc-600 dark:text-zinc-300">Do NOT use workday definition (calendar day only)</span>
+                  <span className="text-xs text-[var(--text-secondary)]">Do NOT use workday definition (calendar day only)</span>
                 </label>
               </div>
             </div>
@@ -1162,7 +1223,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
         </div>
 
         {/* Meal / Break Premium Rules — master section */}
-        <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+        <div className="rounded-md border border-[var(--stroke-secondary)]">
           <div className="flex items-start gap-2.5 rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/60">
             <input
               type="checkbox"
@@ -1171,10 +1232,10 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
               onChange={(e) => setMealBreakPremiumEnabled(e.target.checked)}
               className="mt-0.5 h-4 w-4 cursor-pointer rounded"
             />
-            <label htmlFor="mealBreakPremiumEnabled" className="cursor-pointer select-none text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+            <label htmlFor="mealBreakPremiumEnabled" className="cursor-pointer select-none text-xs leading-relaxed text-[var(--text-secondary)]">
               <span className="font-semibold uppercase tracking-wider">Meal / Break Premium Rules</span>
               <br />
-              <span className="font-normal text-zinc-500 dark:text-zinc-400">
+              <span className="font-normal text-[var(--text-tertiary)]">
                 Apply a premium when employees do not take the minimum required meal and/or paid break time and other qualifications are met.
               </span>
             </label>
@@ -1197,7 +1258,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
                   onChange={(e) => setMealBreakPremiumResetEnabled(e.target.checked)}
                   className="h-4 w-4 cursor-pointer rounded"
                 />
-                <label htmlFor="mealBreakPremiumResetEnabled" className="cursor-pointer select-none text-xs text-zinc-600 dark:text-zinc-300">
+                <label htmlFor="mealBreakPremiumResetEnabled" className="cursor-pointer select-none text-xs text-[var(--text-secondary)]">
                   Reset premium calculation when employee has punched out for more than
                 </label>
                 <input name="mealBreakPremiumResetHours" type="number" min={0} step={0.5} defaultValue={rs ? rs.mealBreakPremiumResetMinutes / 60 : 0} className={`w-16 text-right ${smInputCls}`} />
@@ -1216,7 +1277,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
                   onChange={(e) => setMealBreakPremiumWaivedMsgEnabled(e.target.checked)}
                   className="h-4 w-4 cursor-pointer rounded"
                 />
-                <label htmlFor="mealBreakPremiumWaivedMsgEnabled" className="cursor-pointer select-none text-xs text-zinc-600 dark:text-zinc-300">
+                <label htmlFor="mealBreakPremiumWaivedMsgEnabled" className="cursor-pointer select-none text-xs text-[var(--text-secondary)]">
                   Show waived meal / break premium message to employees
                 </label>
               </div>
@@ -1236,9 +1297,9 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
         </div>
 
         {/* Meal Premiums — detail config (visible only when premium enabled) */}
-        <div className={mealBreakPremiumEnabled ? "rounded-md border border-zinc-200 dark:border-zinc-700" : "hidden"}>
+        <div className={mealBreakPremiumEnabled ? "rounded-md border border-[var(--stroke-secondary)]" : "hidden"}>
           <div className="rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-700 dark:bg-zinc-800/60">
-            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Meal Premiums</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Meal Premiums</span>
           </div>
 
           {/* Calculation options */}
@@ -1250,7 +1311,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
               ["mealPremiumAllowTimesheetEdits", mealPremiumAllowTimesheetEdits, setMealPremiumAllowTimesheetEdits, "Allow Meal Premium timesheet record edits"],
               ["mealPremiumUseTransferGroup",    mealPremiumUseTransferGroup,    setMealPremiumUseTransferGroup,    "Use transfer group values (e.g. job, department) for meal premium records"],
             ] as [string, boolean, (v: boolean) => void, string][]).map(([name, val, setter, label]) => (
-              <label key={name} className="flex cursor-pointer items-start gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
+              <label key={name} className="flex cursor-pointer items-start gap-2.5 text-xs text-[var(--text-secondary)]">
                 <input type="checkbox" checked={val} onChange={(e) => setter(e.target.checked)} className="mt-0.5 h-4 w-4 cursor-pointer rounded" />
                 {label}
                 <input type="hidden" name={name} value={val ? "true" : "false"} />
@@ -1266,7 +1327,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
           <div className="overflow-x-auto px-4 pb-4">
             <table className="w-full min-w-max border-collapse text-xs">
               <thead>
-                <tr className="border-b border-zinc-200 dark:border-zinc-700">
+                <tr className="border-b border-[var(--stroke-secondary)]">
                   <th className="py-2 pr-3 text-left font-medium text-zinc-500 whitespace-nowrap">Meal</th>
                   <th className="py-2 pr-3 text-center font-medium text-zinc-500 whitespace-nowrap" colSpan={3}>Apply if no meal between (hrs)</th>
                   <th className="py-2 pr-3 text-center font-medium text-zinc-500 whitespace-nowrap">Min Meal<br />(min)</th>
@@ -1344,7 +1405,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
 
       {/* FLSA tab */}
       <div className={activeTab !== "flsa" ? "hidden" : "space-y-4"}>
-        <div className="rounded-md border border-zinc-200 dark:border-zinc-700">
+        <div className="rounded-md border border-[var(--stroke-secondary)]">
           <div className="flex items-start gap-2.5 rounded-t-md border-b border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/60">
             <input
               type="checkbox"
@@ -1353,10 +1414,10 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
               onChange={(e) => setFlsaEnabled(e.target.checked)}
               className="mt-0.5 h-4 w-4 cursor-pointer rounded"
             />
-            <label htmlFor="flsaEnabled" className="cursor-pointer select-none text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+            <label htmlFor="flsaEnabled" className="cursor-pointer select-none text-xs leading-relaxed text-[var(--text-secondary)]">
               <span className="font-semibold uppercase tracking-wider">Apply FLSA?</span>
               <br />
-              <span className="font-normal text-zinc-500 dark:text-zinc-400">
+              <span className="font-normal text-[var(--text-tertiary)]">
                 Enable Fair Labor Standards Act overtime calculation for employees on this rule set.
               </span>
             </label>
@@ -1373,7 +1434,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
               <p className="mb-2 text-xs font-medium text-zinc-500">FLSA Type</p>
               <div className="flex gap-6">
                 {(["FEDERAL", "CALIFORNIA"] as const).map((val) => (
-                  <label key={val} className="flex items-center gap-1.5 text-sm text-zinc-700 dark:text-zinc-300">
+                  <label key={val} className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)]">
                     <input type="radio" name="flsaType" value={val} defaultChecked={(rs?.flsaType ?? "FEDERAL") === val} />
                     {val === "FEDERAL" ? "Federal FLSA" : "California FLSA"}
                   </label>
@@ -1413,7 +1474,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
                   onChange={(e) => setFlsaAltPayCodeEnabled(e.target.checked)}
                   className="h-4 w-4 cursor-pointer rounded"
                 />
-                <label htmlFor="flsaAltPayCodeEnabled" className="cursor-pointer select-none text-xs text-zinc-600 dark:text-zinc-300">
+                <label htmlFor="flsaAltPayCodeEnabled" className="cursor-pointer select-none text-xs text-[var(--text-secondary)]">
                   Use a different FLSA pay code for alternating weeks in the same pay period
                 </label>
                 <input type="hidden" name="flsaAltPayCodeEnabled" value={flsaAltPayCodeEnabled ? "true" : "false"} />
@@ -1439,7 +1500,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
                 ["flsaApplyFullOtAmount",        "flsaApplyFullOtAmount",        "Apply the full FLSA OT amount"],
                 ["flsaDistributeMultipleRecords","flsaDistributeMultipleRecords","Distribute the computed FLSA adjustment amount to multiple records based on FLSA overtime timesheet groups"],
               ] as [string, keyof RuleSet, string][]).map(([id, key, label]) => (
-                <label key={id} className="flex cursor-pointer items-start gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
+                <label key={id} className="flex cursor-pointer items-start gap-2.5 text-xs text-[var(--text-secondary)]">
                   <input type="checkbox" name={id} value="true" defaultChecked={(rs?.[key] as boolean) ?? false} className="mt-0.5 h-4 w-4 cursor-pointer rounded" />
                   {label}
                 </label>
@@ -1448,7 +1509,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
 
             {/* Use Total OT Premium */}
             <div className="px-4 py-3">
-              <label className="flex cursor-pointer items-start gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
+              <label className="flex cursor-pointer items-start gap-2.5 text-xs text-[var(--text-secondary)]">
                 <input type="checkbox" name="flsaUseTotalOtPremium" value="true" defaultChecked={rs?.flsaUseTotalOtPremium ?? false} className="mt-0.5 h-4 w-4 cursor-pointer rounded" />
                 <span>
                   Use Total OT Premium Pay as FLSA Adjustment Pay amount in timesheet
@@ -1467,7 +1528,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
                   onChange={(e) => setFlsaWeeklyOtPayMethod(e.target.checked)}
                   className="mt-0.5 h-4 w-4 cursor-pointer rounded"
                 />
-                <label htmlFor="flsaWeeklyOtPayMethod" className="cursor-pointer select-none text-xs text-zinc-600 dark:text-zinc-300">
+                <label htmlFor="flsaWeeklyOtPayMethod" className="cursor-pointer select-none text-xs text-[var(--text-secondary)]">
                   FLSA Pay = Weekly OT pay − All Other OT pay
                   <span className="block text-zinc-400">Used when Weekly OT is not enabled</span>
                 </label>
@@ -1500,7 +1561,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
               <p className="mb-2 text-xs font-medium text-zinc-500">O/T Level — OT tiers counted for FLSA calculation</p>
               <div className="flex flex-wrap gap-4">
                 {(["OT1", "OT2"] as const).map((lvl) => (
-                  <label key={lvl} className="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">
+                  <label key={lvl} className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-secondary)]">
                     <input
                       type="checkbox"
                       checked={flsaOtLevels.includes(lvl)}
@@ -1519,7 +1580,7 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
               <p className="mb-2 text-xs font-medium text-zinc-500">Include As Regular — OT tiers treated as regular hours for FLSA</p>
               <div className="flex flex-wrap gap-4">
                 {(["OT1", "OT2"] as const).map((lvl) => (
-                  <label key={lvl} className="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">
+                  <label key={lvl} className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-secondary)]">
                     <input
                       type="checkbox"
                       checked={flsaIncludeAsRegular.includes(lvl)}
@@ -1557,23 +1618,23 @@ function Modal({
   }, [onClose]);
 
   return (
+    // The scrim stays a literal black wash in both themes: it is the absence
+    // of the page rather than a surface, and a token that lightened in dark
+    // mode would stop the dialog reading as modal.
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <h3 className="text-base font-semibold text-zinc-900 dark:text-white">{title}</h3>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-            aria-label="Close"
-          >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+      <div className="ta-modal max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl">
+        <header
+          className="flex items-center justify-between gap-3 px-6 py-4"
+          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+        >
+          <h3 className="wms-card-title truncate">{title}</h3>
+          <Button hierarchy="tertiary" iconOnly onClick={onClose} aria-label="Close">
+            <X className="h-5 w-5" />
+          </Button>
+        </header>
         <div className="px-6 py-5">{children}</div>
       </div>
     </div>
@@ -1582,7 +1643,22 @@ function Modal({
 
 // ─── Main manager ─────────────────────────────────────────────────────────────
 
-export function RuleSetsManager({ ruleSets, payCodes }: Props) {
+/**
+ * The rule sets list, as the portal design's list template lays it out: the
+ * status views and the search box in one toolbar with the record count, then
+ * one card holding the table.
+ *
+ * <p>The count is not decoration. "No rule sets" and "no rule sets matching
+ * these filters" look identical without it, and on this screen the difference
+ * is whether the tenant has no overtime configuration at all.
+ *
+ * <p>The view is local state seeded from `?view=`, the same compromise the
+ * area rail above makes with `?tab=`. A link can still open this list already
+ * filtered — which is what the hub's "1 inactive" note wants — but clicking
+ * between the three views does not re-run the six server actions this page
+ * loads to hide rows the browser is already holding.
+ */
+export function RuleSetsManager({ ruleSets, payCodes, initialView }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -1590,11 +1666,27 @@ export function RuleSetsManager({ ruleSets, payCodes }: Props) {
   const [showCreate, setShowCreate] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [view, setView] = useState<RuleSetView>(asView(initialView));
 
   const searchLower = search.trim().toLowerCase();
+  const inView =
+    view === "all" ? ruleSets : ruleSets.filter((rs) => rs.isActive === (view === "active"));
   const visible = searchLower
-    ? ruleSets.filter((rs) => rs.name.toLowerCase().includes(searchLower))
-    : ruleSets;
+    ? inView.filter((rs) => rs.name.toLowerCase().includes(searchLower))
+    : inView;
+
+  const activeCount = ruleSets.filter((rs) => rs.isActive).length;
+  const viewCounts: Record<RuleSetView, number> = {
+    all: ruleSets.length,
+    active: activeCount,
+    inactive: ruleSets.length - activeCount,
+  };
+
+  function openEdit(rs: RuleSet) {
+    setEditingRs(rs);
+    setConfirmDeleteId(null);
+    setError(null);
+  }
 
   function openCreate() { setShowCreate(true); setError(null); }
   function closeCreate() { setShowCreate(false); setError(null); }
@@ -1633,84 +1725,129 @@ export function RuleSetsManager({ ruleSets, payCodes }: Props) {
   }
 
   return (
-    <div className="mt-6">
-      {error && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-          {error}
-        </p>
-      )}
+    <div className="mt-6 flex flex-col gap-4">
+      {error && <Banner tone="error" body={error} />}
 
-      <div className="mb-3 flex items-center gap-3">
-        <div className="relative max-w-xs flex-1">
-          <svg className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search rule sets…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm text-zinc-700 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:placeholder-zinc-500"
+      <Toolbar count={visible.length} countLabel="rule set">
+        <SegmentedControl
+          ariaLabel="Rule set status"
+          value={view}
+          onChange={(next) => setView(next as RuleSetView)}
+          items={RULE_SET_VIEWS.map((v) => ({ ...v, count: viewCounts[v.value] }))}
+        />
+        <SearchInput value={search} onValueChange={setSearch} placeholder="Rule set name" />
+        <Button onClick={openCreate} leadingIcon={<Plus className="h-4 w-4" />}>
+          New Rule Set
+        </Button>
+      </Toolbar>
+
+      <Card padding={0}>
+        {visible.length === 0 ? (
+          /* Three different nothings, and they mean different things: the
+             tenant has no rules at all, this status has none, or the search
+             matched none. Only the first is a reason to create one. */
+          <EmptyState
+            icon={<SlidersHorizontal className="h-8 w-8" />}
+            title={
+              ruleSets.length === 0
+                ? "No rule sets yet"
+                : searchLower
+                  ? "No rule sets match that search"
+                  : `No ${view} rule sets`
+            }
+            body={
+              ruleSets.length === 0
+                ? "A rule set holds the overtime thresholds, rounding and meal rules a pay period is calculated with. Nothing is calculated until one exists."
+                : searchLower
+                  ? `Nothing in this view matches "${search}".`
+                  : `All ${ruleSets.length} rule sets are ${view === "active" ? "inactive" : "active"}.`
+            }
+            action={
+              ruleSets.length === 0 ? (
+                <Button size="sm" onClick={openCreate} leadingIcon={<Plus className="h-3.5 w-3.5" />}>
+                  New Rule Set
+                </Button>
+              ) : (
+                <Button
+                  hierarchy="secondary"
+                  size="sm"
+                  onClick={() => { setSearch(""); setView("all"); }}
+                >
+                  Show all rule sets
+                </Button>
+              )
+            }
           />
-        </div>
-        <button
-          onClick={openCreate}
-          className="ml-auto rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          + Add Rule Set
-        </button>
-      </div>
-
-      <div className="flex flex-col gap-3">
-        {visible.length === 0 && (
-          <p className="text-sm text-zinc-400">
-            {searchLower ? `No rule sets match "${search}".` : "No rule sets yet."}
-          </p>
+        ) : (
+          <>
+            <Table>
+              <THead>
+                <TR>
+                  <TH numeric>#</TH>
+                  <TH>Rule Set</TH>
+                  <TH>Pay Cycle</TH>
+                  <TH>Overtime</TH>
+                  <TH>Meal</TH>
+                  <TH align="center">Status</TH>
+                  <TH align="right">Actions</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {visible.map((rs) => (
+                  <TR key={rs.id} onClick={() => openEdit(rs)}>
+                    <TD numeric style={{ color: "var(--text-tertiary)" }}>{rs.number ?? "—"}</TD>
+                    <TD>
+                      <span className="flex items-center gap-2">
+                        <span style={{ fontWeight: "var(--weight-medium)" }}>{rs.name}</span>
+                        {rs.isDefault && (
+                          <Badge tone="info" size="sm">
+                            Default
+                          </Badge>
+                        )}
+                      </span>
+                    </TD>
+                    <TD style={{ color: "var(--text-secondary)" }}>{payCycleLabel(rs)}</TD>
+                    <TD style={{ color: "var(--text-secondary)" }}>{overtimeSummary(rs)}</TD>
+                    <TD style={{ color: "var(--text-secondary)" }}>{mealSummary(rs)}</TD>
+                    <TD align="center">
+                      <Badge tone={statusTone(rs.isActive ? "ACTIVE" : "INACTIVE")} size="sm">
+                        {rs.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                    </TD>
+                    <TD align="right">
+                      <Button
+                        hierarchy="secondary"
+                        size="sm"
+                        onClick={(e) => { e.stopPropagation(); openEdit(rs); }}
+                      >
+                        Edit
+                      </Button>
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+            <TableFooter shown={visible.length} total={ruleSets.length} label="rule sets" />
+          </>
         )}
-        {visible.map((rs) => (
-          <button
-            key={rs.id}
-            type="button"
-            onClick={() => { setEditingRs(rs); setConfirmDeleteId(null); setError(null); }}
-            className="w-full rounded-xl border border-zinc-200 bg-white p-4 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className={`font-medium ${rs.isActive ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"}`}>
-                  {rs.name}
-                </span>
-                {rs.isDefault && (
-                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                    Default
-                  </span>
-                )}
-                {!rs.isActive && (
-                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                    Inactive
-                  </span>
-                )}
-              </div>
-              <span className="text-xs text-zinc-400">Click to edit →</span>
-            </div>
-            <p className="mt-1 text-xs text-zinc-400">
-              Daily OT: {fmtMins(rs.dailyOtMinutes)} · Daily DT: {fmtMins(rs.dailyDtMinutes)} ·
-              Weekly OT: {fmtMins(rs.weeklyOtMinutes)} · Consec day: day {rs.consecutiveDayOtDay}
-            </p>
-          </button>
-        ))}
-      </div>
+      </Card>
 
       {/* Create modal */}
       {showCreate && (
         <Modal title="New Rule Set" onClose={closeCreate}>
-          {error && !editingRs && (
-            <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>
-          )}
+          {error && !editingRs && <Banner tone="error" body={error} />}
           <form onSubmit={handleCreate}>
             <RuleSetFields payCodes={payCodes} />
-            <div className="mt-6 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-              <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Creating…" : "Create"}</button>
-              <button type="button" onClick={closeCreate} className={cancelBtnCls}>Cancel</button>
+            <div
+              className="mt-6 flex gap-2 pt-4"
+              style={{ borderTop: "1px solid var(--stroke-divider)" }}
+            >
+              <Button type="submit" disabled={isPending}>
+                {isPending ? "Creating…" : "Create"}
+              </Button>
+              <Button type="button" hierarchy="secondary" onClick={closeCreate}>
+                Cancel
+              </Button>
             </div>
           </form>
         </Modal>
@@ -1719,37 +1856,54 @@ export function RuleSetsManager({ ruleSets, payCodes }: Props) {
       {/* Edit modal */}
       {editingRs && (
         <Modal title={`Edit: ${editingRs.name}`} onClose={() => { setEditingRs(null); setConfirmDeleteId(null); setError(null); }}>
-          {error && (
-            <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-              {error}
-            </p>
-          )}
+          {error && <Banner tone="error" body={error} />}
           <form onSubmit={(e) => handleUpdate(editingRs.id, e)}>
             <RuleSetFields rs={editingRs} payCodes={payCodes} />
-            <div className="mt-6 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-700">
+            <div
+              className="mt-6 flex flex-wrap items-center justify-between gap-2 pt-4"
+              style={{ borderTop: "1px solid var(--stroke-divider)" }}
+            >
               <div className="flex gap-2">
-                <button type="submit" disabled={isPending} className={saveBtnCls}>
+                <Button type="submit" disabled={isPending}>
                   {isPending ? "Saving…" : "Save changes"}
-                </button>
-                <button type="button" onClick={() => { setEditingRs(null); setConfirmDeleteId(null); }} className={cancelBtnCls}>
+                </Button>
+                <Button
+                  type="button"
+                  hierarchy="secondary"
+                  onClick={() => { setEditingRs(null); setConfirmDeleteId(null); }}
+                >
                   Cancel
-                </button>
+                </Button>
               </div>
+              {/* The default rule set has no delete: every pay period without an
+                  explicit rule set falls back to it. */}
               {!editingRs.isDefault && (
                 confirmDeleteId === editingRs.id ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-zinc-500">Are you sure?</span>
-                    <button type="button" onClick={() => handleDelete(editingRs.id)} disabled={isPending} className={dangerBtnCls}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                      Are you sure?
+                    </span>
+                    <Button
+                      type="button"
+                      tone="error"
+                      onClick={() => handleDelete(editingRs.id)}
+                      disabled={isPending}
+                    >
                       {isPending ? "Deleting…" : "Yes, delete"}
-                    </button>
-                    <button type="button" onClick={() => setConfirmDeleteId(null)} className={cancelBtnCls}>
+                    </Button>
+                    <Button type="button" hierarchy="secondary" onClick={() => setConfirmDeleteId(null)}>
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 ) : (
-                  <button type="button" onClick={() => setConfirmDeleteId(editingRs.id)} className="text-xs text-red-500 hover:underline dark:text-red-400">
+                  <Button
+                    type="button"
+                    hierarchy="link"
+                    tone="error"
+                    onClick={() => setConfirmDeleteId(editingRs.id)}
+                  >
                     Delete rule set
-                  </button>
+                  </Button>
                 )
               )}
             </div>

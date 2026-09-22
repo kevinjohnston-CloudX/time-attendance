@@ -1,8 +1,56 @@
-import Link from "next/link";
+import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { getTenantBySlug, toggleTenantActive, enterTenant } from "@/actions/super-admin.actions";
 import { format } from "date-fns";
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  EmptyState,
+  LinkButton,
+  PageHeader,
+  Table,
+  TableFooter,
+  THead,
+  TBody,
+  TR,
+  TH,
+  TD,
+  statusTone,
+} from "@/components/ui";
 
+/**
+ * One label-over-value pair, as the design's doc template draws them: an
+ * uppercase overline over a 16px semibold value, tabular so the two counts
+ * line up with each other.
+ */
+function Kv({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span className="wms-overline">{label}</span>
+      <span
+        className="tabular"
+        style={{
+          font: "var(--weight-semibold) 16px/22px var(--font-sans)",
+          color: "var(--text-primary)",
+          overflowWrap: "anywhere",
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * One tenant, on the design's doc template: the facts as a key/value card,
+ * then a card per table.
+ *
+ * <p>The deactivation banner is not a nicety. "Manage Portal" still works on a
+ * deactivated tenant, so without it you can be eight clicks into a company
+ * whose staff currently cannot sign in and have nothing on screen saying so.
+ */
 export default async function TenantDetailPage({
   params,
 }: {
@@ -24,147 +72,160 @@ export default async function TenantDetailPage({
   }
 
   return (
-    <div>
-      <Link
-        href="/super-admin/tenants"
-        className="text-sm text-zinc-500 hover:text-white"
-      >
-        ← Tenants
-      </Link>
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title={tenant.name}
+        subtitle={`${tenant.slug} · Created ${format(tenant.createdAt, "MMM d, yyyy")}`}
+        actions={
+          <>
+            {/* Tenants is not in any nav, so this link is the only way back. */}
+            <LinkButton href="/super-admin/tenants" hierarchy="tertiary">
+              ← Tenants
+            </LinkButton>
+            <form action={handleEnter}>
+              <Button type="submit">Manage Portal →</Button>
+            </form>
+            <form action={handleToggle}>
+              {/* Deactivating a tenant takes a whole company offline, so it
+                  is a destructive action and reads as one. */}
+              <Button type="submit" hierarchy="secondary" tone={tenant.isActive ? "error" : "regular"}>
+                {tenant.isActive ? "Deactivate" : "Activate"}
+              </Button>
+            </form>
+          </>
+        }
+      />
 
-      <div className="mt-2 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">{tenant.name}</h1>
-          <p className="mt-0.5 text-sm text-zinc-400">
-            <span className="font-mono">{tenant.slug}</span> · Created{" "}
-            {format(tenant.createdAt, "MMM d, yyyy")} ·{" "}
-            <span
-              className={
-                tenant.isActive ? "text-emerald-400" : "text-zinc-500"
+      <div className="flex flex-col gap-4">
+        {!tenant.isActive && (
+          <Banner
+            tone="warning"
+            title="This tenant is deactivated"
+            body="Its records are all still here and this page still opens them, but nobody at this company can sign in until it is activated again."
+          />
+        )}
+
+        <Card title="Overview" subtitle="What this tenant is made of.">
+          <div
+            className="grid gap-4"
+            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))" }}
+          >
+            <Kv label="Slug" value={<span style={{ fontFamily: "var(--font-mono)" }}>{tenant.slug}</span>} />
+            <Kv label="Employees" value={tenant._count.employees} />
+            <Kv label="Sites" value={tenant.sites.length} />
+            <Kv label="Created" value={format(tenant.createdAt, "MMM d, yyyy")} />
+            <Kv
+              label="Status"
+              value={
+                <Badge tone={statusTone(tenant.isActive ? "ACTIVE" : "INACTIVE")} size="sm" dot>
+                  {tenant.isActive ? "Active" : "Inactive"}
+                </Badge>
               }
-            >
-              {tenant.isActive ? "Active" : "Inactive"}
-            </span>
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <form action={handleEnter}>
-            <button
-              type="submit"
-              className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-100"
-            >
-              Manage Portal →
-            </button>
-          </form>
-          <form action={handleToggle}>
-            <button
-              type="submit"
-              className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:border-zinc-500 hover:text-white"
-            >
-              {tenant.isActive ? "Deactivate" : "Activate"}
-            </button>
-          </form>
-        </div>
-      </div>
+            />
+          </div>
+        </Card>
 
-      <div className="mt-8 grid grid-cols-3 gap-4">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-          <p className="text-xs text-zinc-400">Employees</p>
-          <p className="mt-1 text-2xl font-bold text-white">
-            {tenant._count.employees}
-          </p>
-        </div>
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-          <p className="text-xs text-zinc-400">Sites</p>
-          <p className="mt-1 text-2xl font-bold text-white">
-            {tenant.sites.length}
-          </p>
-        </div>
-      </div>
-
-      {/* Sites */}
-      <div className="mt-8">
-        <h2 className="text-base font-semibold text-white">Sites</h2>
-        <div className="mt-3 overflow-hidden rounded-xl border border-zinc-800">
-          <table className="w-full text-sm">
-            <thead className="border-b border-zinc-800 bg-zinc-900 text-left text-zinc-400">
-              <tr>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Timezone</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800 bg-zinc-950">
-              {tenant.sites.map((s) => (
-                <tr key={s.id}>
-                  <td className="px-4 py-3 text-white">{s.name}</td>
-                  <td className="px-4 py-3 text-zinc-400">{s.timezone}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                        s.isActive
-                          ? "bg-emerald-900/40 text-emerald-400"
-                          : "bg-zinc-800 text-zinc-400"
-                      }`}
-                    >
-                      {s.isActive ? "Active" : "Inactive"}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Employees */}
-      <div className="mt-8">
-        <h2 className="text-base font-semibold text-white">
-          Employees
-          {tenant._count.employees > 20 && (
-            <span className="ml-2 text-sm font-normal text-zinc-400">
-              (showing first 20 of {tenant._count.employees})
-            </span>
+        <Card title="Sites" subtitle="The time zone is what stamps a punch." padding={0}>
+          {tenant.sites.length === 0 ? (
+            <EmptyState
+              title="No sites"
+              body="A tenant with no site cannot take a punch. Add one from the tenant's own admin area."
+            />
+          ) : (
+            <>
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Name</TH>
+                    <TH>Timezone</TH>
+                    <TH>Status</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {tenant.sites.map((s) => (
+                    <TR key={s.id}>
+                      <TD style={{ fontWeight: "var(--weight-medium)" }}>{s.name}</TD>
+                      <TD style={{ fontFamily: "var(--font-mono)", font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                        {s.timezone}
+                      </TD>
+                      <TD>
+                        <Badge tone={statusTone(s.isActive ? "ACTIVE" : "INACTIVE")} size="sm" dot>
+                          {s.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+              <TableFooter shown={tenant.sites.length} total={tenant.sites.length} label="sites" />
+            </>
           )}
-        </h2>
-        <div className="mt-3 overflow-hidden rounded-xl border border-zinc-800">
-          <table className="w-full text-sm">
-            <thead className="border-b border-zinc-800 bg-zinc-900 text-left text-zinc-400">
-              <tr>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Username</th>
-                <th className="px-4 py-3 font-medium">Code</th>
-                <th className="px-4 py-3 font-medium">Role</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800 bg-zinc-950">
-              {tenant.employees.map((e) => (
-                <tr key={e.id}>
-                  <td className="px-4 py-3 text-white">{e.user.name}</td>
-                  <td className="px-4 py-3 font-mono text-zinc-400">
-                    @{e.user.username}
-                  </td>
-                  <td className="px-4 py-3 text-zinc-400">{e.employeeCode}</td>
-                  <td className="px-4 py-3 text-zinc-300">{e.role}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                        !e.isActive
-                          ? "bg-zinc-800 text-zinc-400"
-                          : e.onLeave
-                          ? "bg-amber-900/40 text-amber-400"
-                          : "bg-emerald-900/40 text-emerald-400"
-                      }`}
-                    >
-                      {!e.isActive ? "Inactive" : e.onLeave ? "On Leave" : "Active"}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        </Card>
+
+        <Card
+          title="Employees"
+          subtitle="The first twenty by name. Open the tenant's portal for the full list."
+          padding={0}
+        >
+          {tenant.employees.length === 0 ? (
+            <EmptyState
+              title="No employees"
+              body="Only the System Admin created with the tenant would normally be here, so an empty list means that record is missing."
+            />
+          ) : (
+            <>
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Name</TH>
+                    <TH>Username</TH>
+                    <TH>Code</TH>
+                    <TH>Role</TH>
+                    <TH>Status</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {tenant.employees.map((e) => (
+                    <TR key={e.id}>
+                      <TD style={{ fontWeight: "var(--weight-medium)" }}>{e.user.name}</TD>
+                      <TD style={{ fontFamily: "var(--font-mono)", font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                        @{e.user.username}
+                      </TD>
+                      <TD style={{ color: "var(--text-secondary)" }}>{e.employeeCode}</TD>
+                      <TD style={{ color: "var(--text-secondary)" }}>{e.role}</TD>
+                      <TD>
+                        {/* Inactive is checked first: somebody switched off
+                            cannot sign in whether they are away or not, so
+                            "On Leave" on a deactivated account would be the
+                            less useful of two true statements. Both land on
+                            the same tone, which is the helper working as
+                            intended — they are one severity, not two. */}
+                        {!e.isActive ? (
+                          <Badge tone={statusTone("INACTIVE")} size="sm">
+                            Inactive
+                          </Badge>
+                        ) : e.onLeave ? (
+                          <Badge tone={statusTone("ON_LEAVE")} size="sm" dot>
+                            On Leave
+                          </Badge>
+                        ) : (
+                          <Badge tone={statusTone("ACTIVE")} size="sm" dot>
+                            Active
+                          </Badge>
+                        )}
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+              <TableFooter
+                shown={tenant.employees.length}
+                total={tenant._count.employees}
+                label="employees"
+              />
+            </>
+          )}
+        </Card>
       </div>
     </div>
   );

@@ -2,6 +2,17 @@
 
 import { useState, useEffect } from "react";
 import { X, FileDown, Building2, CheckCircle } from "lucide-react";
+import { Button, Input, Select } from "@/components/ui";
+
+/**
+ * The ADP export dialog.
+ *
+ * <p>Four choices, and then a file leaves the building. The preview line at
+ * the bottom is the whole reason this is a dialog rather than a straight
+ * download: EPIATW01.csv and EPIGA101.csv are indistinguishable once they are
+ * in a downloads folder, and an export of the wrong warehouse's hours is only
+ * discovered on the other side of the payroll run.
+ */
 
 interface Site {
   id: string;
@@ -20,6 +31,27 @@ const STATUS_OPTIONS = [
   { value: "READY", label: "Ready" },
   { value: "LOCKED", label: "Locked" },
 ];
+
+/** An uppercase label with a glyph, over its control. */
+function Labelled({
+  label,
+  icon,
+  children,
+}: {
+  label: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="wms-overline inline-flex items-center gap-1.5">
+        {icon}
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
 
 export function PayPeriodExport({ payPeriodId, label, sites }: Props) {
   const [open, setOpen] = useState(false);
@@ -53,136 +85,132 @@ export function PayPeriodExport({ payPeriodId, label, sites }: Props) {
 
   return (
     <>
-      <button
-        type="button"
+      <Button
+        hierarchy="secondary"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+        leadingIcon={<FileDown className="h-4 w-4" />}
       >
-        <FileDown className="h-4 w-4" />
         Export
-      </button>
+      </Button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          {/* Backdrop */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            className="absolute inset-0 backdrop-blur-sm"
+            style={{ background: "rgb(0 0 0 / 0.4)" }}
             onClick={() => setOpen(false)}
           />
 
-          {/* Modal */}
-          <div className="relative z-10 w-full max-w-md rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
-            {/* Header */}
-            <div className="flex items-start justify-between border-b border-zinc-100 px-6 py-4 dark:border-zinc-800">
-              <div>
-                <h2 className="text-base font-semibold text-zinc-900 dark:text-white">Export to ADP</h2>
-                <p className="mt-0.5 text-sm text-zinc-500">{label}</p>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="adp-export-title"
+            className="ta-modal relative z-10 w-full max-w-md rounded-2xl"
+          >
+            <header
+              className="flex items-start justify-between gap-3 px-6 py-4"
+              style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+            >
+              <div className="flex flex-col gap-0.5">
+                <h2
+                  id="adp-export-title"
+                  style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}
+                >
+                  Export to ADP
+                </h2>
+                <p style={{ margin: 0, font: "var(--type-subtitle)", color: "var(--text-secondary)" }}>
+                  {label}
+                </p>
               </div>
-              <button
-                type="button"
+              <Button
+                hierarchy="tertiary"
+                size="sm"
+                iconOnly
+                aria-label="Close"
                 onClick={() => setOpen(false)}
-                className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
               >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+                <X className="h-4 w-4" />
+              </Button>
+            </header>
 
-            {/* Filters */}
-            <div className="space-y-4 px-6 py-5">
-              {/* Warehouse */}
-              <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-zinc-500">
-                  <Building2 className="h-3.5 w-3.5" />
-                  Warehouse
-                </label>
-                <select
+            <div className="flex flex-col gap-4 px-6 py-5">
+              <Labelled label="Warehouse" icon={<Building2 className="h-3.5 w-3.5" />}>
+                <Select
                   value={siteId}
                   onChange={(e) => setSiteId(e.target.value)}
-                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                  style={{ width: "100%" }}
                 >
                   <option value="">All Warehouses</option>
                   {sites.map((s) => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
-                </select>
-              </div>
+                </Select>
+              </Labelled>
 
-              {/* Status */}
-              <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-zinc-500">
-                  <CheckCircle className="h-3.5 w-3.5" />
-                  Status
-                </label>
-                <select
+              <Labelled label="Status" icon={<CheckCircle className="h-3.5 w-3.5" />}>
+                <Select
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
-                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                  style={{ width: "100%" }}
                 >
                   {STATUS_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
-                </select>
-              </div>
+                </Select>
+              </Labelled>
 
-              {/* ADP Config */}
+              {/* Both are ADP's own identifiers, upper-cased on the way in
+                  because the file ADP parses is case-sensitive and nothing on
+                  this screen can tell the clerk that they typed it lowercase. */}
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-zinc-500">
-                    Co Code
-                  </label>
-                  <input
-                    type="text"
-                    value={coCode}
-                    onChange={(e) => setCoCode(e.target.value.toUpperCase())}
-                    maxLength={10}
-                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-zinc-500">
-                    Batch ID
-                  </label>
-                  <input
-                    type="text"
-                    value={batchId}
-                    onChange={(e) => setBatchId(e.target.value.toUpperCase())}
-                    maxLength={20}
-                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                  />
-                </div>
+                <Input
+                  label="Co Code"
+                  value={coCode}
+                  onChange={(e) => setCoCode(e.target.value.toUpperCase())}
+                  maxLength={10}
+                />
+                <Input
+                  label="Batch ID"
+                  value={batchId}
+                  onChange={(e) => setBatchId(e.target.value.toUpperCase())}
+                  maxLength={20}
+                />
               </div>
 
-              {/* Preview */}
-              <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-800/50">
-                <p className="text-xs text-zinc-500">
-                  <span className="font-medium text-zinc-700 dark:text-zinc-300">File preview: </span>
-                  EPI{coCode || "???"}01.csv
-                </p>
-                <p className="mt-0.5 text-xs text-zinc-400">
+              <div
+                className="flex flex-col gap-0.5 rounded-lg px-4 py-3"
+                style={{
+                  border: "1px solid var(--stroke-divider)",
+                  background: "var(--surface-secondary)",
+                }}
+              >
+                <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                  File preview:{" "}
+                  <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>
+                    EPI{coCode || "???"}01.csv
+                  </span>
+                </span>
+                <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
                   {siteName} · {statusLabel} timesheets
-                </p>
+                </span>
               </div>
             </div>
 
-            {/* Footer */}
-            <div className="flex items-center justify-end gap-3 border-t border-zinc-100 px-6 py-4 dark:border-zinc-800">
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              >
+            <footer
+              className="flex items-center justify-end gap-3 px-6 py-4"
+              style={{ borderTop: "1px solid var(--stroke-divider)" }}
+            >
+              <Button hierarchy="secondary" onClick={() => setOpen(false)}>
                 Cancel
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
                 onClick={handleDownload}
                 disabled={!coCode || !batchId}
-                className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                leadingIcon={<FileDown className="h-4 w-4" />}
               >
-                <FileDown className="h-4 w-4" />
                 Download CSV
-              </button>
-            </div>
+              </Button>
+            </footer>
           </div>
         </div>
       )}

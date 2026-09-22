@@ -1,0 +1,201 @@
+/* ============================================================
+   CloudX WMS — Color Tokens
+   Sourced 1:1 from the Figma Variable collection "WMS Library (V2)".
+   Two layers:
+     1. PRIMITIVES  — the raw color ramps (--wms-color-<hue>-<step>)
+     2. SEMANTIC    — role-based aliases (text, surface, fill, stroke,
+                      icon, link) that components should consume.
+   Dark-mode (zink-based) aliases live under [data-theme="dark"].
+   ============================================================ */
+
+:root {
+  /* ---- Base ---- */
+  --wms-color-base-white: rgb(255, 255, 255);
+  --wms-color-base-black: rgb(0, 0, 0);
+
+  /* ---- Primary (Brand Blue) ---- */
+  --wms-color-primary-25:  rgb(250, 252, 255);
+  --wms-color-primary-50:  rgb(239, 246, 255);
+  --wms-color-primary-100: rgb(219, 234, 254);
+  --wms-color-primary-200: rgb(191, 219, 254);
+  --wms-color-primary-300: rgb(147, 197, 253);
+  --wms-color-primary-400: rgb(96, 165, 250);
+  --wms-color-primary-500: rgb(59, 130, 246);
+  --wms-color-primary-600: rgb(37, 99, 235);   /* core brand action */
+  --wms-color-primary-700: rgb(29, 78, 216);
+  --wms-color-primary-800: rgb(30, 64, 175);
+  --wms-color-primary-900: rgb(30, 58, 138);
+  --wms-color-primary-950: rgb(23, 37, 84);
+
+  /* ---- Gray (Neutral / warm-cool slate) ---- */
+  --wms-color-gray-25:  rgb(252, 252, 253);
+  --wms-color-gray-50:  rgb(249, 250, 251);
+  --wms-color-gray-75:  rgb(243, 244, 246);
+  --wms-color-gray-100: rgb(238, 239, 242);
+  --wms-color-gray-150: rgb(232, 233, 237);
+  --wms-color-gray-200: rgb(226, 228, 233);
+  --wms-color-gray-300: rgb(206, 211, 217);
+  --wms-color-gray-350: rgb(177, 185, 195);
+  --wms-color-gray-400: rgb(156, 163, 175);
+  --wms-color-gray-500: rgb(107, 114, 128);
+  --wms-color-gray-600: rgb(75, 85, 99);
+  --wms-color-gray-700: rgb(55, 65, 81);
+  --wms-color-gray-800: rgb(31, 41, 55);
+  --wms-color-gray-900: rgb(17, 24, 39);
+  --wms-color-gray-950: rgb(3, 7, 18);
+
+  /* ---- Emerald (Success) ---- */
+  --wms-color-emerald-25:  rgb(250, 255, 253);
+  --wms-color-emerald-50:  rgb(236, 253, 245);
+  --wms-color-emerald-100: rgb(209, 250, 229);
+  --wms-color-emerald-200: rgb(167, 243, 208);
+  --wms-color-emerald-300: rgb(110, 231, 183);
+  --wms-color-emerald-400: rgb(76, 216, 165);
+  --wms-color-emerald-500: rgb(16, 185, 129);
+  --wms-color-emerald-600: rgb(5, 150, 105);
+  --wms-color-emerald-700: rgb(4, 120, 87);
+  --wms-color-emerald-800: rgb(6, 95, 70);
+  --wms-color-emerald-900: rgb(6, 78, 59);
+  --wms-color-emerald-950: rgb(2, 44, 34);
+
+  /* ---- Amber (Warning) ---- */
+  --wms-color-amber-25:  rgb(255, 254, 250);
+  --wms-color-amber-50:  rgb(255, 251, 235);
+  --wms-color-amber-100: rgb(254, 243, 199);
+  --wms-color-amber-200: rgb(253, 230, 138);
+  --wms-color-amber-300: rgb(252, 211, 77);
+  --wms-color-amber-400: rgb(251, 191, 36);
+  --wms-color-amber-500: rgb(235, 151, 10);
+  --wms-color-amber-600: rgb(217, 119, 6);
+  --wms-color-amber-700: rgb(180, 83, 9);
+  --wms-color-amber-800: rgb(146, 64, 14);
+  --wms-color-amber-900: rgb(120, 53, 15);
+  --wms-color-amber-950: rgb(69, 26, 3);
+
+  /* ---- Red (Error / Danger) ---- */
+  --wms-color-red-25:  rgb(255, 250, 250);
+  --wms-color-red-50:  rgb(254, 242, 242);
+  --wms-color-red-100: rgb(254, 226, 226);
+  --wms-color-red-200: rgb(254, 202, 202);
+  --wms-color-red-300: rgb(252, 165, 165);
+  --wms-color-red-400: rgb(248, 113, 113);
+  --wms-color-red-500: rgb(239, 68, 68);
+  --wms-color-red-600: rgb(220, 38, 38);
+  --wms-color-red-700: rgb(185, 28, 28);
+  --wms-color-red-800: rgb(153, 27, 27);
+  --wms-color-red-900: rgb(127, 29, 29);
+  --wms-color-red-950: rgb(69, 10, 10);
+
+  /* ---- Secondary Orange (accent) ---- */
+  --wms-color-orange-25:  rgb(255, 253, 250);
+  --wms-color-orange-50:  rgb(255, 247, 237);
+  --wms-color-orange-100: rgb(255, 237, 213);
+  --wms-color-orange-200: rgb(254, 215, 170);
+  --wms-color-orange-300: rgb(253, 186, 116);
+  --wms-color-orange-400: rgb(251, 146, 60);
+  --wms-color-orange-500: rgb(249, 115, 22);
+  --wms-color-orange-600: rgb(234, 88, 12);
+  --wms-color-orange-700: rgb(194, 65, 12);
+  --wms-color-orange-800: rgb(154, 52, 18);
+  --wms-color-orange-900: rgb(124, 45, 18);
+  --wms-color-orange-950: rgb(67, 20, 7);
+
+  /* ---- Violet (Badge "scheduled" tone) ---- */
+  --wms-color-violet-50:  rgb(245, 243, 255);
+  --wms-color-violet-200: rgb(221, 214, 254);
+  --wms-color-violet-500: rgb(139, 92, 246);
+  --wms-color-violet-600: rgb(124, 58, 237);
+  --wms-color-violet-800: rgb(91, 33, 182);
+
+  /* ---- Zink (Dark-mode neutral ramp) ---- */
+  --wms-color-zink-50:  rgb(250, 250, 250);
+  --wms-color-zink-100: rgb(244, 244, 245);
+  --wms-color-zink-200: rgb(228, 228, 231);
+  --wms-color-zink-300: rgb(212, 212, 216);
+  --wms-color-zink-400: rgb(161, 161, 170);
+  --wms-color-zink-500: rgb(113, 113, 122);
+  --wms-color-zink-600: rgb(82, 82, 91);
+  --wms-color-zink-700: rgb(63, 63, 70);
+  --wms-color-zink-750: rgb(43, 43, 46);
+  --wms-color-zink-800: rgb(39, 39, 42);
+  --wms-color-zink-900: rgb(31, 31, 35);
+  --wms-color-zink-950: rgb(9, 9, 11);
+
+  /* ---- Transparency / overlays ---- */
+  --wms-overlay-modal: rgba(0, 0, 0, 0.4);   /* modal scrim */
+  --wms-overlay-menu:  rgba(0, 0, 0, 0.07);  /* dropdown/menu scrim */
+
+  /* ---- Brand logo colors ----
+     The CloudX Systems mark is two-tone: an orange wordmark/lockup
+     paired with a blue icon mark. */
+  --wms-brand-orange: rgb(245, 130, 32);   /* #F58220 — primary wordmark */
+  --wms-brand-blue:   rgb(8, 96, 170);     /* #0860AA — icon mark */
+  --wms-logo-fill:    var(--wms-brand-blue);
+
+  /* ============================================================
+     SEMANTIC ALIASES — consume these in components
+     ============================================================ */
+
+  /* Text */
+  --text-primary:        var(--wms-color-gray-900);
+  --text-secondary:      var(--wms-color-gray-600);
+  --text-tertiary:       var(--wms-color-gray-400);
+  --text-disabled:       var(--wms-color-gray-350);
+  --text-on-accent:      var(--wms-color-base-white);
+  --text-accent:         var(--wms-color-primary-700);
+  --text-error:          var(--wms-color-red-700);
+  --text-success:        var(--wms-color-emerald-700);
+  --text-warning:        var(--wms-color-amber-700);
+
+  /* Surfaces (page & container backgrounds) */
+  --surface-page:        var(--wms-color-gray-50);
+  --surface-card:        var(--wms-color-base-white);
+  --surface-secondary:   var(--wms-color-gray-25);
+  --surface-tertiary:    var(--wms-color-gray-50);
+  --surface-inverse:     var(--wms-color-gray-800);
+  --surface-info:        var(--wms-color-primary-50);
+  --surface-success:     var(--wms-color-emerald-50);
+  --surface-warning:     var(--wms-color-amber-50);
+  --surface-error:       var(--wms-color-red-50);
+
+  /* Fills (interactive solid backgrounds) */
+  --fill-accent:         var(--wms-color-primary-600);
+  --fill-accent-hover:   var(--wms-color-primary-500);
+  --fill-accent-pressed: var(--wms-color-primary-700);
+  --fill-hover:          var(--wms-color-gray-75);
+  --fill-pressed:        var(--wms-color-gray-150);
+  --fill-disabled:       var(--wms-color-gray-75);
+  --fill-readonly:       var(--wms-color-gray-50);   /* "Display" field state - lighter than disabled */
+  --fill-error:          var(--wms-color-red-600);
+  --fill-success:        var(--wms-color-emerald-600);
+  --fill-warning:        var(--wms-color-amber-500);
+
+  /* Strokes / borders */
+  --stroke-default:      var(--wms-color-gray-300);
+  --stroke-secondary:    var(--wms-color-gray-200);
+  --stroke-divider:      var(--wms-color-gray-100);
+  --stroke-readonly:     var(--wms-color-gray-100);   /* "Display" field state stroke - lighter than stroke-secondary */
+  --stroke-hover:        var(--wms-color-gray-400);
+  --stroke-accent:       var(--wms-color-primary-600);
+  --stroke-accent-focus: var(--wms-color-primary-400);
+  --stroke-error:        var(--wms-color-red-400);
+  --stroke-success:      var(--wms-color-emerald-400);
+  --stroke-warning:      var(--wms-color-amber-400);
+  --stroke-wrapper:      var(--wms-color-gray-100);
+
+  /* Icons */
+  --icon-default:        var(--wms-color-gray-700);
+  --icon-secondary:      var(--wms-color-gray-500);
+  --icon-tertiary:       var(--wms-color-gray-600);
+  --icon-accent:         var(--wms-color-primary-600);
+  --icon-disabled:       var(--wms-color-gray-350);
+  --icon-error:          var(--wms-color-red-600);
+  --icon-success:        var(--wms-color-emerald-600);
+  --icon-warning:        var(--wms-color-amber-600);
+
+  /* Links */
+  --link-primary:        var(--wms-color-gray-700);
+  --link-accent:         var(--wms-color-primary-700);
+  --link-accent-hover:   var(--wms-color-primary-600);
+  --link-error:          var(--wms-color-red-700);
+}

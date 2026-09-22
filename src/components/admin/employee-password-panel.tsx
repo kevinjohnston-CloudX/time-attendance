@@ -23,12 +23,12 @@ export function EmployeePasswordPanel({ employeeId }: Props) {
   }
 
   return (
-    <div className="mt-6 rounded-xl border border-zinc-200 dark:border-zinc-700 p-5 space-y-3">
-      <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Password / Account Access</h3>
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+    <div className="mt-6 rounded-xl border border-[var(--stroke-secondary)] p-5 space-y-3">
+      <h3 className="text-sm font-semibold text-[var(--text-secondary)]">Password / Account Access</h3>
+      <p className="text-sm text-[var(--text-secondary)]">
         Set a temporary password. The employee will be required to change it on first login.
       </p>
-      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+      <p className="text-xs text-[var(--text-tertiary)]">
         Requirements: 8+ characters, uppercase letter, number, special character.
       </p>
       <form onSubmit={handleSubmit} className="flex gap-2">
@@ -39,12 +39,12 @@ export function EmployeePasswordPanel({ employeeId }: Props) {
           placeholder="Temporary password (min. 8 chars)"
           minLength={8}
           required
-          className="flex-1 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 px-3 py-2 text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-zinc-500"
+          className="flex-1 rounded-lg border border-[var(--stroke-default)] bg-white dark:bg-zinc-700 px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--stroke-accent)] focus:shadow-[var(--focus-ring-tight)]"
         />
         <button
           type="submit"
           disabled={status === "loading"}
-          className="rounded-lg bg-zinc-900 dark:bg-white px-4 py-2 text-sm font-semibold text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 disabled:opacity-50"
+          className="rounded-lg bg-[var(--fill-accent)] px-4 py-2 text-sm font-semibold text-[var(--text-on-accent)] hover:bg-[var(--fill-accent-hover)] disabled:opacity-50"
         >
           {status === "loading" ? "Saving…" : "Set"}
         </button>

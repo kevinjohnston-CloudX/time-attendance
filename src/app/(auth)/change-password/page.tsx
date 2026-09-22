@@ -4,7 +4,17 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { changePassword } from "@/actions/password.actions";
+import { Banner, Button, Input } from "@/components/ui";
+import { AuthScreen } from "../auth-screen";
 
+/**
+ * The forced change after an administrator has issued a temporary password.
+ *
+ * <p>The note under the button says the session ends, because it does: the
+ * new password is written and then this signs you out, so the next session is
+ * minted without `mustChangePassword`. Somebody who is not told that reads the
+ * jump back to sign-in as the change having failed and does it again.
+ */
 export default function ChangePasswordPage() {
   const router = useRouter();
   const [password, setPassword] = useState("");
@@ -32,63 +42,44 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-zinc-800 p-8 shadow-lg">
-      <div className="mb-8 text-center">
-        <img src="/logo.jpg" alt="Logo" className="mx-auto mb-3 h-12 w-12 rounded object-contain" />
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Change your password</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          You must set a new password before continuing.
-        </p>
-      </div>
+    <AuthScreen
+      title="Change your password"
+      sub="You must set a new password before continuing."
+      note="You will be signed out and asked to sign in again with the new password."
+    >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-2.5">
+        <Input
+          id="password"
+          type="password"
+          label="New password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          minLength={8}
+          placeholder="At least 8 characters"
+          // The rules belong on the field they apply to, not in a paragraph
+          // above the form that people scroll past and then fail against.
+          hint="8+ characters, with an uppercase letter, a number and a symbol."
+        />
 
-      <p className="text-xs text-zinc-500 dark:text-zinc-400 -mt-4 mb-2">
-        Requirements: 8+ characters, uppercase letter, number, special character.
-      </p>
+        <Input
+          id="confirm"
+          type="password"
+          label="Confirm password"
+          autoComplete="new-password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          required
+          placeholder="Re-enter password"
+        />
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1">
-          <label htmlFor="password" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            New password
-          </label>
-          <input
-            id="password"
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={8}
-            className="rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 px-3 py-2 text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-zinc-500"
-            placeholder="At least 8 characters"
-          />
-        </div>
+        {error && <Banner tone="error" body={error} />}
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="confirm" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Confirm password
-          </label>
-          <input
-            id="confirm"
-            type="password"
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            required
-            className="rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 px-3 py-2 text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-zinc-500"
-            placeholder="Re-enter password"
-          />
-        </div>
-
-        {error && <p className="text-sm text-red-500">{error}</p>}
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="mt-2 rounded-lg bg-zinc-900 dark:bg-white px-4 py-2 text-sm font-semibold text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 disabled:opacity-50"
-        >
+        <Button type="submit" disabled={loading} fullWidth>
           {loading ? "Saving…" : "Set new password"}
-        </button>
+        </Button>
       </form>
-    </div>
+    </AuthScreen>
   );
 }

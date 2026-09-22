@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
+import { LinkButton, PageHeader } from "@/components/ui";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getSites, getDepartments, getLeaveTypesAdmin } from "@/actions/admin.actions";
 import { getHolidays } from "@/actions/holiday.actions";
@@ -53,14 +53,16 @@ export default async function SiteSettingsPage({
   }
 
   return (
-    <div>
-      <Link
-        href="/admin"
-        className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white"
-      >
-        ← Admin
-      </Link>
-      <h1 className="mt-1 text-2xl font-bold text-zinc-900 dark:text-white">Company Setup</h1>
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title="Company Setup"
+        subtitle="Sites, departments, holidays and the codes they use"
+        actions={
+          <LinkButton href="/admin" hierarchy="tertiary">
+            ← Administration
+          </LinkButton>
+        }
+      />
 
       <SiteSettingsClient
         sites={serialize(sitesResult.success ? sitesResult.data : [])}

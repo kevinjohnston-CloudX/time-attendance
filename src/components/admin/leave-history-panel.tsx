@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Calendar, ChevronLeft, ChevronRight, ChevronDown, FileDown } from "lucide-react";
+import { Badge, Table, THead, TBody, TR, TH, TD, type BadgeTone } from "@/components/ui";
 
 export type LeaveLogEntry = {
   id: string;
@@ -41,39 +42,22 @@ function fmtDate(iso: string): string {
   });
 }
 
-const TYPE_CONFIG = {
-  accrual: {
-    label: "Accrual",
-    badge: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
-  },
-  accrual_reset: {
-    label: "Manual Adj. Clear",
-    badge: "bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
-  },
-  leave_request: {
-    label: "Leave Request",
-    badge: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
-  },
-  balance_adjustment: {
-    label: "Balance Adjustment",
-    badge: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-  },
-  eod_balance: {
-    label: "EOD Balance",
-    badge: "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
-  },
-  policy_change: {
-    label: "Policy Change",
-    badge: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
-  },
-  timecard_entry: {
-    label: "Time Card Entry",
-    badge: "bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
-  },
+/**
+ * What each ledger event is called and what colour it carries.
+ *
+ * <p>`label` is also the CSV export's value for this column, so it stays a
+ * plain string. Only the colour moved: it was seven hand-written Tailwind
+ * pairs, two of which (violet, purple) are indistinguishable at badge size.
+ */
+const TYPE_CONFIG: Record<string, { label: string; tone: BadgeTone }> = {
+  accrual: { label: "Accrual", tone: "success" },
+  accrual_reset: { label: "Manual Adj. Clear", tone: "purple" },
+  leave_request: { label: "Leave Request", tone: "warning" },
+  balance_adjustment: { label: "Balance Adjustment", tone: "info" },
+  eod_balance: { label: "EOD Balance", tone: "neutral" },
+  policy_change: { label: "Policy Change", tone: "purple" },
+  timecard_entry: { label: "Time Card Entry", tone: "warning" },
 };
-
-const selectCls =
-  "rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
 
 export function LeaveHistoryPanel({ entries, defaultLeaveTypeNames = [] }: { entries: LeaveLogEntry[]; defaultLeaveTypeNames?: string[] }) {
   const currentYear = new Date().getFullYear();
@@ -200,12 +184,12 @@ export function LeaveHistoryPanel({ entries, defaultLeaveTypeNames = [] }: { ent
             onClick={() => setShowTypePicker((v) => !v)}
             className="flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
           >
-            <span className={selectedTypes.size > 0 ? "text-zinc-900 dark:text-white" : ""}>{typeLabel}</span>
+            <span className={selectedTypes.size > 0 ? "text-[var(--text-primary)]" : ""}>{typeLabel}</span>
             <ChevronDown className="h-3 w-3 text-zinc-400" />
           </button>
 
           {showTypePicker && (
-            <div className="absolute left-0 top-full z-20 mt-1 min-w-44 rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+            <div className="absolute left-0 top-full z-20 mt-1 min-w-44 rounded-lg ta-modal">
               <div className="p-1">
                 <button
                   type="button"
@@ -224,7 +208,7 @@ export function LeaveHistoryPanel({ entries, defaultLeaveTypeNames = [] }: { ent
                     <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
                       selectedTypes.has(opt.value)
                         ? "border-zinc-900 bg-zinc-900 dark:border-zinc-100 dark:bg-zinc-100"
-                        : "border-zinc-300 dark:border-zinc-600"
+                        : "border-[var(--stroke-default)]"
                     }`}>
                       {selectedTypes.has(opt.value) && (
                         <svg className="h-2.5 w-2.5 text-white dark:text-zinc-900" viewBox="0 0 10 10" fill="none">
@@ -247,14 +231,14 @@ export function LeaveHistoryPanel({ entries, defaultLeaveTypeNames = [] }: { ent
             onClick={() => setShowLeaveTypePicker((v) => !v)}
             className="flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
           >
-            <span className={selectedLeaveTypes.size > 0 ? "text-zinc-900 dark:text-white" : ""}>
+            <span className={selectedLeaveTypes.size > 0 ? "text-[var(--text-primary)]" : ""}>
               {leaveTypeLabel}
             </span>
             <ChevronDown className="h-3 w-3 text-zinc-400" />
           </button>
 
           {showLeaveTypePicker && leaveTypeOptions.length > 0 && (
-            <div className="absolute left-0 top-full z-20 mt-1 min-w-44 rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+            <div className="absolute left-0 top-full z-20 mt-1 min-w-44 rounded-lg ta-modal">
               <div className="p-1">
                 <button
                   type="button"
@@ -273,7 +257,7 @@ export function LeaveHistoryPanel({ entries, defaultLeaveTypeNames = [] }: { ent
                     <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
                       selectedLeaveTypes.has(lt)
                         ? "border-zinc-900 bg-zinc-900 dark:border-zinc-100 dark:bg-zinc-100"
-                        : "border-zinc-300 dark:border-zinc-600"
+                        : "border-[var(--stroke-default)]"
                     }`}>
                       {selectedLeaveTypes.has(lt) && (
                         <svg className="h-2.5 w-2.5 text-white dark:text-zinc-900" viewBox="0 0 10 10" fill="none">
@@ -301,7 +285,7 @@ export function LeaveHistoryPanel({ entries, defaultLeaveTypeNames = [] }: { ent
           </button>
 
           {showPicker && (
-            <div className="absolute left-0 top-full z-20 mt-1 w-44 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+            <div className="absolute left-0 top-full z-20 mt-1 w-44 rounded-lg ta-modal p-3">
               <div className="flex items-center justify-between">
                 <button
                   type="button"
@@ -310,7 +294,7 @@ export function LeaveHistoryPanel({ entries, defaultLeaveTypeNames = [] }: { ent
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
-                <span className="text-sm font-semibold text-zinc-900 dark:text-white">
+                <span className="text-sm font-semibold text-[var(--text-primary)]">
                   {pickerYear}
                 </span>
                 <button
@@ -324,7 +308,7 @@ export function LeaveHistoryPanel({ entries, defaultLeaveTypeNames = [] }: { ent
               <button
                 type="button"
                 onClick={() => { setSelectedYear(pickerYear); setShowPicker(false); }}
-                className="mt-2.5 w-full rounded-md bg-zinc-900 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="mt-2.5 w-full rounded-md bg-[var(--fill-accent)] py-1.5 text-xs font-medium text-[var(--text-on-accent)] hover:bg-[var(--fill-accent-hover)]"
               >
                 Select {pickerYear}
               </button>
@@ -346,65 +330,69 @@ export function LeaveHistoryPanel({ entries, defaultLeaveTypeNames = [] }: { ent
 
       {/* Table */}
       {filtered.length === 0 ? (
-        <p className="text-sm text-zinc-400">No entries match the selected filters.</p>
+        <p style={{ font: "var(--type-body1)", color: "var(--text-tertiary)" }}>
+          No entries match the selected filters.
+        </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-200 dark:border-zinc-700">
-                <th className="pb-2 pr-4 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-400">Type</th>
-                <th className="pb-2 pr-4 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-400">Leave Type</th>
-                <th className="pb-2 pr-4 text-right text-[10px] font-medium uppercase tracking-wide text-zinc-400">Change</th>
-                <th className="pb-2 pr-4 text-right text-[10px] font-medium uppercase tracking-wide text-zinc-400">Balance After</th>
-                <th className="pb-2 pr-4 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-400">Notes</th>
-                <th className="pb-2 pr-4 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-400">Date</th>
-                <th className="pb-2 text-left text-[10px] font-medium uppercase tracking-wide text-zinc-400">User</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {filtered.map((entry) => {
-                const cfg = TYPE_CONFIG[entry.eventType];
-                const isPositive = entry.deltaMinutes >= 0;
-                return (
-                  <tr key={entry.id}>
-                    <td className="py-2.5 pr-4 align-middle">
-                      <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ${cfg.badge}`}>
-                        {cfg.label}
+        <Table>
+          <THead>
+            <TR>
+              <TH>Type</TH>
+              <TH>Leave Type</TH>
+              <TH numeric>Change</TH>
+              <TH numeric>Balance After</TH>
+              <TH>Notes</TH>
+              <TH>Date</TH>
+              <TH>User</TH>
+            </TR>
+          </THead>
+          <TBody>
+            {filtered.map((entry) => {
+              const cfg = TYPE_CONFIG[entry.eventType];
+              const isPositive = entry.deltaMinutes >= 0;
+              return (
+                <TR key={entry.id}>
+                  <TD>
+                    <Badge tone={cfg.tone} size="sm">
+                      {cfg.label}
+                    </Badge>
+                  </TD>
+                  <TD style={{ color: "var(--text-secondary)" }}>{entry.leaveTypeName}</TD>
+
+                  {/* A ledger is read by scanning the change column for the
+                      one that does not belong, so sign carries the colour and
+                      the figures are tabular. */}
+                  <TD numeric style={{ fontWeight: "var(--weight-medium)" }}>
+                    {entry.eventType === "eod_balance" ? (
+                      <span style={{ color: "var(--text-disabled)" }}>—</span>
+                    ) : entry.eventType === "policy_change" ? (
+                      <span style={{ color: "var(--wms-color-violet-600)" }}>
+                        {fmtBalance(entry.deltaMinutes)}/yr
                       </span>
-                    </td>
-                    <td className="py-2.5 pr-4 align-middle text-sm text-zinc-600 dark:text-zinc-300">
-                      {entry.leaveTypeName}
-                    </td>
-                    <td className="py-2.5 pr-4 text-right align-middle font-medium tabular-nums">
-                      {entry.eventType === "eod_balance"
-                        ? <span className="text-zinc-300 dark:text-zinc-600">—</span>
-                        : entry.eventType === "policy_change"
-                        ? <span className="text-purple-600 dark:text-purple-400">
-                            {fmtBalance(entry.deltaMinutes)}/yr
-                          </span>
-                        : <span className={isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}>
-                            {fmtMins(entry.deltaMinutes)}
-                          </span>
-                      }
-                    </td>
-                    <td className="py-2.5 pr-4 text-right align-middle tabular-nums text-zinc-700 dark:text-zinc-200">
-                      {fmtBalance(entry.balanceAfterMinutes)}
-                    </td>
-                    <td className="py-2.5 pr-4 align-middle text-zinc-500 dark:text-zinc-400">
-                      {entry.note ?? <span className="text-zinc-300 dark:text-zinc-600">—</span>}
-                    </td>
-                    <td className="py-2.5 pr-4 align-middle text-[11px] whitespace-nowrap text-zinc-400 dark:text-zinc-500">
-                      {fmtDate(entry.timestamp)}
-                    </td>
-                    <td className="py-2.5 align-middle text-zinc-600 dark:text-zinc-300">
-                      {entry.userName}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                    ) : (
+                      <span style={{ color: isPositive ? "var(--text-success)" : "var(--text-error)" }}>
+                        {fmtMins(entry.deltaMinutes)}
+                      </span>
+                    )}
+                  </TD>
+
+                  <TD numeric>{fmtBalance(entry.balanceAfterMinutes)}</TD>
+                  <TD style={{ color: "var(--text-secondary)" }}>
+                    {entry.note ?? <span style={{ color: "var(--text-disabled)" }}>—</span>}
+                  </TD>
+                  <TD
+                    numeric
+                    align="left"
+                    style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)", whiteSpace: "nowrap" }}
+                  >
+                    {fmtDate(entry.timestamp)}
+                  </TD>
+                  <TD style={{ color: "var(--text-secondary)" }}>{entry.userName}</TD>
+                </TR>
+              );
+            })}
+          </TBody>
+        </Table>
       )}
     </div>
   );

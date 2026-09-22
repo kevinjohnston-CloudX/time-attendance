@@ -2,22 +2,47 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { format } from "date-fns";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  FilterBar,
+  FilterChip,
+  LinkButton,
+  SearchInput,
+  Select,
+  Table,
+  THead,
+  TBody,
+  TR,
+  TH,
+  TD,
+  Toolbar,
+  statusTone,
+} from "@/components/ui";
+import { Users } from "lucide-react";
 
-const ROLE_BADGE: Record<string, string> = {
-  EMPLOYEE: "bg-zinc-100 text-zinc-600",
-  SUPERVISOR: "bg-blue-100 text-blue-700",
-  PAYROLL_ADMIN: "bg-purple-100 text-purple-700",
-  HR_ADMIN: "bg-amber-100 text-amber-700",
-  SYSTEM_ADMIN: "bg-red-100 text-red-700",
-};
+/**
+ * The employee list, on the design's list template: toolbar, applied-filter
+ * chips, then the table in a padding-free card.
+ *
+ * <p>Columns are the design's — Employee, Employee ID, Department, Shift, Role,
+ * Status — which means Role is plain text. It was a badge coloured by a local
+ * map with no dark-mode entries, and colouring five roles differently made the
+ * one column that does carry a warning, Status, compete with four that never do.
+ *
+ * <p>Filters stay where they were, in the query string. A filtered employee
+ * list is something HR sends to a supervisor, and it has to survive being
+ * pasted into a message.
+ */
 
 const ROLE_LABEL: Record<string, string> = {
-  EMPLOYEE: "Employee",
-  SUPERVISOR: "Supervisor",
+  EMPLOYEE:      "Employee",
+  SUPERVISOR:    "Supervisor",
   PAYROLL_ADMIN: "Payroll Admin",
-  HR_ADMIN: "HR Admin",
-  SYSTEM_ADMIN: "System Admin",
+  HR_ADMIN:      "HR Admin",
+  SYSTEM_ADMIN:  "System Admin",
 };
 
 interface Employee {
@@ -26,7 +51,7 @@ interface Employee {
   role: string;
   isActive: boolean;
   onLeave: boolean;
-  hireDate: Date;
+  shiftId: string | null;
   user: { name: string | null; email: string | null };
   site: { name: string };
   department: { name: string };
@@ -40,10 +65,20 @@ interface Props {
   pageSize: number;
   sites: string[];
   departments: string[];
+  shifts: { id: string; name: string; startTime: string }[];
   currentFilters: { q: string; site: string; dept: string; role: string };
 }
 
-export function EmployeesTable({ employees, total, page, pageSize, sites, departments, currentFilters }: Props) {
+export function EmployeesTable({
+  employees,
+  total,
+  page,
+  pageSize,
+  sites,
+  departments,
+  shifts,
+  currentFilters,
+}: Props) {
   const router = useRouter();
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -84,140 +119,256 @@ export function EmployeesTable({ employees, total, page, pageSize, sites, depart
     navigate({ [key]: val, page: 0 });
   }
 
-  const selectClass = "rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300";
+  const isFiltered = Boolean(
+    currentFilters.q || currentFilters.site || currentFilters.dept || currentFilters.role,
+  );
+
+  // Clearing one chip has to keep the other three, and drop the page with them
+  // — page 4 of an unfiltered list is a different set of people from page 4 of
+  // a filtered one.
+  const clearOne = (key: "q" | "site" | "dept" | "role") => buildUrl({ [key]: "", page: 0 });
+
+  const shiftById = new Map(shifts.map((s) => [s.id, s]));
+
+  const shown = employees.length;
+  const firstRow = total === 0 ? 0 : page * pageSize + 1;
+  const lastRow = page * pageSize + shown;
 
   return (
-    <>
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <input
-          type="text"
-          value={searchValue}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search by name, email, or code…"
-          className="w-64 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm placeholder-zinc-400 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-white dark:placeholder-zinc-500"
-        />
-        <select
-          value={currentFilters.site}
-          onChange={(e) => onFilterChange("site", e.target.value)}
-          className={selectClass}
-        >
-          <option value="">All Sites</option>
-          {sites.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select
-          value={currentFilters.dept}
-          onChange={(e) => onFilterChange("dept", e.target.value)}
-          className={selectClass}
-        >
-          <option value="">All Departments</option>
-          {departments.map((d) => <option key={d} value={d}>{d}</option>)}
-        </select>
-        <select
-          value={currentFilters.role}
-          onChange={(e) => onFilterChange("role", e.target.value)}
-          className={selectClass}
-        >
-          <option value="">All Roles</option>
-          {Object.entries(ROLE_LABEL).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
-      </div>
-
-      <div className="mt-3 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-        <table className="w-full text-sm">
-          <thead className="bg-zinc-50 dark:bg-zinc-900">
-            <tr>
-              <th className="px-4 py-3 text-left font-medium text-zinc-500">Name</th>
-              <th className="px-4 py-3 text-left font-medium text-zinc-500">Code</th>
-              <th className="px-4 py-3 text-left font-medium text-zinc-500">Role</th>
-              <th className="px-4 py-3 text-left font-medium text-zinc-500">Department</th>
-              <th className="px-4 py-3 text-left font-medium text-zinc-500">Hire Date</th>
-              <th className="px-4 py-3 text-left font-medium text-zinc-500">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-950">
-            {employees.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-zinc-400">
-                  No employees match your search.
-                </td>
-              </tr>
-            )}
-            {employees.map((emp) => (
-              <tr
-                key={emp.id}
-                onClick={() => router.push(`/admin/employees/${emp.id}`)}
-                className="cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900/40"
-              >
-                <td className="px-4 py-3 font-medium text-zinc-900 dark:text-white">
-                  {emp.user.name}
-                  {emp.user.email && (
-                    <span className="ml-2 text-xs text-zinc-400">{emp.user.email}</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 font-mono text-xs text-zinc-500">
-                  {emp.employeeCode}
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${emp.customRole ? "bg-indigo-100 text-indigo-700" : ROLE_BADGE[emp.role]}`}>
-                    {emp.customRole ? emp.customRole.name : ROLE_LABEL[emp.role]}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
-                  {emp.department.name}
-                  <span className="ml-1 text-zinc-400">· {emp.site.name}</span>
-                </td>
-                <td className="px-4 py-3 text-zinc-500">
-                  {format(emp.hireDate, "MMM d, yyyy")}
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    !emp.isActive
-                      ? "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
-                      : emp.onLeave
-                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                      : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                  }`}>
-                    {!emp.isActive ? "Inactive" : emp.onLeave ? "On Leave" : "Active"}
-                  </span>
-                </td>
-              </tr>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2.5">
+        <Toolbar count={total} countLabel="employee">
+          <SearchInput
+            value={searchValue}
+            onValueChange={onSearchChange}
+            placeholder="Name, email or employee code"
+          />
+          <Select
+            aria-label="Site"
+            value={currentFilters.site}
+            onChange={(e) => onFilterChange("site", e.target.value)}
+          >
+            <option value="">All sites</option>
+            {sites.map((s) => (
+              <option key={s} value={s}>{s}</option>
             ))}
-          </tbody>
-        </table>
+          </Select>
+          <Select
+            aria-label="Department"
+            value={currentFilters.dept}
+            onChange={(e) => onFilterChange("dept", e.target.value)}
+          >
+            <option value="">All departments</option>
+            {departments.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </Select>
+          <Select
+            aria-label="Role"
+            value={currentFilters.role}
+            onChange={(e) => onFilterChange("role", e.target.value)}
+          >
+            <option value="">All roles</option>
+            {Object.entries(ROLE_LABEL).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </Select>
+        </Toolbar>
+
+        <FilterBar clearHref={isFiltered ? "/admin/employees" : undefined}>
+          {currentFilters.site
+            ? <FilterChip key="site" label="Site" value={currentFilters.site} clearHref={clearOne("site")} />
+            : null}
+          {currentFilters.dept
+            ? <FilterChip key="dept" label="Department" value={currentFilters.dept} clearHref={clearOne("dept")} />
+            : null}
+          {currentFilters.role
+            ? <FilterChip
+                key="role"
+                label="Role"
+                value={ROLE_LABEL[currentFilters.role] ?? currentFilters.role}
+                clearHref={clearOne("role")}
+              />
+            : null}
+          {currentFilters.q
+            ? <FilterChip key="q" label="Search" value={currentFilters.q} clearHref={clearOne("q")} />
+            : null}
+        </FilterBar>
       </div>
 
-      <div className="mt-3 flex items-center justify-between text-xs text-zinc-500">
-        <span>
-          {total.toLocaleString()} employees
-          {totalPages > 1 && ` · page ${page + 1} of ${totalPages}`}
-        </span>
-        {totalPages > 1 && (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => navigate({ page: 0 })}
-              disabled={page === 0}
-              className="rounded px-2 py-1 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
-            >«</button>
-            <button
-              onClick={() => navigate({ page: page - 1 })}
-              disabled={page === 0}
-              className="rounded px-2 py-1 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
-            >‹ Prev</button>
-            <button
-              onClick={() => navigate({ page: page + 1 })}
-              disabled={page >= totalPages - 1}
-              className="rounded px-2 py-1 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
-            >Next ›</button>
-            <button
-              onClick={() => navigate({ page: totalPages - 1 })}
-              disabled={page >= totalPages - 1}
-              className="rounded px-2 py-1 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
-            >»</button>
-          </div>
+      <Card padding={0}>
+        {employees.length === 0 ? (
+          <EmptyState
+            icon={<Users className="h-8 w-8" />}
+            title={isFiltered ? "No employees match these filters" : "No employees"}
+            body={
+              isFiltered
+                ? "Try a wider search, or clear the site, department and role filters."
+                : undefined
+            }
+            action={
+              isFiltered ? (
+                <Button
+                  size="sm"
+                  hierarchy="secondary"
+                  onClick={() => router.push("/admin/employees")}
+                >
+                  Clear filters
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : (
+          <>
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Employee</TH>
+                  <TH>Employee ID</TH>
+                  <TH>Department</TH>
+                  <TH>Shift</TH>
+                  <TH>Role</TH>
+                  <TH>Status</TH>
+                  <TH align="right" />
+                </TR>
+              </THead>
+              <TBody>
+                {employees.map((emp) => {
+                  const shift = emp.shiftId ? shiftById.get(emp.shiftId) : undefined;
+                  const href = `/admin/employees/${emp.id}`;
+                  return (
+                    <TR key={emp.id} onClick={() => router.push(href)}>
+                      <TD>
+                        <span className="flex flex-col">
+                          <span style={{ fontWeight: "var(--weight-medium)", whiteSpace: "nowrap" }}>
+                            {emp.user.name}
+                          </span>
+                          {emp.user.email && (
+                            <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                              {emp.user.email}
+                            </span>
+                          )}
+                        </span>
+                      </TD>
+                      <TD
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          font: "var(--type-body2)",
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        {emp.employeeCode}
+                      </TD>
+                      <TD style={{ color: "var(--text-secondary)" }}>
+                        {emp.department.name}
+                        <span style={{ color: "var(--text-tertiary)" }}> · {emp.site.name}</span>
+                      </TD>
+                      <TD style={{ color: "var(--text-secondary)" }}>
+                        {shift ? (
+                          <>
+                            {shift.name}
+                            {/* 24-hour, as the shift itself is stored and as the
+                                shift editor shows it — a night shift written
+                                "10:00 PM" in one screen and "22:00" in the next
+                                is how the wrong one gets assigned. */}
+                            <span className="tabular" style={{ color: "var(--text-tertiary)" }}>
+                              {" "}({shift.startTime})
+                            </span>
+                          </>
+                        ) : emp.shiftId ? (
+                          // The lookup only carries active shifts, so an
+                          // employee left on a retired one has to say that
+                          // rather than read as unscheduled.
+                          <span style={{ color: "var(--text-tertiary)" }}>Retired shift</span>
+                        ) : (
+                          <span style={{ color: "var(--text-tertiary)" }}>—</span>
+                        )}
+                      </TD>
+                      <TD style={{ color: "var(--text-secondary)" }}>
+                        {emp.customRole ? emp.customRole.name : ROLE_LABEL[emp.role] ?? emp.role}
+                      </TD>
+                      <TD>
+                        {!emp.isActive ? (
+                          // statusTone has no employment branch: it would answer
+                          // "warning" here, and an amber pill on someone who left
+                          // in 2023 reads as something to action. The design puts
+                          // Terminated and Inactive in neutral, which is Badge's
+                          // own default — no local map either way.
+                          <Badge size="sm">Inactive</Badge>
+                        ) : emp.onLeave ? (
+                          <Badge tone="warning" size="sm" dot>On Leave</Badge>
+                        ) : (
+                          <Badge tone={statusTone("ACTIVE")} size="sm" dot>Active</Badge>
+                        )}
+                      </TD>
+                      <TD align="right">
+                        {/* An anchor, not the row handler, so middle-click and
+                            "open in new tab" work on a list HR walks down.
+                            The click must stop here: the row's own handler sits
+                            on the <tr>, and without this a ctrl-click opens the
+                            record in a new tab *and* navigates the tab you were
+                            reading away from the filtered list. */}
+                        <span
+                          className="inline-flex"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <LinkButton href={href} hierarchy="secondary" size="sm">
+                            Open
+                          </LinkButton>
+                        </span>
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+
+            <div
+              className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5"
+              style={{
+                borderTop: "1px solid var(--stroke-divider)",
+                font: "var(--type-body2)",
+                color: "var(--text-secondary)",
+              }}
+            >
+              <span className="tabular">
+                {shown === total
+                  ? `${total.toLocaleString()} ${total === 1 ? "employee" : "employees"}`
+                  : `Showing ${firstRow.toLocaleString()}–${lastRow.toLocaleString()} of ${total.toLocaleString()} employees`}
+              </span>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <Button size="sm" hierarchy="tertiary" onClick={() => navigate({ page: 0 })} disabled={page === 0}>
+                    «
+                  </Button>
+                  <Button size="sm" hierarchy="tertiary" onClick={() => navigate({ page: page - 1 })} disabled={page === 0}>
+                    ‹ Prev
+                  </Button>
+                  <span className="tabular px-1" style={{ color: "var(--text-tertiary)" }}>
+                    Page {page + 1} of {totalPages}
+                  </span>
+                  <Button
+                    size="sm"
+                    hierarchy="tertiary"
+                    onClick={() => navigate({ page: page + 1 })}
+                    disabled={page >= totalPages - 1}
+                  >
+                    Next ›
+                  </Button>
+                  <Button
+                    size="sm"
+                    hierarchy="tertiary"
+                    onClick={() => navigate({ page: totalPages - 1 })}
+                    disabled={page >= totalPages - 1}
+                  >
+                    »
+                  </Button>
+                </div>
+              )}
+            </div>
+          </>
         )}
-      </div>
-    </>
+      </Card>
+    </div>
   );
 }

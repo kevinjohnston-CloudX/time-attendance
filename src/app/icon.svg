@@ -1,0 +1,14 @@
+<!--
+  The CloudTime app icon, so the browser tab matches the tile on the tablet.
+  Literal brand values rather than tokens: a favicon is rendered outside the
+  page, where the stylesheet's custom properties do not reach. The dial paths,
+  the 54/88 glyph and the quarter-tile radius are the handoff's.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="25" fill="#0860AA" />
+  <g transform="translate(19.32 19.32) scale(0.6136)" fill="none" stroke-linecap="round">
+    <circle cx="50" cy="50" r="34" stroke="#fff" stroke-width="7" />
+    <path d="M50 50 V28" stroke="#fff" stroke-width="7" />
+    <path d="M50 50 H70" stroke="#F58220" stroke-width="7" />
+  </g>
+</svg>

@@ -2,19 +2,32 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { getEffectiveRole } from "@/lib/rbac/check-permission";
-import { format } from "date-fns";
-import { FileText, Download } from "lucide-react";
-import Link from "next/link";
 import {
   getAllDocuments,
   getMyDocuments,
   getEmployeesForDocumentUpload,
 } from "@/actions/document.actions";
 import { UploadDocumentForm } from "@/components/documents/upload-document-form";
-import { AdminDocumentsTable } from "@/components/documents/admin-documents-table";
-import { mimeToLabel } from "@/lib/validators/document.schema";
+import { DocumentsList } from "@/components/documents/documents-list";
+import { PageHeader } from "@/components/ui";
 
-export default async function DocumentsPage() {
+/**
+ * Documents, as the portal design's list screen.
+ *
+ * <p>Two audiences, one screen. What you can see is still decided entirely by
+ * the permission check below — DOCUMENT_VIEW_ANY loads the tenant's files,
+ * DOCUMENT_VIEW_OWN loads yours — and the filters narrow what that query
+ * already returned. They never widen it.
+ *
+ * <p>Search, type and year live in the query string rather than in the table.
+ * A narrowed list of documents is something one person sends another, and the
+ * old client-side filter reset itself on every upload.
+ */
+export default async function DocumentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; type?: string; year?: string; page?: string }>;
+}) {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
@@ -24,6 +37,13 @@ export default async function DocumentsPage() {
   const canUpload = hasPermission(effectiveRole, "DOCUMENT_UPLOAD");
 
   if (!canViewAny && !canViewOwn) redirect("/dashboard");
+
+  const sp = (await searchParams) ?? {};
+  const q = sp.q ?? "";
+  const type = sp.type ?? "";
+  const year = sp.year ?? "";
+  const requestedPage = Number(sp.page ?? "1");
+  const page = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
 
   if (canViewAny) {
     const [docsResult, employeesResult] = await Promise.all([
@@ -37,22 +57,33 @@ export default async function DocumentsPage() {
       ? employeesResult.data.map((e) => ({ id: e.id, user: { name: e.user.name } }))
       : [];
 
-    return (
-      <div>
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Documents</h1>
-          {canUpload && employees.length > 0 && (
-            <UploadDocumentForm employees={employees} />
-          )}
-        </div>
+    // How many people have a file, not how many people exist: the subtitle
+    // used to count active employees, which reads as "everyone has documents"
+    // on a tenant where six do.
+    const withFiles = new Set(docs.map((d) => d.employeeId)).size;
 
-        <div className="mt-6">
-          {docs.length === 0 ? (
-            <EmptyState message="No documents uploaded yet." />
-          ) : (
-            <AdminDocumentsTable docs={docs} canDelete={canUpload} />
-          )}
-        </div>
+    return (
+      <div className="flex flex-col gap-4">
+        <PageHeader
+          title="Documents"
+          subtitle={`Pay statements, policies and signed forms · on file for ${withFiles} ${withFiles === 1 ? "employee" : "employees"}`}
+          actions={
+            canUpload && employees.length > 0 ? <UploadDocumentForm employees={employees} /> : undefined
+          }
+        />
+
+        <DocumentsList
+          docs={docs}
+          q={q}
+          type={type}
+          year={year}
+          page={page}
+          showEmployee
+          canDelete={canUpload}
+          searchPlaceholder="Employee or document name"
+          emptyTitle="No documents yet"
+          emptyBody="Pay statements, policies and signed forms uploaded here appear on the employee's own Documents page."
+        />
       </div>
     );
   }
@@ -65,75 +96,19 @@ export default async function DocumentsPage() {
   const docs = docsResult.data;
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">My Documents</h1>
+    <div className="flex flex-col gap-4">
+      <PageHeader title="My Documents" subtitle="Pay statements, policies and signed forms" />
 
-      <div className="mt-6">
-        {docs.length === 0 ? (
-          <EmptyState message="No documents have been uploaded for you yet." />
-        ) : (
-          <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-            <table className="w-full text-sm">
-              <thead className="bg-zinc-50 dark:bg-zinc-800/60">
-                <tr>
-                  <Th>Title</Th>
-                  <Th>Type</Th>
-                  <Th>Uploaded</Th>
-                  <Th><span className="sr-only">Download</span></Th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-900">
-                {docs.map((doc) => (
-                  <tr key={doc.id}>
-                    <Td>{doc.title}</Td>
-                    <Td>
-                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                        {mimeToLabel(doc.fileType)}
-                      </span>
-                    </Td>
-                    <Td>{format(doc.uploadedAt, "MMM d, yyyy")}</Td>
-                    <Td>
-                      <Link
-                        href={`/api/documents/${doc.id}`}
-                        target="_blank"
-                        className="flex items-center gap-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
-                      >
-                        <Download className="h-4 w-4" />
-                        <span className="text-xs">Download</span>
-                      </Link>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-      {children}
-    </th>
-  );
-}
-
-function Td({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <td className={`px-4 py-3 text-zinc-900 dark:text-zinc-100 ${className ?? ""}`}>
-      {children}
-    </td>
-  );
-}
-
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <FileText className="h-10 w-10 text-zinc-300 dark:text-zinc-700" />
-      <p className="mt-3 text-sm text-zinc-500">{message}</p>
+      <DocumentsList
+        docs={docs}
+        q={q}
+        type={type}
+        year={year}
+        page={page}
+        searchPlaceholder="Document name"
+        emptyTitle="Nothing here yet"
+        emptyBody="No documents have been uploaded for you. Anything HR shares with you will show up on this page."
+      />
     </div>
   );
 }

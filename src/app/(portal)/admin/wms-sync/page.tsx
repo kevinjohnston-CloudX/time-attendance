@@ -1,9 +1,47 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getWmsSyncStatus, type BridgeHealth } from "@/actions/sync.actions";
+import {
+  Badge,
+  Banner,
+  Card,
+  EmptyState,
+  LinkButton,
+  PageHeader,
+  StatCard,
+  Table,
+  THead,
+  TBody,
+  TR,
+  TH,
+  TD,
+  statusTone,
+  type BadgeTone,
+  type BannerTone,
+} from "@/components/ui";
+import { PlugZap } from "lucide-react";
+import { SyncNowButton } from "./SyncNowButton";
 import { format } from "date-fns";
+import type { ReactNode } from "react";
+
+/**
+ * WMS Sync, on the portal design's doc template: the bridge's own state as a
+ * banner, its figures as a key-value row, then the tables.
+ *
+ * <p>The design's Frequency / Scope / On Conflict settings are deliberately
+ * absent — see the report. CloudTime cannot reach the VM at all; every exchange
+ * is started by the bridge, so there is no cadence this page could change. That
+ * is also why the banner leads with the check-in rather than with a last-run
+ * time: from in here, "synced and nothing changed" and "dead since Tuesday"
+ * both look like an empty queue.
+ *
+ * <p>"Sync now" is the one exception, and it is not a contradiction of the
+ * above. It cannot start an exchange either — it puts a job in the queue the
+ * bridge already polls, which removes the wait for the next cron tick but not
+ * the poll itself. Without it, an employee added to a shift in Oracle simply
+ * cannot badge in until the schedule pull comes round.
+ */
 
 export const dynamic = "force-dynamic";
 
@@ -17,27 +55,72 @@ function ago(date: Date | string | null | undefined): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-const DOT: Record<BridgeHealth, string> = {
-  HEALTHY: "bg-emerald-500",
-  SLOW: "bg-amber-500",
-  STALE: "bg-red-500",
-  NEVER: "bg-zinc-300 dark:bg-zinc-600",
+const HEALTH: Record<BridgeHealth, { tone: BannerTone; title: string; note: string }> = {
+  HEALTHY: {
+    tone: "success",
+    title: "Bridge is checking in",
+    note: "Checking in normally.",
+  },
+  SLOW: {
+    tone: "warning",
+    title: "Bridge check-in is overdue",
+    note: "Last check-in is overdue. Jobs are waiting, not failing.",
+  },
+  STALE: {
+    tone: "error",
+    title: "Bridge has stopped checking in",
+    note: "The bridge has not checked in. Nothing is syncing — check the scheduled task on the VM.",
+  },
+  NEVER: {
+    tone: "warning",
+    title: "Bridge has never checked in",
+    note:
+      "This bridge has never checked in. Either it is not installed yet, or BRIDGE_SECRET does not match and it is being refused.",
+  },
 };
 
-const HEALTH_NOTE: Record<BridgeHealth, string> = {
-  HEALTHY: "Checking in normally.",
-  SLOW: "Last check-in is overdue. Jobs are waiting, not failing.",
-  STALE: "The bridge has not checked in. Nothing is syncing — check the scheduled task on the VM.",
-  NEVER:
-    "This bridge has never checked in. Either it is not installed yet, or BRIDGE_SECRET does not match and it is being refused.",
+const RUN_STATUS_LABEL: Record<string, string> = {
+  RUNNING: "Running",
+  SUCCEEDED: "Succeeded",
+  PARTIAL: "Partial",
+  FAILED: "Failed",
 };
 
-const RUN_STATUS_CLASS: Record<string, string> = {
-  SUCCEEDED: "text-emerald-600 dark:text-emerald-400",
-  PARTIAL: "text-amber-600 dark:text-amber-400",
-  FAILED: "text-red-600 dark:text-red-400",
-  RUNNING: "text-zinc-500",
-};
+/**
+ * A sync run's outcome as a pill.
+ *
+ * <p>`statusTone` has no case for SUCCEEDED or RUNNING and would answer warning
+ * for both — amber on a run that worked. Translating those two into the
+ * canonical values the shared helper already knows keeps every pill in the
+ * product coming from one place; a per-screen colour map here is exactly how
+ * this codebase previously ended up with two different greens for "approved".
+ * PARTIAL and FAILED fall through and land on warning and error by themselves.
+ */
+function runTone(status: string | null): BadgeTone {
+  if (!status) return statusTone("DRAFT");
+  if (status === "SUCCEEDED") return statusTone("RESOLVED");
+  if (status === "RUNNING") return statusTone("IN_PROGRESS");
+  return statusTone(status);
+}
+
+/** One figure in the doc template's key-value row. */
+function Kv({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span className="wms-overline">{label}</span>
+      <span
+        className="tabular"
+        style={{
+          font: "var(--weight-semibold) 16px/22px var(--font-sans)",
+          color: "var(--text-primary)",
+          overflowWrap: "anywhere",
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
 
 export default async function WmsSyncPage() {
   const session = await auth();
@@ -48,184 +131,203 @@ export default async function WmsSyncPage() {
   if (!result.success) redirect("/admin");
   const s = result.data;
 
+  const health = HEALTH[s.health];
+
   return (
-    <div>
-      <Link href="/admin" className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white">
-        ← Admin
-      </Link>
-      <div className="mt-1 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">WMS Sync</h1>
-        <p className="text-sm text-zinc-400">{s.agentName}</p>
-      </div>
-      <p className="mt-2 max-w-3xl text-sm text-zinc-500 dark:text-zinc-400">
-        Employee, schedule and gate data is read out of the WMS Oracle database by a small service
-        running on the warehouse VM. It calls out to CloudTime on its own cadence — nothing here
-        can reach into that network — so a job nobody collects waits rather than failing.
-      </p>
-
-      {/* Bridge health */}
-      <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-          <span className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-200">
-            <span className={`h-2.5 w-2.5 rounded-full ${DOT[s.health]}`} />
-            Bridge
-          </span>
-          <span className="text-zinc-500 dark:text-zinc-400">Last check-in: {ago(s.lastSeenAt)}</span>
-          <span className="text-zinc-500 dark:text-zinc-400">Waiting: {s.pending}</span>
-          <span className="text-zinc-500 dark:text-zinc-400">Answered (7 days): {s.done7d}</span>
-          {s.failed7d > 0 && (
-            <span className="text-red-600 dark:text-red-400">Failed (7 days): {s.failed7d}</span>
-          )}
-          {s.version && <span className="text-zinc-400">v{s.version}</span>}
-        </div>
-        <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">{HEALTH_NOTE[s.health]}</p>
-      </div>
-
-      {/* Per-leg status */}
-      <h2 className="mt-8 text-sm font-semibold text-zinc-900 dark:text-white">Last run of each leg</h2>
-      <p className="mt-1 text-xs text-zinc-400">
-        Shown separately because they fail independently — schedules can stop flowing while the
-        roster keeps arriving.
-      </p>
-      <div className="mt-3 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-        <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500 dark:bg-zinc-800/50">
-            <tr>
-              <th className="px-4 py-2 font-medium">Leg</th>
-              <th className="px-4 py-2 font-medium">Last run</th>
-              <th className="px-4 py-2 font-medium">Status</th>
-              <th className="px-4 py-2 text-right font-medium">Received</th>
-              <th className="px-4 py-2 text-right font-medium">Applied</th>
-              <th className="px-4 py-2 text-right font-medium">Skipped</th>
-              <th className="px-4 py-2 text-right font-medium">Rejected</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {s.kinds.map((k) => (
-              <tr key={k.kind}>
-                <td className="px-4 py-2">
-                  <span className="font-medium text-zinc-900 dark:text-white">{k.label}</span>
-                  <span className="ml-2 text-xs text-zinc-400">{k.cadence}</span>
-                </td>
-                <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">{ago(k.lastRunAt)}</td>
-                <td className={`px-4 py-2 ${k.status ? RUN_STATUS_CLASS[k.status] ?? "" : "text-zinc-400"}`}>
-                  {k.status ?? "never run"}
-                </td>
-                <td className="px-4 py-2 text-right tabular-nums text-zinc-600 dark:text-zinc-300">{k.received}</td>
-                <td className="px-4 py-2 text-right tabular-nums text-zinc-600 dark:text-zinc-300">{k.applied}</td>
-                <td className="px-4 py-2 text-right tabular-nums text-zinc-400">{k.skipped}</td>
-                <td className={`px-4 py-2 text-right tabular-nums ${k.rejected > 0 ? "text-amber-600 dark:text-amber-400" : "text-zinc-400"}`}>
-                  {k.rejected}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* The two human queues */}
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
-        <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">{s.candidates}</p>
-          <p className="mt-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Oracle employees with no CloudTime record
-          </p>
-          <p className="mt-1 text-xs text-zinc-400">
-            The sync will not invent these — an employee needs a site, department and rule set, and
-            the rule set is what computes overtime. Until someone creates them, their badge is
-            refused at the kiosk.
-          </p>
-        </div>
-        <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">{s.conflicts}</p>
-          <p className="mt-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Schedule days awaiting a decision
-          </p>
-          <p className="mt-1 text-xs text-zinc-400">
-            Both CloudTime and Oracle changed the same day. Nothing was overwritten and these rows
-            have stopped syncing until someone says which one wins.
-          </p>
-        </div>
-      </div>
-
-      {/* Who is actually being hurt */}
-      {s.topCandidates.length > 0 && (
-        <>
-          <h2 className="mt-8 text-sm font-semibold text-zinc-900 dark:text-white">
-            Missing employees, by refused scans
-          </h2>
-          <div className="mt-3 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-            <table className="w-full text-sm">
-              <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500 dark:bg-zinc-800/50">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Oracle empId</th>
-                  <th className="px-4 py-2 font-medium">Name</th>
-                  <th className="px-4 py-2 font-medium">Barcode</th>
-                  <th className="px-4 py-2 font-medium">Department</th>
-                  <th className="px-4 py-2 text-right font-medium">Refused scans</th>
-                  <th className="px-4 py-2 font-medium">First seen</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                {s.topCandidates.map((c) => (
-                  <tr key={c.oracleEmpId}>
-                    <td className="px-4 py-2 font-mono text-zinc-900 dark:text-white">{c.oracleEmpId}</td>
-                    <td className="px-4 py-2 text-zinc-600 dark:text-zinc-300">{c.name ?? "—"}</td>
-                    <td className="px-4 py-2 font-mono text-zinc-400">{c.barcode ?? "—"}</td>
-                    <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">{c.departmentName ?? "—"}</td>
-                    <td className={`px-4 py-2 text-right tabular-nums ${c.failedScans > 0 ? "text-red-600 dark:text-red-400" : "text-zinc-400"}`}>
-                      {c.failedScans}
-                    </td>
-                    <td className="px-4 py-2 text-zinc-400">{format(c.firstSeenAt, "d MMM")}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title="WMS Sync"
+        subtitle="Roster, schedules and gate baselines, read out of the warehouse Oracle database"
+        actions={
+          <div className="flex items-center gap-3">
+            <SyncNowButton />
+            <LinkButton href="/admin" hierarchy="tertiary">
+              ← Administration
+            </LinkButton>
           </div>
-        </>
-      )}
+        }
+      />
 
-      {/* Run log */}
-      <h2 className="mt-8 text-sm font-semibold text-zinc-900 dark:text-white">Recent runs</h2>
-      <div className="mt-3 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-        <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500 dark:bg-zinc-800/50">
-            <tr>
-              <th className="px-4 py-2 font-medium">Started</th>
-              <th className="px-4 py-2 font-medium">Leg</th>
-              <th className="px-4 py-2 font-medium">Status</th>
-              <th className="px-4 py-2 text-right font-medium">Received</th>
-              <th className="px-4 py-2 text-right font-medium">Applied</th>
-              <th className="px-4 py-2 text-right font-medium">Rejected</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {s.recentRuns.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-sm text-zinc-400">
-                  No runs yet. The bridge has not answered a job.
-                </td>
-              </tr>
-            )}
-            {s.recentRuns.map((r) => (
-              <tr key={r.id}>
-                <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">
-                  {format(r.startedAt, "d MMM HH:mm")}
-                </td>
-                <td className="px-4 py-2 text-zinc-600 dark:text-zinc-300">{r.kind}</td>
-                <td className={`px-4 py-2 ${RUN_STATUS_CLASS[r.status] ?? ""}`}>
-                  {r.status}
-                  {r.error && <span className="ml-2 text-xs text-red-500">{r.error.slice(0, 80)}</span>}
-                </td>
-                <td className="px-4 py-2 text-right tabular-nums text-zinc-600 dark:text-zinc-300">{r.received}</td>
-                <td className="px-4 py-2 text-right tabular-nums text-zinc-600 dark:text-zinc-300">{r.applied}</td>
-                <td className={`px-4 py-2 text-right tabular-nums ${r.rejected > 0 ? "text-amber-600 dark:text-amber-400" : "text-zinc-400"}`}>
-                  {r.rejected}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="flex flex-col gap-4">
+        <Banner
+          tone={health.tone}
+          title={health.title}
+          body={health.note}
+          meta="A small service on the warehouse VM does the reading and calls out to CloudTime on its own cadence — nothing here can reach into that network, so a job nobody collects waits rather than failing."
+        />
+
+        <Card title="Bridge" subtitle={s.agentName}>
+          <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr))]">
+            <Kv label="Last check-in" value={ago(s.lastSeenAt)} />
+            <Kv label="Waiting" value={s.pending} />
+            <Kv label="Answered (7 days)" value={s.done7d} />
+            <Kv label="Failed (7 days)" value={s.failed7d} />
+            <Kv label="Agent version" value={s.version ? `v${s.version}` : "unknown"} />
+          </div>
+        </Card>
+
+        {/* The two queues a person is expected to work. Coloured only when
+            there is something in them — a permanently amber zero is a number
+            people stop reading. */}
+        <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))]">
+          <StatCard
+            label="Oracle employees with no CloudTime record"
+            value={s.candidates}
+            tone={s.candidates > 0 ? "warning" : "default"}
+            sub="The sync will not invent these — an employee needs a site, department and rule set, and the rule set is what computes overtime. Until someone creates them, their badge is refused at the kiosk."
+          />
+          <StatCard
+            label="Schedule days awaiting a decision"
+            value={s.conflicts}
+            tone={s.conflicts > 0 ? "warning" : "default"}
+            sub="Both CloudTime and Oracle changed the same day. Nothing was overwritten and these rows have stopped syncing until someone says which one wins."
+          />
+        </div>
+
+        <Card
+          title="Last run of each leg"
+          subtitle="Shown separately because they fail independently — schedules can stop flowing while the roster keeps arriving."
+          padding={0}
+        >
+          <Table>
+            <THead>
+              <TR>
+                <TH>Leg</TH>
+                <TH>Cadence</TH>
+                <TH>Last run</TH>
+                <TH>Status</TH>
+                <TH numeric>Received</TH>
+                <TH numeric>Applied</TH>
+                <TH numeric>Skipped</TH>
+                <TH numeric>Rejected</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {s.kinds.map((k) => (
+                <TR key={k.kind}>
+                  <TD style={{ fontWeight: "var(--weight-medium)" }}>{k.label}</TD>
+                  <TD style={{ color: "var(--text-tertiary)" }}>{k.cadence}</TD>
+                  <TD style={{ color: "var(--text-secondary)" }}>{ago(k.lastRunAt)}</TD>
+                  <TD>
+                    <Badge tone={runTone(k.status)} size="sm">
+                      {k.status ? RUN_STATUS_LABEL[k.status] ?? k.status : "Never run"}
+                    </Badge>
+                  </TD>
+                  <TD numeric style={{ color: "var(--text-secondary)" }}>{k.received}</TD>
+                  <TD numeric style={{ color: "var(--text-secondary)" }}>{k.applied}</TD>
+                  <TD numeric style={{ color: "var(--text-tertiary)" }}>{k.skipped}</TD>
+                  <TD
+                    numeric
+                    style={{ color: k.rejected > 0 ? "var(--text-warning)" : "var(--text-tertiary)" }}
+                  >
+                    {k.rejected}
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        </Card>
+
+        {s.topCandidates.length > 0 && (
+          <Card
+            title="Missing employees, by refused scans"
+            subtitle="Oracle knows these badges and CloudTime does not, so every scan they make is turned away."
+            padding={0}
+          >
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Oracle empId</TH>
+                  <TH>Name</TH>
+                  <TH>Barcode</TH>
+                  <TH>Department</TH>
+                  <TH numeric>Refused scans</TH>
+                  <TH>First seen</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {s.topCandidates.map((c) => (
+                  <TR key={c.oracleEmpId}>
+                    <TD style={{ fontFamily: "var(--font-mono)" }}>{c.oracleEmpId}</TD>
+                    <TD style={{ color: "var(--text-secondary)" }}>{c.name ?? "—"}</TD>
+                    <TD style={{ fontFamily: "var(--font-mono)", color: "var(--text-tertiary)" }}>
+                      {c.barcode ?? "—"}
+                    </TD>
+                    <TD style={{ color: "var(--text-tertiary)" }}>{c.departmentName ?? "—"}</TD>
+                    <TD
+                      numeric
+                      style={{
+                        color: c.failedScans > 0 ? "var(--text-error)" : "var(--text-tertiary)",
+                      }}
+                    >
+                      {c.failedScans}
+                    </TD>
+                    <TD style={{ color: "var(--text-tertiary)" }}>{format(c.firstSeenAt, "d MMM")}</TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </Card>
+        )}
+
+        <Card title="Recent runs" subtitle="The last ten, newest first" padding={0}>
+          {s.recentRuns.length === 0 ? (
+            <EmptyState
+              icon={<PlugZap className="h-7 w-7" />}
+              title="No runs yet"
+              body="The bridge has not answered a job. Until it does there is nothing to report — which is not the same as nothing having changed in Oracle."
+            />
+          ) : (
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Started</TH>
+                  <TH>Leg</TH>
+                  <TH>Result</TH>
+                  <TH numeric>Received</TH>
+                  <TH numeric>Applied</TH>
+                  <TH numeric>Rejected</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {s.recentRuns.map((r) => (
+                  <TR key={r.id}>
+                    <TD style={{ color: "var(--text-secondary)", fontVariantNumeric: "tabular-nums" }}>
+                      {format(r.startedAt, "d MMM HH:mm")}
+                    </TD>
+                    <TD style={{ color: "var(--text-secondary)" }}>{r.kind}</TD>
+                    <TD>
+                      <span className="inline-flex items-center gap-2">
+                        <Badge tone={runTone(r.status)} size="sm">
+                          {RUN_STATUS_LABEL[r.status] ?? r.status}
+                        </Badge>
+                        {/* Truncated, and the full text is on the title: one
+                            Oracle stack trace would otherwise set the width of
+                            every column in this table. */}
+                        {r.error && (
+                          <span
+                            title={r.error}
+                            style={{ font: "var(--type-body2)", color: "var(--text-error)" }}
+                          >
+                            {r.error.slice(0, 80)}
+                          </span>
+                        )}
+                      </span>
+                    </TD>
+                    <TD numeric style={{ color: "var(--text-secondary)" }}>{r.received}</TD>
+                    <TD numeric style={{ color: "var(--text-secondary)" }}>{r.applied}</TD>
+                    <TD
+                      numeric
+                      style={{ color: r.rejected > 0 ? "var(--text-warning)" : "var(--text-tertiary)" }}
+                    >
+                      {r.rejected}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          )}
+        </Card>
       </div>
     </div>
   );

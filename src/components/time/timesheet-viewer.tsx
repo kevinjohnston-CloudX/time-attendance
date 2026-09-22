@@ -1,29 +1,46 @@
 "use client";
 
-import { useState, useRef, useEffect, Fragment } from "react";
+import { Fragment, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
-import {
-  format,
-  eachDayOfInterval,
-  isToday,
-  parseISO,
-  addDays,
-} from "date-fns";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Calendar,
-  CalendarCheck,
-} from "lucide-react";
+import { addDays, eachDayOfInterval, format, isToday, parseISO } from "date-fns";
+import { CalendarX2, ChevronRight } from "lucide-react";
 
+import {
+  Badge,
+  Banner,
+  Card,
+  EmptyState,
+  SegmentedControl,
+  Select,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+  Table,
+  exceptionTone,
+  type BannerTone,
+} from "@/components/ui";
 import { parseUtcDate } from "@/lib/utils/date";
-import { formatMinutes, minutesToHoursDecimal } from "@/lib/utils/duration";
-import { TIMESHEET_STATUS_LABEL, PUNCH_TYPE_LABEL } from "@/lib/state-machines/labels";
+import { minutesToHoursDecimal } from "@/lib/utils/duration";
+import { PUNCH_TYPE_LABEL, TIMESHEET_STATUS_LABEL } from "@/lib/state-machines/labels";
 import { SegmentTimeline } from "@/components/time/segment-timeline";
-import { SubmitTimesheetButton } from "@/components/time/submit-timesheet-button";
 import type { WorkSegment } from "@prisma/client";
 
-const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+/**
+ * The timecard grid, as the portal design draws Template C.
+ *
+ * <p>Two header rows and three column groups: what was punched, what the rules
+ * engine made of it, and what it was booked against. The vertical rules between
+ * the groups are the point of the layout — a clock time and an hours figure are
+ * different kinds of number, and run together in one wide row they read as one.
+ *
+ * <p>The punch cells are the design's `.ta-cell`, in its disabled state. An
+ * employee cannot edit their own punches in this product — corrections go
+ * through a missed-punch request their supervisor approves — so a live input
+ * here would be a field that silently discards what you type. The cells keep
+ * the grid's alignment and let clicks through to the row underneath.
+ */
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -44,6 +61,7 @@ export interface TimesheetListItem {
 export interface TimesheetDetailData {
   timesheetId: string;
   status: string;
+  rejectionNote: string | null;
   payPeriod: PayPeriodOption;
   punches: { id: string; punchType: string; roundedTime: string }[];
   segments: {
@@ -75,48 +93,289 @@ export interface TimesheetViewerProps {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const STATUS_BADGE: Record<string, string> = {
-  OPEN:             "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
-  SUBMITTED:        "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  SUP_APPROVED:     "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-  PAYROLL_APPROVED: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-  LOCKED:           "bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400",
-};
-
-const SUMMARY_BUCKETS = [
-  { key: "REG",         label: "Regular",     color: "text-zinc-900 dark:text-white" },
-  { key: "OT",          label: "Overtime",    color: "text-amber-600 dark:text-amber-400" },
-  { key: "DT",          label: "Double Time", color: "text-red-600 dark:text-red-400" },
-  { key: "PTO",         label: "PTO",         color: "text-blue-600 dark:text-blue-400" },
-  { key: "SICK",        label: "Sick",        color: "text-purple-600 dark:text-purple-400" },
-  { key: "HOLIDAY",     label: "Holiday",     color: "text-green-600 dark:text-green-400" },
-  { key: "FMLA",        label: "FMLA",        color: "text-zinc-500 dark:text-zinc-400" },
-  { key: "BEREAVEMENT", label: "Bereavement", color: "text-zinc-500 dark:text-zinc-400" },
-  { key: "JURY_DUTY",   label: "Jury Duty",   color: "text-zinc-500 dark:text-zinc-400" },
-  { key: "MILITARY",    label: "Military",    color: "text-zinc-500 dark:text-zinc-400" },
-  { key: "UNPAID",      label: "Unpaid",      color: "text-zinc-400 dark:text-zinc-500" },
+/** Display order and names for the pay buckets the summary can show. */
+const BUCKET_ORDER = [
+  "REG", "OT", "DT", "PTO", "SICK", "HOLIDAY",
+  "FMLA", "BEREAVEMENT", "JURY_DUTY", "MILITARY", "UNPAID",
 ];
 
-// ── Summary Row Helper ───────────────────────────────────────────────────────
+const BUCKET_LABEL: Record<string, string> = {
+  REG:         "Regular",
+  OT:          "Overtime",
+  DT:          "Double Time",
+  PTO:         "PTO",
+  SICK:        "Sick",
+  HOLIDAY:     "Holiday",
+  FMLA:        "FMLA",
+  BEREAVEMENT: "Bereavement",
+  JURY_DUTY:   "Jury Duty",
+  MILITARY:    "Military",
+  UNPAID:      "Unpaid",
+};
 
-function SummaryRow({
-  label, reg, ot, dt, total, isBold, className,
-}: {
-  label: string; reg: number; ot: number; dt: number; total: number;
-  isBold?: boolean; className?: string;
-}) {
-  const fmt = minutesToHoursDecimal;
-  const base = isBold ? "border-t-2 border-zinc-300 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900" : "";
-  const text = isBold ? "font-bold text-zinc-900 dark:text-white" : className ?? "text-zinc-700 dark:text-zinc-300";
-  return (
-    <tr className={base}>
-      <td className={`px-4 py-1 ${text}`}>{label}</td>
-      <td className={`px-3 py-1 text-right tabular-nums ${text}`}>{reg > 0 ? fmt(reg) : "—"}</td>
-      <td className={`px-3 py-1 text-right tabular-nums ${ot > 0 ? "font-semibold text-amber-600 dark:text-amber-400" : text}`}>{ot > 0 ? fmt(ot) : "—"}</td>
-      <td className={`px-3 py-1 text-right tabular-nums ${dt > 0 ? "font-semibold text-red-600 dark:text-red-400" : text}`}>{dt > 0 ? fmt(dt) : "—"}</td>
-      <td className={`px-3 py-1 text-right tabular-nums ${isBold ? text : "font-semibold text-zinc-900 dark:text-white"}`}>{total > 0 ? fmt(total) : "—"}</td>
-    </tr>
-  );
+const GROUP_ITEMS = [
+  { value: "total", label: "Total" },
+  { value: "week", label: "Week" },
+];
+
+/** The rule that separates the three column groups. */
+const RULE = "1px solid var(--stroke-secondary)";
+
+const GROUP_HEAD: CSSProperties = {
+  font: "var(--type-overline)",
+  textTransform: "uppercase",
+  letterSpacing: "0.05em",
+  color: "var(--text-tertiary)",
+  textAlign: "center",
+  padding: "6px 4px 0",
+  borderBottom: 0,
+};
+
+const COL_HEAD: CSSProperties = {
+  font: "var(--type-overline)",
+  textTransform: "uppercase",
+  letterSpacing: "0.05em",
+  color: "var(--text-secondary)",
+  padding: "8px 12px",
+  borderBottom: RULE,
+  whiteSpace: "nowrap",
+};
+
+const HOURS_CELL: CSSProperties = {
+  padding: "4px 12px",
+  textAlign: "right",
+  font: "var(--type-body1)",
+  fontVariantNumeric: "tabular-nums",
+  whiteSpace: "nowrap",
+};
+
+/** Eleven columns: date, four punches, four hour figures, pay code, reason. */
+const COLUMN_COUNT = 11;
+
+// ── Day model ────────────────────────────────────────────────────────────────
+
+interface DayRow {
+  key: string;
+  date: Date;
+  punchIn: string | null;
+  mealOut: string | null;
+  mealIn: string | null;
+  punchOut: string | null;
+  reg: number;
+  ot: number;
+  dt: number;
+  total: number;
+  payCode: string | null;
+  leaveName: string | null;
+  reason: string | null;
+  isWeekend: boolean;
+  isTodayRow: boolean;
+  isAbsent: boolean;
+  /** Clocked in on a day that is over, never clocked out. */
+  missingOut: boolean;
+  hasActivity: boolean;
+  segments: TimesheetDetailData["segments"];
+  punches: TimesheetDetailData["punches"];
+}
+
+/**
+ * One row per calendar day of the period, whether or not anything happened on
+ * it — a timesheet that only lists the days you worked cannot show the day you
+ * forgot to clock in, which is the day people open this screen to find.
+ */
+function buildDayRows(detail: TimesheetDetailData, todayMidnight: Date): DayRow[] {
+  const days = eachDayOfInterval({
+    start: parseUtcDate(detail.payPeriod.startDate),
+    end: addDays(parseUtcDate(detail.payPeriod.endDate), -1),
+  });
+
+  return days.map((day) => {
+    const dayStr = format(day, "yyyy-MM-dd");
+    const punches = detail.punches.filter(
+      (p) => format(parseISO(p.roundedTime), "yyyy-MM-dd") === dayStr,
+    );
+    const segments = detail.segments.filter(
+      (s) => format(parseUtcDate(s.segmentDate), "yyyy-MM-dd") === dayStr,
+    );
+
+    const buckets: Record<string, number> = {};
+    for (const seg of segments) {
+      const eb = seg.payBucketOverride ?? seg.payBucket;
+      // Holiday credits display under the REG column (pay code identifies them as holiday)
+      const displayBucket = seg.segmentType === "HOLIDAY" ? "REG" : eb;
+      buckets[displayBucket] = (buckets[displayBucket] ?? 0) + seg.durationMinutes;
+    }
+
+    const firstIn = punches.find((p) => p.punchType === "CLOCK_IN");
+    const lastOut = [...punches].reverse().find((p) => p.punchType === "CLOCK_OUT");
+    // roundedTime is always toISOString() output, so the strings sort
+    // chronologically — this picks the meal-in that closes *this* meal rather
+    // than one from an earlier pair.
+    const mealOut = punches.find((p) => p.punchType === "MEAL_START");
+    const mealIn = punches.find(
+      (p) => p.punchType === "MEAL_END" && (!mealOut || p.roundedTime > mealOut.roundedTime),
+    );
+
+    const leaveSegments = segments.filter((s) => s.segmentType === "LEAVE");
+    const workPayCode = segments.find((s) => s.segmentType === "WORK" && s.payCode)?.payCode;
+    const reason = detail.dayReasons.find(
+      (r) => format(parseUtcDate(r.segmentDate), "yyyy-MM-dd") === dayStr,
+    )?.reasonCode;
+
+    const isWeekend = [0, 6].includes(day.getDay());
+    const isTodayRow = isToday(day);
+    const isPast = day < todayMidnight;
+
+    const clock = (p?: { roundedTime: string }) =>
+      p ? format(parseISO(p.roundedTime), "h:mm a") : null;
+
+    return {
+      key: day.toISOString(),
+      date: day,
+      punchIn: clock(firstIn),
+      mealOut: clock(mealOut),
+      mealIn: clock(mealIn),
+      punchOut: clock(lastOut),
+      reg: buckets["REG"] ?? 0,
+      ot: buckets["OT"] ?? 0,
+      dt: buckets["DT"] ?? 0,
+      total: segments.filter((s) => s.isPaid).reduce((a, s) => a + s.durationMinutes, 0),
+      payCode: workPayCode ? `${workPayCode.code} · ${workPayCode.label}` : null,
+      leaveName: leaveSegments[0]?.leaveTypeName ?? (leaveSegments.length > 0 ? "Leave" : null),
+      reason: reason ? `${reason.code} · ${reason.label}` : null,
+      isWeekend,
+      isTodayRow,
+      isAbsent:
+        !isWeekend && !isTodayRow && isPast && punches.length === 0 && segments.length === 0,
+      // Today's open shift is not a missing punch — you have not finished it yet.
+      missingOut: isPast && !isTodayRow && !!firstIn && !lastOut,
+      hasActivity: punches.length > 0 || segments.length > 0,
+      segments,
+      punches,
+    };
+  });
+}
+
+/**
+ * The pay period cut into weeks from its own start day.
+ *
+ * <p>`addDays`, never `+ 6 * 86_400_000`: a period spanning a daylight-saving
+ * change lands the millisecond arithmetic an hour off midnight, and the day on
+ * the seam then falls outside both weeks — a whole day of hours missing from
+ * the summary, twice a year.
+ */
+function buildWeeks(start: Date, end: Date) {
+  const weeks: { key: string; label: string; start: Date; end: Date }[] = [];
+  let wStart = start;
+  while (wStart <= end) {
+    const candidate = addDays(wStart, 6);
+    const wEnd = candidate > end ? end : candidate;
+    weeks.push({
+      key: format(wStart, "yyyy-MM-dd"),
+      label: `${format(wStart, "MMM d")} – ${format(wEnd, "MMM d")}`,
+      start: wStart,
+      end: wEnd,
+    });
+    wStart = addDays(wEnd, 1);
+  }
+  return weeks;
+}
+
+/**
+ * What the banner at the top of the sheet says.
+ *
+ * <p>Ordered by what stops you: a sheet sent back needs reading before
+ * anything else, then a punch that is actually missing, then the rule breaks a
+ * supervisor will ask about, and only then the plain state.
+ */
+function sheetBanner(
+  detail: TimesheetDetailData,
+  missingDays: DayRow[],
+): { tone: BannerTone; title: string; body: string; meta?: string } {
+  const exc = detail.exceptionCount;
+  // The old header carried an exception pill in every state. It rides along as
+  // the banner's meta line rather than inside the body, so it survives the
+  // branches whose body is somebody else's words — and so that a sheet with a
+  // missing punch does not hide the other things it will be sent back for.
+  const meta =
+    exc > 0 ? `${exc} unresolved exception${exc === 1 ? "" : "s"} on this period` : undefined;
+
+  if (detail.rejectionNote && (detail.status === "OPEN" || detail.status === "REJECTED")) {
+    return {
+      tone: "error",
+      title: "Returned by your supervisor",
+      body: detail.rejectionNote,
+      meta,
+    };
+  }
+
+  if (detail.status === "OPEN" && missingDays.length > 0) {
+    const named = missingDays.slice(0, 2).map((d) => format(d.date, "EEEE d MMM")).join(" and ");
+    const rest = missingDays.length > 2 ? ` and ${missingDays.length - 2} more` : "";
+    return {
+      tone: "warning",
+      title: `Missing a clock-out on ${named}${rest}`,
+      body: "Report a missed punch so your supervisor can add it, or the day pays as worked up to your last scan.",
+      meta,
+    };
+  }
+
+  if (detail.status === "OPEN") {
+    return exc > 0
+      ? {
+          tone: "warning",
+          title: `${exc} unresolved exception${exc === 1 ? "" : "s"} on this timesheet`,
+          body: "Your supervisor sees these when they review it. Fix what you can before you submit.",
+        }
+      : {
+          tone: "info",
+          title: "This period is open",
+          body: "Check the hours below and submit the timesheet when you are done.",
+        };
+  }
+
+  if (detail.status === "SUBMITTED") {
+    return {
+      tone: "info",
+      title: "Submitted — waiting on your supervisor",
+      body: "You cannot change it while it is with them; they can send it back for edits.",
+      meta,
+    };
+  }
+
+  if (detail.status === "REJECTED") {
+    return {
+      tone: "error",
+      title: "Returned for edit",
+      body: "Your supervisor sent this timesheet back. Correct it and submit it again.",
+      meta,
+    };
+  }
+
+  if (detail.status === "SUP_APPROVED") {
+    return {
+      tone: "info",
+      title: "Approved by your supervisor",
+      body: "Payroll reviews it next. Nothing else is needed from you.",
+      meta,
+    };
+  }
+
+  if (detail.status === "LOCKED") {
+    return {
+      tone: "info",
+      title: "This period is locked",
+      body: "The hours have gone to payroll. A change now needs an adjustment on a later period.",
+      meta,
+    };
+  }
+
+  return {
+    tone: "success",
+    title: "Approved by payroll",
+    body: "These hours are the ones that were paid.",
+    meta,
+  };
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -128,50 +387,23 @@ export function TimesheetViewer({
 }: TimesheetViewerProps) {
   const router = useRouter();
 
-  // Pay period navigation
-  const sortedTimesheets = [...timesheets].sort(
-    (a, b) =>
-      new Date(a.payPeriod.startDate).getTime() -
-      new Date(b.payPeriod.startDate).getTime()
-  );
-  const currentIndex = sortedTimesheets.findIndex(
-    (ts) => ts.payPeriodId === selectedPayPeriodId
-  );
-  const hasPrev = currentIndex > 0;
-  const hasNext = currentIndex < sortedTimesheets.length - 1;
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
+  const [summaryGroupBy, setSummaryGroupBy] = useState<"total" | "week">("total");
+  const [weekIndex, setWeekIndex] = useState<number | null>(null);
 
   const todayMidnight = new Date();
   todayMidnight.setHours(0, 0, 0, 0);
 
-  const currentPeriodTs = sortedTimesheets.find((ts) => {
-    const s = parseUtcDate(ts.payPeriod.startDate);
-    const e = parseUtcDate(ts.payPeriod.endDate);
-    return s <= todayMidnight && todayMidnight <= e;
-  });
+  // Newest first: the period you want is almost always the one that just
+  // closed or the one that is open.
+  const periodOptions = [...timesheets].sort(
+    (a, b) =>
+      new Date(b.payPeriod.startDate).getTime() - new Date(a.payPeriod.startDate).getTime(),
+  );
 
-  const allMonthKeys = Array.from(new Set(
-    sortedTimesheets.map(ts => format(parseUtcDate(ts.payPeriod.startDate), "yyyy-MM"))
-  )).sort();
-  const monthsWithPeriods = new Set(allMonthKeys);
-  const selectedTs = sortedTimesheets.find(ts => ts.payPeriodId === selectedPayPeriodId);
-  const selectedMonthYear = selectedTs
-    ? format(parseUtcDate(selectedTs.payPeriod.startDate), "yyyy-MM")
-    : null;
-  const visibleTimesheets = selectedMonthYear
-    ? sortedTimesheets.filter(ts =>
-        format(parseUtcDate(ts.payPeriod.startDate), "yyyy-MM") === selectedMonthYear
-      )
-    : sortedTimesheets;
-
-  // Picker state
-  const [showCalendar, setShowCalendar] = useState(false);
-  const [pickerYear, setPickerYear] = useState(() => {
-    const ts = sortedTimesheets.find(t => t.payPeriodId === selectedPayPeriodId);
-    return ts ? parseUtcDate(ts.payPeriod.startDate).getFullYear() : new Date().getFullYear();
-  });
-  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
-  const [summaryGroupBy, setSummaryGroupBy] = useState<"total" | "week">("total");
-  const calendarRef = useRef<HTMLDivElement>(null);
+  function navigate(payPeriodId: string) {
+    router.push(`/time/timesheet?payPeriodId=${payPeriodId}`);
+  }
 
   function toggleDay(key: string) {
     setExpandedDays((prev) => {
@@ -181,590 +413,572 @@ export function TimesheetViewer({
     });
   }
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (calendarRef.current && !calendarRef.current.contains(e.target as Node)) {
-        setShowCalendar(false);
-      }
-    }
-    if (showCalendar) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showCalendar]);
+  const rows = detail ? buildDayRows(detail, todayMidnight) : [];
+  const weeks = detail
+    ? buildWeeks(
+        parseUtcDate(detail.payPeriod.startDate),
+        addDays(parseUtcDate(detail.payPeriod.endDate), -1),
+      )
+    : [];
 
-  function navigate(payPeriodId: string) {
-    router.push(`/time/timesheet?payPeriodId=${payPeriodId}`);
-  }
-
-  function handleMonthSelect(monthIdx: number) {
-    const monthKey = allMonthKeys[monthIdx];
-    const firstTs = sortedTimesheets.find(ts =>
-      format(parseUtcDate(ts.payPeriod.startDate), "yyyy-MM") === monthKey
-    );
-    if (firstTs) navigate(firstTs.payPeriodId);
-    setShowCalendar(false);
-  }
-
-  // Detail computations
-  const days =
-    detail
-      ? eachDayOfInterval({
-          start: parseUtcDate(detail.payPeriod.startDate),
-          end: addDays(parseUtcDate(detail.payPeriod.endDate), -1),
-        })
-      : [];
-
-  function segmentsForDay(day: Date) {
-    return (detail?.segments ?? []).filter(
-      (s) =>
-        format(parseUtcDate(s.segmentDate), "yyyy-MM-dd") ===
-        format(day, "yyyy-MM-dd")
-    );
-  }
-
-  function punchesForDay(day: Date) {
-    return (detail?.punches ?? []).filter(
-      (p) =>
-        format(parseISO(p.roundedTime), "yyyy-MM-dd") ===
-        format(day, "yyyy-MM-dd")
-    );
-  }
-
-  const bucketMap = Object.fromEntries(
-    (detail?.overtimeBuckets ?? []).map((b) => [b.bucket, b.totalMinutes])
+  // Open on the week containing today so the current period lands where the
+  // person is working. The index is clamped rather than keyed to a date, so
+  // switching to a shorter period cannot leave the grid pointing at nothing.
+  const defaultWeek = Math.max(
+    0,
+    weeks.findIndex((w) => todayMidnight >= w.start && todayMidnight <= w.end),
   );
-  const visibleBuckets = SUMMARY_BUCKETS.filter(
-    (b) => b.key === "REG" || (bucketMap[b.key] ?? 0) > 0
+  const activeWeek = Math.min(weekIndex ?? defaultWeek, Math.max(0, weeks.length - 1));
+  const week = weeks[activeWeek];
+
+  const weekRows = week ? rows.filter((r) => r.date >= week.start && r.date <= week.end) : rows;
+  const weekTotals = weekRows.reduce(
+    (acc, r) => ({
+      reg: acc.reg + r.reg,
+      ot: acc.ot + r.ot,
+      dt: acc.dt + r.dt,
+      total: acc.total + r.total,
+    }),
+    { reg: 0, ot: 0, dt: 0, total: 0 },
   );
+
+  const banner = detail ? sheetBanner(detail, rows.filter((r) => r.missingOut)) : null;
+
+  const bucketMap: Record<string, number> = Object.fromEntries(
+    (detail?.overtimeBuckets ?? []).map((b) => [b.bucket, b.totalMinutes]),
+  );
+
+  const periodLabel = detail
+    ? `${format(parseUtcDate(detail.payPeriod.startDate), "MMM d")} – ${format(
+        addDays(parseUtcDate(detail.payPeriod.endDate), -1),
+        "MMM d",
+      )}`
+    : "";
+
+  const summarySub = detail
+    ? `${periodLabel} · ${minutesToHoursDecimal(bucketMap["REG"] ?? 0)} reg · ` +
+      `${minutesToHoursDecimal(bucketMap["OT"] ?? 0)} OT · ` +
+      `${minutesToHoursDecimal(bucketMap["DT"] ?? 0)} DT`
+    : "";
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <>
-    <h1 className="mb-3 text-xl font-bold text-zinc-900 dark:text-white">My Timesheets</h1>
-    <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-      {/* ── Split pane ───────────────────────────────────────────────────── */}
-      <div className="grid h-[calc(100vh-6.5rem)] grid-cols-[260px_1fr]">
+    <div className="flex flex-col gap-4">
+      {banner && (
+        <Banner tone={banner.tone} title={banner.title} body={banner.body} meta={banner.meta} />
+      )}
 
-        {/* ── Left: filters + pay period list ──────────────────────────── */}
-        <div className="flex min-h-0 flex-col border-r-2 border-zinc-300 dark:border-zinc-600">
+      <Card padding={0}>
+        <div
+          className="flex flex-wrap items-center gap-3 px-4 py-3"
+          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+        >
+          <label className="flex w-[240px] flex-none flex-col gap-1.5">
+            <span className="wms-label">Pay Cycle</span>
+            <Select
+              value={selectedPayPeriodId ?? ""}
+              onChange={(e) => navigate(e.target.value)}
+              disabled={periodOptions.length === 0}
+              style={{ width: "100%" }}
+            >
+              {/* Without this, a period id that matches nothing leaves the
+                  select showing the newest period while the panel below shows
+                  no timecard at all. */}
+              {!selectedPayPeriodId && (
+                <option value="">
+                  {periodOptions.length === 0 ? "No pay periods" : "Select a pay period"}
+                </option>
+              )}
+              {periodOptions.map((ts) => {
+                const s = parseUtcDate(ts.payPeriod.startDate);
+                const e = addDays(parseUtcDate(ts.payPeriod.endDate), -1);
+                const status =
+                  (TIMESHEET_STATUS_LABEL as Record<string, string>)[ts.status] ?? ts.status;
+                return (
+                  <option key={ts.payPeriodId} value={ts.payPeriodId}>
+                    {format(s, "MMM d")} – {format(e, "MMM d, yyyy")} · {status} ·{" "}
+                    {minutesToHoursDecimal(ts.totalMinutes)} h
+                  </option>
+                );
+              })}
+            </Select>
+          </label>
 
-          {/* Filter controls */}
-          <div className="relative shrink-0 space-y-1.5 border-b border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-800 dark:bg-zinc-900">
-            {/* Prev / Next + jump-to-current + month picker */}
-            <div className="flex items-center gap-0.5">
-              <button
-                type="button"
-                disabled={!hasPrev}
-                onClick={() => hasPrev && navigate(sortedTimesheets[currentIndex - 1].payPeriodId)}
-                className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-                title="Previous pay period"
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
-              <span className="flex-1 text-center text-xs font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
-                {(() => {
-                  const ts = sortedTimesheets[currentIndex];
-                  if (!ts) return "—";
-                  const s = parseUtcDate(ts.payPeriod.startDate);
-                  const e = addDays(parseUtcDate(ts.payPeriod.endDate), -1);
-                  return `${format(s, "MMM d")} – ${format(e, "MMM d, yyyy")}`;
-                })()}
-              </span>
-              <button
-                type="button"
-                disabled={!hasNext}
-                onClick={() => hasNext && navigate(sortedTimesheets[currentIndex + 1].payPeriodId)}
-                className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-                title="Next pay period"
-              >
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-
-              {/* Jump to current pay period */}
-              <button
-                type="button"
-                onClick={() => currentPeriodTs && navigate(currentPeriodTs.payPeriodId)}
-                disabled={!currentPeriodTs || selectedPayPeriodId === currentPeriodTs.payPeriodId}
-                title="Jump to current pay period"
-                className="rounded p-1.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:cursor-default disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-              >
-                <CalendarCheck className="h-3.5 w-3.5" />
-              </button>
-
-              {/* Month/year picker */}
-              <div className="relative" ref={calendarRef}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!showCalendar && selectedTs) {
-                      setPickerYear(parseUtcDate(selectedTs.payPeriod.startDate).getFullYear());
-                    }
-                    setShowCalendar((v) => !v);
-                  }}
-                  className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-                  title="Pick a month"
-                >
-                  <Calendar className="h-3.5 w-3.5" />
-                </button>
-
-                {showCalendar && (
-                  <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
-                    <div className="mb-2 flex items-center justify-between">
-                      <button
-                        type="button"
-                        onClick={() => setPickerYear((y) => y - 1)}
-                        className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </button>
-                      <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                        {pickerYear}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setPickerYear((y) => y + 1)}
-                        className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-3 gap-1">
-                      {MONTHS.map((m, i) => {
-                        const key = `${pickerYear}-${String(i + 1).padStart(2, "0")}`;
-                        const hasPeriods = monthsWithPeriods.has(key);
-                        const isSelected = key === selectedMonthYear;
-                        return (
-                          <button
-                            key={m}
-                            type="button"
-                            disabled={!hasPeriods}
-                            onClick={() => {
-                              const idx = allMonthKeys.indexOf(key);
-                              if (idx >= 0) handleMonthSelect(idx);
-                            }}
-                            className={`rounded px-1 py-1.5 text-xs font-medium transition-colors ${
-                              isSelected
-                                ? "bg-blue-600 text-white"
-                                : hasPeriods
-                                ? "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700"
-                                : "cursor-default text-zinc-300 dark:text-zinc-600"
-                            }`}
-                          >
-                            {m}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
+          {weeks.length > 1 && (
+            <div className="self-end">
+              <SegmentedControl
+                items={weeks.map((w, i) => ({ value: String(i), label: w.label }))}
+                value={String(activeWeek)}
+                onChange={(v) => setWeekIndex(Number(v))}
+                size="sm"
+                ariaLabel="Week of the pay period"
+              />
             </div>
+          )}
 
-            <p className="text-xs text-zinc-400">
-              {visibleTimesheets.length} pay period{visibleTimesheets.length !== 1 ? "s" : ""}
-            </p>
-          </div>
+          <div className="flex-1" />
 
-          {/* Scrollable list */}
-          <div className="flex-1 overflow-y-auto">
-            {visibleTimesheets.length === 0 && (
-              <p className="p-4 text-center text-sm text-zinc-400">
-                {timesheets.length === 0 ? "No timesheets yet." : "No timesheets for this filter."}
-              </p>
-            )}
-            {[...visibleTimesheets].reverse().map((ts) => {
-              const isSelected = ts.payPeriodId === selectedPayPeriodId;
-              const s = parseUtcDate(ts.payPeriod.startDate);
-              const e = addDays(parseUtcDate(ts.payPeriod.endDate), -1);
-              return (
-                <button
-                  key={ts.payPeriodId}
-                  type="button"
-                  onClick={() => navigate(ts.payPeriodId)}
-                  className={`flex w-full flex-col border-b border-zinc-100 px-3 py-2 text-left transition-colors dark:border-zinc-800/60 ${
-                    isSelected
-                      ? "bg-blue-50 dark:bg-blue-950/30"
-                      : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className={`truncate text-sm font-semibold ${isSelected ? "text-zinc-900 dark:text-white" : "text-zinc-700 dark:text-zinc-300"}`}>
-                      {format(s, "MMM d")} – {format(e, "MMM d, yyyy")}
-                    </p>
-                  </div>
-                  <div className="mt-1 flex items-center justify-between gap-2">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[ts.status] ?? STATUS_BADGE.OPEN}`}>
-                      {(TIMESHEET_STATUS_LABEL as Record<string, string>)[ts.status] ?? ts.status}
-                    </span>
-                    <span className="text-xs tabular-nums text-zinc-400">
-                      {formatMinutes(ts.totalMinutes)}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
+          <div
+            className="self-end"
+            style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+          >
+            {detail
+              ? "Punches are read-only here · Report a missed punch to correct one"
+              : "Pick a pay period to see its timecard"}
           </div>
         </div>
 
-        {/* ── Right: detail ─────────────────────────────────────────────── */}
-        <div className="flex flex-col min-h-0 bg-white dark:bg-zinc-950">
-        {!detail ? (
-          <div className="flex flex-1 items-center justify-center">
-            <p className="text-sm text-zinc-400">
-              {timesheets.length === 0
-                ? "No timesheets yet. Timesheets are created automatically when you punch in."
-                : "No timesheet found for this pay period."}
-            </p>
-          </div>
+        {!detail || rows.length === 0 ? (
+          <EmptyState
+            icon={<CalendarX2 className="h-8 w-8" />}
+            title={
+              timesheets.length === 0 ? "No timesheets yet" : "No timesheet for this pay period"
+            }
+            body={
+              timesheets.length === 0
+                ? "A timesheet is created for you automatically the first time you punch in."
+                : "Nothing was recorded against this period. Pick another from the Pay Cycle list."
+            }
+          />
         ) : (
-          <>
-            {/* Header strip */}
-            <div className="shrink-0 flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-              <div className="flex items-center gap-3">
-                <div>
-                  <h2 className="text-base font-bold text-zinc-900 dark:text-white">
-                    {format(parseUtcDate(detail.payPeriod.startDate), "MMM d")} –{" "}
-                    {format(addDays(parseUtcDate(detail.payPeriod.endDate), -1), "MMM d, yyyy")}
-                  </h2>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-zinc-500">
-                    {visibleBuckets.map((b) => (
-                      <span key={b.key}>
-                        {b.label}:{" "}
-                        <span className={`font-semibold tabular-nums ${b.color}`}>
-                          {formatMinutes(bucketMap[b.key] ?? 0)}
-                        </span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[detail.status] ?? STATUS_BADGE.OPEN}`}>
-                  {(TIMESHEET_STATUS_LABEL as Record<string, string>)[detail.status] ?? detail.status}
-                </span>
-                {detail.exceptionCount > 0 && (
-                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                    {detail.exceptionCount} exception{detail.exceptionCount !== 1 ? "s" : ""}
-                  </span>
-                )}
-              </div>
-              {detail.status === "OPEN" && (
-                <SubmitTimesheetButton timesheetId={detail.timesheetId} />
-              )}
-            </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", minWidth: 880, borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={{ borderBottom: 0 }} />
+                  <th colSpan={4} style={GROUP_HEAD}>Punches</th>
+                  <th colSpan={4} style={{ ...GROUP_HEAD, borderLeft: RULE, padding: "6px 12px 0" }}>
+                    Calculated Hours
+                  </th>
+                  <th colSpan={2} style={{ borderBottom: 0, borderLeft: RULE }} />
+                </tr>
+                <tr style={{ background: "var(--surface-tertiary)" }}>
+                  <th style={{ ...COL_HEAD, textAlign: "left" }}>Date</th>
+                  <th style={{ ...COL_HEAD, textAlign: "center", padding: "8px 3px" }}>In</th>
+                  <th style={{ ...COL_HEAD, textAlign: "center", padding: "8px 3px" }}>Meal Out</th>
+                  <th style={{ ...COL_HEAD, textAlign: "center", padding: "8px 3px" }}>Meal In</th>
+                  <th style={{ ...COL_HEAD, textAlign: "center", padding: "8px 3px" }}>Out</th>
+                  <th style={{ ...COL_HEAD, textAlign: "right", borderLeft: RULE, paddingLeft: 20 }}>
+                    Reg
+                  </th>
+                  <th style={{ ...COL_HEAD, textAlign: "right" }}>OT</th>
+                  <th style={{ ...COL_HEAD, textAlign: "right" }}>DT</th>
+                  <th style={{ ...COL_HEAD, textAlign: "right" }}>Total</th>
+                  <th style={{ ...COL_HEAD, textAlign: "left", borderLeft: RULE, paddingLeft: 20 }}>
+                    Pay Code
+                  </th>
+                  <th style={{ ...COL_HEAD, textAlign: "left" }}>Reason</th>
+                </tr>
+              </thead>
 
-            {/* Scrollable table + legend + summary */}
-            <div className="flex-1 overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 border-b-2 border-zinc-400 bg-zinc-300 dark:border-zinc-500 dark:bg-zinc-700">
-                  <tr>
-                    <th className="w-7 pl-2 pr-0 py-1.5" />
-                    <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Date</th>
-                    <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Code</th>
-                    <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Reason</th>
-                    <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">In</th>
-                    <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Out</th>
-                    <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Reg</th>
-                    <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">OT</th>
-                    <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">DT</th>
-                    <th className="pl-3 pr-8 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {days.map((day) => {
-                    const dayKey = day.toISOString();
-                    const dayPunches = punchesForDay(day);
-                    const daySegments = segmentsForDay(day);
-                    const isWeekend = [0, 6].includes(day.getDay());
-                    const isExpanded = expandedDays.has(dayKey);
-                    const isTodayRow = isToday(day);
-                    const isMonday = day.getDay() === 1;
-                    const isFirstDay = days[0].toISOString() === dayKey;
-                    const showWeekSeparator = isMonday && !isFirstDay;
+              <tbody>
+                {weekRows.map((row) => {
+                  const expanded = expandedDays.has(row.key);
+                  return (
+                    <Fragment key={row.key}>
+                      <tr
+                        className="ta-row"
+                        style={{
+                          borderBottom: "1px solid var(--stroke-divider)",
+                          background: rowBackground(row),
+                          cursor: row.hasActivity ? "pointer" : undefined,
+                        }}
+                        onClick={row.hasActivity ? () => toggleDay(row.key) : undefined}
+                      >
+                        <td style={{ padding: "4px 12px", font: "var(--type-body1)", whiteSpace: "nowrap" }}>
+                          <span className="flex items-center gap-1.5">
+                            <ChevronRight
+                              className="h-3.5 w-3.5 flex-none transition-transform"
+                              style={{
+                                color: "var(--icon-tertiary)",
+                                visibility: row.hasActivity ? undefined : "hidden",
+                                transform: expanded ? "rotate(90deg)" : undefined,
+                              }}
+                              aria-hidden
+                            />
+                            <span style={{ fontWeight: "var(--weight-medium)" }}>
+                              {format(row.date, "EEE")}
+                            </span>
+                            <span className="tabular" style={{ color: "var(--text-tertiary)" }}>
+                              {format(row.date, "MM/dd")}
+                            </span>
+                          </span>
+                        </td>
 
-                    const buckets: Record<string, number> = {};
-                    for (const seg of daySegments) {
-                      const eb = seg.payBucketOverride ?? seg.payBucket;
-                      // Holiday credits display under the REG column (pay code identifies them as holiday)
-                      const displayBucket = (seg.segmentType === "HOLIDAY") ? "REG" : eb;
-                      buckets[displayBucket] = (buckets[displayBucket] ?? 0) + seg.durationMinutes;
-                    }
-                    const reg = buckets["REG"] ?? 0;
-                    const ot = buckets["OT"] ?? 0;
-                    const dt = buckets["DT"] ?? 0;
-                    const dailyTotal = daySegments
-                      .filter((s) => s.isPaid)
-                      .reduce((a, s) => a + s.durationMinutes, 0);
+                        <PunchCell value={row.punchIn} label="Clock in" row={row} />
+                        <PunchCell value={row.mealOut} label="Meal out" row={row} />
+                        <PunchCell value={row.mealIn} label="Meal in" row={row} />
+                        <PunchCell value={row.punchOut} label="Clock out" row={row} flagged={row.missingOut} />
 
-                    const firstIn = dayPunches.find((p) => p.punchType === "CLOCK_IN");
-                    const lastOut = [...dayPunches].reverse().find((p) => p.punchType === "CLOCK_OUT");
-                    const leaveSegments = daySegments.filter((s) => s.segmentType === "LEAVE");
-                    const hasActivity = dayPunches.length > 0 || daySegments.length > 0;
-
-                    const isPast = day < todayMidnight;
-                    const isAbsent =
-                      !isWeekend &&
-                      !isTodayRow &&
-                      isPast &&
-                      dayPunches.length === 0 &&
-                      leaveSegments.length === 0 &&
-                      daySegments.length === 0;
-
-                    return (
-                      <Fragment key={dayKey}>
-                        {showWeekSeparator && (
-                          <tr aria-hidden>
-                            <td colSpan={10} className="h-0 border-t-2 border-zinc-300 p-0 dark:border-zinc-600" />
-                          </tr>
-                        )}
-                        <tr
-                          className={`border-b border-zinc-200 transition-colors dark:border-zinc-700 ${
-                            isAbsent
-                              ? "bg-red-100 dark:bg-red-950/40"
-                              : isTodayRow
-                              ? "bg-blue-50/60 dark:bg-blue-950/20"
-                              : isWeekend
-                              ? "bg-zinc-50/70 dark:bg-zinc-900/40"
-                              : hasActivity
-                              ? "hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
-                              : "hover:bg-zinc-50/50 dark:hover:bg-zinc-900/20"
-                          } ${hasActivity ? "cursor-pointer" : ""}`}
-                          onClick={hasActivity ? () => toggleDay(dayKey) : undefined}
+                        <td style={{ ...HOURS_CELL, borderLeft: RULE, paddingLeft: 20, ...hoursStyle(row.reg, row.isAbsent) }}>
+                          {row.isAbsent ? "0.00" : row.reg > 0 ? minutesToHoursDecimal(row.reg) : "—"}
+                        </td>
+                        <td style={{ ...HOURS_CELL, ...hoursStyle(row.ot, row.isAbsent, "var(--text-warning)") }}>
+                          {row.ot > 0 ? minutesToHoursDecimal(row.ot) : "—"}
+                        </td>
+                        <td style={{ ...HOURS_CELL, ...hoursStyle(row.dt, row.isAbsent, "var(--text-error)") }}>
+                          {row.dt > 0 ? minutesToHoursDecimal(row.dt) : "—"}
+                        </td>
+                        <td
+                          style={{
+                            ...HOURS_CELL,
+                            ...hoursStyle(row.total, row.isAbsent),
+                            ...(row.total > 0 || row.isAbsent
+                              ? { fontWeight: "var(--weight-semibold)" }
+                              : {}),
+                          }}
                         >
-                          <td className="w-7 pl-2 pr-0 text-center">
-                            {hasActivity ? (
-                              <ChevronRight
-                                className={`inline h-3.5 w-3.5 text-zinc-400 transition-transform ${isExpanded ? "rotate-90" : ""}`}
-                              />
-                            ) : isTodayRow ? (
-                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-400" />
-                            ) : null}
-                          </td>
-                          <td className={`px-3 py-1.5 text-sm tabular-nums ${
-                            isAbsent ? "text-red-800 dark:text-red-300"
-                            : isTodayRow ? "text-blue-700 dark:text-blue-400"
-                            : isWeekend ? "text-zinc-400 dark:text-zinc-500"
-                            : "text-zinc-700 dark:text-zinc-300"
-                          }`}>
-                            <span className={`mr-0.5 ${isWeekend ? "" : "font-semibold"}`}>{format(day, "EEE")}</span>
-                            {format(day, "MM/dd/yyyy")}
-                          </td>
-                          {/* Code */}
-                          <td className="px-3 py-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                            {(() => {
-                              const workSeg = daySegments.find((s) => s.segmentType === "WORK" && s.payCode);
-                              return workSeg?.payCode
-                                ? <span>{workSeg.payCode.code}[{workSeg.payCode.label}]</span>
-                                : null;
-                            })()}
-                          </td>
-                          {/* Reason */}
-                          <td className="px-3 py-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                            {(() => {
-                              const dayStr = format(day, "yyyy-MM-dd");
-                              const dr = detail.dayReasons.find((r) => r.segmentDate.startsWith(dayStr));
-                              return dr ? <span>{dr.reasonCode.code}[{dr.reasonCode.label}]</span> : null;
-                            })()}
-                          </td>
-                          <td className={`px-3 py-1.5 font-mono text-sm ${
-                            isAbsent ? "text-red-700 dark:text-red-400" : "text-zinc-700 dark:text-zinc-300"
-                          }`}>
-                            {isAbsent ? (
-                              <span className="font-sans text-xs font-semibold">Absent</span>
-                            ) : firstIn ? (
-                              format(parseISO(firstIn.roundedTime), "h:mm a")
-                            ) : leaveSegments.length > 0 ? (
-                              <span className="-ml-2 rounded-full bg-violet-100 px-2 py-0.5 font-sans text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
-                                {leaveSegments[0].leaveTypeName ?? "Leave"}
-                              </span>
-                            ) : null}
-                          </td>
-                          <td className="px-3 py-1.5 font-mono text-sm text-zinc-700 dark:text-zinc-300">
-                            {lastOut ? format(parseISO(lastOut.roundedTime), "h:mm a") : null}
-                          </td>
-                          <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
-                            isAbsent ? "text-red-400 dark:text-red-700"
-                            : reg > 0 ? "text-zinc-700 dark:text-zinc-300"
-                            : "text-zinc-300 dark:text-zinc-700"
-                          }`}>
-                            {isAbsent ? "0.00" : reg > 0 ? minutesToHoursDecimal(reg) : "—"}
-                          </td>
-                          <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
-                            isAbsent ? "text-red-400 dark:text-red-700"
-                            : ot > 0 ? "font-semibold text-amber-600 dark:text-amber-400"
-                            : "text-zinc-300 dark:text-zinc-700"
-                          }`}>
-                            {ot > 0 ? minutesToHoursDecimal(ot) : "—"}
-                          </td>
-                          <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
-                            isAbsent ? "text-red-400 dark:text-red-700"
-                            : dt > 0 ? "font-semibold text-red-600 dark:text-red-400"
-                            : "text-zinc-300 dark:text-zinc-700"
-                          }`}>
-                            {dt > 0 ? minutesToHoursDecimal(dt) : "—"}
-                          </td>
-                          <td className={`pl-3 pr-8 py-1.5 text-right tabular-nums text-sm ${
-                            isAbsent ? "font-bold text-red-800 dark:text-red-300"
-                            : dailyTotal > 0 ? "font-bold text-zinc-900 dark:text-white"
-                            : "text-zinc-300 dark:text-zinc-700"
-                          }`}>
-                            {isAbsent ? "0.00" : dailyTotal > 0 ? minutesToHoursDecimal(dailyTotal) : "—"}
+                          {row.isAbsent ? "0.00" : row.total > 0 ? minutesToHoursDecimal(row.total) : "—"}
+                        </td>
+
+                        <td
+                          style={{
+                            padding: "4px 12px 4px 20px",
+                            font: "var(--type-body2)",
+                            color: "var(--text-secondary)",
+                            borderLeft: RULE,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {row.isAbsent ? (
+                            <Badge tone={exceptionTone("ABSENT")} size="sm">Absent</Badge>
+                          ) : (
+                            row.payCode ?? row.leaveName ?? ""
+                          )}
+                        </td>
+                        <td
+                          style={{
+                            padding: "4px 12px",
+                            font: "var(--type-body2)",
+                            color: "var(--text-secondary)",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {row.reason ?? ""}
+                        </td>
+                      </tr>
+
+                      {expanded && row.hasActivity && (
+                        <tr style={{ background: "var(--surface-secondary)" }}>
+                          <td
+                            colSpan={COLUMN_COUNT}
+                            style={{
+                              padding: "10px 20px",
+                              borderBottom: "1px solid var(--stroke-divider)",
+                            }}
+                          >
+                            {row.segments.length > 0 && (
+                              <div className="mb-2">
+                                <SegmentTimeline
+                                  segments={row.segments.map((s) => ({
+                                    ...s,
+                                    startTime: parseISO(s.startTime),
+                                    endTime: parseISO(s.endTime),
+                                    segmentDate: parseISO(s.segmentDate),
+                                  })) as unknown as WorkSegment[]}
+                                  date={row.date}
+                                />
+                              </div>
+                            )}
+                            <div className="flex flex-wrap items-start gap-2">
+                              {row.punches.map((p) => (
+                                <span
+                                  key={p.id}
+                                  className="tabular"
+                                  style={{
+                                    background: "var(--surface-tertiary)",
+                                    color: "var(--text-secondary)",
+                                    font: "var(--type-body2)",
+                                    borderRadius: "var(--radius-s)",
+                                    padding: "2px 8px",
+                                  }}
+                                >
+                                  {(PUNCH_TYPE_LABEL as Record<string, string>)[p.punchType] ??
+                                    p.punchType}{" "}
+                                  {format(parseISO(p.roundedTime), "h:mm a")}
+                                </span>
+                              ))}
+                            </div>
                           </td>
                         </tr>
-                        {isExpanded && hasActivity && (
-                          <tr className="border-b border-zinc-200 bg-zinc-50/80 dark:border-zinc-700 dark:bg-zinc-900/40">
-                            <td colSpan={10} className="px-5 py-2">
-                              {daySegments.length > 0 && (
-                                <div className="mb-2">
-                                  <SegmentTimeline
-                                    segments={daySegments.map((s) => ({
-                                      ...s,
-                                      startTime: parseISO(s.startTime),
-                                      endTime: parseISO(s.endTime),
-                                      segmentDate: parseISO(s.segmentDate),
-                                    })) as unknown as WorkSegment[]}
-                                    date={day}
-                                  />
-                                </div>
-                              )}
-                              <div className="flex flex-wrap items-start gap-2">
-                                {dayPunches.map((p) => (
-                                  <span
-                                    key={p.id}
-                                    className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
-                                  >
-                                    {(PUNCH_TYPE_LABEL as Record<string, string>)[p.punchType]}{" "}
-                                    {format(parseISO(p.roundedTime), "h:mm a")}
-                                  </span>
-                                ))}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>{/* end flex-1 overflow-y-auto */}
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
 
-            {/* ── Color Legend ───────────────────────────────────────── */}
-            <div className="shrink-0 flex flex-wrap items-center gap-4 border-t-4 border-zinc-400 bg-zinc-200 px-4 py-2 dark:border-zinc-500 dark:bg-zinc-800/80">
-              <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">Legend:</span>
-              <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                <span className="inline-block h-3 w-3 rounded border border-red-500 bg-red-300 dark:border-red-800 dark:bg-red-950/40" />
-                Absent
-              </span>
-              <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                <span className="inline-block h-3 w-3 rounded border border-blue-500 bg-blue-200 dark:border-blue-700 dark:bg-blue-950/20" />
-                Today
-              </span>
-              <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                <span className="inline-block h-3 w-3 rounded border border-zinc-500 bg-zinc-300 dark:border-zinc-700 dark:bg-zinc-900/40" />
-                Weekend
-              </span>
-            </div>
-
-            {/* ── Summary ────────────────────────────────────────────── */}
-            <div className="border-t border-zinc-200 dark:border-zinc-800">
-              <div className="flex items-center justify-between bg-zinc-50 px-4 py-1 dark:bg-zinc-900">
-                <span className="text-xs font-medium text-zinc-500">Timesheet Summary</span>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-zinc-400">Group By</label>
-                  <select
-                    value={summaryGroupBy}
-                    onChange={(e) => setSummaryGroupBy(e.target.value as "total" | "week")}
-                    className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                  >
-                    <option value="total">Total</option>
-                    <option value="week">Week</option>
-                  </select>
-                </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="border-b border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/50">
-                    <tr>
-                      <th className="px-4 py-1 text-left text-xs font-medium text-zinc-500">
-                        {summaryGroupBy === "week" ? "Week" : "Category"}
-                      </th>
-                      <th className="px-3 py-1 text-right text-xs font-medium text-zinc-500">Reg Hrs</th>
-                      <th className="px-3 py-1 text-right text-xs font-medium text-zinc-500">OT</th>
-                      <th className="px-3 py-1 text-right text-xs font-medium text-zinc-500">DT</th>
-                      <th className="px-3 py-1 text-right text-xs font-medium text-zinc-500">Total Hrs</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                    {(() => {
-                      const bucketMap: Record<string, number> = Object.fromEntries(
-                        detail.overtimeBuckets.map((b) => [b.bucket, b.totalMinutes])
-                      );
-
-                      if (summaryGroupBy === "total") {
-                        const reg = bucketMap["REG"] ?? 0;
-                        const ot = bucketMap["OT"] ?? 0;
-                        const dt = bucketMap["DT"] ?? 0;
-                        const total = Object.values(bucketMap).reduce((a, b) => a + b, 0);
-                        const otherBuckets = SUMMARY_BUCKETS.filter(
-                          (b) => !["REG", "OT", "DT"].includes(b.key) && (bucketMap[b.key] ?? 0) > 0
-                        );
-                        return (
-                          <>
-                            {otherBuckets.map((b) => (
-                              <SummaryRow key={b.key} label={b.label} reg={0} ot={0} dt={0} total={bucketMap[b.key] ?? 0} className={b.color} />
-                            ))}
-                            <SummaryRow label="Totals" reg={reg} ot={ot} dt={dt} total={total} isBold />
-                          </>
-                        );
-                      }
-
-                      // Week grouping
-                      const ppStart = parseUtcDate(detail.payPeriod.startDate);
-                      const ppEnd = addDays(parseUtcDate(detail.payPeriod.endDate), -1);
-                      const weeks: { label: string; start: Date; end: Date }[] = [];
-                      let wStart = ppStart;
-                      while (wStart <= ppEnd) {
-                        const wEnd = new Date(Math.min(wStart.getTime() + 6 * 86400000, ppEnd.getTime()));
-                        weeks.push({
-                          label: `${format(wStart, "MM/dd/yyyy")} – ${format(wEnd, "MM/dd/yyyy")}`,
-                          start: wStart,
-                          end: wEnd,
-                        });
-                        wStart = new Date(wEnd.getTime() + 86400000);
-                      }
-                      let grandReg = 0, grandOt = 0, grandDt = 0, grandTotal = 0;
-                      return (
-                        <>
-                          {weeks.map((week) => {
-                            const weekSegs = detail.segments.filter((s) => {
-                              const sd = parseUtcDate(s.segmentDate);
-                              return sd >= week.start && sd <= week.end;
-                            });
-                            const wb: Record<string, number> = {};
-                            for (const s of weekSegs) {
-                              if (s.isPaid) {
-                                const eb = s.payBucketOverride ?? s.payBucket;
-                                wb[eb] = (wb[eb] ?? 0) + s.durationMinutes;
-                              }
-                            }
-                            const reg = wb["REG"] ?? 0;
-                            const ot = wb["OT"] ?? 0;
-                            const dt = wb["DT"] ?? 0;
-                            const total = Object.values(wb).reduce((a, b) => a + b, 0);
-                            grandReg += reg; grandOt += ot; grandDt += dt; grandTotal += total;
-                            return <SummaryRow key={week.label} label={week.label} reg={reg} ot={ot} dt={dt} total={total} />;
-                          })}
-                          <SummaryRow label="Totals" reg={grandReg} ot={grandOt} dt={grandDt} total={grandTotal} isBold />
-                        </>
-                      );
-                    })()}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
+              <tfoot>
+                <tr
+                  style={{
+                    background: "var(--surface-tertiary)",
+                    fontWeight: "var(--weight-semibold)",
+                  }}
+                >
+                  <td style={{ padding: "10px 12px", font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", whiteSpace: "nowrap" }}>
+                    {week ? `Week total · ${week.label}` : "Period total"}
+                  </td>
+                  <td colSpan={4} />
+                  <td style={{ ...HOURS_CELL, padding: "10px 12px 10px 20px", borderLeft: RULE, fontWeight: "var(--weight-semibold)" }}>
+                    {minutesToHoursDecimal(weekTotals.reg)}
+                  </td>
+                  <td style={{ ...HOURS_CELL, padding: "10px 12px", fontWeight: "var(--weight-semibold)" }}>
+                    {minutesToHoursDecimal(weekTotals.ot)}
+                  </td>
+                  <td style={{ ...HOURS_CELL, padding: "10px 12px", fontWeight: "var(--weight-semibold)" }}>
+                    {minutesToHoursDecimal(weekTotals.dt)}
+                  </td>
+                  <td style={{ ...HOURS_CELL, padding: "10px 12px", fontWeight: "var(--weight-semibold)" }}>
+                    {minutesToHoursDecimal(weekTotals.total)}
+                  </td>
+                  <td colSpan={2} style={{ borderLeft: RULE }} />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         )}
-        </div>
-      </div>
+
+        {detail && rows.length > 0 && (
+          <div
+            className="px-4 py-2.5"
+            style={{
+              borderTop: "1px solid var(--stroke-divider)",
+              font: "var(--type-body2)",
+              color: "var(--text-secondary)",
+              textWrap: "pretty",
+            }}
+          >
+            Click a day to see its segments · Hours are what the rules engine produced, with
+            rounding and meal deductions already applied
+          </div>
+        )}
+      </Card>
+
+      {detail && (
+        <Card padding={0}>
+          <div
+            className="flex flex-wrap items-center gap-3 px-4 py-3"
+            style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+          >
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>
+                Period Summary
+              </span>
+              <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                {summarySub}
+              </span>
+            </div>
+            <div className="flex-1" />
+            <div className="flex flex-none items-center gap-2">
+              <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                Group by
+              </span>
+              <SegmentedControl
+                items={GROUP_ITEMS}
+                value={summaryGroupBy}
+                onChange={(v) => setSummaryGroupBy(v as "total" | "week")}
+                size="sm"
+                ariaLabel="Group the period summary by"
+              />
+            </div>
+          </div>
+
+          <Table>
+            <THead>
+              <TR>
+                <TH>{summaryGroupBy === "week" ? "Week" : "Category"}</TH>
+                <TH numeric>Reg Hrs</TH>
+                <TH numeric>OT</TH>
+                <TH numeric>DT</TH>
+                <TH numeric>Total Hrs</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {summaryGroupBy === "total" ? (
+                <TotalSummary bucketMap={bucketMap} />
+              ) : (
+                <WeekSummary detail={detail} weeks={weeks} />
+              )}
+            </TBody>
+          </Table>
+        </Card>
+      )}
+
     </div>
+  );
+}
+
+// ── Pieces ───────────────────────────────────────────────────────────────────
+
+/** The row tint: absent and missing-punch days in error, today in accent. */
+function rowBackground(row: DayRow): string | undefined {
+  if (row.isAbsent || row.missingOut) return "var(--surface-error)";
+  if (row.isTodayRow) return "var(--surface-info)";
+  if (row.isWeekend) return "var(--surface-tertiary)";
+  return undefined;
+}
+
+/**
+ * Builds only the style keys a figure actually needs.
+ *
+ * <p>Spreading a key with an undefined value onto a base style erases the base
+ * value rather than falling back to it, which is how a "no override" branch
+ * silently un-colours every cell in the column.
+ */
+function hoursStyle(minutes: number, isAbsent: boolean, tone?: string): CSSProperties {
+  if (isAbsent) return { color: "var(--text-error)" };
+  if (minutes <= 0) return { color: "var(--text-disabled)" };
+  if (tone) return { color: tone, fontWeight: "var(--weight-semibold)" };
+  return {};
+}
+
+/**
+ * One punch time in the grid.
+ *
+ * <p>`pointerEvents: none` so a click lands on the row and expands the day —
+ * a disabled input swallows the event, and the four widest cells in the row
+ * would otherwise be the four that do nothing.
+ */
+function PunchCell({
+  value,
+  label,
+  row,
+  flagged = false,
+}: {
+  value: string | null;
+  label: string;
+  row: DayRow;
+  flagged?: boolean;
+}) {
+  return (
+    <td style={{ padding: "4px 3px" }}>
+      <input
+        className="ta-cell"
+        value={value ?? ""}
+        placeholder="--:--"
+        disabled
+        readOnly
+        aria-label={`${label} ${format(row.date, "EEE d MMM")}`}
+        style={{
+          pointerEvents: "none",
+          ...(flagged ? { borderColor: "var(--stroke-error)" } : {}),
+        }}
+      />
+    </td>
+  );
+}
+
+/** Period totals by pay bucket, the way payroll reads them. */
+function TotalSummary({ bucketMap }: { bucketMap: Record<string, number> }) {
+  const reg = bucketMap["REG"] ?? 0;
+  const ot = bucketMap["OT"] ?? 0;
+  const dt = bucketMap["DT"] ?? 0;
+  const total = Object.values(bucketMap).reduce((a, b) => a + b, 0);
+  const others = BUCKET_ORDER.filter(
+    (key) => !["REG", "OT", "DT"].includes(key) && (bucketMap[key] ?? 0) > 0,
+  );
+
+  return (
+    <>
+      {others.map((key) => (
+        <SummaryRow
+          key={key}
+          label={BUCKET_LABEL[key] ?? key}
+          reg={0}
+          ot={0}
+          dt={0}
+          total={bucketMap[key] ?? 0}
+        />
+      ))}
+      <SummaryRow label="Totals" reg={reg} ot={ot} dt={dt} total={total} emphasis />
     </>
+  );
+}
+
+/** The same totals split by week, for periods longer than one. */
+function WeekSummary({
+  detail,
+  weeks,
+}: {
+  detail: TimesheetDetailData;
+  weeks: { key: string; label: string; start: Date; end: Date }[];
+}) {
+  const perWeek = weeks.map((week) => {
+    const wb: Record<string, number> = {};
+    for (const s of detail.segments) {
+      const sd = parseUtcDate(s.segmentDate);
+      if (sd < week.start || sd > week.end || !s.isPaid) continue;
+      const eb = s.payBucketOverride ?? s.payBucket;
+      wb[eb] = (wb[eb] ?? 0) + s.durationMinutes;
+    }
+    return {
+      key: week.key,
+      label: week.label,
+      reg: wb["REG"] ?? 0,
+      ot: wb["OT"] ?? 0,
+      dt: wb["DT"] ?? 0,
+      total: Object.values(wb).reduce((a, b) => a + b, 0),
+    };
+  });
+
+  const grand = perWeek.reduce(
+    (acc, w) => ({
+      reg: acc.reg + w.reg,
+      ot: acc.ot + w.ot,
+      dt: acc.dt + w.dt,
+      total: acc.total + w.total,
+    }),
+    { reg: 0, ot: 0, dt: 0, total: 0 },
+  );
+
+  return (
+    <>
+      {perWeek.map((w) => (
+        <SummaryRow key={w.key} label={w.label} reg={w.reg} ot={w.ot} dt={w.dt} total={w.total} />
+      ))}
+      <SummaryRow
+        label="Totals"
+        reg={grand.reg}
+        ot={grand.ot}
+        dt={grand.dt}
+        total={grand.total}
+        emphasis
+      />
+    </>
+  );
+}
+
+function SummaryRow({
+  label,
+  reg,
+  ot,
+  dt,
+  total,
+  emphasis = false,
+}: {
+  label: string;
+  reg: number;
+  ot: number;
+  dt: number;
+  total: number;
+  emphasis?: boolean;
+}) {
+  const fmt = minutesToHoursDecimal;
+  const strong: CSSProperties = emphasis
+    ? { fontWeight: "var(--weight-semibold)" }
+    : { color: "var(--text-secondary)" };
+
+  return (
+    <TR style={emphasis ? { background: "var(--surface-tertiary)" } : undefined}>
+      <TD style={emphasis ? { fontWeight: "var(--weight-semibold)" } : undefined}>{label}</TD>
+      <TD numeric style={strong}>{reg > 0 ? fmt(reg) : "—"}</TD>
+      <TD numeric style={ot > 0 ? { color: "var(--text-warning)", fontWeight: "var(--weight-semibold)" } : strong}>
+        {ot > 0 ? fmt(ot) : "—"}
+      </TD>
+      <TD numeric style={dt > 0 ? { color: "var(--text-error)", fontWeight: "var(--weight-semibold)" } : strong}>
+        {dt > 0 ? fmt(dt) : "—"}
+      </TD>
+      <TD numeric style={{ fontWeight: "var(--weight-semibold)" }}>{total > 0 ? fmt(total) : "—"}</TD>
+    </TR>
   );
 }

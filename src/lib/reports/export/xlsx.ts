@@ -6,7 +6,7 @@ export async function generateXlsx(
   title: string
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Time & Attendance";
+  workbook.creator = "CloudTime";
   workbook.created = new Date();
 
   const sheet = workbook.addWorksheet(title.slice(0, 31)); // Excel max 31 chars

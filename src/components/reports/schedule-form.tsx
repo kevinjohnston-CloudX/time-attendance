@@ -1,7 +1,17 @@
 "use client";
 
 import { useState, useTransition, useEffect } from "react";
-import { Clock, Mail, X, Plus, Trash2, Calendar, AlertTriangle } from "lucide-react";
+import type { ReactNode } from "react";
+import { Mail, Plus, Trash2, X } from "lucide-react";
+import {
+  Badge,
+  Banner,
+  Button,
+  Input,
+  SegmentedControl,
+  Select,
+  statusTone,
+} from "@/components/ui";
 import {
   createSchedule,
   updateSchedule,
@@ -138,22 +148,18 @@ function parseCron(expr: string): {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Styles                                                             */
-/* ------------------------------------------------------------------ */
-
-const inputClass =
-  "rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-
-const btnPrimary =
-  "rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
-
-const btnSecondary =
-  "rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800";
-
-/* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * When a report goes out, in what format, and to whom.
+ *
+ * <p>The cron the form builds is unchanged — the presets, the 1st-and-15th
+ * approximation of "biweekly" and the parse back out of a saved expression are
+ * all the same code. What changed is the shell: it is the design system's
+ * modal, its fields are the kit's, and format is one segmented choice instead
+ * of three radios.
+ */
 export function ScheduleForm({
   reportId,
   existingSchedule,
@@ -282,308 +288,322 @@ export function ScheduleForm({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.5)" }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-lg dark:bg-zinc-900">
-        {/* Header */}
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-zinc-900 dark:text-white">
-            <Calendar className="h-5 w-5" />
-            {existingSchedule ? "Edit Schedule" : "Schedule Report"}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {emailConfigured === false && (
-          <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
-            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-            <span>
-              Email delivery is not configured yet. Schedules will be saved but emails
-              won&apos;t be sent until <strong>SENDGRID_API_KEY</strong> and{" "}
-              <strong>SENDGRID_FROM_EMAIL</strong> environment variables are set.
-            </span>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={existingSchedule ? "Edit schedule" : "Schedule report"}
+        className="ta-modal flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden"
+        style={{ borderRadius: "var(--radius-l)" }}
+      >
+        <header
+          className="flex flex-none items-center gap-3 px-5 py-3.5"
+          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+        >
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <h2 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
+              {existingSchedule ? "Edit Schedule" : "Schedule Report"}
+            </h2>
+            <p style={{ margin: 0, font: "var(--type-subtitle)", color: "var(--text-secondary)" }}>
+              Emailed automatically, to the addresses below
+            </p>
           </div>
-        )}
+          {existingSchedule && (
+            // ACTIVE and OPEN are the shared helper's own words for "running"
+            // and "sitting there doing nothing", which is exactly the
+            // difference between a live schedule and a paused one.
+            <Badge tone={statusTone(existingSchedule.isActive ? "ACTIVE" : "OPEN")} size="sm">
+              {existingSchedule.isActive ? "Active" : "Paused"}
+            </Badge>
+          )}
+          <Button hierarchy="tertiary" iconOnly onClick={onClose} aria-label="Close" title="Close">
+            <X className="h-4 w-4" />
+          </Button>
+        </header>
 
-        {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
-            {error}
-          </div>
-        )}
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
+          {emailConfigured === false && (
+            <Banner
+              tone="warning"
+              title="Email delivery is not configured"
+              body="The schedule will be saved, but nothing is sent until SENDGRID_API_KEY and SENDGRID_FROM_EMAIL are set on the server."
+            />
+          )}
 
-        {/* Frequency preset */}
-        <fieldset className="mb-4">
-          <legend className="mb-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Frequency
-          </legend>
-          <select
-            value={preset}
-            onChange={(e) => setPreset(e.target.value as PresetType)}
-            className={inputClass + " w-full"}
-          >
-            <option value="daily">Daily</option>
-            <option value="weekly">Weekly</option>
-            <option value="biweekly">Biweekly (1st &amp; 15th)</option>
-            <option value="monthly">Monthly</option>
-            <option value="custom">Custom cron</option>
-          </select>
-        </fieldset>
+          {error && <Banner tone="error" title="The schedule was not saved" body={error} />}
 
-        {/* Preset-specific fields */}
-        {preset !== "custom" && (
-          <div className="mb-4 flex flex-wrap gap-3">
-            {/* Day of week — weekly / biweekly */}
-            {(preset === "weekly" || preset === "biweekly") && (
-              <div className="flex-1">
-                <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Day
-                </label>
-                <select
-                  value={dayOfWeek}
-                  onChange={(e) => setDayOfWeek(e.target.value)}
-                  className={inputClass + " w-full"}
-                >
-                  {DAYS_OF_WEEK.map((d) => (
-                    <option key={d.value} value={d.value}>
-                      {d.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+          <Field label="Frequency" htmlFor="sched-frequency">
+            <Select
+              id="sched-frequency"
+              value={preset}
+              onChange={(e) => setPreset(e.target.value as PresetType)}
+              style={{ width: "100%" }}
+            >
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="biweekly">Biweekly (1st &amp; 15th)</option>
+              <option value="monthly">Monthly</option>
+              <option value="custom">Custom cron</option>
+            </Select>
+          </Field>
 
-            {/* Day of month — monthly */}
-            {preset === "monthly" && (
-              <div className="flex-1">
-                <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Day of month
-                </label>
-                <select
-                  value={dayOfMonth}
-                  onChange={(e) => setDayOfMonth(e.target.value)}
-                  className={inputClass + " w-full"}
-                >
-                  {dayOfMonthOptions.map((d) => (
-                    <option key={d} value={String(d)}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+          {preset !== "custom" && (
+            <div className="flex flex-wrap items-end gap-3">
+              {(preset === "weekly" || preset === "biweekly") && (
+                <div className="min-w-[160px] flex-1">
+                  <Field label="Day" htmlFor="sched-dow">
+                    <Select
+                      id="sched-dow"
+                      value={dayOfWeek}
+                      onChange={(e) => setDayOfWeek(e.target.value)}
+                      style={{ width: "100%" }}
+                    >
+                      {DAYS_OF_WEEK.map((d) => (
+                        <option key={d.value} value={d.value}>
+                          {d.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                </div>
+              )}
 
-            {/* Time */}
-            <div className="flex gap-2">
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Hour
-                </label>
-                <select
+              {preset === "monthly" && (
+                <div className="min-w-[160px] flex-1">
+                  <Field label="Day of month" htmlFor="sched-dom">
+                    <Select
+                      id="sched-dom"
+                      value={dayOfMonth}
+                      onChange={(e) => setDayOfMonth(e.target.value)}
+                      style={{ width: "100%" }}
+                    >
+                      {dayOfMonthOptions.map((d) => (
+                        <option key={d} value={String(d)}>
+                          {d}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                </div>
+              )}
+
+              <Field label="Hour" htmlFor="sched-hour">
+                <Select
+                  id="sched-hour"
                   value={hour}
                   onChange={(e) => setHour(e.target.value)}
-                  className={inputClass + " w-20"}
+                  style={{ width: 76 }}
                 >
                   {hourOptions.map((h) => (
                     <option key={h} value={String(h)}>
                       {String(h).padStart(2, "0")}
                     </option>
                   ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Min
-                </label>
-                <select
+                </Select>
+              </Field>
+
+              <Field label="Min" htmlFor="sched-min">
+                <Select
+                  id="sched-min"
                   value={minute}
                   onChange={(e) => setMinute(e.target.value)}
-                  className={inputClass + " w-20"}
+                  style={{ width: 76 }}
                 >
                   {minuteOptions.map((m) => (
                     <option key={m} value={String(m)}>
                       {String(m).padStart(2, "0")}
                     </option>
                   ))}
-                </select>
-              </div>
+                </Select>
+              </Field>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Custom cron */}
-        {preset === "custom" && (
-          <div className="mb-4">
-            <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Cron expression
-            </label>
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 shrink-0 text-zinc-400" />
-              <input
-                type="text"
-                value={customCron}
-                onChange={(e) => setCustomCron(e.target.value)}
-                placeholder="0 8 * * *"
-                className={inputClass + " w-full font-mono"}
-              />
-            </div>
-            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-              Format: minute hour day-of-month month day-of-week
-            </p>
-          </div>
-        )}
-
-        {/* Timezone */}
-        <div className="mb-4">
-          <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Timezone
-          </label>
-          <select
-            value={timezone}
-            onChange={(e) => setTimezone(e.target.value)}
-            className={inputClass + " w-full"}
-          >
-            {TIMEZONES.map((tz) => (
-              <option key={tz.value} value={tz.value}>
-                {tz.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Format */}
-        <fieldset className="mb-4">
-          <legend className="mb-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Format
-          </legend>
-          <div className="flex gap-4">
-            {FORMATS.map((f) => (
-              <label
-                key={f.value}
-                className="flex items-center gap-1.5 text-sm text-zinc-700 dark:text-zinc-300"
-              >
-                <input
-                  type="radio"
-                  name="format"
-                  value={f.value}
-                  checked={format === f.value}
-                  onChange={() => setFormat(f.value)}
-                  className="accent-zinc-900 dark:accent-zinc-100"
-                />
-                {f.label}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
-        {/* Recipients */}
-        <div className="mb-5">
-          <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            <Mail className="h-4 w-4" />
-            Recipients
-          </label>
-
-          <div className="flex gap-2">
-            <input
-              type="email"
-              value={emailInput}
-              onChange={(e) => {
-                setEmailInput(e.target.value);
-                setEmailError("");
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addRecipient();
-                }
-              }}
-              placeholder="email@example.com"
-              className={inputClass + " flex-1"}
+          {preset === "custom" && (
+            <Input
+              label="Cron expression"
+              value={customCron}
+              onChange={(e) => setCustomCron(e.target.value)}
+              placeholder="0 8 * * *"
+              hint="minute hour day-of-month month day-of-week"
             />
-            <button
-              type="button"
-              onClick={addRecipient}
-              className={btnSecondary + " flex items-center gap-1"}
+          )}
+
+          <Field label="Timezone" htmlFor="sched-tz">
+            <Select
+              id="sched-tz"
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              style={{ width: "100%" }}
             >
-              <Plus className="h-4 w-4" />
-              Add
-            </button>
-          </div>
-
-          {emailError && (
-            <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-              {emailError}
-            </p>
-          )}
-
-          {recipients.length > 0 && (
-            <ul className="mt-2 space-y-1">
-              {recipients.map((email) => (
-                <li
-                  key={email}
-                  className="flex items-center justify-between rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-700 dark:text-zinc-300"
-                >
-                  <span className="truncate">{email}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeRecipient(email)}
-                    className="ml-2 shrink-0 text-zinc-400 hover:text-red-500"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </li>
+              {TIMEZONES.map((tz) => (
+                <option key={tz.value} value={tz.value}>
+                  {tz.label}
+                </option>
               ))}
-            </ul>
-          )}
-        </div>
+            </Select>
+          </Field>
 
-        {/* Actions */}
-        <div className="flex items-center justify-between">
-          <div>
-            {existingSchedule && (
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={isPending}
-                className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50 dark:text-red-400 dark:hover:text-red-300"
+          <Field label="Format">
+            <SegmentedControl
+              items={FORMATS.map((f) => ({ value: f.value, label: f.label }))}
+              value={format}
+              onChange={setFormat}
+              fullWidth
+              ariaLabel="Attachment format"
+            />
+          </Field>
+
+          <div className="flex flex-col gap-2">
+            <div className="flex items-end gap-2">
+              <div className="min-w-0 flex-1">
+                <Input
+                  label="Recipients"
+                  type="email"
+                  value={emailInput}
+                  onChange={(e) => {
+                    setEmailInput(e.target.value);
+                    setEmailError("");
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addRecipient();
+                    }
+                  }}
+                  placeholder="email@example.com"
+                  leadingIcon={<Mail className="h-4 w-4" />}
+                />
+              </div>
+              <Button
+                hierarchy="secondary"
+                onClick={addRecipient}
+                leadingIcon={<Plus className="h-4 w-4" />}
               >
-                Delete schedule
-              </button>
+                Add
+              </Button>
+            </div>
+
+            {/* The message sits outside the field rather than inside it: the
+                Add button is aligned to the bottom of the input, and an error
+                that grew under the input would shunt the button down the
+                moment somebody mistyped an address. */}
+            {emailError && (
+              <p style={{ margin: 0, font: "var(--type-caption1)", color: "var(--text-error)" }}>
+                {emailError}
+              </p>
+            )}
+
+            {/* The list is the only confirmation an address was accepted, and
+                a schedule with no recipients is refused on save — so say so
+                here rather than at the bottom of the form. */}
+            {recipients.length === 0 ? (
+              <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                No recipients yet. At least one is needed before this can be saved.
+              </p>
+            ) : (
+              <ul
+                className="flex flex-col"
+                style={{
+                  listStyle: "none",
+                  margin: 0,
+                  padding: 0,
+                  border: "1px solid var(--stroke-divider)",
+                  borderRadius: "var(--radius-m)",
+                }}
+              >
+                {recipients.map((email, i) => (
+                  <li
+                    key={email}
+                    className="flex items-center gap-2 px-3 py-1.5"
+                    style={{ borderTop: i === 0 ? undefined : "1px solid var(--stroke-divider)" }}
+                  >
+                    <span
+                      className="min-w-0 flex-1 truncate"
+                      style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}
+                    >
+                      {email}
+                    </span>
+                    <Button
+                      hierarchy="tertiary"
+                      tone="error"
+                      size="sm"
+                      iconOnly
+                      onClick={() => removeRecipient(email)}
+                      title={`Remove ${email}`}
+                      aria-label={`Remove ${email}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isPending}
-              className={btnSecondary}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isPending}
-              className={btnPrimary}
-            >
-              {isPending
-                ? "Saving..."
-                : existingSchedule
-                  ? "Update"
-                  : "Save"}
-            </button>
-          </div>
         </div>
+
+        <footer
+          className="flex flex-none flex-wrap items-center gap-2 px-5 py-3"
+          style={{ borderTop: "1px solid var(--stroke-divider)" }}
+        >
+          {existingSchedule && (
+            <Button
+              hierarchy="link"
+              tone="error"
+              disabled={isPending}
+              onClick={handleDelete}
+            >
+              Delete schedule
+            </Button>
+          )}
+          <div className="flex-1" />
+          <Button hierarchy="secondary" disabled={isPending} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button hierarchy="primary" disabled={isPending} onClick={handleSave}>
+            {isPending ? "Saving…" : existingSchedule ? "Update" : "Save"}
+          </Button>
+        </footer>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A label over a control the kit does not label itself.
+ *
+ * <p>Select is a bare control by design — it goes in table toolbars as often
+ * as in forms — so the label stack that Input brings with it is written out
+ * here, at the same measurements, rather than a second styling of it per
+ * field.
+ */
+function Field({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor?: string;
+  children: ReactNode;
+}) {
+  const text = { font: "var(--type-button2)", color: "var(--text-secondary)" };
+  return (
+    <div className="flex flex-col gap-1.5">
+      {/* A <label> needs something to be the label of. The format switch is a
+          group of buttons, not one control, so that one gets a span. */}
+      {htmlFor ? (
+        <label htmlFor={htmlFor} style={text}>
+          {label}
+        </label>
+      ) : (
+        <span style={text}>{label}</span>
+      )}
+      {children}
     </div>
   );
 }

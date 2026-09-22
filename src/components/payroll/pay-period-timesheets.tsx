@@ -1,18 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, AlertCircle, Clock, ChevronDown, ChevronUp } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Clock } from "lucide-react";
 import { formatMinutes } from "@/lib/utils/duration";
 import { TIMESHEET_STATUS_LABEL } from "@/lib/state-machines/labels";
+import { Badge, Button, EmptyState, TBody, TD, TH, THead, TR, Table, statusTone } from "@/components/ui";
 
-const TS_BADGE: Record<string, string> = {
-  OPEN:             "bg-zinc-100 text-zinc-600",
-  SUBMITTED:        "bg-blue-100 text-blue-700",
-  SUP_APPROVED:     "bg-purple-100 text-purple-700",
-  PAYROLL_APPROVED: "bg-green-100 text-green-700",
-  LOCKED:           "bg-zinc-200 text-zinc-500",
-};
+/**
+ * Every timesheet in the pay period, as the doc template's table section.
+ *
+ * <p>These used to be one card per employee. On a 214-person period that is
+ * 214 stacked panels, and the two numbers payroll actually reads down — OT and
+ * DT — sat inline in a sentence, so spotting the one person with double time
+ * meant reading every card. A table puts them in a column.
+ *
+ * <p>The blocking issues stay behind a disclosure rather than printing under
+ * every row: on a healthy period they are all empty, and a permanently
+ * expanded detail area would double the height of a clean list to say nothing.
+ */
 
 export type TimesheetTile = {
   id: string;
@@ -28,93 +34,35 @@ export type TimesheetTile = {
   siteName: string | null;
 };
 
-function TimesheetCard({
-  ts,
-  payPeriodId,
-  expanded,
-  onToggle,
-}: {
-  ts: TimesheetTile;
-  payPeriodId: string;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  const isApproved = ts.status === "PAYROLL_APPROVED" || ts.status === "LOCKED";
-  const hasIssues = ts.issues.length > 0;
-
-  return (
-    <div
-      className={`rounded-xl border bg-white dark:bg-zinc-900 overflow-hidden ${
-        hasIssues
-          ? "border-red-300 dark:border-red-800/60"
-          : "border-zinc-200 dark:border-zinc-800"
-      }`}
-    >
-      <div className="flex items-center justify-between p-4">
-        <Link
-          href={`/payroll/timecards?payPeriodId=${payPeriodId}&employeeId=${ts.employeeId}`}
-          className="flex flex-1 min-w-0 items-center gap-3 transition-opacity hover:opacity-80"
-        >
-          {isApproved && !ts.hasExceptions ? (
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
-          ) : ts.hasExceptions ? (
-            <AlertCircle className="h-4 w-4 shrink-0 text-red-500" />
-          ) : (
-            <Clock className="h-4 w-4 shrink-0 text-zinc-400" />
-          )}
-          <div className="min-w-0">
-            <p className="font-medium text-zinc-900 dark:text-white truncate">
-              {ts.employeeName}
-            </p>
-            <p className="mt-0.5 text-xs text-zinc-500">
-              REG {formatMinutes(ts.reg)}
-              {ts.ot > 0 && (
-                <span className="ml-2 text-amber-600">OT {formatMinutes(ts.ot)}</span>
-              )}
-              {ts.dt > 0 && (
-                <span className="ml-2 text-red-600">DT {formatMinutes(ts.dt)}</span>
-              )}
-            </p>
-          </div>
-        </Link>
-        <div className="ml-3 flex shrink-0 items-center gap-2">
-          <span className={`rounded-full px-3 py-1 text-xs font-medium ${TS_BADGE[ts.status] ?? ""}`}>
-            {(TIMESHEET_STATUS_LABEL as Record<string, string>)[ts.status]}
-          </span>
-          {hasIssues && (
-            <button
-              onClick={onToggle}
-              className="flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
-            >
-              {ts.issues.length} issue{ts.issues.length !== 1 ? "s" : ""}
-              {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {hasIssues && expanded && (
-        <div className="border-t border-red-200 bg-red-50 px-4 py-3 dark:border-red-800/40 dark:bg-red-900/10">
-          <ul className="flex flex-col gap-1.5">
-            {ts.issues.map((issue, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
-                {issue}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
+/** How far along the approval chain a sheet is, at a glance. */
+function StateIcon({ ts }: { ts: TimesheetTile }) {
+  const approved = ts.status === "PAYROLL_APPROVED" || ts.status === "LOCKED";
+  if (ts.hasExceptions) {
+    return (
+      <AlertCircle
+        className="h-4 w-4"
+        style={{ color: "var(--icon-error)" }}
+        aria-label="Has unresolved exceptions"
+      />
+    );
+  }
+  if (approved) {
+    return (
+      <CheckCircle2 className="h-4 w-4" style={{ color: "var(--icon-success)" }} aria-label="Approved" />
+    );
+  }
+  return <Clock className="h-4 w-4" style={{ color: "var(--icon-tertiary)" }} aria-label="Not yet approved" />;
 }
 
 export function PayPeriodTimesheets({
   timesheets,
   payPeriodId,
+  filtered = false,
 }: {
   timesheets: TimesheetTile[];
   payPeriodId: string;
+  /** Whether a site or department filter is narrowing the list above. */
+  filtered?: boolean;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -129,9 +77,14 @@ export function PayPeriodTimesheets({
 
   if (timesheets.length === 0) {
     return (
-      <p className="py-4 text-center text-sm text-zinc-400">
-        No timesheets for this pay period.
-      </p>
+      <EmptyState
+        title={filtered ? "No timesheets in view" : "No timesheets in this period"}
+        body={
+          filtered
+            ? "No timesheet in this pay period matches the site and department filters above."
+            : "Nothing has been generated yet. Timesheets appear as employees punch."
+        }
+      />
     );
   }
 
@@ -149,28 +102,126 @@ export function PayPeriodTimesheets({
   const showHeaders =
     groups.length > 1 || (groups.length === 1 && groups[0].siteName !== "No Site");
 
+  const COLS = 7;
+
   return (
-    <div className="flex flex-col gap-6">
-      {groups.map((group) => (
-        <div key={group.siteName}>
-          {showHeaders && (
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              {group.siteName}
-            </h3>
-          )}
-          <div className="flex flex-col gap-2">
-            {group.sheets.map((ts) => (
-              <TimesheetCard
-                key={ts.id}
-                ts={ts}
-                payPeriodId={payPeriodId}
-                expanded={expanded.has(ts.id)}
-                onToggle={() => toggle(ts.id)}
-              />
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
+    <Table>
+      <THead>
+        <TR>
+          {/* The state glyph has no header: it repeats the Status column in a
+              form you can scan down, and labelling it twice reads as two
+              different facts. */}
+          <TH style={{ width: 34 }} aria-label="State" />
+          <TH>Employee</TH>
+          <TH numeric>Reg</TH>
+          <TH numeric>OT</TH>
+          <TH numeric>DT</TH>
+          <TH>Status</TH>
+          <TH align="right">Blocking</TH>
+        </TR>
+      </THead>
+      <TBody>
+        {groups.map((group) => (
+          <Fragment key={group.siteName}>
+            {showHeaders && (
+              <TR
+                style={{
+                  // Inline, not a class: .ta-row's hover rule would otherwise
+                  // light the group header up as though it were a record.
+                  background: "var(--surface-secondary)",
+                }}
+              >
+                <TD
+                  colSpan={COLS}
+                  className="wms-overline"
+                  style={{ height: 28, color: "var(--text-tertiary)" }}
+                >
+                  {group.siteName}
+                </TD>
+              </TR>
+            )}
+
+            {group.sheets.map((ts) => {
+              const open = expanded.has(ts.id);
+              return (
+                <Fragment key={ts.id}>
+                  <TR>
+                    <TD style={{ paddingRight: 0 }}>
+                      <StateIcon ts={ts} />
+                    </TD>
+                    <TD>
+                      <Link
+                        href={`/payroll/timecards?payPeriodId=${payPeriodId}&employeeId=${ts.employeeId}`}
+                        style={{
+                          color: "var(--text-primary)",
+                          fontWeight: "var(--weight-medium)",
+                          textDecoration: "none",
+                        }}
+                        className="hover:underline"
+                      >
+                        {ts.employeeName}
+                      </Link>
+                    </TD>
+                    <TD numeric>{formatMinutes(ts.reg)}</TD>
+                    <TD numeric style={{ color: ts.ot > 0 ? "var(--text-warning)" : "var(--text-tertiary)" }}>
+                      {ts.ot > 0 ? formatMinutes(ts.ot) : "—"}
+                    </TD>
+                    <TD numeric style={{ color: ts.dt > 0 ? "var(--text-error)" : "var(--text-tertiary)" }}>
+                      {ts.dt > 0 ? formatMinutes(ts.dt) : "—"}
+                    </TD>
+                    <TD>
+                      <Badge tone={statusTone(ts.status)} size="sm">
+                        {(TIMESHEET_STATUS_LABEL as Record<string, string>)[ts.status] ?? ts.status}
+                      </Badge>
+                    </TD>
+                    <TD align="right">
+                      {ts.issues.length === 0 ? (
+                        <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>—</span>
+                      ) : (
+                        <Button
+                          hierarchy="link"
+                          tone="error"
+                          size="sm"
+                          onClick={() => toggle(ts.id)}
+                          aria-expanded={open}
+                          trailingIcon={
+                            open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                          }
+                        >
+                          {ts.issues.length} issue{ts.issues.length === 1 ? "" : "s"}
+                        </Button>
+                      )}
+                    </TD>
+                  </TR>
+
+                  {open && ts.issues.length > 0 && (
+                    <TR style={{ background: "var(--surface-error)" }}>
+                      <TD colSpan={COLS} style={{ height: "auto", padding: "10px 14px" }}>
+                        <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+                          {ts.issues.map((issue, i) => (
+                            <li
+                              key={i}
+                              className="flex items-start gap-2"
+                              style={{ font: "var(--type-body2)", color: "var(--text-primary)" }}
+                            >
+                              <AlertCircle
+                                className="mt-0.5 h-3.5 w-3.5 flex-none"
+                                style={{ color: "var(--icon-error)" }}
+                                aria-hidden="true"
+                              />
+                              {issue}
+                            </li>
+                          ))}
+                        </ul>
+                      </TD>
+                    </TR>
+                  )}
+                </Fragment>
+              );
+            })}
+          </Fragment>
+        ))}
+      </TBody>
+    </Table>
   );
 }

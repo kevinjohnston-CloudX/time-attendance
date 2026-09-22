@@ -1,49 +1,111 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { getEffectiveRole } from "@/lib/rbac/check-permission";
-import { Users, Building2, FolderOpen, Calendar, Settings, FileText, RefreshCw, SlidersHorizontal, CalendarClock, DatabaseZap } from "lucide-react";
+import {
+  IdCard,
+  Network,
+  ShieldCheck,
+  ScrollText,
+  Building2,
+  CalendarClock,
+  PartyPopper,
+  SlidersHorizontal,
+  Receipt,
+  MessageCircle,
+  CalendarRange,
+  Palmtree,
+  FileText,
+  Hourglass,
+  Plug,
+  RefreshCw,
+  DatabaseZap,
+  Settings,
+  Users,
+  Warehouse,
+  Scale,
+  CalendarOff,
+  Cpu,
+} from "lucide-react";
+import { PageHeader } from "@/components/ui";
+import { ADMIN_GROUPS } from "@/components/layout/nav-model";
+import { AdminHub, type HubGroup } from "./admin-hub";
 
-const adminCards = [
-  { label: "Employees", href: "/admin/employees", icon: Users, perm: "EMPLOYEE_MANAGE" },
-  { label: "Sites", href: "/admin/sites", icon: Building2, perm: "SITE_MANAGE" },
-  { label: "Departments", href: "/admin/departments", icon: FolderOpen, perm: "SITE_MANAGE" },
-  { label: "Leave Types", href: "/admin/leave-types", icon: Calendar, perm: "RULES_MANAGE" },
-  { label: "PTO Policies", href: "/admin/pto-policies", icon: CalendarClock, perm: "RULES_MANAGE" },
-  { label: "Rule Sets", href: "/admin/rules", icon: Settings, perm: "RULES_MANAGE" },
-  { label: "ADP Sync", href: "/admin/adp", icon: RefreshCw, perm: "EMPLOYEE_MANAGE" },
-  { label: "WMS Sync", href: "/admin/wms-sync", icon: DatabaseZap, perm: "EMPLOYEE_MANAGE" },
-  { label: "Audit Log", href: "/admin/audit", icon: FileText, perm: "AUDIT_VIEW" },
-  { label: "Company Settings", href: "/admin/settings", icon: SlidersHorizontal, perm: "PAY_PERIOD_MANAGE" },
-] as const;
+/**
+ * Every setting in the product, grouped.
+ *
+ * <p>The list itself lives in the nav model, because the ⌘K palette offers
+ * the same destinations and a second copy here is a second copy to keep in
+ * step. This page only decides what each one looks like.
+ */
+const ICONS: Record<string, React.ReactNode> = {
+  "/admin/employees": <IdCard className="h-[18px] w-[18px]" />,
+  "/admin/site-settings?tab=departments": <Network className="h-[18px] w-[18px]" />,
+  "/admin/roles": <ShieldCheck className="h-[18px] w-[18px]" />,
+  "/admin/audit": <ScrollText className="h-[18px] w-[18px]" />,
+  "/admin/site-settings?tab=sites": <Building2 className="h-[18px] w-[18px]" />,
+  "/admin/rules-setup?tab=shifts": <CalendarClock className="h-[18px] w-[18px]" />,
+  "/admin/site-settings?tab=holidays": <PartyPopper className="h-[18px] w-[18px]" />,
+  "/admin/rules-setup?tab=rule-sets": <SlidersHorizontal className="h-[18px] w-[18px]" />,
+  "/admin/site-settings?tab=pay-codes": <Receipt className="h-[18px] w-[18px]" />,
+  "/admin/site-settings?tab=reason-codes": <MessageCircle className="h-[18px] w-[18px]" />,
+  "/payroll/pay-periods": <CalendarRange className="h-[18px] w-[18px]" />,
+  "/admin/site-settings?tab=leave-types": <Palmtree className="h-[18px] w-[18px]" />,
+  "/admin/rules-setup?tab=leave-policies": <FileText className="h-[18px] w-[18px]" />,
+  "/accruals": <Hourglass className="h-[18px] w-[18px]" />,
+  "/admin/api-keys": <Plug className="h-[18px] w-[18px]" />,
+  "/admin/adp": <RefreshCw className="h-[18px] w-[18px]" />,
+  "/admin/wms-sync": <DatabaseZap className="h-[18px] w-[18px]" />,
+  "/admin/settings": <Settings className="h-[18px] w-[18px]" />,
+};
+
+/**
+ * The glyph for each area in the hub's "Settings areas" card.
+ *
+ * <p>Keyed by group label rather than by index so reordering ADMIN_GROUPS, or
+ * adding a sixth area, cannot silently shuffle the icons onto the wrong rows.
+ */
+const GROUP_ICONS: Record<string, React.ReactNode> = {
+  "People & HR": <Users className="h-[18px] w-[18px]" />,
+  Organization: <Warehouse className="h-[18px] w-[18px]" />,
+  "Pay & Rules": <Scale className="h-[18px] w-[18px]" />,
+  "Leave & Absence": <CalendarOff className="h-[18px] w-[18px]" />,
+  System: <Cpu className="h-[18px] w-[18px]" />,
+};
 
 export default async function AdminPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
   const effectiveRole = await getEffectiveRole(session.user);
-  const visibleCards = adminCards.filter((c) =>
-    hasPermission(effectiveRole, c.perm)
-  );
 
-  if (visibleCards.length === 0) redirect("/dashboard");
+  const groups: HubGroup[] = ADMIN_GROUPS.map((g) => ({
+    label: g.label,
+    hint: g.hint,
+    icon: GROUP_ICONS[g.label] ?? <Settings className="h-[18px] w-[18px]" />,
+    items: g.items
+      .filter((i) => hasPermission(effectiveRole, i.permission as Parameters<typeof hasPermission>[1]))
+      .map((i) => ({
+        label: i.label,
+        detail: i.detail,
+        href: i.href,
+        icon: ICONS[i.href] ?? <Settings className="h-[18px] w-[18px]" />,
+      })),
+  })).filter((g) => g.items.length > 0);
+
+  const total = groups.reduce((n, g) => n + g.items.length, 0);
+  if (total === 0) redirect("/dashboard");
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Admin</h1>
-      <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
-        {visibleCards.map((card) => (
-          <Link
-            key={card.href}
-            href={card.href}
-            className="flex items-center gap-4 rounded-xl border border-zinc-200 bg-white p-5 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800/60"
-          >
-            <card.icon className="h-6 w-6 text-zinc-400" />
-            <span className="font-medium text-zinc-900 dark:text-white">{card.label}</span>
-          </Link>
-        ))}
-      </div>
+    <div className="flex flex-col gap-4">
+      {/* The count moved into the areas card and the filter row, where it is
+          next to the thing it counts. The subtitle says how the page is
+          organised instead, which is the question someone arriving here asks. */}
+      <PageHeader
+        title="Administration"
+        subtitle="People, policy and configuration — grouped by what each page controls"
+      />
+      <AdminHub groups={groups} />
     </div>
   );
 }

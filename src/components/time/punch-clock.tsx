@@ -44,13 +44,13 @@ export function PunchClock({ initialState }: PunchClockProps) {
   }
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-8 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="rounded-2xl ta-card p-8">
       {/* Live clock */}
       <div className="text-center">
-        <p className="text-5xl font-bold tabular-nums text-zinc-900 dark:text-white">
+        <p className="text-5xl font-bold tabular-nums text-[var(--text-primary)]">
           {format(now, "hh:mm:ss a")}
         </p>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-sm text-[var(--text-tertiary)]">
           {format(now, "EEEE, MMMM d, yyyy")}
         </p>
       </div>
@@ -74,7 +74,7 @@ export function PunchClock({ initialState }: PunchClockProps) {
               key={pt}
               onClick={() => handlePunch(pt)}
               disabled={isPending}
-              className="rounded-lg bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="rounded-lg bg-[var(--fill-accent)] px-6 py-2.5 text-sm font-semibold text-[var(--text-on-accent)] transition-colors hover:bg-[var(--fill-accent-hover)] disabled:opacity-50"
             >
               {PUNCH_TYPE_LABEL[pt]}
             </button>

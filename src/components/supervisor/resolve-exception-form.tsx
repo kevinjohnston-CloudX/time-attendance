@@ -30,12 +30,12 @@ export function ResolveExceptionForm({ exceptionId }: Props) {
         value={note}
         onChange={(e) => setNote(e.target.value)}
         placeholder="Resolution note…"
-        className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+        className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-[var(--stroke-accent)] focus:shadow-[var(--focus-ring-tight)] focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
       />
       <button
         type="submit"
         disabled={isPending || !note.trim()}
-        className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-900 disabled:opacity-50 dark:bg-zinc-600 dark:hover:bg-zinc-500"
+        className="rounded-lg bg-[var(--fill-accent)] px-3 py-1.5 text-sm font-medium text-[var(--text-on-accent)] transition-colors hover:bg-[var(--fill-accent-hover)] disabled:opacity-50"
       >
         {isPending ? "Saving…" : "Resolve"}
       </button>

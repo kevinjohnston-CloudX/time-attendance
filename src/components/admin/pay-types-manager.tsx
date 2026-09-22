@@ -3,6 +3,12 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createPayType, updatePayType, deletePayType } from "@/actions/pay-type.actions";
+import {
+  fieldCls as inputCls,
+  primaryBtnCls as saveBtnCls,
+  secondaryBtnCls as cancelBtnCls,
+  dangerBtnCls,
+} from "@/components/ui/form-classes";
 
 type PayType = {
   id: string;
@@ -15,15 +21,6 @@ type PayType = {
 interface Props {
   payTypes: PayType[];
 }
-
-const inputCls =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const saveBtnCls =
-  "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
-const cancelBtnCls =
-  "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
-const dangerBtnCls =
-  "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50";
 
 function PayTypeFields({ payType }: { payType?: PayType }) {
   return (
@@ -56,7 +53,7 @@ function PayTypeFields({ payType }: { payType?: PayType }) {
       <div>
         <label className="mb-1 block text-xs text-zinc-500">Include in Employee Setup</label>
         <div className="flex gap-4">
-          <label className="flex items-center gap-1.5 text-sm text-zinc-700 dark:text-zinc-300">
+          <label className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)]">
             <input
               type="radio"
               name="includeInEmployeeSetup"
@@ -65,7 +62,7 @@ function PayTypeFields({ payType }: { payType?: PayType }) {
             />
             Include
           </label>
-          <label className="flex items-center gap-1.5 text-sm text-zinc-700 dark:text-zinc-300">
+          <label className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)]">
             <input
               type="radio"
               name="includeInEmployeeSetup"
@@ -159,7 +156,7 @@ export function PayTypesManager({ payTypes }: Props) {
             placeholder="Search pay types…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm text-zinc-700 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:placeholder-zinc-500"
+            className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm text-zinc-700 placeholder-zinc-400 focus:border-[var(--stroke-accent)] focus:shadow-[var(--focus-ring-tight)] focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:placeholder-zinc-500"
           />
         </div>
         <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-500">
@@ -168,7 +165,7 @@ export function PayTypesManager({ payTypes }: Props) {
         </label>
         <button
           onClick={() => { setShowCreate(true); setEditing(null); setError(null); }}
-          className="ml-auto rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          className="ml-auto rounded-lg bg-[var(--fill-accent)] px-4 py-2 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--fill-accent-hover)]"
         >
           + Add Pay Type
         </button>
@@ -186,12 +183,12 @@ export function PayTypesManager({ payTypes }: Props) {
             key={pt.id}
             type="button"
             onClick={() => { setEditing(pt); setShowCreate(false); setConfirmDeleteId(null); setError(null); }}
-            className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
+            className="w-full rounded-xl ta-card ta-card-hover px-4 py-3 text-left"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <span className="font-mono text-sm text-zinc-400">{pt.number}</span>
-                <span className={`font-medium ${pt.isActive ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"}`}>
+                <span className={`font-medium ${pt.isActive ? "text-[var(--text-primary)]" : "text-[var(--text-tertiary)]"}`}>
                   {pt.description ?? "—"}
                 </span>
               </div>
@@ -208,8 +205,8 @@ export function PayTypesManager({ payTypes }: Props) {
 
       {/* Create form */}
       {showCreate && (
-        <div className="mt-4 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
-          <h3 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-white">New Pay Type</h3>
+        <div className="mt-4 rounded-xl ta-card p-5">
+          <h3 className="mb-4 text-sm font-semibold text-[var(--text-primary)]">New Pay Type</h3>
           <form onSubmit={handleCreate} className="flex flex-col gap-4">
             <PayTypeFields />
             <div className="flex gap-2">
@@ -226,8 +223,8 @@ export function PayTypesManager({ payTypes }: Props) {
 
       {/* Edit form */}
       {editing && !showCreate && (
-        <div className="mt-4 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
-          <h3 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-white">Edit Pay Type</h3>
+        <div className="mt-4 rounded-xl ta-card p-5">
+          <h3 className="mb-4 text-sm font-semibold text-[var(--text-primary)]">Edit Pay Type</h3>
           <form onSubmit={handleUpdate} className="flex flex-col gap-4">
             <PayTypeFields payType={editing} />
 

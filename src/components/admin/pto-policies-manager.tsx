@@ -2,8 +2,42 @@
 
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, Trash2 } from "lucide-react";
+import { FileText, Plus, X, Trash2 } from "lucide-react";
+import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
 import { createPtoPolicy, updatePtoPolicy, deletePtoPolicy } from "@/actions/pto-policy.actions";
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  Checkbox,
+  EmptyState,
+  Input,
+  SearchInput,
+  Select,
+  SegmentedControl,
+  Table,
+  TBody,
+  THead,
+  TR,
+  TH,
+  TD,
+  TableFooter,
+  Toolbar,
+  statusTone,
+} from "@/components/ui";
+
+/**
+ * PTO policies — the list on the design's list template, the editor in a
+ * dialog behind it.
+ *
+ * <p>The design's Policies list carries Rate, Waiting Period, Balance Cap and
+ * Carryover as single values. A policy here is tiered: the rate and both caps
+ * are per tenure level, so one number in a column would be whichever tier
+ * happened to be first. The table shows how many tiers there are and how many
+ * sites and employees the policy reaches — the figures that say whether a
+ * change to it is small or company-wide.
+ */
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -149,19 +183,107 @@ const MONTHS = [
   "July","August","September","October","November","December",
 ];
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+type View = "all" | "active" | "inactive";
 
-const inputCls = "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const smInputCls = "w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const labelCls = "mb-1 block text-xs text-zinc-500";
-const smLabelCls = "mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-zinc-400";
-const saveBtnCls = "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
-const cancelBtnCls = "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
-const dangerBtnCls = "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50";
+const VIEWS = [
+  { value: "all", label: "All" },
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+];
+
+/** Field grid from the design's doc template, at two columns. */
+const FIELD_GRID = "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,48%)),1fr))]";
+
+// ─── Shared form pieces ───────────────────────────────────────────────────────
+
+/**
+ * A control sized to sit in a grid cell or beside a word.
+ *
+ * <p>The tier grid is six numbers across; the kit's 32px labelled field in
+ * every cell would make one tier as tall as the dialog.
+ */
+function InlineInput({ width, ...rest }: InputHTMLAttributes<HTMLInputElement> & { width?: number | string }) {
+  return (
+    <input
+      {...rest}
+      className="ta-field rounded px-2 py-1 disabled:opacity-40"
+      style={{
+        width: width ?? 80,
+        border: "1px solid var(--stroke-secondary)",
+        background: "var(--surface-card)",
+        color: "var(--text-primary)",
+        font: "var(--type-body2)",
+        fontVariantNumeric: "tabular-nums",
+        textAlign: rest.type === "number" ? "right" : "left",
+        outline: "none",
+      }}
+    />
+  );
+}
+
+/** The select half of the same pair. */
+function InlineSelect({ children, ...rest }: SelectHTMLAttributes<HTMLSelectElement> & { children: ReactNode }) {
+  return (
+    <Select {...rest} style={{ height: 26, font: "var(--type-body2)", padding: "0 6px" }}>
+      {children}
+    </Select>
+  );
+}
+
+/** A labelled Select, matching the kit Input's label. */
+function SelectField({
+  label,
+  hint,
+  children,
+  ...rest
+}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <label className="flex w-full flex-col gap-1.5">
+      <span className="wms-label">{label}</span>
+      <Select {...rest}>{children}</Select>
+      {hint && <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{hint}</span>}
+    </label>
+  );
+}
+
+/** A small labelled control for the two-up sub-grids. */
+function SmallField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="flex w-full flex-col gap-1">
+      <span className="wms-overline">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+/** A section inside the dialog, where a nested Card would be a panel on a panel. */
+function FormSection({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <span className="wms-overline">{label}</span>
+      {children}
+      {hint && <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)", textWrap: "pretty" }}>{hint}</span>}
+    </section>
+  );
+}
+
+/** A bordered group — one rule of the policy, with everything it switches on. */
+function Panel({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <section
+      className="flex flex-col gap-3 rounded-xl px-4 py-3"
+      style={{ border: "1px solid var(--stroke-secondary)" }}
+    >
+      <span className="wms-overline">{label}</span>
+      {children}
+      {hint && <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)", textWrap: "pretty" }}>{hint}</span>}
+    </section>
+  );
+}
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
     document.addEventListener("keydown", onKey);
@@ -169,15 +291,28 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <h3 className="text-base font-semibold text-zinc-900 dark:text-white">{title}</h3>
-          <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" aria-label="Close">
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
-        </div>
-        <div className="px-6 py-5">{children}</div>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.4)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="ta-modal max-h-[90vh] w-full max-w-3xl overflow-y-auto"
+        style={{ borderRadius: "var(--radius-l)" }}
+      >
+        <header
+          className="flex items-center justify-between gap-3 px-5 py-3.5"
+          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+        >
+          <h3 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>{title}</h3>
+          <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
+            <X className="h-4 w-4" />
+          </Button>
+        </header>
+        <div className="px-5 py-4">{children}</div>
       </div>
     </div>
   );
@@ -203,56 +338,52 @@ function PostingRow({
   onDayChange: (v: number | "") => void;
 }) {
   return (
-    <div className="space-y-2">
-      <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{label}</p>
-      <div>
-        <label className={labelCls}>Posting Frequency</label>
-        <select
-          value={freq}
-          onChange={(e) => onFreqChange(e.target.value as AccrualPostingFreq)}
-          className={inputCls}
-        >
-          <option value="PER_PAY_PERIOD">Per Pay Period</option>
-          <option value="DAILY">Daily</option>
-          <option value="WEEKLY">Weekly</option>
-          <option value="BI_WEEKLY">Bi-Weekly</option>
-          <option value="SEMI_MONTHLY">Semi-Monthly</option>
-          <option value="MONTHLY">Monthly</option>
-          <option value="EVERY_2_MONTHS">Every 2 Months</option>
-          <option value="QUARTERLY">Quarterly</option>
-          <option value="EVERY_4_MONTHS">Every 4 Months</option>
-          <option value="SEMI_ANNUALLY">Semi-Annually</option>
-          <option value="ANNUALLY">Annually</option>
-        </select>
-      </div>
+    <FormSection label={label}>
+      <SelectField
+        label="Posting Frequency"
+        value={freq}
+        onChange={(e) => onFreqChange(e.target.value as AccrualPostingFreq)}
+      >
+        <option value="PER_PAY_PERIOD">Per Pay Period</option>
+        <option value="DAILY">Daily</option>
+        <option value="WEEKLY">Weekly</option>
+        <option value="BI_WEEKLY">Bi-Weekly</option>
+        <option value="SEMI_MONTHLY">Semi-Monthly</option>
+        <option value="MONTHLY">Monthly</option>
+        <option value="EVERY_2_MONTHS">Every 2 Months</option>
+        <option value="QUARTERLY">Quarterly</option>
+        <option value="EVERY_4_MONTHS">Every 4 Months</option>
+        <option value="SEMI_ANNUALLY">Semi-Annually</option>
+        <option value="ANNUALLY">Annually</option>
+      </SelectField>
+      {/* The two legacy frequencies are not offered above; a policy already on
+          ANNUALLY_FIXED still needs its month and day editable. */}
       {freq === "ANNUALLY_FIXED" && (
-        <div className="grid grid-cols-2 gap-3 pl-1">
-          <div>
-            <label className={smLabelCls}>Month</label>
-            <select
+        <div className="grid gap-3 pl-1 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(140px,48%)),1fr))]">
+          <SmallField label="Month">
+            <InlineSelect
               value={month}
               onChange={(e) => onMonthChange(e.target.value !== "" ? parseInt(e.target.value, 10) : "")}
-              className={smInputCls}
+              style={{ width: "100%" }}
             >
               <option value="">-- select --</option>
               {MONTHS.map((m, i) => (
-                <option key={i} value={i + 1}>{m}</option>
+                <option key={m} value={i + 1}>{m}</option>
               ))}
-            </select>
-          </div>
-          <div>
-            <label className={smLabelCls}>Day</label>
-            <input
+            </InlineSelect>
+          </SmallField>
+          <SmallField label="Day">
+            <InlineInput
               type="number" min="1" max="31" step="1"
               value={day}
               onChange={(e) => onDayChange(e.target.value !== "" ? parseInt(e.target.value, 10) : "")}
               placeholder="1–31"
-              className={smInputCls}
+              width="100%"
             />
-          </div>
+          </SmallField>
         </div>
       )}
-    </div>
+    </FormSection>
   );
 }
 
@@ -399,102 +530,68 @@ function PolicyForm({ leaveTypes, payCodes, initial, isPending, onSubmit, onCanc
 
   return (
     <form onSubmit={handleSubmit}>
-      {/* Tab nav */}
-      <div className="mb-5 flex gap-0 border-b border-zinc-200 dark:border-zinc-700">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              activeTab === tab.key
-                ? "border-zinc-900 text-zinc-900 dark:border-white dark:text-white"
-                : "border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      {/* Tab bar. The design system has no underline tab: a set this small
+          and this mutually exclusive is a segmented control. */}
+      <div className="mb-5">
+        <SegmentedControl
+          items={TABS.map((tab) => ({ value: tab.key, label: tab.label }))}
+          value={activeTab}
+          onChange={(v) => setActiveTab(v as typeof activeTab)}
+        />
       </div>
 
       {/* ── Properties tab ── */}
-      <div className={activeTab !== "properties" ? "hidden" : "space-y-4"}>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2 sm:col-span-1">
-            <label className={labelCls}>Policy Name</label>
-            <input name="name" required defaultValue={initial?.name ?? ""} placeholder="e.g. Full-Time PTO" className={inputCls} />
-          </div>
-          <div className="col-span-2 sm:col-span-1">
-            <label className={labelCls}>Description <span className="text-zinc-400">(optional)</span></label>
-            <input name="description" defaultValue={initial?.description ?? ""} placeholder="Brief description" className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Leave Type</label>
-            <select value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)} className={inputCls}>
-              {leaveTypes.map((lt) => (
-                <option key={lt.id} value={lt.id}>{lt.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Pay Code <span className="text-zinc-400">(optional)</span></label>
-            <select value={payCodeId ?? ""} onChange={(e) => setPayCodeId(e.target.value || null)} className={inputCls}>
-              <option value="">— none —</option>
-              {payCodes.map((pc) => (
-                <option key={pc.id} value={pc.id}>
-                  {pc.code} – {pc.label}{pc.expressCode ? ` (${pc.expressCode})` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Default Policy</label>
-            <select name="isDefault" defaultValue={initial?.isDefault ? "true" : "false"} className={inputCls}>
-              <option value="false">No</option>
-              <option value="true">Yes — tenant fallback</option>
-            </select>
-          </div>
+      <div className={activeTab !== "properties" ? "hidden" : "flex flex-col gap-4"}>
+        <div className={FIELD_GRID}>
+          <Input label="Policy Name" name="name" required defaultValue={initial?.name ?? ""} placeholder="e.g. Full-Time PTO" />
+          <Input label="Description" name="description" defaultValue={initial?.description ?? ""} placeholder="Brief description" hint="Optional" />
+          <SelectField label="Leave Type" value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)}>
+            {leaveTypes.map((lt) => (
+              <option key={lt.id} value={lt.id}>{lt.name}</option>
+            ))}
+          </SelectField>
+          <SelectField label="Pay Code" value={payCodeId ?? ""} onChange={(e) => setPayCodeId(e.target.value || null)} hint="Optional">
+            <option value="">— none —</option>
+            {payCodes.map((pc) => (
+              <option key={pc.id} value={pc.id}>
+                {pc.code} – {pc.label}{pc.expressCode ? ` (${pc.expressCode})` : ""}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField label="Default Policy" name="isDefault" defaultValue={initial?.isDefault ? "true" : "false"}>
+            <option value="false">No</option>
+            <option value="true">Yes — tenant fallback</option>
+          </SelectField>
           {initial && (
-            <div>
-              <label className={labelCls}>Status</label>
-              <select name="isActive" defaultValue={initial.isActive ? "true" : "false"} className={inputCls}>
-                <option value="true">Active</option>
-                <option value="false">Inactive</option>
-              </select>
-            </div>
+            <SelectField label="Status" name="isActive" defaultValue={initial.isActive ? "true" : "false"}>
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </SelectField>
           )}
-          <div className="col-span-2 sm:col-span-1">
-            <label className={labelCls}>Max hours per day <span className="text-zinc-400">(optional)</span></label>
-            <input
-              name="maxDailyHours"
-              type="number" min="0.25" max="24" step="0.25"
-              defaultValue={initial?.maxDailyHours ?? ""}
-              placeholder="No limit"
-              className={inputCls}
-            />
-            <p className="mt-1 text-xs text-zinc-400">Leave blank for no limit. Employees requesting more than this on a single day will see an error.</p>
-          </div>
+          <Input
+            label="Max hours per day"
+            name="maxDailyHours"
+            type="number" min="0.25" max="24" step="0.25"
+            defaultValue={initial?.maxDailyHours ?? ""}
+            placeholder="No limit"
+            hint="Optional. Blank means no limit; a request for more than this on one day is refused."
+          />
         </div>
         <input type="hidden" name="leaveTypeId" value={leaveTypeId} />
       </div>
 
       {/* ── Posting Frequency tab ── */}
-      <div className={activeTab !== "posting" ? "hidden" : "space-y-4"}>
-        <div>
-          <label className={labelCls}>Service Month Based On</label>
-          <select
-            value={serviceMonthBasis}
-            onChange={(e) => setServiceMonthBasis(e.target.value as ServiceMonthBasis)}
-            className={inputCls}
-          >
-            {(Object.keys(SERVICE_MONTH_BASIS_LABELS) as ServiceMonthBasis[]).map((key) => (
-              <option key={key} value={key}>{SERVICE_MONTH_BASIS_LABELS[key]}</option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-zinc-400">
-            Determines which employee date is used to calculate tenure tiers and annual anniversary triggers.
-          </p>
-        </div>
+      <div className={activeTab !== "posting" ? "hidden" : "flex flex-col gap-4"}>
+        <SelectField
+          label="Service Month Based On"
+          value={serviceMonthBasis}
+          onChange={(e) => setServiceMonthBasis(e.target.value as ServiceMonthBasis)}
+          hint="Determines which employee date is used to calculate tenure tiers and annual anniversary triggers."
+        >
+          {(Object.keys(SERVICE_MONTH_BASIS_LABELS) as ServiceMonthBasis[]).map((key) => (
+            <option key={key} value={key}>{SERVICE_MONTH_BASIS_LABELS[key]}</option>
+          ))}
+        </SelectField>
 
         <PostingRow
           label="1st Posting"
@@ -506,73 +603,53 @@ function PolicyForm({ leaveTypes, payCodes, initial, isPending, onSubmit, onCanc
           onDayChange={setPosting1Day}
         />
 
-        <div>
-          <label className={labelCls}>Posting Anchor Date <span className="text-zinc-400">(optional)</span></label>
-          <input
+        <div className="w-56">
+          <Input
+            label="Posting Anchor Date"
             type="date"
             value={postingAnchorDate}
             onChange={(e) => setPostingAnchorDate(e.target.value)}
-            className={`w-48 ${inputCls}`}
+            hint="Optional. A fixed reference for bi-weekly or weekly cycles; blank uses a calendar approximation."
           />
-          <p className="mt-1 text-xs text-zinc-400">
-            Fixed reference date for bi-weekly or weekly cycles. Leave blank to use a calendar approximation.
-          </p>
         </div>
 
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
-          <input
-            type="checkbox"
-            checked={dualPosting}
-            onChange={(e) => setDualPosting(e.target.checked)}
-            className="h-4 w-4 rounded border-zinc-300 accent-zinc-800 dark:border-zinc-600"
-          />
-          Enable 2nd posting
-        </label>
+        <Checkbox checked={dualPosting} onChange={setDualPosting} label="Enable 2nd posting" />
 
         {dualPosting && (
-          <div className="space-y-3 rounded-lg border border-dashed border-zinc-300 p-3 dark:border-zinc-600">
-            {/* Starts on */}
-            <div>
-              <label className={labelCls}>Starts on the</label>
-              <div className="flex items-center gap-2">
-                <input
+          <div
+            className="flex flex-col gap-3 rounded-lg p-3"
+            style={{ border: "1px dashed var(--stroke-default)" }}
+          >
+            <div className="flex flex-col gap-1.5">
+              <span className="wms-label">Starts on the</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <InlineInput
                   type="number" min="1" max="99" step="1"
+                  aria-label="Starts on the Nth year or month"
                   value={posting2StartsOnYear}
                   onChange={(e) => setPosting2StartsOnYear(e.target.value)}
-                  className="w-16 rounded border border-zinc-300 bg-white px-2 py-1 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                  width={64}
                 />
-                <span className="text-sm text-zinc-500">
+                <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                   {posting2BasedOnMonths ? "month(s)" : (() => {
                     const n = parseInt(posting2StartsOnYear, 10);
                     return `${n}${n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"} calendar year`;
                   })()}
                 </span>
-                <label className="flex cursor-pointer items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-400">
-                  <input
-                    type="checkbox"
-                    checked={posting2BasedOnMonths}
-                    onChange={(e) => setPosting2BasedOnMonths(e.target.checked)}
-                    className="h-4 w-4 rounded border-zinc-300 accent-zinc-800 dark:border-zinc-600"
-                  />
-                  Based on Months
-                </label>
+                <Checkbox checked={posting2BasedOnMonths} onChange={setPosting2BasedOnMonths} label="Based on Months" />
               </div>
             </div>
 
-            {/* Service Month Based On */}
-            <div>
-              <label className={labelCls}>Service Month Based On</label>
-              <select
-                value={posting2ServiceMonthBasis}
-                onChange={(e) => setPosting2ServiceMonthBasis(e.target.value as ServiceMonthBasis | "")}
-                className={inputCls}
-              >
-                <option value="">— same as 1st posting —</option>
-                {(Object.keys(SERVICE_MONTH_BASIS_LABELS) as ServiceMonthBasis[]).map((key) => (
-                  <option key={key} value={key}>{SERVICE_MONTH_BASIS_LABELS[key]}</option>
-                ))}
-              </select>
-            </div>
+            <SelectField
+              label="Service Month Based On"
+              value={posting2ServiceMonthBasis}
+              onChange={(e) => setPosting2ServiceMonthBasis(e.target.value as ServiceMonthBasis | "")}
+            >
+              <option value="">— same as 1st posting —</option>
+              {(Object.keys(SERVICE_MONTH_BASIS_LABELS) as ServiceMonthBasis[]).map((key) => (
+                <option key={key} value={key}>{SERVICE_MONTH_BASIS_LABELS[key]}</option>
+              ))}
+            </SelectField>
 
             <PostingRow
               label="2nd Posting"
@@ -584,14 +661,13 @@ function PolicyForm({ leaveTypes, payCodes, initial, isPending, onSubmit, onCanc
               onDayChange={setPosting2Day}
             />
 
-            {/* Reference Date */}
-            <div>
-              <label className={labelCls}>Reference Date <span className="text-zinc-400">(optional)</span></label>
-              <input
+            <div className="w-56">
+              <Input
+                label="Reference Date"
                 type="date"
                 value={posting2AnchorDate}
                 onChange={(e) => setPosting2AnchorDate(e.target.value)}
-                className={`w-48 ${inputCls}`}
+                hint="Optional"
               />
             </div>
           </div>
@@ -599,378 +675,377 @@ function PolicyForm({ leaveTypes, payCodes, initial, isPending, onSubmit, onCanc
       </div>
 
       {/* ── Computation tab ── */}
-      <div className={activeTab !== "computation" ? "hidden" : "space-y-4"}>
-        {/* Accrual Rate Mode */}
-        <div>
-          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Accrual Rate Mode</p>
-          <div className="inline-flex rounded-lg border border-zinc-300 p-0.5 dark:border-zinc-600">
-            {(["YEARLY", "PER_POSTING"] as AccrualRateMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setRateMode(mode)}
-                className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
-                  rateMode === mode
-                    ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                    : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-                }`}
-              >
-                {mode === "YEARLY" ? "Annual Total" : "Per Posting Rate"}
-              </button>
-            ))}
-          </div>
-          <p className="mt-1 text-xs text-zinc-400">
-            {rateMode === "YEARLY"
-              ? "Enter total hours per year — the engine divides by pay periods automatically."
-              : "Enter exact hours credited each time accruals post. All leave types in this policy use the same mode."}
-          </p>
-        </div>
+      <div className={activeTab !== "computation" ? "hidden" : "flex flex-col gap-4"}>
 
-        {/* Balance Reset */}
-        <div className="rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-700">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">Balance Reset</p>
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
-            <input
-              type="checkbox"
-              checked={balanceReset}
-              onChange={(e) => setBalanceReset(e.target.checked)}
-              className="h-4 w-4 rounded border-zinc-300 accent-zinc-800 dark:border-zinc-600"
+        <FormSection
+          label="Accrual Rate Mode"
+          hint={
+            rateMode === "YEARLY"
+              ? "Enter total hours per year — the engine divides by pay periods automatically."
+              : "Enter exact hours credited each time accruals post. All leave types in this policy use the same mode."
+          }
+        >
+          <span className="self-start">
+            <SegmentedControl
+              items={[
+                { value: "YEARLY", label: "Annual Total" },
+                { value: "PER_POSTING", label: "Per Posting Rate" },
+              ]}
+              value={rateMode}
+              onChange={(v) => setRateMode(v as AccrualRateMode)}
+              size="sm"
+              ariaLabel="Accrual rate mode"
             />
-            Reset balance to 0 on a fixed date each year
-          </label>
+          </span>
+        </FormSection>
+
+        <Panel
+          label="Balance Reset"
+          hint="When enabled, accrued balances are zeroed on the specified date each year. If an accrual also falls on that date, the reset applies first."
+        >
+          <Checkbox checked={balanceReset} onChange={setBalanceReset} label="Reset balance to 0 on a fixed date each year" />
           {balanceReset && (
-            <div className="mt-3 grid grid-cols-2 gap-3 pl-1">
-              <div>
-                <label className={smLabelCls}>Reset Month</label>
-                <select
+            <div className="grid gap-3 pl-1 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(140px,48%)),1fr))]">
+              <SmallField label="Reset Month">
+                <InlineSelect
                   value={resetMonth}
                   onChange={(e) => setResetMonth(e.target.value !== "" ? parseInt(e.target.value, 10) : "")}
-                  className={smInputCls}
+                  style={{ width: "100%" }}
                 >
                   <option value="">-- select --</option>
                   {MONTHS.map((m, i) => (
-                    <option key={i} value={i + 1}>{m}</option>
+                    <option key={m} value={i + 1}>{m}</option>
                   ))}
-                </select>
-              </div>
-              <div>
-                <label className={smLabelCls}>Reset Day</label>
-                <input
+                </InlineSelect>
+              </SmallField>
+              <SmallField label="Reset Day">
+                <InlineInput
                   type="number" min="1" max="31" step="1"
                   value={resetDay}
                   onChange={(e) => setResetDay(e.target.value !== "" ? parseInt(e.target.value, 10) : "")}
                   placeholder="1–31"
-                  className={smInputCls}
+                  width="100%"
                 />
-              </div>
+              </SmallField>
             </div>
           )}
           {balanceReset && (
-            <div className="mt-3 space-y-3 pl-1">
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
-                <input
-                  type="checkbox"
-                  checked={carryOverEnabled}
-                  onChange={(e) => setCarryOverEnabled(e.target.checked)}
-                  className="h-4 w-4 rounded border-zinc-300 accent-zinc-800 dark:border-zinc-600"
-                />
-                Carry unused time forward
-              </label>
+            <div className="flex flex-col gap-3 pl-1">
+              <Checkbox checked={carryOverEnabled} onChange={setCarryOverEnabled} label="Carry unused time forward" />
               {carryOverEnabled && (
-                <div className="space-y-2 pl-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Carry-over destination</p>
+                <div className="flex flex-col gap-2 pl-1">
+                  <span className="wms-overline">Carry-over destination</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-zinc-400">→</span>
-                    <select
+                    <span style={{ color: "var(--text-tertiary)" }}>→</span>
+                    <InlineSelect
+                      aria-label="Carry-over destination leave type"
                       value={carryOverToLeaveTypeId ?? ""}
                       onChange={(e) => setCarryOverToLeaveTypeId(e.target.value || null)}
-                      className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
                     >
                       <option value="">Same leave type</option>
                       {leaveTypes.filter((l) => l.id !== leaveTypeId).map((l) => (
                         <option key={l.id} value={l.id}>{l.name}</option>
                       ))}
-                    </select>
+                    </InlineSelect>
                   </div>
                   {carryOverToLeaveTypeId && (
-                    <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
-                      <input
-                        type="checkbox"
-                        checked={carryOverRespectMaxBalance}
-                        onChange={(e) => setCarryOverRespectMaxBalance(e.target.checked)}
-                        className="h-3.5 w-3.5 rounded border-zinc-300 accent-zinc-800 dark:border-zinc-600"
-                      />
-                      Cap carry-over at destination&apos;s maximum balance
-                    </label>
+                    <Checkbox
+                      checked={carryOverRespectMaxBalance}
+                      onChange={setCarryOverRespectMaxBalance}
+                      label="Cap carry-over at destination’s maximum balance"
+                    />
                   )}
                 </div>
               )}
             </div>
           )}
-          <p className="mt-2 text-xs text-zinc-400">
-            When enabled, accrued balances are zeroed on the specified date each year. If an accrual also falls on that date, the reset applies first.
-          </p>
-        </div>
+        </Panel>
 
-        {/* Forecasted Hours */}
-        <div className="rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-700">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">Forecasted Hours</p>
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
-            <input
-              type="checkbox"
-              checked={forecastEnabled}
-              onChange={(e) => setForecastEnabled(e.target.checked)}
-              className="h-4 w-4 rounded border-zinc-300 accent-zinc-800 dark:border-zinc-600"
-            />
-            Compute forecasted hours
-          </label>
+        <Panel
+          label="Forecasted Hours"
+          hint="Projects how many hours an employee will earn from today through the selected horizon, respecting their annual cap and current tier."
+        >
+          <Checkbox checked={forecastEnabled} onChange={setForecastEnabled} label="Compute forecasted hours" />
           {forecastEnabled && (
-            <div className="mt-3 space-y-3 pl-1">
-              <div className="space-y-2">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Forecast Horizon</p>
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+            <div className="flex flex-col gap-3 pl-1">
+              <div className="flex flex-col gap-2">
+                <span className="wms-overline">Forecast Horizon</span>
+                <label
+                  className="flex cursor-pointer items-center gap-2"
+                  style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
+                >
                   <input
                     type="radio"
                     name="forecastModeRadio"
                     checked={forecastMode === "END_OF_YEAR"}
                     onChange={() => setForecastMode("END_OF_YEAR")}
-                    className="h-4 w-4 accent-zinc-800"
+                    className="accent-[var(--fill-accent)]"
                   />
                   End of calendar year
                 </label>
-                <div className="flex items-center gap-2">
+                <div
+                  className="flex flex-wrap items-center gap-2"
+                  style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
+                >
                   <input
                     type="radio"
                     name="forecastModeRadio"
+                    aria-label="Forecast a fixed number of months"
                     checked={forecastMode === "MONTHS"}
                     onChange={() => setForecastMode("MONTHS")}
-                    className="h-4 w-4 accent-zinc-800"
+                    className="accent-[var(--fill-accent)]"
                   />
-                  <span className="text-sm text-zinc-600 dark:text-zinc-400">Up to</span>
-                  <input
+                  <span>Up to</span>
+                  {/* Typing in the box picks the mode as well — reaching for the
+                      number and getting no forecast is the likelier mistake. */}
+                  <InlineInput
                     type="number" min="1" max="120" step="1"
+                    aria-label="Forecast months"
                     value={forecastMonths}
                     onChange={(e) => { setForecastMode("MONTHS"); setForecastMonths(e.target.value); }}
-                    className="w-16 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                    width={64}
                   />
-                  <span className="text-sm text-zinc-600 dark:text-zinc-400">months</span>
+                  <span>months</span>
                 </div>
               </div>
-              <div className="border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
-                  <input
-                    type="checkbox"
-                    checked={forecastApplyToAvailable}
-                    onChange={(e) => setForecastApplyToAvailable(e.target.checked)}
-                    className="h-4 w-4 rounded border-zinc-300 accent-zinc-800 dark:border-zinc-600"
-                  />
-                  Apply forecasted hours to available balance
-                </label>
-                <p className="mt-1 pl-6 text-xs text-zinc-400">
+              <div className="pt-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+                <Checkbox
+                  checked={forecastApplyToAvailable}
+                  onChange={setForecastApplyToAvailable}
+                  label="Apply forecasted hours to available balance"
+                />
+                <p
+                  className="mt-1 pl-6"
+                  style={{ margin: 0, font: "var(--type-caption1)", color: "var(--text-tertiary)", textWrap: "pretty" }}
+                >
                   When checked, the employee&apos;s available balance will include projected future accruals. When unchecked, the forecast is computed and displayed but does not affect the available balance.
                 </p>
               </div>
             </div>
           )}
-          <p className="mt-2 text-xs text-zinc-400">
-            Projects how many hours an employee will earn from today through the selected horizon, respecting their annual cap and current tier.
-          </p>
-        </div>
+        </Panel>
 
-        {/* Borrowing */}
-        <div className="rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-700">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">Borrowing</p>
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
-            <input
-              type="checkbox"
-              checked={allowNegativeBalance}
-              onChange={(e) => setAllowNegativeBalance(e.target.checked)}
-              className="h-4 w-4 rounded border-zinc-300 accent-zinc-800 dark:border-zinc-600"
-            />
-            Allow employees to borrow against future accruals
-          </label>
+        <Panel
+          label="Borrowing"
+          hint="When enabled, employees can request leave even if their balance would go negative. The max borrow limit prevents the balance from falling below a set number of hours."
+        >
+          <Checkbox
+            checked={allowNegativeBalance}
+            onChange={setAllowNegativeBalance}
+            label="Allow employees to borrow against future accruals"
+          />
           {allowNegativeBalance && (
-            <div className="mt-3 pl-1">
-              <label className={smLabelCls}>Max Borrow Hours <span className="text-zinc-400 normal-case">(optional)</span></label>
-              <input
-                type="number" min="0.25" max="9999" step="0.25"
-                value={maxNegativeHours}
-                onChange={(e) => setMaxNegativeHours(e.target.value)}
-                placeholder="No limit"
-                className="w-36 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-              />
+            <div className="w-40 pl-1">
+              <SmallField label="Max Borrow Hours">
+                <InlineInput
+                  type="number" min="0.25" max="9999" step="0.25"
+                  value={maxNegativeHours}
+                  onChange={(e) => setMaxNegativeHours(e.target.value)}
+                  placeholder="No limit"
+                  width="100%"
+                />
+              </SmallField>
             </div>
           )}
-          <p className="mt-2 text-xs text-zinc-400">
-            When enabled, employees can request leave even if their balance would go negative. The max borrow limit prevents the balance from falling below a set number of hours.
-          </p>
-        </div>
+        </Panel>
 
-        {/* Accrual Tiers */}
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Accrual Tiers</p>
-            <button type="button" onClick={addTier} className="flex items-center gap-1 text-xs text-blue-600 hover:underline dark:text-blue-400">
-              <Plus className="h-3 w-3" /> {rateMode === "PER_POSTING" ? "Add level" : "Add tier"}
-            </button>
+        <section className="flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-3">
+            <span className="wms-overline">Accrual Tiers</span>
+            <Button
+              type="button"
+              hierarchy="link"
+              size="sm"
+              onClick={addTier}
+              leadingIcon={<Plus className="h-3 w-3" />}
+            >
+              {rateMode === "PER_POSTING" ? "Add level" : "Add tier"}
+            </Button>
           </div>
-          <div className="rounded-xl border border-zinc-200 dark:border-zinc-700">
+          <div className="rounded-xl" style={{ border: "1px solid var(--stroke-secondary)", overflow: "hidden" }}>
             {rateMode === "PER_POSTING" ? (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/50">
-                      <th className="w-10 px-3 py-2 text-center text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Lvl</th>
-                      <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Svc Month</th>
-                      <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Accrual Hrs</th>
-                      <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Carry-Over</th>
-                      <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Max Annual Use</th>
-                      <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Max Balance</th>
-                      <th className="w-8" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                    {tiers.map((tier, ti) => (
-                      <tr key={ti}>
-                        <td className="px-3 py-2 text-center text-xs font-medium text-zinc-400">{ti + 1}</td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="number" min="0" step="1"
-                            value={tier.minTenureMonths}
-                            onChange={(e) => updateTier(ti, "minTenureMonths", parseInt(e.target.value, 10) || 0)}
-                            className="w-16 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="number" min="0" max="9999" step="0.01"
-                            value={tier.annualHours === 0 ? "" : tier.annualHours}
-                            placeholder="0.00"
-                            onChange={(e) => updateTier(ti, "annualHours", e.target.value === "" ? 0 : (parseFloat(e.target.value) || 0))}
-                            className="w-20 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="number" min="0" max="9999" step="1"
-                            value={tier.carryOverHours ?? ""}
-                            placeholder="Unlimited"
-                            onChange={(e) => updateTier(ti, "carryOverHours", e.target.value !== "" ? parseInt(e.target.value, 10) : null)}
-                            className="w-24 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="number" min="0" max="9999" step="0.5"
-                            value={tier.maxAnnualHours ?? ""}
-                            placeholder="No limit"
-                            onChange={(e) => updateTier(ti, "maxAnnualHours", e.target.value !== "" ? parseFloat(e.target.value) : null)}
-                            className="w-24 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="number" min="0" max="9999" step="0.5"
-                            value={tier.maxBalanceHours ?? ""}
-                            placeholder="No limit"
-                            onChange={(e) => updateTier(ti, "maxBalanceHours", e.target.value !== "" ? parseFloat(e.target.value) : null)}
-                            className="w-24 rounded border border-zinc-300 bg-white px-2 py-1 text-xs focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          {tiers.length > 1 && (
-                            <button type="button" onClick={() => removeTier(ti)} className="text-zinc-300 hover:text-red-500 dark:text-zinc-600">
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table>
+                <THead>
+                  <TR>
+                    <TH align="center" style={{ width: 44 }}>Lvl</TH>
+                    <TH>Svc Month</TH>
+                    <TH>Accrual Hrs</TH>
+                    <TH>Carry-Over</TH>
+                    <TH>Max Annual Use</TH>
+                    <TH>Max Balance</TH>
+                    <TH style={{ width: 40 }} aria-label="Remove" />
+                  </TR>
+                </THead>
+                <TBody>
+                  {tiers.map((tier, ti) => (
+                    <TR key={ti}>
+                      <TD align="center" style={{ font: "var(--type-body2)", fontWeight: "var(--weight-medium)", color: "var(--text-tertiary)" }}>
+                        {ti + 1}
+                      </TD>
+                      <TD>
+                        <InlineInput
+                          type="number" min="0" step="1"
+                          aria-label={`Level ${ti + 1} service month`}
+                          value={tier.minTenureMonths}
+                          onChange={(e) => updateTier(ti, "minTenureMonths", parseInt(e.target.value, 10) || 0)}
+                          width={64}
+                        />
+                      </TD>
+                      <TD>
+                        <InlineInput
+                          type="number" min="0" max="9999" step="0.01"
+                          aria-label={`Level ${ti + 1} accrual hours`}
+                          value={tier.annualHours === 0 ? "" : tier.annualHours}
+                          placeholder="0.00"
+                          onChange={(e) => updateTier(ti, "annualHours", e.target.value === "" ? 0 : (parseFloat(e.target.value) || 0))}
+                          width={80}
+                        />
+                      </TD>
+                      <TD>
+                        <InlineInput
+                          type="number" min="0" max="9999" step="1"
+                          aria-label={`Level ${ti + 1} carry-over hours`}
+                          value={tier.carryOverHours ?? ""}
+                          placeholder="Unlimited"
+                          onChange={(e) => updateTier(ti, "carryOverHours", e.target.value !== "" ? parseInt(e.target.value, 10) : null)}
+                          width={96}
+                        />
+                      </TD>
+                      <TD>
+                        <InlineInput
+                          type="number" min="0" max="9999" step="0.5"
+                          aria-label={`Level ${ti + 1} max annual use`}
+                          value={tier.maxAnnualHours ?? ""}
+                          placeholder="No limit"
+                          onChange={(e) => updateTier(ti, "maxAnnualHours", e.target.value !== "" ? parseFloat(e.target.value) : null)}
+                          width={96}
+                        />
+                      </TD>
+                      <TD>
+                        <InlineInput
+                          type="number" min="0" max="9999" step="0.5"
+                          aria-label={`Level ${ti + 1} max balance`}
+                          value={tier.maxBalanceHours ?? ""}
+                          placeholder="No limit"
+                          onChange={(e) => updateTier(ti, "maxBalanceHours", e.target.value !== "" ? parseFloat(e.target.value) : null)}
+                          width={96}
+                        />
+                      </TD>
+                      <TD align="right">
+                        {tiers.length > 1 && (
+                          <Button
+                            type="button"
+                            hierarchy="tertiary"
+                            tone="error"
+                            size="sm"
+                            iconOnly
+                            aria-label={`Remove level ${ti + 1}`}
+                            onClick={() => removeTier(ti)}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
             ) : (
-              <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              <div className="flex flex-col">
                 {tiers.map((tier, ti) => (
-                  <div key={ti} className="px-4 py-3">
-                    <div className="mb-2 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Tenure</span>
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="number" min="0" step="1" value={tier.minTenureMonths}
-                            onChange={(e) => updateTier(ti, "minTenureMonths", parseInt(e.target.value, 10) || 0)}
-                            className="w-14 rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                          />
-                          <span className="text-xs text-zinc-400">–</span>
-                          <input
-                            type="number" min="1" step="1" value={tier.maxTenureMonths ?? ""}
-                            onChange={(e) => updateTier(ti, "maxTenureMonths", e.target.value !== "" ? parseInt(e.target.value, 10) : null)}
-                            placeholder="∞"
-                            className="w-14 rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                          />
-                          <span className="text-xs text-zinc-400">months</span>
-                        </div>
+                  <div
+                    key={ti}
+                    className="px-4 py-3"
+                    style={{ borderBottom: ti < tiers.length - 1 ? "1px solid var(--stroke-divider)" : undefined }}
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="wms-overline">Tenure</span>
+                        <InlineInput
+                          type="number" min="0" step="1"
+                          aria-label={`Tier ${ti + 1} minimum tenure months`}
+                          value={tier.minTenureMonths}
+                          onChange={(e) => updateTier(ti, "minTenureMonths", parseInt(e.target.value, 10) || 0)}
+                          width={56}
+                        />
+                        <span style={{ color: "var(--text-tertiary)" }}>–</span>
+                        <InlineInput
+                          type="number" min="1" step="1"
+                          aria-label={`Tier ${ti + 1} maximum tenure months`}
+                          value={tier.maxTenureMonths ?? ""}
+                          onChange={(e) => updateTier(ti, "maxTenureMonths", e.target.value !== "" ? parseInt(e.target.value, 10) : null)}
+                          placeholder="∞"
+                          width={56}
+                        />
+                        <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>months</span>
                       </div>
                       {tiers.length > 1 && (
-                        <button type="button" onClick={() => removeTier(ti)} className="text-zinc-300 hover:text-red-500 dark:text-zinc-600">
+                        <Button
+                          type="button"
+                          hierarchy="tertiary"
+                          tone="error"
+                          size="sm"
+                          iconOnly
+                          aria-label={`Remove tier ${ti + 1}`}
+                          onClick={() => removeTier(ti)}
+                        >
                           <X className="h-3.5 w-3.5" />
-                        </button>
+                        </Button>
                       )}
                     </div>
-                    <div className="grid grid-cols-5 gap-3">
-                      <div>
-                        <label className={smLabelCls}>Annual Hours</label>
-                        <input type="number" min="0" max="9999" step="0.01"
+                    <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(120px,18%)),1fr))]">
+                      <SmallField label="Annual Hours">
+                        <InlineInput
+                          type="number" min="0" max="9999" step="0.01"
                           value={tier.annualHours === 0 ? "" : tier.annualHours}
                           placeholder="0"
                           onChange={(e) => updateTier(ti, "annualHours", e.target.value === "" ? 0 : (parseFloat(e.target.value) || 0))}
-                          className={smInputCls}
+                          width="100%"
                         />
-                      </div>
-                      <div>
-                        <label className={smLabelCls}>+ Hrs/Yr Tenure</label>
-                        <input type="number" min="0" max="999" step="0.01"
+                      </SmallField>
+                      <SmallField label="+ Hrs/Yr Tenure">
+                        <InlineInput
+                          type="number" min="0" max="999" step="0.01"
                           value={tier.earnedHoursPerYear === 0 ? "" : tier.earnedHoursPerYear}
                           placeholder="0"
                           onChange={(e) => updateTier(ti, "earnedHoursPerYear", e.target.value === "" ? 0 : (parseFloat(e.target.value) || 0))}
-                          className={smInputCls}
+                          width="100%"
                         />
-                      </div>
-                      <div>
-                        <label className={smLabelCls}>Carry-Over Hrs</label>
-                        <input type="number" min="0" max="9999" step="1"
+                      </SmallField>
+                      <SmallField label="Carry-Over Hrs">
+                        <InlineInput
+                          type="number" min="0" max="9999" step="1"
                           value={tier.carryOverHours ?? ""}
                           onChange={(e) => updateTier(ti, "carryOverHours", e.target.value !== "" ? parseInt(e.target.value, 10) : null)}
                           placeholder="Unlimited"
-                          className={smInputCls}
+                          width="100%"
                         />
-                      </div>
-                      <div>
-                        <label className={smLabelCls}>Max Annual Use</label>
-                        <input type="number" min="0" max="9999" step="0.5"
+                      </SmallField>
+                      <SmallField label="Max Annual Use">
+                        <InlineInput
+                          type="number" min="0" max="9999" step="0.5"
                           value={tier.maxAnnualHours ?? ""}
                           onChange={(e) => updateTier(ti, "maxAnnualHours", e.target.value !== "" ? parseFloat(e.target.value) : null)}
                           placeholder="No limit"
-                          className={smInputCls}
+                          width="100%"
                         />
-                      </div>
-                      <div>
-                        <label className={smLabelCls}>Max Balance</label>
-                        <input type="number" min="0" max="9999" step="0.5"
+                      </SmallField>
+                      <SmallField label="Max Balance">
+                        <InlineInput
+                          type="number" min="0" max="9999" step="0.5"
                           value={tier.maxBalanceHours ?? ""}
                           onChange={(e) => updateTier(ti, "maxBalanceHours", e.target.value !== "" ? parseFloat(e.target.value) : null)}
                           placeholder="No limit"
-                          className={smInputCls}
+                          width="100%"
                         />
-                      </div>
+                      </SmallField>
                     </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
-        </div>
+        </section>
       </div>
 
       {/* Always-rendered hidden inputs (must stay in DOM for form submission) */}
@@ -983,11 +1058,11 @@ function PolicyForm({ leaveTypes, payCodes, initial, isPending, onSubmit, onCanc
       <input type="hidden" name="allowNegativeBalance"       value={allowNegativeBalance       ? "true" : "false"} />
       <input type="hidden" name="maxNegativeHours"           value={allowNegativeBalance ? maxNegativeHours : ""} />
 
-      <div className="mt-5 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-        <button type="submit" disabled={isPending} className={saveBtnCls}>
+      <div className="mt-5 flex gap-2 pt-4" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+        <Button type="submit" disabled={isPending}>
           {isPending ? "Saving…" : initial ? "Save Changes" : "Create"}
-        </button>
-        <button type="button" onClick={onCancel} className={cancelBtnCls}>Cancel</button>
+        </Button>
+        <Button type="button" hierarchy="secondary" onClick={onCancel}>Cancel</Button>
       </div>
     </form>
   );
@@ -1002,6 +1077,8 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes, initialPoli
   const [editingPolicy, setEditingPolicy] = useState<Policy | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [view, setView] = useState<View>("all");
+  const [search, setSearch] = useState("");
 
   function openEdit(p: Policy) { setEditingPolicy(p); setConfirmDeleteId(null); setError(null); }
 
@@ -1106,6 +1183,7 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes, initialPoli
     });
   }
 
+  /** How the policy posts, in one line: rate mode, frequency, and any reset. */
   function postingLabel(p: Policy): string {
     const freq = (() => {
       const p1 = FREQ_LABELS[p.posting1Freq];
@@ -1119,156 +1197,108 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes, initialPoli
     return `${mode} · ${freq}${reset}`;
   }
 
-  const [search, setSearch] = useState("");
   const searchLower = search.trim().toLowerCase();
-
-  const policyGroups: { label: string; policies: Policy[] }[] = (() => {
-    const map = new Map<string, Policy[]>();
-    for (const p of policies) {
-      if (searchLower && !p.name.toLowerCase().includes(searchLower)) continue;
-      const key = p.leaveType?.name ?? "Unassigned";
-      const list = map.get(key) ?? [];
-      list.push(p);
-      map.set(key, list);
-    }
-    return [...map.entries()]
-      .sort(([a], [b]) => {
-        if (a === "Unassigned") return 1;
-        if (b === "Unassigned") return -1;
-        return a.localeCompare(b);
-      })
-      .map(([label, ps]) => ({ label, policies: ps.sort((a, b) => a.name.localeCompare(b.name)) }));
-  })();
-
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const allExpanded = policyGroups.length > 0 && expandedGroups.size === policyGroups.length;
-
-  function toggleGroup(label: string) {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      next.has(label) ? next.delete(label) : next.add(label);
-      return next;
+  const visible = policies
+    .filter((p) => (view === "all" ? true : view === "active" ? p.isActive : !p.isActive))
+    .filter((p) => !searchLower || p.name.toLowerCase().includes(searchLower))
+    .sort((a, b) => {
+      // Grouped by leave type, then by name — the same order the grouped list
+      // had, kept as a sort so the Leave Type column reads down in runs.
+      const al = a.leaveType?.name ?? "￿";
+      const bl = b.leaveType?.name ?? "￿";
+      return al === bl ? a.name.localeCompare(b.name) : al.localeCompare(bl);
     });
-  }
-
-  function toggleAll() {
-    setExpandedGroups(allExpanded ? new Set() : new Set(policyGroups.map((g) => g.label)));
-  }
 
   return (
-    <div className="mt-6">
-      <div className="mb-3 flex items-center gap-3">
-        {policies.length > 0 && (
+    <div className="mt-4 flex flex-col gap-2.5">
+      {error && !editingPolicy && !showCreate && <Banner tone="error" body={error} />}
+
+      <Toolbar count={visible.length} countLabel="policy">
+        <SegmentedControl
+          items={VIEWS}
+          value={view}
+          onChange={(v) => setView(v as View)}
+          size="sm"
+          ariaLabel="Which policies to show"
+        />
+        <SearchInput value={search} onValueChange={setSearch} placeholder="Search policies…" width={220} />
+        <Button onClick={openCreate}>New Policy</Button>
+      </Toolbar>
+
+      <Card padding={0}>
+        {visible.length === 0 ? (
+          <EmptyState
+            icon={<FileText className="h-8 w-8" />}
+            title={searchLower ? `No policies match “${search}”` : view === "active" ? "No active policies" : "No PTO policies"}
+            body="A policy decides how much leave an employee earns, how often it posts and what happens to the balance at year end."
+            action={
+              searchLower
+                ? <Button size="sm" hierarchy="secondary" onClick={() => setSearch("")}>Clear search</Button>
+                : <Button size="sm" onClick={openCreate}>New Policy</Button>
+            }
+          />
+        ) : (
           <>
-            <div className="relative flex-1 max-w-xs">
-              <svg className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search policies…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm text-zinc-700 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:placeholder-zinc-500"
-              />
-            </div>
-            {policyGroups.length > 0 && !searchLower && (
-              <button
-                type="button"
-                onClick={toggleAll}
-                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:bg-zinc-800"
-              >
-                {allExpanded ? "Collapse all" : "Expand all"}
-              </button>
-            )}
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Policy</TH>
+                  <TH>Leave Type</TH>
+                  <TH>Posting</TH>
+                  <TH numeric>Tiers</TH>
+                  <TH numeric>Sites</TH>
+                  <TH numeric>Overrides</TH>
+                  <TH>Status</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {visible.map((policy) => (
+                  <TR key={policy.id} onClick={() => openEdit(policy)}>
+                    <TD>
+                      <span className="flex items-center gap-2">
+                        <span style={{ fontWeight: "var(--weight-medium)" }}>{policy.name}</span>
+                        {policy.isDefault && <Badge tone="info" size="sm">Default</Badge>}
+                      </span>
+                    </TD>
+                    <TD style={{ color: "var(--text-secondary)" }}>
+                      {policy.leaveType?.name ?? <span style={{ color: "var(--text-tertiary)" }}>Unassigned</span>}
+                    </TD>
+                    <TD style={{ color: "var(--text-secondary)" }}>{postingLabel(policy)}</TD>
+                    <TD numeric style={{ color: "var(--text-secondary)" }}>{policy.rules.length}</TD>
+                    <TD numeric style={{ color: "var(--text-secondary)" }}>{policy._count.siteLinks}</TD>
+                    <TD numeric style={{ color: "var(--text-secondary)" }}>{policy._count.empOverrides}</TD>
+                    <TD>
+                      {policy.isActive ? (
+                        <Badge tone={statusTone("ACTIVE")} size="sm" dot>Active</Badge>
+                      ) : (
+                        // statusTone would answer "warning"; a policy nobody is
+                        // on is not something to go and fix.
+                        <Badge size="sm">Inactive</Badge>
+                      )}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+            <TableFooter
+              shown={visible.length}
+              total={policies.length}
+              label={policies.length === 1 ? "policy" : "policies"}
+            />
           </>
         )}
-        <button
-          onClick={openCreate}
-          className="ml-auto rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          + Add Policy
-        </button>
-      </div>
-      {searchLower && policyGroups.length === 0 && (
-        <p className="text-sm text-zinc-400">No policies match &ldquo;{search}&rdquo;.</p>
-      )}
-      <div className="flex flex-col gap-3">
-        {policyGroups.map(({ label, policies: groupPolicies }) => {
-          const isOpen = searchLower ? true : expandedGroups.has(label);
-          return (
-            <div key={label}>
-              <button
-                type="button"
-                onClick={() => toggleGroup(label)}
-                className="flex w-full items-center gap-1.5 text-left"
-              >
-                <svg
-                  className={`h-3 w-3 flex-shrink-0 text-zinc-400 transition-transform ${isOpen ? "rotate-90" : ""}`}
-                  fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-                <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{label}</span>
-                <span className="text-xs text-zinc-300 dark:text-zinc-600">({groupPolicies.length})</span>
-              </button>
-              {isOpen && (
-                <div className="mt-1.5 flex flex-col gap-2">
-                  {groupPolicies.map((policy) => {
-                    const tierCount = policy.rules.length;
-                    return (
-                      <button
-                        key={policy.id}
-                        type="button"
-                        onClick={() => openEdit(policy)}
-                        className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className={`font-medium ${policy.isActive ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-500"}`}>
-                              {policy.name}
-                            </span>
-                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-                              policy.isActive
-                                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
-                            }`}>
-                              <span className={`h-1.5 w-1.5 rounded-full ${policy.isActive ? "bg-green-500 dark:bg-green-400" : "bg-zinc-400 dark:bg-zinc-500"}`} />
-                              {policy.isActive ? "Active" : "Inactive"}
-                            </span>
-                            {policy.isDefault && (
-                              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">Default</span>
-                            )}
-                          </div>
-                          <span className="text-xs text-zinc-400">Click to edit →</span>
-                        </div>
-                        <p className="mt-0.5 text-xs text-zinc-400">
-                          {postingLabel(policy)}
-                          {tierCount > 1 && <> · {tierCount} tiers</>}
-                          {policy._count.siteLinks + policy._count.empOverrides > 0 && (
-                            <> · {policy._count.siteLinks} site{policy._count.siteLinks !== 1 ? "s" : ""} · {policy._count.empOverrides} override{policy._count.empOverrides !== 1 ? "s" : ""}</>
-                          )}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      </Card>
 
       {showCreate && (
         <Modal title="New PTO Policy" onClose={closeCreate}>
-          {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
+          {error && <div className="mb-4"><Banner tone="error" body={error} /></div>}
           <PolicyForm leaveTypes={leaveTypes} payCodes={payCodes} isPending={isPending} onSubmit={handleCreate} onCancel={closeCreate} />
         </Modal>
       )}
 
       {editingPolicy && (
         <Modal title={`Edit: ${editingPolicy.name}`} onClose={closeEdit}>
-          {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
+          {error && <div className="mb-4"><Banner tone="error" body={error} /></div>}
           <PolicyForm
             leaveTypes={leaveTypes}
             payCodes={payCodes}
@@ -1277,19 +1307,28 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes, initialPoli
             onSubmit={(e, rules, posting) => handleUpdate(editingPolicy, e, rules, posting)}
             onCancel={closeEdit}
           />
-          <div className="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+          {/* Outside the form on purpose: deleting is not a way of saving, and
+              a submit button beside it is one mis-click from the same place. */}
+          <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
             {confirmDeleteId === editingPolicy.id ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-zinc-500">Are you sure?</span>
-                <button type="button" onClick={() => handleDelete(editingPolicy.id)} disabled={isPending} className={dangerBtnCls}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>Are you sure?</span>
+                <Button type="button" tone="error" size="sm" onClick={() => handleDelete(editingPolicy.id)} disabled={isPending}>
                   {isPending ? "Deleting…" : "Yes, delete"}
-                </button>
-                <button type="button" onClick={() => setConfirmDeleteId(null)} className={cancelBtnCls}>Cancel</button>
+                </Button>
+                <Button type="button" hierarchy="secondary" size="sm" onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
               </div>
             ) : (
-              <button type="button" onClick={() => setConfirmDeleteId(editingPolicy.id)} className="flex items-center gap-1.5 text-xs text-red-500 hover:underline dark:text-red-400">
-                <Trash2 className="h-3.5 w-3.5" /> Delete policy
-              </button>
+              <Button
+                type="button"
+                hierarchy="link"
+                tone="error"
+                size="sm"
+                onClick={() => setConfirmDeleteId(editingPolicy.id)}
+                leadingIcon={<Trash2 className="h-3.5 w-3.5" />}
+              >
+                Delete policy
+              </Button>
             )}
           </div>
         </Modal>

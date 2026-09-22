@@ -213,9 +213,9 @@ export function CsvUploadForm({ sites, departments, ruleSets }: Props) {
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
           {/* Modal */}
-          <div className="relative w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="relative w-full max-w-lg rounded-2xl ta-modal p-6">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-zinc-900 dark:text-white">
+              <h3 className="text-base font-semibold text-[var(--text-primary)]">
                 Import Employees from CSV
               </h3>
               <button
@@ -235,7 +235,7 @@ export function CsvUploadForm({ sites, departments, ruleSets }: Props) {
                 Download Template
               </button>
 
-              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300">
+              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-[var(--fill-accent)] px-3 py-1.5 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--fill-accent-hover)]">
                 <FileSpreadsheet className="h-3.5 w-3.5" />
                 Choose File
                 <input
@@ -248,7 +248,7 @@ export function CsvUploadForm({ sites, departments, ruleSets }: Props) {
               </label>
 
               {fileName && (
-                <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                <span className="text-sm text-[var(--text-tertiary)]">
                   {fileName}
                 </span>
               )}
@@ -271,14 +271,14 @@ export function CsvUploadForm({ sites, departments, ruleSets }: Props) {
             {/* Preview */}
             {parsedRows.length > 0 && parseErrors.length === 0 && !result && (
               <div className="mt-4">
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                <p className="text-sm text-[var(--text-secondary)]">
                   Ready to import <span className="font-semibold">{parsedRows.length}</span> employee
                   {parsedRows.length !== 1 && "s"}.
                 </p>
                 <button
                   onClick={handleUpload}
                   disabled={isPending}
-                  className="mt-3 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+                  className="mt-3 rounded-lg bg-[var(--fill-accent)] px-4 py-2 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--fill-accent-hover)] disabled:opacity-50"
                 >
                   {isPending ? "Importing…" : "Upload & Create"}
                 </button>

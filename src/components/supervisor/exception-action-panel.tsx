@@ -8,6 +8,17 @@ import {
   correctPunchAndResolve,
 } from "@/actions/supervisor.actions";
 import type { PunchType } from "@prisma/client";
+import { Button, Input, Select, TBody, TD, TH, THead, TR, Table } from "@/components/ui";
+
+/**
+ * The three ways an exception leaves this screen: add the punch that is
+ * missing, correct the punch that is wrong, or resolve it with a note because
+ * the hours as recorded are right.
+ *
+ * <p>Every one of them writes to a timecard that payroll will pay from, which
+ * is why none of them is a single click — each opens a form, and each needs a
+ * reason before it will submit.
+ */
 
 interface Punch {
   id: string;
@@ -125,7 +136,8 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
       setEditError("Invalid time — enter something like 8:30 or 530");
       return;
     }
-    let { hours, minutes } = parsed;
+    const { minutes } = parsed;
+    let { hours } = parsed;
     if (editAmPm === "PM" && hours !== 12) hours += 12;
     if (editAmPm === "AM" && hours === 12) hours = 0;
     const punchDate = new Date(occurredAt);
@@ -182,222 +194,257 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
     });
   }
 
-  // Time cell renderer — shows time as clickable button or inline editor
-  function TimeCell({ side, punch }: { side: "in" | "out"; punch: Punch | null }) {
-    const isEditing = mode === "add" && rowSide === side;
+  /**
+   * One side of the punch row: the recorded time, or "Missed" where there is
+   * none, or the editor once you click either.
+   *
+   * <p>A plain function rather than a component, because a component declared
+   * in here is a new type on every keystroke — React would tear the input down
+   * and rebuild it, and the caret would jump to the end of whatever you were
+   * halfway through typing.
+   */
+  function timeCell(side: "in" | "out", punch: Punch | null) {
     const label = side === "in" ? "Clock In" : "Clock Out";
 
-    if (isEditing) {
+    if (mode === "add" && rowSide === side) {
       return (
-        <div className="flex flex-col gap-1">
-          <div className="flex gap-1">
-            <input
-              value={editTimeStr}
-              onChange={(e) => setEditTimeStr(e.target.value)}
-              placeholder="8:30"
-              autoFocus
-              className="w-14 rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-            />
-            <button
-              type="button"
-              onClick={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
-              className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs font-medium dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-            >
-              {editAmPm}
-            </button>
-          </div>
-        </div>
+        <span className="flex items-center gap-1.5">
+          <input
+            value={editTimeStr}
+            onChange={(e) => setEditTimeStr(e.target.value)}
+            placeholder="8:30"
+            aria-label={`${label} time`}
+            autoFocus
+            className="ta-cell"
+            style={{ width: 72, minWidth: 0 }}
+          />
+          <Button
+            hierarchy="secondary"
+            size="sm"
+            style={{ height: 28 }}
+            onClick={() => setEditAmPm((p) => (p === "AM" ? "PM" : "AM"))}
+          >
+            {editAmPm}
+          </Button>
+        </span>
       );
     }
 
     if (punch) {
       return (
-        <button
-          type="button"
-          onClick={() => { setMode("add"); startRowEdit(side, punch); }}
-          className="rounded px-1 py-0.5 text-xs hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
+        <Button
+          hierarchy="tertiary"
+          size="sm"
           title={`Edit ${label}`}
+          onClick={() => { setMode("add"); startRowEdit(side, punch); }}
+          style={{ fontVariantNumeric: "tabular-nums" }}
         >
           {format(punch.roundedTime, "h:mm a")}
-        </button>
+        </Button>
       );
     }
 
     return (
-      <button
-        type="button"
-        onClick={() => { setMode("add"); startRowEdit(side, null); }}
-        className="rounded px-1 py-0.5 text-xs font-medium text-amber-500 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+      <Button
+        hierarchy="tertiary"
+        size="sm"
         title={`Add ${label}`}
+        onClick={() => { setMode("add"); startRowEdit(side, null); }}
+        style={{ color: "var(--text-warning)" }}
       >
         Missed
-      </button>
+      </Button>
     );
   }
 
   return (
-    <div className="mt-3 space-y-2">
-      {error && <p className="text-sm text-red-500">{error}</p>}
+    <div className="flex flex-col gap-2.5">
+      {error && (
+        <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-error)" }}>{error}</p>
+      )}
 
-      {/* Action buttons */}
       {mode === null && (
         <div className="flex flex-wrap gap-2">
           {usesPunchRow ? (
-            <button
-              onClick={handleOpenAdd}
-              className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-            >
+            <Button size="sm" onClick={handleOpenAdd}>
               {isAbsent ? "Add Punches" : "Add Missing Punch"}
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
+              size="sm"
+              disabled={punches.length === 0}
               onClick={() => {
                 setMode("correct");
                 const p = punches[0];
                 if (p) setNewPunchTime(toDatetimeLocal(p.roundedTime));
               }}
-              disabled={punches.length === 0}
-              className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-40"
             >
               Correct a Punch
-            </button>
+            </Button>
           )}
-          <button
-            onClick={() => setMode("resolve")}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
+          <Button hierarchy="secondary" size="sm" onClick={() => setMode("resolve")}>
             Resolve with Note
-          </button>
+          </Button>
         </div>
       )}
 
-      {/* Punch row editor (MISSING_PUNCH add mode) */}
+      {/* Add or correct the day's clock in / clock out, laid out the way the
+          timecard itself is — so the supervisor is looking at the same row
+          they would fix it on. */}
       {mode === "add" && (
-        <form onSubmit={handleRowSubmit} className="rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-200 dark:border-zinc-700">
-                <th className="px-3 py-1.5 text-left text-xs font-medium text-zinc-500">Date</th>
-                <th className="px-3 py-1.5 text-left text-xs font-medium text-zinc-500">In</th>
-                <th className="px-3 py-1.5 text-left text-xs font-medium text-zinc-500">Out</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="px-3 py-2 text-xs text-zinc-600 dark:text-zinc-400">
-                  <span className="font-medium">{format(occurredAt, "EEE")}</span>{" "}
-                  {format(occurredAt, "MM/dd/yyyy")}
-                </td>
-                <td className="px-3 py-2">
-                  <TimeCell side="in" punch={clockIn} />
-                </td>
-                <td className="px-3 py-2">
-                  <TimeCell side="out" punch={clockOut} />
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <form
+          onSubmit={handleRowSubmit}
+          className="overflow-hidden"
+          style={{
+            border: "1px solid var(--stroke-secondary)",
+            borderRadius: "var(--radius-m)",
+            background: "var(--surface-secondary)",
+          }}
+        >
+          <Table>
+            <THead>
+              <TR>
+                <TH>Date</TH>
+                <TH>In</TH>
+                <TH>Out</TH>
+              </TR>
+            </THead>
+            <TBody>
+              <TR>
+                <TD style={{ whiteSpace: "nowrap" }}>
+                  <span style={{ fontWeight: "var(--weight-medium)" }}>{format(occurredAt, "EEE")}</span>{" "}
+                  <span className="tabular" style={{ color: "var(--text-secondary)" }}>
+                    {format(occurredAt, "MM/dd/yyyy")}
+                  </span>
+                </TD>
+                <TD style={{ paddingLeft: 8, paddingRight: 8 }}>{timeCell("in", clockIn)}</TD>
+                <TD style={{ paddingLeft: 8, paddingRight: 8 }}>{timeCell("out", clockOut)}</TD>
+              </TR>
+            </TBody>
+          </Table>
 
-          <div className="flex flex-col gap-2 border-t border-zinc-200 px-3 py-2 dark:border-zinc-700">
-            <input
+          {/* No top rule here — the punch row's own cell border is already
+              drawing one, and the two stack into a 2px line. */}
+          <div className="flex flex-col gap-2 px-3 py-2.5">
+            <Input
               value={editReason}
               onChange={(e) => setEditReason(e.target.value)}
               placeholder="Reason…"
+              aria-label="Reason"
               required
-              className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
             />
-            {editError && <span className="text-xs text-red-500">{editError}</span>}
-            <div className="flex gap-2">
-              <button
+            {/* Not hung off the reason field: what fails here is usually the
+                time in the row above, and an error under the wrong control is
+                how somebody retypes a reason that was fine. */}
+            {editError && (
+              <span style={{ font: "var(--type-caption1)", color: "var(--text-error)" }}>{editError}</span>
+            )}
+            <div className="flex items-center gap-2">
+              <Button
                 type="submit"
+                size="sm"
                 disabled={isPending || !editTimeStr.trim() || !editReason.trim()}
-                className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {isPending ? "Saving…" : editingExistingId ? "Correct & Resolve" : "Add & Resolve"}
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                hierarchy="tertiary"
+                size="sm"
                 onClick={() => { setMode(null); setRowSide(null); setEditingExistingId(null); }}
-                className="text-xs text-zinc-500 hover:text-zinc-700"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         </form>
       )}
 
-      {/* Correct existing punch (non-MISSING_PUNCH) */}
+      {/* Correct an existing punch. Warning-toned, because unlike the row
+          above this one replaces a time that is already on the timecard. */}
       {mode === "correct" && (
         <form
           onSubmit={handleCorrectPunch}
-          className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30"
+          className="flex flex-col gap-2.5 p-3"
+          style={{
+            border: "1px solid var(--stroke-warning)",
+            borderRadius: "var(--radius-m)",
+            background: "var(--surface-warning)",
+          }}
         >
-          <p className="mb-2 text-sm font-medium text-amber-800 dark:text-amber-300">Correct a Punch</p>
-          <div className="flex flex-col gap-2">
-            <select
-              value={selectedPunchId}
-              onChange={(e) => {
-                setSelectedPunchId(e.target.value);
-                const p = punches.find((x) => x.id === e.target.value);
-                if (p) setNewPunchTime(toDatetimeLocal(p.roundedTime));
-              }}
-              className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+          <span
+            style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-warning)" }}
+          >
+            Correct a Punch
+          </span>
+
+          <Select
+            aria-label="Punch to correct"
+            value={selectedPunchId}
+            onChange={(e) => {
+              setSelectedPunchId(e.target.value);
+              const p = punches.find((x) => x.id === e.target.value);
+              if (p) setNewPunchTime(toDatetimeLocal(p.roundedTime));
+            }}
+          >
+            {punches.map((p) => (
+              <option key={p.id} value={p.id}>
+                {PUNCH_LABEL[p.punchType] ?? p.punchType} — {format(p.roundedTime, "MMM d, h:mm a")}
+              </option>
+            ))}
+          </Select>
+
+          {/* Explicit id: the label is what makes this field clickable, and a
+              panel is rendered per exception card — two cards open on "Correct
+              a Punch" at once would otherwise share one generated id, so the
+              second card's label would focus the first card's input. */}
+          <Input
+            id={`correct-time-${exceptionId}`}
+            label="New time"
+            type="datetime-local"
+            value={newPunchTime}
+            onChange={(e) => setNewPunchTime(e.target.value)}
+            required
+          />
+
+          <Input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Reason for correction…"
+            aria-label="Reason for correction"
+            required
+          />
+
+          <div className="flex items-center gap-2">
+            <Button
+              type="submit"
+              size="sm"
+              disabled={isPending || !selectedPunchId || !newPunchTime || !reason.trim()}
             >
-              {punches.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {PUNCH_LABEL[p.punchType] ?? p.punchType} — {format(p.roundedTime, "MMM d, h:mm a")}
-                </option>
-              ))}
-            </select>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-zinc-500">New time:</span>
-              <input
-                type="datetime-local"
-                value={newPunchTime}
-                onChange={(e) => setNewPunchTime(e.target.value)}
-                required
-                className="flex-1 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-              />
-            </div>
-            <input
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Reason for correction…"
-              required
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-            />
-            <div className="flex gap-2">
-              <button type="submit" disabled={isPending || !selectedPunchId || !newPunchTime || !reason.trim()}
-                className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50">
-                {isPending ? "Saving…" : "Correct & Resolve"}
-              </button>
-              <button type="button" onClick={() => setMode(null)}
-                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400">
-                Cancel
-              </button>
-            </div>
+              {isPending ? "Saving…" : "Correct & Resolve"}
+            </Button>
+            <Button hierarchy="secondary" size="sm" onClick={() => setMode(null)}>
+              Cancel
+            </Button>
           </div>
         </form>
       )}
 
-      {/* Resolve with note */}
       {mode === "resolve" && (
-        <form onSubmit={handleResolve} className="flex items-center gap-2">
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Resolution note…"
-            className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-          />
-          <button type="submit" disabled={isPending || !note.trim()}
-            className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-900 disabled:opacity-50 dark:bg-zinc-600 dark:hover:bg-zinc-500">
+        <form onSubmit={handleResolve} className="flex flex-wrap items-center gap-2">
+          <div className="min-w-[200px] flex-1">
+            <Input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Resolution note…"
+              aria-label="Resolution note"
+            />
+          </div>
+          <Button type="submit" size="sm" disabled={isPending || !note.trim()}>
             {isPending ? "Saving…" : "Resolve"}
-          </button>
-          <button type="button" onClick={() => setMode(null)}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400">
+          </Button>
+          <Button hierarchy="secondary" size="sm" onClick={() => setMode(null)}>
             Cancel
-          </button>
+          </Button>
         </form>
       )}
     </div>

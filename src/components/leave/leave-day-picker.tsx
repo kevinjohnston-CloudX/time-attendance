@@ -13,6 +13,19 @@ import {
   isBefore,
   startOfToday,
 } from "date-fns";
+import { Button, SegmentedControl } from "@/components/ui";
+
+/**
+ * Pick the days you are asking off, and how much of each.
+ *
+ * <p>A month grid rather than a from/to pair, because leave here is a set of
+ * days and not a range: a Thursday-and-the-following-Monday request is one
+ * request, and a range control forces it to be two or to swallow the weekend.
+ *
+ * <p>Hours are derived from the shift, never typed, except on a partial day.
+ * Whatever this shows has to agree with what the accrual engine deducts, and
+ * the engine works from the shift too.
+ */
 
 export type DaySelection =
   | { date: string; type: "FULL" }
@@ -34,6 +47,11 @@ interface Props {
 
 const DAY_HEADERS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5];
+
+const DURATION_SEGMENTS = [
+  { value: "FULL", label: "Full" },
+  { value: "PARTIAL", label: "Partial" },
+];
 
 function timeToMins(t: string): number {
   const [h, m] = t.split(":").map(Number);
@@ -123,38 +141,27 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
   const totalMins = sortedValue.reduce((sum, d) => sum + calcDayMinutes(shift, d), 0);
 
   return (
-    <div>
-      {/* Month navigation */}
-      <div className="mb-3 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => setDisplayMonth((m) => subMonths(m, 1))}
-          className="rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-        >
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <NavButton label="Previous month" onClick={() => setDisplayMonth((m) => subMonths(m, 1))}>
           <ChevronLeft className="h-4 w-4" />
-        </button>
-        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        </NavButton>
+        <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>
           {format(displayMonth, "MMMM yyyy")}
         </span>
-        <button
-          type="button"
-          onClick={() => setDisplayMonth((m) => addMonths(m, 1))}
-          className="rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-        >
+        <NavButton label="Next month" onClick={() => setDisplayMonth((m) => addMonths(m, 1))}>
           <ChevronRight className="h-4 w-4" />
-        </button>
+        </NavButton>
       </div>
 
-      {/* Day-of-week headers */}
-      <div className="mb-1 grid grid-cols-7 text-center">
+      <div className="grid grid-cols-7 text-center">
         {DAY_HEADERS.map((d) => (
-          <div key={d} className="py-1 text-xs font-medium text-zinc-400">
+          <div key={d} className="wms-overline py-1">
             {d}
           </div>
         ))}
       </div>
 
-      {/* Calendar cells */}
       <div className="grid grid-cols-7 gap-0.5">
         {cells.map((day, i) => {
           if (!day) return <div key={`empty-${i}`} />;
@@ -163,32 +170,48 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
           const date = new Date(displayMonth.getFullYear(), displayMonth.getMonth(), day);
           const isPast = isBefore(date, today);
           const isWorkDay = workDays.includes(getDay(date));
+          const disabled = isPast || !isWorkDay;
           const sel = selMap.get(ds);
-          const isSelected = !!sel;
           const isPartial = sel?.type === "PARTIAL";
 
-          let cls =
-            "flex h-8 w-full items-center justify-center rounded text-xs font-medium transition-colors ";
-
-          if (isPast || !isWorkDay) {
-            cls += "cursor-not-allowed text-zinc-300 dark:text-zinc-600";
-          } else if (isPartial) {
-            cls +=
-              "cursor-pointer bg-blue-200 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300";
-          } else if (isSelected) {
-            cls += "cursor-pointer bg-blue-600 text-white";
-          } else {
-            cls +=
-              "cursor-pointer text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700";
-          }
+          // Three states, three fills. A partial day is the accent surface
+          // rather than the accent fill, so a half day never reads as a whole
+          // one from across the desk.
+          const tone = disabled
+            ? { background: "transparent", color: "var(--text-disabled)", border: "1px solid transparent" }
+            : isPartial
+              ? {
+                  background: "var(--surface-info)",
+                  color: "var(--text-accent)",
+                  border: "1px solid var(--stroke-accent)",
+                }
+              : sel
+                ? {
+                    background: "var(--fill-accent)",
+                    color: "var(--text-on-accent)",
+                    border: "1px solid var(--fill-accent)",
+                  }
+                : {
+                    background: "transparent",
+                    color: "var(--text-primary)",
+                    border: "1px solid transparent",
+                  };
 
           return (
             <button
               key={ds}
               type="button"
-              disabled={isPast || !isWorkDay}
+              disabled={disabled}
               onClick={() => toggleDay(day)}
-              className={cls}
+              aria-pressed={!!sel}
+              className={`tabular flex h-8 w-full items-center justify-center rounded${disabled || sel ? "" : " ta-hoverable"}`}
+              style={{
+                ...tone,
+                font: "var(--type-body2)",
+                fontWeight: "var(--weight-medium)",
+                cursor: disabled ? "not-allowed" : "pointer",
+                transition: "background-color 120ms ease",
+              }}
             >
               {day}
             </button>
@@ -196,16 +219,25 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
         })}
       </div>
 
-      {/* Selected days list */}
       {sortedValue.length > 0 && (
-        <div className="mt-4 space-y-2">
+        <div
+          className="flex flex-col gap-2 pt-3"
+          style={{ borderTop: "1px solid var(--stroke-divider)" }}
+        >
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            <span className="wms-overline">
               {sortedValue.length} day{sortedValue.length !== 1 ? "s" : ""} selected
-            </p>
-            <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+            </span>
+            <span
+              className="tabular"
+              style={{
+                font: "var(--type-body1)",
+                fontWeight: "var(--weight-semibold)",
+                color: "var(--text-primary)",
+              }}
+            >
               {fmtMins(totalMins)} total
-            </p>
+            </span>
           </div>
 
           {sortedValue.map((day) => {
@@ -215,39 +247,31 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
             return (
               <div
                 key={day.date}
-                className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
+                className="flex flex-wrap items-center gap-2 rounded-lg px-3 py-2"
+                style={{
+                  border: "1px solid var(--stroke-secondary)",
+                  background: "var(--surface-secondary)",
+                }}
               >
-                <span className="flex-1 text-sm text-zinc-700 dark:text-zinc-300">
+                <span className="flex-1" style={{ font: "var(--type-body1)" }}>
                   {label}
                 </span>
 
-                {/* Full / Partial toggle */}
-                <div className="flex overflow-hidden rounded border border-zinc-200 text-xs dark:border-zinc-600">
-                  <button
-                    type="button"
-                    onClick={() => setFull(day.date)}
-                    className={`px-2.5 py-1 transition-colors ${
-                      day.type === "FULL"
-                        ? "bg-blue-600 text-white"
-                        : "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700"
-                    }`}
-                  >
-                    Full
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPartial(day.date)}
-                    className={`border-l border-zinc-200 px-2.5 py-1 transition-colors dark:border-zinc-600 ${
-                      day.type === "PARTIAL"
-                        ? "bg-blue-600 text-white"
-                        : "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700"
-                    }`}
-                  >
-                    Partial
-                  </button>
-                </div>
+                {/* Re-picking the segment that is already on would otherwise
+                    throw away typed partial hours, because setPartial resets
+                    them to half a shift. */}
+                <SegmentedControl
+                  size="sm"
+                  ariaLabel={`Duration for ${label}`}
+                  items={DURATION_SEGMENTS}
+                  value={day.type}
+                  onChange={(next) => {
+                    if (next === day.type) return;
+                    if (next === "FULL") setFull(day.date);
+                    else setPartial(day.date);
+                  }}
+                />
 
-                {/* Partial hours + minutes inputs */}
                 {day.type === "PARTIAL" && (
                   <div className="flex items-center gap-1">
                     <input
@@ -255,46 +279,84 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
                       min="0"
                       max="23"
                       step="1"
+                      aria-label={`Hours off on ${label}`}
                       value={Math.floor(day.minutes / 60)}
                       onChange={(e) => {
                         const h = Math.max(0, parseInt(e.target.value) || 0);
                         setMinutes(day.date, h * 60 + (day.minutes % 60));
                       }}
-                      className="w-12 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs text-zinc-700 focus:outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+                      className="ta-cell w-12"
+                      style={{ minWidth: 0 }}
                     />
-                    <span className="text-xs text-zinc-400">h</span>
+                    <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>h</span>
                     <input
                       type="number"
                       min="0"
                       max="59"
                       step="1"
+                      aria-label={`Minutes off on ${label}`}
                       value={day.minutes % 60}
                       onChange={(e) => {
                         const m = Math.min(59, Math.max(0, parseInt(e.target.value) || 0));
                         setMinutes(day.date, Math.floor(day.minutes / 60) * 60 + m);
                       }}
-                      className="w-12 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs text-zinc-700 focus:outline-none focus:border-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+                      className="ta-cell w-12"
+                      style={{ minWidth: 0 }}
                     />
-                    <span className="text-xs text-zinc-400">m</span>
+                    <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>m</span>
                   </div>
                 )}
 
-                <span className="w-8 text-right text-xs text-zinc-400">
+                <span
+                  className="tabular w-12 text-right"
+                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                >
                   {fmtMins(mins)}
                 </span>
 
-                <button
-                  type="button"
+                <Button
+                  hierarchy="tertiary"
+                  size="sm"
+                  iconOnly
+                  aria-label={`Remove ${label}`}
                   onClick={() => removeDay(day.date)}
-                  className="text-zinc-300 hover:text-zinc-500 dark:hover:text-zinc-300"
                 >
                   <X className="h-3.5 w-3.5" />
-                </button>
+                </Button>
               </div>
             );
           })}
         </div>
       )}
     </div>
+  );
+}
+
+/** Month stepper, matching the one on the leave calendar. */
+function NavButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="ta-field inline-flex h-[26px] w-[26px] items-center justify-center rounded-md"
+      style={{
+        border: "1px solid var(--stroke-secondary)",
+        background: "var(--surface-card)",
+        color: "var(--icon-secondary)",
+        cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
   );
 }

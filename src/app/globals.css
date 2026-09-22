@@ -1,27 +1,384 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------
+   CloudX WMS design system.
+
+   tokens/ are copied verbatim from the design handoff so the next
+   export diffs cleanly against them; nothing in here edits them.
+   Everything below this block is the bridge between those tokens and
+   the Tailwind utilities this app is actually written in.
+   ------------------------------------------------------------------ */
+@import "../styles/wms/fonts.css";
+@import "../styles/wms/colors.css";
+@import "../styles/wms/typography.css";
+@import "../styles/wms/spacing.css";
+@import "../styles/wms/dark.css";
+
 /* Switch dark mode from media query to class strategy for next-themes */
 @custom-variant dark (&:where(.dark, .dark *));
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ------------------------------------------------------------------
+   Tailwind palette -> design system ramps.
+
+   This app is written in `zinc-*` and `blue-*` utilities — roughly
+   4,800 of them across 143 components. Rewriting every one of those
+   into semantic tokens would be a mechanical change to nearly every
+   file, and each touched file is a chance to change behaviour by
+   accident. Repointing the two ramps instead moves the whole product
+   onto the design system's colour in one place, and leaves the markup
+   alone.
+
+   `zinc` is the app's neutral, so it is mapped onto the WMS gray ramp
+   (a cooler, bluer slate than Tailwind's zinc). `blue` is already an
+   exact match for WMS primary — mapped anyway so the ramp has one
+   owner and a future brand change lands here.
+
+   New work should use the semantic tokens (--text-primary,
+   --surface-card, --stroke-divider). These aliases exist so the
+   existing 32k lines come along without being touched.
+   ------------------------------------------------------------------ */
+@theme {
+  /* Neutrals — WMS gray. Steps 25/75/150/350 have no Tailwind
+     equivalent; they carry the design's subtler surface and stroke
+     stops. 750 exists because the zink ramp defines one and a hover
+     state in share-dialog.tsx already asks for it. */
+  --color-zinc-25:  var(--wms-color-gray-25);
+  --color-zinc-50:  var(--wms-color-gray-50);
+  --color-zinc-75:  var(--wms-color-gray-75);
+  --color-zinc-100: var(--wms-color-gray-100);
+  --color-zinc-150: var(--wms-color-gray-150);
+  --color-zinc-200: var(--wms-color-gray-200);
+  --color-zinc-300: var(--wms-color-gray-300);
+  --color-zinc-350: var(--wms-color-gray-350);
+  --color-zinc-400: var(--wms-color-gray-400);
+  --color-zinc-500: var(--wms-color-gray-500);
+  --color-zinc-600: var(--wms-color-gray-600);
+  --color-zinc-700: var(--wms-color-gray-700);
+  --color-zinc-750: var(--wms-color-zink-750);
+  --color-zinc-800: var(--wms-color-gray-800);
+  --color-zinc-900: var(--wms-color-gray-900);
+  --color-zinc-950: var(--wms-color-gray-950);
+
+  /* Accent — WMS primary (Brand Blue 600 is the single action colour). */
+  --color-blue-25:  var(--wms-color-primary-25);
+  --color-blue-50:  var(--wms-color-primary-50);
+  --color-blue-100: var(--wms-color-primary-100);
+  --color-blue-200: var(--wms-color-primary-200);
+  --color-blue-300: var(--wms-color-primary-300);
+  --color-blue-400: var(--wms-color-primary-400);
+  --color-blue-500: var(--wms-color-primary-500);
+  --color-blue-600: var(--wms-color-primary-600);
+  --color-blue-700: var(--wms-color-primary-700);
+  --color-blue-800: var(--wms-color-primary-800);
+  --color-blue-900: var(--wms-color-primary-900);
+  --color-blue-950: var(--wms-color-primary-950);
+
+  /* Status ramps. Already identical to the design's values, aliased so
+     a change to the system lands here rather than in 143 files. */
+  --color-emerald-50:  var(--wms-color-emerald-50);
+  --color-emerald-500: var(--wms-color-emerald-500);
+  --color-emerald-600: var(--wms-color-emerald-600);
+  --color-emerald-700: var(--wms-color-emerald-700);
+  --color-amber-50:    var(--wms-color-amber-50);
+  --color-amber-500:   var(--wms-color-amber-500);
+  --color-amber-600:   var(--wms-color-amber-600);
+  --color-amber-700:   var(--wms-color-amber-700);
+  --color-red-50:      var(--wms-color-red-50);
+  --color-red-500:     var(--wms-color-red-500);
+  --color-red-600:     var(--wms-color-red-600);
+  --color-red-700:     var(--wms-color-red-700);
+
+  /* Radii — 4px controls / 8px cards+buttons / 12px modals. */
+  --radius-sm: var(--radius-s);
+  --radius-md: var(--radius-m);
+  --radius-lg: var(--radius-l);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: var(--wms-font-mono);
 }
 
-.dark {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+/* ------------------------------------------------------------------
+   Product chrome (light). The portal design adds four variables on top
+   of the design system for the app shell itself; the dark values live
+   with the other dark aliases in wms/dark.css.
+   ------------------------------------------------------------------ */
+:root {
+  /* CloudTime brand, from the TimeClock handoff. The tile keeps its own
+     white-on-blue contrast, so both values hold in dark mode too and the
+     portal icon stays the same icon as the one on the tablet. */
+  --ta-brand-blue:   #0860AA;
+  --ta-brand-orange: #F58220;
+  --ta-wordmark-cloud: var(--ta-brand-blue);
+  --ta-rail:      var(--wms-color-gray-900);
+  --ta-row-hover: var(--wms-color-gray-25);
+  --ta-track:     var(--wms-color-gray-100);
 }
 
+/* ------------------------------------------------------------------
+   Base layer — from the design system's tokens/base.css and the
+   portal's own element defaults.
+   ------------------------------------------------------------------ */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  font: var(--type-body1);
+  font-family: var(--font-sans);
+  background: var(--surface-page);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
+
+/* Controls inherit the brand face — browsers default them to system UI. */
+input,
+button,
+select,
+textarea {
+  font-family: inherit;
+}
+
+/* Tabular figures wherever a number is meant to line up in a column.
+   Timecards are read down the column, not across the row. */
+.tabular,
+[data-numeric] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* App shell interaction states. These are CSS rather than Tailwind utilities
+   because the elements they sit on set `background` and `color` inline from
+   tokens, and an inline style beats a utility class — a `hover:bg-*` would
+   simply never apply. */
+.ta-hoverable {
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.ta-hoverable:hover {
+  background: var(--fill-hover) !important;
+}
+/* The selected row keeps its tint on hover. Letting the neutral hover win
+   there reads as the selection being lost under the cursor. */
+.ta-hoverable[data-active="true"]:hover {
+  background: var(--wms-color-primary-50) !important;
+}
+.ta-outlined {
+  transition: border-color 120ms ease, color 120ms ease;
+}
+.ta-outlined:hover {
+  border-color: var(--stroke-hover) !important;
+  color: var(--text-primary);
+}
+
+/* A page that runs to the edges of the content area, for the split-pane
+   screens whose two halves scroll independently.
+
+   The portal layout gives <main> 16px sides, 16px top and 24px bottom, and
+   sits under a 56px top bar; this cancels exactly that and claims the height
+   that is left. Two pages used to hardcode `-mx-6 -my-8 h-screen`, which was
+   three numbers that had to be kept in step with the layout by hand and were
+   silently wrong the moment the layout's padding changed. */
+.ta-bleed {
+  margin: -1rem -1rem -1.5rem;
+  height: calc(100vh - 3.5rem);
+}
+
+/* Inputs and selects. The focus ring is the design system's soft blue glow;
+   :focus-within covers the search field, where the ring belongs on the
+   bordered wrapper rather than the bare input inside it. */
+.ta-field {
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.ta-field:hover {
+  border-color: var(--stroke-hover);
+}
+.ta-field:focus,
+.ta-field:focus-within {
+  outline: none;
+  border-color: var(--stroke-accent);
+  box-shadow: var(--focus-ring-tight);
+}
+
+/* Panels and overlays.
+
+   The design system's elevation pairs a hairline inset ring with a soft
+   ambient drop, so a panel reads crisp and low-float rather than outlined.
+   Sixty-five panels were hand-rolled as `border border-zinc-200 bg-white`,
+   which put a plain 1px border next to every Card component's ring on the
+   same screens.
+
+   .ta-card    a panel        .ta-card-hover  a panel you can click
+   .ta-modal   an overlay     — a heavier drop, because it floats over content */
+/* Declared in @layer components so Tailwind's utilities, which come later,
+   still win. Unlayered these would outrank every bg-* class — a panel that
+   wanted an amber tint would silently stay white, and nothing would say so. */
+@layer components {
+  .ta-card {
+    background: var(--surface-card);
+    box-shadow: var(--shadow-card);
+  }
+  .ta-card-hover {
+    transition: box-shadow 120ms ease, background-color 120ms ease;
+  }
+  .ta-card-hover:hover {
+    background: var(--wms-color-primary-25);
+    box-shadow: inset 0 0 0 1px var(--stroke-accent), 0px 2px 12px 0px rgba(0, 0, 0, 0.04);
+  }
+  .ta-modal {
+    background: var(--surface-card);
+    box-shadow: var(--shadow-modal);
+  }
+}
+
+/* Administration hub cards. The accent border on hover is what tells you the
+   whole tile is the target, not just the label inside it. */
+.ta-hub-card {
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.ta-hub-card:hover {
+  border-color: var(--stroke-accent) !important;
+  background: var(--wms-color-primary-25) !important;
+}
+
+/* Form fields. The ring goes on the bordered wrapper, never on the bare
+   input inside it, so a field with a leading glyph focuses as one control. */
+.wms-input {
+  border-color: var(--stroke-secondary);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.wms-input-ro {
+  border-color: var(--stroke-readonly);
+}
+.wms-input-err {
+  border-color: var(--stroke-error);
+}
+.wms-input:not(.wms-input-ro):focus-within {
+  border-color: var(--ring);
+  box-shadow: var(--focus-ring);
+}
+
+/* Table rows. Hover only — the design system's tables are explicitly
+   zebra-free, so the row under the cursor is the only one that lifts.
+
+   Scoped to tbody: TR is the same component in the head, body and foot, so an
+   unscoped rule made the totals row light up under the cursor as though it
+   were a record you could click. */
+tbody .ta-row:hover {
+  background: var(--ta-row-hover);
+}
+
+/* Button states. The component hands down --bg/--fg/--bd; these rules are
+   what make hover, pressed, focus and disabled happen. Same split as the
+   design system bundle, and for the same reason the nav needed it: the
+   palette arrives as an inline style, which no utility class can override. */
+.wms-btn {
+  background: var(--bg);
+  color: var(--fg);
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.wms-btn:hover:not(:disabled) {
+  background: var(--bg-h);
+  color: var(--fg-h);
+}
+.wms-btn:active:not(:disabled) {
+  background: var(--bg-a, var(--bg-h));
+}
+.wms-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-tight);
+}
+.wms-btn:disabled {
+  background: var(--fill-disabled);
+  color: var(--text-disabled);
+  border-color: transparent;
+  box-shadow: none;
+}
+/* A link-styled button is text, so it does not take the disabled fill. */
+.wms-btn-link:disabled {
+  background: transparent;
+  color: var(--text-disabled);
+}
+.wms-btn-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+/* Segmented control. Same inline-variable split as the button, and for the
+   same reason: the component hands each segment its palette as an inline
+   style, so the hover and pressed states have to be read back out of those
+   variables rather than set as utilities.
+
+   The link flavour needs the colour repeated — an <a> takes its colour from
+   the UA stylesheet's link rule, which is more specific than inheriting. */
+.wms-seg {
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: var(--sh);
+}
+.wms-seg:hover {
+  background: var(--bg-h);
+  color: var(--fg-h);
+}
+.wms-seg:active {
+  background: var(--bg-a);
+}
+.wms-seg:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-tight);
+}
+
+/* An editable cell inside a timecard grid.
+
+   Narrower and quieter than a form field on purpose: a timesheet row holds
+   four of these side by side, and the full --stroke-default border on each
+   turned a week of rows into a wall of boxes. The border only appears on
+   hover and focus, so the grid reads as numbers until you go to change one. */
+.ta-cell {
+  width: 100%;
+  min-width: 62px;
+  height: 28px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  text-align: center;
+  font: var(--type-body1);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.ta-cell:hover:not(:disabled) {
+  border-color: var(--stroke-secondary);
+  background: var(--surface-card);
+}
+.ta-cell:focus {
+  outline: none;
+  border-color: var(--stroke-accent);
+  background: var(--surface-card);
+  box-shadow: var(--focus-ring-tight);
+}
+.ta-cell:disabled {
+  color: var(--text-secondary);
+  cursor: not-allowed;
+}
+.ta-cell::placeholder {
+  color: var(--text-disabled);
+}
+
+/* Applied-filter pills. The hover only firms the outline: a chip is a label
+   for a filter that is already on, not a button that does something new. */
+.ta-chip {
+  transition: border-color 120ms ease;
+}
+.ta-chip:not([data-applied]):hover {
+  border-color: var(--stroke-hover);
+}
+
+/* Text roles from the design system, for markup that wants the role
+   rather than a pile of Tailwind size/weight/colour utilities. */
+.wms-page-title    { font: var(--type-h1); letter-spacing: -0.02em; color: var(--text-primary); margin: 0; }
+.wms-section-title { font: var(--type-h2); color: var(--text-primary); margin: 0; }
+.wms-card-title    { font: var(--type-h3); color: var(--text-primary); margin: 0; }
+.wms-body          { font: var(--type-body1); color: var(--text-primary); }
+.wms-meta          { font: var(--type-subtitle); color: var(--text-secondary); }
+.wms-label         { font: var(--type-button2); color: var(--text-secondary); }
+.wms-overline      { font: var(--type-overline); color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; }

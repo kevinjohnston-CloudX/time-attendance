@@ -4,11 +4,20 @@ import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { deleteDocument } from "@/actions/document.actions";
+import { Button } from "@/components/ui";
 
 interface Props {
   documentId: string;
 }
 
+/**
+ * Delete, on a document row.
+ *
+ * <p>The kit's error tone rather than a hand-written red: the old pair of raw
+ * ramp steps gave this one control a different red from every other
+ * destructive action, and its dark-mode step was lighter than its light-mode
+ * one, so the button got louder when the lights went out.
+ */
 export function DeleteDocumentButton({ documentId }: Props) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -26,13 +35,17 @@ export function DeleteDocumentButton({ documentId }: Props) {
   }
 
   return (
-    <button
+    <Button
+      hierarchy="tertiary"
+      tone="error"
+      size="sm"
+      iconOnly
       onClick={handleDelete}
       disabled={isPending}
       title="Delete document"
-      className="text-red-400 hover:text-red-600 disabled:opacity-40 dark:text-red-500 dark:hover:text-red-400"
+      aria-label="Delete document"
     >
       <Trash2 className="h-4 w-4" />
-    </button>
+    </Button>
   );
 }
