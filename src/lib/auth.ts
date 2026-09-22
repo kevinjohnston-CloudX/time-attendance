@@ -25,6 +25,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      // Always show Google's account chooser. Without this, Google silently
+      // reuses whichever account Chrome is signed into, and a person with
+      // several Google accounts has no way to pick their work one.
+      authorization: { params: { prompt: "select_account" } },
     }),
     // Kept for super-admin and emergency access only
     Credentials({
