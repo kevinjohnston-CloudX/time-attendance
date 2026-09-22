@@ -21,11 +21,11 @@ import {
   Banner,
   Button,
   Card,
-  EmptyState,
   FilterBar,
   FilterChip,
   LinkButton,
   PageHeader,
+  SearchInput,
   SegmentedControl,
   Select,
   Textarea,
@@ -70,6 +70,9 @@ interface LeaveRequestRow {
   leaveType: { name: string };
 }
 
+/** Which queue a row came from. The All view mixes all three. */
+type Queue = "pending" | "hr-pending" | "upcoming";
+
 interface LeaveTabsProps {
   pending: LeaveRequestRow[];
   hrPending: LeaveRequestRow[];
@@ -84,7 +87,7 @@ interface LeaveTabsProps {
   selectedDepartmentId?: string;
 }
 
-type Tab = "pending" | "hr-pending" | "upcoming";
+type Tab = "all" | "pending" | "hr-pending" | "upcoming";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -123,6 +126,12 @@ export function LeaveTabs({
 }: LeaveTabsProps) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(initialTab ?? "pending");
+  // Name search is the design's addition. It filters rows already fetched, so
+  // it never re-queries and never widens what this person is allowed to see.
+  const [query, setQuery] = useState("");
+  // Which card is expanded in the coverage panel. The design selects a request
+  // and shows its days on the calendar.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   type TeamEmployee = {
     id: string;
@@ -289,7 +298,30 @@ export function LeaveTabs({
     end: endOfWeek(endOfMonth(calMonth)),
   });
 
-  const rows = tab === "pending" ? pending : tab === "hr-pending" ? hrPending : upcoming;
+  /**
+   * Every row carries the queue it came from, because the All view mixes the
+   * three and each queue has its own actions. Without this a row in All would
+   * not know whether it offers Approve, the HR signature, or Reverse.
+   */
+  const tagged: { req: LeaveRequestRow; queue: Queue }[] =
+    tab === "pending"
+      ? pending.map((req) => ({ req, queue: "pending" as const }))
+      : tab === "hr-pending"
+        ? hrPending.map((req) => ({ req, queue: "hr-pending" as const }))
+        : tab === "upcoming"
+          ? upcoming.map((req) => ({ req, queue: "upcoming" as const }))
+          : [
+              ...pending.map((req) => ({ req, queue: "pending" as const })),
+              ...hrPending.map((req) => ({ req, queue: "hr-pending" as const })),
+              ...upcoming.map((req) => ({ req, queue: "upcoming" as const })),
+            ];
+
+  const needle = query.trim().toLowerCase();
+  const visible = needle
+    ? tagged.filter((t) => (t.req.employee.user?.name ?? "").toLowerCase().includes(needle))
+    : tagged;
+
+  const rows = visible.map((t) => t.req);
   // The page only passes siteId/departmentId into the three queries when
   // canFilter is true, so a ?siteId= left in the URL by somebody without that
   // permission narrows nothing. A chip for it would claim a filter the rows
@@ -301,6 +333,12 @@ export function LeaveTabs({
   const deptName = departments.find((d) => d.id === selectedDepartmentId)?.name ?? selectedDepartmentId;
 
   const LIST_CARD: Record<Tab, { title: string; subtitle: string; empty: string; emptyBody: string }> = {
+    all: {
+      title: "All Requests",
+      subtitle: "Everything on your team, whichever stage it has reached",
+      empty: "No leave requests",
+      emptyBody: "Nothing has been filed for your team yet.",
+    },
     pending: {
       title: "Awaiting Your Decision",
       subtitle: "Oldest first — the ones people have been waiting on longest",
@@ -349,12 +387,24 @@ export function LeaveTabs({
         <SegmentedControl
           ariaLabel="Leave view"
           items={[
+            { value: "all", label: "All", count: pending.length + hrPending.length + upcoming.length },
             { value: "pending", label: "Pending", count: pending.length },
             { value: "hr-pending", label: "HR Review", count: hrPending.length },
-            { value: "upcoming", label: "Upcoming", count: upcoming.length },
+            { value: "upcoming", label: "Approved", count: upcoming.length },
           ]}
           value={tab}
-          onChange={(v) => setTab(v as Tab)}
+          onChange={(v) => {
+            setTab(v as Tab);
+            setSelectedId(null);
+          }}
+        />
+
+        {/* Name search, from the design. Filters rows already on the page. */}
+        <SearchInput
+          aria-label="Search by employee name"
+          placeholder="Employee name"
+          value={query}
+          onValueChange={setQuery}
         />
 
         {/* Site / Department filter — payroll+ only */}
@@ -402,32 +452,64 @@ export function LeaveTabs({
 
       <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(360px,42%)),1fr))]">
         {/* ── The requests ─────────────────────────────────────────────── */}
-        <Card
-          title={LIST_CARD[tab].title}
-          subtitle={LIST_CARD[tab].subtitle}
-          padding={0}
-        >
+        {/* The list is a stack of selectable cards, as the design lays it
+            out, rather than one card of divided rows. Selecting a card drives
+            the coverage panel beside it. */}
+        <div className="flex min-w-0 flex-col gap-2.5">
+          <div className="flex flex-col gap-0.5">
+            <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>
+              {LIST_CARD[tab].title}
+            </span>
+            <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+              {LIST_CARD[tab].subtitle}
+            </span>
+          </div>
+
           {rows.length === 0 ? (
-            <EmptyState
-              icon={<CalendarOff className="h-8 w-8" />}
-              title={LIST_CARD[tab].empty}
-              // "No pending requests" and "no pending requests in Packing at
-              // Site 2" look identical without this, and the difference is
-              // whether somebody stops looking.
-              body={
-                isFiltered
-                  ? "Nothing matches the site and department you have filtered to. Clear the filters to see the whole team."
-                  : LIST_CARD[tab].emptyBody
-              }
-            />
-          ) : (
-            <div className="flex flex-col">
-              {tab === "pending" && <PendingList requests={rows} conflictNames={conflictNames} />}
-              {tab === "hr-pending" && <HrPendingList requests={rows} canHrApprove={!!canHrApprove} />}
-              {tab === "upcoming" && <UpcomingList requests={rows} />}
+            <div
+              className="flex flex-col items-center gap-2.5 px-6 py-12 text-center"
+              style={{
+                border: "1px solid var(--stroke-secondary)",
+                borderRadius: 12,
+                background: "var(--surface-card)",
+              }}
+            >
+              <span style={{ color: "var(--icon-disabled)" }}>
+                <CalendarOff className="h-8 w-8" />
+              </span>
+              <div style={{ font: "var(--type-h4)" }}>
+                {needle ? "No matching requests" : LIST_CARD[tab].empty}
+              </div>
+              <div
+                className="max-w-80"
+                style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
+              >
+                {needle
+                  ? `Nobody on this list is called "${query.trim()}". Clear the search to see the rest.`
+                  : isFiltered
+                    ? "Nothing matches the site and department you have filtered to. Clear the filters to see the whole team."
+                    : LIST_CARD[tab].emptyBody}
+              </div>
+              {needle && (
+                <Button hierarchy="secondary" size="sm" onClick={() => setQuery("")}>
+                  Clear search
+                </Button>
+              )}
             </div>
+          ) : (
+            sortForTab(visible, tab).map(({ req, queue }) => (
+              <RequestCard
+                key={req.id}
+                req={req}
+                queue={queue}
+                canHrApprove={!!canHrApprove}
+                conflictWith={conflictNames.get(req.id)}
+                selected={req.id === selectedId}
+                onSelect={() => setSelectedId(req.id === selectedId ? null : req.id)}
+              />
+            ))
           )}
-        </Card>
+        </div>
 
         {/* ── Coverage ─────────────────────────────────────────────────── */}
         <Card
@@ -837,91 +919,12 @@ function TooltipGroup({
   );
 }
 
-/**
- * One request, whichever queue it is in.
- *
- * <p>Four lines, always in the same order: who, what and when, the note, and
- * when it was filed. The three lists used to draw this themselves and had
- * drifted — the pending one was the only one that never showed the hours,
- * which is the number the balance actually moves by.
- */
-function RequestRow({
-  req,
-  conflictWith,
-  divider,
-  children,
-}: {
-  req: LeaveRequestRow;
-  conflictWith?: string[];
-  /** Rule above this row. The card header already rules off the first one. */
-  divider: boolean;
-  children?: ReactNode;
-}) {
-  const start = parseLeaveDate(req.startDate);
-  const end = parseLeaveDate(req.endDate);
-  const days = differenceInCalendarDays(end, start) + 1;
-  const status = req.status as LeaveRequestStatusValue;
-  const clashes = conflictWith ?? [];
-
-  return (
-    <div
-      className="flex flex-col gap-1.5 px-4 py-3.5"
-      style={{
-        borderTop: divider ? "1px solid var(--stroke-divider)" : undefined,
-        // The tint is the row's conflict marker; the line below names who.
-        background: clashes.length > 0 ? "var(--surface-error)" : undefined,
-      }}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <span
-          className="min-w-0 flex-1"
-          style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-primary)" }}
-        >
-          {req.employee.user?.name ?? `Employee ${req.employeeId}`}
-        </span>
-        <span className="flex-none">
-          <Badge tone={leaveTone(status)} size="sm">
-            {LEAVE_STATUS_LABEL[status] ?? status}
-          </Badge>
-        </span>
-      </div>
-
-      <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-        {req.leaveType.name}
-        {" · "}
-        <span className="tabular">
-          {format(start, "MMM d")} – {format(end, "MMM d, yyyy")} · {days} day{days === 1 ? "" : "s"} ·{" "}
-          {(req.durationMinutes / 60).toFixed(1)} h
-        </span>
-      </p>
-
-      {clashes.length > 0 && (
-        <p
-          className="flex items-start gap-1.5"
-          style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-error)" }}
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" aria-hidden="true" />
-          <span style={{ textWrap: "pretty" }}>
-            Overlaps approved leave for {clashes.join(", ")}
-          </span>
-        </p>
-      )}
-
-      {req.note && (
-        <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-primary)", textWrap: "pretty" }}>
-          &ldquo;{req.note}&rdquo;
-        </p>
-      )}
-
-      {req.submittedAt && (
-        <p className="tabular" style={{ margin: 0, font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-          Filed {format(new Date(req.submittedAt), "MMM d, yyyy 'at' h:mm a")}
-        </p>
-      )}
-
-      {children && <div className="mt-1.5">{children}</div>}
-    </div>
-  );
+/** Initials for the avatar. One word names give one letter, not a crash. */
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
 }
 
 /**
@@ -937,54 +940,161 @@ function byAge(a: LeaveRequestRow, b: LeaveRequestRow) {
   return aDate - bDate;
 }
 
-function PendingList({
-  requests,
-  conflictNames,
-}: {
-  requests: LeaveRequestRow[];
-  conflictNames: Map<string, string[]>;
-}) {
-  return (
-    <>
-      {[...requests].sort(byAge).map((req, i) => (
-        <RequestRow key={req.id} req={req} divider={i > 0} conflictWith={conflictNames.get(req.id)}>
-          <LeaveApprovalButtons leaveRequestId={req.id} />
-        </RequestRow>
-      ))}
-    </>
-  );
+/**
+ * The Approved queue arrives in the order the server chose, which is by start
+ * date, and that is the order somebody scanning upcoming leave wants. The two
+ * decision queues are oldest first, because those are waiting on a person.
+ */
+function sortForTab(
+  items: { req: LeaveRequestRow; queue: Queue }[],
+  tab: Tab,
+): { req: LeaveRequestRow; queue: Queue }[] {
+  if (tab === "upcoming") return items;
+  return [...items].sort((a, b) => byAge(a.req, b.req));
 }
 
-function HrPendingList({
-  requests,
+/**
+ * One request as a card, in the shape the design lays out: who, what and when,
+ * how it collides with the rest of the team, then the actions for the queue it
+ * is sitting in.
+ *
+ * <p>The actions are the same components the divided list used, so approving
+ * from here runs exactly what approving ran before, including the note the
+ * reject path requires.
+ */
+function RequestCard({
+  req,
+  queue,
   canHrApprove,
+  conflictWith,
+  selected,
+  onSelect,
 }: {
-  requests: LeaveRequestRow[];
+  req: LeaveRequestRow;
+  queue: Queue;
   canHrApprove: boolean;
+  conflictWith?: string[];
+  selected: boolean;
+  onSelect: () => void;
 }) {
-  return (
-    <>
-      {[...requests].sort(byAge).map((req, i) => (
-        <RequestRow key={req.id} req={req} divider={i > 0}>
-          {canHrApprove ? (
-            <HrApproveButtons leaveRequestId={req.id} />
-          ) : (
-            <LeaveReverseButton leaveRequestId={req.id} label="Return to Supervisor Queue" />
-          )}
-        </RequestRow>
-      ))}
-    </>
-  );
-}
+  const start = parseLeaveDate(req.startDate);
+  const end = parseLeaveDate(req.endDate);
+  const days = differenceInCalendarDays(end, start) + 1;
+  const status = req.status as LeaveRequestStatusValue;
+  const clashes = conflictWith ?? [];
+  const name = req.employee.user?.name ?? `Employee ${req.employeeId}`;
+  const sameDay = differenceInCalendarDays(end, start) === 0;
 
-function UpcomingList({ requests }: { requests: LeaveRequestRow[] }) {
   return (
-    <>
-      {requests.map((req, i) => (
-        <RequestRow key={req.id} req={req} divider={i > 0}>
-          {req.status === "APPROVED" && <LeaveReverseButton leaveRequestId={req.id} />}
-        </RequestRow>
-      ))}
-    </>
+    <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className="flex cursor-pointer items-start gap-3 px-4 py-3.5"
+      style={{
+        border: `1px solid ${selected ? "var(--stroke-accent)" : "var(--stroke-secondary)"}`,
+        borderRadius: 10,
+        background: selected ? "var(--wms-color-primary-50)" : "var(--surface-card)",
+        transition: "border-color 140ms ease, background 140ms ease",
+      }}
+    >
+      <span
+        aria-hidden="true"
+        className="flex flex-none items-center justify-center"
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: 999,
+          background: selected ? "var(--fill-accent)" : "var(--surface-tertiary)",
+          color: selected ? "#fff" : "var(--text-secondary)",
+          font: "var(--weight-semibold) 13px/1 var(--font-sans)",
+        }}
+      >
+        {initialsOf(name)}
+      </span>
+
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex items-center gap-2.5">
+          <span
+            className="min-w-0 flex-1 truncate"
+            style={{ font: "var(--weight-semibold) 15px/21px var(--font-sans)", color: "var(--text-primary)" }}
+          >
+            {name}
+          </span>
+          <span className="flex-none">
+            <Badge tone={leaveTone(status)} size="sm">
+              {LEAVE_STATUS_LABEL[status] ?? status}
+            </Badge>
+          </span>
+        </div>
+
+        <span style={{ font: "var(--type-body1)", color: "var(--text-secondary)", textWrap: "pretty" }}>
+          {req.leaveType.name}
+          {" \u00b7 "}
+          {sameDay
+            ? format(start, "MMM d, yyyy")
+            : `${format(start, "MMM d")} \u2013 ${format(end, "MMM d, yyyy")}`}
+        </span>
+
+        <span
+          className="tabular"
+          style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+        >
+          {(req.durationMinutes / 60).toFixed(2)} h {"\u00b7"} {days} day{days === 1 ? "" : "s"}
+          {req.submittedAt ? ` \u00b7 Filed ${format(new Date(req.submittedAt), "MMM d")}` : ""}
+        </span>
+
+        {/* The overlap line is the reason this screen exists. It names people
+            rather than only reporting that a clash exists, because "who" was
+            always the next question. */}
+        <span
+          className="flex items-start gap-1.5"
+          style={{
+            font: "var(--type-body2)",
+            fontWeight: "var(--weight-medium)",
+            color: clashes.length > 0 ? "var(--text-warning)" : "var(--text-secondary)",
+            textWrap: "pretty",
+          }}
+        >
+          {clashes.length > 0 && (
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" aria-hidden="true" />
+          )}
+          {clashes.length > 0
+            ? `Overlaps approved leave for ${clashes.join(", ")}`
+            : "Nobody else on the team is off then"}
+        </span>
+
+        {req.note && (
+          <span style={{ font: "var(--type-body2)", color: "var(--text-primary)", textWrap: "pretty" }}>
+            &ldquo;{req.note}&rdquo;
+          </span>
+        )}
+
+        {/* Clicking an action must not also toggle the card selection. */}
+        <div
+          className="mt-2 flex flex-wrap items-center gap-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {queue === "pending" && <LeaveApprovalButtons leaveRequestId={req.id} />}
+          {queue === "hr-pending" &&
+            (canHrApprove ? (
+              <HrApproveButtons leaveRequestId={req.id} />
+            ) : (
+              <LeaveReverseButton leaveRequestId={req.id} label="Return to Supervisor Queue" />
+            ))}
+          {queue === "upcoming" && req.status === "APPROVED" && (
+            <LeaveReverseButton leaveRequestId={req.id} />
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
