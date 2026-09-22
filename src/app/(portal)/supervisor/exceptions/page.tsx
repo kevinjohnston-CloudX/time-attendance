@@ -132,7 +132,7 @@ export default async function ExceptionsPage({
   const filters: Filters = { siteId, departmentId, employeeId, exceptionType, payPeriodId };
 
   // Build left-panel employee list (grouped + sorted)
-  const empMap = new Map<string, { employeeId: string; name: string; exceptionTypes: string[] }>();
+  const empMap = new Map<string, { employeeId: string; name: string; exceptionTypes: string[]; count: number }>();
   for (const ex of exceptions) {
     const id = ex.timesheet.employeeId;
     if (!empMap.has(id)) {
@@ -140,9 +140,14 @@ export default async function ExceptionsPage({
         employeeId: id,
         name: ex.timesheet.employee.user?.name ?? id,
         exceptionTypes: [],
+        count: 0,
       });
     }
     const entry = empMap.get(id)!;
+    // Counted on the way past rather than by filtering the whole list again
+    // per person: that was 2,619 exceptions scanned once for each of 865
+    // people, on the request thread, every time the page opened.
+    entry.count += 1;
     if (!entry.exceptionTypes.includes(ex.exceptionType)) {
       entry.exceptionTypes.push(ex.exceptionType);
     }
@@ -294,7 +299,7 @@ export default async function ExceptionsPage({
             employees={employeeList.map((emp) => ({
               employeeId: emp.employeeId,
               name: emp.name,
-              count: exceptions.filter((ex) => ex.timesheet.employeeId === emp.employeeId).length,
+              count: emp.count,
               // Labelled here rather than in the list: the list is a client
               // component, and a second copy of this map is how "Late In" ends
               // up spelled two ways on one screen.
@@ -426,7 +431,7 @@ export default async function ExceptionsPage({
                         exceptionType={ex.exceptionType}
                         timesheetId={ex.timesheetId}
                         occurredAt={ex.occurredAt}
-                        punches={ex.timesheet.punches}
+                        hasPunches={ex.timesheet.hasPunches}
                       />
                     </div>
                   </Card>

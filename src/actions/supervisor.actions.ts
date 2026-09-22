@@ -85,6 +85,21 @@ export const getTimesheetForReview = withRBAC(
 // ─── Exceptions ───────────────────────────────────────────────────────────────
 
 /** All unresolved exceptions for the supervisor's team (or all if payroll+). */
+/**
+ * The open exceptions in the viewer's scope, for the exceptions screen.
+ *
+ * <p>Deliberately does not carry the timesheet's punches. It used to: every
+ * exception arrived with its whole timesheet, employee, user, site, department
+ * and pay period, plus every punch on that sheet. Because roughly three
+ * exceptions share a timesheet, the same punches were serialised three times
+ * over, and the page came to 25MB of HTML and 4.5 seconds for 2,619 open
+ * exceptions. Punches are only ever read once somebody opens the action panel
+ * on one card, so {@link getExceptionPunches} fetches them then.
+ *
+ * <p>`hasPunches` is what the collapsed panel needs: it is the only thing the
+ * card knows about punches before it is opened, and it decides whether
+ * "Correct a Punch" is available.
+ */
 export const getTeamExceptions = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
   async ({ employeeId, role, tenantId }, input: unknown) => {
@@ -105,7 +120,7 @@ export const getTeamExceptions = withRBAC(
       ...(departmentId ? { departmentId } : {}),
     };
 
-    return db.exception.findMany({
+    const rows = await db.exception.findMany({
       where: {
         resolvedAt: null,
         exceptionType: { in: Object.values(ExceptionType) },
@@ -115,19 +130,72 @@ export const getTeamExceptions = withRBAC(
           employee: employeeFilter,
         },
       },
-      include: {
+      select: {
+        id: true,
+        exceptionType: true,
+        description: true,
+        occurredAt: true,
+        timesheetId: true,
         timesheet: {
-          include: {
-            employee: { include: { user: true, site: true, department: true } },
-            payPeriod: true,
-            punches: {
-              where: { isApproved: true, correctedById: null },
-              orderBy: { roundedTime: "asc" },
+          select: {
+            employeeId: true,
+            employee: {
+              select: {
+                user:       { select: { name: true } },
+                site:       { select: { name: true } },
+                department: { select: { name: true } },
+              },
             },
+            payPeriod: { select: { id: true, startDate: true, endDate: true } },
+            _count: { select: { punches: { where: { isApproved: true, correctedById: null } } } },
           },
         },
       },
       orderBy: { occurredAt: "asc" },
+    });
+
+    return rows.map(({ timesheet, ...ex }) => ({
+      ...ex,
+      timesheet: {
+        employeeId: timesheet.employeeId,
+        employee:   timesheet.employee,
+        payPeriod:  timesheet.payPeriod,
+        hasPunches: timesheet._count.punches > 0,
+      },
+    }));
+  }
+);
+
+/**
+ * The punches on one timesheet, for the action panel that is being opened.
+ *
+ * <p>Scoped the same way the exceptions list is: a supervisor reaches their
+ * own team's sheets and nobody else's, and payroll reaches their tenant. The
+ * scope is in the `where` rather than checked after the read, and a sheet
+ * outside it comes back as though it does not exist.
+ */
+export const getExceptionPunches = withRBAC(
+  "TIMESHEET_APPROVE_TEAM",
+  async ({ employeeId, role, tenantId }, input: unknown) => {
+    const { timesheetId } = z.object({ timesheetId: z.string() }).parse(input);
+    const isPayroll = PAYROLL_ROLES.includes(role);
+
+    const timesheet = await db.timesheet.findFirst({
+      where: {
+        id: timesheetId,
+        employee: {
+          tenantId: tenantId ?? undefined,
+          ...(isPayroll ? {} : { supervisorId: employeeId }),
+        },
+      },
+      select: { id: true },
+    });
+    if (!timesheet) return null;
+
+    return db.punch.findMany({
+      where: { timesheetId, isApproved: true, correctedById: null },
+      orderBy: { roundedTime: "asc" },
+      select: { id: true, punchType: true, roundedTime: true },
     });
   }
 );

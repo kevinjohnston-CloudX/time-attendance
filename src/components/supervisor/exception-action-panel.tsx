@@ -6,6 +6,7 @@ import {
   resolveException,
   addMissingPunchForEmployee,
   correctPunchAndResolve,
+  getExceptionPunches,
 } from "@/actions/supervisor.actions";
 import type { PunchType } from "@prisma/client";
 import { Button, Input, Select, TBody, TD, TH, THead, TR, Table } from "@/components/ui";
@@ -31,7 +32,16 @@ interface Props {
   exceptionType: string;
   timesheetId: string;
   occurredAt: Date;
-  punches: Punch[];
+  /**
+   * Whether the timesheet has any punches at all.
+   *
+   * <p>The punches themselves are not sent with the page. One screen can hold
+   * a few thousand of these panels, and carrying every sheet's punches into
+   * all of them is what made this page 25MB. The collapsed panel only needs
+   * to know whether there is anything to correct; the rest is fetched when a
+   * form is opened.
+   */
+  hasPunches: boolean;
 }
 
 const PUNCH_LABEL: Record<string, string> = {
@@ -63,8 +73,32 @@ function parseTimeInput(str: string): { hours: number; minutes: number } | null 
   return null;
 }
 
-export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, occurredAt, punches }: Props) {
+export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, occurredAt, hasPunches }: Props) {
   const [mode, setMode] = useState<"add" | "correct" | "resolve" | null>(null);
+
+  // Fetched the first time a form that needs them is opened, then kept.
+  const [punches, setPunches] = useState<Punch[]>([]);
+  const [isLoadingPunches, setLoadingPunches] = useState(false);
+
+  /**
+   * The day's punches, fetched once.
+   *
+   * <p>Returns them rather than relying on state, because the caller decides
+   * which side of the row to open from what came back and state is not
+   * readable yet in the same tick.
+   */
+  async function loadPunches(): Promise<Punch[]> {
+    if (punches.length > 0) return punches;
+    setLoadingPunches(true);
+    try {
+      const result = await getExceptionPunches({ timesheetId });
+      const rows = result.success && result.data ? result.data : [];
+      setPunches(rows);
+      return rows;
+    } finally {
+      setLoadingPunches(false);
+    }
+  }
 
   // Row-style punch editor state (for MISSING_PUNCH add mode)
   const [rowSide, setRowSide] = useState<"in" | "out" | null>(null);
@@ -75,7 +109,7 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
   const [editError, setEditError] = useState<string | null>(null);
 
   // Correct-a-punch form state (non-MISSING_PUNCH)
-  const [selectedPunchId, setSelectedPunchId] = useState(punches[0]?.id ?? "");
+  const [selectedPunchId, setSelectedPunchId] = useState("");
   const [newPunchTime, setNewPunchTime] = useState("");
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
@@ -114,7 +148,10 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
     setEditError(null);
   }
 
-  function handleOpenAdd() {
+  async function handleOpenAdd() {
+    // Which side is missing is decided from the rows that just came back,
+    // not from state, which has not been applied yet in this tick.
+    const rows = await loadPunches();
     setMode("add");
     if (isAbsent) {
       // Both punches missing — let user click whichever side they want first
@@ -124,7 +161,10 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
       setEditError(null);
     } else {
       // MISSING_PUNCH — auto-open the missing side
-      const missingSide = !clockOut ? "out" : !clockIn ? "in" : "out";
+      const onDay = rows.filter((p) => format(p.roundedTime, "yyyy-MM-dd") === exDateStr);
+      const hasIn  = onDay.some((p) => p.punchType === "CLOCK_IN");
+      const hasOut = onDay.some((p) => p.punchType === "CLOCK_OUT");
+      const missingSide = !hasOut ? "out" : !hasIn ? "in" : "out";
       startRowEdit(missingSide, null);
     }
   }
@@ -266,17 +306,21 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
       {mode === null && (
         <div className="flex flex-wrap gap-2">
           {usesPunchRow ? (
-            <Button size="sm" onClick={handleOpenAdd}>
+            <Button size="sm" disabled={isLoadingPunches} onClick={handleOpenAdd}>
               {isAbsent ? "Add Punches" : "Add Missing Punch"}
             </Button>
           ) : (
             <Button
               size="sm"
-              disabled={punches.length === 0}
-              onClick={() => {
+              disabled={!hasPunches || isLoadingPunches}
+              onClick={async () => {
+                const rows = await loadPunches();
                 setMode("correct");
-                const p = punches[0];
-                if (p) setNewPunchTime(toDatetimeLocal(p.roundedTime));
+                const p = rows[0];
+                if (p) {
+                  setSelectedPunchId(p.id);
+                  setNewPunchTime(toDatetimeLocal(p.roundedTime));
+                }
               }}
             >
               Correct a Punch
