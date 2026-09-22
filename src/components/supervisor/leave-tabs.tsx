@@ -66,17 +66,27 @@ interface LeaveRequestRow {
   status: string;
   note: string | null;
   submittedAt: Date | string | null;
-  employee: { user: { name: string | null } | null };
+  employee: {
+    user: { name: string | null } | null;
+    department: { id: string; name: string } | null;
+  };
   leaveType: { name: string };
 }
 
 /** Which queue a row came from. The All view mixes all three. */
 type Queue = "pending" | "hr-pending" | "upcoming";
 
+/** Active headcount in the approver's scope, for the coverage figure. */
+interface Headcount {
+  total: number;
+  byDepartment: { id: string; name: string; count: number }[];
+}
+
 interface LeaveTabsProps {
   pending: LeaveRequestRow[];
   hrPending: LeaveRequestRow[];
   upcoming: LeaveRequestRow[];
+  headcount: Headcount;
   initialTab?: "pending" | "hr-pending" | "upcoming";
   canFilter?: boolean;
   canHrApprove?: boolean;
@@ -115,6 +125,7 @@ export function LeaveTabs({
   pending,
   hrPending,
   upcoming,
+  headcount,
   initialTab,
   canFilter,
   canHrApprove,
@@ -132,6 +143,9 @@ export function LeaveTabs({
   // Which card is expanded in the coverage panel. The design selects a request
   // and shows its days on the calendar.
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The coverage panel reads one department at a time by default, because
+  // "who else is off" is a question about the people who cover the same work.
+  const [deptOnly, setDeptOnly] = useState(true);
 
   type TeamEmployee = {
     id: string;
@@ -251,14 +265,24 @@ export function LeaveTabs({
   } | null>(null);
 
   // Build date → { name, employeeId, leaveType } maps
-  type Entry = { name: string; employeeId: string; leaveType: string };
+  type Entry = {
+    name: string;
+    employeeId: string;
+    leaveType: string;
+    departmentId: string | null;
+  };
   const approvedMap = new Map<string, Entry[]>();
   for (const req of upcoming) {
     const days = eachDayOfInterval({ start: parseLeaveDate(req.startDate), end: parseLeaveDate(req.endDate) });
     for (const day of days) {
       const key = format(day, "yyyy-MM-dd");
       if (!approvedMap.has(key)) approvedMap.set(key, []);
-      approvedMap.get(key)!.push({ name: req.employee.user?.name ?? "Unknown", employeeId: req.employeeId, leaveType: req.leaveType.name });
+      approvedMap.get(key)!.push({
+        name: req.employee.user?.name ?? "Unknown",
+        employeeId: req.employeeId,
+        leaveType: req.leaveType.name,
+        departmentId: req.employee.department?.id ?? null,
+      });
     }
   }
 
@@ -268,7 +292,12 @@ export function LeaveTabs({
     for (const day of days) {
       const key = format(day, "yyyy-MM-dd");
       if (!pendingMap.has(key)) pendingMap.set(key, []);
-      pendingMap.get(key)!.push({ name: req.employee.user?.name ?? "Unknown", employeeId: req.employeeId, leaveType: req.leaveType.name });
+      pendingMap.get(key)!.push({
+        name: req.employee.user?.name ?? "Unknown",
+        employeeId: req.employeeId,
+        leaveType: req.leaveType.name,
+        departmentId: req.employee.department?.id ?? null,
+      });
     }
   }
 
@@ -322,6 +351,53 @@ export function LeaveTabs({
     : tagged;
 
   const rows = visible.map((t) => t.req);
+
+  /**
+   * The request the coverage panel is answering for. The design always has one
+   * in focus, so an unclicked page still means something: it falls back to the
+   * first row rather than showing an empty panel nobody can interpret.
+   */
+  const focused: LeaveRequestRow | null =
+    rows.find((r) => r.id === selectedId) ?? rows[0] ?? null;
+
+  const focusedDept = focused?.employee.department ?? null;
+  /** Narrowing to a department needs a department to narrow to. */
+  const scopedToDept = deptOnly && !!focusedDept;
+
+  const focusedDays = focused
+    ? eachDayOfInterval({
+        start: parseLeaveDate(focused.startDate),
+        end: parseLeaveDate(focused.endDate),
+      }).map((d) => format(d, "yyyy-MM-dd"))
+    : [];
+  const focusedDaySet = new Set(focusedDays);
+
+  const inScope = (e: Entry) => !scopedToDept || e.departmentId === focusedDept!.id;
+
+  /**
+   * Everyone off on the focused request's days, counted once each however many
+   * of those days they are out for. Pending counts too: the question before
+   * approving is how thin the floor gets if this one is said yes to, and a
+   * figure that ignored the other requests in the queue would answer a
+   * different question.
+   */
+  const offOnFocusedDays = new Set<string>();
+  for (const key of focusedDays) {
+    for (const e of approvedMap.get(key) ?? []) if (inScope(e)) offOnFocusedDays.add(e.employeeId);
+    for (const e of pendingMap.get(key) ?? []) if (inScope(e)) offOnFocusedDays.add(e.employeeId);
+  }
+
+  const scopeSize = scopedToDept
+    ? (headcount.byDepartment.find((d) => d.id === focusedDept!.id)?.count ?? 0)
+    : headcount.total;
+  const offCount = offOnFocusedDays.size;
+  const onShift = Math.max(scopeSize - offCount, 0);
+  const scopeName = scopedToDept ? focusedDept!.name : "the team";
+  // Three or more out together is the point the design flags, and it matches
+  // the shading already used on the calendar cells.
+  const coverageTight = offCount >= 3;
+  /** No headcount means no denominator, so the figure is withheld rather than guessed. */
+  const coverageKnown = scopeSize > 0 && !!focused;
   // The page only passes siteId/departmentId into the three queries when
   // canFilter is true, so a ?siteId= left in the URL by somebody without that
   // permission narrows nothing. A chip for it would claim a filter the rows
@@ -504,8 +580,14 @@ export function LeaveTabs({
                 queue={queue}
                 canHrApprove={!!canHrApprove}
                 conflictWith={conflictNames.get(req.id)}
-                selected={req.id === selectedId}
-                onSelect={() => setSelectedId(req.id === selectedId ? null : req.id)}
+                selected={req.id === focused?.id}
+                onSelect={() => {
+                  const next = req.id === selectedId ? null : req.id;
+                  setSelectedId(next);
+                  // Jumping the calendar to the request saves the supervisor
+                  // paging to it by hand, which was the point of selecting it.
+                  if (next) setCalMonth(startOfMonth(parseLeaveDate(req.startDate)));
+                }}
               />
             ))
           )}
@@ -513,11 +595,15 @@ export function LeaveTabs({
 
         {/* ── Coverage ─────────────────────────────────────────────────── */}
         <Card
-          title="Coverage"
+          title="Who is off"
           subtitle={
-            tab === "pending"
-              ? "Approved leave, with pending requests laid over it"
-              : "Approved leave for the team"
+            focused
+              ? `${scopedToDept ? focusedDept!.name : "All departments"}, around ${
+                  focused.employee.user?.name ?? "the selected request"
+                }`
+              : tab === "pending"
+                ? "Approved leave, with pending requests laid over it"
+                : "Approved leave for the team"
           }
           actions={
             <div className="flex items-center gap-1">
@@ -552,6 +638,40 @@ export function LeaveTabs({
           }
         >
           <div className="flex flex-col gap-2.5">
+            {/* The coverage line. It answers "can I say yes to this" before the
+                grid is read at all, which is the whole reason the panel sits
+                beside the queue rather than under it. */}
+            {coverageKnown && (
+              <div
+                className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 rounded-lg px-3 py-2.5"
+                style={{
+                  background: coverageTight ? "var(--surface-warning)" : "var(--surface-success)",
+                  color: coverageTight ? "var(--text-warning)" : "var(--text-success)",
+                }}
+              >
+                <span
+                  className="tabular whitespace-nowrap"
+                  style={{ font: "var(--weight-bold) 18px/22px var(--font-sans)" }}
+                >
+                  {onShift} of {scopeSize} on shift
+                </span>
+                <span
+                  className="min-w-0 flex-1"
+                  style={{
+                    font: "var(--type-body2)",
+                    fontWeight: "var(--weight-medium)",
+                    textWrap: "pretty",
+                  }}
+                >
+                  {offCount === 0
+                    ? `Nobody in ${scopeName} is off on those days`
+                    : coverageTight
+                      ? `${offCount} people off in ${scopeName} on these days. Check before approving.`
+                      : `Coverage stays within target for ${scopeName}`}
+                </span>
+              </div>
+            )}
+
             <div className="grid grid-cols-7 gap-1">
               {WEEKDAYS.map((d) => (
                 <div key={d} className="wms-overline py-1.5 text-center">
@@ -563,8 +683,12 @@ export function LeaveTabs({
             <div className="grid grid-cols-7 gap-1">
               {gridDays.map((day) => {
                 const key = format(day, "yyyy-MM-dd");
-                const approvedEntries = approvedMap.get(key) ?? [];
-                const pendingEntries = tab === "pending" ? (pendingMap.get(key) ?? []) : [];
+                const approvedEntries = (approvedMap.get(key) ?? []).filter(inScope);
+                const pendingEntries =
+                  tab === "pending" ? (pendingMap.get(key) ?? []).filter(inScope) : [];
+                // The days the focused request covers, outlined so the request
+                // under decision is findable in the month at a glance.
+                const inFocusedRequest = focusedDaySet.has(key);
                 const inMonth = day.getMonth() === calMonth.getMonth();
                 const todayDay = isToday(day);
 
@@ -600,12 +724,28 @@ export function LeaveTabs({
                     key={key}
                     className="flex min-h-[4.5rem] flex-col gap-1 rounded-md p-1.5"
                     style={{
-                      border: `1px solid ${tone ? tone.line : "var(--stroke-secondary)"}`,
-                      background: tone ? tone.bg : inMonth ? "var(--surface-card)" : "transparent",
+                      // The focused request's own days outrank the tint: the
+                      // supervisor has to see which days they are deciding on
+                      // even when those days are already busy.
+                      border: `1px solid ${
+                        inFocusedRequest
+                          ? "var(--stroke-accent)"
+                          : tone
+                            ? tone.line
+                            : "var(--stroke-secondary)"
+                      }`,
+                      outline: inFocusedRequest ? "1px solid var(--stroke-accent)" : undefined,
+                      background: tone
+                        ? tone.bg
+                        : inFocusedRequest
+                          ? "var(--wms-color-primary-50)"
+                          : inMonth
+                            ? "var(--surface-card)"
+                            : "transparent",
                       // Out-of-month days are dimmed rather than hidden: a
                       // request that runs over a month boundary has to stay
                       // visible on both sides of it.
-                      opacity: inMonth ? 1 : total > 0 ? 0.6 : 0.4,
+                      opacity: inMonth || inFocusedRequest ? 1 : total > 0 ? 0.6 : 0.4,
                     }}
                     onMouseEnter={
                       total > 0
@@ -701,7 +841,28 @@ export function LeaveTabs({
                   rostered, so an untinted day means nobody is booked off — it does
                   not mean the floor is covered. */}
               <Swatch label="Nobody off" bg="var(--surface-card)" line="var(--stroke-secondary)" />
-              <span className="ml-auto" style={{ color: "var(--text-tertiary)" }}>
+              {focused && (
+                <Swatch
+                  label="Days in this request"
+                  bg="var(--wms-color-primary-50)"
+                  line="var(--stroke-accent)"
+                />
+              )}
+              {focusedDept && (
+                <span className="ml-auto">
+                  <Button
+                    hierarchy="secondary"
+                    size="sm"
+                    onClick={() => setDeptOnly((v) => !v)}
+                  >
+                    {deptOnly ? "Show all departments" : `Show ${focusedDept.name} only`}
+                  </Button>
+                </span>
+              )}
+              <span
+                className={focusedDept ? "w-full" : "ml-auto"}
+                style={{ color: "var(--text-tertiary)" }}
+              >
                 {tab === "pending"
                   ? "The number in a cell counts everyone off that day, approved and requested"
                   : "The number in a cell is how many people are off that day"}

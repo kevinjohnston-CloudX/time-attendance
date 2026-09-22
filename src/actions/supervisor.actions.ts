@@ -284,11 +284,69 @@ export const getTeamLeaveRequests = withRBAC(
     return db.leaveRequest.findMany({
       where: { status: "PENDING", employee: employeeFilter },
       include: {
-        employee: { select: { user: { select: { name: true } } } },
+        employee: {
+          select: {
+            user: { select: { name: true } },
+            department: { select: { id: true, name: true } },
+          },
+        },
         leaveType: true,
       },
       orderBy: { submittedAt: "asc" },
     });
+  }
+);
+
+// ─── Team headcount, for the coverage panel ──────────────────────────────────
+
+/**
+ * How many people the approver is responsible for, split by department.
+ *
+ * <p>This is the denominator in "48 of 52 on shift". It is deliberately a
+ * separate query rather than a count over the leave rows, because the people
+ * who are *not* off never appear in a leave list, and a coverage figure built
+ * only from people who asked for leave would always read as full staffing.
+ *
+ * <p>Scoped exactly like the three leave queues above and behind the same
+ * permission, so it can never report a headcount for a department whose leave
+ * the caller is not allowed to see. Counted in SQL with groupBy rather than
+ * pulled and length-ed in JS, because a site can hold a few thousand people.
+ */
+export const getTeamHeadcount = withRBAC(
+  "LEAVE_APPROVE_TEAM",
+  async ({ employeeId, role, tenantId }, input: unknown) => {
+    const { siteId, departmentId } = z.object({
+      siteId: z.string().optional(),
+      departmentId: z.string().optional(),
+    }).parse(input ?? {});
+
+    const isPayroll = PAYROLL_ROLES.includes(role);
+    const t = tenantId ?? undefined;
+
+    const employeeFilter = isPayroll
+      ? { tenantId: t, ...(siteId ? { siteId } : {}), ...(departmentId ? { departmentId } : {}) }
+      : { supervisorId: employeeId, tenantId: t };
+
+    const grouped = await db.employee.groupBy({
+      by: ["departmentId"],
+      where: { ...employeeFilter, isActive: true },
+      _count: { _all: true },
+    });
+
+    const names = await db.department.findMany({
+      where: { id: { in: grouped.map((g) => g.departmentId) } },
+      select: { id: true, name: true },
+    });
+    const nameById = new Map(names.map((d) => [d.id, d.name]));
+
+    return {
+      total: grouped.reduce((sum, g) => sum + g._count._all, 0),
+      byDepartment: grouped.map((g) => ({
+        id: g.departmentId,
+        name: nameById.get(g.departmentId) ?? "Unassigned",
+        count: g._count._all,
+      })),
+    };
   }
 );
 
@@ -316,7 +374,12 @@ export const getHrPendingLeave = withRBAC(
     return db.leaveRequest.findMany({
       where: { status: "PENDING_HR", employee: employeeFilter },
       include: {
-        employee: { select: { user: { select: { name: true } } } },
+        employee: {
+          select: {
+            user: { select: { name: true } },
+            department: { select: { id: true, name: true } },
+          },
+        },
         leaveType: true,
       },
       orderBy: { submittedAt: "asc" },
@@ -354,7 +417,12 @@ export const getUpcomingTeamLeave = withRBAC(
         employee: employeeFilter,
       },
       include: {
-        employee: { select: { user: { select: { name: true } } } },
+        employee: {
+          select: {
+            user: { select: { name: true } },
+            department: { select: { id: true, name: true } },
+          },
+        },
         leaveType: true,
       },
       orderBy: { startDate: "asc" },

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { userHasPermission } from "@/lib/rbac/check-permission";
-import { getTeamLeaveRequests, getUpcomingTeamLeave, getHrPendingLeave } from "@/actions/supervisor.actions";
+import { getTeamLeaveRequests, getUpcomingTeamLeave, getHrPendingLeave, getTeamHeadcount } from "@/actions/supervisor.actions";
 import { LeaveTabs } from "@/components/supervisor/leave-tabs";
 
 /**
@@ -39,10 +39,11 @@ export default async function SupervisorLeavePage({
   const tenantId = (session.user as { tenantId?: string }).tenantId;
   const filterInput = canFilter ? { siteId, departmentId } : {};
 
-  const [pendingResult, hrPendingResult, upcomingResult, sites, departments] = await Promise.all([
+  const [pendingResult, hrPendingResult, upcomingResult, headcountResult, sites, departments] = await Promise.all([
     getTeamLeaveRequests(filterInput),
     getHrPendingLeave(filterInput),
     getUpcomingTeamLeave(filterInput),
+    getTeamHeadcount(filterInput),
     canFilter && tenantId
       ? db.site.findMany({ where: { tenantId, isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } })
       : [],
@@ -64,6 +65,7 @@ export default async function SupervisorLeavePage({
       pending={pendingResult.data}
       hrPending={hrPendingResult.data}
       upcoming={upcomingResult.data}
+      headcount={headcountResult.success ? headcountResult.data : { total: 0, byDepartment: [] }}
       initialTab={initialTab}
       canFilter={canFilter}
       canHrApprove={canHrApprove}
