@@ -70,9 +70,13 @@ export const getAdminRefData = withRBAC(
         include: { sites: { include: { site: true } } },
       }),
       db.ruleSet.findMany({ where: { tenantId: t }, orderBy: { name: "asc" } }),
+      // Only what the Supervisor dropdown draws. This used to be every column
+      // on the employee plus the whole user row, which put pay rates, dates of
+      // birth, home addresses and password hashes into the page source of
+      // every screen that asks for reference data.
       db.employee.findMany({
         where: { isActive: true, tenantId: t },
-        include: { user: true },
+        select: { id: true, user: { select: { name: true } } },
         orderBy: { user: { name: "asc" } },
       }),
       db.customRole.findMany({
@@ -101,7 +105,9 @@ export const getAdminRefData = withRBAC(
         select: { id: true, number: true, description: true },
       }),
     ]);
-    return { sites, departments, ruleSets, employees: employees.map(serializePayRate), customRoles, shifts, holidayRules, payCategories, payTypes };
+    // No serializePayRate here any more: the rows no longer carry a pay rate
+    // to turn from a Decimal into a number.
+    return { sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes };
   }
 );
 
@@ -140,15 +146,24 @@ export const getEmployees = withRBAC(
       ];
     }
 
-    const [rawEmployees, total] = await Promise.all([
+    // Exactly the columns the roster table draws, and nothing else. It used
+    // to take every column on the employee, the whole user row, the site, the
+    // department, the rule set and the supervisor with their user row too, so
+    // a page of 100 people carried 100 password hashes and 100 pay rates into
+    // the browser to render a name, a code and a department.
+    const [employees, total] = await Promise.all([
       db.employee.findMany({
         where,
-        include: {
-          user: true,
-          site: true,
-          department: true,
-          ruleSet: true,
-          supervisor: { include: { user: true } },
+        select: {
+          id: true,
+          employeeCode: true,
+          role: true,
+          isActive: true,
+          onLeave: true,
+          shiftId: true,
+          user:       { select: { name: true, email: true } },
+          site:       { select: { name: true } },
+          department: { select: { name: true } },
           customRole: { select: { id: true, name: true } },
         },
         orderBy: { user: { name: "asc" } },
@@ -157,11 +172,6 @@ export const getEmployees = withRBAC(
       }),
       db.employee.count({ where }),
     ]);
-
-    const employees = rawEmployees.map((e) => {
-      const emp = serializePayRate(e) as any;
-      return { ...emp, supervisor: emp.supervisor ? serializePayRate(emp.supervisor) : null };
-    });
 
     return { employees, total, page, pageSize: PAGE_SIZE };
   }
@@ -173,11 +183,13 @@ export const getEmployeeById = withRBAC(
     const emp = await db.employee.findUniqueOrThrow({
       where: { id: input.employeeId },
       include: {
-        user: true,
+        // Name and email are the only user fields the edit form draws, and
+        // the whole row carries the password hash into the page source.
+        user: { select: { id: true, name: true, email: true } },
         site: true,
         department: true,
         ruleSet: true,
-        supervisor: { include: { user: true } },
+        supervisor: { include: { user: { select: { id: true, name: true, email: true } } } },
       },
     });
     const serialized = serializePayRate(decryptPiiFields(emp));

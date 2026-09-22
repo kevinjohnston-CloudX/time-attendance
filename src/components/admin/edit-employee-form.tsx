@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { updateEmployee, updateHrSiteAccess } from "@/actions/admin.actions";
 import { setTemporaryPassword } from "@/actions/password.actions";
-import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
+import type { Site, Department, RuleSet, Employee } from "@prisma/client";
 import {
   Banner,
   Button,
@@ -40,13 +40,20 @@ import { History } from "lucide-react";
  * one-field correction into an overwrite of everything else.
  */
 
+/**
+ * The user fields this form draws. Deliberately not Prisma's `User`, which
+ * also carries the password hash: typing it that way is what let the whole
+ * row be selected and serialised into the page.
+ */
+type UserSummary = { id: string; name: string | null; email: string | null };
+
 type EmployeeWithRelations = Omit<Employee, "payRate"> & {
   payRate: number | null;
-  user: User;
+  user: UserSummary;
   site: Site;
   department: Department;
   ruleSet: RuleSet;
-  supervisor: (Omit<Employee, "payRate"> & { payRate: number | null; user: User }) | null;
+  supervisor: (Omit<Employee, "payRate"> & { payRate: number | null; user: UserSummary }) | null;
 };
 
 interface Props {
