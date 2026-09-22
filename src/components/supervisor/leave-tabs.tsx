@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   addMonths,
@@ -28,6 +28,8 @@ import {
   PageHeader,
   SearchInput,
   SegmentedControl,
+  Toast,
+  useToast,
   Select,
   Textarea,
   Toolbar,
@@ -102,6 +104,81 @@ interface LeaveTabsProps {
 
 type Tab = "all" | "pending" | "hr-pending" | "upcoming";
 
+/**
+ * A filter combination somebody wants back tomorrow.
+ *
+ * <p>Held in this browser rather than the database. A saved view is one
+ * person's shortcut, and putting it in the browser means it works today
+ * without a schema change on a live system. The cost is honest and worth
+ * stating: it does not follow the person to another machine, and it is not
+ * shared with anybody.
+ */
+type SavedView = {
+  name: string;
+  tab: Tab;
+  query: string;
+  siteId?: string;
+  departmentId?: string;
+  shiftId?: string;
+};
+
+const SAVED_VIEWS_KEY = "cloudtime.teamLeave.savedViews";
+const SAVED_VIEWS_EVENT = "cloudtime:saved-views";
+
+/**
+ * The parse is cached against the raw string because useSyncExternalStore
+ * compares snapshots by identity: returning a freshly parsed array on every
+ * read would tell React the value changed on every render, forever.
+ */
+const EMPTY_VIEWS: SavedView[] = [];
+let cachedRaw: string | null = null;
+let cachedViews: SavedView[] = EMPTY_VIEWS;
+
+function readSavedViews(): SavedView[] {
+  let raw = "";
+  try {
+    raw = window.localStorage.getItem(SAVED_VIEWS_KEY) ?? "";
+  } catch {
+    // Private windows, cleared site data and blocked storage all land here.
+    // A saved view is a convenience, so losing it must never break the page.
+    return EMPTY_VIEWS;
+  }
+  if (raw === cachedRaw) return cachedViews;
+  cachedRaw = raw;
+  try {
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    cachedViews = Array.isArray(parsed) ? (parsed as SavedView[]) : EMPTY_VIEWS;
+  } catch {
+    cachedViews = EMPTY_VIEWS;
+  }
+  return cachedViews;
+}
+
+/** Nothing is saved on the server, so the first paint matches an empty list. */
+function readSavedViewsOnServer(): SavedView[] {
+  return EMPTY_VIEWS;
+}
+
+function subscribeToSavedViews(onChange: () => void): () => void {
+  // "storage" covers this page's other tabs; the custom event covers this one,
+  // because a tab does not receive its own storage event.
+  window.addEventListener("storage", onChange);
+  window.addEventListener(SAVED_VIEWS_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(SAVED_VIEWS_EVENT, onChange);
+  };
+}
+
+function writeSavedViews(views: SavedView[]) {
+  try {
+    window.localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(views));
+  } catch {
+    /* storage unavailable, so the view simply does not persist */
+  }
+  window.dispatchEvent(new Event(SAVED_VIEWS_EVENT));
+}
+
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /**
@@ -151,6 +228,14 @@ export function LeaveTabs({
   // The coverage panel reads one department at a time by default, because
   // "who else is off" is a question about the people who cover the same work.
   const [deptOnly, setDeptOnly] = useState(true);
+  const { message: toast, flash } = useToast();
+  // Storage is an external store, so it is read as one. This also keeps two
+  // open tabs in step without either of them polling.
+  const savedViews = useSyncExternalStore(
+    subscribeToSavedViews,
+    readSavedViews,
+    readSavedViewsOnServer,
+  );
 
   type TeamEmployee = {
     id: string;
@@ -258,6 +343,68 @@ export function LeaveTabs({
 
   function navigate(next: { siteId?: string; departmentId?: string; shiftId?: string }) {
     router.push(hrefFor(next));
+  }
+
+  /** The export carries the filters the person is looking at, not everything. */
+  function exportUrl() {
+    const params = new URLSearchParams();
+    params.set("tab", tab);
+    if (selectedSiteId) params.set("siteId", selectedSiteId);
+    if (selectedDepartmentId) params.set("departmentId", selectedDepartmentId);
+    if (selectedShiftId) params.set("shiftId", selectedShiftId);
+    return `/api/reports/team-leave?${params.toString()}`;
+  }
+
+  /**
+   * A name built from what is actually filtered, so a saved view says what it
+   * is without asking the person to name it in a dialog.
+   */
+  function describeCurrentView(): string {
+    const parts: string[] = [
+      tab === "all"
+        ? "All requests"
+        : tab === "pending"
+          ? "Pending"
+          : tab === "hr-pending"
+            ? "HR review"
+            : "Approved",
+    ];
+    if (selectedSiteId) parts.push(siteName ?? "Site");
+    if (selectedDepartmentId) parts.push(deptName ?? "Department");
+    if (selectedShiftId) parts.push(shiftName ?? "Shift");
+    if (query.trim()) parts.push(`"${query.trim()}"`);
+    return parts.join(", ");
+  }
+
+  function saveCurrentView() {
+    const view: SavedView = {
+      name: describeCurrentView(),
+      tab,
+      query: query.trim(),
+      siteId: selectedSiteId,
+      departmentId: selectedDepartmentId,
+      shiftId: selectedShiftId,
+    };
+    // Saving the same combination twice replaces it rather than stacking
+    // duplicates that read identically and cannot be told apart.
+    const next = [view, ...savedViews.filter((v) => v.name !== view.name)].slice(0, 8);
+    writeSavedViews(next);
+    flash(`View saved: ${view.name}`);
+  }
+
+  function applyView(view: SavedView) {
+    setTab(view.tab);
+    setQuery(view.query);
+    setSelectedId(null);
+    router.push(hrefFor({
+      siteId: view.siteId,
+      departmentId: view.departmentId,
+      shiftId: view.shiftId,
+    }));
+  }
+
+  function removeView(name: string) {
+    writeSavedViews(savedViews.filter((v) => v.name !== name));
   }
 
   const [calMonth, setCalMonth] = useState(() => new Date());
@@ -452,6 +599,17 @@ export function LeaveTabs({
             <LinkButton href="/supervisor" hierarchy="tertiary">
               ← Team Portal
             </LinkButton>
+            <Button
+              hierarchy="secondary"
+              onClick={() => {
+                // A normal navigation: the route answers with an attachment,
+                // so the browser downloads it and the page stays put.
+                window.location.assign(exportUrl());
+                flash("Preparing your download");
+              }}
+            >
+              Export
+            </Button>
             {canSubmitLeave && (
               <Button onClick={openSubmitModal} leadingIcon={<Plus className="h-4 w-4" />}>
                 Submit Leave
@@ -559,7 +717,72 @@ export function LeaveTabs({
             })}
           />
         ) : null}
+        <span className="ml-auto">
+          <Button hierarchy="link" size="sm" onClick={saveCurrentView}>
+            Save current view
+          </Button>
+        </span>
       </FilterBar>
+
+      {/* A saved view is only worth saving if it can be got back, so the
+          design's single link grows the row that returns you to one. */}
+      {savedViews.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+            Saved views
+          </span>
+          {savedViews.map((v) => (
+            <span key={v.name} className="inline-flex items-center">
+              <button
+                type="button"
+                onClick={() => applyView(v)}
+                className="ta-chip truncate"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  height: 28,
+                  maxWidth: 260,
+                  padding: "0 8px 0 10px",
+                  boxSizing: "border-box",
+                  whiteSpace: "nowrap",
+                  borderRadius: "999px 0 0 999px",
+                  border: "1px solid var(--stroke-secondary)",
+                  borderRight: "none",
+                  background: "var(--surface-card)",
+                  font: "var(--type-body2)",
+                  fontWeight: "var(--weight-medium)",
+                  color: "var(--text-secondary)",
+                  cursor: "pointer",
+                }}
+              >
+                {v.name}
+              </button>
+              <button
+                type="button"
+                onClick={() => removeView(v.name)}
+                aria-label={`Remove saved view ${v.name}`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  height: 28,
+                  padding: "0 9px 0 5px",
+                  boxSizing: "border-box",
+                  borderRadius: "0 999px 999px 0",
+                  border: "1px solid var(--stroke-secondary)",
+                  background: "var(--surface-card)",
+                  color: "var(--icon-tertiary)",
+                  cursor: "pointer",
+                  lineHeight: 0,
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(360px,42%)),1fr))]">
         {/* ── The requests ─────────────────────────────────────────────── */}
@@ -908,6 +1131,8 @@ export function LeaveTabs({
       </div>
 
       {/* Submit Leave Modal */}
+      <Toast message={toast} />
+
       {showSubmitModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="ta-modal max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl">

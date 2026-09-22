@@ -115,6 +115,10 @@
   --ta-rail:      var(--wms-color-gray-900);
   --ta-row-hover: var(--wms-color-gray-25);
   --ta-track:     var(--wms-color-gray-100);
+  /* Text that sits on --surface-inverse. That surface flips with the
+     theme, so its text has to flip with it; white is only correct while
+     the surface is dark. */
+  --ta-text-on-inverse: #fff;
 }
 
 /* ------------------------------------------------------------------
