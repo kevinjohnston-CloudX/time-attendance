@@ -17,5 +17,7 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([actorId])
   @@index([createdAt])
+  // The audit screen is always one tenant, newest first.
+  @@index([tenantId, createdAt])
   @@map("audit_logs")
 }

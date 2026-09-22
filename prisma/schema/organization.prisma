@@ -206,6 +206,13 @@ model Employee {
   siteAccess         HrSiteAccess[]
 
   @@unique([tenantId, employeeCode])
+  // The roster, the team scopes and the admin filters. Every one of these
+  // was a full scan of 7,420 rows.
+  @@index([tenantId, isActive])
+  @@index([supervisorId])
+  @@index([siteId])
+  @@index([departmentId])
+  @@index([ruleSetId])
   @@map("employees")
 }
 

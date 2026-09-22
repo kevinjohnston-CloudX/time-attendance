@@ -47,6 +47,9 @@ model Timesheet {
   notes           TimesheetNote[]
   dayReasons      TimesheetDayReason[]
 
+  // Every pay-period screen reads a period's sheets by status, and the
+  // unique above only helps when the employee is known.
+  @@index([payPeriodId, status])
   @@unique([employeeId, payPeriodId])
   @@map("timesheets")
 }
@@ -85,6 +88,10 @@ model Punch {
   sourcedLeaveRequest LeaveRequest? @relation("SourcePunchLeaveRequest")
   scanEvent   ScanEvent?
 
+  // The timecard reads a sheet's punches; the dashboard and the presence
+  // card read a person's most recent ones. Without these both scan the table.
+  @@index([timesheetId])
+  @@index([employeeId, roundedTime])
   @@map("punches")
 }
 
@@ -238,6 +245,10 @@ model WorkSegment {
   leaveRequest LeaveRequest? @relation(fields: [leaveRequestId], references: [id])
   payCode      PayCode?      @relation(fields: [payCodeId], references: [id])
 
+  // Matches the segment builder's own predicate, which was the single
+  // heaviest query in the database at 12.6ms a call across 38,773 calls.
+  @@index([timesheetId, segmentType])
+  @@index([leaveRequestId])
   @@map("work_segments")
 }
 
@@ -269,6 +280,9 @@ model Exception {
 
   timesheet Timesheet @relation(fields: [timesheetId], references: [id])
 
+  // Open exceptions for a sheet, read on every timecard and every
+  // exceptions screen.
+  @@index([timesheetId, resolvedAt])
   @@map("exceptions")
 }
 

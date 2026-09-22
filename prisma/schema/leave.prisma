@@ -70,6 +70,10 @@ model LeaveRequest {
   ledgerEntries LeaveAccrualLedger[]
   segments      WorkSegment[]
 
+  // A person's own requests, and the date-range rollups the dashboard runs.
+  @@index([employeeId, status])
+  @@index([leaveTypeId])
+  @@index([startDate])
   @@map("leave_requests")
 }
 
@@ -90,6 +94,10 @@ model LeaveAccrualLedger {
   leaveType    LeaveType    @relation(fields: [leaveTypeId], references: [id])
   leaveRequest LeaveRequest? @relation(fields: [leaveRequestId], references: [id])
 
+  // The largest table in the database, always read as one person's history.
+  @@index([employeeId, createdAt])
+  @@index([leaveTypeId])
+  @@index([leaveRequestId])
   @@map("leave_accrual_ledger")
 }
 
