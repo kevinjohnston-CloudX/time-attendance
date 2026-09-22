@@ -246,27 +246,56 @@ export function LeaveTabs({
   const [toolbarHeight, setToolbarHeight] = useState(96);
 
   /**
-   * True once the page has scrolled at all, which shrinks the title and drops
-   * the subtitle so the pinned bar costs less height without ever leaving the
-   * screen unnamed.
+   * True once the page has scrolled past the top, which shrinks the title and
+   * drops the counts so the pinned bar costs less height without ever leaving
+   * the screen unnamed.
    *
-   * <p>Driven by a one pixel sentinel above the bar rather than a scroll
-   * listener. A listener fires on every frame of every scroll and would be
-   * doing work on a list of several hundred cards; this fires twice, once each
-   * way.
+   * <p>Read from the scroll position with a dead band, not from a sentinel
+   * element. Condensing removes about thirty pixels of header, and a sentinel
+   * sitting above the bar gets pushed back into view by exactly that shift,
+   * which expands the header, which pushes it out again: the title flickers
+   * between both sizes as fast as the browser can lay out. The two thresholds
+   * below cannot oscillate, because the distance between them is wider than
+   * the height the header gives up.
    */
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
   const [condensed, setCondensed] = useState(false);
 
   useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el || typeof IntersectionObserver !== "function") return;
-    const io = new IntersectionObserver(
-      ([entry]) => setCondensed(!entry.isIntersecting),
-      { threshold: 0 },
-    );
-    io.observe(el);
-    return () => io.disconnect();
+    const el = toolbarRef.current;
+    if (!el) return;
+
+    // The portal scrolls an inner element, not the window, so find whichever
+    // ancestor actually scrolls rather than assuming either one.
+    let scroller: HTMLElement | Window = window;
+    for (let node = el.parentElement; node; node = node.parentElement) {
+      const overflowY = getComputedStyle(node).overflowY;
+      if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight) {
+        scroller = node;
+        break;
+      }
+    }
+
+    const CONDENSE_AT = 72;
+    const EXPAND_AT = 24;
+    let frame = 0;
+
+    const read = () => {
+      frame = 0;
+      const y = scroller === window ? window.scrollY : (scroller as HTMLElement).scrollTop;
+      setCondensed((prev) => (prev ? y > EXPAND_AT : y > CONDENSE_AT));
+    };
+
+    // Coalesced into one read per frame. Passive, so it never delays a scroll.
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(read);
+    };
+
+    read();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
   }, []);
 
   const measureToolbar = useCallback(() => {
@@ -646,10 +675,6 @@ export function LeaveTabs({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Watched to know when the page has scrolled. A sentinel is cheaper and
-          steadier than a scroll listener, which fires on every frame. */}
-      <div ref={sentinelRef} aria-hidden="true" style={{ height: 1 }} />
-
       {/* The whole top of the page pins, not just the filters. Scrolling a
           queue of several hundred used to take the title, the actions and the
           filters off the screen together. Built here rather than with the
