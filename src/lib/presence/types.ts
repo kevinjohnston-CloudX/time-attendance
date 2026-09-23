@@ -64,6 +64,10 @@ export interface PresencePerson {
   lateMinutes: number | null;
   /** The record is inactive or terminated, and the person is still scanning. */
   inactive: boolean;
+  /** The security gate's latest word on them, in the last 36 hours. */
+  gate: { inside: boolean; at: string; automatic: boolean } | null;
+  /** The time clock's latest word on them, in the last 36 hours. */
+  clock: { state: "WORK" | "MEAL" | "BREAK" | "OUT"; at: string; automatic: boolean } | null;
 }
 
 export interface PresenceBoard {

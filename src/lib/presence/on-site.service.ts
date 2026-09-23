@@ -102,7 +102,8 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
   const [latest, todayRows, lastGate, scheduled, leaveRequests, onLeaveFlags] = await Promise.all([
     // Newest IN/OUT per person per stream. UNKNOWN is left out before the
     // DISTINCT ON, not after, so an unresolvable scan never hides the real
-    // state underneath it.
+    // state underneath it. So is a time clock scan the timecard refused: it
+    // changed nothing, and the person panel's lanes read it the same way.
     db.$queryRaw<LatestRow[]>`
       SELECT DISTINCT ON (s."employeeId", s."stream")
              s."employeeId"            AS "employeeId",
@@ -118,6 +119,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
         AND  e."siteId" = ${siteId}
         AND  s."scanTime" >= ${windowStart}
         AND  s."direction" IN ('IN', 'OUT')
+        AND  NOT (s."stream" = 'TIME_CLOCK' AND s."outcome"::text IN ('PUNCH_REJECTED', 'ERROR'))
       ORDER  BY s."employeeId", s."stream", s."scanTime" DESC
     `,
     // What each person actually did at a reader today. System rows are left
@@ -273,6 +275,12 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       scheduledEnd: schedule?.endTime ?? null,
       lateMinutes,
       inactive: !emp.isActive || emp.terminatedAt !== null,
+      gate: gate
+        ? { inside: gateIn, at: gate.scanTime.toISOString(), automatic: gate.source === "AUTO_CLOSE" }
+        : null,
+      clock: clock
+        ? { state: clockState, at: clock.scanTime.toISOString(), automatic: clock.source === "AUTO_CLOSE" }
+        : null,
     });
   }
 

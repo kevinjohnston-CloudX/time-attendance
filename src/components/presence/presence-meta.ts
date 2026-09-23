@@ -300,3 +300,119 @@ export function matchesSearch(p: PresencePerson, needle: string): boolean {
   if (!needle) return true;
   return p.name.toLowerCase().includes(needle) || p.employeeCode.toLowerCase().includes(needle);
 }
+
+/* ── The two readers, one line each ──────────────────────────────────────── */
+
+export interface ReaderLine {
+  reader: "gate" | "clock";
+  /** What the reader says: "Inside", "Working", "Meal", "Left". */
+  word: string;
+  /** When, or for how long: "7:02 AM", "25 min". */
+  value: string;
+  /** This line is the reason the person is in a group worth a look. */
+  tone: "warning" | null;
+  /** The whole sentence, for the tooltip and the list. */
+  title: string;
+}
+
+/**
+ * What each reader last said about somebody, short enough for two lines under
+ * a 150px card: a word, then a time. A time that is not today is never shown
+ * bare, because it would read as today: an open stretch shows how long it has
+ * run instead, and in amber, since a day that long is the one to look at.
+ */
+export function readerLines(p: PresencePerson, tz: string, now: number, hasGateData: boolean): ReaderLine[] {
+  const nowIso = new Date(now).toISOString();
+  const today = siteDate(nowIso, tz);
+  const isToday = (iso: string) => siteDate(iso, tz) === today;
+  const lines: ReaderLine[] = [];
+
+  if (hasGateData) {
+    const g = p.gate;
+    if (!g) {
+      lines.push({
+        reader: "gate",
+        word: "No scan",
+        value: "",
+        tone: p.status === "NO_GATE_SCAN" ? "warning" : null,
+        title: "Security gate: no scan in the last 36 hours",
+      });
+    } else if (g.inside) {
+      const long = !isToday(g.at);
+      lines.push({
+        reader: "gate",
+        word: "Inside",
+        value: long ? fmtDuration(minutesSince(g.at, now) ?? 0) : fmtTime(g.at, tz),
+        tone: long ? "warning" : null,
+        title: `Security gate: inside since ${fmtWhen(g.at, tz, nowIso)}`,
+      });
+    } else if (g.automatic) {
+      lines.push({
+        reader: "gate",
+        word: "Marked out",
+        value: "",
+        tone: null,
+        title: "Security gate: marked out overnight by the system, no exit scan",
+      });
+    } else {
+      lines.push({
+        reader: "gate",
+        word: "Left",
+        value: isToday(g.at) ? fmtTime(g.at, tz) : "Yesterday",
+        tone: p.status === "NO_GATE_SCAN" ? "warning" : null,
+        title: `Security gate: left at ${fmtWhen(g.at, tz, nowIso)}`,
+      });
+    }
+  }
+
+  const c = p.clock;
+  if (!c) {
+    lines.push({
+      reader: "clock",
+      word: "No scan",
+      value: "",
+      tone: p.status === "OFF_CLOCK" ? "warning" : null,
+      title: "Time clock: no scan in the last 36 hours",
+    });
+  } else if (c.state === "WORK") {
+    const long = !isToday(c.at);
+    lines.push({
+      reader: "clock",
+      word: "Working",
+      value: long ? fmtDuration(minutesSince(c.at, now) ?? 0) : fmtTime(c.at, tz),
+      tone: long ? "warning" : null,
+      title: `Time clock: on the clock since ${fmtWhen(c.at, tz, nowIso)}`,
+    });
+  } else if (c.state === "MEAL" || c.state === "BREAK") {
+    const word = c.state === "MEAL" ? "Meal" : "Break";
+    lines.push({
+      reader: "clock",
+      word,
+      value: fmtDuration(minutesSince(c.at, now) ?? 0),
+      tone: null,
+      title: `Time clock: ${word.toLowerCase()} since ${fmtWhen(c.at, tz, nowIso)}`,
+    });
+  } else if (c.automatic) {
+    lines.push({
+      reader: "clock",
+      word: "Out",
+      value: "Overnight",
+      tone: null,
+      title: "Time clock: clocked out overnight by the system, no clock out scan",
+    });
+  } else {
+    lines.push({
+      reader: "clock",
+      word: "Out",
+      value: isToday(c.at) ? fmtTime(c.at, tz) : "Yesterday",
+      tone: p.status === "OFF_CLOCK" ? "warning" : null,
+      title: `Time clock: clocked out at ${fmtWhen(c.at, tz, nowIso)}`,
+    });
+  }
+  return lines;
+}
+
+/** Whose card carries the reader lines: everybody a reader has seen today. */
+export function showsReaders(p: PresencePerson): boolean {
+  return INSIDE_STATUSES.includes(p.status) || p.status === "LEFT";
+}

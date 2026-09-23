@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Building2, ChevronDown, SearchX, UserRoundX } from "lucide-react";
+import { ArrowDown, ArrowUp, Building2, ChevronDown, Clock, DoorOpen, SearchX, UserRoundX } from "lucide-react";
 import {
   Badge,
   Button,
@@ -31,13 +31,15 @@ import {
   compareBy,
   matchesSearch,
   parseSort,
+  readerLines,
   serializeSort,
+  showsReaders,
+  type ReaderLine,
   type Sort,
   type SortKey,
   fmtDuration,
   fmtShift,
   fmtTime,
-  fmtWhen,
   initialsOf,
   minutesSince,
   sinceLine,
@@ -408,13 +410,26 @@ export function OnSiteBoard({
     if (!board) return;
     // The export follows what is on screen, in the order it is on screen.
     const rows = listRows;
-    const header = ["Name", "Employee code", "Department", "Shift", "Status", "Since", "First in today", "Scheduled"];
+    const gateData = board.site.hasGateData;
+    const header = [
+      "Name",
+      "Employee code",
+      "Department",
+      "Shift",
+      "Status",
+      ...(gateData ? ["Security gate"] : []),
+      "Time clock",
+      "Since",
+      "First in today",
+      "Scheduled",
+    ];
     const lines = [header, ...rows.map((p) => [
       p.name,
       p.employeeCode,
       p.department ?? "",
       p.shift ?? "",
       statusLabel(p),
+      ...readerLines(p, tz, now, gateData).map((l) => l.title.replace(/^[^:]+: /, "")),
       fmtTime(p.since, tz),
       fmtTime(p.firstInToday, tz),
       fmtShift(p.scheduledStart, p.scheduledEnd) ?? "",
@@ -803,6 +818,7 @@ export function OnSiteBoard({
             <Card padding={0}>
               <PeopleTable
                 people={listRows}
+                hasGateData={board.site.hasGateData}
                 sort={sort}
                 onSort={setSort}
                 tz={tz}
@@ -835,6 +851,7 @@ export function OnSiteBoard({
                   <PersonTile
                     key={p.id}
                     person={p}
+                    hasGateData={board.site.hasGateData}
                     tz={tz}
                     now={now}
                     compact={view === "compact"}
@@ -935,6 +952,7 @@ export function Photo({ person, className, alt = "" }: { person: PresencePerson;
 
 function PersonTile({
   person: p,
+  hasGateData,
   tz,
   now,
   compact,
@@ -943,6 +961,7 @@ function PersonTile({
   onOpen,
 }: {
   person: PresencePerson;
+  hasGateData: boolean;
   tz: string;
   now: number;
   compact: boolean;
@@ -967,6 +986,11 @@ function PersonTile({
     p.inactive ? "Inactive record" : null,
   ].filter(Boolean) as string[];
 
+  // Anybody a reader has seen today gets one line per reader, so the card
+  // says what the gate and the clock each think instead of one verdict. The
+  // rest (due, on leave) keep the single line, which is all there is to say.
+  const readers = showsReaders(p) ? readerLines(p, tz, now, hasGateData) : null;
+
   return (
     <button
       type="button"
@@ -974,7 +998,7 @@ function PersonTile({
       aria-pressed={selected}
       data-changed={changed ? "true" : undefined}
       onClick={onOpen}
-      title={`${p.name} · ${p.employeeCode}`}
+      title={[`${p.name} · ${p.employeeCode}`, ...(readers ?? []).map((l) => l.title)].join("\n")}
     >
       <span className={styles.photo}>
         <span className={styles.initials} aria-hidden="true">
@@ -1018,17 +1042,52 @@ function PersonTile({
       <span className={styles.tileBody}>
         <span className={styles.name}>{p.name}</span>
         {!compact && <span className={styles.meta}>{p.department ?? p.employeeCode}</span>}
-        <span className={styles.since}>
-          <span className={styles.dot} style={{ background: meta.color }} aria-hidden="true" />
-          <span className={compact && p.lateMinutes !== null ? styles.late : undefined}>{line}</span>
-        </span>
+        {readers && !compact ? (
+          <span className={styles.readers}>
+            {readers.map((l) => (
+              <ReaderRow key={l.reader} line={l} />
+            ))}
+          </span>
+        ) : (
+          <span className={styles.since}>
+            <span className={styles.dot} style={{ background: meta.color }} aria-hidden="true" />
+            <span className={compact && p.lateMinutes !== null ? styles.late : undefined}>{line}</span>
+          </span>
+        )}
       </span>
     </button>
   );
 }
 
+/** One reader's line on a card: its icon, what it says, and when. */
+function ReaderRow({ line: l }: { line: ReaderLine }) {
+  const Icon = l.reader === "gate" ? DoorOpen : Clock;
+  return (
+    <span className={styles.reader} data-tone={l.tone ?? undefined}>
+      <Icon className={styles.readerMark} aria-label={l.reader === "gate" ? "Security gate" : "Time clock"} />
+      <span className={styles.readerWord}>{l.word}</span>
+      {l.value && <span className={styles.readerValue}>{l.value}</span>}
+    </span>
+  );
+}
+
+/** A reader's line in the list, as one phrase. */
+function ReaderCell({ line: l }: { line: ReaderLine | undefined }) {
+  if (!l) return null;
+  return (
+    <span
+      className="tabular"
+      title={l.title}
+      style={{ color: l.tone ? "var(--text-warning)" : "var(--text-secondary)", whiteSpace: "nowrap" }}
+    >
+      {l.value ? `${l.word} ${l.value}` : l.word}
+    </span>
+  );
+}
+
 function PeopleTable({
   people,
+  hasGateData,
   sort,
   onSort,
   tz,
@@ -1039,6 +1098,7 @@ function PeopleTable({
   selectedId,
 }: {
   people: PresencePerson[];
+  hasGateData: boolean;
   sort: Sort;
   onSort: (s: Sort) => void;
   tz: string;
@@ -1056,8 +1116,11 @@ function PeopleTable({
             <SortTH label="Employee" sortKey="name" sort={sort} onSort={onSort} />
             <SortTH label="Department" sortKey="department" sort={sort} onSort={onSort} />
             <SortTH label="Status" sortKey="status" sort={sort} onSort={onSort} />
-            <SortTH label="Since" sortKey="since" sort={sort} onSort={onSort} />
-            <TH numeric>For</TH>
+            {hasGateData && <TH>Security gate</TH>}
+            <TH>Time clock</TH>
+            {/* The reader columns say since when; this says for how long, and
+                sorts by it. */}
+            <SortTH label="For" sortKey="since" sort={sort} onSort={onSort} />
             <SortTH label="First In" sortKey="arrival" sort={sort} onSort={onSort} />
             <SortTH label="Scheduled" sortKey="scheduled" sort={sort} onSort={onSort} />
           </TR>
@@ -1065,12 +1128,14 @@ function PeopleTable({
         <TBody>
           {people.slice(0, shown).map((p) => {
             const mins = minutesSince(p.since, now);
+            const readers = showsReaders(p) ? readerLines(p, tz, now, hasGateData) : [];
             return (
               <TR key={p.id} onClick={() => onOpen(p.id)} selected={p.id === selectedId}>
                 <TD>
                   <button
                     type="button"
-                    className={`${styles.row} flex min-w-0 items-center gap-2.5 border-0 bg-transparent p-0 text-left`}
+                    className={`${styles.row} flex min-w-0 max-w-[200px] items-center gap-2.5 border-0 bg-transparent p-0 text-left`}
+                    title={p.name}
                     onClick={(e) => {
                       e.stopPropagation();
                       onOpen(p.id);
@@ -1088,7 +1153,9 @@ function PeopleTable({
                   </button>
                 </TD>
                 <TD style={{ color: "var(--text-secondary)" }}>
-                  <div className="max-w-[200px] truncate">{p.department ?? ""}</div>
+                  <div className="max-w-[128px] truncate" title={p.department ?? undefined}>
+                    {p.department ?? ""}
+                  </div>
                 </TD>
                 <TD>
                   <span className="inline-flex flex-wrap items-center gap-1.5">
@@ -1107,10 +1174,15 @@ function PeopleTable({
                     )}
                   </span>
                 </TD>
-                <TD className="tabular" style={{ color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
-                  {fmtWhen(p.since, tz, new Date(now).toISOString())}
+                {hasGateData && (
+                  <TD>
+                    <ReaderCell line={readers.find((l) => l.reader === "gate")} />
+                  </TD>
+                )}
+                <TD>
+                  <ReaderCell line={readers.find((l) => l.reader === "clock")} />
                 </TD>
-                <TD numeric style={{ whiteSpace: "nowrap" }}>
+                <TD className="tabular" style={{ whiteSpace: "nowrap" }}>
                   {mins !== null && p.status !== "LEFT" ? fmtDuration(mins) : ""}
                 </TD>
                 <TD className="tabular" style={{ color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
