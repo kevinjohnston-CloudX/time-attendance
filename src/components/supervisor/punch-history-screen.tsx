@@ -22,9 +22,10 @@ import { PunchHistoryDatePicker, dayLabel, rangeLabel } from "./punch-history-da
  * with the title, the dates and the filters, the people on the left, and the
  * selected person's punches on the right, one day at a time.
  *
- * <p>The one deliberate departure from the handoff is the title. The handoff
- * lets it scroll away with the page; here it shrinks and stays, the same as on
- * Leave requests and Exceptions, so the screen is never unnamed.
+ * <p>The one deliberate departure from the handoff's layout is the title. The
+ * handoff lets it scroll away with the page; here it stays, full size and
+ * still, in the pinned bar, the same as on Leave requests and Exceptions, so
+ * the screen is never unnamed.
  *
  * <p>Every filter, the search and the selected person live in the address
  * bar, so any view of this screen is a link somebody can send. The server does
@@ -87,43 +88,15 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
     [data.timezone],
   );
 
-  // ── Pinned bar: the condensing title and the height the panes sit under ──
+  // ── Pinned bar, and the height the panes sit under ──
   const barRef = useRef<HTMLDivElement | null>(null);
-  const markerRef = useRef<HTMLSpanElement | null>(null);
-  const [barHeight, setBarHeight] = useState(96);
-  const [condensed, setCondensed] = useState(false);
-
-  useEffect(() => {
-    let frame = 0;
-    const read = () => {
-      frame = 0;
-      const bar = barRef.current;
-      const marker = markerRef.current;
-      if (!bar || !marker) return;
-      // How far the pinned bar has travelled from a marker that scrolls away
-      // with the page. Hysteresis, so the title cannot flicker at the edge.
-      const travelled = bar.getBoundingClientRect().top - marker.getBoundingClientRect().top;
-      setCondensed((prev) => (prev ? travelled > 4 : travelled > 16));
-    };
-    const onScroll = () => {
-      if (!frame) frame = requestAnimationFrame(read);
-    };
-    read();
-    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
-    window.addEventListener("resize", onScroll, { passive: true });
-    return () => {
-      document.removeEventListener("scroll", onScroll, { capture: true });
-      window.removeEventListener("resize", onScroll);
-      if (frame) cancelAnimationFrame(frame);
-    };
-  }, []);
+  const [barHeight, setBarHeight] = useState(112);
 
   useEffect(() => {
     const el = barRef.current;
     if (!el || typeof ResizeObserver !== "function") return;
-    // The bar wraps onto more lines on a narrow window and loses its subtitle
-    // when it condenses, so the panes pin under its measured height rather
-    // than a guess, the same as the handoff does.
+    // The bar wraps onto more lines on a narrow window, so the panes pin
+    // under its measured height rather than a guess, the same as the handoff.
     const ro = new ResizeObserver(() => {
       const h = Math.round(el.getBoundingClientRect().height);
       if (h) setBarHeight((prev) => (prev === h ? prev : h));
@@ -272,36 +245,22 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
       className="ta-tph relative flex flex-col"
       style={{ "--tph-bar": `${barHeight}px` } as CSSProperties}
     >
-      <span ref={markerRef} aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-px w-px" />
-
       {/* ── Pinned bar ─────────────────────────────────────────────────────── */}
+      {/* Pulled up and out over the page's own padding (16px on each side and
+          on top) and given it back inside, as on Leave requests. At rest it
+          sits exactly where it would, but its box already starts at the top
+          of the scroller, so it has nothing to travel before it pins and never
+          slides; and rows cannot show through the side gutters. */}
       <div
         ref={barRef}
-        className="sticky top-0 z-20 flex flex-col gap-3.5 pb-3.5"
+        className="sticky top-0 z-20 -mx-4 -mt-4 flex flex-col gap-3.5 px-4 pb-3.5 pt-4"
         style={{ background: "var(--surface-page)" }}
       >
-        <div
-          className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1"
-          style={{ paddingTop: condensed ? 8 : 0, transition: "padding 140ms ease" }}
-        >
-          <h1
-            style={{
-              margin: 0,
-              fontSize: condensed ? 20 : 30,
-              lineHeight: condensed ? "26px" : "36px",
-              fontWeight: "var(--weight-bold)",
-              letterSpacing: "-0.02em",
-              color: "var(--text-primary)",
-              transition: "font-size 140ms ease, line-height 140ms ease",
-            }}
-          >
-            Team Punch History
-          </h1>
-          {!condensed && (
-            <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-              Punches by employee, with source and approval status
-            </p>
-          )}
+        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+          <h1 className="wms-page-title">Team Punch History</h1>
+          <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+            Punches by employee, with source and approval status
+          </p>
           <div className="ml-auto flex items-center gap-2 self-center">
             <Button
               hierarchy="secondary"
