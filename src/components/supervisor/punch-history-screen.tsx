@@ -782,28 +782,64 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                                 >
                                   {clock(p.punchTime, true)}
                                 </span>
-                                <span className="tabular whitespace-nowrap" style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>
+                                {/* How far rounding moved the punch, beside the
+                                    rounded time, only when it moved it by a
+                                    minute or more. Rounding is the part of this
+                                    screen that changes pay, and two similar
+                                    times side by side never said so. */}
+                                <span className="tabular inline-flex items-baseline gap-2 whitespace-nowrap" style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>
                                   {clock(p.roundedTime, false)}
+                                  {(() => {
+                                    const shift = Math.round(
+                                      (new Date(p.roundedTime).getTime() - new Date(p.punchTime).getTime()) / 60000,
+                                    );
+                                    if (sup || Math.abs(shift) < 1) return null;
+                                    return (
+                                      <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                                        {shift > 0 ? `+${shift}` : `\u2212${Math.abs(shift)}`} min
+                                      </span>
+                                    );
+                                  })()}
                                 </span>
-                                <span className="truncate" style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>
+                                {/* Routine sources are quiet. Manual and System are
+                                    not: one means somebody entered the punch by
+                                    hand, the other that the system wrote it. */}
+                                <span
+                                  className="truncate"
+                                  style={{
+                                    font: "var(--type-body1)",
+                                    fontWeight: !sup && (p.source === "MANUAL" || p.source === "SYSTEM") ? "var(--weight-medium)" : undefined,
+                                    color: sup
+                                      ? "var(--text-tertiary)"
+                                      : p.source === "MANUAL" || p.source === "SYSTEM"
+                                        ? "var(--text-primary)"
+                                        : "var(--text-tertiary)",
+                                  }}
+                                >
                                   {SOURCE_LABEL[p.source] ?? p.source}
                                 </span>
-                                <span
-                                  className="inline-flex items-center gap-[7px] whitespace-nowrap"
-                                  style={{ font: "var(--type-body2)", fontWeight: "var(--weight-medium)", color: fg }}
-                                >
+{/* Approved is the normal case on almost every row, so it
+                                    is a quiet check rather than the same word six
+                                    times a day. Pending and Superseded keep their
+                                    words, which is what makes them findable. */}
+                                {sup ? (
+                                  <span className="whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                                    Superseded
+                                  </span>
+                                ) : p.isApproved ? (
+                                  <span className="inline-flex items-center" title="Approved">
+                                    <CheckCircle2 className="h-4 w-4" style={{ color: "var(--icon-success)" }} aria-hidden="true" />
+                                    <span className="sr-only">Approved</span>
+                                  </span>
+                                ) : (
                                   <span
-                                    className="h-2 w-2 flex-none rounded-full"
-                                    style={{
-                                      background: sup
-                                        ? "var(--stroke-default)"
-                                        : p.isApproved
-                                          ? "var(--fill-success)"
-                                          : "var(--fill-warning)",
-                                    }}
-                                  />
-                                  {sup ? "Superseded" : p.isApproved ? "Approved" : "Pending"}
-                                </span>
+                                    className="inline-flex items-center gap-[7px] whitespace-nowrap"
+                                    style={{ font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: "var(--text-warning)" }}
+                                  >
+                                    <span className="h-2 w-2 flex-none rounded-full" style={{ background: "var(--fill-warning)" }} />
+                                    Pending
+                                  </span>
+                                )}
                               </div>
                             );
                           })}
