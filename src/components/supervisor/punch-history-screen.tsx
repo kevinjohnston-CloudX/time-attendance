@@ -127,45 +127,6 @@ function summarizeDay(punches: PunchHistoryPunch[]) {
   };
 }
 
-/** One labelled fact in a day's summary. */
-function DayFact({
-  label,
-  value,
-  strong,
-  muted,
-  warn,
-  live,
-}: {
-  label: string;
-  value: string;
-  strong?: boolean;
-  muted?: boolean;
-  warn?: boolean;
-  live?: boolean;
-}) {
-  const tone = warn ? "var(--text-warning)" : live ? "var(--text-accent)" : null;
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span
-        className="wms-overline truncate"
-        style={{ color: tone ?? "var(--text-tertiary)" }}
-      >
-        {label}
-      </span>
-      <span
-        className="tabular truncate"
-        style={{
-          font: "var(--type-body2)",
-          fontWeight: strong ? "var(--weight-bold)" : "var(--weight-semibold)",
-          color: tone ?? (muted ? "var(--text-tertiary)" : "var(--text-primary)"),
-        }}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
 export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -624,7 +585,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
               >
                 {data.punches.length > 0 ? (
                   <>
-                    {data.days.map((day) => {
+                    {data.days.map((day, dayIndex) => {
                       const dayPunches = data.punches.filter((p) => p.localDate === day.date);
                       const sum = summarizeDay(dayPunches);
                       // Worked keeps the pay engine's rules: it only counts
@@ -632,110 +593,136 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                       // rather than showing a zero that reads as no work.
                       const worked =
                         day.workedMinutes > 0
-                          ? `${hours(day.workedMinutes)} h`
+                          ? null
                           : day.isClockedIn
                             ? "In progress"
                             : day.hasPending
                               ? "Pending"
                               : day.hasMissingPunch
-                                ? "\u2014"
-                                : `${hours(0)} h`;
+                                ? "No hours"
+                                : null;
+                      const warnTone = "var(--text-warning)";
+                      const liveTone = "var(--text-accent)";
+                      // The shape of the day as one quiet line: arrival to
+                      // departure, then meal and breaks only when there were
+                      // any. Anything that went wrong on it takes its colour.
+                      const shape: { text: string; tone?: string }[] = [];
+                      if (sum.inAt || sum.outAt || day.isClockedIn) {
+                        const from = sum.inAt ? clock(sum.inAt, false) : "No clock in";
+                        if (sum.outAt) {
+                          shape.push({ text: `${from} to ${clock(sum.outAt, false)}` });
+                          if (sum.outIsAuto) shape.push({ text: "Clocked out by system", tone: warnTone });
+                        } else {
+                          shape.push({ text: day.isClockedIn ? `In since ${from}` : `${from}, no clock out` });
+                        }
+                      }
+                      for (const [label, part, verb] of [
+                        ["Meal", sum.meal, "On meal"],
+                        ["Breaks", sum.breaks, "On break"],
+                      ] as const) {
+                        if (!part) continue;
+                        if (part.open) {
+                          shape.push(
+                            day.isClockedIn
+                              ? { text: verb, tone: liveTone }
+                              : { text: `${label === "Meal" ? "Meal" : "Break"} not ended`, tone: warnTone },
+                          );
+                        } else if (part.minutes > 0) {
+                          shape.push({ text: `${label} ${duration(part.minutes)}` });
+                        }
+                      }
                       return (
-                      <div key={day.date} className="flex flex-col">
-                        {/* The day at a glance. Each fact sits under its own
-                            label, so the day can be read without its rows:
-                            when they came in and left, meal, breaks, and the
-                            hours. One status on the right, quiet when the day
-                            is clean and amber only when it is not. */}
+                      <div
+                        key={day.date}
+                        className="flex flex-col"
+                        style={{ borderTop: dayIndex === 0 ? undefined : "1px solid var(--stroke-secondary)" }}
+                      >
+                        {/* The day as a heading: the date and the shape of the
+                            day on the left, the hours on the right as the
+                            answer, and the day's one status under them. The
+                            punches that make it up follow as its rows. */}
                         <div
-                          className="flex flex-wrap items-center gap-x-6 gap-y-2 px-[18px] py-2.5"
-                          style={{ background: "var(--surface-tertiary)", borderBottom: "1px solid var(--stroke-divider)" }}
+                          className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-[18px] pb-3 pt-4"
+                          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
                         >
-                          <span
-                            className="min-w-[120px] whitespace-nowrap"
-                            style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}
-                          >
-                            {dayLabel(day.date, true)}
-                          </span>
-
-                          <div className="grid flex-1 grid-cols-[repeat(5,minmax(72px,1fr))] gap-4">
-                            <DayFact label="In" value={sum.inAt ? clock(sum.inAt, false) : "\u2014"} muted={!sum.inAt} />
-                            <DayFact
-                              label={sum.outIsAuto ? "Out \u00b7 Auto" : "Out"}
-                              value={sum.outAt ? clock(sum.outAt, false) : day.isClockedIn ? "Still in" : "\u2014"}
-                              muted={!sum.outAt}
-                              warn={sum.outIsAuto}
-                            />
-                            {/* An unended meal or break on a finished day was
-                                never punched back from. On the day still in
-                                progress it is simply happening now, so it is
-                                the live blue there, not a warning. */}
-                            <DayFact
-                              label="Meal"
-                              value={
-                                sum.meal?.open
-                                  ? day.isClockedIn ? "On meal" : "Not ended"
-                                  : duration(sum.meal?.minutes ?? null)
-                              }
-                              muted={!sum.meal?.minutes && !sum.meal?.open}
-                              warn={sum.meal?.open && !day.isClockedIn}
-                              live={sum.meal?.open && day.isClockedIn}
-                            />
-                            <DayFact
-                              label="Breaks"
-                              value={
-                                sum.breaks?.open
-                                  ? day.isClockedIn ? "On break" : "Not ended"
-                                  : duration(sum.breaks?.minutes ?? null)
-                              }
-                              muted={!sum.breaks?.minutes && !sum.breaks?.open}
-                              warn={sum.breaks?.open && !day.isClockedIn}
-                              live={sum.breaks?.open && day.isClockedIn}
-                            />
-                            <DayFact label="Worked" value={worked} strong muted={day.workedMinutes === 0} />
+                          <div className="flex min-w-0 flex-col gap-1">
+                            <span
+                              className="whitespace-nowrap"
+                              style={{ font: "var(--type-h4)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}
+                            >
+                              {dayLabel(day.date, true)}
+                            </span>
+                            {shape.length > 0 && (
+                              <span className="tabular flex flex-wrap items-center gap-x-2" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                                {shape.map((s, i) => (
+                                  <span key={i} className="inline-flex items-center gap-2 whitespace-nowrap">
+                                    {i > 0 && <span aria-hidden="true" style={{ color: "var(--text-tertiary)" }}>·</span>}
+                                    <span style={s.tone ? { color: s.tone, fontWeight: "var(--weight-medium)" } : undefined}>{s.text}</span>
+                                  </span>
+                                ))}
+                              </span>
+                            )}
                           </div>
 
-                          <div className="flex min-w-[150px] flex-none items-center justify-end gap-2.5">
-                            {day.hasMissingPunch ? (
-                              <>
-                                <span
-                                  className="inline-flex items-center gap-1.5 whitespace-nowrap"
-                                  style={{ font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: "var(--text-warning)" }}
-                                >
-                                  <TriangleAlert className="h-[15px] w-[15px]" />
-                                  Missing punch
-                                </span>
-                                {data.canResolveExceptions && exceptionsHref && (
-                                  <Button hierarchy="link" size="sm" onClick={() => router.push(exceptionsHref)}>
-                                    Resolve
-                                  </Button>
-                                )}
-                              </>
-                            ) : day.isClockedIn ? (
+                          <div className="flex flex-none flex-col items-end gap-1">
+                            {worked === null ? (
                               <span
-                                className="inline-flex items-center gap-1.5 whitespace-nowrap"
-                                style={{ font: "var(--type-body2)", fontWeight: "var(--weight-medium)", color: "var(--text-accent)" }}
+                                className="tabular whitespace-nowrap"
+                                style={{ font: "var(--type-h3)", fontWeight: "var(--weight-bold)", letterSpacing: "-0.01em", color: "var(--text-primary)" }}
                               >
-                                <span className="h-[7px] w-[7px] rounded-full" style={{ background: "var(--fill-accent)" }} />
-                                Clocked in
-                              </span>
-                            ) : sum.pending > 0 ? (
-                              <span
-                                className="inline-flex items-center gap-1.5 whitespace-nowrap"
-                                style={{ font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: "var(--text-warning)" }}
-                              >
-                                <span className="h-2 w-2 rounded-full" style={{ background: "var(--fill-warning)" }} />
-                                {sum.pending} pending
+                                {hours(day.workedMinutes)}
+                                <span style={{ font: "var(--type-body2)", fontWeight: "var(--weight-medium)", color: "var(--text-secondary)" }}> h</span>
                               </span>
                             ) : (
                               <span
-                                className="inline-flex items-center gap-1.5 whitespace-nowrap"
-                                style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                                className="whitespace-nowrap"
+                                style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", lineHeight: "26px", color: "var(--text-tertiary)" }}
                               >
-                                <CheckCircle2 className="h-[15px] w-[15px]" style={{ color: "var(--icon-success)" }} />
-                                Approved
+                                {worked}
                               </span>
                             )}
+                            <div className="flex items-center gap-2.5">
+                              {day.hasMissingPunch ? (
+                                <>
+                                  <span
+                                    className="inline-flex items-center gap-1.5 whitespace-nowrap"
+                                    style={{ font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: warnTone }}
+                                  >
+                                    <TriangleAlert className="h-[14px] w-[14px]" />
+                                    Missing punch
+                                  </span>
+                                  {data.canResolveExceptions && exceptionsHref && (
+                                    <Button hierarchy="link" size="sm" onClick={() => router.push(exceptionsHref)}>
+                                      Resolve
+                                    </Button>
+                                  )}
+                                </>
+                              ) : day.isClockedIn ? (
+                                <span
+                                  className="inline-flex items-center gap-1.5 whitespace-nowrap"
+                                  style={{ font: "var(--type-body2)", fontWeight: "var(--weight-medium)", color: liveTone }}
+                                >
+                                  <span className="h-[7px] w-[7px] rounded-full" style={{ background: "var(--fill-accent)" }} />
+                                  Clocked in
+                                </span>
+                              ) : sum.pending > 0 ? (
+                                <span
+                                  className="inline-flex items-center gap-1.5 whitespace-nowrap"
+                                  style={{ font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: warnTone }}
+                                >
+                                  <span className="h-2 w-2 rounded-full" style={{ background: "var(--fill-warning)" }} />
+                                  {sum.pending} pending
+                                </span>
+                              ) : (
+                                <span
+                                  className="inline-flex items-center gap-1.5 whitespace-nowrap"
+                                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                                >
+                                  <CheckCircle2 className="h-[14px] w-[14px]" style={{ color: "var(--icon-success)" }} />
+                                  Approved
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
 
