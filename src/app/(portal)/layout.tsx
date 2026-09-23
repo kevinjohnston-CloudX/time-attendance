@@ -12,6 +12,7 @@ import { SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants"
 import { getPermissions } from "@/lib/rbac/permissions";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { getLegacyPermissions } from "@/lib/rbac/permission-resolver";
+import { getWaitingOnYou } from "@/lib/dashboard/dashboard-data";
 
 const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
@@ -135,6 +136,23 @@ export default async function PortalLayout({
     return userPermissions.includes(permission);
   };
 
+  /**
+   * What the bell counts. Read here rather than in the bell because the
+   * layout already knows this viewer's permissions, so it costs no extra
+   * permission lookup — only the counts themselves, which are indexed.
+   *
+   * <p>An inactive employee is shown nothing: every queue behind these counts
+   * is a page their route guard already refuses.
+   */
+  const waiting = isEmployeeActive
+    ? await getWaitingOnYou({
+        employeeId: session.user.employeeId ?? null,
+        tenantId: session.user.tenantId ?? null,
+        canApproveTeam: userPermissions.includes("TIMESHEET_APPROVE_TEAM"),
+        isPayroll: userPermissions.includes("PAY_PERIOD_MANAGE"),
+      })
+    : [];
+
   const destinations: Destination[] = isEmployeeActive
     ? [
         ...SECTIONS.flatMap((s) =>
@@ -194,7 +212,7 @@ export default async function PortalLayout({
               viewer's permissions and by whether they are active, so the
               shortcuts list is built from the same set rather than a second
               one that could disagree with it. */}
-          <TopBar reachableHrefs={destinations.map((d) => d.href)} />
+          <TopBar reachableHrefs={destinations.map((d) => d.href)} waiting={waiting} />
           <main className="min-h-0 flex-1 overflow-y-auto">
             <InactiveRouteGuard isInactive={!isEmployeeActive} />
             {/* --space-content: the design moved main padding from 24px to

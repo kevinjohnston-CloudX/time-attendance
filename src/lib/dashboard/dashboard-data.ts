@@ -448,3 +448,85 @@ export async function getUpcoming(
 
   return rows.sort((a, b) => a.date.getTime() - b.date.getTime()).slice(0, 6);
 }
+
+// ─── What is waiting on you ───────────────────────────────────────────────────
+
+export interface WaitingItem {
+  /** What the count is of, as a label. */
+  label: string;
+  count: number;
+  href: string;
+}
+
+/**
+ * The counts behind the notification bell.
+ *
+ * <p>Derived rather than stored. A notification table would need a writer at
+ * every event site and a rule for what happens when the work is done by
+ * somebody else, and it would drift: the bell would still say a timesheet
+ * needs approving after a colleague approved it. These counts are the current
+ * state of the queues, so the bell clears when the work is done rather than
+ * when somebody looks at it.
+ *
+ * <p>Scoped exactly as the pages behind it are. A supervisor counts their own
+ * team, payroll counts the tenant, and somebody with no team counts only
+ * their own two.
+ *
+ * <p>Counts only, no rows, and every one of them hits an index. This runs on
+ * every page in the portal, so it is deliberately the cheapest query set that
+ * answers the question.
+ */
+export async function getWaitingOnYou({
+  employeeId,
+  tenantId,
+  canApproveTeam,
+  isPayroll,
+}: {
+  employeeId: string | null;
+  tenantId: string | null;
+  canApproveTeam: boolean;
+  isPayroll: boolean;
+}): Promise<WaitingItem[]> {
+  if (!tenantId) return [];
+
+  const teamScope = isPayroll
+    ? { tenantId }
+    : { tenantId, supervisorId: employeeId ?? "" };
+
+  const [toApprove, leaveToApprove, openExceptions, myRejected, myDrafts] = await Promise.all([
+    canApproveTeam
+      ? db.timesheet.count({
+          where: isPayroll
+            ? { status: "SUP_APPROVED", employee: { tenantId } }
+            : { status: "SUBMITTED", employee: teamScope },
+        })
+      : 0,
+    canApproveTeam
+      ? db.leaveRequest.count({ where: { status: "PENDING", employee: teamScope } })
+      : 0,
+    canApproveTeam
+      ? db.exception.count({
+          where: { resolvedAt: null, timesheet: { employee: teamScope } },
+        })
+      : 0,
+    // Yours to act on whether or not you have a team: a timesheet sent back
+    // needs you to fix it, and a draft leave request was never submitted.
+    // A rejection sends the sheet back to OPEN and stamps rejectedAt, so
+    // "sent back to you" is those two together. There is no REJECTED status
+    // to count: the sheet is open again precisely so it can be fixed.
+    employeeId
+      ? db.timesheet.count({ where: { employeeId, status: "OPEN", rejectedAt: { not: null } } })
+      : 0,
+    employeeId
+      ? db.leaveRequest.count({ where: { employeeId, status: "DRAFT" } })
+      : 0,
+  ]);
+
+  return [
+    { label: "Timesheets to approve", count: toApprove,       href: "/supervisor/timesheets" },
+    { label: "Leave to approve",      count: leaveToApprove,  href: "/supervisor/leave" },
+    { label: "Open exceptions",       count: openExceptions,  href: "/supervisor/exceptions" },
+    { label: "Timesheets sent back",  count: myRejected,      href: "/time/timesheet" },
+    { label: "Unsent leave requests", count: myDrafts,        href: "/leave" },
+  ].filter((i) => i.count > 0);
+}

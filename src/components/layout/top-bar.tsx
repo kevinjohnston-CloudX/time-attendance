@@ -6,6 +6,8 @@ import { Home, ChevronRight } from "lucide-react";
 import { locate } from "./nav-model";
 import { ThemeToggle } from "./theme-toggle";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
+import { NotificationBell } from "./notification-bell";
+import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
 
 /**
  * The 56px bar above the content, from the portal design.
@@ -16,13 +18,18 @@ import { KeyboardShortcuts } from "./keyboard-shortcuts";
  * highlighted. The trail is built from the same nav model the sidebar renders,
  * so the two cannot disagree about which section a page belongs to.
  *
- * <p>The design also puts a notifications bell and an avatar menu up here.
- * Neither has anything behind it yet, and chrome that does nothing when
- * clicked is worse than chrome that is absent, so this carries the
- * breadcrumb, the theme switch and the shortcuts list only. The command
- * palette the design draws here is reached from the sidebar search and ⌘K.
+ * <p>The avatar menu the design puts up here is still absent: it would
+ * duplicate the sidebar footer, which already carries the name, the role and
+ * sign out, and two places to sign out is worse than one. The command palette
+ * the design draws here is reached from the sidebar search and ⌘K instead.
  */
-export function TopBar({ reachableHrefs }: { reachableHrefs: string[] }) {
+export function TopBar({
+  reachableHrefs,
+  waiting,
+}: {
+  reachableHrefs: string[];
+  waiting: WaitingItem[];
+}) {
   const pathname = usePathname();
   const here = locate(pathname);
 
@@ -76,6 +83,7 @@ export function TopBar({ reachableHrefs }: { reachableHrefs: string[] }) {
       <div className="flex flex-none items-center gap-2">
         <ThemeToggle />
         <KeyboardShortcuts reachableHrefs={reachableHrefs} />
+        <NotificationBell items={waiting} />
       </div>
     </header>
   );
