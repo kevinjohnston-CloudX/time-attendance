@@ -17,6 +17,7 @@ import { STATUS_META, describeScan, fmtDuration, fmtShift, fmtTime, initialsOf }
 import { iconFor } from "./person-panel";
 import styles from "./on-site.module.css";
 import { ZoomableFace } from "./face";
+import { HomeSiteBadge } from "./home-site";
 
 /**
  * Movements: one block per person, their photo and name on the left, and on
@@ -288,6 +289,7 @@ function PersonBlock({
                   On leave
                 </Badge>
               )}
+              <HomeSiteBadge site={p.homeSite} />
             </span>
             <span className={styles.mvFacts}>
               {schedule ? `Scheduled ${schedule}` : "Not scheduled"}

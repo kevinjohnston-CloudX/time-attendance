@@ -65,6 +65,7 @@ import {
   useSiteDay,
   type MvSort,
 } from "./movements-view";
+import { HomeSiteBadge } from "./home-site";
 import {
   ScanLogCounts,
   ScanLogEmpty,
@@ -467,7 +468,7 @@ export function OnSiteBoard({
     if (!board) return;
     const all = await log.fetchAll();
     if (!all) return;
-    const csv = scanLogCsv(all.rows, tz, csvCell);
+    const csv = scanLogCsv(all.rows, tz, csvCell, board.site.name);
     const stamp = logDayShown || `${today} ${fmtTime(board.generatedAt, tz).replace(/[: ]/g, "")}`;
     download(csv, `Scan log ${board.site.name} ${stamp}.csv`);
   }
@@ -477,10 +478,10 @@ export function OnSiteBoard({
     if (!data) return;
     const tzDay = data.site.timezone;
     const time = (ms: number | null) => (ms === null ? "" : fmtTime(new Date(ms).toISOString(), tzDay));
-    const header = ["Name", "Employee code", "Department", "Scheduled", "Reader", "Activity", "From", "To", "Minutes", "Notes"];
+    const header = ["Name", "Employee code", "Department", "Home site", "Scheduled", "Reader", "Activity", "From", "To", "Minutes", "Notes"];
     const lines: string[][] = [header];
     for (const v of mvRows) {
-      const base = [v.person.name, v.person.employeeCode, v.person.department ?? "", fmtShift(v.person.scheduledStart, v.person.scheduledEnd) ?? ""];
+      const base = [v.person.name, v.person.employeeCode, v.person.department ?? "", v.person.homeSite ?? data.site.name, fmtShift(v.person.scheduledStart, v.person.scheduledEnd) ?? ""];
       if (v.lines.length === 0) {
         lines.push([...base, "", v.person.onLeave ? "On leave" : "Not seen", "", "", "", ""]);
         continue;
@@ -511,6 +512,7 @@ export function OnSiteBoard({
       "Name",
       "Employee code",
       "Department",
+      "Home site",
       "Shift",
       "Status",
       ...(gateData ? ["Security gate"] : []),
@@ -523,6 +525,7 @@ export function OnSiteBoard({
       p.name,
       p.employeeCode,
       p.department ?? "",
+      p.homeSite ?? board.site.name,
       p.shift ?? "",
       statusLabel(p),
       ...readerLines(p, tz, now, gateData).map((l) => l.title.replace(/^[^:]+: /, "")),
@@ -1223,6 +1226,7 @@ function PersonTile({
   const flags = [
     p.outsideOnMeal ? "Outside the building" : null,
     p.inactive ? "Inactive record" : null,
+    p.homeSite ? `Home site: ${p.homeSite}` : null,
   ].filter(Boolean) as string[];
 
   // Anybody a reader has seen today gets one line per reader, so the card
@@ -1273,6 +1277,11 @@ function PersonTile({
           {p.inactive && (
             <span className={styles.flagChip} data-tone="error">
               Inactive record
+            </span>
+          )}
+          {p.homeSite && (
+            <span className={styles.flagChip} data-tone="neutral" title={`Home site: ${p.homeSite}`}>
+              Other site
             </span>
           )}
         </span>
@@ -1411,6 +1420,7 @@ function PeopleTable({
                         Inactive record
                       </Badge>
                     )}
+                    <HomeSiteBadge site={p.homeSite} />
                   </span>
                 </TD>
                 {hasGateData && (

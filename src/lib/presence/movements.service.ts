@@ -3,6 +3,7 @@ import { snapToLocalTime } from "@/lib/utils/date";
 import { addDays, clampDay } from "./days";
 import { LOOKBACK_MS, localDateString, toScan, type ScanRow } from "./on-site.service";
 import { photoUrls } from "./photos";
+import { scansHere, scansHereSql, siteScope } from "./site-scope";
 import type { DayPerson, PresenceScan, SiteDay } from "./types";
 
 /**
@@ -13,6 +14,10 @@ import type { DayPerson, PresenceScan, SiteDay } from "./types";
  * person's movement lines from it with the lane logic in lanes.ts, the same
  * code the person panel draws with, so the two can never disagree and an open
  * stretch keeps counting between refreshes.
+ *
+ * <p>A site's day is the scans made at that building (see site-scope.ts), so
+ * somebody whose record names another site is here when they scanned here,
+ * plus the people of this site who were scheduled or on leave.
  *
  * <p>Read-only, and bounded: one site, one calendar day, capped at MAX_SCANS.
  * A site of 400 people makes about 2,000 scans a day. The poll first asks
@@ -44,7 +49,9 @@ export async function getSiteDay(
   const dayStart = snapToLocalTime("00:00", day, timezone);
   const dayEnd = snapToLocalTime("00:00", addDays(day, 1), timezone);
   const workDate = new Date(`${day}T00:00:00.000Z`);
-  const atSite = { tenantId, scanTime: { gte: dayStart, lt: dayEnd }, employee: { siteId } };
+  const scope = await siteScope(tenantId, siteId);
+  const here = scansHere(scope);
+  const atSite = { tenantId, scanTime: { gte: dayStart, lt: dayEnd }, AND: [here] };
 
   const newest = await db.scanEvent.aggregate({ where: atSite, _max: { createdAt: true } });
   const watermark = newest._max.createdAt?.toISOString() ?? null;
@@ -95,7 +102,7 @@ export async function getSiteDay(
       JOIN   "employees" e ON e.id = s."employeeId"
       WHERE  s."tenantId" = ${tenantId}
         AND  e."tenantId" = ${tenantId}
-        AND  e."siteId" = ${siteId}
+        AND  ${scansHereSql(scope)}
         AND  s."scanTime" >= ${new Date(dayStart.getTime() - LOOKBACK_MS)}
         AND  s."scanTime" < ${dayStart}
         AND  s."direction" IN ('IN', 'OUT')
@@ -109,7 +116,7 @@ export async function getSiteDay(
         stream: "SECURITY",
         scanTime: { gte: new Date(dayStart.getTime() - LOOKBACK_MS), lt: dayEnd },
         directionSource: { notIn: SYSTEM_SOURCES as never },
-        employee: { siteId },
+        AND: [here],
       },
       select: { id: true },
     }),
@@ -159,10 +166,13 @@ export async function getSiteDay(
 
   const employees = ids.size
     ? await db.employee.findMany({
-        where: { tenantId, siteId, id: { in: [...ids] } },
+        // Already scoped: every id came from a scan here or from this site's
+        // own schedules and leave.
+        where: { tenantId, id: { in: [...ids] } },
         select: {
           id: true,
           employeeCode: true,
+          site: { select: { id: true, name: true } },
           barcode: true,
           wmsId: true,
           isActive: true,
@@ -190,6 +200,7 @@ export async function getSiteDay(
       scheduledStart: schedule?.startTime ?? null,
       scheduledEnd: schedule?.endTime ?? null,
       onLeave: leaveIds.has(e.id),
+      homeSite: e.site && e.site.id !== siteId ? e.site.name : null,
     };
   });
 

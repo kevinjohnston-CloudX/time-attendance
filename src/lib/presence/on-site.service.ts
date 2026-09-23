@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
-import { addDays, clampDay } from "./days";
+import { DAYS_BACK, addDays, clampDay } from "./days";
 import { photoUrls } from "./photos";
+import { scansHere, scansHereSql, siteScope } from "./site-scope";
 import { NOT_COUNTED_OUTCOMES } from "./scan-rules";
 import type {
   PresenceBoard,
@@ -100,6 +101,9 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
   const todayStart = snapToLocalTime("00:00", today, timezone);
   const windowStart = new Date(now.getTime() - LOOKBACK_MS);
   const workDate = new Date(`${today}T00:00:00.000Z`);
+  // The scans made at this building, whoever made them (see site-scope.ts).
+  const scope = await siteScope(tenantId, siteId);
+  const here = scansHereSql(scope);
 
   const [latest, todayRows, lastGate, scheduled, leaveRequests, onLeaveFlags] = await Promise.all([
     // Newest IN/OUT per person per stream. UNKNOWN is left out before the
@@ -118,7 +122,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       JOIN   "employees" e ON e.id = s."employeeId"
       WHERE  s."tenantId" = ${tenantId}
         AND  e."tenantId" = ${tenantId}
-        AND  e."siteId" = ${siteId}
+        AND  ${here}
         AND  s."scanTime" >= ${windowStart}
         AND  s."direction" IN ('IN', 'OUT')
         AND  NOT (s."stream" = 'TIME_CLOCK' AND s."outcome"::text IN ('PUNCH_REJECTED', 'ERROR', 'PENDING'))
@@ -134,15 +138,13 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       JOIN   "employees" e ON e.id = s."employeeId"
       WHERE  s."tenantId" = ${tenantId}
         AND  e."tenantId" = ${tenantId}
-        AND  e."siteId" = ${siteId}
+        AND  ${here}
         AND  s."scanTime" >= ${todayStart}
         AND  s."direction" IN ('IN', 'OUT')
         AND  s."directionSource"::text NOT IN (${SYSTEM_SOURCES[0]}, ${SYSTEM_SOURCES[1]})
       GROUP  BY s."employeeId"
     `,
-    // Whether this building's gate is reporting at all. Keyed on the scanning
-    // employees' site, because gates post numeric location ids and never join
-    // the site table directly.
+    // Whether this building's gate is reporting at all.
     db.scanEvent.findFirst({
       where: {
         tenantId,
@@ -150,7 +152,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
         deviceName: { not: null },
         scanTime: { gte: windowStart },
         directionSource: { notIn: [...SYSTEM_SOURCES] },
-        employee: { siteId },
+        AND: [scansHere(scope)],
       },
       orderBy: { scanTime: "desc" },
       select: { scanTime: true },
@@ -194,10 +196,13 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
 
   const employees = ids.size
     ? await db.employee.findMany({
-        where: { tenantId, siteId, id: { in: [...ids] } },
+        // Already scoped: every id came from a scan here or from this site's
+        // own schedules and leave.
+        where: { tenantId, id: { in: [...ids] } },
         select: {
           id: true,
           employeeCode: true,
+          site: { select: { id: true, name: true } },
           barcode: true,
           wmsId: true,
           isActive: true,
@@ -280,6 +285,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       scheduledEnd: schedule?.endTime ?? null,
       lateMinutes,
       inactive: !emp.isActive || emp.terminatedAt !== null,
+      homeSite: emp.site && emp.site.id !== siteId ? emp.site.name : null,
       gate: gate
         ? { inside: gateIn, at: gate.scanTime.toISOString(), automatic: gate.source === "AUTO_CLOSE" }
         : null,
@@ -329,9 +335,10 @@ function latestOf(a: Date | null, b: Date | null): Date | null {
  * the night before left them.
  *
  * <p>`day` is a site calendar day within the last week; anything else reads
- * as today. Scoped by tenant AND site in the where clause, so an id for
- * somebody at a building the viewer cannot open finds nothing, and the caller
- * answers as if the person does not exist.
+ * as today. Only the scans made at this building are read, the same ones
+ * the table shows. Somebody opens when this is their site or they scanned
+ * here in the days the page can show; any other id finds nothing, and the
+ * caller answers as if the person does not exist.
  */
 export async function getPresenceDetail(
   tenantId: string,
@@ -339,8 +346,26 @@ export async function getPresenceDetail(
   employeeId: string,
   day?: string | null,
 ): Promise<PresenceDetail | null> {
+  const [site, scope] = await Promise.all([
+    db.site.findFirst({ where: { id: siteId, tenantId }, select: { timezone: true } }),
+    siteScope(tenantId, siteId),
+  ]);
+  if (!site) return null;
+  const here = scansHere(scope);
+  const timezone = site.timezone || "America/New_York";
+  const now = new Date();
+  const today = localDateString(now, timezone);
+  const oldest = snapToLocalTime("00:00", addDays(today, -DAYS_BACK), timezone);
+
   const emp = await db.employee.findFirst({
-    where: { id: employeeId, tenantId, siteId },
+    where: {
+      id: employeeId,
+      tenantId,
+      OR: [
+        { siteId },
+        { scanEvents: { some: { AND: [here], tenantId, scanTime: { gte: new Date(oldest.getTime() - LOOKBACK_MS) } } } },
+      ],
+    },
     select: {
       id: true,
       employeeCode: true,
@@ -353,14 +378,11 @@ export async function getPresenceDetail(
       department: { select: { name: true } },
       shift: { select: { name: true } },
       supervisor: { select: { user: { select: { name: true } } } },
-      site: { select: { timezone: true } },
+      site: { select: { id: true, name: true } },
     },
   });
   if (!emp) return null;
 
-  const timezone = emp.site?.timezone || "America/New_York";
-  const now = new Date();
-  const today = localDateString(now, timezone);
   const theDay = clampDay(day, today) ?? today;
   const dayStart = snapToLocalTime("00:00", theDay, timezone);
   const dayEnd = snapToLocalTime("00:00", addDays(theDay, 1), timezone);
@@ -384,6 +406,7 @@ export async function getPresenceDetail(
         employeeId,
         tenantId,
         stream,
+        AND: [here],
         direction: { in: ["IN", "OUT"] },
         scanTime: { gte: carryFrom, lt: dayStart },
         ...(stream === "TIME_CLOCK" ? { outcome: { notIn: [...NOT_COUNTED_OUTCOMES] } } : {}),
@@ -398,7 +421,7 @@ export async function getPresenceDetail(
       select: { startTime: true, endTime: true },
     }),
     db.scanEvent.findMany({
-      where: { employeeId, tenantId, scanTime: { gte: dayStart, lt: dayEnd } },
+      where: { employeeId, tenantId, scanTime: { gte: dayStart, lt: dayEnd }, AND: [here] },
       orderBy: { scanTime: "desc" },
       take: 400,
       select: scanSelect,
@@ -417,6 +440,7 @@ export async function getPresenceDetail(
     shift: emp.shift?.name ?? null,
     supervisor: emp.supervisor?.user?.name ?? null,
     inactive: !emp.isActive || emp.terminatedAt !== null,
+    homeSite: emp.site && emp.site.id !== siteId ? emp.site.name : null,
     photoUrl: photos.get(emp.id) ?? null,
     scheduledStart: schedule?.startTime ?? null,
     scheduledEnd: schedule?.endTime ?? null,

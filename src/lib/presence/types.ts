@@ -63,6 +63,8 @@ export interface PresencePerson {
   lateMinutes: number | null;
   /** The record is inactive or terminated, and the person is still scanning. */
   inactive: boolean;
+  /** The site on their record, when it is not this building: they scanned here from elsewhere. */
+  homeSite: string | null;
   /** The security gate's latest word on them, in the last 36 hours. */
   gate: { inside: boolean; at: string; automatic: boolean } | null;
   /** The time clock's latest word on them, in the last 36 hours. */
@@ -111,6 +113,8 @@ export interface PresenceDetail {
   shift: string | null;
   supervisor: string | null;
   inactive: boolean;
+  /** The site on their record, when it is not this building. */
+  homeSite: string | null;
   /** A signed link to the tablet photo, or null. */
   photoUrl: string | null;
   scheduledStart: string | null;
@@ -165,6 +169,8 @@ export interface ScanLogRow extends PresenceScan {
     name: string;
     employeeCode: string;
     department: string | null;
+    /** The site on their record, when it is not this building. */
+    homeSite: string | null;
     photoUrl: string | null;
   };
 }
@@ -218,6 +224,8 @@ export interface DayPerson {
   scheduledStart: string | null;
   scheduledEnd: string | null;
   onLeave: boolean;
+  /** The site on their record, when it is not this building: they scanned here from elsewhere. */
+  homeSite: string | null;
 }
 
 /**

@@ -501,6 +501,7 @@ function LogRow({
           <span className={styles.meta}>
             {r.person.employeeCode}
             {r.person.department ? ` · ${r.person.department}` : ""}
+            {r.person.homeSite ? ` · From ${r.person.homeSite}` : ""}
           </span>
         </span>
 
@@ -630,8 +631,8 @@ export function ScanLogSkeleton() {
 
 /* ── Export ─────────────────────────────────────────────────────────────── */
 
-export function scanLogCsv(rows: ScanLogRow[], tz: string, cell: (v: string) => string): string {
-  const header = ["Time", "Name", "Employee code", "Department", "Reader", "Scan", "Device", "Accepted", "Notes"];
+export function scanLogCsv(rows: ScanLogRow[], tz: string, cell: (v: string) => string, site: string): string {
+  const header = ["Time", "Name", "Employee code", "Department", "Home site", "Reader", "Scan", "Device", "Accepted", "Notes"];
   const lines = [
     header,
     ...rows.map((r) => [
@@ -639,6 +640,7 @@ export function scanLogCsv(rows: ScanLogRow[], tz: string, cell: (v: string) => 
       r.person.name,
       r.person.employeeCode,
       r.person.department ?? "",
+      r.person.homeSite ?? site,
       r.stream === "SECURITY" ? "Security gate" : "Time clock",
       describeScan(r),
       r.device ?? "",

@@ -22,6 +22,7 @@ import {
 } from "./presence-meta";
 import styles from "./on-site.module.css";
 import { ZoomableFace } from "./face";
+import { HomeSiteBadge } from "./home-site";
 
 /**
  * One person, opened from the board or the scan log: who they are, and their
@@ -197,6 +198,7 @@ export function PersonPanel({
                 {person && isToday && person.status === "NO_GATE_SCAN" && <Badge tone="warning">No gate scan</Badge>}
                 {person && isToday && person.outsideOnMeal && <Badge tone="neutral">Outside the building</Badge>}
                 {(person?.inactive || detail?.inactive) && <Badge tone="error">Inactive record</Badge>}
+                <HomeSiteBadge site={detail?.homeSite ?? person?.homeSite ?? null} size="md" />
               </span>
               {person && isToday && (
                 <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>

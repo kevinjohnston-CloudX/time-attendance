@@ -5,6 +5,7 @@ import { addDays, clampDay } from "./days";
 import { localDateString } from "./on-site.service";
 import { photoUrls } from "./photos";
 import { NOT_COUNTED_OUTCOMES } from "./scan-rules";
+import { scansHere, siteScope } from "./site-scope";
 import type { ScanLogPage, ScanLogQuery, ScanLogRow } from "./types";
 
 /**
@@ -21,9 +22,9 @@ import type { ScanLogPage, ScanLogQuery, ScanLogRow } from "./types";
  * so an open log costs a small query every 30 seconds rather than the whole
  * day again.
  *
- * <p>Scoped by the scanning employee's site, like the board, because the gates
- * post numeric location ids that never join the site table. A badge that
- * matches nobody has no employee and so no site, and is not in this log.
+ * <p>Scoped by the building the scan was made at, like the board (see
+ * site-scope.ts). A badge that matches nobody has no person, and is not in
+ * this log.
  */
 
 const REJECTED = NOT_COUNTED_OUTCOMES;
@@ -89,10 +90,10 @@ export async function getScanLog(
   const dayStart = snapToLocalTime("00:00", day, timezone);
   const dayEnd = snapToLocalTime("00:00", addDays(day, 1), timezone);
 
+  const scope = await siteScope(tenantId, siteId);
   const q = input.q?.trim() || null;
   const employee: Prisma.EmployeeWhereInput = {
     tenantId,
-    siteId,
     ...(input.departmentId ? { departmentId: input.departmentId } : {}),
     ...(input.shiftId ? { shiftId: input.shiftId } : {}),
     ...(q
@@ -106,7 +107,12 @@ export async function getScanLog(
   };
 
   // What the counts cover: the day, the site and the people filters.
-  const base: Prisma.ScanEventWhereInput = { tenantId, scanTime: { gte: dayStart, lt: dayEnd }, employee };
+  const base: Prisma.ScanEventWhereInput = {
+    tenantId,
+    scanTime: { gte: dayStart, lt: dayEnd },
+    employee,
+    AND: [scansHere(scope)],
+  };
 
   // The scans that never counted: refused by the timecard, or a reader's
   // repeat of the same badge. Hidden unless "Not counted" is picked.
@@ -165,6 +171,7 @@ export async function getScanLog(
             wmsId: true,
             user: { select: { name: true } },
             department: { select: { name: true } },
+            site: { select: { id: true, name: true } },
           },
         },
       },
@@ -215,6 +222,7 @@ export async function getScanLog(
               name: s.employee.user?.name?.trim() || `Employee ${s.employee.employeeCode}`,
               employeeCode: s.employee.employeeCode,
               department: s.employee.department?.name ?? null,
+              homeSite: s.employee.site && s.employee.site.id !== siteId ? s.employee.site.name : null,
               photoUrl: photos.get(s.employee.id) ?? null,
             },
           },
