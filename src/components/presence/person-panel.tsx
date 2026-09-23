@@ -347,6 +347,7 @@ function statusSentence(p: PresencePerson, tz: string, mins: number | null, nowI
     case "LEFT":
       return at ? `Left at ${at}` : "Left";
     case "NOT_ARRIVED":
+      if (p.salaried) return "Not seen at any reader yet today";
       return p.lateMinutes !== null ? `${fmtDuration(p.lateMinutes)} past the scheduled start` : "Not due yet";
     case "ON_LEAVE":
       return "Approved time off today";

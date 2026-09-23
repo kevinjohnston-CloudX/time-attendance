@@ -266,7 +266,8 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
     if (!status) continue;
 
     let lateMinutes: number | null = null;
-    if (status === "NOT_ARRIVED" && schedule?.startTime) {
+    // Lateness is an hourly measure. Salaried people keep their own hours.
+    if (status === "NOT_ARRIVED" && schedule?.startTime && emp.payType !== "SALARY") {
       const start = snapToLocalTime(schedule.startTime, today, timezone);
       const late = Math.floor((now.getTime() - start.getTime()) / 60000);
       lateMinutes = late > 0 ? late : null;

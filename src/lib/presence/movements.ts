@@ -187,8 +187,11 @@ export function buildPersonDay(
   const present = nowState.inside || nowState.clock !== "OUT";
   const grace = LATE_GRACE_MIN * 60000;
 
+  // Lateness is an hourly measure. Salaried people keep their own hours.
   const lateMinutes =
-    schedule && firstIn && firstIn > schedule.start + grace ? Math.floor((firstIn - schedule.start) / 60000) : null;
+    !person.salaried && schedule && firstIn && firstIn > schedule.start + grace
+      ? Math.floor((firstIn - schedule.start) / 60000)
+      : null;
   const earlyMinutes =
     schedule && lastOut && !present && lastOut < schedule.end - grace && lastOut > schedule.start
       ? Math.floor((schedule.end - lastOut) / 60000)
