@@ -463,106 +463,174 @@ function Lanes({
         })()
       : null;
 
+  // The clock spans whatever happened and whatever was scheduled, then snaps
+  // out to labelled hours at both ends, so the frame starts and ends on a
+  // label rather than somewhere between two.
   const points = [
     ...lanes.gate.flatMap((g) => [g.start, g.end]),
     ...lanes.clock.flatMap((c) => [c.start, c.end]),
     ...detail.scans.map((s) => Date.parse(s.at)),
     ...(sched ? [sched.start, sched.end] : []),
+    ...(isToday ? [Math.min(now, dayEnd)] : []),
   ];
-  let from = points.length ? Math.floor(Math.min(...points) / HOUR) * HOUR : dayStart + 6 * HOUR;
-  let to = points.length ? Math.ceil(Math.max(...points) / HOUR) * HOUR : dayStart + 18 * HOUR;
-  if (to - from < 8 * HOUR) {
-    to = Math.min(from + 8 * HOUR, dayEnd);
-    from = Math.max(to - 8 * HOUR, dayStart);
+  let lo = points.length ? Math.min(...points) : dayStart + 6 * HOUR;
+  let hi = points.length ? Math.max(...points) : dayStart + 18 * HOUR;
+  if (hi - lo < 8 * HOUR) {
+    hi = Math.min(lo + 8 * HOUR, dayEnd);
+    lo = Math.max(hi - 8 * HOUR, dayStart);
   }
-  from = Math.max(from, dayStart);
-  to = Math.min(to, dayEnd);
+  // Hour labels count from the first hour anything happened, so the frame
+  // neither opens on empty hours nor ends between two labels. The spacing is
+  // whichever leaves the least empty time after the last event, with no more
+  // than eight labels across the panel.
+  const from = Math.max(dayStart, Math.floor(lo / HOUR) * HOUR);
+  const step = [1, 2, 3, 4]
+    .map((h) => h * HOUR)
+    .filter((st) => Math.ceil((hi - from) / st) + 1 <= 8)
+    .reduce((best, st) => {
+      const waste = (x: number) => from + Math.ceil((hi - from) / x) * x - hi;
+      return best === 0 || waste(st) < waste(best) ? st : best;
+    }, 0) || 4 * HOUR;
+  const to = Math.min(dayEnd, from + Math.ceil((hi - from) / step) * step);
   const span = Math.max(to - from, HOUR);
-  const pct = (t: number) => `${(((Math.min(Math.max(t, from), to) - from) / span) * 100).toFixed(3)}%`;
-  const width = (a: number, b: number) =>
-    `${(((Math.min(b, to) - Math.max(a, from)) / span) * 100).toFixed(3)}%`;
-
-  const step = span <= 10 * HOUR ? 2 * HOUR : span <= 16 * HOUR ? 3 * HOUR : 4 * HOUR;
+  const clamp = (t: number) => Math.min(Math.max(t, from), to);
+  const pct = (t: number) => `${(((clamp(t) - from) / span) * 100).toFixed(3)}%`;
+  const width = (a: number, b: number) => `${(((clamp(b) - clamp(a)) / span) * 100).toFixed(3)}%`;
   const ticks: number[] = [];
-  for (let t = Math.ceil(from / step) * step; t <= to; t += step) ticks.push(t);
+  for (let t = from; t <= to; t += step) ticks.push(t);
 
   const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
   const until = (s: { end: number; open: boolean }) =>
     s.open ? (isToday ? "now" : "the end of the day, never scanned out") : time(s.end);
+  // A stretch still running is pinned to now from the right, so a meal that
+  // has only just started grows back into the bar, never past the now line.
+  const place = (s: { start: number; end: number; open: boolean }) =>
+    s.open && isToday
+      ? { right: `calc(100% - ${pct(s.end)})`, width: width(s.start, s.end) }
+      : { left: pct(s.start), width: width(s.start, s.end) };
+
+  // An hour label that would touch the "Now" label under it gives way. An
+  // edge label is drawn to one side of its hour, so it needs more room.
+  const crowdsNow = (t: number) => {
+    const gap = Math.abs(t - now) / span;
+    return t === to || t === from ? gap < 0.17 : gap < 0.1;
+  };
+
+  // Today the record ends now: the track stops there, and what is left of
+  // the scheduled day is drawn as an outline still to come.
+  const recordedTo = isToday ? clamp(Math.min(now, dayEnd)) : to;
   const nowAt = isToday && now > from && now < to ? pct(now) : null;
+  const ahead = isToday && sched && sched.end > recordedTo ? { start: Math.max(recordedTo, sched.start), end: sched.end } : null;
+
+  // The clock is one bar per stretch on the clock: a meal inside it is a
+  // notch, not a separate piece, so only the ends of a run are rounded.
+  const clock = [...lanes.clock].sort((a, b) => a.start - b.start);
+  const runEdge = (i: number) => ({
+    first: i === 0 || clock[i - 1].end !== clock[i].start,
+    last: i === clock.length - 1 || clock[i + 1].start !== clock[i].end,
+  });
+
+  const track = (children: ReactNode, empty: string | null, reporting = true) => (
+    <span className={styles.ppTrack}>
+      <span className={styles.ppTrackBg} style={{ width: width(from, reporting ? recordedTo : to) }} />
+      {ahead && reporting && (
+        <span className={styles.ppAhead} style={{ left: pct(ahead.start), width: width(ahead.start, ahead.end) }} />
+      )}
+      {empty ? <span className={styles.laneEmpty}>{empty}</span> : children}
+    </span>
+  );
 
   return (
     <div className={styles.ppChart}>
       <div className={styles.ppChartBody}>
-        <div className={styles.ppLabels} aria-hidden="true">
-          <span>Security gate</span>
-          <span>Time clock</span>
-        </div>
-        <div className={styles.ppPlot}>
+        <span className={styles.ppLabel}>Scheduled</span>
+        <span className={styles.ppSchedRow}>
+          {sched ? (
+            <span
+              className={styles.ppSchedLine}
+              style={{ left: pct(sched.start), width: width(sched.start, sched.end) }}
+              title={`Scheduled ${time(sched.start)} to ${time(sched.end)}`}
+            >
+              <span className={styles.ppSchedText}>
+                {time(sched.start)} to {time(sched.end)}
+              </span>
+            </span>
+          ) : (
+            <span className={styles.ppSchedNone}>Not scheduled</span>
+          )}
+        </span>
+
+        <span className={styles.ppLabel}>Security gate</span>
+        <span className={styles.ppLane}>
           {ticks.map((t) => (
             <span key={t} className={styles.ppGrid} style={{ left: pct(t) }} aria-hidden="true" />
           ))}
-          {sched && (
-            <span
-              className={styles.ppSched}
-              style={{ left: pct(sched.start), width: width(sched.start, sched.end) }}
-              title={`Scheduled ${time(sched.start)} to ${time(sched.end)}`}
-            />
+          {track(
+            lanes.gate.map((g) => (
+              <span
+                key={g.start}
+                className={styles.ppSeg}
+                data-kind="inside"
+                data-first="true"
+                data-last={g.open && isToday ? undefined : "true"}
+                data-open={g.open && !isToday ? "true" : undefined}
+                style={place(g)}
+                title={`Inside ${time(g.start)} to ${until(g)} (${fmtDuration((g.end - g.start) / 60000)})${
+                  g.closedBySystem ? ". Never scanned out, closed by the system" : ""
+                }`}
+              />
+            )),
+            !hasGateData ? "Not reporting at this site" : lanes.gate.length === 0 ? "Not inside" : null,
+            hasGateData,
           )}
-          <div className={styles.ppTracks}>
-            <span className={styles.ppTrack}>
-              {!hasGateData ? (
-                <span className={styles.laneEmpty}>Not reporting at this site</span>
-              ) : lanes.gate.length === 0 ? (
-                <span className={styles.laneEmpty}>Not inside</span>
-              ) : (
-                lanes.gate.map((g) => (
-                  <span
-                    key={g.start}
-                    className={styles.laneSeg}
-                    data-kind="inside"
-                    data-open={g.open && !isToday ? "true" : undefined}
-                    style={{ left: pct(g.start), width: width(g.start, g.end) }}
-                    title={`Inside ${time(g.start)} to ${until(g)} (${fmtDuration((g.end - g.start) / 60000)})${
-                      g.closedBySystem ? ". Never scanned out, closed by the system" : ""
-                    }`}
-                  />
-                ))
-              )}
-            </span>
-            <span className={styles.ppTrack}>
-              {lanes.clock.length === 0 ? (
-                <span className={styles.laneEmpty}>Not clocked in</span>
-              ) : (
-                lanes.clock.map((c) => (
-                  <span
-                    key={c.start}
-                    className={styles.laneSeg}
-                    data-kind={c.kind === "WORK" ? "work" : "meal"}
-                    data-open={c.open && !isToday ? "true" : undefined}
-                    style={{ left: pct(c.start), width: width(c.start, c.end) }}
-                    title={`${c.kind === "WORK" ? "On the clock" : c.kind === "MEAL" ? "Meal" : "Break"} ${time(c.start)} to ${until(c)} (${fmtDuration(
-                      (c.end - c.start) / 60000,
-                    )})${c.closedBySystem ? ". Clocked out by the system" : ""}`}
-                  />
-                ))
-              )}
-            </span>
-          </div>
-          {nowAt && (
-            <span className={styles.ppNow} style={{ left: nowAt }} aria-hidden="true">
-              <span>Now</span>
-            </span>
-          )}
-        </div>
-      </div>
+          {nowAt && <span className={styles.ppNow} style={{ left: nowAt }} aria-hidden="true" />}
+        </span>
 
-      <div className={styles.ppAxis} aria-hidden="true">
-        {ticks.map((t) => (
-          <span key={t} style={{ left: pct(t) }}>
-            {fmtHour(t, tz)}
-          </span>
-        ))}
+        <span className={styles.ppLabel}>Time clock</span>
+        <span className={styles.ppLane}>
+          {ticks.map((t) => (
+            <span key={t} className={styles.ppGrid} style={{ left: pct(t) }} aria-hidden="true" />
+          ))}
+          {track(
+            clock.map((c, i) => {
+              const edge = runEdge(i);
+              return (
+                <span
+                  key={c.start}
+                  className={styles.ppSeg}
+                  data-kind={c.kind === "WORK" ? "work" : "meal"}
+                  data-first={edge.first ? "true" : undefined}
+                  data-last={edge.last && !(c.open && isToday) ? "true" : undefined}
+                  data-open={c.open && !isToday ? "true" : undefined}
+                  style={place(c)}
+                  title={`${c.kind === "WORK" ? "On the clock" : c.kind === "MEAL" ? "Meal" : "Break"} ${time(c.start)} to ${until(c)} (${fmtDuration(
+                    (c.end - c.start) / 60000,
+                  )})${c.closedBySystem ? ". Clocked out by the system" : ""}`}
+                />
+              );
+            }),
+            clock.length === 0 ? "Not clocked in" : null,
+          )}
+          {nowAt && <span className={styles.ppNow} style={{ left: nowAt }} aria-hidden="true" />}
+        </span>
+
+        <span />
+        <span className={styles.ppAxis} aria-hidden="true">
+          {ticks.map((t) => (
+            <span key={t} style={{ left: pct(t) }} data-edge={t === from ? "start" : t === to ? "end" : undefined}>
+              {nowAt && crowdsNow(t) ? "" : fmtHour(t, tz)}
+            </span>
+          ))}
+          {nowAt && (
+            <span
+              className={styles.ppNowLabel}
+              style={{ left: nowAt }}
+              data-edge={now > to - span * 0.04 ? "end" : now < from + span * 0.04 ? "start" : undefined}
+            >
+              Now
+            </span>
+          )}
+        </span>
       </div>
 
       <div className={styles.ppKey}>
@@ -577,9 +645,11 @@ function Lanes({
         <span>
           <i data-kind="meal" /> Meal or break
         </span>
-        <span>
-          <i data-kind="sched" /> {sched ? "Scheduled" : "Not scheduled"}
-        </span>
+        {ahead && (
+          <span>
+            <i data-kind="ahead" /> Rest of the shift
+          </span>
+        )}
       </div>
     </div>
   );
