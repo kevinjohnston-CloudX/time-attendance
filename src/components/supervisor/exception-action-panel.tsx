@@ -6,6 +6,7 @@ import {
   resolveException,
   addMissingPunchForEmployee,
   correctPunchAndResolve,
+  getPunchesForTimesheet,
 } from "@/actions/supervisor.actions";
 import type { PunchType } from "@prisma/client";
 
@@ -20,7 +21,6 @@ interface Props {
   exceptionType: string;
   timesheetId: string;
   occurredAt: Date;
-  punches: Punch[];
 }
 
 const PUNCH_LABEL: Record<string, string> = {
@@ -52,8 +52,13 @@ function parseTimeInput(str: string): { hours: number; minutes: number } | null 
   return null;
 }
 
-export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, occurredAt, punches }: Props) {
+export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, occurredAt }: Props) {
   const [mode, setMode] = useState<"add" | "correct" | "resolve" | null>(null);
+
+  // Lazy-loaded punches — fetched only when the user opens an action
+  const [punches, setPunches] = useState<Punch[]>([]);
+  const [punchesLoaded, setPunchesLoaded] = useState(false);
+  const [loadingPunches, setLoadingPunches] = useState(false);
 
   // Row-style punch editor state (for MISSING_PUNCH add mode)
   const [rowSide, setRowSide] = useState<"in" | "out" | null>(null);
@@ -64,7 +69,7 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
   const [editError, setEditError] = useState<string | null>(null);
 
   // Correct-a-punch form state (non-MISSING_PUNCH)
-  const [selectedPunchId, setSelectedPunchId] = useState(punches[0]?.id ?? "");
+  const [selectedPunchId, setSelectedPunchId] = useState("");
   const [newPunchTime, setNewPunchTime] = useState("");
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
@@ -76,13 +81,24 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
   const isAbsent = exceptionType === "ABSENT";
   const usesPunchRow = isMissingPunch || isAbsent;
 
-  // Punches for the exception date
+  // Punches for the exception date (derived from lazy-loaded state)
   const exDateStr = format(occurredAt, "yyyy-MM-dd");
   const dayPunches = punches.filter(
     (p) => format(p.roundedTime, "yyyy-MM-dd") === exDateStr
   );
   const clockIn = dayPunches.find((p) => p.punchType === "CLOCK_IN") ?? null;
   const clockOut = dayPunches.find((p) => p.punchType === "CLOCK_OUT") ?? null;
+
+  async function loadPunches(): Promise<Punch[]> {
+    if (punchesLoaded) return punches;
+    setLoadingPunches(true);
+    const result = await getPunchesForTimesheet({ timesheetId });
+    const loaded: Punch[] = result.success ? (result.data as Punch[]) : [];
+    setPunches(loaded);
+    setPunchesLoaded(true);
+    setLoadingPunches(false);
+    return loaded;
+  }
 
   function startRowEdit(side: "in" | "out", existingPunch: Punch | null) {
     setRowSide(side);
@@ -104,18 +120,29 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
   }
 
   function handleOpenAdd() {
-    setMode("add");
-    if (isAbsent) {
-      // Both punches missing — let user click whichever side they want first
-      setRowSide(null);
-      setEditTimeStr("");
-      setEditReason("");
-      setEditError(null);
-    } else {
-      // MISSING_PUNCH — auto-open the missing side
-      const missingSide = !clockOut ? "out" : !clockIn ? "in" : "out";
-      startRowEdit(missingSide, null);
-    }
+    startTransition(async () => {
+      const loaded = await loadPunches();
+      const dayPs = loaded.filter((p) => format(p.roundedTime, "yyyy-MM-dd") === exDateStr);
+      const ci = dayPs.find((p) => p.punchType === "CLOCK_IN") ?? null;
+      const co = dayPs.find((p) => p.punchType === "CLOCK_OUT") ?? null;
+      setMode("add");
+      if (isAbsent) {
+        // Both punches missing — let user click whichever side they want first
+        setRowSide(null);
+        setEditTimeStr("");
+        setEditReason("");
+        setEditError(null);
+      } else {
+        // MISSING_PUNCH — auto-open the missing side
+        const missingSide = !co ? "out" : !ci ? "in" : "out";
+        setRowSide(missingSide);
+        setEditingExistingId(null);
+        setEditTimeStr("");
+        setEditAmPm(missingSide === "in" ? "AM" : "PM");
+        setEditReason("");
+        setEditError(null);
+      }
+    });
   }
 
   function handleRowSubmit(e: React.FormEvent) {
@@ -252,14 +279,20 @@ export function ExceptionActionPanel({ exceptionId, exceptionType, timesheetId, 
           ) : (
             <button
               onClick={() => {
-                setMode("correct");
-                const p = punches[0];
-                if (p) setNewPunchTime(toDatetimeLocal(p.roundedTime));
+                startTransition(async () => {
+                  const loaded = await loadPunches();
+                  setMode("correct");
+                  const p = loaded[0];
+                  if (p) {
+                    setSelectedPunchId(p.id);
+                    setNewPunchTime(toDatetimeLocal(p.roundedTime));
+                  }
+                });
               }}
-              disabled={punches.length === 0}
+              disabled={loadingPunches}
               className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-40"
             >
-              Correct a Punch
+              {loadingPunches ? "Loading…" : "Correct a Punch"}
             </button>
           )}
           <button

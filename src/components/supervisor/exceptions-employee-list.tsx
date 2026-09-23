@@ -35,13 +35,13 @@ interface EmployeeEntry {
   count: number;
 }
 
-function buildUrl(siteId?: string, departmentId?: string, employeeId?: string, exceptionType?: string, payPeriodId?: string) {
+function buildUrl(siteId?: string, departmentId?: string, employeeId?: string, exceptionType?: string, payPeriodStart?: string) {
   const params = new URLSearchParams();
   if (siteId) params.set("siteId", siteId);
   if (departmentId) params.set("departmentId", departmentId);
   if (employeeId) params.set("employeeId", employeeId);
   if (exceptionType) params.set("exceptionType", exceptionType);
-  if (payPeriodId) params.set("payPeriodId", payPeriodId);
+  if (payPeriodStart) params.set("payPeriodStart", payPeriodStart);
   const qs = params.toString();
   return `/supervisor/exceptions${qs ? `?${qs}` : ""}`;
 }
@@ -53,7 +53,7 @@ interface Props {
   siteId?: string;
   departmentId?: string;
   exceptionType?: string;
-  payPeriodId?: string;
+  payPeriodStart?: string;
 }
 
 export function ExceptionsEmployeeList({
@@ -63,7 +63,7 @@ export function ExceptionsEmployeeList({
   siteId,
   departmentId,
   exceptionType,
-  payPeriodId,
+  payPeriodStart,
 }: Props) {
   const [search, setSearch] = useState("");
 
@@ -98,7 +98,7 @@ export function ExceptionsEmployeeList({
             {/* "All" row — hide when searching */}
             {!search.trim() && (
               <Link
-                href={buildUrl(siteId, departmentId, undefined, exceptionType, payPeriodId)}
+                href={buildUrl(siteId, departmentId, undefined, exceptionType, payPeriodStart)}
                 className={`flex w-full items-center justify-between border-b border-zinc-100 px-3 py-2.5 text-sm transition-colors dark:border-zinc-800/60 ${
                   !selectedEmployeeId
                     ? "bg-blue-50 font-medium text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
@@ -121,7 +121,7 @@ export function ExceptionsEmployeeList({
               return (
                 <Link
                   key={emp.employeeId}
-                  href={buildUrl(siteId, departmentId, emp.employeeId, exceptionType, payPeriodId)}
+                  href={buildUrl(siteId, departmentId, emp.employeeId, exceptionType, payPeriodStart)}
                   className={`flex w-full flex-col border-b border-zinc-100 px-3 py-2.5 transition-colors dark:border-zinc-800/60 ${
                     isSelected
                       ? "bg-blue-50 dark:bg-blue-950/30"

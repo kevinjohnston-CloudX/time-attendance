@@ -10,6 +10,8 @@ import { getPtoPolicies } from "@/actions/pto-policy.actions";
 import { getHolidayRules } from "@/actions/holiday-rule.actions";
 import { getPayCategories } from "@/actions/pay-category.actions";
 import { getPayTypes } from "@/actions/pay-type.actions";
+import { getJobTitles } from "@/actions/job-title.actions";
+import { getAgencies } from "@/actions/agency.actions";
 import { SiteSettingsClient } from "./site-settings-client";
 
 export default async function SiteSettingsPage({
@@ -33,7 +35,7 @@ export default async function SiteSettingsPage({
   const [
     sitesResult, deptsResult, holidaysResult,
     leaveTypesResult, payCodesResult, reasonCodesResult, ptoPoliciesResult,
-    holidayRulesResult, payCategoriesResult, payTypesResult,
+    holidayRulesResult, payCategoriesResult, payTypesResult, jobTitlesResult, agenciesResult,
   ] = await Promise.all([
     getSites(),
     getDepartments(),
@@ -45,6 +47,8 @@ export default async function SiteSettingsPage({
     hasRulesManage ? getHolidayRules() : Promise.resolve({ success: true as const, data: [] }),
     hasRulesManage ? getPayCategories() : Promise.resolve({ success: true as const, data: [] }),
     hasRulesManage ? getPayTypes() : Promise.resolve({ success: true as const, data: [] }),
+    hasRulesManage ? getJobTitles() : Promise.resolve({ success: true as const, data: [] }),
+    hasRulesManage ? getAgencies() : Promise.resolve({ success: true as const, data: [] }),
   ]);
 
   // Serialize Prisma Decimal/Date objects so they cross the server→client boundary as plain values
@@ -73,6 +77,8 @@ export default async function SiteSettingsPage({
         holidayRules={serialize(holidayRulesResult.success ? holidayRulesResult.data : [])}
         payCategories={serialize(payCategoriesResult.success ? payCategoriesResult.data : [])}
         payTypes={serialize(payTypesResult.success ? payTypesResult.data : [])}
+        jobTitles={serialize(jobTitlesResult.success ? jobTitlesResult.data : [])}
+        agencies={serialize(agenciesResult.success ? agenciesResult.data : [])}
         hasSiteManage={hasSiteManage}
         hasRulesManage={hasRulesManage}
         hasPayPeriodManage={hasPayPeriodManage}

@@ -38,7 +38,7 @@ interface MealPremiumRow {
   unlessPunchedMeal: boolean;
 }
 type OtPreset = Pick<RSFields, "dailyOtMinutes" | "dailyDtMinutes" | "dailyDtMaxMinutes" | "weeklyOtEnabled" | "weeklyOtMinutes" | "weeklyDtMinutes" | "weeklyDtMaxMinutes" | "consecutiveDayOtEnabled" | "consecutiveDayOtDay" | "consecutiveDayPayCycleOnly" | "consecutiveDayOtMaxMinutes" | "consecutiveDayDtMaxMinutes">;
-type RSTab = "general" | "overtime" | "breaks" | "rounding" | "guaranteed" | "miscellaneous" | "flsa";
+type RSTab = "general" | "overtime" | "rounding" | "guaranteed" | "miscellaneous" | "flsa";
 
 const FEDERAL: OtPreset = { dailyOtMinutes: 1440, dailyDtMinutes: 1440, dailyDtMaxMinutes: 0, weeklyOtEnabled: true, weeklyOtMinutes: 2400, weeklyDtMinutes: 86400, weeklyDtMaxMinutes: 0, consecutiveDayOtEnabled: false, consecutiveDayOtDay: 7, consecutiveDayPayCycleOnly: true, consecutiveDayOtMaxMinutes: 0, consecutiveDayDtMaxMinutes: 0 };
 
@@ -499,7 +499,6 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
   const rsTabs: { id: RSTab; label: string }[] = [
     { id: "general", label: "General" },
     { id: "overtime", label: "Overtime" },
-    { id: "breaks", label: "Breaks & Attendance" },
     { id: "rounding", label: "Rounding" },
     { id: "guaranteed", label: "Guaranteed Hours / Pay" },
     { id: "miscellaneous", label: "Miscellaneous" },
@@ -717,25 +716,17 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
             />
           </div>
         </Fragment>
-      </div>
-
-      {/* Breaks & Attendance tab */}
-      <div className={activeTab !== "breaks" ? "hidden" : "block"}>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-          <NumField name="mealBreakMinutes" label="Meal break duration" defaultValue={rs?.mealBreakMinutes ?? 30} unit="min" />
-          <HoursField name="mealBreakAfterHours" label="Require meal after" defaultMinutes={rs?.mealBreakAfterMinutes ?? 300} />
-          <div className="col-span-2">
-            <label className="mb-1 block text-xs text-zinc-500">Auto-deduct meal</label>
-            <select name="autoDeductMeal" defaultValue={rs ? (rs.autoDeductMeal ? "true" : "false") : "false"} className={inputCls}>
-              <option value="false">No — employee punches</option>
-              <option value="true">Yes — deduct automatically</option>
-            </select>
-          </div>
-          <NumField name="shortBreakMinutes" label="Short break duration" defaultValue={rs?.shortBreakMinutes ?? 15} unit="min" />
-          <NumField name="shortBreaksPerDay" label="Short breaks per day" defaultValue={rs?.shortBreaksPerDay ?? 2} />
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 pt-2">
           <HoursField name="longShiftHours" label="Flag shift as long after" defaultMinutes={rs?.longShiftMinutes ?? 720} />
         </div>
       </div>
+
+      {/* Break fields preserved as hidden inputs — configured via shift, not rule set */}
+      <input type="hidden" name="mealBreakMinutes" value={rs?.mealBreakMinutes ?? 30} />
+      <input type="hidden" name="mealBreakAfterHours" value={(rs?.mealBreakAfterMinutes ?? 300) / 60} />
+      <input type="hidden" name="autoDeductMeal" value={rs?.autoDeductMeal ? "true" : "false"} />
+      <input type="hidden" name="shortBreakMinutes" value={rs?.shortBreakMinutes ?? 15} />
+      <input type="hidden" name="shortBreaksPerDay" value={rs?.shortBreaksPerDay ?? 2} />
 
       {/* Rounding tab */}
       <div className={activeTab !== "rounding" ? "hidden" : "space-y-4"}>

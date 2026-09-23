@@ -1,6 +1,8 @@
 "use server";
 
 import { parseISO, addMonths, addYears, differenceInMonths } from "date-fns";
+import { generatePeriodsForRuleSet } from "@/lib/pay-period-utils";
+import { migrateTimesheetsOnRuleSetChange, migrateTimesheetBetweenRuleSets } from "@/lib/timesheet-migration";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -62,7 +64,7 @@ export const getAdminRefData = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ tenantId }, _input: void) => {
     const t = tenantId ?? undefined;
-    const [sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes] = await Promise.all([
+    const [sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies] = await Promise.all([
       db.site.findMany({ where: { isActive: true, tenantId: t }, orderBy: { name: "asc" } }),
       db.department.findMany({
         where: { isActive: true, tenantId: t },
@@ -100,8 +102,18 @@ export const getAdminRefData = withRBAC(
         orderBy: { number: "asc" },
         select: { id: true, number: true, description: true },
       }),
+      db.jobTitle.findMany({
+        where: { isActive: true, tenantId: t },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, externalId: true },
+      }),
+      db.agency.findMany({
+        where: { tenantId: t },
+        orderBy: { code: "asc" },
+        select: { id: true, code: true, description: true, inactiveOn: true },
+      }),
     ]);
-    return { sites, departments, ruleSets, employees: employees.map(serializePayRate), customRoles, shifts, holidayRules, payCategories, payTypes };
+    return { sites, departments, ruleSets, employees: employees.map(serializePayRate), customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies };
   }
 );
 
@@ -122,12 +134,13 @@ async function getActorSiteRestrictions(employeeId: string, role: string): Promi
 
 export const getEmployees = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ tenantId, employeeId: actorEmpId, role: actorRole }, input?: { page?: number; q?: string; site?: string; dept?: string; role?: string }) => {
-    const { page = 0, q, site, dept, role } = input ?? {};
+  async ({ tenantId, employeeId: actorEmpId, role: actorRole }, input?: { page?: number; q?: string; site?: string; dept?: string; role?: string; showInactive?: boolean }) => {
+    const { page = 0, q, site, dept, role, showInactive = false } = input ?? {};
 
     const allowedSiteIds = await getActorSiteRestrictions(actorEmpId, actorRole);
 
     const where: Prisma.EmployeeWhereInput = { tenantId: tenantId ?? undefined };
+    if (!showInactive) where.isActive = true;
     if (allowedSiteIds) where.siteId = { in: allowedSiteIds };
     if (site) where.site = { name: site };
     if (dept) where.department = { name: dept };
@@ -268,7 +281,7 @@ export const updateEmployee = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: UpdateEmployeeInput) => {
     const {
       employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, payTypeId, isActive, onLeave, wmsId, barcode, adpWorkerId,
-      adjustedHireDate, jobTitle, terminationReason, payType, payRate,
+      adjustedHireDate, jobTitle, jobTitleId, agencyId, terminationReason, payType, payRate,
       phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
       address1, address2, city, state, country, zipCode,
@@ -327,6 +340,8 @@ export const updateEmployee = withRBAC(
           ...(adpWorkerId !== undefined && { adpWorkerId }),
           ...(adjustedHireDate !== undefined && { adjustedHireDate: adjustedHireDate ? parseISO(adjustedHireDate) : null }),
           ...(jobTitle !== undefined && { jobTitle }),
+          ...(jobTitleId !== undefined && { jobTitleRef: jobTitleId ? { connect: { id: jobTitleId } } : { disconnect: true } }),
+          ...(agencyId !== undefined && { agencyRef: agencyId ? { connect: { id: agencyId } } : { disconnect: true } }),
           ...(terminationReason !== undefined && { terminationReason }),
           ...(payType !== undefined && { payType }),
           ...(payRate !== undefined && { payRate }),
@@ -347,8 +362,23 @@ export const updateEmployee = withRBAC(
       });
     });
 
-    // TODO: migrate open timesheets to the new rule set's pay period when ruleSetId changes
-    // (src/lib/timesheet-migration.ts — not yet implemented)
+    // When the rule set changes, write a history record (for split-segment logic) and
+    // migrate the open timesheet to the new rule set's pay period.
+    if (ruleSetId !== undefined && ruleSetId !== current.ruleSetId) {
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      await db.employeeRuleSetHistory.create({
+        data: { employeeId, ruleSetId, effectiveDate: today, createdById: actorId },
+      });
+
+      const newRuleSet = await db.ruleSet.findUnique({ where: { id: ruleSetId } });
+      if (newRuleSet) {
+        // RS-to-RS: move timesheet between two rule-set-specific periods
+        await migrateTimesheetBetweenRuleSets(employeeId, current.ruleSetId, ruleSetId, newRuleSet);
+        // Tenant-to-RS: move any tenant-level fallback timesheets
+        await migrateTimesheetsOnRuleSetChange(employeeId, ruleSetId);
+      }
+    }
 
     // Build field-level diff for audit log
     const decCurrent = decryptPiiFields({
@@ -522,6 +552,23 @@ export const updateEmployee = withRBAC(
       ]);
       diff("Supervisor", from?.user.name, to?.user.name);
     }
+    const currentJobTitleId = (current as { jobTitleId?: string | null }).jobTitleId ?? null;
+    if (jobTitleId !== undefined && jobTitleId !== currentJobTitleId) {
+      const [from, to] = await Promise.all([
+        currentJobTitleId ? db.jobTitle.findUnique({ where: { id: currentJobTitleId }, select: { name: true } }) : Promise.resolve(null),
+        jobTitleId ? db.jobTitle.findUnique({ where: { id: jobTitleId }, select: { name: true } }) : Promise.resolve(null),
+      ]);
+      diff("Job Title", from?.name, to?.name);
+    }
+    const currentAgencyId = (current as { agencyId?: string | null }).agencyId ?? null;
+    if (agencyId !== undefined && agencyId !== currentAgencyId) {
+      const [from, to] = await Promise.all([
+        currentAgencyId ? db.agency.findUnique({ where: { id: currentAgencyId }, select: { code: true, description: true } }) : Promise.resolve(null),
+        agencyId ? db.agency.findUnique({ where: { id: agencyId }, select: { code: true, description: true } }) : Promise.resolve(null),
+      ]);
+      const fmt = (a: { code: number; description: string } | null) => a ? `${a.code} – ${a.description}` : null;
+      diff("Agency", fmt(from), fmt(to));
+    }
 
     if (fieldChanges.length > 0) {
       await writeAuditLog({
@@ -588,19 +635,33 @@ export const getEmployeeAuditLogs = withRBAC(
   "EMPLOYEE_MANAGE",
   async (_actor, { employeeId }: { employeeId: string }) => {
     const logs = await db.auditLog.findMany({
-      where: { entityType: "EMPLOYEE", entityId: employeeId, action: "EMPLOYEE_UPDATED" },
+      where: { entityType: "EMPLOYEE", entityId: employeeId, action: { in: ["EMPLOYEE_CREATED", "EMPLOYEE_UPDATED"] } },
       orderBy: { createdAt: "desc" },
       take: 200,
       include: {
         actor: { select: { user: { select: { name: true } } } },
       },
     });
-    return logs.map((log) => ({
-      id: log.id,
-      createdAt: log.createdAt.toISOString(),
-      actorName: log.actor?.user.name ?? "System",
-      fields: (log.changes as { fields?: Array<{ field: string; before: string; after: string }> } | null)?.fields ?? [],
-    }));
+    return logs.map((log) => {
+      const changes = log.changes as Record<string, unknown> | null;
+      let fields: Array<{ field: string; before: string; after: string }>;
+      if (log.action === "EMPLOYEE_CREATED") {
+        const after = (changes?.after ?? {}) as Record<string, string>;
+        fields = [
+          { field: "Employee Code", before: "—", after: after.employeeCode ?? "—" },
+          { field: "Role", before: "—", after: after.role ?? "—" },
+        ];
+      } else {
+        fields = (changes as { fields?: Array<{ field: string; before: string; after: string }> } | null)?.fields ?? [];
+      }
+      return {
+        id: log.id,
+        createdAt: log.createdAt.toISOString(),
+        actorName: log.actor?.user.name ?? "System",
+        action: log.action,
+        fields,
+      };
+    });
   }
 );
 
@@ -898,6 +959,14 @@ export const updateRuleSet = withRBAC(
     const payPeriodAnchorDate = anchorStr ? new Date(anchorStr + "T12:00:00") : null;
     const otCycleAnchorDate = otAnchorStr ? new Date(otAnchorStr + "T12:00:00") : null;
     const updated = await db.ruleSet.update({ where: { id: ruleSetId }, data: { ...rest, payPeriodAnchorDate, otCycleAnchorDate } });
+
+    // If this save configured (or changed) the pay schedule, immediately generate
+    // current + future periods so findOpenPayPeriod never falls back to the
+    // tenant-level period and creates an orphaned timesheet.
+    if (updated.payFrequency && updated.payPeriodAnchorDate && tenantId) {
+      await generatePeriodsForRuleSet(ruleSetId, tenantId, 2);
+    }
+
     await writeAuditLog({
       tenantId,
       actorId,

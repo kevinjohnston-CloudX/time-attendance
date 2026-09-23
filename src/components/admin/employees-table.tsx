@@ -40,7 +40,7 @@ interface Props {
   pageSize: number;
   sites: string[];
   departments: string[];
-  currentFilters: { q: string; site: string; dept: string; role: string };
+  currentFilters: { q: string; site: string; dept: string; role: string; showInactive: boolean };
 }
 
 export function EmployeesTable({ employees, total, page, pageSize, sites, departments, currentFilters }: Props) {
@@ -56,16 +56,18 @@ export function EmployeesTable({ employees, total, page, pageSize, sites, depart
 
   const buildUrl = useCallback((overrides: Partial<typeof currentFilters & { page: number }>) => {
     const params = new URLSearchParams();
-    const q    = overrides.q    ?? currentFilters.q;
-    const site = overrides.site ?? currentFilters.site;
-    const dept = overrides.dept ?? currentFilters.dept;
-    const role = overrides.role ?? currentFilters.role;
-    const pg   = overrides.page ?? 0;
-    if (q)    params.set("q",    q);
-    if (site) params.set("site", site);
-    if (dept) params.set("dept", dept);
-    if (role) params.set("role", role);
-    if (pg)   params.set("page", String(pg));
+    const q            = overrides.q            ?? currentFilters.q;
+    const site         = overrides.site         ?? currentFilters.site;
+    const dept         = overrides.dept         ?? currentFilters.dept;
+    const role         = overrides.role         ?? currentFilters.role;
+    const showInactive = overrides.showInactive  ?? currentFilters.showInactive;
+    const pg           = overrides.page          ?? 0;
+    if (q)            params.set("q",       q);
+    if (site)         params.set("site",    site);
+    if (dept)         params.set("dept",    dept);
+    if (role)         params.set("role",    role);
+    if (showInactive) params.set("inactive", "1");
+    if (pg)           params.set("page",    String(pg));
     const qs = params.toString();
     return `/admin/employees${qs ? `?${qs}` : ""}`;
   }, [currentFilters]);
@@ -122,6 +124,15 @@ export function EmployeesTable({ employees, total, page, pageSize, sites, depart
             <option key={value} value={value}>{label}</option>
           ))}
         </select>
+        <label className="ml-1 flex cursor-pointer items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+          <input
+            type="checkbox"
+            checked={currentFilters.showInactive}
+            onChange={(e) => navigate({ showInactive: e.target.checked, page: 0 })}
+            className="rounded"
+          />
+          Show inactive
+        </label>
       </div>
 
       <div className="mt-3 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
@@ -190,7 +201,7 @@ export function EmployeesTable({ employees, total, page, pageSize, sites, depart
 
       <div className="mt-3 flex items-center justify-between text-xs text-zinc-500">
         <span>
-          {total.toLocaleString()} employees
+          {total.toLocaleString()} {currentFilters.showInactive ? "" : "active "}employees
           {totalPages > 1 && ` · page ${page + 1} of ${totalPages}`}
         </span>
         {totalPages > 1 && (

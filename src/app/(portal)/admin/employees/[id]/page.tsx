@@ -30,7 +30,7 @@ export default async function EditEmployeePage({
   const employee = empResult.data;
   const hrSiteAccess = siteAccessResult.success ? siteAccessResult.data : [];
   const actorRole = session.user.role;
-  const { sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes } = refResult.data;
+  const { sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies } = refResult.data;
 
   return (
     <div className="max-w-2xl">
@@ -70,6 +70,8 @@ export default async function EditEmployeePage({
         holidayRules={holidayRules}
         payCategories={payCategories ?? []}
         payTypes={payTypes ?? []}
+        jobTitles={jobTitles ?? []}
+        agencies={agencies ?? []}
         logs={logs}
         hrSiteAccess={hrSiteAccess}
         actorRole={actorRole ?? "EMPLOYEE"}
