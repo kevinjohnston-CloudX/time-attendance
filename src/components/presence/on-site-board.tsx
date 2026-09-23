@@ -47,6 +47,7 @@ import {
   statusLabel,
 } from "./presence-meta";
 import { PersonPanel } from "./person-panel";
+import { PhotoViewer } from "./face";
 import { clampDay, dayLabel, recentDays } from "@/lib/presence/days";
 import { buildSiteDay, countFlags } from "@/lib/presence/movements";
 import {
@@ -160,6 +161,7 @@ export function OnSiteBoard({
     initialBoard ? clampDay(initialFilters.day, siteDate(initialBoard.generatedAt, initialBoard.site.timezone)) ?? "" : "",
   );
   const [panelDay, setPanelDay] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{ src: string; name: string; detail: string } | null>(null);
 
   const [lastOk, setLastOk] = useState(() => (initialBoard ? Date.now() : 0));
   const [failure, setFailure] = useState<string | null>(null);
@@ -857,6 +859,13 @@ export function OnSiteBoard({
               setPanelDay(logDayShown || null);
               setSelectedId(id);
             }}
+            onZoom={(v, src) =>
+              setViewing({
+                src,
+                name: v.person.name,
+                detail: [v.person.employeeCode, v.person.department].filter(Boolean).join(" · "),
+              })
+            }
           />
           )}
           </>
@@ -1075,7 +1084,12 @@ export function OnSiteBoard({
           now={now}
           refreshedAt={board?.generatedAt ?? ""}
           onClose={() => setSelectedId(null)}
+          onZoom={(src, who) => setViewing({ src, ...who })}
         />
+      )}
+
+      {viewing && (
+        <PhotoViewer src={viewing.src} name={viewing.name} detail={viewing.detail} onClose={() => setViewing(null)} />
       )}
     </div>
   );
@@ -1088,7 +1102,7 @@ function Header({ siteName, liveLine, actions }: { siteName: string; liveLine: R
   // it, and a count of people "in the building" means nothing without saying
   // which building.
   return (
-    <PageHeader
+    <PageHeader pinned
       title={siteName ? `On Site at ${siteName}` : "On Site"}
       subtitle={liveLine ?? undefined}
       actions={actions ?? undefined}

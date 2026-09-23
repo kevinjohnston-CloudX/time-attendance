@@ -20,7 +20,7 @@ import {
   statusLabel,
 } from "./presence-meta";
 import styles from "./on-site.module.css";
-import { Face } from "./face";
+import { ZoomableFace } from "./face";
 
 /**
  * One person, opened from the board or the scan log: who they are, and their
@@ -50,6 +50,7 @@ export function PersonPanel({
   now,
   refreshedAt,
   onClose,
+  onZoom,
 }: {
   siteId: string;
   employeeId: string;
@@ -63,6 +64,8 @@ export function PersonPanel({
   now: number;
   refreshedAt: string;
   onClose: () => void;
+  /** Opens the photo large; the panel stays open behind it. */
+  onZoom?: (src: string, who: { name: string; detail: string }) => void;
 }) {
   const [day, setDay] = useState(initialDay ?? today);
   const [detail, setDetail] = useState<PresenceDetail | null>(null);
@@ -152,7 +155,20 @@ export function PersonPanel({
               <span className={styles.initials} style={{ fontSize: 36 }} aria-hidden="true">
                 {name ? initialsOf(name) : ""}
               </span>
-              <Face src={person?.photoUrl ?? detail?.photoUrl} alt={`Photo of ${name}`} />
+              <ZoomableFace
+                src={person?.photoUrl ?? detail?.photoUrl}
+                name={name}
+                onZoom={
+                  onZoom &&
+                  ((src) =>
+                    onZoom(src, {
+                      name,
+                      detail: [person?.employeeCode ?? detail?.employeeCode, person?.department ?? detail?.department]
+                        .filter(Boolean)
+                        .join(" · "),
+                    }))
+                }
+              />
               {meta && isToday && <span className={styles.stripe} style={{ background: meta.color, height: 6 }} />}
             </span>
             <div className="flex min-w-0 flex-col gap-1.5 pt-1">

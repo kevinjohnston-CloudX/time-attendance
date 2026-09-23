@@ -13,7 +13,7 @@ import {
 } from "@/lib/presence/movements";
 import { STATUS_META, fmtDuration, fmtShift, fmtTime, initialsOf } from "./presence-meta";
 import styles from "./on-site.module.css";
-import { Face } from "./face";
+import { ZoomableFace } from "./face";
 
 /**
  * Movements: one block per person, their photo and name on the left, and on
@@ -141,6 +141,7 @@ export function MovementsTable({
   onShowMore,
   selectedId,
   onOpen,
+  onZoom,
 }: {
   views: PersonDayView[];
   data: SiteDay;
@@ -150,6 +151,7 @@ export function MovementsTable({
   onShowMore: () => void;
   selectedId: string | null;
   onOpen: (id: string) => void;
+  onZoom: (v: PersonDayView, src: string) => void;
 }) {
   const isToday = data.day === data.today;
   const tz = data.site.timezone;
@@ -176,6 +178,7 @@ export function MovementsTable({
             now={now}
             selected={v.person.id === selectedId}
             onOpen={() => onOpen(v.person.id)}
+            onZoom={(src) => onZoom(v, src)}
           />
         ))}
       </ol>
@@ -203,6 +206,7 @@ function PersonBlock({
   now,
   selected,
   onOpen,
+  onZoom,
 }: {
   view: PersonDayView;
   isToday: boolean;
@@ -211,6 +215,7 @@ function PersonBlock({
   now: number;
   selected: boolean;
   onOpen: () => void;
+  onZoom: (src: string) => void;
 }) {
   const p = v.person;
   const status = statusOfDay(v, isToday, hasGate);
@@ -221,23 +226,26 @@ function PersonBlock({
 
   return (
     <li>
-      <button
-        type="button"
-        className={styles.mvPerson}
-        aria-pressed={selected}
-        onClick={onOpen}
-        title={`${p.name} · ${p.employeeCode}`}
-      >
+      {/* The whole block opens the person; the face has its own click, to
+          enlarge it, and the name is the keyboard's way in. */}
+      <div className={styles.mvPerson} data-selected={selected ? "true" : undefined} onClick={onOpen}>
         <span className={styles.mvWho}>
           <span className={styles.mvPhoto}>
             <span className={styles.initials} aria-hidden="true">
               {initialsOf(p.name)}
             </span>
-            <Face src={p.photoUrl} />
+            <ZoomableFace src={p.photoUrl} name={p.name} onZoom={onZoom} />
             {meta && <span className={styles.stripe} style={{ background: meta.color, height: 4 }} />}
           </span>
           <span className={styles.mvIdentity}>
-            <span className={styles.mvName}>{p.name}</span>
+            <button
+              type="button"
+              className={styles.mvNameButton}
+              aria-pressed={selected}
+              title={`${p.name} · ${p.employeeCode}`}
+            >
+              {p.name}
+            </button>
             <span className={styles.meta}>
               {p.employeeCode}
               {p.department ? ` · ${p.department}` : ""}
@@ -294,7 +302,7 @@ function PersonBlock({
             v.lines.map((l) => <Line key={l.key} line={l} isToday={isToday} tz={tz} />)
           )}
         </span>
-      </button>
+      </div>
     </li>
   );
 }
