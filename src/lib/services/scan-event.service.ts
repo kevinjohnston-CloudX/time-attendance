@@ -393,22 +393,32 @@ export const REREAD_WINDOW_MS = 60_000;
  * The gate's own window, which is shorter so that somebody who turns straight
  * back round is allowed to record it instead of being told they already entered.
  *
- * <p>This is a deliberate trade, not a refinement of the number above. Over the
- * fourteen days to 2026-09-22 there were 424 gate pairs between five and sixty
- * seconds apart, 359 of them at the same reader, and 253 of those the window
- * above currently absorbs. Of that 253, 100 are followed by a time clock punch
- * from the same badge inside ninety minutes — proof the person never left — and
- * 97 more have no further gate scan for over six hours, which is the shape of a
- * repeat read followed by the real end-of-shift exit. Shortening the window
- * turns those back into crossings, and a crossing recorded that is not real
- * inverts every scan the badge makes for the rest of the day.
+ * <p>Twelve seconds, chosen rather than derived. Sixty was measured, five was
+ * tried on 2026-09-22, and this is where it settled. Over the fourteen days to
+ * that date, 248 gate pairs fell under twelve seconds apart and stay suppressed
+ * here, while 187 sit in the twelve-to-sixty band and now count as crossings.
+ * 107 of those 187 are ones sixty seconds was absorbing, so this gives up about
+ * eight suppressed repeats a day.
  *
- * <p>So it is settable without a deploy. GATE_REREAD_WINDOW_MS in the Vercel
- * environment overrides it; setting it to 60000 restores the old behaviour at
- * the gate within one redeploy of the edge config, which is the lever to reach
- * for if inverted directions reappear at NJ299.
+ * <p>What that costs is known rather than guessed. Of the 253 pairs the sixty
+ * second window absorbed between five and sixty seconds, 100 are followed by a
+ * time clock punch from the same badge inside ninety minutes, which is proof the
+ * person never left, and 97 more have no further gate scan for over six hours,
+ * which is the shape of a repeat read followed by the real end-of-shift exit.
+ * Each one that now counts is a crossing that did not happen, and a crossing
+ * that did not happen inverts every scan the badge makes for the rest of the day.
+ *
+ * <p>There is no cliff to aim for below a minute. The gaps run 145 pairs at five
+ * to ten seconds, 244 at ten to thirty and 35 at thirty to sixty, so a value in
+ * this range is a judgement about how much repeat-suppression to trade away, not
+ * a closer reading of the data.
+ *
+ * <p>Which is why it is settable without a deploy. GATE_REREAD_WINDOW_MS in the
+ * Vercel environment overrides it, and setting it to 60000 restores the old
+ * behaviour at the gate. That is the lever to reach for if inverted directions
+ * reappear at NJ299, rather than a revert.
  */
-export const GATE_REREAD_WINDOW_MS = readWindowMs("GATE_REREAD_WINDOW_MS", 5_000);
+export const GATE_REREAD_WINDOW_MS = readWindowMs("GATE_REREAD_WINDOW_MS", 12_000);
 
 function readWindowMs(name: string, fallback: number): number {
   const raw = process.env[name];
