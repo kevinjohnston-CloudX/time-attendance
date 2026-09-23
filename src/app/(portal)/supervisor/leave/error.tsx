@@ -69,7 +69,7 @@ export default function TeamLeaveError({
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={reset}>Try again</Button>
         <LinkButton href="/supervisor" hierarchy="secondary">
-          Back to Team Portal
+          Back to Team Overview
         </LinkButton>
       </div>
     </div>

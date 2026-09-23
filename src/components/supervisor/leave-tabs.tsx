@@ -723,7 +723,7 @@ export function LeaveTabs({
 
           <div className="flex items-center gap-2">
             <LinkButton href="/supervisor" hierarchy="tertiary">
-              ← Team Portal
+              ← Team Overview
             </LinkButton>
             <Button
               hierarchy="secondary"
