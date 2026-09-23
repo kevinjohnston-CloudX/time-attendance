@@ -491,20 +491,20 @@ export function ExceptionsScreen({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-start gap-4">
+      <div className="ta-split flex flex-wrap items-start gap-4">
         {/* Who has something open. Pinned under the bar rather than scrolling
             with the cards, so moving from one person to the next never means
             scrolling back up for the list. */}
         <div
-          className="min-w-0 flex-[1_1_216px]"
-          style={{ position: "sticky", top: toolbarHeight + 14, maxWidth: 256 }}
+          className="ta-rail min-w-0 flex-[1_1_216px]"
+          style={{ maxWidth: 256, "--ta-rail-top": `${toolbarHeight + 14}px` } as React.CSSProperties}
         >
           <div
             className="flex flex-col overflow-hidden"
             style={{
               background: "var(--surface-card)",
               border: "1px solid var(--stroke-secondary)",
-              borderRadius: "var(--radius-l)",
+              borderRadius: "var(--radius-m)",
             }}
           >
             <div
@@ -553,13 +553,24 @@ export function ExceptionsScreen({
           {visible.length === 0 ? (
             <EmptyState
               icon={<Inbox className="h-8 w-8" />}
-              title={openEmployeeId ? "Nothing open for this person" : "No open exceptions"}
-              // "Clean" is a claim somebody closes a pay period on, so it is
-              // only made when nothing at all is narrowing the list.
+              // "No open exceptions" is a claim somebody closes a pay period
+              // on, so it is only made when nothing at all is narrowing the
+              // list. With a filter set, the rest of the queue is off screen,
+              // and saying the queue is empty is how a supervisor stops
+              // looking.
+              title={
+                openEmployeeId
+                  ? "Nothing open for this person"
+                  : dirty
+                    ? "Nothing matches these filters"
+                    : "No open exceptions"
+              }
               body={
-                openEmployeeId || query.trim() || dirty
-                  ? "There may still be exceptions outside the filters you have set."
-                  : "Every timecard in range is clean."
+                openEmployeeId
+                  ? "Other people in the rail may still have exceptions open."
+                  : dirty
+                    ? "There may still be exceptions outside the search, type, department, shift, site or pay period you have set."
+                    : "Every timecard in range is clean."
               }
             />
           ) : (

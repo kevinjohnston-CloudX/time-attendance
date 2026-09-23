@@ -325,7 +325,9 @@ export function ExceptionCard({
       style={{
         border: "1px solid var(--stroke-secondary)",
         borderLeft: `3px solid ${SEVERITY_RULE[severity]}`,
-        borderRadius: "var(--radius-l)",
+        // radius-m, which the scale itself calls the card radius and which is
+        // what the handoff draws. radius-l is for modals and wrappers.
+        borderRadius: "var(--radius-m)",
         background: "var(--surface-card)",
       }}
     >

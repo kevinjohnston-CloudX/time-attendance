@@ -26,7 +26,7 @@ function CardSkeleton() {
       style={{
         border: "1px solid var(--stroke-secondary)",
         borderLeft: "3px solid var(--ta-skeleton)",
-        borderRadius: "var(--radius-l)",
+        borderRadius: "var(--radius-m)",
         background: "var(--surface-card)",
       }}
     >
@@ -86,7 +86,7 @@ export default function Loading() {
           style={{
             maxWidth: 256,
             border: "1px solid var(--stroke-secondary)",
-            borderRadius: "var(--radius-l)",
+            borderRadius: "var(--radius-m)",
             background: "var(--surface-card)",
           }}
         >
