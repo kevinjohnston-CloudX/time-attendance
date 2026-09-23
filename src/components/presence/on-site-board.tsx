@@ -76,6 +76,7 @@ import {
   type LogCounter,
 } from "./scan-log";
 import styles from "./on-site.module.css";
+import { Face } from "./face";
 
 /**
  * The On Site board: who is in one building right now.
@@ -1135,9 +1136,9 @@ export function Photo({ person, className, alt = "" }: { person: PresencePerson;
       <span className={styles.initials} aria-hidden="true">
         {initialsOf(person.name)}
       </span>
-      {/* The tablet photo, once the photo store is connected. Until then the
-          initials above fill the same frame, so nothing moves when it lands. */}
-      {person.photoUrl && <img src={person.photoUrl} alt={alt} loading="lazy" decoding="async" />}
+      {/* The tablet photo, over the initials, which show whenever there is
+          no photo, so nothing moves either way. */}
+      <Face src={person.photoUrl} alt={alt} />
     </span>
   );
 }
@@ -1196,7 +1197,7 @@ function PersonTile({
         <span className={styles.initials} aria-hidden="true">
           {initialsOf(p.name)}
         </span>
-        {p.photoUrl && <img src={p.photoUrl} alt="" loading="lazy" decoding="async" />}
+        <Face src={p.photoUrl} />
         <span
           className={styles.stripe}
           data-dim={p.status === "NO_GATE_SCAN" || p.outsideOnMeal ? "true" : undefined}

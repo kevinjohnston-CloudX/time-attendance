@@ -20,6 +20,7 @@ import {
   statusLabel,
 } from "./presence-meta";
 import styles from "./on-site.module.css";
+import { Face } from "./face";
 
 /**
  * One person, opened from the board or the scan log: who they are, and their
@@ -151,7 +152,7 @@ export function PersonPanel({
               <span className={styles.initials} style={{ fontSize: 36 }} aria-hidden="true">
                 {name ? initialsOf(name) : ""}
               </span>
-              {person?.photoUrl && <img src={person.photoUrl} alt={`Photo of ${name}`} />}
+              <Face src={person?.photoUrl ?? detail?.photoUrl} alt={`Photo of ${name}`} />
               {meta && isToday && <span className={styles.stripe} style={{ background: meta.color, height: 6 }} />}
             </span>
             <div className="flex min-w-0 flex-col gap-1.5 pt-1">

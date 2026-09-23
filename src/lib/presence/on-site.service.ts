@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { addDays, clampDay } from "./days";
+import { photoUrls } from "./photos";
 import type {
   PresenceBoard,
   PresenceDetail,
@@ -196,6 +197,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
         select: {
           id: true,
           employeeCode: true,
+          barcode: true,
           isActive: true,
           terminatedAt: true,
           user: { select: { name: true } },
@@ -205,6 +207,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       })
     : [];
 
+  const photos = await photoUrls(tenantId, employees);
   const people: PresencePerson[] = [];
 
   for (const emp of employees) {
@@ -264,7 +267,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       department: emp.department?.name ?? null,
       shiftId: emp.shift?.id ?? null,
       shift: emp.shift?.name ?? null,
-      photoUrl: null,
+      photoUrl: photos.get(emp.id) ?? null,
       status,
       inside,
       breakKind,
@@ -340,6 +343,7 @@ export async function getPresenceDetail(
       id: true,
       employeeCode: true,
       jobTitle: true,
+      barcode: true,
       isActive: true,
       terminatedAt: true,
       user: { select: { name: true } },
@@ -385,7 +389,7 @@ export async function getPresenceDetail(
       select: scanSelect,
     });
 
-  const [schedule, scans, carryGate, carryClock] = await Promise.all([
+  const [schedule, scans, carryGate, carryClock, photos] = await Promise.all([
     db.scheduleDay.findFirst({
       where: { employeeId, tenantId, workDate: new Date(`${theDay}T00:00:00.000Z`), isWorkday: true },
       select: { startTime: true, endTime: true },
@@ -398,6 +402,7 @@ export async function getPresenceDetail(
     }),
     carry("SECURITY"),
     carry("TIME_CLOCK"),
+    photoUrls(tenantId, [{ id: emp.id, barcode: emp.barcode }]),
   ]);
 
   return {
@@ -409,6 +414,7 @@ export async function getPresenceDetail(
     shift: emp.shift?.name ?? null,
     supervisor: emp.supervisor?.user?.name ?? null,
     inactive: !emp.isActive || emp.terminatedAt !== null,
+    photoUrl: photos.get(emp.id) ?? null,
     scheduledStart: schedule?.startTime ?? null,
     scheduledEnd: schedule?.endTime ?? null,
     timezone,

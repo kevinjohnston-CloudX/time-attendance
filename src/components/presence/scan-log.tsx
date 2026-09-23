@@ -8,6 +8,7 @@ import type { ScanLogPage, ScanLogQuery, ScanLogRow, ScanLogSummary, ScanStream 
 import { describeScan, fmtTime, initialsOf } from "./presence-meta";
 import { iconFor } from "./person-panel";
 import styles from "./on-site.module.css";
+import { Face } from "./face";
 
 /**
  * The scan log: every security gate and time clock scan at the site today,
@@ -492,7 +493,7 @@ function LogRow({
           <span className={styles.initials} aria-hidden="true">
             {initialsOf(r.person.name)}
           </span>
-          {photo && <img src={photo} alt="" loading="lazy" decoding="async" />}
+          <Face src={photo} />
         </span>
 
         <span className={styles.logWho}>

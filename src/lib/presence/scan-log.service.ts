@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { addDays, clampDay } from "./days";
 import { localDateString } from "./on-site.service";
+import { photoUrls } from "./photos";
 import type { ScanLogPage, ScanLogQuery, ScanLogRow } from "./types";
 
 /**
@@ -144,6 +145,7 @@ export async function getScanLog(
           select: {
             id: true,
             employeeCode: true,
+            barcode: true,
             user: { select: { name: true } },
             department: { select: { name: true } },
           },
@@ -173,6 +175,9 @@ export async function getScanLog(
       .reduce((n, g) => n + g._count._all, 0);
 
   const more = rows.length > limit;
+  const seen = new Map<string, { id: string; barcode: string | null }>();
+  for (const r of rows.slice(0, limit)) if (r.employee) seen.set(r.employee.id, r.employee);
+  const photos = await photoUrls(tenantId, [...seen.values()]);
   const page: ScanLogRow[] = rows.slice(0, limit).flatMap((s) =>
     s.employee
       ? [
@@ -193,7 +198,7 @@ export async function getScanLog(
               name: s.employee.user?.name?.trim() || `Employee ${s.employee.employeeCode}`,
               employeeCode: s.employee.employeeCode,
               department: s.employee.department?.name ?? null,
-              photoUrl: null,
+              photoUrl: photos.get(s.employee.id) ?? null,
             },
           },
         ]

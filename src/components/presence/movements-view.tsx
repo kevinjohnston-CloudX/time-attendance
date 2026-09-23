@@ -13,6 +13,7 @@ import {
 } from "@/lib/presence/movements";
 import { STATUS_META, fmtDuration, fmtShift, fmtTime, initialsOf } from "./presence-meta";
 import styles from "./on-site.module.css";
+import { Face } from "./face";
 
 /**
  * Movements: one block per person, their photo and name on the left, and on
@@ -232,7 +233,7 @@ function PersonBlock({
             <span className={styles.initials} aria-hidden="true">
               {initialsOf(p.name)}
             </span>
-            {p.photoUrl && <img src={p.photoUrl} alt="" loading="lazy" decoding="async" />}
+            <Face src={p.photoUrl} />
             {meta && <span className={styles.stripe} style={{ background: meta.color, height: 4 }} />}
           </span>
           <span className={styles.mvIdentity}>

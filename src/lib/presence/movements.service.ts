@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { addDays, clampDay } from "./days";
 import { LOOKBACK_MS, localDateString, toScan, type ScanRow } from "./on-site.service";
+import { photoUrls } from "./photos";
 import type { DayPerson, PresenceScan, SiteDay } from "./types";
 
 /**
@@ -162,6 +163,7 @@ export async function getSiteDay(
         select: {
           id: true,
           employeeCode: true,
+          barcode: true,
           isActive: true,
           terminatedAt: true,
           user: { select: { name: true } },
@@ -171,6 +173,7 @@ export async function getSiteDay(
       })
     : [];
 
+  const photos = await photoUrls(tenantId, employees);
   const people: DayPerson[] = employees.map((e) => {
     const schedule = scheduleById.get(e.id);
     return {
@@ -181,7 +184,7 @@ export async function getSiteDay(
       department: e.department?.name ?? null,
       shiftId: e.shift?.id ?? null,
       shift: e.shift?.name ?? null,
-      photoUrl: null,
+      photoUrl: photos.get(e.id) ?? null,
       inactive: !e.isActive || e.terminatedAt !== null,
       scheduledStart: schedule?.startTime ?? null,
       scheduledEnd: schedule?.endTime ?? null,

@@ -41,9 +41,8 @@ export interface PresencePerson {
   shiftId: string | null;
   shift: string | null;
   /**
-   * The tablet photo. Always null until the photo store is connected; the
-   * board draws initials in the same frame, so connecting it changes nothing
-   * else on the screen.
+   * A signed link to the tablet photo (see photos.ts), or null. The board
+   * draws initials in the same frame, which show when there is no photo.
    */
   photoUrl: string | null;
   status: PresenceStatus;
@@ -111,6 +110,8 @@ export interface PresenceDetail {
   shift: string | null;
   supervisor: string | null;
   inactive: boolean;
+  /** A signed link to the tablet photo, or null. */
+  photoUrl: string | null;
   scheduledStart: string | null;
   scheduledEnd: string | null;
   timezone: string;
@@ -152,9 +153,9 @@ export interface ScanLogRow extends PresenceScan {
   /** The pipeline's own words when the time clock scan was not accepted. */
   rejectionReason: string | null;
   /**
-   * The photo the tablet took at this scan, once the photo store is
-   * connected. Until then null, and the row shows the person's photo or
-   * their initials in the same frame.
+   * A photo taken at this scan. Always null: the tablets keep one photo per
+   * person, not one per scan, so the row shows `person.photoUrl`. Kept so a
+   * per scan photo can drop in without reshaping the row.
    */
   photoUrl: string | null;
   person: {
@@ -208,7 +209,7 @@ export interface DayPerson {
   department: string | null;
   shiftId: string | null;
   shift: string | null;
-  /** The tablet photo, once the photo store is connected. */
+  /** A signed link to the tablet photo, or null. */
   photoUrl: string | null;
   inactive: boolean;
   /** That day's schedule in site time, HH:mm. */
