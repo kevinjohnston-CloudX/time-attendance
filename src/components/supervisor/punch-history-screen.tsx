@@ -586,11 +586,16 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                   </div>
                   <div className="flex items-center gap-[22px]">
                     <Stat value={hours(data.totals.workedMinutes)} label="Hours worked" />
-                    <Stat value={String(data.totals.punches)} label="Punches" />
+                    <Stat value={String(data.totals.daysWorked)} label="Days worked" />
                     <Stat
                       value={String(data.totals.pending)}
-                      label="Pending approval"
+                      label="Pending punches"
                       tone={data.totals.pending > 0 ? "var(--text-warning)" : undefined}
+                    />
+                    <Stat
+                      value={String(data.totals.missingDays)}
+                      label="Missing punches"
+                      tone={data.totals.missingDays > 0 ? "var(--text-warning)" : undefined}
                     />
                   </div>
                 </div>

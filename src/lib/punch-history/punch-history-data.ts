@@ -114,7 +114,15 @@ export type PunchHistoryData = {
   } | null;
   punches: PunchHistoryPunch[];
   days: PunchHistoryDay[];
-  totals: { workedMinutes: number; punches: number; pending: number };
+  totals: {
+    workedMinutes: number;
+    punches: number;
+    pending: number;
+    /** Days with a clock in that still stands. */
+    daysWorked: number;
+    /** Days in the range with an open missing punch exception. */
+    missingDays: number;
+  };
 };
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -407,6 +415,8 @@ export async function loadTeamPunchHistory(
       workedMinutes: days.reduce((n, d) => n + d.workedMinutes, 0),
       punches: punches.length,
       pending: live.filter((p) => !p.isApproved).length,
+      daysWorked: new Set(live.filter((p) => p.punchType === "CLOCK_IN").map((p) => p.localDate)).size,
+      missingDays: days.filter((d) => d.hasMissingPunch).length,
     },
   };
 }
