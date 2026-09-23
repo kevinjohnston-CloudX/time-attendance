@@ -490,11 +490,11 @@ export function OnSiteBoard({
         lines.push([
           ...base,
           l.reader === "gate" ? "Security gate" : "Time clock",
-          { INSIDE: "Inside the building", WORK: "On the clock", MEAL: "Meal", BREAK: "Break", EXIT_ONLY: "Exit, no entry scan" }[l.kind],
-          l.carried ? "Before midnight" : time(l.start),
-          l.end === null ? (data.day === data.today ? "Still going" : "No scan out") : time(l.end),
+          { INSIDE: "Inside the building", WORK: "On the clock", MEAL: "Meal", BREAK: "Break", EXIT_ONLY: "Left, never scanned in" }[l.kind],
+          l.carried ? "Since yesterday" : time(l.start),
+          l.end === null ? (data.day === data.today ? "Still going" : "Never scanned out") : time(l.end),
           l.kind === "EXIT_ONLY" ? "" : String(l.minutes),
-          l.closedBySystem ? "Marked out by the system" : "",
+          l.closedBySystem ? "Closed by the system" : "",
         ]);
       }
     }
@@ -978,68 +978,72 @@ export function OnSiteBoard({
       ) : (
         <>
           {/* ── Headcount ─────────────────────────────────────────────── */}
-          <section className={styles.headcount} aria-label="Headcount">
-            <div className={styles.side}>
+          <section className={styles.summary} aria-label="Headcount">
+            <div
+              className={styles.summaryMain}
+              data-cards={INSIDE_STATUSES.filter((s) => s !== "NO_GATE_SCAN" || board.site.hasGateData).length}
+            >
               <button
                 type="button"
-                className={styles.total}
+                className={styles.summaryHero}
                 aria-pressed={!searching && status === "inside"}
                 onClick={() => pickStatus("inside")}
+                title="Show everyone in the building"
               >
-                <span className={styles.totalFigure}>{insideTotal.toLocaleString()}</span>
-                <span className={styles.totalLabel}>
-                  {insideTotal === 1 ? "person" : "people"} in the building
+                <span className={styles.summaryLabel}>In the building</span>
+                <span className={styles.summaryHeroFigure}>{insideTotal.toLocaleString()}</span>
+                <span className={styles.summarySub}>
+                  {scheduled.length === 0
+                    ? "Nobody scheduled today"
+                    : `${scheduledArrived.toLocaleString()} of ${scheduled.length.toLocaleString()} scheduled have arrived`}
                 </span>
               </button>
-
-              <div className={styles.bar} role="img" aria-label={barLabel(counts, scoped)}>
-                {INSIDE_STATUSES.map((s) => {
-                  const n = s === "ON_MEAL" ? scoped.filter((p) => p.status === s && p.inside).length : counts[s];
-                  return n > 0 ? (
-                    <span
-                      key={s}
-                      className={styles.barPart}
-                      style={{
-                        flexGrow: n,
-                        background: STATUS_META[s].color,
-                        opacity: s === "NO_GATE_SCAN" ? 0.55 : 1,
-                      }}
-                    />
-                  ) : null;
-                })}
-              </div>
-
-              <div className={styles.counters}>
-                {INSIDE_STATUSES.filter((s) => s !== "NO_GATE_SCAN" || board.site.hasGateData).map((s) => (
-                  <Counter key={s} status={s} count={counts[s]} active={!searching && status === s} onClick={() => pickStatus(status === s ? "inside" : s)} />
+              {INSIDE_STATUSES.filter((s) => s !== "NO_GATE_SCAN" || board.site.hasGateData).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className={styles.summaryCard}
+                  aria-pressed={!searching && status === s}
+                  data-empty={counts[s] === 0 ? "true" : undefined}
+                  onClick={() => pickStatus(status === s ? "inside" : s)}
+                  title={STATUS_META[s].hint}
+                >
+                  <span className={styles.summaryLabel}>
+                    <span className={styles.dot} style={{ background: STATUS_META[s].color }} aria-hidden="true" />
+                    <span className="truncate">{STATUS_META[s].heading}</span>
+                  </span>
+                  <span className={styles.summaryFigure}>{counts[s].toLocaleString()}</span>
+                </button>
+              ))}
+            </div>
+            <div className={styles.summaryMore}>
+              <div className={styles.summaryChips}>
+                {AWAY_STATUSES.filter((s) => counts[s] > 0 || (!searching && status === s)).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={styles.summaryChip}
+                    aria-pressed={!searching && status === s}
+                    onClick={() => pickStatus(status === s ? "inside" : s)}
+                    title={STATUS_META[s].hint}
+                  >
+                    <span className={styles.dot} style={{ background: STATUS_META[s].color }} aria-hidden="true" />
+                    <span>{STATUS_META[s].heading}</span>
+                    <span className={styles.summaryChipCount}>{counts[s].toLocaleString()}</span>
+                  </button>
                 ))}
               </div>
-
-              <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+              <span className={styles.summaryNote}>
                 {outsideOnMeal > 0 &&
-                  `${outsideOnMeal.toLocaleString()} on a meal or break went out through the gate and are not in this count. `}
+                  `${outsideOnMeal.toLocaleString()} on a break ${outsideOnMeal === 1 ? "is" : "are"} outside the building. `}
                 {board.site.hasGateData
                   ? `Last security gate scan at ${fmtTime(board.site.lastGateScanAt, tz)}${
                       board.site.lastGateScanAt && siteDate(board.site.lastGateScanAt, tz) !== siteDate(board.generatedAt, tz)
                         ? " yesterday"
                         : ""
-                    }`
-                  : "The security gate here has not reported in the last 36 hours, so this count comes from the time clock alone."}
-              </p>
-            </div>
-
-            <div className={styles.side}>
-              <span style={{ font: "var(--type-h4)", color: "var(--text-secondary)" }}>Not in the building</span>
-              <div className={styles.counters}>
-                {AWAY_STATUSES.map((s) => (
-                  <Counter key={s} status={s} count={counts[s]} active={!searching && status === s} onClick={() => pickStatus(status === s ? "inside" : s)} />
-                ))}
-              </div>
-              <p style={{ margin: "auto 0 0", font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                {scheduled.length === 0
-                  ? "Nobody here has a schedule for today."
-                  : `${scheduledArrived.toLocaleString()} of ${scheduled.length.toLocaleString()} scheduled today have arrived.`}
-              </p>
+                    }.`
+                  : "The security gate has not reported, so this count comes from the time clock."}
+              </span>
             </div>
           </section>
 
@@ -1139,40 +1143,6 @@ function Header({ siteName, liveLine, actions }: { siteName: string; liveLine: R
       subtitle={liveLine ?? undefined}
       actions={actions ?? undefined}
     />
-  );
-}
-
-function Counter({
-  status,
-  count,
-  active,
-  onClick,
-}: {
-  status: PresenceStatus;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-}) {
-  const meta = STATUS_META[status];
-  return (
-    <button
-      type="button"
-      className={styles.counter}
-      aria-pressed={active}
-      data-empty={count === 0 ? "true" : undefined}
-      onClick={onClick}
-      title={meta.hint}
-    >
-      <span className={styles.counterFigure}>{count.toLocaleString()}</span>
-      <span className={styles.counterLabel}>
-        <span
-          className={styles.dot}
-          style={{ background: meta.color, opacity: status === "NO_GATE_SCAN" ? 0.55 : 1 }}
-          aria-hidden="true"
-        />
-        <span className="truncate">{status === "ON_MEAL" ? "Meal or break" : meta.label}</span>
-      </span>
-    </button>
   );
 }
 
@@ -1838,14 +1808,6 @@ function distinct(
   return [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function barLabel(counts: Record<PresenceStatus, number>, scoped: PresencePerson[]): string {
-  const outsideMeal = scoped.filter((p) => p.status === "ON_MEAL" && !p.inside).length;
-  return INSIDE_STATUSES.map((s) => {
-    const n = s === "ON_MEAL" ? counts[s] - outsideMeal : counts[s];
-    return `${n} ${STATUS_META[s].label.toLowerCase()}`;
-  }).join(", ");
-}
-
 const COUNTER_LABEL: Record<LogCounter, string> = {
   gate: "Security gate scans",
   "gate-in": "Security gate in",
@@ -1853,7 +1815,7 @@ const COUNTER_LABEL: Record<LogCounter, string> = {
   clock: "Time clock scans",
   "clock-in": "Time clock in",
   "clock-out": "Time clock out",
-  rejected: "Not counted",
+  rejected: "Taps not counted",
 };
 
 /** How many scans the picked counter stands for, from the same counts it shows. */

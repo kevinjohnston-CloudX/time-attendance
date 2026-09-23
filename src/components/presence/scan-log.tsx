@@ -234,8 +234,9 @@ function compareRows(a: ScanLogRow, b: ScanLogRow): number {
 /* ── Counts ─────────────────────────────────────────────────────────────── */
 
 /**
- * The two readers side by side, drawn exactly like the board's headcount: a
- * big number, and counters under it that are also the filters.
+ * The same two tier summary as Movements: every scan first, then in and out
+ * at each reader, which stay on screen at zero, then the reader totals and
+ * the taps that did not count as chips. Every number is the filter for it.
  */
 export function ScanLogCounts({
   summary,
@@ -257,119 +258,103 @@ export function ScanLogCounts({
 }) {
   const isToday = when === "today";
   const pick = (c: LogCounter) => onPick(counter === c ? null : c);
+  const all = summary.gateTotal + summary.clockTotal;
+
+  const cards: { key: LogCounter; label: string; tone: "in" | "out"; count: number }[] = [
+    ...(hasGateData
+      ? [
+          { key: "gate-in" as const, label: "Security gate in", tone: "in" as const, count: summary.gateIn },
+          { key: "gate-out" as const, label: "Security gate out", tone: "out" as const, count: summary.gateOut },
+        ]
+      : []),
+    { key: "clock-in", label: "Time clock in", tone: "in", count: summary.clockIn },
+    { key: "clock-out", label: "Time clock out", tone: "out", count: summary.clockOut },
+  ];
+  const chipList: { key: LogCounter; label: string; count: number }[] = [
+    ...(hasGateData ? [{ key: "gate" as const, label: "Security gate", count: summary.gateTotal }] : []),
+    { key: "clock", label: "Time clock", count: summary.clockTotal },
+    { key: "rejected", label: "Taps not counted", count: summary.rejected },
+  ];
+  const chips = chipList.filter((c) => c.count > 0 || counter === c.key);
+
+  const note = !hasGateData
+    ? "The security gate here has not reported in the last 36 hours."
+    : isToday
+      ? `Last security gate scan at ${fmtTime(lastGateScanAt, tz)}.`
+      : summary.gateTotal === 0
+        ? `No security gate scans ${when}.`
+        : summary.gateAutoClosed === 0
+          ? "Everyone who came in scanned out."
+          : `${summary.gateAutoClosed.toLocaleString()} ${summary.gateAutoClosed === 1 ? "person" : "people"} never scanned out and ${
+              summary.gateAutoClosed === 1 ? "was" : "were"
+            } closed by the system.`;
+
   return (
-    <section className={`${styles.headcount} ${styles.headcountEven}`} aria-label="Scans today">
-      <div className={styles.side}>
-        <ReaderTotal
-          icon={<DoorOpen className="h-5 w-5" />}
-          figure={summary.gateTotal}
-          label={`${summary.gateTotal === 1 ? "security gate scan" : "security gate scans"} ${when}`}
-          active={counter === "gate"}
-          onClick={() => pick("gate")}
-        />
-        <div className={styles.counters}>
-          <LogCount label="In" tone="in" count={summary.gateIn} active={counter === "gate-in"} onClick={() => pick("gate-in")} />
-          <LogCount label="Out" tone="out" count={summary.gateOut} active={counter === "gate-out"} onClick={() => pick("gate-out")} />
-        </div>
-        <p className={styles.footnote}>
-          {!hasGateData
-            ? "The security gate here has not reported in the last 36 hours."
-            : isToday
-              ? `Last security gate scan at ${fmtTime(lastGateScanAt, tz)}.`
-              : summary.gateTotal === 0
-                ? `No security gate scans ${when}.`
-                : summary.gateAutoClosed === 0
-                  ? "Nobody had to be marked out overnight by the system."
-                  : `${summary.gateAutoClosed.toLocaleString()} ${
-                      summary.gateAutoClosed === 1 ? "person was" : "people were"
-                    } marked out overnight with no exit scan.`}
-        </p>
+    <section className={styles.summary} aria-label="Scans">
+      <div className={styles.summaryMain} data-cards={cards.length}>
+        <button
+          type="button"
+          className={styles.summaryHero}
+          aria-pressed={counter === null}
+          onClick={() => onPick(null)}
+          title="Show every scan"
+        >
+          <span className={styles.summaryLabel}>Scans {when}</span>
+          <span className={styles.summaryHeroFigure}>{all.toLocaleString()}</span>
+          <span className={styles.summarySub}>
+            {summary.people === 0
+              ? "Nobody scanned"
+              : `by ${summary.people.toLocaleString()} ${summary.people === 1 ? "person" : "people"}`}
+          </span>
+        </button>
+        {cards.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            className={styles.summaryCard}
+            aria-pressed={counter === c.key}
+            data-empty={c.count === 0 ? "true" : undefined}
+            onClick={() => pick(c.key)}
+          >
+            <span className={styles.summaryLabel}>
+              <span className={styles.dot} data-tone={c.tone} aria-hidden="true" />
+              <span className="truncate">{c.label}</span>
+            </span>
+            <span className={styles.summaryFigure}>{c.count.toLocaleString()}</span>
+          </button>
+        ))}
       </div>
 
-      <div className={styles.side}>
-        <ReaderTotal
-          icon={<Clock className="h-5 w-5" />}
-          figure={summary.clockTotal}
-          label={`${summary.clockTotal === 1 ? "time clock scan" : "time clock scans"} ${when}`}
-          active={counter === "clock"}
-          onClick={() => pick("clock")}
-        />
-        <div className={styles.counters}>
-          <LogCount label="In" tone="in" count={summary.clockIn} active={counter === "clock-in"} onClick={() => pick("clock-in")} />
-          <LogCount label="Out" tone="out" count={summary.clockOut} active={counter === "clock-out"} onClick={() => pick("clock-out")} />
-          <LogCount
-            label="Not counted"
-            tone="error"
-            count={summary.rejected}
-            active={counter === "rejected"}
-            onClick={() => pick("rejected")}
-            hint="Scans the timecard refused, usually a second tap too soon, and repeat reads of the same badge. Left out of every other list and total"
-          />
+      <div className={styles.summaryMore}>
+        <div className={styles.summaryChips}>
+          {chips.map((c) => (
+            <button
+              key={c.key}
+              type="button"
+              className={styles.summaryChip}
+              aria-pressed={counter === c.key}
+              onClick={() => pick(c.key)}
+              title={
+                c.key === "rejected"
+                  ? "Taps the time clock did not accept, usually a second tap too soon, and repeat reads of the same badge. They are left out of every other list and total"
+                  : undefined
+              }
+            >
+              {c.key === "gate" ? (
+                <DoorOpen className="h-3.5 w-3.5" aria-hidden="true" />
+              ) : c.key === "clock" ? (
+                <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+              ) : (
+                <span className={styles.dot} data-tone="error" aria-hidden="true" />
+              )}
+              <span>{c.label}</span>
+              <span className={styles.summaryChipCount}>{c.count.toLocaleString()}</span>
+            </button>
+          ))}
         </div>
-        <p className={styles.footnote}>
-          {summary.people === 0
-            ? `Nobody scanned at either reader ${when}.`
-            : `${summary.people.toLocaleString()} ${summary.people === 1 ? "person" : "people"} scanned at either reader ${when}.`}
-        </p>
+        <span className={styles.summaryNote}>{note}</span>
       </div>
     </section>
-  );
-}
-
-function ReaderTotal({
-  icon,
-  figure,
-  label,
-  active,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  figure: number;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button type="button" className={styles.total} aria-pressed={active} data-active={active ? "true" : undefined} onClick={onClick}>
-      <span className={styles.readerIcon} aria-hidden="true">
-        {icon}
-      </span>
-      <span className={styles.totalFigure}>{figure.toLocaleString()}</span>
-      <span className={styles.totalLabel}>{label}</span>
-    </button>
-  );
-}
-
-function LogCount({
-  label,
-  tone,
-  count,
-  active,
-  onClick,
-  hint,
-}: {
-  label: string;
-  tone: "in" | "out" | "error";
-  count: number;
-  active: boolean;
-  onClick: () => void;
-  hint?: string;
-}) {
-  return (
-    <button
-      type="button"
-      className={styles.counter}
-      aria-pressed={active}
-      data-empty={count === 0 ? "true" : undefined}
-      onClick={onClick}
-      title={hint}
-    >
-      <span className={styles.counterFigure}>{count.toLocaleString()}</span>
-      <span className={styles.counterLabel}>
-        <span className={styles.dot} data-tone={tone} aria-hidden="true" />
-        <span className="truncate">{label}</span>
-      </span>
-    </button>
   );
 }
 

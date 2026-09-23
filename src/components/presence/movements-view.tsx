@@ -13,7 +13,7 @@ import {
   type ScanTotals,
 } from "@/lib/presence/movements";
 import type { LogCounter } from "./scan-log";
-import { STATUS_META, describeScan, fmtDuration, fmtShift, fmtTime, initialsOf } from "./presence-meta";
+import { STATUS_META, describeScan, fmtDuration, fmtTime, initialsOf } from "./presence-meta";
 import { iconFor } from "./person-panel";
 import styles from "./on-site.module.css";
 import { ZoomableFace } from "./face";
@@ -119,9 +119,9 @@ function flagChips(v: PersonDayView, isToday: boolean): { label: string; tone: "
   const has = (f: MovementFlag) => v.flags.includes(f);
   // Today the status badge says it; on a finished day the chip carries how long.
   if (!isToday && has("INSIDE_OFF_CLOCK"))
-    out.push({ label: `Inside off the clock ${fmtDuration(v.lanes.totals.insideOffClockMin)}`, tone: "warning" });
+    out.push({ label: `Inside, not clocked in ${fmtDuration(v.lanes.totals.insideOffClockMin)}`, tone: "warning" });
   if (!isToday && has("NO_GATE_SCAN"))
-    out.push({ label: `On the clock outside ${fmtDuration(v.lanes.totals.workOutsideMin)}`, tone: "warning" });
+    out.push({ label: `Clocked in, not inside ${fmtDuration(v.lanes.totals.workOutsideMin)}`, tone: "warning" });
   if (has("LATE") && v.lateMinutes !== null) out.push({ label: `${fmtDuration(v.lateMinutes)} late`, tone: "warning" });
   if (has("LEFT_EARLY") && v.earlyMinutes !== null)
     out.push({ label: `Left ${fmtDuration(v.earlyMinutes)} early`, tone: "warning" });
@@ -129,7 +129,7 @@ function flagChips(v: PersonDayView, isToday: boolean): { label: string; tone: "
   if (has("LONG_BREAK")) out.push({ label: "Long break", tone: "warning" });
   if (has("EXIT_NO_ENTRY")) out.push({ label: "Left, never scanned in", tone: "error" });
   if (has("MARKED_OUT")) out.push({ label: "Never scanned out", tone: "neutral" });
-  if (has("REJECTED")) out.push({ label: `${v.rejected} not counted`, tone: "neutral" });
+  if (has("REJECTED")) out.push({ label: `${v.rejected} ${v.rejected === 1 ? "tap" : "taps"} not counted`, tone: "neutral" });
   if (has("INACTIVE")) out.push({ label: "Inactive employee", tone: "error" });
   return out;
 }
@@ -267,7 +267,7 @@ function PersonRow({
     v.firstIn !== null ? (
       <span data-tone={late ? "warning" : undefined}>{time(v.firstIn)}</span>
     ) : carried ? (
-      <span className={styles.mvQuiet}>Before midnight</span>
+      <span className={styles.mvQuiet}>Since yesterday</span>
     ) : p.onLeave ? (
       <span className={styles.mvQuiet}>On leave</span>
     ) : v.schedule ? (
@@ -277,7 +277,7 @@ function PersonRow({
   const left = present ? (
     <span className={styles.mvStill}>Still here</span>
   ) : unclosed ? (
-    <span className={styles.mvWarn}>No scan out</span>
+    <span className={styles.mvWarn}>Never scanned out</span>
   ) : v.lastOut !== null ? (
     <span data-tone={early ? "warning" : undefined}>{time(v.lastOut)}</span>
   ) : null;
@@ -438,8 +438,8 @@ function ScanList({ scans, tz, notCounted }: { scans: PersonDayView["scans"]; tz
       })}
       {notCounted > 0 && (
         <li className={styles.scanHidden}>
-          {notCounted.toLocaleString()} more {notCounted === 1 ? "scan was" : "scans were"} not counted: refused by the
-          timecard or read twice. They are in the Scan log under Not counted.
+          {notCounted.toLocaleString()} more {notCounted === 1 ? "tap was" : "taps were"} not counted, usually a second
+          tap too soon. The Scan log lists them under Taps not counted.
         </li>
       )}
     </ol>
@@ -600,7 +600,7 @@ const KIND_LABEL: Record<MovementLine["kind"], string> = {
   WORK: "On the clock",
   MEAL: "Meal",
   BREAK: "Break",
-  EXIT_ONLY: "Exit, no entry scan",
+  EXIT_ONLY: "Left, never scanned in",
 };
 
 const STILL: Record<MovementLine["kind"], string> = {
@@ -630,9 +630,9 @@ function Line({ line: l, isToday, tz }: { line: MovementLine; isToday: boolean; 
       </span>
       <span className={`${styles.mvCell} ${styles.mvTime}`}>
         {l.kind === "EXIT_ONLY" ? (
-          <span className={styles.mvQuiet}>No entry</span>
+          <span className={styles.mvQuiet}>Never scanned in</span>
         ) : l.carried ? (
-          <span className={styles.mvQuiet}>Before midnight</span>
+          <span className={styles.mvQuiet}>Since yesterday</span>
         ) : (
           <>
             <span>{l.start !== null ? time(l.start) : ""}</span>
@@ -645,13 +645,13 @@ function Line({ line: l, isToday, tz }: { line: MovementLine; isToday: boolean; 
           isToday ? (
             <span className={styles.mvStill}>{STILL[l.kind]}</span>
           ) : (
-            <span className={styles.mvWarn}>No scan out</span>
+            <span className={styles.mvWarn}>Never scanned out</span>
           )
         ) : (
           <>
             <span>{time(l.end)}</span>
             {l.closedBySystem ? (
-              <span className={styles.mvWarnSmall}>Marked out by the system</span>
+              <span className={styles.mvWarnSmall}>Closed by the system</span>
             ) : (
               l.endDevice && <span className={styles.mvDevice}>{l.endDevice}</span>
             )}

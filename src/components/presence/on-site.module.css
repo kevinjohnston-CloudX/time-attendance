@@ -2170,6 +2170,10 @@
   grid-template-columns: minmax(200px, 1.25fr) repeat(3, minmax(0, 1fr));
 }
 
+.summaryMain[data-cards="4"] {
+  grid-template-columns: minmax(200px, 1.25fr) repeat(4, minmax(0, 1fr));
+}
+
 .summaryMain[data-cards="2"] {
   grid-template-columns: minmax(200px, 1.25fr) repeat(2, minmax(0, 1fr));
 }
@@ -2314,6 +2318,14 @@
   font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
+}
+
+.summaryNote {
+  flex: none;
+  margin-left: auto;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
 .summaryScans {

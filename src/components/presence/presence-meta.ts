@@ -27,29 +27,29 @@ export const STATUS_META: Record<PresenceStatus, StatusMeta> = {
     badge: "success",
   },
   NO_GATE_SCAN: {
-    label: "No gate scan",
-    heading: "Clocked in, no gate scan",
+    label: "Clocked in, not inside",
+    heading: "Clocked in, not inside",
     hint: "On the clock, but the security gate did not see them come in",
     color: "var(--ps-working)",
     badge: "warning",
   },
   ON_MEAL: {
     label: "On break",
-    heading: "On meal or break",
+    heading: "On a break",
     hint: "Clocked out for a meal or a rest break",
     color: "var(--ps-meal)",
     badge: "warning",
   },
   OFF_CLOCK: {
-    label: "Off the clock",
-    heading: "Inside, off the clock",
+    label: "Inside, not clocked in",
+    heading: "Inside, not clocked in",
     hint: "Came through the security gate and is not clocked in",
     color: "var(--ps-offclock)",
     badge: "purple",
   },
   NOT_ARRIVED: {
     label: "Not arrived",
-    heading: "Scheduled, not arrived",
+    heading: "Not arrived",
     hint: "Scheduled to work today and not seen at any reader yet",
     color: "var(--ps-absent)",
     badge: "neutral",
@@ -156,12 +156,12 @@ export function sinceLine(p: PresencePerson, timeZone: string, nowIso: string): 
 /** What a reader event means, in words a person at HR would use. */
 export function describeScan(s: PresenceScan): string {
   if (s.stream === "SECURITY") {
-    if (s.automatic) return s.direction === "OUT" ? "Marked out overnight, no exit scan" : "Starting point from the old system";
-    if (s.direction === "IN") return "Entered through the security gate";
+    if (s.automatic) return s.direction === "OUT" ? "Never scanned out, closed by the system" : "Carried over from the old system";
+    if (s.direction === "IN") return "Came in through the security gate";
     if (s.direction === "OUT") return "Left through the security gate";
-    return "Security gate scan, direction unknown";
+    return "Security gate scan";
   }
-  if (s.automatic) return "Clocked out overnight, no clock out scan";
+  if (s.automatic) return "Never clocked out, closed by the system";
   switch (s.punchType) {
     case "CLOCK_IN":
       return "Clocked in";
@@ -176,9 +176,7 @@ export function describeScan(s: PresenceScan): string {
     case "BREAK_END":
       return "Back from break";
   }
-  if (s.direction === "IN") return "Time clock scan in";
-  if (s.direction === "OUT") return "Time clock scan out";
-  return "Time clock scan, direction unknown";
+  return "Time clock scan";
 }
 
 export function initialsOf(name: string): string {
@@ -349,10 +347,10 @@ export function readerLines(p: PresencePerson, tz: string, now: number, hasGateD
     } else if (g.automatic) {
       lines.push({
         reader: "gate",
-        word: "Marked out",
+        word: "Never scanned out",
         value: "",
         tone: null,
-        title: "Security gate: marked out overnight by the system, no exit scan",
+        title: "Security gate: never scanned out, closed by the system overnight",
       });
     } else {
       lines.push({

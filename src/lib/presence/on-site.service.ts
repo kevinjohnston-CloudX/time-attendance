@@ -235,7 +235,9 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
 
     if (clockState === "WORK") {
       status = hasGateData && !gateIn ? "NO_GATE_SCAN" : "WORKING";
-      inside = true;
+      // The building total follows the gate, as Movements does: somebody the
+      // gate has outside is listed as clocked in and not inside, not counted.
+      inside = status === "WORKING";
       since = clock!.scanTime;
     } else if (clockState === "MEAL" || clockState === "BREAK") {
       status = "ON_MEAL";

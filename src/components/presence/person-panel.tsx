@@ -195,7 +195,6 @@ export function PersonPanel({
                     {statusLabel(person)}
                   </Badge>
                 )}
-                {person && isToday && person.status === "NO_GATE_SCAN" && <Badge tone="warning">No gate scan</Badge>}
                 {person && isToday && person.outsideOnMeal && <Badge tone="neutral">Outside the building</Badge>}
                 {(person?.inactive || detail?.inactive) && <Badge tone="error">Inactive employee</Badge>}
                 <HomeSiteBadge site={detail?.homeSite ?? person?.homeSite ?? null} size="md" />
@@ -263,7 +262,7 @@ export function PersonPanel({
                 <div className={styles.facts}>
                   <Fact label={isToday ? "Scheduled today" : "Scheduled"} value={schedule ?? "Not scheduled"} />
                   <Fact
-                    label="First in, last out"
+                    label="Arrived and left"
                     value={
                       lanes.firstIn
                         ? `${fmtTime(new Date(lanes.firstIn).toISOString(), tz)}${
@@ -279,7 +278,7 @@ export function PersonPanel({
                   <Total label="Meals and breaks" minutes={lanes.totals.mealMin + lanes.totals.breakMin} />
                   {hasGateData && (
                     <Total
-                      label="Inside, off the clock"
+                      label="Inside, not clocked in"
                       minutes={lanes.totals.insideOffClockMin}
                       hint="In the building, not clocked in, and not on a meal or break"
                       flag
@@ -287,7 +286,7 @@ export function PersonPanel({
                   )}
                   {hasGateData && (
                     <Total
-                      label="On the clock, outside"
+                      label="Clocked in, not inside"
                       minutes={lanes.totals.workOutsideMin}
                       hint="Clocked in while the security gate had them outside the building"
                       flag
@@ -318,8 +317,8 @@ export function PersonPanel({
             )}
             {shown && hiddenScans > 0 && (
               <p style={{ margin: "6px 0 0", font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                {hiddenScans.toLocaleString()} more {hiddenScans === 1 ? "scan was" : "scans were"} not counted: refused
-                by the timecard, usually a second tap too soon, or read twice. The Scan log lists them under Not counted.
+                {hiddenScans.toLocaleString()} more {hiddenScans === 1 ? "tap was" : "taps were"} not counted, usually a
+                second tap too soon. The Scan log lists them under Taps not counted.
               </p>
             )}
           </section>
@@ -336,7 +335,7 @@ function statusSentence(p: PresencePerson, tz: string, mins: number | null, nowI
     case "WORKING":
       return at ? `On the clock since ${at}${forHow}` : "On the clock";
     case "NO_GATE_SCAN":
-      return at ? `Clocked in since ${at}${forHow}, no gate entry` : "On the clock, no gate entry";
+      return at ? `Clocked in since ${at}${forHow}, not seen coming in at the gate` : "Clocked in, not seen coming in at the gate";
     case "ON_MEAL":
       return at ? `Started ${p.breakKind === "BREAK" ? "a break" : "a meal"} at ${at}${forHow}` : statusLabel(p);
     case "OFF_CLOCK":
@@ -452,7 +451,7 @@ function Lanes({
 
   const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
   const until = (s: { end: number; open: boolean }) =>
-    s.open ? (isToday ? "now" : "the end of the day, no scan out") : time(s.end);
+    s.open ? (isToday ? "now" : "the end of the day, never scanned out") : time(s.end);
   const nowAt = isToday && now > from && now < to ? pct(now) : null;
 
   return (
@@ -489,7 +488,7 @@ function Lanes({
                 data-open={g.open && !isToday ? "true" : undefined}
                 style={{ left: pct(g.start), width: width(g.start, g.end) }}
                 title={`Inside ${time(g.start)} to ${until(g)} (${fmtDuration((g.end - g.start) / 60000)})${
-                  g.closedBySystem ? ". Closed by the system, no scan out" : ""
+                  g.closedBySystem ? ". Never scanned out, closed by the system" : ""
                 }`}
               />
             ))
