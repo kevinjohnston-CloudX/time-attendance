@@ -245,56 +245,6 @@ export function LeaveTabs({
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   const [toolbarHeight, setToolbarHeight] = useState(96);
 
-  /**
-   * True once the page has scrolled, which shrinks the title and drops the
-   * counts so the pinned bar costs less height without ever leaving the screen
-   * unnamed.
-   *
-   * <p>Measured as the distance the pinned bar has travelled from a marker at
-   * the top of the page. The marker scrolls away while the bar stays put, so
-   * the gap between them is how far the page has scrolled, whichever element
-   * is doing the scrolling.
-   *
-   * <p>The marker is positioned absolutely on purpose. Sticky elements can
-   * only travel within their own parent, so wrapping the bar in something to
-   * measure against pins it to a box its own height and it never moves at all.
-   * Out of flow, the marker also costs no height and no column gap.
-   *
-   * <p>Condensing never moves the marker, which sits above the header, so the
-   * measurement cannot move itself and cannot oscillate.
-   */
-  const markerRef = useRef<HTMLSpanElement | null>(null);
-  const [condensed, setCondensed] = useState(false);
-
-  useEffect(() => {
-    let frame = 0;
-
-    const read = () => {
-      frame = 0;
-      const bar = toolbarRef.current;
-      const marker = markerRef.current;
-      if (!bar || !marker) return;
-      const travelled = bar.getBoundingClientRect().top - marker.getBoundingClientRect().top;
-      setCondensed((prev) => (prev ? travelled > 4 : travelled > 16));
-    };
-
-    const onScroll = () => {
-      if (!frame) frame = requestAnimationFrame(read);
-    };
-
-    // Captured on the document, because scroll events do not bubble: this
-    // catches the portal's inner scroller, the window, and anything else,
-    // without having to work out which one it is.
-    read();
-    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
-    window.addEventListener("resize", onScroll, { passive: true });
-    return () => {
-      document.removeEventListener("scroll", onScroll, { capture: true });
-      window.removeEventListener("resize", onScroll);
-      if (frame) cancelAnimationFrame(frame);
-    };
-  }, []);
-
   const measureToolbar = useCallback(() => {
     const el = toolbarRef.current;
     if (!el) return;
@@ -672,53 +622,34 @@ export function LeaveTabs({
 
   return (
     <div className="relative flex flex-col gap-4">
-      <span
-        ref={markerRef}
-        aria-hidden="true"
-        className="pointer-events-none absolute left-0 top-0 h-px w-px"
-      />
 
       {/* The whole top of the page pins, not just the filters. Scrolling a
           queue of several hundred used to take the title, the actions and the
-          filters off the screen together. Built here rather than with the
-          shared PageHeader because this one has to shrink, which that
-          component does not do. */}
+          filters off the screen together. The title stays at full size while
+          it is pinned: it used to shrink on scroll, and the resizing read as
+          the page moving under the cursor. */}
       <div
         ref={toolbarRef}
         className="sticky top-0 z-20 flex flex-col"
         style={{ background: "var(--surface-page)" }}
       >
-        <div
-          className="flex flex-wrap items-end gap-3"
-          style={{
-            paddingTop: condensed ? 8 : 0,
-            paddingBottom: condensed ? 8 : 12,
-            transition: "padding 140ms ease",
-          }}
-        >
+        <div className="flex flex-wrap items-end gap-3" style={{ paddingBottom: 12 }}>
           <div className="flex min-w-60 flex-1 flex-col gap-0.5">
             <h1
               style={{
                 margin: 0,
-                // Shrinks to the page-title step rather than disappearing, so
-                // there is always something naming the screen you are in.
-                fontSize: condensed ? 20 : 30,
-                lineHeight: condensed ? "26px" : "36px",
+                fontSize: 30,
+                lineHeight: "36px",
                 fontWeight: "var(--weight-bold)",
                 letterSpacing: "-0.02em",
                 color: "var(--text-primary)",
-                transition: "font-size 140ms ease, line-height 140ms ease",
               }}
             >
               Leave Requests
             </h1>
-            {/* The counts are orientation, not navigation, so they are the
-                first thing to go when space is short. */}
-            {!condensed && (
-              <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
-                {`${pending.length} awaiting you \u00b7 ${hrPending.length} with HR \u00b7 ${upcoming.length} approved upcoming`}
-              </p>
-            )}
+            <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
+              {`${pending.length} awaiting you \u00b7 ${hrPending.length} with HR \u00b7 ${upcoming.length} approved upcoming`}
+            </p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -911,7 +842,11 @@ export function LeaveTabs({
         </div>
       )}
 
-      <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(360px,42%)),1fr))]">
+      {/* The list is capped and the calendar takes the rest. The two used to
+          split the width evenly, which left the request cards mostly empty
+          and squeezed seven day columns into the other half. Below the lg
+          breakpoint they stack, list first. */}
+      <div className="grid grid-cols-1 items-start gap-4 lg:[grid-template-columns:minmax(340px,440px)_minmax(0,1fr)]">
         {/* ── The requests ─────────────────────────────────────────────── */}
         {/* The list is a stack of selectable cards, as the design lays it
             out, rather than one card of divided rows. Selecting a card drives
@@ -998,8 +933,22 @@ export function LeaveTabs({
         </div>
 
         {/* ── Coverage ─────────────────────────────────────────────────── */}
-        <div className="sticky min-w-0" style={{ top: toolbarHeight + 14 }}>
+        {/* Sized to the window on the two-column layout, so the month fills
+            the space beside the queue rather than stopping short of it.
+            56px top bar, the pinned toolbar and its 14px gap, and the 24px of
+            padding under the page. A floor keeps the month readable on a
+            short window, where the page scrolls instead. Stacked below lg it
+            sizes to its content as before. */}
+        <div
+          className="sticky min-w-0 lg:h-[var(--coverage-h)]"
+          style={{
+            top: toolbarHeight + 14,
+            ["--coverage-h" as string]: `max(560px, calc(100dvh - ${toolbarHeight + 94}px))`,
+          }}
+        >
         <Card
+          fill
+          style={{ height: "100%" }}
           title="Coverage"
           subtitle={
             focused
@@ -1042,7 +991,7 @@ export function LeaveTabs({
             </div>
           }
         >
-          <div className="flex flex-col gap-2.5">
+          <div className="flex min-h-0 flex-1 flex-col gap-2.5">
             {/* The coverage line. It answers "can I say yes to this" before the
                 grid is read at all, which is the whole reason the panel sits
                 beside the queue rather than under it. */}
@@ -1085,7 +1034,9 @@ export function LeaveTabs({
               ))}
             </div>
 
-            <div className="grid grid-cols-7 gap-1">
+            {/* Rows share whatever height is left, and never drop below the
+                height a cell needs for its date and two names. */}
+            <div className="grid min-h-0 flex-1 grid-cols-7 gap-1 [grid-auto-rows:minmax(4.5rem,1fr)]">
               {gridDays.map((day) => {
                 const key = format(day, "yyyy-MM-dd");
                 const approvedEntries = (approvedMap.get(key) ?? []).filter(inScope);

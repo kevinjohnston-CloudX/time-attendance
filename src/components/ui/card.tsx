@@ -17,6 +17,7 @@ export function Card({
   children,
   padding = 16,
   style,
+  fill = false,
 }: {
   title?: ReactNode;
   subtitle?: ReactNode;
@@ -24,6 +25,12 @@ export function Card({
   children?: ReactNode;
   padding?: number;
   style?: CSSProperties;
+  /**
+   * Lets the body take whatever height the card is given, for a card sized to
+   * the window rather than to its content. Off by default, so every existing
+   * card keeps sizing to what is inside it.
+   */
+  fill?: boolean;
 }) {
   return (
     <section
@@ -32,6 +39,7 @@ export function Card({
         borderRadius: "var(--radius-l)",
         boxShadow: "var(--shadow-card)",
         overflow: "hidden",
+        ...(fill ? { display: "flex", flexDirection: "column" } : null),
         ...style,
       }}
     >
@@ -55,7 +63,15 @@ export function Card({
           {actions && <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>{actions}</div>}
         </header>
       )}
-      <div style={{ padding }}>{children}</div>
+      <div
+        style={
+          fill
+            ? { padding, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }
+            : { padding }
+        }
+      >
+        {children}
+      </div>
     </section>
   );
 }
