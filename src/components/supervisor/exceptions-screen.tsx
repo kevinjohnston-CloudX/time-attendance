@@ -76,6 +76,13 @@ const SEVERITY_RULE = [
   "var(--stroke-secondary)",
 ];
 
+/** The rail's count pill, per severity: soft fill, strong text, a hairline. */
+const COUNT_PILL = [
+  { bg: "var(--surface-error)", fg: "var(--text-error)", line: "var(--stroke-error)" },
+  { bg: "var(--surface-warning)", fg: "var(--text-warning)", line: "var(--stroke-warning)" },
+  { bg: "var(--ta-track)", fg: "var(--text-secondary)", line: "transparent" },
+];
+
 /**
  * The heading above each block.
  *
@@ -170,50 +177,43 @@ export function ExceptionsScreen({
   const [toolbarHeight, setToolbarHeight] = useState(110);
 
   /**
-   * True once the page has scrolled, which shrinks the title and drops the
-   * subtitle so the pinned bar costs less height without ever leaving the
-   * screen unnamed. The handoff lets the title scroll away entirely; this is
-   * the one place the build departs from it, on purpose.
+   * The rail reaches the bottom of the window wherever the page is scrolled.
    *
-   * <p>Measured as the distance the pinned bar has travelled from a marker at
-   * the top of the page. The marker scrolls away while the bar stays put, so
-   * the gap between them is how far the page has scrolled, whichever element
-   * is doing the scrolling. The marker is positioned absolutely: a sticky
-   * element can only travel inside its own parent, so wrapping the bar in
-   * something to measure against pins it to a box its own height and it never
-   * moves at all. Out of flow it also costs no height and no column gap.
-   *
-   * <p>Condensing never moves the marker, so the measurement cannot move
-   * itself and cannot oscillate.
+   * <p>Measured rather than computed from constants, because the space left
+   * under a pinned rail depends on the top bar, the pinned toolbar (which wraps
+   * on a narrow window) and how far the page has scrolled before the rail
+   * sticks. Only while the rail is actually pinned: on a narrow window it sits
+   * in the flow above the cards, and a list as tall as the screen there would
+   * push every exception off it.
    */
-  const markerRef = useRef<HTMLSpanElement | null>(null);
-  const [condensed, setCondensed] = useState(false);
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const [railHeight, setRailHeight] = useState<number | null>(null);
 
   useEffect(() => {
     let frame = 0;
-
     const read = () => {
       frame = 0;
-      const bar = toolbarRef.current;
-      const marker = markerRef.current;
-      if (!bar || !marker) return;
-      const travelled = bar.getBoundingClientRect().top - marker.getBoundingClientRect().top;
-      setCondensed((prev) => (prev ? travelled > 4 : travelled > 16));
+      const el = railRef.current;
+      if (!el) return;
+      if (getComputedStyle(el).position !== "sticky") {
+        setRailHeight(null);
+        return;
+      }
+      const h = Math.max(240, Math.floor(window.innerHeight - el.getBoundingClientRect().top - 16));
+      setRailHeight((prev) => (prev === h ? prev : h));
     };
-
-    const onScroll = () => {
+    const onChange = () => {
       if (!frame) frame = requestAnimationFrame(read);
     };
-
     // Captured on the document, because scroll events do not bubble: this
     // catches the portal's inner scroller, the window, and anything else,
     // without having to work out which one it is.
     read();
-    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
-    window.addEventListener("resize", onScroll, { passive: true });
+    document.addEventListener("scroll", onChange, { capture: true, passive: true });
+    window.addEventListener("resize", onChange, { passive: true });
     return () => {
-      document.removeEventListener("scroll", onScroll, { capture: true });
-      window.removeEventListener("resize", onScroll);
+      document.removeEventListener("scroll", onChange, { capture: true });
+      window.removeEventListener("resize", onChange);
       if (frame) cancelAnimationFrame(frame);
     };
   }, []);
@@ -355,16 +355,11 @@ export function ExceptionsScreen({
 
   return (
     <div className="relative flex flex-col gap-4">
-      <span
-        ref={markerRef}
-        aria-hidden="true"
-        className="pointer-events-none absolute left-0 top-0 h-px w-px"
-      />
-
       {/* The whole top of the page pins, not just the filters. Scrolling a
           queue of several hundred used to take the title and the export away
-          with it. Built here rather than with the shared PageHeader because
-          this one has to shrink, which that component does not do. */}
+          with it. The title keeps its size while it is pinned: on a queue
+          people work down for an hour, a heading that changes size as they
+          scroll is movement with nothing to say. */}
       <div
         ref={toolbarRef}
         className="sticky top-0 z-20 flex flex-col"
@@ -372,34 +367,24 @@ export function ExceptionsScreen({
       >
         <div
           className="flex flex-wrap items-baseline gap-x-3 gap-y-1"
-          style={{
-            paddingTop: condensed ? 8 : 0,
-            paddingBottom: condensed ? 8 : 12,
-            transition: "padding 140ms ease",
-          }}
+          style={{ paddingBottom: 12 }}
         >
           <h1
             style={{
               margin: 0,
-              // Shrinks to the page-title step rather than disappearing, so
-              // there is always something naming the screen you are in.
-              fontSize: condensed ? 20 : 30,
-              lineHeight: condensed ? "26px" : "36px",
+              fontSize: 30,
+              lineHeight: "36px",
               fontWeight: "var(--weight-bold)",
               letterSpacing: "-0.02em",
               color: "var(--text-primary)",
-              transition: "font-size 140ms ease, line-height 140ms ease",
             }}
           >
             Exceptions
           </h1>
-          {/* On the title's own baseline, as the handoff has it, and the first
-              thing to go when the bar condenses. */}
-          {!condensed && (
-            <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-              Missing punches and rule breaks to resolve before close
-            </p>
-          )}
+          {/* On the title's own baseline, as the handoff has it. */}
+          <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+            Missing punches and rule breaks to resolve before close
+          </p>
           <div className="ml-auto flex items-center gap-2">
             <Button
               hierarchy="secondary"
@@ -496,12 +481,14 @@ export function ExceptionsScreen({
             with the cards, so moving from one person to the next never means
             scrolling back up for the list. */}
         <div
+          ref={railRef}
           className="ta-rail min-w-0 flex-[1_1_216px]"
           style={{ maxWidth: 256, "--ta-rail-top": `${toolbarHeight + 14}px` } as React.CSSProperties}
         >
           <div
             className="flex flex-col overflow-hidden"
             style={{
+              height: railHeight ?? undefined,
               background: "var(--surface-card)",
               border: "1px solid var(--stroke-secondary)",
               borderRadius: "var(--radius-m)",
@@ -513,13 +500,15 @@ export function ExceptionsScreen({
             >
               Employees ({people.length})
             </div>
-            <div className="flex max-h-[460px] flex-col overflow-y-auto">
+            <div
+              className={`ta-scroll flex min-h-0 flex-1 flex-col overflow-y-auto ${railHeight === null ? "max-h-[460px]" : ""}`}
+            >
               <RailRow
                 name="All employees"
                 summary="Everyone with an open exception"
                 count={rows.filter((r) => matchesQuery(r.employeeName)).length}
                 selected={!openEmployeeId}
-                rule="transparent"
+                severity={null}
                 onClick={() => setOpenEmployeeId(null)}
               />
               {people.length > 0 && people.filter((p) => matchesQuery(p.name)).length === 0 && (
@@ -539,7 +528,7 @@ export function ExceptionsScreen({
                     summary={p.kinds.join(", ")}
                     count={p.count}
                     selected={openEmployeeId === p.id}
-                    rule={SEVERITY_RULE[p.worst]}
+                    severity={p.worst}
                     // Clicking the person you already have open takes you back
                     // to everyone, so the rail is never a place you get stuck.
                     onClick={() => setOpenEmployeeId(openEmployeeId === p.id ? null : p.id)}
@@ -662,24 +651,29 @@ export function ExceptionsScreen({
  * One person in the rail, or the way back out to everybody.
  *
  * <p>A button rather than a link, because the rows it filters are already in
- * the browser. The left rule carries the worst thing this person has open, so
- * the rail is scannable without reading any of the summaries.
+ * the browser. The count sits in a pill tinted by the worst thing this person
+ * has open, so the rail is scannable without reading any of the summaries. It
+ * used to be a coloured rule down the left edge of every row, which on a list
+ * where nearly everybody has something critical turned the rail into a red
+ * stripe and said nothing.
  */
 function RailRow({
   name,
   summary,
   count,
   selected,
-  rule,
+  severity,
   onClick,
 }: {
   name: string;
   summary: string;
   count: number;
   selected: boolean;
-  rule: string;
+  /** 0 critical, 1 warning, 2 anything else; null for the All row. */
+  severity: number | null;
   onClick: () => void;
 }) {
+  const pill = severity === null ? COUNT_PILL[2] : COUNT_PILL[severity] ?? COUNT_PILL[2];
   return (
     <button
       type="button"
@@ -689,7 +683,6 @@ function RailRow({
       style={{
         boxSizing: "border-box",
         border: 0,
-        borderLeft: `3px solid ${selected ? "var(--fill-accent)" : rule}`,
         borderBottom: "1px solid var(--stroke-divider)",
         background: selected ? "var(--surface-info)" : "transparent",
         cursor: "pointer",
@@ -715,11 +708,22 @@ function RailRow({
       </span>
       <span
         className="tabular"
+        aria-label={`${count} open${severity === 0 ? ", critical" : severity === 1 ? ", warning" : ""}`}
         style={{
           flex: "none",
-          font: "var(--type-body2)",
-          fontWeight: "var(--weight-semibold)",
-          color: "var(--text-secondary)",
+          minWidth: 24,
+          height: 20,
+          padding: "0 7px",
+          boxSizing: "border-box",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: 999,
+          background: pill.bg,
+          color: pill.fg,
+          boxShadow: `inset 0 0 0 1px ${pill.line}`,
+          font: "var(--weight-semibold) 12px/16px var(--font-sans)",
+          whiteSpace: "nowrap",
         }}
       >
         {count}
