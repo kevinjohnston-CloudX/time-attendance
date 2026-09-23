@@ -994,7 +994,7 @@ export function OnSiteBoard({
           <section className={styles.summary} aria-label="Headcount">
             <div
               className={styles.summaryMain}
-              data-cards={CARD_STATUSES.filter((s) => s !== "NO_GATE_SCAN" || board.site.hasGateData).length}
+              data-cards={CARD_STATUSES.filter((s) => board.site.hasGateData || (s !== "NO_GATE_SCAN" && s !== "OFF_CLOCK")).length}
             >
               <button
                 type="button"
@@ -1003,7 +1003,7 @@ export function OnSiteBoard({
                 onClick={() => pickStatus("inside")}
                 title="Show everyone in the building"
               >
-                <span className={styles.summaryLabel}>In the building</span>
+                <span className={styles.summaryLabel}>{board.site.hasGateData ? "In the building" : "On the clock"}</span>
                 <span className={styles.summaryHeroFigure}>{insideTotal.toLocaleString()}</span>
                 <span className={styles.summarySub}>
                   {scheduled.length === 0
@@ -1011,7 +1011,7 @@ export function OnSiteBoard({
                     : `${scheduledArrived.toLocaleString()} of ${scheduled.length.toLocaleString()} scheduled have arrived`}
                 </span>
               </button>
-              {CARD_STATUSES.filter((s) => s !== "NO_GATE_SCAN" || board.site.hasGateData).map((s) => (
+              {CARD_STATUSES.filter((s) => board.site.hasGateData || (s !== "NO_GATE_SCAN" && s !== "OFF_CLOCK")).map((s) => (
                 <button
                   key={s}
                   type="button"

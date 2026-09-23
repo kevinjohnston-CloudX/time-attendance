@@ -9,6 +9,7 @@ import { describeScan, fmtTime, initialsOf } from "./presence-meta";
 import { iconFor } from "./person-panel";
 import styles from "./on-site.module.css";
 import { Face } from "./face";
+import { SummarySkeleton } from "./movements-view";
 
 /**
  * The scan log: every security gate and time clock scan at the site today,
@@ -584,19 +585,7 @@ export function ScanLogSkeleton() {
   );
   return (
     <div className="flex flex-col gap-4" aria-busy="true" aria-label="Loading the scan log">
-      <div className={`${styles.headcount} ${styles.headcountEven}`}>
-        {[0, 1].map((i) => (
-          <div key={i} className={styles.side}>
-            {bar(240, 44)}
-            <div className={styles.counters}>
-              {Array.from({ length: i ? 3 : 2 }, (_, j) => (
-                <span key={j}>{bar("100%", 58)}</span>
-              ))}
-            </div>
-            {bar("60%", 12)}
-          </div>
-        ))}
-      </div>
+      <SummarySkeleton cards={4} />
       <div className={styles.group}>
         <div className={styles.groupHead} style={{ padding: "14px 16px" }}>
           {bar(80, 18)}
