@@ -41,6 +41,8 @@ export const PERMISSIONS = [
   "REPORT_SCHEDULE",
   // Role management
   "ROLE_MANAGE",
+  // On Site: who is in the building right now, across a whole site
+  "PRESENCE_VIEW_ANY",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -117,6 +119,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "ACCRUAL_VIEW_OWN",
     "ACCRUAL_VIEW_ANY",
     "ACCRUAL_ADJUST_ANY",
+    "PRESENCE_VIEW_ANY",
   ],
   SYSTEM_ADMIN: [...PERMISSIONS],
   SUPER_ADMIN: [...PERMISSIONS],

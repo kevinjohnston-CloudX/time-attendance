@@ -14,6 +14,7 @@ export const RESOURCES = [
   "report",
   "audit",
   "role",
+  "presence",
 ] as const;
 
 export const ACTIONS = ["read", "write", "execute"] as const;
