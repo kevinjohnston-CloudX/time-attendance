@@ -7,6 +7,8 @@ import { locate } from "./nav-model";
 import { ThemeToggle } from "./theme-toggle";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { NotificationBell } from "./notification-bell";
+import { SegmentedControl } from "@/components/ui";
+import { navModeStore, useNavMode, type NavMode } from "./nav-mode";
 import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
 
 /**
@@ -31,6 +33,7 @@ export function TopBar({
   waiting: WaitingItem[];
 }) {
   const pathname = usePathname();
+  const navMode = useNavMode();
   const here = locate(pathname);
 
   return (
@@ -81,6 +84,24 @@ export function TopBar({
       <div className="flex-1" />
 
       <div className="flex flex-none items-center gap-2">
+        {/* The navigation layout switch, where the design puts it: a label and
+            a small segmented control immediately before the theme button. */}
+        <span
+          className="whitespace-nowrap uppercase"
+          style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)", letterSpacing: "0.05em" }}
+        >
+          Nav
+        </span>
+        <SegmentedControl
+          size="sm"
+          ariaLabel="Navigation layout"
+          value={navMode}
+          onChange={(next) => navModeStore.set(next as NavMode)}
+          items={[
+            { value: "grouped", label: "Grouped" },
+            { value: "rail", label: "Rail" },
+          ]}
+        />
         <ThemeToggle />
         <KeyboardShortcuts reachableHrefs={reachableHrefs} />
         <NotificationBell items={waiting} />

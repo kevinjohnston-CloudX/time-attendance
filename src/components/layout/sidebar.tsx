@@ -8,6 +8,7 @@ import { LogOut, PanelLeftClose, PanelLeft, Eye, X, Search } from "lucide-react"
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { BrandIcon, BrandMark } from "./brand-mark";
 import { openCommandPalette } from "./command-palette";
+import { useNavMode, type NavMode } from "./nav-mode";
 import {
   SECTIONS,
   type NavItem,
@@ -17,11 +18,6 @@ import {
 } from "./nav-model";
 
 const COLLAPSE_KEY = "ta.sidebar.collapsed";
-const NAV_MODE_KEY = "ta.sidebar.nav";
-
-/** The two navigation layouts the design offers. */
-export type NavMode = "grouped" | "rail";
-
 /**
  * Whether the sidebar is collapsed, kept in localStorage so the choice
  * survives a reload — the design system says the toggle persists.
@@ -67,45 +63,6 @@ const collapseStore = {
   },
 };
 
-/**
- * Grouped or Rail, kept in localStorage beside the collapse choice.
- *
- * <p>In the browser rather than on the person's record, which is where the
- * collapse choice already lives. A layout preference that followed someone
- * between machines while the control next to it did not would be two answers
- * to the same question.
- */
-const navModeStore = {
-  listeners: new Set<() => void>(),
-  subscribe(cb: () => void) {
-    navModeStore.listeners.add(cb);
-    window.addEventListener("storage", cb);
-    return () => {
-      navModeStore.listeners.delete(cb);
-      window.removeEventListener("storage", cb);
-    };
-  },
-  get(): NavMode {
-    try {
-      return window.localStorage.getItem(NAV_MODE_KEY) === "rail" ? "rail" : "grouped";
-    } catch {
-      return "grouped";
-    }
-  },
-  /** What the server renders. It has no browser to ask. */
-  getServer(): NavMode {
-    return "grouped";
-  },
-  set(next: NavMode) {
-    try {
-      window.localStorage.setItem(NAV_MODE_KEY, next);
-    } catch {
-      /* not worth failing the click over */
-    }
-    navModeStore.listeners.forEach((l) => l());
-  },
-};
-
 function initials(name?: string | null): string {
   if (!name) return "?";
   const parts = name.trim().split(/\s+/).slice(0, 2);
@@ -142,42 +99,6 @@ interface SidebarProps {
   canViewAs?: boolean;
   viewAsOptions?: { id: string; name: string }[];
   isInactive?: boolean;
-}
-
-/**
- * Grouped or Rail, as a pair of segments in the sidebar footer.
- *
- * <p>Two words rather than two icons: this switches the shape of the whole
- * navigation, and an unlabelled glyph for that is a control people press once
- * and then hunt for a way back from.
- */
-function NavModeSwitch({ mode, onChange }: { mode: NavMode; onChange: (m: NavMode) => void }) {
-  return (
-    <div
-      className="mt-1 flex h-8 w-full items-center rounded-md p-0.5"
-      role="group"
-      aria-label="Navigation layout"
-      style={{ background: "var(--surface-tertiary)", border: "1px solid var(--stroke-secondary)" }}
-    >
-      {(["grouped", "rail"] as const).map((m) => (
-        <button
-          key={m}
-          type="button"
-          onClick={() => onChange(m)}
-          aria-pressed={mode === m}
-          className="ta-hoverable h-full flex-1 whitespace-nowrap rounded"
-          style={{
-            font: "var(--type-body2)",
-            background: mode === m ? "var(--surface-card)" : "transparent",
-            color: mode === m ? "var(--text-primary)" : "var(--text-tertiary)",
-            boxShadow: mode === m ? "var(--shadow-card)" : "none",
-          }}
-        >
-          {m === "grouped" ? "Grouped" : "Rail"}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 /**
@@ -370,11 +291,7 @@ export function Sidebar({
     collapseStore.get,
     collapseStore.getServer,
   );
-  const navMode = useSyncExternalStore(
-    navModeStore.subscribe,
-    navModeStore.get,
-    navModeStore.getServer,
-  );
+  const navMode = useNavMode();
   const [showRolePicker, setShowRolePicker] = useState(false);
   const [pinnedSection, setPinnedSection] = useState<{ id: string; path: string } | null>(null);
   const rolePickerRef = useRef<HTMLDivElement>(null);
@@ -573,8 +490,6 @@ export function Sidebar({
           {!narrow && <span>Collapse</span>}
         </button>
         )}
-
-        {!narrow && <NavModeSwitch mode={mode} onChange={navModeStore.set} />}
 
         {narrow && (
           <button
