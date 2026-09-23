@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { getPresenceBoard, getPresenceDetail, getViewableSites } from "@/lib/presence/on-site.service";
 import { getScanLog, type ScanLogInput } from "@/lib/presence/scan-log.service";
+import { getSiteDay } from "@/lib/presence/movements.service";
 
 /**
  * On Site: who is in the building right now.
@@ -101,5 +102,35 @@ export const getOnSiteScanLog = withRBAC(
     });
     if (!log) throw new Error("NOT_FOUND");
     return log;
+  },
+);
+
+/**
+ * One site's whole day for the Movements view: everybody scheduled, on leave
+ * or seen, with every scan they made. The same gate and site check as the
+ * board. With `since`, answers `{ unchanged: true }` when nothing new has been
+ * recorded, so the poll costs one small query most of the time.
+ */
+export const getOnSiteMovements = withRBAC(
+  "PRESENCE_VIEW_ANY",
+  async (
+    { tenantId, employeeId, role },
+    input: { siteId: string; day?: string | null; since?: { watermark: string | null; generatedAt: string } | null },
+  ) => {
+    if (!tenantId) throw new Error("NOT_FOUND");
+    await assertSite(tenantId, { employeeId, role }, input.siteId);
+    const since =
+      input.since && typeof input.since.generatedAt === "string" && !Number.isNaN(Date.parse(input.since.generatedAt))
+        ? {
+            watermark: typeof input.since.watermark === "string" ? input.since.watermark : null,
+            generatedAt: input.since.generatedAt,
+          }
+        : null;
+    const day = await getSiteDay(tenantId, input.siteId, {
+      day: typeof input.day === "string" ? input.day.slice(0, 10) : null,
+      since,
+    });
+    if (!day) throw new Error("NOT_FOUND");
+    return day;
   },
 );

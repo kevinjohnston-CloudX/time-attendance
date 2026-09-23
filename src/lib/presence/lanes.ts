@@ -22,6 +22,9 @@ export interface Segment {
   open: boolean;
   /** Closed by the system overnight rather than by a scan. */
   closedBySystem: boolean;
+  /** The scans that opened and closed it. Null when it began before the day, or is still open. */
+  startScan: PresenceScan | null;
+  endScan: PresenceScan | null;
 }
 
 export interface ClockSegment extends Segment {
@@ -43,6 +46,8 @@ export interface DayLanes {
   };
   firstIn: number | null;
   lastOut: number | null;
+  /** Gate exits with no entry before them: out through the gate, never seen coming in. */
+  exitsWithoutEntry: PresenceScan[];
 }
 
 type ClockState = ClockKind | "OUT";
@@ -87,34 +92,47 @@ export function buildLanes({
 
   // ── Gate ──
   const gate: Segment[] = [];
+  const exitsWithoutEntry: PresenceScan[] = [];
   let inside: number | null = carryGate && carryGate.direction === "IN" && !carryGate.automatic ? from : null;
+  let insideScan: PresenceScan | null = null;
   for (const s of asc) {
     if (s.stream !== "SECURITY" || s.direction === "UNKNOWN") continue;
     const t = Date.parse(s.at);
     if (s.direction === "IN") {
-      if (inside === null) inside = t;
+      if (inside === null) {
+        inside = t;
+        insideScan = s;
+      }
     } else if (inside !== null) {
-      gate.push({ start: inside, end: t, open: false, closedBySystem: s.automatic });
+      gate.push({ start: inside, end: t, open: false, closedBySystem: s.automatic, startScan: insideScan, endScan: s });
       inside = null;
+      insideScan = null;
+    } else if (!s.automatic) {
+      exitsWithoutEntry.push(s);
     }
   }
-  if (inside !== null && to > inside) gate.push({ start: inside, end: to, open: true, closedBySystem: false });
+  if (inside !== null && to > inside)
+    gate.push({ start: inside, end: to, open: true, closedBySystem: false, startScan: insideScan, endScan: null });
 
   // ── Time clock ──
   // A scan the timecard refused changed nothing, so it moves no lane.
   const clock: ClockSegment[] = [];
   let state: ClockState = carryClock ? clockStateAfter(carryClock) ?? "OUT" : "OUT";
   let since = from;
+  let sinceScan: PresenceScan | null = null;
   for (const s of asc) {
     if (s.stream !== "TIME_CLOCK" || s.rejected) continue;
     const next = clockStateAfter(s);
     if (!next || next === state) continue;
     const t = Date.parse(s.at);
-    if (state !== "OUT" && t > since) clock.push({ kind: state, start: since, end: t, open: false, closedBySystem: s.automatic });
+    if (state !== "OUT" && t > since)
+      clock.push({ kind: state, start: since, end: t, open: false, closedBySystem: s.automatic, startScan: sinceScan, endScan: s });
     state = next;
     since = t;
+    sinceScan = s;
   }
-  if (state !== "OUT" && to > since) clock.push({ kind: state, start: since, end: to, open: true, closedBySystem: false });
+  if (state !== "OUT" && to > since)
+    clock.push({ kind: state, start: since, end: to, open: true, closedBySystem: false, startScan: sinceScan, endScan: null });
 
   const work = clock.filter((c) => c.kind === "WORK");
   const minutes = (segs: { start: number; end: number }[]) =>
@@ -141,6 +159,7 @@ export function buildLanes({
     },
     firstIn: ins.length ? ins[0] : null,
     lastOut: outs.length ? outs[outs.length - 1] : null,
+    exitsWithoutEntry,
   };
 }
 

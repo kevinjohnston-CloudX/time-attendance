@@ -196,3 +196,47 @@ export interface ScanLogPage {
    */
   watermark: string | null;
 }
+
+/* ── Movements: one site, one day, everybody ───────────────────────────── */
+
+/** Somebody the day concerns: scanned, scheduled, or on approved leave. */
+export interface DayPerson {
+  id: string;
+  name: string;
+  employeeCode: string;
+  departmentId: string | null;
+  department: string | null;
+  shiftId: string | null;
+  shift: string | null;
+  /** The tablet photo, once the photo store is connected. */
+  photoUrl: string | null;
+  inactive: boolean;
+  /** That day's schedule in site time, HH:mm. */
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
+  onLeave: boolean;
+}
+
+/**
+ * Everything that happened at one site on one day, as it was recorded. The
+ * browser turns it into movements with the same lane logic the person panel
+ * uses, so a line in the table and a stretch on the panel's lanes are always
+ * the same stretch, and the open ones keep counting between refreshes.
+ */
+export interface SiteDay {
+  site: { id: string; name: string; timezone: string; hasGateData: boolean };
+  day: string;
+  today: string;
+  dayStart: string;
+  dayEnd: string;
+  generatedAt: string;
+  /** The newest time any of the day's scans was recorded, for "has anything changed". */
+  watermark: string | null;
+  people: DayPerson[];
+  /** Each person's scans that day, oldest first, keyed by person id. */
+  scans: Record<string, PresenceScan[]>;
+  /** Each person's last scan of each kind before the day, which sets where it starts. */
+  carry: Record<string, { gate: PresenceScan | null; clock: PresenceScan | null }>;
+  /** The day held more scans than one answer carries; the oldest were left out. */
+  truncated: boolean;
+}

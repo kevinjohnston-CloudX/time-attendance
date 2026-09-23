@@ -32,7 +32,7 @@ import type {
  * that started yesterday evening plus a missed auto-close run, without letting
  * a week-old arrival keep somebody "inside" forever.
  */
-const LOOKBACK_MS = 36 * 60 * 60 * 1000;
+export const LOOKBACK_MS = 36 * 60 * 60 * 1000;
 
 /** Rows that record what the system did, not what a reader saw. */
 const SYSTEM_SOURCES = ["AUTO_CLOSE", "SEEDED"] as const;
@@ -422,7 +422,7 @@ export async function getPresenceDetail(
   };
 }
 
-type ScanRow = {
+export type ScanRow = {
   id: string;
   scanTime: Date;
   stream: "SECURITY" | "TIME_CLOCK";
@@ -433,7 +433,7 @@ type ScanRow = {
   outcome: string;
 };
 
-function toScan(s: ScanRow): PresenceScan {
+export function toScan(s: ScanRow): PresenceScan {
   return {
     id: s.id,
     at: s.scanTime.toISOString(),
