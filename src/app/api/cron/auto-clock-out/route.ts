@@ -10,8 +10,9 @@ import { endOfDayInTz, computeShiftExpiry } from "@/lib/utils/date";
 // and creates a SYSTEM unapproved CLOCK_OUT for any employee whose last punch
 // leaves them in a non-OUT state once their workday expansion window has expired.
 //
-// With workday expansion enabled:  auto-close fires at shift end time once
-//   (shift end + workdayExpansionAfterMinutes) has passed.
+// With workday expansion enabled:  auto-close fires once
+//   (shift end + workdayExpansionAfterMinutes) has passed, and the close is
+//   stamped at the END of that day — never at shift end (see below).
 // Without expansion: auto-close fires at 23:59:59 local time (legacy behavior).
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const secret = process.env.CRON_SECRET;
@@ -77,7 +78,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       let closeAtTime: Date;
 
       if (ruleSet?.workdayExpansionEnabled && ruleSet.workdayExpansionUseShiftDef && shift) {
-        // Shift-aware expansion: close at shift end once the expansion window has expired.
+        // Shift-aware expansion: act once the expansion window has expired.
         const { shiftEndUtc, expiryUtc } = computeShiftExpiry(
           shift,
           localDate,
@@ -90,7 +91,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           continue; // expansion window still open — employee may punch out naturally
         }
 
-        closeAtTime = shiftEndUtc;
+        // Close at the END of the punch's local day, not at scheduled shift end.
+        // A SYSTEM close stamped at 15:30 erases every hour somebody worked
+        // past 15:30, and the people still showing IN at night are exactly the
+        // ones who worked late and forgot the clock-out. End of day over-states
+        // instead, which is the direction HR can see and pull back — the row is
+        // left unapproved for precisely that. Never earlier than shift end, so
+        // a night shift that legitimately ends after midnight keeps its end.
+        const eod = endOfDayInTz(localDate, timezone);
+        closeAtTime = eod > shiftEndUtc ? eod : shiftEndUtc;
       } else {
         // Legacy behavior: close at 23:59:59 local time of the punch date.
         const localToday = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(now);

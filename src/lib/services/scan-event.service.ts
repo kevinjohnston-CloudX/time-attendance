@@ -39,9 +39,9 @@ export type RecordedScan = {
    */
   duplicate: boolean;
   /**
-   * True when this is a distinct scan that arrived within {@link REREAD_WINDOW_MS}
-   * of the same badge's previous one in the same stream — the reader firing
-   * twice rather than the person crossing twice.
+   * True when this is a distinct scan that arrived inside the stream's re-read
+   * window (see {@link rereadWindowMsFor}) of the same badge's previous one in
+   * the same stream — the reader firing twice rather than the person crossing.
    *
    * <p>Unlike {@link duplicate} the row IS stored: it is what the reader did,
    * and Oracle logs both crossings too, so dropping it would make the two
@@ -282,7 +282,9 @@ export async function recordScanEvent(input: RecordScanInput): Promise<RecordedS
               direction: { in: ["IN", "OUT"] },
               scanTime: {
                 lt: input.scanTime,
-                gte: new Date(input.scanTime.getTime() - REREAD_WINDOW_MS),
+                gte: new Date(
+                  input.scanTime.getTime() - rereadWindowMsFor(input.stream),
+                ),
               },
             },
             orderBy: { scanTime: "desc" },
@@ -386,6 +388,51 @@ export async function recordScanEvent(input: RecordScanInput): Promise<RecordedS
  * essentially all the repeats and almost nothing real.
  */
 export const REREAD_WINDOW_MS = 60_000;
+
+/**
+ * The gate's own window, which is shorter so that somebody who turns straight
+ * back round is allowed to record it instead of being told they already entered.
+ *
+ * <p>Twelve seconds, chosen rather than derived. Sixty was measured, five was
+ * tried on 2026-09-22, and this is where it settled. Over the fourteen days to
+ * that date, 248 gate pairs fell under twelve seconds apart and stay suppressed
+ * here, while 187 sit in the twelve-to-sixty band and now count as crossings.
+ * 107 of those 187 are ones sixty seconds was absorbing, so this gives up about
+ * eight suppressed repeats a day.
+ *
+ * <p>What that costs is known rather than guessed. Of the 253 pairs the sixty
+ * second window absorbed between five and sixty seconds, 100 are followed by a
+ * time clock punch from the same badge inside ninety minutes, which is proof the
+ * person never left, and 97 more have no further gate scan for over six hours,
+ * which is the shape of a repeat read followed by the real end-of-shift exit.
+ * Each one that now counts is a crossing that did not happen, and a crossing
+ * that did not happen inverts every scan the badge makes for the rest of the day.
+ *
+ * <p>There is no cliff to aim for below a minute. The gaps run 145 pairs at five
+ * to ten seconds, 244 at ten to thirty and 35 at thirty to sixty, so a value in
+ * this range is a judgement about how much repeat-suppression to trade away, not
+ * a closer reading of the data.
+ *
+ * <p>Which is why it is settable without a deploy. GATE_REREAD_WINDOW_MS in the
+ * Vercel environment overrides it, and setting it to 60000 restores the old
+ * behaviour at the gate. That is the lever to reach for if inverted directions
+ * reappear at NJ299, rather than a revert.
+ */
+export const GATE_REREAD_WINDOW_MS = readWindowMs("GATE_REREAD_WINDOW_MS", 12_000);
+
+function readWindowMs(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const parsed = Number(raw);
+  // A typo in an environment variable must not silently disable the guard that
+  // keeps a repeat read from inverting somebody's day.
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+/** Security repeats itself far more than the clock does, and matters more. */
+export function rereadWindowMsFor(stream: ScanStream): number {
+  return stream === "SECURITY" ? GATE_REREAD_WINDOW_MS : REREAD_WINDOW_MS;
+}
 
 /**
  * Records what the timecard pipeline did with a scan already written down.
@@ -493,7 +540,18 @@ export type DiscrepancyKind =
   | "REJECTED"
   | "UNRESOLVED"
   | "NO_EMPLOYEE"
-  | "DIRECTION_MISMATCH";
+  | "DIRECTION_MISMATCH"
+  | "GATE_CONTRADICTS_CLOCK";
+
+/**
+ * How close a time-clock punch has to be to a gate scan to witness it.
+ *
+ * Arrivals badge the gate and then clock in; departures clock out and then
+ * badge the gate. Ninety minutes covers the walk in both directions with room
+ * for a queue at the clock, and is short enough that a lunch break does not
+ * pair a morning arrival with a midday exit.
+ */
+const GATE_WITNESS_WINDOW_MS = 90 * 60_000;
 
 export type Discrepancy = {
   scanEventId: string;
@@ -515,9 +573,10 @@ export type Discrepancy = {
  * Every tablet scan in the window that the timecard does not cleanly account
  * for.
  *
- * Only TIME_CLOCK scans are compared. Gate scans are excluded by design — they
- * never produce a punch, so "no punch" is their normal state and flagging them
- * would bury the real findings under thousands of expected rows.
+ * TIME_CLOCK scans get the punch checks. Gate scans get exactly one check of
+ * their own, at the end: a gate row never produces a punch, so "no punch" is
+ * its normal state — but the direction it GUESSED can be judged against the
+ * time clock, which is an independent witness.
  *
  * `to` is exclusive. Pass a window that has closed: a scan taken seconds ago is
  * legitimately still PENDING.
@@ -593,6 +652,89 @@ export async function findScanDiscrepancies(
           description: `The tablets' record says this ${when} scan was a clock ${s.direction}, but the timecard recorded ${s.timecardPunchType ?? "a punch"} leaving the employee ${s.timecardStateAfter ?? "unknown"}. One of the two has missed a punch.` });
       }
     }
+  }
+
+  // Gate direction is inferred by alternation, and alternation is only right
+  // when every crossing was seen. When a reader CloudTime is not connected to
+  // takes the morning arrivals, the evening exit is the first thing CloudTime
+  // sees and it is called IN — 91 times at NJ299 and 16 at NJ3 on 2026-09-22.
+  // The time clock saw those same people clock OUT minutes before. That is the
+  // contradiction surfaced here, the same day, in the exceptions view.
+  //
+  // Only guessed rows are judged: SOURCE_COLUMN and AUTO_CLOSE state a fact.
+  // The witness is asymmetric on purpose. A clock-out shortly BEFORE the gate
+  // means leaving; a clock-in shortly AFTER the gate means arriving. A clock-in
+  // before the gate is not a witness — that is someone stepping out after
+  // starting work, and the gate calling it OUT is correct.
+  const gateScans = await db.scanEvent.findMany({
+    where: {
+      stream: "SECURITY",
+      employeeId: { not: null },
+      direction: { in: ["IN", "OUT"] },
+      directionSource: { in: ["ALTERNATION", "REREAD"] },
+      scanTime: { gte: from, lt: to },
+      ...(tenantId ? { tenantId } : {}),
+    },
+    orderBy: { scanTime: "asc" },
+    select: {
+      id: true, employeeId: true, badgeCode: true, deviceName: true,
+      scanTime: true, stream: true, direction: true,
+      employee: { select: { user: { select: { name: true } } } },
+    },
+  });
+
+  for (const g of gateScans) {
+    const employeeId = g.employeeId as string;
+    const [before, after] = await Promise.all([
+      db.scanEvent.findFirst({
+        where: {
+          employeeId, stream: "TIME_CLOCK", outcome: "PUNCH_RECORDED",
+          timecardStateAfter: { not: null },
+          scanTime: { gte: new Date(g.scanTime.getTime() - GATE_WITNESS_WINDOW_MS), lte: g.scanTime },
+        },
+        orderBy: { scanTime: "desc" },
+        select: { scanTime: true, timecardStateAfter: true, timecardPunchType: true },
+      }),
+      db.scanEvent.findFirst({
+        where: {
+          employeeId, stream: "TIME_CLOCK", outcome: "PUNCH_RECORDED",
+          timecardPunchType: "CLOCK_IN",
+          scanTime: { gte: g.scanTime, lte: new Date(g.scanTime.getTime() + GATE_WITNESS_WINDOW_MS) },
+        },
+        orderBy: { scanTime: "asc" },
+        select: { scanTime: true, timecardStateAfter: true, timecardPunchType: true },
+      }),
+    ]);
+
+    // Leaving: clocked out, then badged the gate.
+    const leaving = before && before.timecardStateAfter !== "WORK" ? before : null;
+    // Arriving: badged the gate, then clocked in.
+    const arriving = after ?? null;
+    // Both within the window is a short break, not a verdict.
+    if ((leaving && arriving) || (!leaving && !arriving)) continue;
+
+    const expected: ScanDirection = leaving ? "OUT" : "IN";
+    if (expected === g.direction) continue;
+
+    const witness = (leaving ?? arriving)!;
+    out.push({
+      scanEventId: g.id,
+      kind: "GATE_CONTRADICTS_CLOCK",
+      employeeId,
+      employeeName: g.employee?.user?.name?.trim() ?? null,
+      badgeCode: g.badgeCode,
+      deviceName: g.deviceName,
+      scanTime: g.scanTime,
+      stream: g.stream,
+      scanDirection: g.direction,
+      timecardPunchType: witness.timecardPunchType,
+      timecardStateAfter: witness.timecardStateAfter,
+      rejectionReason: null,
+      description:
+        `The gate at ${g.deviceName ?? "an unknown reader"} recorded the ${g.scanTime.toISOString()} scan as ${g.direction}, ` +
+        `but the employee ${leaving ? "clocked out" : "clocked in"} at ${witness.scanTime.toISOString()}, ` +
+        `${leaving ? "just before" : "just after"} it. The gate missed an earlier crossing; this scan was almost certainly ${expected}.`,
+    });
   }
 
   return out;
