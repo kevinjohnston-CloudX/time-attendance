@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
-import { Banner, Button, Input } from "@/components/ui";
+import { Banner, Button, Checkbox, Input } from "@/components/ui";
 import { BrandLockup } from "@/components/layout/brand-mark";
+import { rememberedEmailStore, useRememberedEmail } from "@/lib/remembered-email";
 
 /**
  * Sign-in, as the portal design draws it: a 360px column on the card surface
@@ -19,10 +20,34 @@ import { BrandLockup } from "@/components/layout/brand-mark";
  * decorative panel above the fold means scrolling to reach the password box.
  */
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const remembered = useRememberedEmail();
+  // Null until the person touches them, so both fall back to what this
+  // browser remembered. Stored values arrive after the first render, and
+  // deriving from them avoids copying them into state from an effect.
+  const [typedEmail, setTypedEmail] = useState<string | null>(null);
+  const [rememberChoice, setRememberChoice] = useState<boolean | null>(null);
+  const email = typedEmail ?? remembered;
+  const remember = rememberChoice ?? remembered !== "";
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // With the address already filled in, the password is the next thing to
+  // type, so the cursor starts there. Once only: never pull focus back later.
+  const focused = useRef(false);
+  useEffect(() => {
+    if (remembered && !focused.current) {
+      focused.current = true;
+      document.getElementById("password")?.focus();
+    }
+  }, [remembered]);
+
+  function handleRememberChange(next: boolean) {
+    setRememberChoice(next);
+    // Unticking forgets straight away, not at the next sign-in, so someone
+    // walking away from a shared computer leaves nothing behind.
+    if (!next) rememberedEmailStore.forget();
+  }
 
   async function handleGoogleSignIn() {
     setError("");
@@ -46,6 +71,9 @@ export default function LoginPage() {
       setError("Invalid email or password.");
       return;
     }
+
+    if (remember) rememberedEmailStore.save(email.trim());
+    else rememberedEmailStore.forget();
 
     // Deliberately left loading: the page is about to be replaced, and
     // re-enabling the button first invites a second submit into the gap.
@@ -91,11 +119,21 @@ export default function LoginPage() {
               type="email"
               label="Work Email"
               autoComplete="username"
+              // Clearing a remembered address leaves it one click away. A
+              // datalist rather than a menu of our own, because the browser
+              // merges it into its own suggestions: two dropdowns would open
+              // on top of each other for anyone with a saved password.
+              list={remembered ? "remembered-email" : undefined}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => setTypedEmail(e.target.value)}
               required
               placeholder="you@company.com"
             />
+            {remembered && (
+              <datalist id="remembered-email">
+                <option value={remembered} />
+              </datalist>
+            )}
 
             <Input
               id="password"
@@ -109,7 +147,13 @@ export default function LoginPage() {
               placeholder="••••••••"
             />
 
-            <div className="flex justify-end">
+            <div className="flex items-center justify-between gap-3">
+              <Checkbox
+                id="remember"
+                checked={remember}
+                onChange={handleRememberChange}
+                label={<span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>Remember me</span>}
+              />
               <Link
                 href="/forgot-password"
                 style={{ font: "var(--type-body2)", color: "var(--link-accent)" }}

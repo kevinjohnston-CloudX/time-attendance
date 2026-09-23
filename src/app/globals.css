@@ -476,3 +476,18 @@ tbody .ta-row:hover {
 .ta-tph-row { transition: background-color 120ms ease; }
 .ta-tph-row:hover { background: var(--surface-tertiary) !important; }
 .ta-day:hover { box-shadow: inset 0 0 0 1px var(--stroke-hover) !important; }
+
+/* The shared checkbox hides its real input, so without this a keyboard user
+   tabbing through a form cannot see when the box has focus. An outline, not a
+   shadow: the box draws its border as an inset shadow, which a shadow ring
+   would replace. */
+.wms-check:focus-visible + span {
+  outline: 3px solid var(--wms-color-primary-100);
+}
+
+/* Sign-in's remembered address is offered through a datalist, which Chrome
+   marks with a picker arrow of its own. The suggestion still opens on click
+   and on typing; the arrow only looked like a broken select. */
+#email::-webkit-calendar-picker-indicator {
+  display: none !important;
+}

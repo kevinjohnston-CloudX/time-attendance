@@ -202,7 +202,7 @@ export function Checkbox({
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange?.(e.target.checked)}
-        className="sr-only"
+        className="wms-check sr-only"
       />
       <span
         aria-hidden="true"
