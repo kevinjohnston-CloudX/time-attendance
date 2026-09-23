@@ -84,6 +84,15 @@ const SEVERITY_RULE = [
  * business tool uses, and they are what a supervisor already knows from the
  * rest of their software. The quiet line beside each one carries the meaning.
  */
+/**
+ * How many cards are drawn before the list asks.
+ *
+ * <p>A site mid-period can hold a few thousand open exceptions, and each card
+ * here is a form. Rendering all of them costs seconds of layout for a screen
+ * nobody reads past the first block of.
+ */
+const PAGE_SIZE = 25;
+
 const SEVERITY_GROUP = [
   { label: "Critical", hint: "Hours stay wrong until these are corrected" },
   { label: "Warning", hint: "A rule was broken. Confirm or correct it." },
@@ -123,7 +132,8 @@ export function ExceptionsScreen({
 }: Props) {
   const router = useRouter();
   const { message: toast, flash } = useToast();
-  const [query, setQuery] = useState("");
+  const [query, setQueryState] = useState("");
+  const [shown, setShown] = useState(PAGE_SIZE);
 
   /**
    * Who is open in the rail.
@@ -134,9 +144,21 @@ export function ExceptionsScreen({
    * employeeId in the address bar is still honoured on the way in, so a link
    * to one person's exceptions lands where it always did.
    */
-  const [openEmployeeId, setOpenEmployeeId] = useState<string | null>(
+  const [openEmployeeId, setOpenEmployeeIdState] = useState<string | null>(
     selected.employeeId ?? null,
   );
+
+  // Narrowing the list always starts it again from the top, so "show more"
+  // never carries a page count over from a list that is no longer on screen.
+  const setQuery = useCallback((value: string) => {
+    setQueryState(value);
+    setShown(PAGE_SIZE);
+  }, []);
+
+  const setOpenEmployeeId = useCallback((id: string | null) => {
+    setOpenEmployeeIdState(id);
+    setShown(PAGE_SIZE);
+  }, []);
 
   /**
    * The bar pins, so the rail has to pin below it rather than at a guessed
@@ -231,7 +253,7 @@ export function ExceptionsScreen({
       setOpenEmployeeId(null);
       router.push(`/supervisor/exceptions${qs ? `?${qs}` : ""}`, { scroll: false });
     },
-    [router, selected],
+    [router, selected, setOpenEmployeeId],
   );
 
   /**
@@ -307,6 +329,8 @@ export function ExceptionsScreen({
     [rows, openEmployeeId, matchesQuery],
   );
 
+  const page = useMemo(() => visible.slice(0, shown), [visible, shown]);
+
   const dirty = Boolean(
     query ||
       openEmployeeId ||
@@ -317,8 +341,8 @@ export function ExceptionsScreen({
       selected.payPeriodId,
   );
 
-  const shown = visible.length;
-  const countLabel = shown === total ? `${total} open` : `${shown} of ${total}`;
+  const matching = visible.length;
+  const countLabel = matching === total ? `${total} open` : `${matching} of ${total}`;
 
   function exportUrl(): string {
     const params = new URLSearchParams();
@@ -498,6 +522,14 @@ export function ExceptionsScreen({
                 rule="transparent"
                 onClick={() => setOpenEmployeeId(null)}
               />
+              {people.length > 0 && people.filter((p) => matchesQuery(p.name)).length === 0 && (
+                <p
+                  className="px-3.5 py-4 text-center"
+                  style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+                >
+                  No match
+                </p>
+              )}
               {people
                 .filter((p) => matchesQuery(p.name))
                 .map((p) => (
@@ -531,12 +563,12 @@ export function ExceptionsScreen({
               }
             />
           ) : (
-            visible.map((ex, i) => {
+            page.map((ex, i) => {
               const severity = severityRank(ex.exceptionType);
               const group = SEVERITY_GROUP[severity];
               // A heading only where the severity changes, which is what the
               // sort above makes possible: one block per severity, in order.
-              const opensGroup = i === 0 || severityRank(visible[i - 1].exceptionType) !== severity;
+              const opensGroup = i === 0 || severityRank(page[i - 1].exceptionType) !== severity;
               const groupCount = visible.filter(
                 (r) => severityRank(r.exceptionType) === severity,
               ).length;
@@ -588,6 +620,24 @@ export function ExceptionsScreen({
                 </div>
               );
             })
+          )}
+
+          {visible.length > page.length && (
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <span
+                className="tabular"
+                style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+              >
+                Showing {page.length} of {visible.length}
+              </span>
+              <Button
+                hierarchy="secondary"
+                size="sm"
+                onClick={() => setShown((n) => n + PAGE_SIZE)}
+              >
+                Show {Math.min(PAGE_SIZE, visible.length - page.length)} more
+              </Button>
+            </div>
           )}
         </div>
       </div>
