@@ -197,6 +197,39 @@ export function OnSiteBoard({
     };
   }, [siteId, refresh]);
 
+  // ── The pinned bar ──────────────────────────────────────────────────────
+  // The title, the actions and the find row stay on screen while the faces
+  // scroll, and shrink to one slim row once the page has moved. Measured the
+  // way Leave Requests does it: the distance between the pinned bar and a
+  // marker that scrolls away, so it works whichever element is scrolling.
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const markerRef = useRef<HTMLSpanElement | null>(null);
+  const [condensed, setCondensed] = useState(false);
+
+  useEffect(() => {
+    let frame = 0;
+    const read = () => {
+      frame = 0;
+      const bar = barRef.current;
+      const marker = markerRef.current;
+      if (!bar || !marker) return;
+      const travelled = bar.getBoundingClientRect().top - marker.getBoundingClientRect().top;
+      // Two thresholds, so a page sitting right on the line cannot flicker.
+      setCondensed((prev) => (prev ? travelled > 4 : travelled > 16));
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(read);
+    };
+    read();
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    window.addEventListener("resize", onScroll, { passive: true });
+    return () => {
+      document.removeEventListener("scroll", onScroll, { capture: true });
+      window.removeEventListener("resize", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
+
   // The clock the durations and "updated 12 seconds ago" read from.
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 5_000);
@@ -352,8 +385,123 @@ export function OnSiteBoard({
   );
 
   return (
-    <div className={`${styles.board} flex flex-col gap-4`}>
-      <Header siteName={siteName} liveLine={liveLine} actions={actions} />
+    <div className={`${styles.board} relative flex flex-col gap-4`}>
+      <span ref={markerRef} aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-px w-px" />
+
+      <div ref={barRef} className="sticky top-0 z-20 flex flex-col" style={{ background: "var(--surface-page)" }}>
+        <div
+          className="flex flex-wrap items-center gap-x-3 gap-y-2"
+          style={{ paddingTop: condensed ? 8 : 0, paddingBottom: condensed ? 8 : 12, transition: "padding 140ms ease" }}
+        >
+          <div className="flex min-w-60 flex-1 flex-col gap-0.5">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+              <h1
+                className="truncate"
+                style={{
+                  margin: 0,
+                  fontSize: condensed ? 20 : 30,
+                  lineHeight: condensed ? "26px" : "36px",
+                  fontWeight: "var(--weight-bold)",
+                  letterSpacing: "-0.02em",
+                  color: "var(--text-primary)",
+                  transition: "font-size 140ms ease, line-height 140ms ease",
+                }}
+              >
+                {siteName ? `On Site at ${siteName}` : "On Site"}
+              </h1>
+              {/* Slim, the bar keeps the one number this page exists for and
+                  whether it is still live, and gives up the sentence. */}
+              {condensed && board && (
+                <span
+                  className="tabular inline-flex items-center gap-2 whitespace-nowrap"
+                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                  title={liveState === "live" ? "Live" : liveState === "paused" ? "Paused" : "Not updating"}
+                >
+                  <span className={styles.live} data-state={liveState} aria-hidden="true" />
+                  <span>
+                    <strong style={{ color: "var(--text-primary)", fontWeight: "var(--weight-semibold)" }}>
+                      {insideTotal.toLocaleString()}
+                    </strong>{" "}
+                    in the building
+                  </span>
+                  {status !== "inside" && (
+                    <button
+                      type="button"
+                      className="ta-chip inline-flex items-center gap-1.5 whitespace-nowrap"
+                      onClick={() => setStatus("inside")}
+                      aria-label={`Showing ${STATUS_META[status].label}. Show everyone inside`}
+                      style={{
+                        height: 24,
+                        padding: "0 8px 0 10px",
+                        borderRadius: 999,
+                        border: "1px solid var(--stroke-secondary)",
+                        background: "var(--surface-card)",
+                        font: "var(--type-body2)",
+                        fontWeight: "var(--weight-medium)",
+                        color: "var(--text-secondary)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {STATUS_META[status].label}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                        <path d="M18 6 6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </span>
+              )}
+            </div>
+            {!condensed && <div style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>{liveLine}</div>}
+          </div>
+          <div className="flex items-center gap-2">{actions}</div>
+        </div>
+
+        {board && !switching && failure !== "access" && (
+              <div className="flex flex-wrap items-center gap-2.5 pb-3">
+                <SearchInput
+                  placeholder="Name or employee code"
+                  value={query}
+                  onValueChange={(v) => {
+                    setQuery(v);
+                    setExpanded({});
+                  }}
+                />
+                {departments.length > 0 && (
+                  <FilterSelectChip label="Department" value={dept} options={departments} onChange={setDept} />
+                )}
+                {shifts.length > 0 && <FilterSelectChip label="Shift" value={shift} options={shifts} onChange={setShift} />}
+                {isFiltered && (
+                  <Button
+                    hierarchy="link"
+                    size="sm"
+                    onClick={() => {
+                      setQuery("");
+                      setDept("");
+                      setShift("");
+                    }}
+                  >
+                    Clear all
+                  </Button>
+                )}
+                <span
+                  className="tabular ml-auto whitespace-nowrap"
+                  style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+                >
+                  {matches.length.toLocaleString()} {matches.length === 1 ? "person" : "people"}
+                </span>
+                <SegmentedControl
+                  ariaLabel="Layout"
+                  size="sm"
+                  items={[
+                    { value: "photos", label: "Photos" },
+                    { value: "list", label: "List" },
+                  ]}
+                  value={view}
+                  onChange={(v) => setView(v as View)}
+                />
+              </div>
+        )}
+      </div>
 
       {failure === "access" ? (
         <Card padding={0}>
@@ -432,51 +580,6 @@ export function OnSiteBoard({
               </p>
             </div>
           </section>
-
-          {/* ── Find ──────────────────────────────────────────────────── */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            <SearchInput
-              placeholder="Name or employee code"
-              value={query}
-              onValueChange={(v) => {
-                setQuery(v);
-                setExpanded({});
-              }}
-            />
-            {departments.length > 0 && (
-              <FilterSelectChip label="Department" value={dept} options={departments} onChange={setDept} />
-            )}
-            {shifts.length > 0 && <FilterSelectChip label="Shift" value={shift} options={shifts} onChange={setShift} />}
-            {isFiltered && (
-              <Button
-                hierarchy="link"
-                size="sm"
-                onClick={() => {
-                  setQuery("");
-                  setDept("");
-                  setShift("");
-                }}
-              >
-                Clear all
-              </Button>
-            )}
-            <span
-              className="tabular ml-auto whitespace-nowrap"
-              style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
-            >
-              {matches.length.toLocaleString()} {matches.length === 1 ? "person" : "people"}
-            </span>
-            <SegmentedControl
-              ariaLabel="Layout"
-              size="sm"
-              items={[
-                { value: "photos", label: "Photos" },
-                { value: "list", label: "List" },
-              ]}
-              value={view}
-              onChange={(v) => setView(v as View)}
-            />
-          </div>
 
           {/* ── People ────────────────────────────────────────────────── */}
           {matches.length === 0 ? (
