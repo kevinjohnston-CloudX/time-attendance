@@ -1,0 +1,52 @@
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
+import { userHasPermission } from "@/lib/rbac/check-permission";
+import { getOnSiteBoard, getOnSiteSites } from "@/actions/presence.actions";
+import { OnSiteBoard } from "@/components/presence/on-site-board";
+
+/**
+ * On Site: who is in the building right now, for HR and loss prevention.
+ *
+ * <p>This half picks the site and draws the first snapshot on the server, so
+ * the page opens full rather than empty-then-full. From then on the board
+ * polls every 30 seconds on its own; the server keeps no timer.
+ *
+ * <p>The permission is checked here for the page and again inside every
+ * action the board calls, because the board polls with whatever site id the
+ * browser sends.
+ */
+export default async function OnSitePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ site?: string; status?: string; dept?: string; shift?: string; view?: string }>;
+}) {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  if (!(await userHasPermission(session.user, "PRESENCE_VIEW_ANY"))) redirect("/dashboard");
+
+  const params = (await searchParams) ?? {};
+  const sitesResult = await getOnSiteSites(undefined);
+  if (!sitesResult.success) redirect("/dashboard");
+
+  const { sites, defaultSiteId } = sitesResult.data;
+  const siteId = sites.some((s) => s.id === params.site) ? params.site! : defaultSiteId;
+
+  const boardResult = siteId ? await getOnSiteBoard({ siteId }) : null;
+  // A failure here is a real fault, not an empty building: the error boundary
+  // says so and offers a retry, rather than drawing a board of zeros.
+  if (boardResult && !boardResult.success) throw new Error(boardResult.error);
+
+  return (
+    <OnSiteBoard
+      sites={sites}
+      initialSiteId={siteId}
+      initialBoard={boardResult?.success ? boardResult.data : null}
+      initialFilters={{
+        status: params.status ?? null,
+        dept: params.dept ?? null,
+        shift: params.shift ?? null,
+        view: params.view === "list" ? "list" : "photos",
+      }}
+    />
+  );
+}
