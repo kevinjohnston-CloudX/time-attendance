@@ -123,10 +123,27 @@ function localDateOf(instant: Date, timezone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(instant);
 }
 
-export async function loadTeamPunchHistory(
-  viewer: Viewer,
-  params: PunchHistoryParams,
-): Promise<PunchHistoryData> {
+/**
+ * A superseded punch goes directly above the correction that replaced it,
+ * whatever the two times are, so the pair reads as what was recorded and then
+ * what it was changed to. Sorted by time alone, a later original lands under
+ * its own correction. The screen and the export both use it.
+ */
+function pairCorrections<T extends { id: string; correctedById: string | null }>(rows: T[]): T[] {
+  const ids = new Set(rows.map((p) => p.id));
+  const ordered = rows.filter((p) => !(p.correctedById && ids.has(p.correctedById)));
+  for (const original of rows) {
+    if (!original.correctedById || !ids.has(original.correctedById)) continue;
+    ordered.splice(ordered.findIndex((p) => p.id === original.correctedById), 0, original);
+  }
+  return ordered;
+}
+
+/**
+ * Who this viewer may see, narrowed by the filters and the search. Shared by
+ * the screen and the export, so the two cannot drift apart on it.
+ */
+async function resolveScope(viewer: Viewer, params: PunchHistoryParams) {
   const tenantId = viewer.tenantId ?? undefined;
   const [isPayroll, canResolveExceptions] = await Promise.all([
     userHasPermission(viewer, "PAY_PERIOD_MANAGE"),
@@ -159,6 +176,62 @@ export async function loadTeamPunchHistory(
         ],
       }
     : filtered;
+
+  return { tenantId, isPayroll, canResolveExceptions, selectedSiteId, selectedDepartmentId, filtered, search, matching };
+}
+
+/**
+ * The date range in force: the one asked for, else the current pay period,
+ * else the last fourteen days. Also the recent pay periods for the picker.
+ */
+async function resolveRange(tenantId: string | undefined, params: PunchHistoryParams, timezone: string) {
+  const today = localDateOf(new Date(), timezone);
+  // Pay periods for the picker: the three most recent that have started, with
+  // any duplicates from rule sets that share dates folded into one.
+  const periodRows = await db.payPeriod.findMany({
+    where: { ...(tenantId ? { tenantId } : {}), startDate: { lte: new Date() } },
+    orderBy: { startDate: "desc" },
+    take: 12,
+    select: { startDate: true, endDate: true, status: true },
+  });
+  const byRange = new Map<string, PayPeriodPreset>();
+  for (const p of periodRows) {
+    const startDate = localDateOf(p.startDate, timezone);
+    const endDate = localDateOf(p.endDate, timezone);
+    const key = `${startDate}|${endDate}`;
+    const seen = byRange.get(key);
+    if (seen) {
+      if (seen.status !== p.status) seen.status = null;
+    } else if (byRange.size < 3) {
+      byRange.set(key, { startDate, endDate, status: p.status, isCurrent: startDate <= today && today <= endDate });
+    }
+  }
+  const payPeriods = [...byRange.values()];
+  const current = payPeriods.find((p) => p.isCurrent) ?? null;
+
+  const isCustomRange =
+    !!params.startDate && !!params.endDate && ISO_DATE.test(params.startDate) && ISO_DATE.test(params.endDate);
+  let startDate: string;
+  let endDate: string;
+  if (isCustomRange) {
+    [startDate, endDate] =
+      params.startDate! <= params.endDate! ? [params.startDate!, params.endDate!] : [params.endDate!, params.startDate!];
+  } else if (current) {
+    ({ startDate, endDate } = current);
+  } else {
+    const twoWeeksAgo = new Date(Date.now() - 13 * 86_400_000);
+    startDate = localDateOf(twoWeeksAgo, timezone);
+    endDate = today;
+  }
+  return { today, payPeriods, isCustomRange, startDate, endDate };
+}
+
+export async function loadTeamPunchHistory(
+  viewer: Viewer,
+  params: PunchHistoryParams,
+): Promise<PunchHistoryData> {
+  const { tenantId, isPayroll, canResolveExceptions, selectedSiteId, selectedDepartmentId, filtered, search, matching } =
+    await resolveScope(viewer, params);
 
   const employeeSelect = {
     id: true,
@@ -213,45 +286,8 @@ export async function loadTeamPunchHistory(
   const selectedRow = params.employeeId ? named : (list[0] ?? null);
 
   const timezone = selectedRow?.site?.timezone ?? firstSite?.timezone ?? FALLBACK_TZ;
-  const today = localDateOf(new Date(), timezone);
 
-  // Pay periods for the picker: the three most recent that have started, with
-  // any duplicates from rule sets that share dates folded into one.
-  const periodRows = await db.payPeriod.findMany({
-    where: { ...(tenantId ? { tenantId } : {}), startDate: { lte: new Date() } },
-    orderBy: { startDate: "desc" },
-    take: 12,
-    select: { startDate: true, endDate: true, status: true },
-  });
-  const byRange = new Map<string, PayPeriodPreset>();
-  for (const p of periodRows) {
-    const startDate = localDateOf(p.startDate, timezone);
-    const endDate = localDateOf(p.endDate, timezone);
-    const key = `${startDate}|${endDate}`;
-    const seen = byRange.get(key);
-    if (seen) {
-      if (seen.status !== p.status) seen.status = null;
-    } else if (byRange.size < 3) {
-      byRange.set(key, { startDate, endDate, status: p.status, isCurrent: startDate <= today && today <= endDate });
-    }
-  }
-  const payPeriods = [...byRange.values()];
-  const current = payPeriods.find((p) => p.isCurrent) ?? null;
-
-  const isCustomRange =
-    !!params.startDate && !!params.endDate && ISO_DATE.test(params.startDate) && ISO_DATE.test(params.endDate);
-  let startDate: string;
-  let endDate: string;
-  if (isCustomRange) {
-    [startDate, endDate] =
-      params.startDate! <= params.endDate! ? [params.startDate!, params.endDate!] : [params.endDate!, params.startDate!];
-  } else if (current) {
-    ({ startDate, endDate } = current);
-  } else {
-    const twoWeeksAgo = new Date(Date.now() - 13 * 86_400_000);
-    startDate = localDateOf(twoWeeksAgo, timezone);
-    endDate = today;
-  }
+  const { today, payPeriods, isCustomRange, startDate, endDate } = await resolveRange(tenantId, params, timezone);
   const rangeStart = snapToLocalTime("00:00", startDate, timezone);
   const rangeEnd = endOfDayInTz(endDate, timezone);
 
@@ -313,19 +349,7 @@ export async function loadTeamPunchHistory(
       }),
     ]);
 
-    // A superseded punch sits directly above the correction that replaced it,
-    // whatever the two times are, so the pair reads as what was recorded and
-    // then what it was changed to. Sorted by time alone, a later original
-    // lands under its own correction.
-    const byId = new Map(rows.map((p) => [p.id, p]));
-    const ordered = rows.filter((p) => !(p.correctedById && byId.has(p.correctedById)));
-    for (const original of rows) {
-      if (!original.correctedById || !byId.has(original.correctedById)) continue;
-      const at = ordered.findIndex((p) => p.id === original.correctedById);
-      ordered.splice(at, 0, original);
-    }
-
-    punches = ordered.map((p) => ({
+    punches = pairCorrections(rows).map((p) => ({
       id: p.id,
       punchType: p.punchType,
       punchTime: p.punchTime.toISOString(),
@@ -385,4 +409,131 @@ export async function loadTeamPunchHistory(
       pending: live.filter((p) => !p.isApproved).length,
     },
   };
+}
+
+/** Most punch rows one export will write. Past it the export refuses. */
+export const EXPORT_ROW_CAP = 50_000;
+
+export type PunchExportRow = {
+  employee: string;
+  employeeCode: string;
+  department: string;
+  site: string;
+  date: string;
+  punchType: string;
+  actual: string;
+  rounded: string;
+  source: string;
+  status: "Approved" | "Pending" | "Superseded";
+  isCorrection: boolean;
+};
+
+export type PunchExport =
+  | { ok: true; startDate: string; endDate: string; rows: PunchExportRow[] }
+  | { ok: false; reason: "too_many"; count: number };
+
+/**
+ * Every punch in the range for everyone the screen's filters and search
+ * match, for the spreadsheet. Not capped at the list's 200: a file that
+ * quietly leaves people out is worse than no file. Capped instead on rows, and
+ * refused past it, so a whole company over a long range cannot tie the server
+ * up; the caller says how to narrow it.
+ *
+ * <p>Each row is on its own employee's site clock, 12 hour.
+ */
+export async function loadPunchExport(viewer: Viewer, params: PunchHistoryParams): Promise<PunchExport> {
+  const { tenantId, matching } = await resolveScope(viewer, params);
+  const firstSite = await db.site.findFirst({
+    where: { isActive: true, ...(tenantId ? { tenantId } : {}) },
+    orderBy: { name: "asc" },
+    select: { timezone: true },
+  });
+  const { startDate, endDate } = await resolveRange(tenantId, params, firstSite?.timezone ?? FALLBACK_TZ);
+
+  // A day either side, because each site draws its own midnight. Rows outside
+  // their own site's dates are dropped below.
+  const where: Prisma.PunchWhereInput = {
+    isRejected: false,
+    employee: matching,
+    roundedTime: {
+      gte: new Date(Date.parse(`${startDate}T00:00:00.000Z`) - 86_400_000),
+      lte: new Date(Date.parse(`${endDate}T23:59:59.999Z`) + 86_400_000),
+    },
+  };
+  const count = await db.punch.count({ where });
+  if (count > EXPORT_ROW_CAP) return { ok: false, reason: "too_many", count };
+
+  const [punches, people] = await Promise.all([
+    db.punch.findMany({
+      where,
+      orderBy: [{ roundedTime: "asc" }, { punchTime: "asc" }],
+      select: {
+        id: true,
+        employeeId: true,
+        punchType: true,
+        punchTime: true,
+        roundedTime: true,
+        source: true,
+        isApproved: true,
+        correctedById: true,
+        correctsId: true,
+      },
+    }),
+    db.employee.findMany({
+      where: matching,
+      select: {
+        id: true,
+        employeeCode: true,
+        user: { select: { name: true } },
+        department: { select: { name: true } },
+        site: { select: { name: true, timezone: true } },
+      },
+    }),
+  ]);
+
+  const who = new Map(people.map((e) => [e.id, e]));
+  const clocks = new Map<string, { date: Intl.DateTimeFormat; secs: Intl.DateTimeFormat; mins: Intl.DateTimeFormat }>();
+  const clockFor = (tz: string) => {
+    let c = clocks.get(tz);
+    if (!c) {
+      c = {
+        date: new Intl.DateTimeFormat("en-CA", { timeZone: tz }),
+        secs: new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }),
+        mins: new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }),
+      };
+      clocks.set(tz, c);
+    }
+    return c;
+  };
+
+  const SOURCE: Record<string, string> = { WEB: "Web", KIOSK: "Kiosk", MOBILE: "Mobile", MANUAL: "Manual", SYSTEM: "System" };
+  const TYPE: Record<string, string> = {
+    CLOCK_IN: "Clock In", CLOCK_OUT: "Clock Out", MEAL_START: "Start Meal",
+    MEAL_END: "End Meal", BREAK_START: "Start Break", BREAK_END: "End Break",
+  };
+
+  const rows: PunchExportRow[] = [];
+  for (const p of pairCorrections(punches)) {
+    const e = who.get(p.employeeId);
+    if (!e) continue;
+    const c = clockFor(e.site?.timezone ?? FALLBACK_TZ);
+    const date = c.date.format(p.roundedTime);
+    if (date < startDate || date > endDate) continue;
+    rows.push({
+      employee: e.user?.name ?? e.employeeCode,
+      employeeCode: e.employeeCode,
+      department: e.department?.name ?? "",
+      site: e.site?.name ?? "",
+      date,
+      punchType: TYPE[p.punchType] ?? p.punchType,
+      actual: c.secs.format(p.punchTime),
+      rounded: c.mins.format(p.roundedTime),
+      source: SOURCE[p.source] ?? p.source,
+      status: p.correctedById ? "Superseded" : p.isApproved ? "Approved" : "Pending",
+      isCorrection: !!p.correctsId,
+    });
+  }
+  // By person, then in the order they happened, which is how payroll reads it.
+  rows.sort((a, b) => a.employee.localeCompare(b.employee) || a.employeeCode.localeCompare(b.employeeCode));
+  return { ok: true, startDate, endDate, rows };
 }

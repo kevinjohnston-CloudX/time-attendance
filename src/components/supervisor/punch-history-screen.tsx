@@ -12,7 +12,7 @@ import {
   UtensilsCrossed,
   type LucideIcon,
 } from "lucide-react";
-import { Button, EmptyState, SearchInput, Select } from "@/components/ui";
+import { Button, EmptyState, SearchInput, Select, Toast, useToast } from "@/components/ui";
 import { PUNCH_TYPE_LABEL, type PunchTypeValue } from "@/lib/state-machines/labels";
 import type { PunchHistoryData, PunchHistoryParams } from "@/lib/punch-history/punch-history-data";
 import { PunchHistoryDatePicker, dayLabel, rangeLabel } from "./punch-history-date-picker";
@@ -71,6 +71,8 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
   const [isPending, startTransition] = useTransition();
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [query, setQuery] = useState(data.search);
+  const { message: toast, flash } = useToast();
+  const [exporting, setExporting] = useState(false);
 
   // Clock time on the site's clock, 12 hour, always.
   const clock = useCallback(
@@ -191,6 +193,51 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
     navigate({ startDate: undefined, endDate: undefined, siteId: undefined, departmentId: undefined, q: undefined });
   }
 
+  /**
+   * The spreadsheet of everything the filters match, for the dates on screen.
+   *
+   * <p>Fetched rather than opened as a link, so a refusal (too many rows, or
+   * no longer signed in) comes back as a message on this screen instead of a
+   * page of JSON in place of it. The dates are sent as shown, so the file
+   * covers exactly the range the person was looking at.
+   */
+  async function exportPunches() {
+    const params = new URLSearchParams({ startDate: data.startDate, endDate: data.endDate });
+    if (data.selectedSiteId) params.set("siteId", data.selectedSiteId);
+    if (data.selectedDepartmentId) params.set("departmentId", data.selectedDepartmentId);
+    if (data.search) params.set("q", data.search);
+    setExporting(true);
+    flash("Preparing your download");
+    try {
+      const res = await fetch(`/api/reports/team-punch-history?${params}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        flash(body?.error ?? "The export did not work. Try again.");
+        return;
+      }
+      // A session that ran out is redirected to the sign in page, which
+      // arrives as a successful HTML response. Saving that as a .csv would
+      // hand somebody a spreadsheet with no punches in it.
+      if (!(res.headers.get("content-type") ?? "").includes("text/csv")) {
+        flash("Your session has ended. Sign in again to export.");
+        return;
+      }
+      const blob = await res.blob();
+      const name =
+        /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? "team-punch-history.csv";
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(href);
+    } catch {
+      flash("The export did not work. Check your connection and try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const selected = data.selected;
   const range = rangeLabel(data.startDate, data.endDate);
   const exceptionsHref = selected
@@ -242,6 +289,17 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
               Punches by employee, with source and approval status
             </p>
           )}
+          <div className="ml-auto flex items-center gap-2 self-center">
+            <Button
+              hierarchy="secondary"
+              size="sm"
+              onClick={exportPunches}
+              disabled={exporting || data.employeeTotal === 0}
+              title="Every punch in this date range for everyone the filters match"
+            >
+              {exporting ? "Exporting" : "Export"}
+            </Button>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -663,6 +721,8 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
           )}
         </div>
       </div>
+
+      <Toast message={toast} />
     </div>
   );
 }
