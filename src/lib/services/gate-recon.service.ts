@@ -39,8 +39,19 @@ import { SyncTally } from "./sync-run.service";
 /** Provenance of a row this job inserts. Never "LIVE": no tablet saw these. */
 export const ORACLE_RECON_SLOT = "ORACLE_RECON";
 
-/** A live gate row this close to an Oracle instant is the same crossing. */
-const SAME_CROSSING_MS = 3 * 60_000;
+/**
+ * A live gate row this close to an Oracle instant is the same crossing.
+ *
+ * <p>Fifteen minutes, not three. On the first run (2026-09-22, 506 inserts)
+ * two people had badged a CloudTime tablet and then the legacy reader six and
+ * seven minutes apart on the way in; three minutes let both through as a
+ * second arrival, which turned their real 15:37 exits into entries. Measured
+ * across every inserted row that night, the gap to the nearest live scan was
+ * either under ten minutes (those two) or over an hour (genuine separate
+ * crossings) — nothing in between — so fifteen catches the double-badge with
+ * nothing to lose on the other side.
+ */
+const SAME_CROSSING_MS = 15 * 60_000;
 
 export async function applyGateReconBatch(
   tenantId: string,
