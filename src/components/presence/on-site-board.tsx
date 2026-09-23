@@ -30,6 +30,7 @@ import {
   fmtDuration,
   fmtShift,
   fmtTime,
+  fmtWhen,
   initialsOf,
   minutesSince,
   sinceLine,
@@ -598,7 +599,7 @@ function Counter({
           style={{ background: meta.color, opacity: status === "NO_GATE_SCAN" ? 0.55 : 1 }}
           aria-hidden="true"
         />
-        <span className="truncate">{status === "ON_MEAL" ? "On meal or break" : meta.label}</span>
+        <span className="truncate">{status === "ON_MEAL" ? "Meal or break" : meta.label}</span>
       </span>
     </button>
   );
@@ -637,7 +638,7 @@ function PersonTile({
   const line =
     p.status === "ON_MEAL" && mins !== null
       ? `${p.breakKind === "BREAK" ? "Break" : "Meal"} for ${fmtDuration(mins)}`
-      : sinceLine(p, tz);
+      : sinceLine(p, tz, new Date(now).toISOString());
 
   return (
     <button
@@ -659,7 +660,6 @@ function PersonTile({
           style={{ background: meta.color }}
         />
         <span className={styles.flag}>
-          {p.status === "NO_GATE_SCAN" && <span className={styles.flagChip}>No gate scan</span>}
           {p.outsideOnMeal && (
             <span className={styles.flagChip} data-tone="neutral">
               Outside
@@ -766,7 +766,7 @@ function PeopleTable({
                   </span>
                 </TD>
                 <TD className="tabular" style={{ color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
-                  {fmtTime(p.since, tz)}
+                  {fmtWhen(p.since, tz, new Date(now).toISOString())}
                 </TD>
                 <TD numeric style={{ whiteSpace: "nowrap" }}>
                   {mins !== null && p.status !== "LEFT" ? fmtDuration(mins) : ""}

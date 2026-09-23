@@ -93,6 +93,17 @@ export function fmtTime(iso: string | null, timeZone: string): string {
   return f.format(new Date(iso));
 }
 
+/**
+ * "6:58 AM" for today, "yesterday 6:36 PM" for anything earlier. A time with no
+ * day reads as today, and somebody clocked in since yesterday evening is
+ * exactly the person this page should not make look ordinary.
+ */
+export function fmtWhen(iso: string | null, timeZone: string, nowIso: string): string {
+  if (!iso) return "";
+  const t = fmtTime(iso, timeZone);
+  return siteDate(iso, timeZone) === siteDate(nowIso, timeZone) ? t : `yesterday ${t}`;
+}
+
 /** The calendar date in the site's zone, for telling today from yesterday. */
 export function siteDate(iso: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date(iso));
@@ -123,8 +134,8 @@ export function fmtShift(start: string | null, end: string | null): string | nul
  * The line under a name on a tile: what they are doing, and since when.
  * Short enough to fit a 150px tile on one line.
  */
-export function sinceLine(p: PresencePerson, timeZone: string): string {
-  const at = fmtTime(p.since, timeZone);
+export function sinceLine(p: PresencePerson, timeZone: string, nowIso: string): string {
+  const at = fmtWhen(p.since, timeZone, nowIso);
   switch (p.status) {
     case "WORKING":
     case "NO_GATE_SCAN":

@@ -3,8 +3,8 @@
  *
  * Status colours are defined here once, for both themes, and everything on the
  * board reads them through these names. Violet has no semantic alias in the
- * design system yet, so it is the one place a ramp step is named directly, and
- * it is named twice: once per theme.
+ * design system yet, so it is the one place a ramp step is named directly. The
+ * kit ships no violet-400, and 500 holds its contrast on both backgrounds.
  */
 .board {
   --ps-working: var(--fill-success);
@@ -20,7 +20,6 @@
 
 :global(:root.dark) .board,
 :global(:root[data-theme="dark"]) .board {
-  --ps-offclock: var(--wms-color-violet-400);
   --ps-photo: rgb(31, 41, 55);
 }
 
@@ -458,6 +457,14 @@
   background: var(--ps-photo);
   color: var(--text-secondary);
   font: var(--weight-semibold) 12px/1 var(--font-sans);
+}
+
+/* The initials are sized for a tile; the round avatar and the portrait set
+   their own, or the letters spill out of a 32px circle. */
+.avatar .initials {
+  font: var(--weight-semibold) 12px/1 var(--font-sans);
+  letter-spacing: 0;
+  color: var(--text-secondary);
 }
 
 .avatar img {

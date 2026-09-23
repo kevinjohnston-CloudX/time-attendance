@@ -11,6 +11,7 @@ import {
   fmtDuration,
   fmtShift,
   fmtTime,
+  fmtWhen,
   initialsOf,
   minutesSince,
   siteDate,
@@ -121,7 +122,7 @@ export function PersonPanel({
               >
                 {person.name}
               </h2>
-              <span className="truncate" style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>
+              <span className="line-clamp-2" style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>
                 {detail?.jobTitle ?? person.department ?? ""}
               </span>
               <span className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -133,7 +134,7 @@ export function PersonPanel({
                 {person.inactive && <Badge tone="error">Inactive record</Badge>}
               </span>
               <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                {statusSentence(person, tz, mins)}
+                {statusSentence(person, tz, mins, new Date(now).toISOString())}
               </span>
             </div>
           </div>
@@ -172,20 +173,20 @@ export function PersonPanel({
   );
 }
 
-function statusSentence(p: PresencePerson, tz: string, mins: number | null): string {
-  const at = fmtTime(p.since, tz);
-  const forHow = mins !== null && mins >= 1 ? `, ${fmtDuration(mins)} ago` : "";
+function statusSentence(p: PresencePerson, tz: string, mins: number | null, nowIso: string): string {
+  const at = fmtWhen(p.since, tz, nowIso);
+  const forHow = mins !== null && mins >= 1 ? ` (${fmtDuration(mins)})` : "";
   switch (p.status) {
     case "WORKING":
       return at ? `On the clock since ${at}${forHow}` : "On the clock";
     case "NO_GATE_SCAN":
-      return at ? `Clocked in at ${at}${forHow}. The gate has no entry for them.` : "On the clock";
+      return at ? `Clocked in since ${at}${forHow}, no gate entry` : "On the clock, no gate entry";
     case "ON_MEAL":
       return at ? `Started ${p.breakKind === "BREAK" ? "a break" : "a meal"} at ${at}${forHow}` : statusLabel(p);
     case "OFF_CLOCK":
       return at ? `Inside since ${at}${forHow}, not clocked in` : "Inside, not clocked in";
     case "LEFT":
-      return at ? `Left at ${at}${forHow}` : "Left";
+      return at ? `Left at ${at}` : "Left";
     case "NOT_ARRIVED":
       return p.lateMinutes !== null ? `${fmtDuration(p.lateMinutes)} past the scheduled start` : "Not due yet";
     case "ON_LEAVE":
