@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Banner, Button, Input } from "@/components/ui";
 import { BrandLockup } from "@/components/layout/brand-mark";
@@ -20,7 +19,6 @@ import { BrandLockup } from "@/components/layout/brand-mark";
  * decorative panel above the fold means scrolling to reach the password box.
  */
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -43,15 +41,21 @@ export default function LoginPage() {
       redirect: false,
     });
 
-    setLoading(false);
-
     if (result?.error) {
+      setLoading(false);
       setError("Invalid email or password.");
       return;
     }
 
-    router.push("/dashboard");
-    router.refresh();
+    // Deliberately left loading: the page is about to be replaced, and
+    // re-enabling the button first invites a second submit into the gap.
+
+    // A real navigation rather than a client-side push. The browser only
+    // offers to save a password when it sees a credential submission followed
+    // by one, so a soft route change here is why nothing was ever saved for
+    // this site. It also guarantees the first render after sign-in is made
+    // with the new session cookie rather than the one the app started with.
+    window.location.assign("/dashboard");
   }
 
   return (
@@ -79,9 +83,14 @@ export default function LoginPage() {
           <form onSubmit={handleCredentials} className="flex flex-col gap-2.5">
             <Input
               id="email"
+              // name and autoComplete together are what a password manager
+              // matches on. "username" rather than "email": email is an
+              // address-book token, so browsers fill it from saved addresses
+              // instead of pairing it with the password field as a credential.
+              name="username"
               type="email"
               label="Work Email"
-              autoComplete="email"
+              autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -90,6 +99,7 @@ export default function LoginPage() {
 
             <Input
               id="password"
+              name="password"
               type="password"
               label="Password"
               autoComplete="current-password"
