@@ -52,6 +52,9 @@ export interface DayLanes {
 
 type ClockState = ClockKind | "OUT";
 
+/** A second exit read this soon after the last one, with no entry between, is the same exit. */
+const REPEAT_EXIT_MS = 5 * 60 * 1000;
+
 /** What the timecard made of a time clock scan, falling back to the tablet's direction. */
 export function clockStateAfter(s: PresenceScan): ClockState | null {
   if (s.automatic) return "OUT";
@@ -95,10 +98,12 @@ export function buildLanes({
   const exitsWithoutEntry: PresenceScan[] = [];
   let inside: number | null = carryGate && carryGate.direction === "IN" && !carryGate.automatic ? from : null;
   let insideScan: PresenceScan | null = null;
+  let lastExit: number | null = null;
   for (const s of asc) {
-    if (s.stream !== "SECURITY" || s.direction === "UNKNOWN") continue;
+    if (s.stream !== "SECURITY" || s.direction === "UNKNOWN" || s.reread) continue;
     const t = Date.parse(s.at);
     if (s.direction === "IN") {
+      lastExit = null;
       if (inside === null) {
         inside = t;
         insideScan = s;
@@ -107,8 +112,10 @@ export function buildLanes({
       gate.push({ start: inside, end: t, open: false, closedBySystem: s.automatic, startScan: insideScan, endScan: s });
       inside = null;
       insideScan = null;
-    } else if (!s.automatic) {
+      lastExit = t;
+    } else if (!s.automatic && (lastExit === null || t - lastExit > REPEAT_EXIT_MS)) {
       exitsWithoutEntry.push(s);
+      lastExit = t;
     }
   }
   if (inside !== null && to > inside)

@@ -48,6 +48,14 @@ import {
 } from "./presence-meta";
 import { PersonPanel } from "./person-panel";
 import { clampDay, dayLabel, recentDays } from "@/lib/presence/days";
+import { buildSiteDay } from "@/lib/presence/movements";
+import {
+  MovementsEmpty,
+  MovementsSkeleton,
+  MovementsTable,
+  PEOPLE_PER_PAGE,
+  useSiteDay,
+} from "./movements-view";
 import {
   ScanLogCounts,
   ScanLogEmpty,
@@ -85,7 +93,7 @@ const ROWS_PER_PAGE = 200;
 
 type StatusFilter = "inside" | PresenceStatus;
 type View = "photos" | "compact" | "list";
-type Tab = "people" | "log";
+type Tab = "movements" | "people" | "log";
 
 const ALL_STATUSES = [...INSIDE_STATUSES, ...AWAY_STATUSES];
 
@@ -127,7 +135,11 @@ export function OnSiteBoard({
   const [sort, setSort] = useState<Sort>(parseSort(initialFilters.sort));
   const [byDept, setByDept] = useState(initialFilters.group === "dept");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [tab, setTab] = useState<Tab>(initialFilters.tab === "log" ? "log" : "people");
+  // Movements is the page's main view; the cards and the scan log sit beside it.
+  const [tab, setTab] = useState<Tab>(
+    initialFilters.tab === "log" ? "log" : initialFilters.tab === "people" ? "people" : "movements",
+  );
+  const [mvShown, setMvShown] = useState(PEOPLE_PER_PAGE);
   const [counter, setCounter] = useState<LogCounter | null>(parseCounter(initialFilters.scans));
   // A past day for the log, or "" for today. The panel opens on the day of
   // the row it was opened from.
@@ -161,9 +173,9 @@ export function OnSiteBoard({
     const sortParam = serializeSort(sort);
     if (sortParam) qs.set("sort", sortParam);
     if (byDept) qs.set("group", "dept");
-    if (tab === "log") qs.set("tab", "log");
+    if (tab !== "movements") qs.set("tab", tab);
     if (tab === "log" && counter) qs.set("scans", counter);
-    if (tab === "log" && logDay) qs.set("day", logDay);
+    if (tab !== "people" && logDay) qs.set("day", logDay);
     const next = `${window.location.pathname}?${qs.toString()}`;
     if (next !== `${window.location.pathname}${window.location.search}`) {
       window.history.replaceState(window.history.state, "", next);
@@ -379,6 +391,26 @@ export function OnSiteBoard({
   // The day already picked stays picked only while it is inside the window.
   const logDayShown = logDay && today && recentDays(today).includes(logDay) ? logDay : "";
   const when = !logDayShown ? "today" : dayLabel(logDayShown, today) === "Yesterday" ? "yesterday" : `on ${dayLabel(logDayShown, today)}`;
+
+  // ── Movements ──
+  const siteDay = useSiteDay({ siteId, active: tab === "movements", day: logDayShown });
+  const dayViews = useMemo(
+    () => (siteDay.data ? buildSiteDay(siteDay.data, now) : []),
+    [siteDay.data, now],
+  );
+  const mvRows = useMemo(() => {
+    const needleMv = query.trim().toLowerCase();
+    return dayViews
+      .filter(
+        (v) =>
+          (!dept || v.person.departmentId === dept) &&
+          (!shift || v.person.shiftId === shift) &&
+          (!needleMv ||
+            v.person.name.toLowerCase().includes(needleMv) ||
+            v.person.employeeCode.toLowerCase().includes(needleMv)),
+      )
+      .sort((a, b) => a.person.name.localeCompare(b.person.name));
+  }, [dayViews, dept, shift, query]);
   const logSummary = log.page?.summary ?? null;
   const logTotal = logSummary ? counterTotal(logSummary, counter) : 0;
 
@@ -405,7 +437,36 @@ export function OnSiteBoard({
     download(csv, `Scan log ${board.site.name} ${stamp}.csv`);
   }
 
+  function exportMovements() {
+    const data = siteDay.data;
+    if (!data) return;
+    const tzDay = data.site.timezone;
+    const time = (ms: number | null) => (ms === null ? "" : fmtTime(new Date(ms).toISOString(), tzDay));
+    const header = ["Name", "Employee code", "Department", "Scheduled", "Reader", "Activity", "From", "To", "Minutes", "Notes"];
+    const lines: string[][] = [header];
+    for (const v of mvRows) {
+      const base = [v.person.name, v.person.employeeCode, v.person.department ?? "", fmtShift(v.person.scheduledStart, v.person.scheduledEnd) ?? ""];
+      if (v.lines.length === 0) {
+        lines.push([...base, "", v.person.onLeave ? "On leave" : "Not seen", "", "", "", ""]);
+        continue;
+      }
+      for (const l of v.lines) {
+        lines.push([
+          ...base,
+          l.reader === "gate" ? "Security gate" : "Time clock",
+          { INSIDE: "Inside the building", WORK: "On the clock", MEAL: "Meal", BREAK: "Break", EXIT_ONLY: "Exit, no entry scan" }[l.kind],
+          l.carried ? "Before midnight" : time(l.start),
+          l.end === null ? (data.day === data.today ? "Still going" : "No scan out") : time(l.end),
+          l.kind === "EXIT_ONLY" ? "" : String(l.minutes),
+          l.closedBySystem ? "Marked out by the system" : "",
+        ]);
+      }
+    }
+    download(lines.map((r) => r.map(csvCell).join(",")).join("\r\n"), `Movements ${data.site.name} ${data.day}.csv`);
+  }
+
   function exportCsv() {
+    if (tab === "movements") return exportMovements();
     if (tab === "log") return void exportLog();
     if (!board) return;
     // The export follows what is on screen, in the order it is on screen.
@@ -482,6 +543,7 @@ export function OnSiteBoard({
       <SegmentedControl
         ariaLabel="View"
         items={[
+          { value: "movements", label: "Movements" },
           { value: "people", label: "People" },
           { value: "log", label: "Scan log" },
         ]}
@@ -503,7 +565,10 @@ export function OnSiteBoard({
       <Button
         hierarchy="secondary"
         onClick={exportCsv}
-        disabled={!board || (tab === "log" ? log.rows.length === 0 : matches.length === 0)}
+        disabled={
+          !board ||
+          (tab === "log" ? log.rows.length === 0 : tab === "movements" ? mvRows.length === 0 : matches.length === 0)
+        }
       >
         Export
       </Button>
@@ -537,6 +602,20 @@ export function OnSiteBoard({
               </h1>
               {/* Slim, the bar keeps the one number this page exists for and
                   whether it is still live, and gives up the sentence. */}
+              {condensed && board && tab === "movements" && siteDay.data && (
+                <span
+                  className="tabular inline-flex items-center gap-2 whitespace-nowrap"
+                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                >
+                  <span className={styles.live} data-state={liveState} aria-hidden="true" />
+                  <span>
+                    <strong style={{ color: "var(--text-primary)", fontWeight: "var(--weight-semibold)" }}>
+                      {mvRows.length.toLocaleString()}
+                    </strong>{" "}
+                    {mvRows.length === 1 ? "person" : "people"} {when}
+                  </span>
+                </span>
+              )}
               {condensed && board && tab === "log" && (
                 <span
                   className="tabular inline-flex items-center gap-2 whitespace-nowrap"
@@ -627,7 +706,11 @@ export function OnSiteBoard({
                   className="tabular ml-auto whitespace-nowrap"
                   style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
                 >
-                  {tab === "log"
+                  {tab === "movements"
+                    ? siteDay.data
+                      ? `${mvRows.length.toLocaleString()} ${mvRows.length === 1 ? "person" : "people"}`
+                      : ""
+                    : tab === "log"
                     ? logSummary
                       ? `${logTotal.toLocaleString()} ${logTotal === 1 ? "scan" : "scans"}`
                       : ""
@@ -635,7 +718,16 @@ export function OnSiteBoard({
                       ? `${matches.length.toLocaleString()} ${matches.length === 1 ? "match" : "matches"} in every group`
                       : `${matches.length.toLocaleString()} ${matches.length === 1 ? "person" : "people"}`}
                 </span>
-                {tab === "log" && today && <DayChip day={logDayShown} today={today} onChange={setLogDay} />}
+                {tab !== "people" && today && (
+                  <DayChip
+                    day={logDayShown}
+                    today={today}
+                    onChange={(d) => {
+                      setLogDay(d);
+                      setMvShown(PEOPLE_PER_PAGE);
+                    }}
+                  />
+                )}
                 {tab === "log" && counter && (
                   <ToggleChip label={COUNTER_LABEL[counter]} pressed onClick={() => setCounter(null)} />
                 )}
@@ -668,6 +760,57 @@ export function OnSiteBoard({
             body="Your access may have changed since the page opened. Pick another site, or reload the page."
           />
         </Card>
+      ) : tab === "movements" ? (
+        siteDay.failure === "access" ? (
+          <Card padding={0}>
+            <EmptyState
+              icon={<Building2 className="h-8 w-8" />}
+              title="This site is no longer available to you"
+              body="Your access may have changed since the page opened. Pick another site, or reload the page."
+            />
+          </Card>
+        ) : siteDay.failure === "error" && !siteDay.data ? (
+          <Card padding={0}>
+            <EmptyState
+              icon={<Building2 className="h-8 w-8" />}
+              title="Movements could not be loaded"
+              body="Something went wrong reading this day's scans. Try again, and if it keeps happening, reload the page."
+              action={
+                <Button hierarchy="secondary" size="sm" onClick={() => void siteDay.retry()}>
+                  Try again
+                </Button>
+              }
+            />
+          </Card>
+        ) : switching || !board || !siteDay.data ? (
+          <MovementsSkeleton />
+        ) : mvRows.length === 0 ? (
+          <Card padding={0}>
+            <MovementsEmpty
+              when={when}
+              filtered={!!dept || !!shift || !!query.trim()}
+              onClear={() => {
+                setQuery("");
+                setDept("");
+                setShift("");
+              }}
+            />
+          </Card>
+        ) : (
+          <MovementsTable
+            views={mvRows}
+            data={siteDay.data}
+            now={now}
+            stickyTop={barHeight}
+            shown={mvShown}
+            onShowMore={() => setMvShown((n) => n + PEOPLE_PER_PAGE)}
+            selectedId={selectedId}
+            onOpen={(id) => {
+              setPanelDay(logDayShown || null);
+              setSelectedId(id);
+            }}
+          />
+        )
       ) : tab === "log" ? (
         switching || !board || log.failure === "access" || !log.page || !logSummary ? (
           log.failure === "access" ? (

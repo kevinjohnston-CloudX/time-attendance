@@ -177,7 +177,6 @@ export function buildPersonDay(
         })()
       : null;
 
-  const real = scans.filter((s) => !s.automatic && !s.rejected);
   const firstIn = lanes.firstIn;
   const lastOut = lanes.lastOut;
   const present = nowState.inside || nowState.clock !== "OUT";
@@ -190,9 +189,11 @@ export function buildPersonDay(
       ? Math.floor((schedule.end - lastOut) / 60000)
       : null;
 
+  // Trips out, not raw exit reads: a stretch inside that a scan closed, plus
+  // any exit with no entry before it. A double read at the turnstile is one.
   const exits = hasGate
-    ? real.filter((s) => s.stream === "SECURITY" && s.direction === "OUT").length
-    : real.filter((s) => s.stream === "TIME_CLOCK" && s.punchType === "CLOCK_OUT").length;
+    ? lanes.gate.filter((g) => !g.open && !g.closedBySystem).length + lanes.exitsWithoutEntry.length
+    : lanes.clock.filter((c) => c.kind === "WORK" && c.endScan?.punchType === "CLOCK_OUT").length;
   const rejected = scans.filter((s) => s.rejected).length;
   const breaks = lanes.clock.filter((c) => c.kind !== "WORK");
 
