@@ -291,8 +291,9 @@ export async function POST(req: NextRequest) {
   let stateBefore = await getCurrentPunchState(employee.id);
 
   // Workday expansion: if the employee is still clocked in from a previous shift,
-  // either re-route the punch to the old timesheet (within the window) or reset
-  // state to OUT so this tap becomes a CLOCK_IN (outside the window).
+  // either re-route the punch to the old timesheet (within the window) or, when
+  // the window has passed AND the open punch is from an earlier day, reset state
+  // to OUT so this tap becomes a CLOCK_IN. Same-day is never reset — see below.
   //
   // This also acts as a safety net when the state-reset cron runs late: without
   // the SYSTEM punch in the DB yet, getCurrentPunchState returns WORK, and the
@@ -335,9 +336,23 @@ export async function POST(req: NextRequest) {
             activeTimesheetStatus = oldTimesheet.status;
           }
         } else {
-          // Outside the expansion window — the previous shift has definitively
-          // closed. Override state so this tap is recorded as a CLOCK_IN.
-          stateBefore = "OUT";
+          // Outside the expansion window. Whether that means "the previous
+          // shift is over" depends on which DAY the open punch is from.
+          //
+          // From an earlier local day: this is what the window was built for.
+          // Somebody forgot to clock out yesterday and is arriving now, so
+          // override to OUT and let this tap be a CLOCK_IN.
+          //
+          // From TODAY: this is somebody working late — past scheduled end plus
+          // the window — and this tap is their clock-out. Flipping it turned 34
+          // real clock-outs into CLOCK_INs on 2026-09-22 (25 at NJ3, 5 at
+          // NJ299, 4 at GA), every one past their shift's end time, and showed
+          // "Clock-in" on the tablet to people walking out. Overtime is a long
+          // day, not an expired shift, so the state stays WORK.
+          const thisDay = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(punchTime);
+          if (localDate !== thisDay) {
+            stateBefore = "OUT";
+          }
         }
       } else {
         // No shift schedule defined (calendar-day mode or no shift assigned).
