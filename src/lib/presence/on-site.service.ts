@@ -209,6 +209,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
           terminatedAt: true,
           user: { select: { name: true } },
           jobTitle: true,
+          payType: true,
           department: { select: { id: true, name: true } },
           shift: { select: { id: true, name: true } },
         },
@@ -246,7 +247,9 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       inside = !outsideOnMeal;
       since = clock!.scanTime;
     } else if (gateIn) {
-      status = "OFF_CLOCK";
+      // Salaried people are not expected to clock in, so for them being
+      // through the gate is being at work, not a warning.
+      status = emp.payType === "SALARY" ? "ON_SITE" : "OFF_CLOCK";
       inside = true;
       // Inside since whichever came last: walking through the gate, or
       // clocking out while still in the building.
@@ -279,6 +282,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       shiftId: emp.shift?.id ?? null,
       shift: emp.shift?.name ?? null,
       photoUrl: photos.get(emp.id) ?? null,
+      salaried: emp.payType === "SALARY",
       status,
       inside,
       breakKind,
@@ -374,6 +378,7 @@ export async function getPresenceDetail(
       id: true,
       employeeCode: true,
       jobTitle: true,
+      payType: true,
       barcode: true,
       wmsId: true,
       isActive: true,
@@ -443,6 +448,7 @@ export async function getPresenceDetail(
     department: emp.department?.name ?? null,
     shift: emp.shift?.name ?? null,
     supervisor: emp.supervisor?.user?.name ?? null,
+    salaried: emp.payType === "SALARY",
     inactive: !emp.isActive || emp.terminatedAt !== null,
     homeSite: emp.site && emp.site.id !== siteId ? emp.site.name : null,
     photoUrl: photos.get(emp.id) ?? null,

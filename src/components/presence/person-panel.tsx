@@ -137,6 +137,7 @@ export function PersonPanel({
   const shownScans = shown ? shown.scans.filter(isShownScan) : [];
   const hiddenScans = shown ? shown.scans.length - shownScans.length : 0;
   const name = person?.name ?? detail?.name ?? "";
+  const salaried = person?.salaried ?? detail?.salaried ?? false;
   const meta = person ? STATUS_META[person.status] : null;
   const mins = person ? minutesSince(person.since, now) : null;
   const schedule = shown ? fmtShift(shown.scheduledStart, shown.scheduledEnd) : undefined;
@@ -196,6 +197,7 @@ export function PersonPanel({
                   </Badge>
                 )}
                 {person && isToday && person.outsideOnMeal && <Badge tone="neutral">Outside the building</Badge>}
+                {salaried && <Badge tone="neutral">Salary</Badge>}
                 {(person?.inactive || detail?.inactive) && <Badge tone="error">Inactive employee</Badge>}
                 <HomeSiteBadge site={detail?.homeSite ?? person?.homeSite ?? null} size="md" />
               </span>
@@ -276,7 +278,7 @@ export function PersonPanel({
                   {hasGateData && <Total label="Inside the building" minutes={lanes.totals.insideMin} />}
                   <Total label="On the clock" minutes={lanes.totals.workMin} />
                   <Total label="Meals and breaks" minutes={lanes.totals.mealMin + lanes.totals.breakMin} />
-                  {hasGateData && (
+                  {hasGateData && !salaried && (
                     <Total
                       label="Inside, not clocked in"
                       minutes={lanes.totals.insideOffClockMin}
@@ -340,6 +342,8 @@ function statusSentence(p: PresencePerson, tz: string, mins: number | null, nowI
       return at ? `Started ${p.breakKind === "BREAK" ? "a break" : "a meal"} at ${at}${forHow}` : statusLabel(p);
     case "OFF_CLOCK":
       return at ? `Inside since ${at}${forHow}, not clocked in` : "Inside, not clocked in";
+    case "ON_SITE":
+      return at ? `Inside since ${at}${forHow}` : "Inside";
     case "LEFT":
       return at ? `Left at ${at}` : "Left";
     case "NOT_ARRIVED":

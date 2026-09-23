@@ -47,6 +47,13 @@ export const STATUS_META: Record<PresenceStatus, StatusMeta> = {
     color: "var(--ps-offclock)",
     badge: "purple",
   },
+  ON_SITE: {
+    label: "On site",
+    heading: "On site, salaried",
+    hint: "Salaried, so not expected to clock in. The security gate saw them come in",
+    color: "var(--ps-working)",
+    badge: "success",
+  },
   NOT_ARRIVED: {
     label: "Not arrived",
     heading: "Not arrived",
@@ -71,7 +78,7 @@ export const STATUS_META: Record<PresenceStatus, StatusMeta> = {
 };
 
 /** The four that make up the building total, in the order the board lists them. */
-export const INSIDE_STATUSES: PresenceStatus[] = ["WORKING", "NO_GATE_SCAN", "ON_MEAL", "OFF_CLOCK"];
+export const INSIDE_STATUSES: PresenceStatus[] = ["WORKING", "NO_GATE_SCAN", "ON_MEAL", "OFF_CLOCK", "ON_SITE"];
 export const AWAY_STATUSES: PresenceStatus[] = ["NOT_ARRIVED", "LEFT", "ON_LEAVE"];
 
 /** A meal and a break share a status; the tile still says which one it is. */
@@ -143,6 +150,7 @@ export function sinceLine(p: PresencePerson, timeZone: string, nowIso: string): 
     case "ON_MEAL":
       return at ? `${p.breakKind === "BREAK" ? "Break" : "Meal"} since ${at}` : statusLabel(p);
     case "OFF_CLOCK":
+    case "ON_SITE":
       return at ? `Inside since ${at}` : "Inside";
     case "LEFT":
       return at ? `Left at ${at}` : "Left";

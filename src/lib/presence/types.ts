@@ -17,6 +17,8 @@
  *   <li>ON_MEAL: clocked out for a meal or a break.</li>
  *   <li>OFF_CLOCK: through the gate, not on the clock. Inside the building and
  *       not being paid, which is what loss prevention asks about first.</li>
+ *   <li>ON_SITE: through the gate and salaried. Salaried people do not use
+ *       the time clock, so being inside is simply being at work.</li>
  *   <li>NO_GATE_SCAN: on the clock, but the gate never saw them come in.</li>
  *   <li>LEFT: seen today, now out.</li>
  *   <li>ON_LEAVE: approved time off today, not seen.</li>
@@ -27,6 +29,7 @@ export type PresenceStatus =
   | "WORKING"
   | "ON_MEAL"
   | "OFF_CLOCK"
+  | "ON_SITE"
   | "NO_GATE_SCAN"
   | "LEFT"
   | "ON_LEAVE"
@@ -48,6 +51,8 @@ export interface PresencePerson {
    * draws initials in the same frame, which show when there is no photo.
    */
   photoUrl: string | null;
+  /** Paid a salary, so not expected to use the time clock. */
+  salaried: boolean;
   status: PresenceStatus;
   /** Counted in the building total. */
   inside: boolean;
@@ -115,6 +120,8 @@ export interface PresenceDetail {
   department: string | null;
   shift: string | null;
   supervisor: string | null;
+  /** Paid a salary, so not expected to use the time clock. */
+  salaried: boolean;
   inactive: boolean;
   /** The site on their record, when it is not this building. */
   homeSite: string | null;
@@ -226,6 +233,8 @@ export interface DayPerson {
   shift: string | null;
   /** A signed link to the tablet photo, or null. */
   photoUrl: string | null;
+  /** Paid a salary, so not expected to use the time clock. */
+  salaried: boolean;
   inactive: boolean;
   /** That day's schedule in site time, HH:mm. */
   scheduledStart: string | null;

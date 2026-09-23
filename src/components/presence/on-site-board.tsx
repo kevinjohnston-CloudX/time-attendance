@@ -107,6 +107,10 @@ type View = "photos" | "compact" | "list";
 type Tab = "movements" | "people" | "log";
 
 const ALL_STATUSES = [...INSIDE_STATUSES, ...AWAY_STATUSES];
+/** The inside statuses that get a headcount card. Salaried people on site are
+ *  counted in the building total and listed as a chip, since they need no action. */
+const CARD_STATUSES = INSIDE_STATUSES.filter((s) => s !== "ON_SITE");
+const CHIP_STATUSES: PresenceStatus[] = ["ON_SITE", ...AWAY_STATUSES];
 
 function parseStatus(raw: string | null): StatusFilter {
   return raw && (ALL_STATUSES as string[]).includes(raw) ? (raw as PresenceStatus) : "inside";
@@ -981,7 +985,7 @@ export function OnSiteBoard({
           <section className={styles.summary} aria-label="Headcount">
             <div
               className={styles.summaryMain}
-              data-cards={INSIDE_STATUSES.filter((s) => s !== "NO_GATE_SCAN" || board.site.hasGateData).length}
+              data-cards={CARD_STATUSES.filter((s) => s !== "NO_GATE_SCAN" || board.site.hasGateData).length}
             >
               <button
                 type="button"
@@ -998,7 +1002,7 @@ export function OnSiteBoard({
                     : `${scheduledArrived.toLocaleString()} of ${scheduled.length.toLocaleString()} scheduled have arrived`}
                 </span>
               </button>
-              {INSIDE_STATUSES.filter((s) => s !== "NO_GATE_SCAN" || board.site.hasGateData).map((s) => (
+              {CARD_STATUSES.filter((s) => s !== "NO_GATE_SCAN" || board.site.hasGateData).map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -1018,7 +1022,7 @@ export function OnSiteBoard({
             </div>
             <div className={styles.summaryMore}>
               <div className={styles.summaryChips}>
-                {AWAY_STATUSES.filter((s) => counts[s] > 0 || (!searching && status === s)).map((s) => (
+                {CHIP_STATUSES.filter((s) => counts[s] > 0 || (!searching && status === s)).map((s) => (
                   <button
                     key={s}
                     type="button"
@@ -1256,7 +1260,12 @@ function PersonTile({
       </span>
       <span className={styles.tileBody}>
         <span className={styles.name}>{p.name}</span>
-        {!compact && <span className={styles.meta}>{p.jobTitle ?? p.department ?? p.employeeCode}</span>}
+        {!compact && (
+          <span className={styles.meta}>
+            {p.jobTitle ?? p.department ?? p.employeeCode}
+            {p.salaried ? " · Salary" : ""}
+          </span>
+        )}
         {readers && !compact ? (
           <span className={styles.readers}>
             {readers.map((l) => (
@@ -1732,6 +1741,7 @@ function EmptyBoard({
     NO_GATE_SCAN: ["Everyone on the clock came through the gate", "Nobody is clocked in without a security gate scan."],
     ON_MEAL: ["Nobody is on a meal or break", "Everyone on the clock is working."],
     OFF_CLOCK: ["Nobody is inside off the clock", "Everyone who came through the gate is on the clock or has left."],
+    ON_SITE: ["No salaried people inside", "No one salaried has come through the gate right now."],
     NOT_ARRIVED: ["Everyone scheduled has arrived", "No one scheduled for today is still missing."],
     LEFT: ["Nobody has left yet", "No one who was here today has gone home."],
     ON_LEAVE: ["Nobody is on leave today", "No approved time off covers today."],

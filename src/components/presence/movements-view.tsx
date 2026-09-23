@@ -106,7 +106,7 @@ export function statusOfDay(v: PersonDayView, isToday: boolean, hasGate: boolean
   const { inside, clock } = v.now;
   if (clock === "WORK") return hasGate && !inside ? "NO_GATE_SCAN" : "WORKING";
   if (clock === "MEAL" || clock === "BREAK") return "ON_MEAL";
-  if (inside) return "OFF_CLOCK";
+  if (inside) return v.person.salaried ? "ON_SITE" : "OFF_CLOCK";
   if (v.scanCount > 0) return "LEFT";
   if (v.person.onLeave) return "ON_LEAVE";
   if (v.schedule) return "NOT_ARRIVED";
@@ -311,7 +311,10 @@ function PersonRow({
             >
               {p.name}
             </button>
-            <span className={styles.meta}>{p.jobTitle ?? p.department ?? p.employeeCode}</span>
+            <span className={styles.meta}>
+              {p.jobTitle ?? p.department ?? p.employeeCode}
+              {p.salaried ? " · Salary" : ""}
+            </span>
             <span className={styles.mvBadges}>
               {meta && status && (
                 <Badge tone={meta.badge} size="sm" dot>
