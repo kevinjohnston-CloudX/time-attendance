@@ -188,7 +188,7 @@ export const requestWmsSync = withRBAC("EMPLOYEE_MANAGE", async ({ tenantId }) =
   const roster = await enqueueBridgeJob(tenantId, ROSTER_SYNC_KIND, {});
   (roster.created ? queued : alreadyPending).push(ROSTER_SYNC_KIND);
 
-  const schedule = await enqueueBridgeJob(tenantId, SCHEDULE_PULL_KIND, scheduleWindow());
+  const schedule = await enqueueBridgeJob(tenantId, SCHEDULE_PULL_KIND, scheduleWindow("day"));
   (schedule.created ? queued : alreadyPending).push(SCHEDULE_PULL_KIND);
 
   return { queued, alreadyPending };

@@ -9,6 +9,7 @@ import {
   applyGateStateBatch,
   type OracleGateScanRow,
 } from "@/lib/services/gate-state-sync.service";
+import { applyGateReconBatch } from "@/lib/services/gate-recon.service";
 import {
   startSyncRun,
   finishSyncRun,
@@ -33,10 +34,16 @@ export const BRIDGE_AGENT = "cloudtime-wms";
 export const ROSTER_SYNC_KIND = "roster.sync";
 export const SCHEDULE_PULL_KIND = "schedule.pull";
 export const GATE_STATE_PULL_KIND = "gatestate.pull";
+/**
+ * Today's gate crossings from Oracle, to fill in readers CloudTime cannot see.
+ * Temporary — see gate-recon.service. Deleted at Oracle cutover.
+ */
+export const GATE_SCAN_RECON_KIND = "gatescan.recon";
 export const BRIDGE_JOB_KINDS = [
   ROSTER_SYNC_KIND,
   SCHEDULE_PULL_KIND,
   GATE_STATE_PULL_KIND,
+  GATE_SCAN_RECON_KIND,
 ] as const;
 
 /**
@@ -100,13 +107,48 @@ export async function enqueueBridgeJob(
   return { id: job.id, created: true };
 }
 
-/** The date window a schedule pull should ask Oracle for. */
-export function scheduleWindow(): { dateFrom: string; dateTo: string } {
+/**
+ * How far either side of today a "day" scope reaches, in days.
+ *
+ * <p>One, not zero, and that is the whole reason the narrow scope is three days
+ * rather than one. Eligibility asks for the workday in the *site's* own zone,
+ * and the sites run from Europe/Amsterdam (UTC+2) to America/Los_Angeles
+ * (UTC-7). So at 23:00 UTC it is already tomorrow in Amsterdam, and at 02:00
+ * UTC it is still yesterday in Los Angeles — a window pinned to the UTC date
+ * alone would leave one end of the estate with no row for its own current day,
+ * which reads at a gate as "not scheduled".
+ */
+const SCHEDULE_DAY_SCOPE_PAD = 1;
+
+/**
+ * The date window a schedule pull should ask Oracle for.
+ *
+ * <p><b>"day"</b> is today and a day either side: what a gate needs to decide
+ * whether somebody may come in right now. <b>"full"</b> is the whole -7/+28 span.
+ *
+ * <p>The split exists because only one thing reads this table to make a
+ * decision — {@code /api/timeclock/eligibility}, and it reads exactly one row,
+ * for today. Pulling 35 days to serve that fetches 14,450 rows a pass where
+ * ~1,200 would do, and every row for an employee CloudTime does not have counts
+ * as a rejection, which is why a healthy sync still reports PARTIAL. The full
+ * sweep still runs, just not on every pass: those extra days are for history
+ * and for anything that later reads ahead, neither of which is urgent the way
+ * a person standing at a door is.
+ */
+export function scheduleWindow(scope: "day" | "full" = "full"): {
+  dateFrom: string;
+  dateTo: string;
+} {
+  const back = scope === "day" ? SCHEDULE_DAY_SCOPE_PAD : SCHEDULE_DAYS_BACK;
+  // The bridge bounds this exclusively (`scheduledate < :dateTo`), so the
+  // forward pad needs one more day than it reaches to include tomorrow itself.
+  const forward = scope === "day" ? SCHEDULE_DAY_SCOPE_PAD + 1 : SCHEDULE_DAYS_FORWARD;
+
   const today = new Date();
   const from = new Date(today);
-  from.setUTCDate(from.getUTCDate() - SCHEDULE_DAYS_BACK);
+  from.setUTCDate(from.getUTCDate() - back);
   const to = new Date(today);
-  to.setUTCDate(to.getUTCDate() + SCHEDULE_DAYS_FORWARD);
+  to.setUTCDate(to.getUTCDate() + forward);
   return {
     dateFrom: from.toISOString().slice(0, 10),
     dateTo: to.toISOString().slice(0, 10),
@@ -185,6 +227,16 @@ export async function applyBridgeAnswer(
     const rows = extractRows<OracleGateScanRow>(result, "scans");
     return runAndRecord(jobId, tenantId, "GATE_STATE", () =>
       applyGateStateBatch(tenantId, rows),
+    );
+  }
+
+  if (kind === GATE_SCAN_RECON_KIND) {
+    const rows = extractRows<OracleGateScanRow>(result, "scans");
+    // Recorded as GATE_STATE: SyncKind is a Prisma enum, and a job that is
+    // deleted at Oracle cutover does not earn a migration. The run's details
+    // carry a RECON code, so the two stay distinguishable in the sync log.
+    return runAndRecord(jobId, tenantId, "GATE_STATE", () =>
+      applyGateReconBatch(tenantId, rows),
     );
   }
 

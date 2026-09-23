@@ -35,7 +35,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     select: { id: true, slug: true },
   });
 
-  const window = scheduleWindow();
+  // Narrow on most passes, the full -7/+28 sweep once an hour. Only today
+  // matters to a gate, and at a 5-minute cadence the wide pull would ask
+  // Oracle for 14,450 rows every time to serve a question about ~1,200 of
+  // them. The sweep still happens; it just stops being what a person at a
+  // door is waiting behind.
+  //
+  // Keyed off the clock rather than off state so it stays stateless: with a
+  // */5 cron this is one full sweep and eleven narrow passes an hour, and a
+  // missed tick costs an hour at worst, never a permanent drift.
+  const window = scheduleWindow(new Date().getUTCMinutes() < 5 ? "full" : "day");
   const queued: Array<{ tenant: string; kind: string; created: boolean }> = [];
 
   for (const tenant of tenants) {

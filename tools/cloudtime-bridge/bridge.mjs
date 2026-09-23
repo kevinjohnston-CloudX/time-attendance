@@ -22,7 +22,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const ONCE = process.argv.includes("--once");
 const DRY_RUN = process.argv.includes("--dry-run");
 
@@ -433,10 +433,48 @@ async function handleGateStatePull(conn, payload) {
   return { scans };
 }
 
+/**
+ * Every gate-log row touched in the last :days — NOT last-row-per-badge like
+ * GATE_STATE_SQL. CloudTime reads BOTH scantime and outtime from each row as
+ * bare instants and ignores scantype: when Oracle is out of phase with
+ * CloudTime's nightly auto-close, a morning arrival is written into outtime on
+ * the previous open row, so reading only scantime would miss exactly the
+ * people this job exists to recover. Temporary — see gate-recon.service.ts.
+ */
+const GATE_RECON_SQL = `
+  SELECT t.badgeid  AS "badgeId",
+         t.scanid   AS "scanId",
+         t.scantype AS "scanType",
+         t.scantime AS "scanTime",
+         t.location AS "location",
+         t.outtime  AS "outTime"
+  FROM timestationscanlog t
+  WHERE t.scantime >= SYSDATE - :days
+     OR t.outtime  >= SYSDATE - :days`;
+
+async function handleGateScanRecon(conn, payload) {
+  const days = Math.min(Math.max(Number(payload?.days ?? 1) || 1, 1), 7);
+  const r = await conn.execute(GATE_RECON_SQL, { days });
+
+  const scans = (r.rows ?? [])
+    .map((row) => ({
+      badgeId: text(row.badgeId) ?? "",
+      scanId: text(row.scanId),
+      scanType: (text(row.scanType) ?? "").toUpperCase() || null,
+      scanTime: toIsoInstant(row.scanTime),
+      location: row.location === null || row.location === undefined ? null : Number(row.location),
+      outTime: toIsoInstant(row.outTime),
+    }))
+    .filter((s) => s.badgeId && s.scanTime);
+
+  return { scans };
+}
+
 const HANDLERS = {
   "roster.sync": handleRosterSync,
   "schedule.pull": handleSchedulePull,
   "gatestate.pull": handleGateStatePull,
+  "gatescan.recon": handleGateScanRecon,
 };
 
 /* ------------------------------------------------------------------ */
