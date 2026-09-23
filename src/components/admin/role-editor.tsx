@@ -54,7 +54,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   report: "Reports",
   audit: "Audit Log",
   role: "Roles",
-  presence: "On Site",
+  presence: "Live Attendance",
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -165,7 +165,7 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
   presence: {
     summary: "Controls who can see which employees are in the building right now.",
     cells: {
-      "read:all": "See everyone at a site on the On Site board, with their gate and time clock scans.",
+      "read:all": "See everyone at a site on Live Attendance, with their gate and time clock scans.",
     },
   },
   role: {

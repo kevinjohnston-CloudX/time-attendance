@@ -535,7 +535,7 @@ export function OnSiteBoard({
     ])];
     const csv = lines.map((r) => r.map(csvCell).join(",")).join("\r\n");
     const stamp = `${siteDate(board.generatedAt, tz)} ${fmtTime(board.generatedAt, tz).replace(/[: ]/g, "")}`;
-    download(csv, `On Site ${board.site.name} ${stamp}.csv`);
+    download(csv, `Live Attendance ${board.site.name} ${stamp}.csv`);
   }
 
   // ── No site at all ──────────────────────────────────────────────────────
@@ -556,6 +556,9 @@ export function OnSiteBoard({
 
   const liveLine = (
     <span className="inline-flex flex-wrap items-center gap-2">
+      {siteName && (
+        <span style={{ color: "var(--text-primary)", fontWeight: "var(--weight-medium)" }}>{siteName}</span>
+      )}
       <span className={styles.live} data-state={liveState} aria-hidden="true" />
       {liveState === "paused" ? (
         <span>Paused while this tab is in the background</span>
@@ -636,7 +639,7 @@ export function OnSiteBoard({
                   transition: "font-size 140ms ease, line-height 140ms ease",
                 }}
               >
-                {siteName ? `On Site at ${siteName}` : "On Site"}
+                Live Attendance
               </h1>
               {/* Slim, the bar keeps the one number this page exists for and
                   whether it is still live, and gives up the sentence. */}
@@ -1133,12 +1136,12 @@ export function OnSiteBoard({
 /* ── Pieces ─────────────────────────────────────────────────────────────── */
 
 function Header({ siteName, liveLine, actions }: { siteName: string; liveLine: React.ReactNode; actions: React.ReactNode }) {
-  // The site is part of the title because every number on the page belongs to
-  // it, and a count of people "in the building" means nothing without saying
-  // which building.
+  // The title stays the same on every site. Which building the numbers belong
+  // to leads the line under it instead, so a long site name never crowds the
+  // title and the page reads the same wherever you are.
   return (
     <PageHeader pinned
-      title={siteName ? `On Site at ${siteName}` : "On Site"}
+      title="Live Attendance"
       subtitle={liveLine ?? undefined}
       actions={actions ?? undefined}
     />
@@ -1784,7 +1787,7 @@ function BoardSkeleton() {
     <span className={styles.skeleton} style={{ width: w, height: h }} />
   );
   return (
-    <div className="flex flex-col gap-4" aria-busy="true" aria-label="Loading who is on site">
+    <div className="flex flex-col gap-4" aria-busy="true" aria-label="Loading Live Attendance">
       <div className={styles.headcount}>
         <div className={styles.side}>
           {bar(220, 44)}

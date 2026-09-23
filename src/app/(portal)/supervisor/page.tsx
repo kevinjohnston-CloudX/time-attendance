@@ -203,7 +203,7 @@ export default async function TeamOverviewPage() {
         <div className="flex items-center gap-2">
           {canSeeOnSite && (
             <LinkButton href="/supervisor/on-site" hierarchy="secondary">
-              On Site
+              Live Attendance
             </LinkButton>
           )}
           <LinkButton href="/supervisor/timesheets" hierarchy="primary">
@@ -274,7 +274,7 @@ export default async function TeamOverviewPage() {
           actions={
             canSeeOnSite ? (
               <LinkButton href="/supervisor/on-site" hierarchy="tertiary" size="sm">
-                Open On Site
+                Open Live Attendance
               </LinkButton>
             ) : undefined
           }

@@ -38,7 +38,7 @@ export default function OnSiteError({
 
       <div className="flex flex-col gap-1.5">
         <h1 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>
-          On Site could not be loaded
+          Live Attendance could not be loaded
         </h1>
         <p
           className="max-w-prose"

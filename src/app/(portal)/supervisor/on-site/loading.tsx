@@ -22,7 +22,7 @@ const panel = {
 
 export default function Loading() {
   return (
-    <div className="flex flex-col gap-4" aria-busy="true" aria-label="Loading who is on site">
+    <div className="flex flex-col gap-4" aria-busy="true" aria-label="Loading Live Attendance">
       <div className="flex flex-col gap-2">
         <Bar w={260} h={30} />
         <Bar w={200} />
