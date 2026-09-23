@@ -59,7 +59,7 @@ export default async function ExceptionsPage({
   const tenantId = session.user.tenantId as string;
   const now = new Date();
 
-  const [result, counts, sites, departments, shifts, rawPayPeriods] = await Promise.all([
+  const [result, counts, sites, departments, shifts, reasonCodes, rawPayPeriods] = await Promise.all([
     getTeamExceptions({ siteId, departmentId, shiftId, exceptionType, payPeriodId }),
     // Taken without the type filter on purpose, so the type control can say
     // what picking a different one would get you.
@@ -82,6 +82,14 @@ export default async function ExceptionsPage({
       where: { tenantId, isActive: true },
       orderBy: [{ number: "asc" }, { name: "asc" }],
       select: { id: true, name: true },
+    }),
+    // Read here rather than through getReasonCodes, which sits behind
+    // PAY_PERIOD_MANAGE and would refuse the supervisors this screen is for.
+    // The page has already checked the permission it does need.
+    db.reasonCode.findMany({
+      where: { tenantId, isActive: true },
+      orderBy: { code: "asc" },
+      select: { id: true, code: true, label: true },
     }),
     db.payPeriod.findMany({
       where: {
@@ -129,6 +137,7 @@ export default async function ExceptionsPage({
       departments={departments}
       shifts={shifts}
       payPeriods={payPeriods}
+      reasonCodes={reasonCodes}
       selected={{ siteId, departmentId, shiftId, employeeId, exceptionType, payPeriodId }}
     />
   );

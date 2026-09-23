@@ -2,19 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { format } from "date-fns";
-import { ExternalLink, Inbox } from "lucide-react";
-import { ExceptionActionPanel } from "@/components/supervisor/exception-action-panel";
+import { Inbox } from "lucide-react";
+import { ExceptionCard } from "@/components/supervisor/exception-card";
 import {
-  Badge,
   Button,
-  Card,
   EmptyState,
   FilterSelectChip,
-  LinkButton,
   SearchInput,
   Toast,
-  exceptionTone,
   useToast,
 } from "@/components/ui";
 
@@ -81,6 +76,13 @@ const SEVERITY_RULE = [
   "var(--stroke-secondary)",
 ];
 
+/** The heading above each block, in the handoff's own words. */
+const SEVERITY_GROUP = [
+  { label: "Needs a fix", hint: "Hours stay wrong until these are corrected" },
+  { label: "To check", hint: "A rule was broken. Confirm or correct it." },
+  { label: "To review", hint: "Logged for the record" },
+];
+
 type Props = {
   rows: ExceptionRow[];
   /** Open counts per type, taken before the type filter ran. */
@@ -90,6 +92,7 @@ type Props = {
   departments: Option[];
   shifts: Option[];
   payPeriods: Option[];
+  reasonCodes: { id: string; code: string; label: string }[];
   selected: {
     siteId?: string;
     departmentId?: string;
@@ -108,6 +111,7 @@ export function ExceptionsScreen({
   departments,
   shifts,
   payPeriods,
+  reasonCodes,
   selected,
 }: Props) {
   const router = useRouter();
@@ -520,57 +524,63 @@ export function ExceptionsScreen({
               }
             />
           ) : (
-            visible.map((ex) => (
-              <Card
-                key={ex.id}
-                // With one person open every card would carry the same name,
-                // so the date takes the title instead.
-                title={openEmployeeId ? format(ex.occurredAt, "EEEE, d MMMM yyyy") : ex.employeeName}
-                subtitle={[ex.departmentName, ex.siteName].filter(Boolean).join(" \u00b7 ")}
-                actions={
-                  <LinkButton
-                    href={`/payroll/timecards?payPeriodId=${ex.payPeriod.id}&employeeId=${ex.employeeId}`}
-                    size="sm"
-                    leadingIcon={<ExternalLink className="h-3.5 w-3.5" />}
-                  >
-                    View Timecard
-                  </LinkButton>
-                }
-              >
-                <div className="flex flex-col gap-2.5">
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <Badge tone={exceptionTone(ex.exceptionType)} size="sm">
-                      {typeLabels[ex.exceptionType] ?? ex.exceptionType}
-                    </Badge>
-                    <span
-                      className="tabular"
-                      style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+            visible.map((ex, i) => {
+              const severity = severityRank(ex.exceptionType);
+              const group = SEVERITY_GROUP[severity];
+              // A heading only where the severity changes, which is what the
+              // sort above makes possible: one block per severity, in order.
+              const opensGroup = i === 0 || severityRank(visible[i - 1].exceptionType) !== severity;
+              const groupCount = visible.filter(
+                (r) => severityRank(r.exceptionType) === severity,
+              ).length;
+
+              return (
+                <div key={ex.id} className="flex flex-col gap-2.5">
+                  {opensGroup && (
+                    <div
+                      className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1"
+                      style={{ paddingTop: i === 0 ? 0 : 10 }}
                     >
-                      {format(ex.occurredAt, openEmployeeId ? "h:mm a" : "MMM d, yyyy")}
-                    </span>
-                    <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                      Scheduled {ex.scheduled.start ?? "\u2014"} to {ex.scheduled.end ?? "\u2014"}
-                      {" \u00b7 "}
-                      Recorded {ex.recorded.in ?? "\u2014"} to {ex.recorded.out ?? "\u2014"}
-                    </span>
-                  </div>
-
-                  {ex.description && (
-                    <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
-                      {ex.description}
-                    </p>
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          alignSelf: "center",
+                          width: 8,
+                          height: 8,
+                          borderRadius: 2,
+                          background: SEVERITY_RULE[severity],
+                        }}
+                      />
+                      <span
+                        style={{
+                          font: "var(--type-body1)",
+                          fontWeight: "var(--weight-semibold)",
+                          color: "var(--text-primary)",
+                        }}
+                      >
+                        {group.label}
+                      </span>
+                      <span
+                        className="tabular"
+                        style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                      >
+                        {groupCount}
+                      </span>
+                      <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                        {group.hint}
+                      </span>
+                    </div>
                   )}
-
-                  <ExceptionActionPanel
-                    exceptionId={ex.id}
-                    exceptionType={ex.exceptionType}
-                    timesheetId={ex.timesheetId}
-                    occurredAt={ex.occurredAt}
-                    hasPunches={ex.hasPunches}
+                  <ExceptionCard
+                    row={ex}
+                    typeLabel={typeLabels[ex.exceptionType] ?? ex.exceptionType}
+                    severity={severity}
+                    reasonCodes={reasonCodes}
+                    onDone={flash}
                   />
                 </div>
-              </Card>
-            ))
+              );
+            })
           )}
         </div>
       </div>
