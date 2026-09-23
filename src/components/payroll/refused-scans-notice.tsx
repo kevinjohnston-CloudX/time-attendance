@@ -65,7 +65,7 @@ export function RefusedScansNotice({
         body={
           canEdit
             ? `They are not on this timecard. Review them to add the ones that should count${days > 1 ? `, across ${days} days` : ""}.`
-            : "They are not on this timecard. It is locked or approved, so reopen it to add them."
+            : "They are not on this timecard, and it cannot be changed here."
         }
         actions={
           canEdit ? (
