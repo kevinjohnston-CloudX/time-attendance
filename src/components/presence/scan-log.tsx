@@ -500,7 +500,7 @@ function LogRow({
           <span className={styles.name}>{r.person.name}</span>
           <span className={styles.meta}>
             {r.person.employeeCode}
-            {r.person.department ? ` · ${r.person.department}` : ""}
+            {(r.person.jobTitle ?? r.person.department) ? ` · ${r.person.jobTitle ?? r.person.department}` : ""}
             {r.person.homeSite ? ` · From ${r.person.homeSite}` : ""}
           </span>
         </span>

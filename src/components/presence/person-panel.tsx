@@ -185,7 +185,7 @@ export function PersonPanel({
                 <span className={styles.skeleton} style={{ width: 180, height: 24 }} />
               )}
               <span className="line-clamp-2" style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>
-                {detail?.jobTitle ?? person?.department ?? detail?.department ?? ""}
+                {person?.jobTitle ?? detail?.jobTitle ?? person?.department ?? detail?.department ?? ""}
               </span>
               <span className="mt-1 flex flex-wrap items-center gap-1.5">
                 {/* The live status says where they are now, so it only sits

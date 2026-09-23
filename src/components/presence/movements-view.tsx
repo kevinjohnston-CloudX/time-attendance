@@ -276,7 +276,7 @@ function PersonBlock({
             </button>
             <span className={styles.meta}>
               {p.employeeCode}
-              {p.department ? ` · ${p.department}` : ""}
+              {(p.jobTitle ?? p.department) ? ` · ${p.jobTitle ?? p.department}` : ""}
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-1">
               {meta && status && (

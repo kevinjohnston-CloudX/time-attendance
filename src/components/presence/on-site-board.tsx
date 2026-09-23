@@ -1289,7 +1289,7 @@ function PersonTile({
       </span>
       <span className={styles.tileBody}>
         <span className={styles.name}>{p.name}</span>
-        {!compact && <span className={styles.meta}>{p.department ?? p.employeeCode}</span>}
+        {!compact && <span className={styles.meta}>{p.jobTitle ?? p.department ?? p.employeeCode}</span>}
         {readers && !compact ? (
           <span className={styles.readers}>
             {readers.map((l) => (

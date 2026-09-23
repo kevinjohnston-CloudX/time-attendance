@@ -38,6 +38,9 @@ export interface PresencePerson {
   employeeCode: string;
   departmentId: string | null;
   department: string | null;
+  /** Their job title, or null. What the board shows under a name, so the
+   *  card and the panel describe someone the same way. */
+  jobTitle: string | null;
   shiftId: string | null;
   shift: string | null;
   /**
@@ -169,6 +172,7 @@ export interface ScanLogRow extends PresenceScan {
     name: string;
     employeeCode: string;
     department: string | null;
+    jobTitle: string | null;
     /** The site on their record, when it is not this building. */
     homeSite: string | null;
     photoUrl: string | null;
@@ -215,6 +219,9 @@ export interface DayPerson {
   employeeCode: string;
   departmentId: string | null;
   department: string | null;
+  /** Their job title, or null. What the board shows under a name, so the
+   *  card and the panel describe someone the same way. */
+  jobTitle: string | null;
   shiftId: string | null;
   shift: string | null;
   /** A signed link to the tablet photo, or null. */
