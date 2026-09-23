@@ -298,12 +298,12 @@ export function ScanLogCounts({
           <LogCount label="In" tone="in" count={summary.clockIn} active={counter === "clock-in"} onClick={() => pick("clock-in")} />
           <LogCount label="Out" tone="out" count={summary.clockOut} active={counter === "clock-out"} onClick={() => pick("clock-out")} />
           <LogCount
-            label="Not accepted"
+            label="Not counted"
             tone="error"
             count={summary.rejected}
             active={counter === "rejected"}
             onClick={() => pick("rejected")}
-            hint="Time clock scans the timecard refused"
+            hint="Scans the timecard refused, usually a second tap too soon, and repeat reads of the same badge. Left out of every other list and total"
           />
         </div>
         <p className={styles.footnote}>

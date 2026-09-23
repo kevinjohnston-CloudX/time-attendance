@@ -1846,7 +1846,7 @@ const COUNTER_LABEL: Record<LogCounter, string> = {
   clock: "Time clock scans",
   "clock-in": "Time clock in",
   "clock-out": "Time clock out",
-  rejected: "Not accepted",
+  rejected: "Not counted",
 };
 
 /** How many scans the picked counter stands for, from the same counts it shows. */

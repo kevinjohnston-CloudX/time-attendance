@@ -1,5 +1,6 @@
 import { snapToLocalTime } from "@/lib/utils/date";
 import { buildLanes, type DayLanes } from "./lanes";
+import { isCountedScan, isShownScan } from "./scan-rules";
 import type { DayPerson, PresenceScan, SiteDay } from "./types";
 
 /**
@@ -81,8 +82,10 @@ export interface NowState {
 
 export interface PersonDayView {
   person: DayPerson;
-  /** Every scan that day, oldest first, exactly as recorded. */
+  /** Every scan that day worth showing, oldest first (see scan-rules.ts). */
   scans: PresenceScan[];
+  /** Scans that day that never counted and are not shown. */
+  notCounted: number;
   lanes: DayLanes;
   lines: MovementLine[];
   flags: MovementFlag[];
@@ -196,7 +199,7 @@ export function buildPersonDay(
   const exits = hasGate
     ? lanes.gate.filter((g) => !g.open && !g.closedBySystem).length + lanes.exitsWithoutEntry.length
     : lanes.clock.filter((c) => c.kind === "WORK" && c.endScan?.punchType === "CLOCK_OUT").length;
-  const rejected = scans.filter((s) => s.rejected).length;
+  const rejected = scans.filter((s) => !isShownScan(s)).length;
   const breaks = lanes.clock.filter((c) => c.kind !== "WORK");
 
   const flags: MovementFlag[] = [];
@@ -234,11 +237,13 @@ export function buildPersonDay(
   add("INACTIVE", person.inactive && scans.length > 0);
   add("ON_LEAVE", person.onLeave);
 
-  const last = scans.length ? Date.parse(scans[scans.length - 1].at) : null;
+  const shown = scans.filter(isShownScan);
+  const last = shown.length ? Date.parse(shown[shown.length - 1].at) : null;
 
   return {
     person,
-    scans,
+    scans: scans.filter(isShownScan),
+    notCounted: scans.filter((s) => !isShownScan(s)).length,
     lanes,
     lines,
     flags,
@@ -248,7 +253,7 @@ export function buildPersonDay(
     earlyMinutes,
     exits,
     rejected,
-    scanCount: scans.length,
+    scanCount: scans.filter(isShownScan).length,
     firstIn,
     lastOut,
     lastActivity: last,
@@ -282,7 +287,9 @@ export interface ScanTotals {
 export function scanTotals(views: PersonDayView[]): ScanTotals {
   const t: ScanTotals = { all: 0, gate: 0, gateIn: 0, gateOut: 0, clock: 0, clockIn: 0, clockOut: 0, rejected: 0 };
   for (const v of views) {
+    t.rejected += v.notCounted;
     for (const s of v.scans) {
+      if (!isCountedScan(s)) continue;
       t.all += 1;
       const d = scanDirection(s);
       if (s.stream === "SECURITY") {
@@ -293,7 +300,6 @@ export function scanTotals(views: PersonDayView[]): ScanTotals {
         t.clock += 1;
         if (d === "IN") t.clockIn += 1;
         else if (d === "OUT") t.clockOut += 1;
-        if (s.rejected) t.rejected += 1;
       }
     }
   }

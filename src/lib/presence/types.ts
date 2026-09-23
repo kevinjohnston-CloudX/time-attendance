@@ -98,6 +98,7 @@ export interface PresenceScan {
   automatic: boolean;
   /** The same badge read twice within seconds at the same kind of reader. */
   reread: boolean;
+  /** A time clock scan the timecard refused, errored on, or never finished. */
   rejected: boolean;
 }
 
@@ -138,6 +139,7 @@ export type ScanStream = "SECURITY" | "TIME_CLOCK";
  * counters themselves, so they only narrow the rows.
  */
 export interface ScanLogQuery {
+  /* `rejected` picks the scans that never counted instead of the ones that did. */
   /** A site calendar day in the last week, YYYY-MM-DD. Null is today. */
   day: string | null;
   stream: ScanStream | null;
@@ -174,7 +176,7 @@ export interface ScanLogSummary {
   clockIn: number;
   clockOut: number;
   clockTotal: number;
-  /** Time clock scans the timecard did not accept. */
+  /** Scans that never counted: refused by the timecard, or a reader's repeat read. */
   rejected: number;
   /** Gate exits the system wrote overnight for people who never scanned out. */
   gateAutoClosed: number;

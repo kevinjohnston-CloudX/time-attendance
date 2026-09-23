@@ -4,6 +4,7 @@ import { snapToLocalTime } from "@/lib/utils/date";
 import { addDays, clampDay } from "./days";
 import { localDateString } from "./on-site.service";
 import { photoUrls } from "./photos";
+import { NOT_COUNTED_OUTCOMES } from "./scan-rules";
 import type { ScanLogPage, ScanLogQuery, ScanLogRow } from "./types";
 
 /**
@@ -25,7 +26,8 @@ import type { ScanLogPage, ScanLogQuery, ScanLogRow } from "./types";
  * matches nobody has no employee and so no site, and is not in this log.
  */
 
-const REJECTED = ["PUNCH_REJECTED", "ERROR"] as const;
+const REJECTED = NOT_COUNTED_OUTCOMES;
+const SYSTEM = ["AUTO_CLOSE", "SEEDED"];
 
 /**
  * A time clock scan is in or out by what the timecard made of it, when it
@@ -106,13 +108,27 @@ export async function getScanLog(
   // What the counts cover: the day, the site and the people filters.
   const base: Prisma.ScanEventWhereInput = { tenantId, scanTime: { gte: dayStart, lt: dayEnd }, employee };
 
+  // The scans that never counted: refused by the timecard, or a reader's
+  // repeat of the same badge. Hidden unless "Not counted" is picked.
+  const notCounted: Prisma.ScanEventWhereInput = {
+    OR: [{ stream: "TIME_CLOCK", outcome: { in: [...REJECTED] } }, { directionSource: "REREAD" }],
+  };
+  // Every total counts real scans only: not those, and not the rows the
+  // system wrote overnight, which are shown but are nobody's scan.
+  const counted: Prisma.ScanEventWhereInput = {
+    AND: [base, { NOT: notCounted }, { directionSource: { notIn: SYSTEM as never } }],
+  };
+
   // What the rows cover: that, narrowed by whichever counter is picked. A
   // direction always comes with its reader, because every counter has one.
   const narrow: Prisma.ScanEventWhereInput[] = [base];
-  if (input.rejected) narrow.push({ stream: "TIME_CLOCK", outcome: { in: [...REJECTED] } });
-  else if (input.stream) {
-    narrow.push({ stream: input.stream });
-    if (input.direction) narrow.push(directionWhere(input.stream, input.direction));
+  if (input.rejected) narrow.push(notCounted);
+  else {
+    narrow.push({ NOT: notCounted });
+    if (input.stream) {
+      narrow.push({ stream: input.stream });
+      if (input.direction) narrow.push(directionWhere(input.stream, input.direction));
+    }
   }
   const filtered: Prisma.ScanEventWhereInput = { AND: narrow };
 
@@ -154,12 +170,12 @@ export async function getScanLog(
     }),
     db.scanEvent.groupBy({
       by: ["stream", "direction", "timecardPunchType"],
-      where: base,
+      where: counted,
       _count: { _all: true },
     }),
-    db.scanEvent.count({ where: { ...base, stream: "TIME_CLOCK", outcome: { in: [...REJECTED] } } }),
+    db.scanEvent.count({ where: { AND: [base, notCounted] } }),
     db.scanEvent.count({ where: { ...base, stream: "SECURITY", directionSource: "AUTO_CLOSE" } }),
-    db.scanEvent.groupBy({ by: ["employeeId"], where: base }),
+    db.scanEvent.groupBy({ by: ["employeeId"], where: counted }),
     db.scanEvent.aggregate({ where: base, _max: { createdAt: true } }),
   ]);
 

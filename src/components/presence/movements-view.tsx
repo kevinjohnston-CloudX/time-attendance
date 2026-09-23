@@ -128,7 +128,7 @@ function flagChips(v: PersonDayView, isToday: boolean): { label: string; tone: "
   if (has("LONG_BREAK")) out.push({ label: `Break over ${LONG_BREAK_MIN} min`, tone: "warning" });
   if (has("EXIT_NO_ENTRY")) out.push({ label: "Exit with no entry scan", tone: "error" });
   if (has("MARKED_OUT")) out.push({ label: "Marked out overnight", tone: "neutral" });
-  if (has("REJECTED")) out.push({ label: `${v.rejected} not accepted`, tone: "neutral" });
+  if (has("REJECTED")) out.push({ label: `${v.rejected} not counted`, tone: "neutral" });
   if (has("INACTIVE")) out.push({ label: "Inactive record", tone: "error" });
   return out;
 }
@@ -342,9 +342,8 @@ function PersonBlock({
               >
                 <ChevronDown className={styles.chevron} aria-hidden="true" />
                 {scansOpen ? "Hide" : "Show"} {v.scanCount.toLocaleString()} {v.scanCount === 1 ? "scan" : "scans"}
-                {v.rejected > 0 && <span className={styles.scanToggleNote}>{v.rejected} not accepted</span>}
               </button>
-              {scansOpen && <ScanList scans={v.scans} tz={tz} />}
+              {scansOpen && <ScanList scans={v.scans} tz={tz} notCounted={v.notCounted} />}
             </>
           )}
         </span>
@@ -357,7 +356,7 @@ function PersonBlock({
  * A person's scans, every one, in the order they happened, inside their
  * block: the same words the Scan log uses, so the two read alike.
  */
-function ScanList({ scans, tz }: { scans: PersonDayView["scans"]; tz: string }) {
+function ScanList({ scans, tz, notCounted }: { scans: PersonDayView["scans"]; tz: string; notCounted: number }) {
   return (
     <ol className={styles.scanList} onClick={(e) => e.stopPropagation()}>
       {scans.map((s) => {
@@ -377,25 +376,21 @@ function ScanList({ scans, tz }: { scans: PersonDayView["scans"]; tz: string }) 
             </span>
             <span className={styles.scanDevice}>{s.device ?? ""}</span>
             <span className={styles.scanNotes}>
-              {s.rejected && (
-                <Badge tone="error" size="sm">
-                  Not accepted
-                </Badge>
-              )}
               {s.automatic && (
                 <Badge tone="neutral" size="sm">
                   Added by the system
-                </Badge>
-              )}
-              {s.reread && (
-                <Badge tone="neutral" size="sm">
-                  Read twice
                 </Badge>
               )}
             </span>
           </li>
         );
       })}
+      {notCounted > 0 && (
+        <li className={styles.scanHidden}>
+          {notCounted.toLocaleString()} more {notCounted === 1 ? "scan was" : "scans were"} not counted: refused by the
+          timecard or read twice. They are in the Scan log under Not counted.
+        </li>
+      )}
     </ol>
   );
 }
@@ -717,7 +712,11 @@ export const FLAG_META: Record<MovementFlag, { label: string; hint: string; tone
   LONG_BREAK: { label: `Break over ${LONG_BREAK_MIN} min`, hint: `A meal or break that ran past ${LONG_BREAK_MIN} minutes`, tone: "warning" },
   EXIT_NO_ENTRY: { label: "Exit, no entry scan", hint: "Left through the security gate without being seen coming in", tone: "error" },
   MARKED_OUT: { label: "Marked out overnight", hint: "Never scanned out, so the system closed their day", tone: "neutral" },
-  REJECTED: { label: "Scans not accepted", hint: "Time clock scans the timecard refused", tone: "neutral" },
+  REJECTED: {
+    label: "Scans not counted",
+    hint: "Had scans the timecard refused, usually a second tap too soon. They are left out of the lists and totals",
+    tone: "neutral",
+  },
   INACTIVE: { label: "Inactive record", hint: "Scanning on a record that is inactive or terminated", tone: "error" },
   ON_LEAVE: { label: "On leave", hint: "Approved time off that day", tone: "info" },
 };
@@ -841,7 +840,7 @@ export function MovementsCounts({
           <TotalLink figure={totals.clockIn} label="in" onClick={() => onJump("clock-in")} quiet />
           <TotalLink figure={totals.clockOut} label="out" onClick={() => onJump("clock-out")} quiet />
           {totals.rejected > 0 && (
-            <TotalLink figure={totals.rejected} label="not accepted" onClick={() => onJump("rejected")} quiet />
+            <TotalLink figure={totals.rejected} label="not counted" onClick={() => onJump("rejected")} quiet />
           )}
         </span>
       </div>

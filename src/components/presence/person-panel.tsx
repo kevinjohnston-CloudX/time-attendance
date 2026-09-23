@@ -6,6 +6,7 @@ import { Badge, Button } from "@/components/ui";
 import { getOnSitePerson } from "@/actions/presence.actions";
 import { addDays, dayLabel, DAYS_BACK } from "@/lib/presence/days";
 import { buildLanes, type DayLanes } from "@/lib/presence/lanes";
+import { isShownScan } from "@/lib/presence/scan-rules";
 import type { PresenceDetail, PresencePerson, PresenceScan } from "@/lib/presence/types";
 import { snapToLocalTime } from "@/lib/utils/date";
 import {
@@ -131,6 +132,9 @@ export function PersonPanel({
     });
   }, [shown, now]);
 
+  // The list shows the scans that counted; the rest are one quiet line.
+  const shownScans = shown ? shown.scans.filter(isShownScan) : [];
+  const hiddenScans = shown ? shown.scans.length - shownScans.length : 0;
   const name = person?.name ?? detail?.name ?? "";
   const meta = person ? STATUS_META[person.status] : null;
   const mins = person ? minutesSince(person.since, now) : null;
@@ -297,18 +301,24 @@ export function PersonPanel({
               <h3 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>Scans</h3>
               {shown && (
                 <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                  {shown.scans.length.toLocaleString()} {shown.scans.length === 1 ? "scan" : "scans"}
+                  {shownScans.length.toLocaleString()} {shownScans.length === 1 ? "scan" : "scans"}
                 </span>
               )}
             </div>
             {failed && !shown ? null : !shown ? (
               <TimelineSkeleton />
-            ) : shown.scans.length === 0 ? (
+            ) : shownScans.length === 0 ? (
               <p style={{ margin: "8px 0 0", font: "var(--type-body1)", color: "var(--text-secondary)" }}>
                 {isToday ? "No reader has seen this person today." : "No reader saw this person that day."}
               </p>
             ) : (
-              <Timeline scans={shown.scans} tz={tz} />
+              <Timeline scans={shownScans} tz={tz} />
+            )}
+            {shown && hiddenScans > 0 && (
+              <p style={{ margin: "6px 0 0", font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                {hiddenScans.toLocaleString()} more {hiddenScans === 1 ? "scan was" : "scans were"} not counted: refused
+                by the timecard, usually a second tap too soon, or read twice. The Scan log lists them under Not counted.
+              </p>
             )}
           </section>
         </div>
@@ -560,8 +570,6 @@ function Timeline({ scans, tz }: { scans: PresenceScan[]; tz: string }) {
         const notes = [
           s.stream === "SECURITY" ? "Security gate" : "Time clock",
           s.device,
-          s.reread ? "Read twice by the reader" : null,
-          s.rejected ? "Not accepted by the timecard" : null,
           s.automatic ? "Added by the system" : null,
         ].filter(Boolean);
         return (

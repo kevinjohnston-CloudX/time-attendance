@@ -99,7 +99,7 @@ export async function getSiteDay(
         AND  s."scanTime" >= ${new Date(dayStart.getTime() - LOOKBACK_MS)}
         AND  s."scanTime" < ${dayStart}
         AND  s."direction" IN ('IN', 'OUT')
-        AND  NOT (s."stream" = 'TIME_CLOCK' AND s."outcome"::text IN ('PUNCH_REJECTED', 'ERROR'))
+        AND  NOT (s."stream" = 'TIME_CLOCK' AND s."outcome"::text IN ('PUNCH_REJECTED', 'ERROR', 'PENDING'))
       ORDER  BY s."employeeId", s."stream", s."scanTime" DESC
     `,
     // Whether this building's gate reports at all, around this day.

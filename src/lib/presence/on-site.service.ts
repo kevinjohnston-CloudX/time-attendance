@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { addDays, clampDay } from "./days";
 import { photoUrls } from "./photos";
+import { NOT_COUNTED_OUTCOMES } from "./scan-rules";
 import type {
   PresenceBoard,
   PresenceDetail,
@@ -120,7 +121,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
         AND  e."siteId" = ${siteId}
         AND  s."scanTime" >= ${windowStart}
         AND  s."direction" IN ('IN', 'OUT')
-        AND  NOT (s."stream" = 'TIME_CLOCK' AND s."outcome"::text IN ('PUNCH_REJECTED', 'ERROR'))
+        AND  NOT (s."stream" = 'TIME_CLOCK' AND s."outcome"::text IN ('PUNCH_REJECTED', 'ERROR', 'PENDING'))
       ORDER  BY s."employeeId", s."stream", s."scanTime" DESC
     `,
     // What each person actually did at a reader today. System rows are left
@@ -383,7 +384,7 @@ export async function getPresenceDetail(
         stream,
         direction: { in: ["IN", "OUT"] },
         scanTime: { gte: carryFrom, lt: dayStart },
-        ...(stream === "TIME_CLOCK" ? { outcome: { notIn: ["PUNCH_REJECTED", "ERROR"] } } : {}),
+        ...(stream === "TIME_CLOCK" ? { outcome: { notIn: [...NOT_COUNTED_OUTCOMES] } } : {}),
       },
       orderBy: { scanTime: "desc" },
       select: scanSelect,
@@ -449,6 +450,6 @@ export function toScan(s: ScanRow): PresenceScan {
     device: s.deviceName,
     automatic: s.directionSource === "AUTO_CLOSE" || s.directionSource === "SEEDED",
     reread: s.directionSource === "REREAD",
-    rejected: s.stream === "TIME_CLOCK" && (s.outcome === "PUNCH_REJECTED" || s.outcome === "ERROR"),
+    rejected: s.stream === "TIME_CLOCK" && (NOT_COUNTED_OUTCOMES as readonly string[]).includes(s.outcome),
   };
 }
