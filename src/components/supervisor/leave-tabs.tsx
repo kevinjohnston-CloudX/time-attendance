@@ -628,9 +628,15 @@ export function LeaveTabs({
           filters off the screen together. The title stays at full size while
           it is pinned: it used to shrink on scroll, and the resizing read as
           the page moving under the cursor. */}
+      {/* Pulled up and out over the page's own padding (16px on each side and
+          on top) and given that padding back inside. At rest it therefore
+          sits exactly where it did, but its box already starts at the top of
+          the scroller, so there is nothing left for it to travel before it
+          pins: it no longer slides up 16px on the first bit of scroll. The
+          same pull to the sides stops rows showing through the gutters. */}
       <div
         ref={toolbarRef}
-        className="sticky top-0 z-20 flex flex-col"
+        className="sticky top-0 z-20 -mx-4 -mt-4 flex flex-col px-4 pt-4"
         style={{ background: "var(--surface-page)" }}
       >
         <div className="flex flex-wrap items-end gap-3" style={{ paddingBottom: 12 }}>
@@ -935,15 +941,15 @@ export function LeaveTabs({
         {/* ── Coverage ─────────────────────────────────────────────────── */}
         {/* Sized to the window on the two-column layout, so the month fills
             the space beside the queue rather than stopping short of it.
-            56px top bar, the pinned toolbar and its 14px gap, and the 24px of
+            56px top bar, the pinned toolbar and its 16px gap, and the 24px of
             padding under the page. A floor keeps the month readable on a
             short window, where the page scrolls instead. Stacked below lg it
             sizes to its content as before. */}
         <div
           className="sticky min-w-0 lg:h-[var(--coverage-h)]"
           style={{
-            top: toolbarHeight + 14,
-            ["--coverage-h" as string]: `max(560px, calc(100dvh - ${toolbarHeight + 94}px))`,
+            top: toolbarHeight + 16,
+            ["--coverage-h" as string]: `max(560px, calc(100dvh - ${toolbarHeight + 96}px))`,
           }}
         >
         <Card
