@@ -7,7 +7,8 @@ import { ExceptionActionPanel } from "@/components/supervisor/exception-action-p
 import { ExceptionsFilter } from "@/components/supervisor/exceptions-filter";
 import { ExceptionsEmployeeList } from "@/components/supervisor/exceptions-employee-list";
 import { db } from "@/lib/db";
-import { format } from "date-fns";
+import { format, subDays } from "date-fns";
+import { parseUtcDate } from "@/lib/utils/date";
 import { ExternalLink } from "lucide-react";
 
 const EXCEPTION_LABEL: Record<string, string> = {
@@ -18,6 +19,9 @@ const EXCEPTION_LABEL: Record<string, string> = {
   UNSCHEDULED_OT: "Unscheduled OT",
   CONSECUTIVE_DAYS: "Consecutive Days",
   ABSENT: "Absent",
+  SCAN_DISCREPANCY: "Scan Discrepancy",
+  LATE_IN: "Late In",
+  EARLY_OUT: "Early Out",
 };
 
 
@@ -29,15 +33,18 @@ const EXCEPTION_BADGE: Record<string, string> = {
   UNSCHEDULED_OT:   "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
   CONSECUTIVE_DAYS: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
   ABSENT:           "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  SCAN_DISCREPANCY: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  LATE_IN:          "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+  EARLY_OUT:        "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
 };
 
-function buildUrl(siteId?: string, departmentId?: string, employeeId?: string, exceptionType?: string, payPeriodId?: string) {
+function buildUrl(siteId?: string, departmentId?: string, employeeId?: string, exceptionType?: string, payPeriodStart?: string) {
   const params = new URLSearchParams();
   if (siteId) params.set("siteId", siteId);
   if (departmentId) params.set("departmentId", departmentId);
   if (employeeId) params.set("employeeId", employeeId);
   if (exceptionType) params.set("exceptionType", exceptionType);
-  if (payPeriodId) params.set("payPeriodId", payPeriodId);
+  if (payPeriodStart) params.set("payPeriodStart", payPeriodStart);
   const qs = params.toString();
   return `/supervisor/exceptions${qs ? `?${qs}` : ""}`;
 }
@@ -45,18 +52,18 @@ function buildUrl(siteId?: string, departmentId?: string, employeeId?: string, e
 export default async function ExceptionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ siteId?: string; departmentId?: string; employeeId?: string; exceptionType?: string; payPeriodId?: string }>;
+  searchParams: Promise<{ siteId?: string; departmentId?: string; employeeId?: string; exceptionType?: string; payPeriodStart?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "TIMESHEET_APPROVE_TEAM")) redirect("/dashboard");
 
-  const { siteId, departmentId, employeeId, exceptionType, payPeriodId } = await searchParams;
+  const { siteId, departmentId, employeeId, exceptionType, payPeriodStart } = await searchParams;
   const tenantId = session.user.tenantId as string;
   const now = new Date();
 
   const [result, sites, departments, rawPayPeriods] = await Promise.all([
-    getTeamExceptions({ siteId, departmentId, exceptionType, payPeriodId }),
+    getTeamExceptions({ siteId, departmentId, exceptionType, payPeriodStart }),
     db.site.findMany({ where: { tenantId, isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.department.findMany({
       where: {
@@ -77,13 +84,18 @@ export default async function ExceptionsPage({
     }),
   ]);
 
-  const payPeriodOptions = rawPayPeriods.map((pp) => {
+  const seenStarts = new Set<string>();
+  const payPeriodOptions: { id: string; label: string }[] = [];
+  for (const pp of rawPayPeriods) {
+    const startKey = format(parseUtcDate(pp.startDate), "yyyy-MM-dd");
+    if (seenStarts.has(startKey)) continue;
+    seenStarts.add(startKey);
     const isCurrent = pp.startDate <= now && pp.endDate >= now && pp.status === "OPEN";
-    return {
-      id: pp.id,
-      label: `${format(pp.startDate, "MMM d")} – ${format(pp.endDate, "MMM d, yyyy")}${isCurrent ? " (Current)" : ""}`,
-    };
-  });
+    payPeriodOptions.push({
+      id: startKey,
+      label: `${format(parseUtcDate(pp.startDate), "MMM d")} – ${format(subDays(parseUtcDate(pp.endDate), 1), "MMM d, yyyy")}${isCurrent ? " (Current)" : ""}`,
+    });
+  }
 
   if (!result.success) redirect("/supervisor");
 
@@ -138,7 +150,7 @@ export default async function ExceptionsPage({
           selectedSiteId={siteId}
           selectedDepartmentId={departmentId}
           selectedExceptionType={exceptionType}
-          selectedPayPeriodId={payPeriodId}
+          selectedPayPeriodStart={payPeriodStart}
         />
       </div>
 
@@ -161,7 +173,7 @@ export default async function ExceptionsPage({
             siteId={siteId}
             departmentId={departmentId}
             exceptionType={exceptionType}
-            payPeriodId={payPeriodId}
+            payPeriodStart={payPeriodStart}
           />
         </div>
 
@@ -209,8 +221,8 @@ export default async function ExceptionsPage({
                       </div>
                       <p className="mt-0.5 text-xs text-zinc-400">
                         Pay period:{" "}
-                        {format(ex.timesheet.payPeriod.startDate, "MMM d")} –{" "}
-                        {format(ex.timesheet.payPeriod.endDate, "MMM d, yyyy")}
+                        {format(parseUtcDate(ex.timesheet.payPeriod.startDate), "MMM d")} –{" "}
+                        {format(subDays(parseUtcDate(ex.timesheet.payPeriod.endDate), 1), "MMM d, yyyy")}
                       </p>
                       {ex.description && (
                         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
@@ -231,7 +243,6 @@ export default async function ExceptionsPage({
                     exceptionType={ex.exceptionType}
                     timesheetId={ex.timesheetId}
                     occurredAt={ex.occurredAt}
-                    punches={ex.timesheet.punches}
                   />
                 </div>
               ))}

@@ -8,7 +8,7 @@ import { CsvUploadForm } from "@/components/admin/csv-upload-form";
 import { EmployeesTable } from "@/components/admin/employees-table";
 
 interface Props {
-  searchParams?: Promise<{ page?: string; q?: string; site?: string; dept?: string; role?: string }>;
+  searchParams?: Promise<{ page?: string; q?: string; site?: string; dept?: string; role?: string; inactive?: string }>;
 }
 
 export default async function EmployeesPage({ searchParams }: Props) {
@@ -17,14 +17,15 @@ export default async function EmployeesPage({ searchParams }: Props) {
   if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
 
   const sp = await searchParams;
-  const page = Math.max(0, Number(sp?.page ?? 0));
-  const q    = sp?.q    ?? "";
-  const site = sp?.site ?? "";
-  const dept = sp?.dept ?? "";
-  const role = sp?.role ?? "";
+  const page         = Math.max(0, Number(sp?.page ?? 0));
+  const q            = sp?.q    ?? "";
+  const site         = sp?.site ?? "";
+  const dept         = sp?.dept ?? "";
+  const role         = sp?.role ?? "";
+  const showInactive = sp?.inactive === "1";
 
   const [employeesResult, refDataResult] = await Promise.all([
-    getEmployees({ page, q: q || undefined, site: site || undefined, dept: dept || undefined, role: role || undefined }),
+    getEmployees({ page, q: q || undefined, site: site || undefined, dept: dept || undefined, role: role || undefined, showInactive }),
     getAdminRefData(),
   ]);
 
@@ -71,7 +72,7 @@ export default async function EmployeesPage({ searchParams }: Props) {
         pageSize={pageSize}
         sites={[...new Set(sites.map((s) => s.name))].sort()}
         departments={[...new Set(departments.map((d) => d.name))].sort()}
-        currentFilters={{ q, site, dept, role }}
+        currentFilters={{ q, site, dept, role, showInactive }}
       />
     </div>
   );

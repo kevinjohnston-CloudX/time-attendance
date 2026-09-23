@@ -27,10 +27,13 @@ interface Props {
   holidayRules: { id: string; name: string }[];
   payCategories: { id: string; number: number; description: string | null }[];
   payTypes: { id: string; number: number; description: string | null }[];
+  jobTitles: { id: string; name: string; externalId: string | null }[];
+  agencies: { id: string; code: number; description: string; inactiveOn: string | null }[];
   logs: Array<{
     id: string;
     createdAt: string;
     actorName: string;
+    action?: string;
     fields: Array<{ field: string; before: string; after: string }>;
   }>;
   hrSiteAccess: string[];
@@ -49,7 +52,7 @@ const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-
 
 type Tab = "general" | "personal" | "pay" | "logs" | "site-access";
 
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, logs, hrSiteAccess, actorRole }: Props) {
+export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, logs, hrSiteAccess, actorRole }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +111,8 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       // Oracle sync leaves it alone instead of undoing the correction.
       barcode: fd.get("barcode") as string,
       adpWorkerId: fd.get("adpWorkerId") as string,
-      jobTitle: fd.get("jobTitle") as string,
+      jobTitleId: (fd.get("jobTitleId") as string) || null,
+      agencyId: (fd.get("agencyId") as string) || null,
       terminationReason: fd.get("terminationReason") as string,
     });
   }
@@ -266,7 +270,40 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
 
             <div>
               <label className={labelCls}>Job Title</label>
-              <input name="jobTitle" defaultValue={employee.jobTitle ?? ""} className={inputCls} />
+              <select
+                name="jobTitleId"
+                defaultValue={(employee as any).jobTitleId ?? ""}
+                className={inputCls}
+              >
+                <option value="">— None —</option>
+                {jobTitles.map((jt) => (
+                  <option key={jt.id} value={jt.id}>
+                    {jt.name}{jt.externalId ? ` (${jt.externalId})` : ""}
+                  </option>
+                ))}
+              </select>
+              {!(employee as any).jobTitleId && employee.jobTitle && (
+                <p className="mt-1 text-xs text-zinc-400">
+                  Legacy value: &ldquo;{employee.jobTitle}&rdquo;
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className={labelCls}>Agency</label>
+              <select
+                name="agencyId"
+                defaultValue={(employee as any).agencyId ?? ""}
+                className={inputCls}
+              >
+                <option value="">— None —</option>
+                {agencies.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.code} – {a.description}
+                    {a.inactiveOn && new Date(a.inactiveOn) <= new Date() ? " (inactive)" : ""}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -602,6 +639,11 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
                           })}
                         </time>
                         <span className="text-xs text-zinc-400">by {entry.actorName}</span>
+                        {entry.action === "EMPLOYEE_CREATED" && (
+                          <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                            Created
+                          </span>
+                        )}
                       </div>
                       <ul className="mt-2 space-y-1">
                         {entry.fields.map((f, i) => (

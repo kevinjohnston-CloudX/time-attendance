@@ -88,11 +88,11 @@ export const getTimesheetForReview = withRBAC(
 export const getTeamExceptions = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
   async ({ employeeId, role, tenantId }, input: unknown) => {
-    const { siteId, departmentId, exceptionType, payPeriodId } = z.object({
+    const { siteId, departmentId, exceptionType, payPeriodStart } = z.object({
       siteId: z.string().optional(),
       departmentId: z.string().optional(),
       exceptionType: z.nativeEnum(ExceptionType).optional(),
-      payPeriodId: z.string().optional(),
+      payPeriodStart: z.string().optional(),
     }).parse(input ?? {});
 
     const isPayroll = PAYROLL_ROLES.includes(role);
@@ -111,7 +111,14 @@ export const getTeamExceptions = withRBAC(
         exceptionType: { in: Object.values(ExceptionType) },
         ...(exceptionType ? { exceptionType } : {}),
         timesheet: {
-          ...(payPeriodId ? { payPeriodId } : {}),
+          ...(payPeriodStart ? {
+            payPeriod: {
+              startDate: {
+                gte: new Date(payPeriodStart + "T00:00:00.000Z"),
+                lt:  new Date(payPeriodStart + "T23:59:59.999Z"),
+              },
+            },
+          } : {}),
           employee: employeeFilter,
         },
       },
@@ -120,14 +127,32 @@ export const getTeamExceptions = withRBAC(
           include: {
             employee: { include: { user: true, site: true, department: true } },
             payPeriod: true,
-            punches: {
-              where: { isApproved: true, correctedById: null },
-              orderBy: { roundedTime: "asc" },
-            },
           },
         },
       },
       orderBy: { occurredAt: "asc" },
+    });
+  }
+);
+
+/** Punches for a single timesheet — loaded lazily when the action panel opens. */
+export const getPunchesForTimesheet = withRBAC(
+  "TIMESHEET_APPROVE_TEAM",
+  async ({ employeeId, role, tenantId }, input: unknown) => {
+    const { timesheetId } = z.object({ timesheetId: z.string() }).parse(input ?? {});
+    const isPayroll = PAYROLL_ROLES.includes(role);
+    const t = tenantId ?? undefined;
+    return db.punch.findMany({
+      where: {
+        timesheetId,
+        isApproved: true,
+        correctedById: null,
+        ...(isPayroll ? {} : {
+          timesheet: { employee: { supervisorId: employeeId, tenantId: t } },
+        }),
+      },
+      select: { id: true, punchType: true, roundedTime: true },
+      orderBy: { roundedTime: "asc" },
     });
   }
 );

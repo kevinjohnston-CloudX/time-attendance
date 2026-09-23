@@ -26,7 +26,7 @@ type Props = {
   selectedSiteId?: string;
   selectedDepartmentId?: string;
   selectedExceptionType?: string;
-  selectedPayPeriodId?: string;
+  selectedPayPeriodStart?: string;
 };
 
 export function ExceptionsFilter({
@@ -36,7 +36,7 @@ export function ExceptionsFilter({
   selectedSiteId,
   selectedDepartmentId,
   selectedExceptionType,
-  selectedPayPeriodId,
+  selectedPayPeriodStart,
 }: Props) {
   const router = useRouter();
 
@@ -44,24 +44,24 @@ export function ExceptionsFilter({
     siteId?: string,
     departmentId?: string,
     exceptionType?: string,
-    payPeriodId?: string,
+    payPeriodStart?: string,
   ) {
     const params = new URLSearchParams();
     if (siteId) params.set("siteId", siteId);
     if (departmentId) params.set("departmentId", departmentId);
     if (exceptionType) params.set("exceptionType", exceptionType);
-    if (payPeriodId) params.set("payPeriodId", payPeriodId);
+    if (payPeriodStart) params.set("payPeriodStart", payPeriodStart);
     const qs = params.toString();
     router.push(`/supervisor/exceptions${qs ? `?${qs}` : ""}`);
   }
 
-  const hasFilters = selectedSiteId || selectedDepartmentId || selectedExceptionType || selectedPayPeriodId;
+  const hasFilters = selectedSiteId || selectedDepartmentId || selectedExceptionType || selectedPayPeriodStart;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       {payPeriods.length > 0 && (
         <select
-          value={selectedPayPeriodId ?? ""}
+          value={selectedPayPeriodStart ?? ""}
           onChange={(e) =>
             navigate(selectedSiteId, selectedDepartmentId, selectedExceptionType, e.target.value || undefined)
           }
@@ -77,7 +77,7 @@ export function ExceptionsFilter({
         <select
           value={selectedSiteId ?? ""}
           onChange={(e) =>
-            navigate(e.target.value || undefined, undefined, selectedExceptionType, selectedPayPeriodId)
+            navigate(e.target.value || undefined, undefined, selectedExceptionType, selectedPayPeriodStart)
           }
           className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
         >
@@ -90,7 +90,7 @@ export function ExceptionsFilter({
       <select
         value={selectedDepartmentId ?? ""}
         onChange={(e) =>
-          navigate(selectedSiteId, e.target.value || undefined, selectedExceptionType, selectedPayPeriodId)
+          navigate(selectedSiteId, e.target.value || undefined, selectedExceptionType, selectedPayPeriodStart)
         }
         className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
       >
@@ -102,7 +102,7 @@ export function ExceptionsFilter({
       <select
         value={selectedExceptionType ?? ""}
         onChange={(e) =>
-          navigate(selectedSiteId, selectedDepartmentId, e.target.value || undefined, selectedPayPeriodId)
+          navigate(selectedSiteId, selectedDepartmentId, e.target.value || undefined, selectedPayPeriodStart)
         }
         className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
       >

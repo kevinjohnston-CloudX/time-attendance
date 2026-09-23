@@ -13,9 +13,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  // Tenant-level periods (legacy / fallback for rule sets with no own schedule)
+  // Tenant-level periods — only needed for tenants that have at least one rule
+  // set without its own pay schedule (those rule sets rely on the fallback).
+  // If every rule set has payFrequency + payPeriodAnchorDate, skip tenant-level
+  // generation entirely so no orphan periods are created alongside rule-set ones.
   const tenants = await db.tenant.findMany({
-    where: { payPeriodAnchorDate: { not: null } },
+    where: {
+      payPeriodAnchorDate: { not: null },
+      ruleSets: {
+        some: {
+          OR: [{ payFrequency: null }, { payPeriodAnchorDate: null }],
+        },
+      },
+    },
     select: { id: true },
   });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, FolderOpen, Palmtree, Calendar, Tag, MessageSquare, CalendarClock, Layers, ChevronRight } from "lucide-react";
+import { Building2, FolderOpen, Palmtree, Calendar, Tag, MessageSquare, CalendarClock, Layers, ChevronRight, Briefcase, Users } from "lucide-react";
 import { SitesManager } from "@/components/admin/sites-manager";
 import { DepartmentsManager } from "@/components/admin/departments-manager";
 import { HolidaysManager } from "@/components/admin/holidays-manager";
@@ -10,11 +10,13 @@ import { PayCodesManager } from "@/components/admin/pay-codes-manager";
 import { ReasonCodesManager } from "@/components/admin/reason-codes-manager";
 import { PayCategoriesManager } from "@/components/admin/pay-categories-manager";
 import { PayTypesManager } from "@/components/admin/pay-types-manager";
+import { JobTitlesManager } from "@/components/admin/job-titles-manager";
+import { AgenciesManager } from "@/components/admin/agencies-manager";
 import type { Site, Department } from "@prisma/client";
 
 type DepartmentWithSites = Department & { sites: { site: Site }[] };
 
-type Tab = "sites" | "departments" | "holidays" | "leave-types" | "pay-codes" | "reason-codes" | "pay-categories" | "pay-types";
+type Tab = "sites" | "departments" | "holidays" | "leave-types" | "pay-codes" | "reason-codes" | "pay-categories" | "pay-types" | "job-titles" | "agencies";
 
 interface TabDef {
   id: Tab;
@@ -39,6 +41,10 @@ const TABS: TabDef[] = [
     description: "Manage numeric pay codes used for payroll export and segment classification." },
   { id: "reason-codes",   label: "Reason Codes",   icon: MessageSquare, requires: "payroll", title: "Reason Codes",
     description: "Manage reason codes that can be assigned to timecard entries." },
+  { id: "job-titles",     label: "Job Titles",     icon: Briefcase,     requires: "rules",   title: "Job Titles",
+    description: "Define job titles and their associated ID or code used in payroll or HR systems." },
+  { id: "agencies",       label: "Agencies",       icon: Users,         requires: "rules",   title: "Agencies",
+    description: "Define staffing agencies with their code, rates, and work hour limits." },
 ];
 
 interface Props {
@@ -62,6 +68,10 @@ interface Props {
   payCategories: any[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   payTypes: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  jobTitles: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  agencies: any[];
   hasSiteManage: boolean;
   hasRulesManage: boolean;
   hasPayPeriodManage: boolean;
@@ -79,6 +89,8 @@ export function SiteSettingsClient({
   holidayRules,
   payCategories,
   payTypes,
+  jobTitles,
+  agencies,
   hasSiteManage,
   hasRulesManage,
   hasPayPeriodManage,
@@ -162,6 +174,12 @@ export function SiteSettingsClient({
             )}
             {activeTab === "reason-codes" && (
               <ReasonCodesManager reasonCodes={reasonCodes} />
+            )}
+            {activeTab === "job-titles" && (
+              <JobTitlesManager jobTitles={jobTitles} />
+            )}
+            {activeTab === "agencies" && (
+              <AgenciesManager agencies={agencies} />
             )}
           </>
         )}

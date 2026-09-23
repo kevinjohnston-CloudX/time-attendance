@@ -28,6 +28,8 @@ model Tenant {
   holidayRules   HolidayRule[]
   payCategories  PayCategory[]
   payTypes       PayType[]
+  jobTitles      JobTitle[]
+  agencies       Agency[]
   apiKeys        ApiKey[]
   syncRuns         SyncRun[]
   rosterCandidates RosterCandidate[]
@@ -149,6 +151,10 @@ model Employee {
 
   // Work info
   jobTitle          String?
+  jobTitleId        String?
+  jobTitleRef       JobTitle? @relation(fields: [jobTitleId], references: [id])
+  agencyId          String?
+  agencyRef         Agency?   @relation(fields: [agencyId], references: [id])
   terminationReason String?
 
   // Pay
@@ -204,6 +210,8 @@ model Employee {
   badges             EmployeeBadge[]
   legacySyncLogs     LegacySyncLog[]
   siteAccess         HrSiteAccess[]
+  ruleSetHistory     EmployeeRuleSetHistory[]
+  ruleSetHistoryCreated EmployeeRuleSetHistory[] @relation("RuleSetHistoryCreator")
 
   @@unique([tenantId, employeeCode])
   @@map("employees")
@@ -335,4 +343,55 @@ model Document {
   employee Employee @relation(fields: [employeeId], references: [id])
 
   @@map("documents")
+}
+
+model EmployeeRuleSetHistory {
+  id            String   @id @default(cuid())
+  employeeId    String
+  ruleSetId     String
+  effectiveDate DateTime @db.Date
+  createdAt     DateTime @default(now())
+  createdById   String?
+
+  employee  Employee  @relation(fields: [employeeId], references: [id])
+  ruleSet   RuleSet   @relation(fields: [ruleSetId], references: [id])
+  createdBy Employee? @relation("RuleSetHistoryCreator", fields: [createdById], references: [id])
+
+  @@index([employeeId, effectiveDate])
+  @@map("employee_ruleset_history")
+}
+
+model Agency {
+  id          String   @id @default(cuid())
+  tenantId    String
+  code        Int                       // numeric agency code
+  description String
+  laborRate   Decimal  @default(0) @db.Decimal(10, 6)
+  chargeRate  Decimal  @default(0) @db.Decimal(10, 6)
+  inactiveOn  DateTime?                 // null = still active
+  maxWorkHours Decimal @default(0) @db.Decimal(8, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  employees Employee[]
+
+  @@index([tenantId])
+  @@map("agencies")
+}
+
+model JobTitle {
+  id         String   @id @default(cuid())
+  tenantId   String
+  name       String
+  externalId String?  // configurable ID (e.g. ADP job code, position number)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  employees Employee[]
+
+  @@index([tenantId])
+  @@map("job_titles")
 }
