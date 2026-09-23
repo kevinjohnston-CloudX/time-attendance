@@ -37,8 +37,16 @@ import { Badge, Card, LinkButton, exceptionTone } from "@/components/ui";
  * by what is drawn.
  */
 
+/**
+ * Two panels side by side, the same height as each other. Stretching rather
+ * than aligning to the top is what keeps a pair from looking like two
+ * unrelated boxes when one of them has fewer rows.
+ */
 const GRID =
-  "grid gap-4 items-start [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(340px,44%)),1fr))]";
+  "grid gap-4 items-stretch [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(340px,44%)),1fr))]";
+
+/** Every list in a panel uses the same row, so the pairs line up row for row. */
+const ROW = "flex min-h-[48px] items-center gap-3 py-2";
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n.toLocaleString()} ${n === 1 ? one : many}`;
@@ -176,8 +184,13 @@ export default async function TeamOverviewPage() {
   return (
     <div className="flex flex-col gap-4">
       {/* Pinned, like every list screen, so the page name and its way out stay
-          on screen while the panels scroll. It does not shrink. */}
-      <div className="sticky top-0 z-20 flex flex-wrap items-end gap-3 pb-3" style={{ background: "var(--surface-page)" }}>
+          on screen while the panels scroll. It does not shrink, and it does not
+          move either: it is pulled up into the page's top padding (-mt-4 pt-4)
+          so it already sits where it pins, instead of sliding 16px first. */}
+      <div
+        className="sticky top-0 z-20 -mt-4 flex flex-wrap items-end gap-3 pb-3 pt-4"
+        style={{ background: "var(--surface-page)" }}
+      >
         <div className="flex min-w-60 flex-1 flex-col gap-0.5">
           <h1 style={{ margin: 0, font: "var(--type-h1)", letterSpacing: "-0.02em", color: "var(--text-primary)" }}>
             Team Overview
@@ -284,7 +297,7 @@ export default async function TeamOverviewPage() {
                     return (
                       <div
                         key={d.dept}
-                        className="grid items-center gap-3 py-2 [grid-template-columns:minmax(0,120px)_minmax(0,1fr)_auto]"
+                        className="grid min-h-[40px] items-center gap-3 py-2 [grid-template-columns:140px_minmax(0,1fr)_72px]"
                         style={{ borderTop: "1px solid var(--stroke-divider)" }}
                       >
                         <span className="truncate" style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)" }} title={d.dept}>
@@ -294,7 +307,7 @@ export default async function TeamOverviewPage() {
                           <span style={{ width: `${inPct}%`, background: "var(--fill-success)" }} />
                           <span style={{ width: `${mealPct}%`, background: "var(--fill-warning)" }} />
                         </span>
-                        <span className="tabular whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                        <span className="tabular whitespace-nowrap text-right" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                           {d.inCount + d.mealCount} of {d.total}
                         </span>
                       </div>
@@ -328,7 +341,7 @@ export default async function TeamOverviewPage() {
                 return (
                   <div
                     key={r.id}
-                    className="flex items-center gap-3 py-2"
+                    className={ROW}
                     style={{ borderTop: i === 0 ? undefined : "1px solid var(--stroke-divider)" }}
                   >
                     <Avatar name={r.name} />
@@ -340,15 +353,15 @@ export default async function TeamOverviewPage() {
                         {[r.leaveType, r.department].filter(Boolean).join(" · ")}
                       </span>
                     </span>
-                    <span className="flex flex-none flex-col items-end gap-0.5">
-                      <span className="tabular whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                        {dateRange(r.startDate, r.endDate)}
-                      </span>
+                    <span className="flex flex-none items-center gap-2">
                       {onNow && (
                         <Badge tone="info" size="sm">
                           Off today
                         </Badge>
                       )}
+                      <span className="tabular whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                        {dateRange(r.startDate, r.endDate)}
+                      </span>
                     </span>
                   </div>
                 );
@@ -385,7 +398,7 @@ export default async function TeamOverviewPage() {
               {approvals.rows.map((r, i) => (
                 <div
                   key={r.id}
-                  className="flex items-center gap-3 py-2"
+                  className={ROW}
                   style={{ borderTop: i === 0 ? undefined : "1px solid var(--stroke-divider)" }}
                 >
                   <Avatar name={r.name} />
@@ -427,7 +440,7 @@ export default async function TeamOverviewPage() {
                 <Link
                   key={t.type}
                   href={`/supervisor/exceptions?exceptionType=${t.type}`}
-                  className="ta-hoverable -mx-2 grid items-center gap-3 rounded-md px-2 py-2 [grid-template-columns:minmax(0,150px)_minmax(0,1fr)_auto_14px]"
+                  className="ta-hoverable grid min-h-[48px] items-center gap-3 py-2 [grid-template-columns:140px_minmax(0,1fr)_56px_14px]"
                   style={{
                     color: "var(--text-primary)",
                     textDecoration: "none",
