@@ -1,0 +1,391 @@
+import { db } from "@/lib/db";
+import { snapToLocalTime } from "@/lib/utils/date";
+import type {
+  PresenceBoard,
+  PresenceDetail,
+  PresencePerson,
+  PresenceStatus,
+} from "./types";
+
+/**
+ * Who is in the building at one site, right now.
+ *
+ * <p>Built on `scan_events`, not on punches, because the question is what the
+ * readers saw rather than what the timecard concluded. The two streams stay
+ * separate all the way through and are only combined at the very end, into
+ * one status per person (see {@link PresenceStatus}).
+ *
+ * <p>Read-only. Nothing here writes, and nothing here is called on a timer by
+ * the server: the board polls it, so its cost is paid once per open screen
+ * every 30 seconds. That is why every query is bounded by a time window and a
+ * site, and why the aggregation happens in SQL rather than in a loop over
+ * every scan.
+ */
+
+/**
+ * How far back a scan can still decide somebody's state.
+ *
+ * <p>The nightly auto-close writes an OUT for anybody left IN, so in practice
+ * nobody's latest row is older than one night. 36 hours covers a night shift
+ * that started yesterday evening plus a missed auto-close run, without letting
+ * a week-old arrival keep somebody "inside" forever.
+ */
+const LOOKBACK_MS = 36 * 60 * 60 * 1000;
+
+/** Rows that record what the system did, not what a reader saw. */
+const SYSTEM_SOURCES = ["AUTO_CLOSE", "SEEDED"] as const;
+
+type LatestRow = {
+  employeeId: string;
+  stream: "SECURITY" | "TIME_CLOCK";
+  direction: "IN" | "OUT";
+  source: string;
+  scanTime: Date;
+  stateAfter: string | null;
+};
+
+type TodayRow = { employeeId: string; firstIn: Date | null; lastOut: Date | null };
+
+function localDateString(at: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(at);
+}
+
+/**
+ * The sites this viewer may open.
+ *
+ * <p>HR admins can be restricted to named sites through `HrSiteAccess`; no
+ * rows means unrestricted, which is how the rest of the app reads it too.
+ * Everybody else holding the permission sees the whole tenant.
+ */
+export async function getViewableSites(
+  tenantId: string,
+  viewer: { employeeId: string; role: string },
+) {
+  let restrictTo: string[] | null = null;
+  if (viewer.role === "HR_ADMIN" && viewer.employeeId) {
+    const rows = await db.hrSiteAccess.findMany({
+      where: { employeeId: viewer.employeeId },
+      select: { siteId: true },
+    });
+    if (rows.length > 0) restrictTo = rows.map((r) => r.siteId);
+  }
+
+  return db.site.findMany({
+    where: { tenantId, isActive: true, ...(restrictTo ? { id: { in: restrictTo } } : {}) },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, timezone: true },
+  });
+}
+
+/**
+ * One site's board. The caller has already checked the permission and that
+ * `siteId` is one of {@link getViewableSites}; the site is still re-read here
+ * scoped by tenant, so a stray id answers null rather than another company's
+ * building.
+ */
+export async function getPresenceBoard(tenantId: string, siteId: string): Promise<PresenceBoard | null> {
+  const site = await db.site.findFirst({
+    where: { id: siteId, tenantId, isActive: true },
+    select: { id: true, name: true, timezone: true },
+  });
+  if (!site) return null;
+
+  const now = new Date();
+  const timezone = site.timezone || "America/New_York";
+  const today = localDateString(now, timezone);
+  const todayStart = snapToLocalTime("00:00", today, timezone);
+  const windowStart = new Date(now.getTime() - LOOKBACK_MS);
+  const workDate = new Date(`${today}T00:00:00.000Z`);
+
+  const [latest, todayRows, lastGate, scheduled, leaveRequests, onLeaveFlags] = await Promise.all([
+    // Newest IN/OUT per person per stream. UNKNOWN is left out before the
+    // DISTINCT ON, not after, so an unresolvable scan never hides the real
+    // state underneath it.
+    db.$queryRaw<LatestRow[]>`
+      SELECT DISTINCT ON (s."employeeId", s."stream")
+             s."employeeId"            AS "employeeId",
+             s."stream"::text          AS stream,
+             s."direction"::text       AS direction,
+             s."directionSource"::text AS source,
+             s."scanTime"              AS "scanTime",
+             s."timecardStateAfter"    AS "stateAfter"
+      FROM   "scan_events" s
+      JOIN   "employees" e ON e.id = s."employeeId"
+      WHERE  s."tenantId" = ${tenantId}
+        AND  e."tenantId" = ${tenantId}
+        AND  e."siteId" = ${siteId}
+        AND  s."scanTime" >= ${windowStart}
+        AND  s."direction" IN ('IN', 'OUT')
+      ORDER  BY s."employeeId", s."stream", s."scanTime" DESC
+    `,
+    // What each person actually did at a reader today. System rows are left
+    // out: an auto-close at 11 PM last night is not somebody leaving today.
+    db.$queryRaw<TodayRow[]>`
+      SELECT s."employeeId" AS "employeeId",
+             MIN(s."scanTime") FILTER (WHERE s."direction" = 'IN')  AS "firstIn",
+             MAX(s."scanTime") FILTER (WHERE s."direction" = 'OUT') AS "lastOut"
+      FROM   "scan_events" s
+      JOIN   "employees" e ON e.id = s."employeeId"
+      WHERE  s."tenantId" = ${tenantId}
+        AND  e."tenantId" = ${tenantId}
+        AND  e."siteId" = ${siteId}
+        AND  s."scanTime" >= ${todayStart}
+        AND  s."direction" IN ('IN', 'OUT')
+        AND  s."directionSource"::text NOT IN (${SYSTEM_SOURCES[0]}, ${SYSTEM_SOURCES[1]})
+      GROUP  BY s."employeeId"
+    `,
+    // Whether this building's gate is reporting at all. Keyed on the scanning
+    // employees' site, because gates post numeric location ids and never join
+    // the site table directly.
+    db.scanEvent.findFirst({
+      where: {
+        tenantId,
+        stream: "SECURITY",
+        deviceName: { not: null },
+        scanTime: { gte: windowStart },
+        directionSource: { notIn: [...SYSTEM_SOURCES] },
+        employee: { siteId },
+      },
+      orderBy: { scanTime: "desc" },
+      select: { scanTime: true },
+    }),
+    db.scheduleDay.findMany({
+      where: { tenantId, workDate, isWorkday: true, employee: { siteId, isActive: true } },
+      select: { employeeId: true, startTime: true, endTime: true },
+    }),
+    db.leaveRequest.findMany({
+      where: {
+        status: { in: ["APPROVED", "POSTED"] },
+        startDate: { lte: workDate },
+        endDate: { gte: workDate },
+        employee: { tenantId, siteId, isActive: true },
+      },
+      select: { employeeId: true },
+    }),
+    db.employee.findMany({
+      where: { tenantId, siteId, isActive: true, onLeave: true },
+      select: { id: true },
+    }),
+  ]);
+
+  const gateById = new Map<string, LatestRow>();
+  const clockById = new Map<string, LatestRow>();
+  for (const row of latest) {
+    (row.stream === "SECURITY" ? gateById : clockById).set(row.employeeId, row);
+  }
+  const todayById = new Map(todayRows.map((r) => [r.employeeId, r]));
+  const scheduleById = new Map(scheduled.map((s) => [s.employeeId, s]));
+  const onLeave = new Set([...leaveRequests.map((l) => l.employeeId), ...onLeaveFlags.map((e) => e.id)]);
+  const hasGateData = lastGate !== null;
+
+  const ids = new Set<string>([
+    ...gateById.keys(),
+    ...clockById.keys(),
+    ...todayById.keys(),
+    ...scheduleById.keys(),
+    ...onLeave,
+  ]);
+
+  const employees = ids.size
+    ? await db.employee.findMany({
+        where: { tenantId, siteId, id: { in: [...ids] } },
+        select: {
+          id: true,
+          employeeCode: true,
+          isActive: true,
+          terminatedAt: true,
+          user: { select: { name: true } },
+          department: { select: { id: true, name: true } },
+          shift: { select: { id: true, name: true } },
+        },
+      })
+    : [];
+
+  const people: PresencePerson[] = [];
+
+  for (const emp of employees) {
+    const gate = gateById.get(emp.id);
+    const clock = clockById.get(emp.id);
+    const todayActivity = todayById.get(emp.id);
+    const schedule = scheduleById.get(emp.id);
+
+    const gateIn = gate?.direction === "IN";
+    const clockState = clockStateOf(clock);
+
+    let status: PresenceStatus | null = null;
+    let inside = false;
+    let outsideOnMeal = false;
+    let breakKind: "MEAL" | "BREAK" | null = null;
+    let since: Date | null = null;
+
+    if (clockState === "WORK") {
+      status = hasGateData && !gateIn ? "NO_GATE_SCAN" : "WORKING";
+      inside = true;
+      since = clock!.scanTime;
+    } else if (clockState === "MEAL" || clockState === "BREAK") {
+      status = "ON_MEAL";
+      breakKind = clockState;
+      outsideOnMeal = hasGateData && !gateIn;
+      inside = !outsideOnMeal;
+      since = clock!.scanTime;
+    } else if (gateIn) {
+      status = "OFF_CLOCK";
+      inside = true;
+      // Inside since whichever came last: walking through the gate, or
+      // clocking out while still in the building.
+      since = latestOf(gate!.scanTime, clock?.scanTime ?? null);
+    } else if (todayActivity) {
+      status = "LEFT";
+      since = todayActivity.lastOut ?? latestOf(gate?.scanTime ?? null, clock?.scanTime ?? null);
+    } else if (onLeave.has(emp.id)) {
+      status = "ON_LEAVE";
+    } else if (schedule) {
+      status = "NOT_ARRIVED";
+    }
+
+    if (!status) continue;
+
+    let lateMinutes: number | null = null;
+    if (status === "NOT_ARRIVED" && schedule?.startTime) {
+      const start = snapToLocalTime(schedule.startTime, today, timezone);
+      const late = Math.floor((now.getTime() - start.getTime()) / 60000);
+      lateMinutes = late > 0 ? late : null;
+    }
+
+    people.push({
+      id: emp.id,
+      name: emp.user?.name?.trim() || `Employee ${emp.employeeCode}`,
+      employeeCode: emp.employeeCode,
+      departmentId: emp.department?.id ?? null,
+      department: emp.department?.name ?? null,
+      shiftId: emp.shift?.id ?? null,
+      shift: emp.shift?.name ?? null,
+      photoUrl: null,
+      status,
+      inside,
+      breakKind,
+      outsideOnMeal,
+      since: since ? since.toISOString() : null,
+      firstInToday: todayActivity?.firstIn ? todayActivity.firstIn.toISOString() : null,
+      scheduledStart: schedule?.startTime ?? null,
+      scheduledEnd: schedule?.endTime ?? null,
+      lateMinutes,
+      inactive: !emp.isActive || emp.terminatedAt !== null,
+    });
+  }
+
+  return {
+    site: {
+      id: site.id,
+      name: site.name,
+      timezone,
+      hasGateData,
+      lastGateScanAt: lastGate ? lastGate.scanTime.toISOString() : null,
+    },
+    generatedAt: now.toISOString(),
+    people,
+  };
+}
+
+/**
+ * The time clock's view of somebody, as WORK / MEAL / BREAK / OUT.
+ *
+ * <p>The pipeline's own verdict wins when it recorded one, because only it can
+ * tell a meal from a clock-out: both are an OUT at the tablet. A scan the
+ * pipeline refused has no verdict, and falls back to the direction the tablet
+ * resolved. An auto-close is always OUT.
+ */
+function clockStateOf(row: LatestRow | undefined): "WORK" | "MEAL" | "BREAK" | "OUT" {
+  if (!row || row.source === "AUTO_CLOSE") return "OUT";
+  const state = row.stateAfter?.toUpperCase();
+  if (state === "WORK" || state === "MEAL" || state === "BREAK" || state === "OUT") return state;
+  return row.direction === "IN" ? "WORK" : "OUT";
+}
+
+function latestOf(a: Date | null, b: Date | null): Date | null {
+  if (!a) return b;
+  if (!b) return a;
+  return a > b ? a : b;
+}
+
+/**
+ * One person's last 24 hours at the readers, for the side panel.
+ *
+ * <p>Scoped by tenant AND site in the where clause, so an id for somebody at a
+ * building the viewer cannot open finds nothing, and the caller answers as if
+ * the person does not exist.
+ */
+export async function getPresenceDetail(
+  tenantId: string,
+  siteId: string,
+  employeeId: string,
+): Promise<PresenceDetail | null> {
+  const emp = await db.employee.findFirst({
+    where: { id: employeeId, tenantId, siteId },
+    select: {
+      id: true,
+      employeeCode: true,
+      jobTitle: true,
+      user: { select: { name: true } },
+      department: { select: { name: true } },
+      shift: { select: { name: true } },
+      supervisor: { select: { user: { select: { name: true } } } },
+      site: { select: { timezone: true } },
+    },
+  });
+  if (!emp) return null;
+
+  const timezone = emp.site?.timezone || "America/New_York";
+  const now = new Date();
+  const today = localDateString(now, timezone);
+
+  const [schedule, scans] = await Promise.all([
+    db.scheduleDay.findFirst({
+      where: { employeeId, tenantId, workDate: new Date(`${today}T00:00:00.000Z`), isWorkday: true },
+      select: { startTime: true, endTime: true },
+    }),
+    db.scanEvent.findMany({
+      where: {
+        employeeId,
+        tenantId,
+        scanTime: { gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
+      },
+      orderBy: { scanTime: "desc" },
+      take: 200,
+      select: {
+        id: true,
+        scanTime: true,
+        stream: true,
+        direction: true,
+        directionSource: true,
+        timecardPunchType: true,
+        deviceName: true,
+        outcome: true,
+      },
+    }),
+  ]);
+
+  return {
+    id: emp.id,
+    name: emp.user?.name?.trim() || `Employee ${emp.employeeCode}`,
+    employeeCode: emp.employeeCode,
+    jobTitle: emp.jobTitle,
+    department: emp.department?.name ?? null,
+    shift: emp.shift?.name ?? null,
+    supervisor: emp.supervisor?.user?.name ?? null,
+    scheduledStart: schedule?.startTime ?? null,
+    scheduledEnd: schedule?.endTime ?? null,
+    timezone,
+    scans: scans.map((s) => ({
+      id: s.id,
+      at: s.scanTime.toISOString(),
+      stream: s.stream,
+      direction: s.direction,
+      punchType: s.timecardPunchType,
+      device: s.deviceName,
+      automatic: s.directionSource === "AUTO_CLOSE" || s.directionSource === "SEEDED",
+      reread: s.directionSource === "REREAD",
+      rejected: s.outcome === "PUNCH_REJECTED" || s.outcome === "ERROR",
+    })),
+  };
+}
