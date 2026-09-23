@@ -53,6 +53,7 @@ type State = {
 export function useScanLog({
   siteId,
   active,
+  day,
   counter,
   departmentId,
   shiftId,
@@ -60,6 +61,8 @@ export function useScanLog({
 }: {
   siteId: string | null;
   active: boolean;
+  /** A past day, or "" for today. */
+  day: string;
   counter: LogCounter | null;
   departmentId: string;
   shiftId: string;
@@ -77,8 +80,14 @@ export function useScanLog({
   }, [q]);
 
   const query = useMemo<ScanLogQuery>(
-    () => ({ ...counterQuery(counter), departmentId: departmentId || null, shiftId: shiftId || null, q: needle || null }),
-    [counter, departmentId, shiftId, needle],
+    () => ({
+      day: day || null,
+      ...counterQuery(counter),
+      departmentId: departmentId || null,
+      shiftId: shiftId || null,
+      q: needle || null,
+    }),
+    [day, counter, departmentId, shiftId, needle],
   );
   const key = `${siteId}|${JSON.stringify(query)}`;
 
@@ -121,14 +130,15 @@ export function useScanLog({
 
   const poll = useCallback(async () => {
     const page = pageRef.current;
-    if (!siteId || !page || inFlight.current) return;
+    // A past day is finished; only today's log keeps moving.
+    if (!siteId || !page || page.day !== page.today || inFlight.current) return;
     inFlight.current = true;
     const forKey = key;
     try {
       const res = await getOnSiteScanLog({ siteId, ...query, since: page.watermark });
       if (keyRef.current !== forKey || !res.success) return;
       const next = res.data;
-      if (next.day !== page.day || next.hasMore) {
+      if (next.today !== page.today || next.hasMore) {
         // A new day, or more arrived at once than a poll carries: redraw.
         await loadHead();
         return;
@@ -233,6 +243,7 @@ export function ScanLogCounts({
   hasGateData,
   lastGateScanAt,
   tz,
+  when,
 }: {
   summary: ScanLogSummary;
   counter: LogCounter | null;
@@ -240,7 +251,10 @@ export function ScanLogCounts({
   hasGateData: boolean;
   lastGateScanAt: string | null;
   tz: string;
+  /** "today", "yesterday" or "on Mon, Sep 21". */
+  when: string;
 }) {
+  const isToday = when === "today";
   const pick = (c: LogCounter) => onPick(counter === c ? null : c);
   return (
     <section className={`${styles.headcount} ${styles.headcountEven}`} aria-label="Scans today">
@@ -248,7 +262,7 @@ export function ScanLogCounts({
         <ReaderTotal
           icon={<DoorOpen className="h-5 w-5" />}
           figure={summary.gateTotal}
-          label={summary.gateTotal === 1 ? "security gate scan today" : "security gate scans today"}
+          label={`${summary.gateTotal === 1 ? "security gate scan" : "security gate scans"} ${when}`}
           active={counter === "gate"}
           onClick={() => pick("gate")}
         />
@@ -257,9 +271,17 @@ export function ScanLogCounts({
           <LogCount label="Out" tone="out" count={summary.gateOut} active={counter === "gate-out"} onClick={() => pick("gate-out")} />
         </div>
         <p className={styles.footnote}>
-          {hasGateData
-            ? `Last security gate scan at ${fmtTime(lastGateScanAt, tz)}.`
-            : "The security gate here has not reported in the last 36 hours."}
+          {!hasGateData
+            ? "The security gate here has not reported in the last 36 hours."
+            : isToday
+              ? `Last security gate scan at ${fmtTime(lastGateScanAt, tz)}.`
+              : summary.gateTotal === 0
+                ? `No security gate scans ${when}.`
+                : summary.gateAutoClosed === 0
+                  ? "Nobody had to be marked out overnight by the system."
+                  : `${summary.gateAutoClosed.toLocaleString()} ${
+                      summary.gateAutoClosed === 1 ? "person was" : "people were"
+                    } marked out overnight with no exit scan.`}
         </p>
       </div>
 
@@ -267,7 +289,7 @@ export function ScanLogCounts({
         <ReaderTotal
           icon={<Clock className="h-5 w-5" />}
           figure={summary.clockTotal}
-          label={summary.clockTotal === 1 ? "time clock scan today" : "time clock scans today"}
+          label={`${summary.clockTotal === 1 ? "time clock scan" : "time clock scans"} ${when}`}
           active={counter === "clock"}
           onClick={() => pick("clock")}
         />
@@ -285,8 +307,8 @@ export function ScanLogCounts({
         </div>
         <p className={styles.footnote}>
           {summary.people === 0
-            ? "Nobody has scanned at either reader today."
-            : `${summary.people.toLocaleString()} ${summary.people === 1 ? "person has" : "people have"} scanned at either reader today.`}
+            ? `Nobody scanned at either reader ${when}.`
+            : `${summary.people.toLocaleString()} ${summary.people === 1 ? "person" : "people"} scanned at either reader ${when}.`}
         </p>
       </div>
     </section>
@@ -424,7 +446,9 @@ export function ScanLogList({
       ))}
       <div className={styles.logFoot}>
         <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-          {hasMore ? `Showing the latest ${rows.length.toLocaleString()} scans` : `${rows.length.toLocaleString()} ${rows.length === 1 ? "scan" : "scans"}, all of today`}
+          {hasMore
+            ? `Showing the latest ${rows.length.toLocaleString()} scans`
+            : `${rows.length.toLocaleString()} ${rows.length === 1 ? "scan" : "scans"}, the whole day`}
         </span>
         {hasMore && (
           <Button hierarchy="secondary" size="sm" onClick={onShowMore} disabled={loadingMore}>
@@ -527,12 +551,14 @@ export function ScanLogEmpty({
   filtered,
   hasGateData,
   onClear,
+  when,
 }: {
   counter: LogCounter | null;
   searching: boolean;
   filtered: boolean;
   hasGateData: boolean;
   onClear: () => void;
+  when: string;
 }) {
   if (searching || filtered || counter) {
     return (
@@ -542,7 +568,7 @@ export function ScanLogEmpty({
         body={
           counter?.startsWith("gate") && !hasGateData
             ? "The security gate at this site has not reported, so there are no gate scans to show."
-            : "No scan today matches what you have picked. Clear the filters to see the whole log."
+            : `No scan ${when} matches what you have picked. Clear the filters to see the whole log.`
         }
         action={
           <Button hierarchy="secondary" size="sm" onClick={onClear}>
@@ -555,8 +581,12 @@ export function ScanLogEmpty({
   return (
     <EmptyState
       icon={<ScanLine className="h-8 w-8" />}
-      title="No scans yet today"
-      body="Every security gate and time clock scan at this site will appear here as it happens."
+      title={when === "today" ? "No scans yet today" : `No scans ${when}`}
+      body={
+        when === "today"
+          ? "Every security gate and time clock scan at this site will appear here as it happens."
+          : "Neither reader at this site recorded a scan that day."
+      }
     />
   );
 }

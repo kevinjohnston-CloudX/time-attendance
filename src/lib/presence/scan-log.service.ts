@@ -1,11 +1,12 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
+import { addDays, clampDay } from "./days";
 import { localDateString } from "./on-site.service";
 import type { ScanLogPage, ScanLogQuery, ScanLogRow } from "./types";
 
 /**
- * Every reader event at one site today, from both the security gate and the
+ * Every reader event at one site on one day, today unless asked, from both the security gate and the
  * time clock, newest first.
  *
  * <p>The board answers "where is everybody now" from each person's latest
@@ -80,8 +81,10 @@ export async function getScanLog(
   if (!site) return null;
 
   const timezone = site.timezone || "America/New_York";
-  const day = localDateString(new Date(), timezone);
+  const today = localDateString(new Date(), timezone);
+  const day = clampDay(input.day, today) ?? today;
   const dayStart = snapToLocalTime("00:00", day, timezone);
+  const dayEnd = snapToLocalTime("00:00", addDays(day, 1), timezone);
 
   const q = input.q?.trim() || null;
   const employee: Prisma.EmployeeWhereInput = {
@@ -100,7 +103,7 @@ export async function getScanLog(
   };
 
   // What the counts cover: the day, the site and the people filters.
-  const base: Prisma.ScanEventWhereInput = { tenantId, scanTime: { gte: dayStart }, employee };
+  const base: Prisma.ScanEventWhereInput = { tenantId, scanTime: { gte: dayStart, lt: dayEnd }, employee };
 
   // What the rows cover: that, narrowed by whichever counter is picked. A
   // direction always comes with its reader, because every counter has one.
@@ -122,7 +125,7 @@ export async function getScanLog(
       ? { AND: [filtered, { OR: [{ scanTime: { lt: before.at } }, { scanTime: before.at, id: { lt: before.id } }] }] }
       : filtered;
 
-  const [rows, byStream, rejected, people, newest] = await Promise.all([
+  const [rows, byStream, rejected, autoClosed, people, newest] = await Promise.all([
     db.scanEvent.findMany({
       where: rowWhere,
       orderBy: [{ scanTime: "desc" }, { id: "desc" }],
@@ -153,6 +156,7 @@ export async function getScanLog(
       _count: { _all: true },
     }),
     db.scanEvent.count({ where: { ...base, stream: "TIME_CLOCK", outcome: { in: [...REJECTED] } } }),
+    db.scanEvent.count({ where: { ...base, stream: "SECURITY", directionSource: "AUTO_CLOSE" } }),
     db.scanEvent.groupBy({ by: ["employeeId"], where: base }),
     db.scanEvent.aggregate({ where: base, _max: { createdAt: true } }),
   ]);
@@ -198,6 +202,7 @@ export async function getScanLog(
 
   return {
     day,
+    today,
     rows: page,
     hasMore: more,
     summary: {
@@ -208,6 +213,7 @@ export async function getScanLog(
       clockOut: count("TIME_CLOCK", "OUT"),
       clockTotal: count("TIME_CLOCK"),
       rejected,
+      gateAutoClosed: autoClosed,
       people: people.filter((p) => p.employeeId).length,
     },
     watermark: newest._max.createdAt?.toISOString() ?? null,

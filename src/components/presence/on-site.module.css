@@ -698,7 +698,8 @@
   top: 0;
   right: 0;
   bottom: 0;
-  width: min(440px, 100vw);
+  /* Wide enough for a working day on the lanes to read hour by hour. */
+  width: min(520px, 100vw);
   display: flex;
   flex-direction: column;
   background: var(--surface-card);
@@ -1124,4 +1125,174 @@
   .logRow[data-changed="true"] {
     animation: none;
   }
+}
+
+/* ── Attendance lanes in the person panel ───────────────────────── */
+
+.dayPick {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.dayPickLabel {
+  min-width: 108px;
+  text-align: center;
+  font: var(--weight-semibold) 13px/18px var(--font-sans);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.lanes {
+  --lane-inside: var(--text-accent);
+  --lane-work: var(--fill-success);
+  --lane-meal: var(--fill-warning);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: var(--radius-m);
+}
+
+.laneRow {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.laneName {
+  font: var(--weight-medium) 12px/16px var(--font-sans);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.laneTrack {
+  position: relative;
+  height: 20px;
+  border-radius: 5px;
+  background: var(--ta-track);
+  overflow: hidden;
+}
+
+.laneTrack[data-quiet="true"] {
+  background: transparent;
+  overflow: visible;
+}
+
+.laneSeg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  border-radius: 4px;
+}
+
+.laneSeg[data-kind="inside"] {
+  background: var(--lane-inside);
+}
+
+.laneSeg[data-kind="work"] {
+  background: var(--lane-work);
+}
+
+.laneSeg[data-kind="meal"] {
+  background: var(--lane-meal);
+}
+
+/* A past day's stretch no scan closed: drawn to the end of the day, hatched,
+   because nobody knows when it really ended. */
+.laneSeg[data-open="true"] {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0 4px,
+    color-mix(in srgb, var(--surface-card) 55%, transparent) 4px 8px
+  );
+}
+
+.laneSched {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border: 1.5px dashed var(--stroke-default);
+  border-radius: 5px;
+}
+
+.laneEmpty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 8px;
+  font: var(--type-body2);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.laneNow {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text-primary);
+  border-radius: 1px;
+}
+
+.laneAxis {
+  position: relative;
+  height: 16px;
+  margin-left: 102px;
+}
+
+.laneAxis > span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font: var(--weight-medium) 11px/16px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.laneKey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding-top: 8px;
+  border-top: 1px solid var(--stroke-divider);
+  font: var(--type-body2);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.laneKey > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.laneKey i {
+  width: 12px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.laneKey i[data-kind="inside"] {
+  background: var(--lane-inside);
+}
+
+.laneKey i[data-kind="work"] {
+  background: var(--lane-work);
+}
+
+.laneKey i[data-kind="meal"] {
+  background: var(--lane-meal);
+}
+
+.laneKey i[data-kind="sched"] {
+  border: 1.5px dashed var(--stroke-default);
 }

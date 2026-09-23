@@ -106,10 +106,21 @@ export interface PresenceDetail {
   department: string | null;
   shift: string | null;
   supervisor: string | null;
+  inactive: boolean;
   scheduledStart: string | null;
   scheduledEnd: string | null;
   timezone: string;
+  /** The site calendar day shown, and today's, YYYY-MM-DD. */
+  day: string;
+  today: string;
+  /** The day's bounds as instants, ISO. */
+  dayStart: string;
+  dayEnd: string;
+  /** Every scan that day, newest first. */
   scans: PresenceScan[];
+  /** The last scan of each kind before the day, which sets where it starts. */
+  carryGate: PresenceScan | null;
+  carryClock: PresenceScan | null;
 }
 
 /* ── Scan log ──────────────────────────────────────────────────────────── */
@@ -122,6 +133,8 @@ export type ScanStream = "SECURITY" | "TIME_CLOCK";
  * counters themselves, so they only narrow the rows.
  */
 export interface ScanLogQuery {
+  /** A site calendar day in the last week, YYYY-MM-DD. Null is today. */
+  day: string | null;
   stream: ScanStream | null;
   direction: "IN" | "OUT" | null;
   rejected: boolean;
@@ -158,13 +171,16 @@ export interface ScanLogSummary {
   clockTotal: number;
   /** Time clock scans the timecard did not accept. */
   rejected: number;
+  /** Gate exits the system wrote overnight for people who never scanned out. */
+  gateAutoClosed: number;
   /** Different people seen at either reader today. */
   people: number;
 }
 
 export interface ScanLogPage {
-  /** The site's calendar day the log covers, YYYY-MM-DD. */
+  /** The site's calendar day the log covers, and today's, YYYY-MM-DD. */
   day: string;
+  today: string;
   rows: ScanLogRow[];
   /** More rows exist further back than the ones returned. */
   hasMore: boolean;

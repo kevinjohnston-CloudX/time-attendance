@@ -1,8 +1,10 @@
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
+import { addDays, clampDay } from "./days";
 import type {
   PresenceBoard,
   PresenceDetail,
+  PresenceScan,
   PresencePerson,
   PresenceStatus,
 } from "./types";
@@ -309,16 +311,20 @@ function latestOf(a: Date | null, b: Date | null): Date | null {
 }
 
 /**
- * One person's last 24 hours at the readers, for the side panel.
+ * One person's day at the readers, for the side panel: every scan that day,
+ * and the last scan of each kind before it, so the day can start from where
+ * the night before left them.
  *
- * <p>Scoped by tenant AND site in the where clause, so an id for somebody at a
- * building the viewer cannot open finds nothing, and the caller answers as if
- * the person does not exist.
+ * <p>`day` is a site calendar day within the last week; anything else reads
+ * as today. Scoped by tenant AND site in the where clause, so an id for
+ * somebody at a building the viewer cannot open finds nothing, and the caller
+ * answers as if the person does not exist.
  */
 export async function getPresenceDetail(
   tenantId: string,
   siteId: string,
   employeeId: string,
+  day?: string | null,
 ): Promise<PresenceDetail | null> {
   const emp = await db.employee.findFirst({
     where: { id: employeeId, tenantId, siteId },
@@ -326,6 +332,8 @@ export async function getPresenceDetail(
       id: true,
       employeeCode: true,
       jobTitle: true,
+      isActive: true,
+      terminatedAt: true,
       user: { select: { name: true } },
       department: { select: { name: true } },
       shift: { select: { name: true } },
@@ -338,31 +346,50 @@ export async function getPresenceDetail(
   const timezone = emp.site?.timezone || "America/New_York";
   const now = new Date();
   const today = localDateString(now, timezone);
+  const theDay = clampDay(day, today) ?? today;
+  const dayStart = snapToLocalTime("00:00", theDay, timezone);
+  const dayEnd = snapToLocalTime("00:00", addDays(theDay, 1), timezone);
+  const carryFrom = new Date(dayStart.getTime() - LOOKBACK_MS);
 
-  const [schedule, scans] = await Promise.all([
-    db.scheduleDay.findFirst({
-      where: { employeeId, tenantId, workDate: new Date(`${today}T00:00:00.000Z`), isWorkday: true },
-      select: { startTime: true, endTime: true },
-    }),
-    db.scanEvent.findMany({
+  const scanSelect = {
+    id: true,
+    scanTime: true,
+    stream: true,
+    direction: true,
+    directionSource: true,
+    timecardPunchType: true,
+    deviceName: true,
+    outcome: true,
+  } as const;
+
+  // The state at midnight: the newest IN or OUT of each kind before the day.
+  const carry = (stream: "SECURITY" | "TIME_CLOCK") =>
+    db.scanEvent.findFirst({
       where: {
         employeeId,
         tenantId,
-        scanTime: { gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
+        stream,
+        direction: { in: ["IN", "OUT"] },
+        scanTime: { gte: carryFrom, lt: dayStart },
+        ...(stream === "TIME_CLOCK" ? { outcome: { notIn: ["PUNCH_REJECTED", "ERROR"] } } : {}),
       },
       orderBy: { scanTime: "desc" },
-      take: 200,
-      select: {
-        id: true,
-        scanTime: true,
-        stream: true,
-        direction: true,
-        directionSource: true,
-        timecardPunchType: true,
-        deviceName: true,
-        outcome: true,
-      },
+      select: scanSelect,
+    });
+
+  const [schedule, scans, carryGate, carryClock] = await Promise.all([
+    db.scheduleDay.findFirst({
+      where: { employeeId, tenantId, workDate: new Date(`${theDay}T00:00:00.000Z`), isWorkday: true },
+      select: { startTime: true, endTime: true },
     }),
+    db.scanEvent.findMany({
+      where: { employeeId, tenantId, scanTime: { gte: dayStart, lt: dayEnd } },
+      orderBy: { scanTime: "desc" },
+      take: 400,
+      select: scanSelect,
+    }),
+    carry("SECURITY"),
+    carry("TIME_CLOCK"),
   ]);
 
   return {
@@ -373,19 +400,41 @@ export async function getPresenceDetail(
     department: emp.department?.name ?? null,
     shift: emp.shift?.name ?? null,
     supervisor: emp.supervisor?.user?.name ?? null,
+    inactive: !emp.isActive || emp.terminatedAt !== null,
     scheduledStart: schedule?.startTime ?? null,
     scheduledEnd: schedule?.endTime ?? null,
     timezone,
-    scans: scans.map((s) => ({
-      id: s.id,
-      at: s.scanTime.toISOString(),
-      stream: s.stream,
-      direction: s.direction,
-      punchType: s.timecardPunchType,
-      device: s.deviceName,
-      automatic: s.directionSource === "AUTO_CLOSE" || s.directionSource === "SEEDED",
-      reread: s.directionSource === "REREAD",
-      rejected: s.outcome === "PUNCH_REJECTED" || s.outcome === "ERROR",
-    })),
+    day: theDay,
+    today,
+    dayStart: dayStart.toISOString(),
+    dayEnd: dayEnd.toISOString(),
+    scans: scans.map(toScan),
+    carryGate: carryGate ? toScan(carryGate) : null,
+    carryClock: carryClock ? toScan(carryClock) : null,
+  };
+}
+
+type ScanRow = {
+  id: string;
+  scanTime: Date;
+  stream: "SECURITY" | "TIME_CLOCK";
+  direction: "IN" | "OUT" | "UNKNOWN";
+  directionSource: string;
+  timecardPunchType: string | null;
+  deviceName: string | null;
+  outcome: string;
+};
+
+function toScan(s: ScanRow): PresenceScan {
+  return {
+    id: s.id,
+    at: s.scanTime.toISOString(),
+    stream: s.stream,
+    direction: s.direction,
+    punchType: s.timecardPunchType,
+    device: s.deviceName,
+    automatic: s.directionSource === "AUTO_CLOSE" || s.directionSource === "SEEDED",
+    reread: s.directionSource === "REREAD",
+    rejected: s.stream === "TIME_CLOCK" && (s.outcome === "PUNCH_REJECTED" || s.outcome === "ERROR"),
   };
 }

@@ -45,6 +45,7 @@ import {
   statusLabel,
 } from "./presence-meta";
 import { PersonPanel } from "./person-panel";
+import { clampDay, dayLabel, recentDays } from "@/lib/presence/days";
 import {
   ScanLogCounts,
   ScanLogEmpty,
@@ -108,6 +109,7 @@ export function OnSiteBoard({
     group: string | null;
     tab: string | null;
     scans: string | null;
+    day: string | null;
   };
 }) {
   const [siteId, setSiteId] = useState(initialSiteId);
@@ -125,6 +127,12 @@ export function OnSiteBoard({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [tab, setTab] = useState<Tab>(initialFilters.tab === "log" ? "log" : "people");
   const [counter, setCounter] = useState<LogCounter | null>(parseCounter(initialFilters.scans));
+  // A past day for the log, or "" for today. The panel opens on the day of
+  // the row it was opened from.
+  const [logDay, setLogDay] = useState(() =>
+    initialBoard ? clampDay(initialFilters.day, siteDate(initialBoard.generatedAt, initialBoard.site.timezone)) ?? "" : "",
+  );
+  const [panelDay, setPanelDay] = useState<string | null>(null);
 
   const [lastOk, setLastOk] = useState(() => (initialBoard ? Date.now() : 0));
   const [failure, setFailure] = useState<string | null>(null);
@@ -153,11 +161,12 @@ export function OnSiteBoard({
     if (byDept) qs.set("group", "dept");
     if (tab === "log") qs.set("tab", "log");
     if (tab === "log" && counter) qs.set("scans", counter);
+    if (tab === "log" && logDay) qs.set("day", logDay);
     const next = `${window.location.pathname}?${qs.toString()}`;
     if (next !== `${window.location.pathname}${window.location.search}`) {
       window.history.replaceState(window.history.state, "", next);
     }
-  }, [siteId, status, dept, shift, view, sort, byDept, tab, counter]);
+  }, [siteId, status, dept, shift, view, sort, byDept, tab, counter, logDay]);
 
   // ── Remember who was where, to mark who just moved ──────────────────────
   const absorb = useCallback((next: PresenceBoard, sameSite: boolean) => {
@@ -363,7 +372,11 @@ export function OnSiteBoard({
 
   // The log lives beside the board and shares its search, department and
   // shift, so switching views keeps what you were looking for.
-  const log = useScanLog({ siteId, active: tab === "log", counter, departmentId: dept, shiftId: shift, q: query });
+  const log = useScanLog({ siteId, active: tab === "log", day: logDay, counter, departmentId: dept, shiftId: shift, q: query });
+  const today = board ? siteDate(board.generatedAt, tz) : "";
+  // The day already picked stays picked only while it is inside the window.
+  const logDayShown = logDay && today && recentDays(today).includes(logDay) ? logDay : "";
+  const when = !logDayShown ? "today" : dayLabel(logDayShown, today) === "Yesterday" ? "yesterday" : `on ${dayLabel(logDayShown, today)}`;
   const logSummary = log.page?.summary ?? null;
   const logTotal = logSummary ? counterTotal(logSummary, counter) : 0;
 
@@ -386,7 +399,7 @@ export function OnSiteBoard({
     const all = await log.fetchAll();
     if (!all) return;
     const csv = scanLogCsv(all.rows, tz, csvCell);
-    const stamp = `${siteDate(board.generatedAt, tz)} ${fmtTime(board.generatedAt, tz).replace(/[: ]/g, "")}`;
+    const stamp = logDayShown || `${today} ${fmtTime(board.generatedAt, tz).replace(/[: ]/g, "")}`;
     download(csv, `Scan log ${board.site.name} ${stamp}.csv`);
   }
 
@@ -519,7 +532,7 @@ export function OnSiteBoard({
                     <strong style={{ color: "var(--text-primary)", fontWeight: "var(--weight-semibold)" }}>
                       {logTotal.toLocaleString()}
                     </strong>{" "}
-                    {counter ? `${COUNTER_LABEL[counter].toLowerCase()} today` : "scans today"}
+                    {counter ? `${COUNTER_LABEL[counter].toLowerCase()} ${when}` : `scans ${when}`}
                   </span>
                 </span>
               )}
@@ -607,6 +620,7 @@ export function OnSiteBoard({
                       ? `${matches.length.toLocaleString()} ${matches.length === 1 ? "match" : "matches"} in every group`
                       : `${matches.length.toLocaleString()} ${matches.length === 1 ? "person" : "people"}`}
                 </span>
+                {tab === "log" && today && <DayChip day={logDayShown} today={today} onChange={setLogDay} />}
                 {tab === "log" && counter && (
                   <ToggleChip label={COUNTER_LABEL[counter]} pressed onClick={() => setCounter(null)} />
                 )}
@@ -674,6 +688,7 @@ export function OnSiteBoard({
               hasGateData={board.site.hasGateData}
               lastGateScanAt={board.site.lastGateScanAt}
               tz={tz}
+              when={when}
             />
             {log.rows.length === 0 ? (
               <Card padding={0}>
@@ -682,6 +697,7 @@ export function OnSiteBoard({
                   searching={log.searching}
                   filtered={!!dept || !!shift}
                   hasGateData={board.site.hasGateData}
+                  when={when}
                   onClear={() => {
                     setCounter(null);
                     setQuery("");
@@ -697,7 +713,10 @@ export function OnSiteBoard({
                 stickyTop={barHeight}
                 changed={log.changed}
                 selectedId={selectedId}
-                onOpen={setSelectedId}
+                onOpen={(id) => {
+                  setPanelDay(logDayShown || null);
+                  setSelectedId(id);
+                }}
                 hasMore={log.page.hasMore}
                 loadingMore={log.loadingMore}
                 onShowMore={() => void log.showMore()}
@@ -790,7 +809,10 @@ export function OnSiteBoard({
                 now={now}
                 shown={rowsShown}
                 onShowMore={() => setRowsShown((n) => n + ROWS_PER_PAGE)}
-                onOpen={setSelectedId}
+                onOpen={(id) => {
+                  setPanelDay(null);
+                  setSelectedId(id);
+                }}
                 selectedId={selectedId}
               />
             </Card>
@@ -818,7 +840,10 @@ export function OnSiteBoard({
                     compact={view === "compact"}
                     selected={p.id === selectedId}
                     changed={changed.has(p.id)}
-                    onOpen={() => setSelectedId(p.id)}
+                    onOpen={() => {
+                      setPanelDay(null);
+                      setSelectedId(p.id);
+                    }}
                   />
                 )}
               />
@@ -827,11 +852,15 @@ export function OnSiteBoard({
         </>
       )}
 
-      {selected && siteId && (
+      {selectedId && siteId && board && (
         <PersonPanel
-          key={selected.id}
+          key={`${selectedId}|${panelDay ?? ""}`}
           siteId={siteId}
+          employeeId={selectedId}
           person={selected}
+          initialDay={panelDay}
+          today={today}
+          hasGateData={board.site.hasGateData}
           tz={tz}
           now={now}
           refreshedAt={board?.generatedAt ?? ""}
@@ -1168,6 +1197,32 @@ function SortChip({ sort, onChange }: { sort: Sort; onChange: (s: Sort) => void 
         {options.map((o) => (
           <option key={o.key} value={o.key}>
             {o.label}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
+/**
+ * Which day the scan log shows, as the same pill the sort uses: today and the
+ * six days before, under the names people say them by.
+ */
+function DayChip({ day, today, onChange }: { day: string; today: string; onChange: (d: string) => void }) {
+  return (
+    <span className={`ta-chip ${styles.pill}`} data-applied={day ? "true" : undefined}>
+      <span>Day</span>
+      <span className={styles.pillValue}>{dayLabel(day || today, today)}</span>
+      <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+      <select
+        aria-label="Show scans from"
+        value={day || today}
+        onChange={(e) => onChange(e.target.value === today ? "" : e.target.value)}
+        className={styles.pillSelect}
+      >
+        {recentDays(today).map((d) => (
+          <option key={d} value={d}>
+            {dayLabel(d, today)}
           </option>
         ))}
       </select>

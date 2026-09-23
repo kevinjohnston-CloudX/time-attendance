@@ -55,10 +55,15 @@ export const getOnSiteBoard = withRBAC(
 
 export const getOnSitePerson = withRBAC(
   "PRESENCE_VIEW_ANY",
-  async ({ tenantId, employeeId, role }, input: { siteId: string; employeeId: string }) => {
+  async ({ tenantId, employeeId, role }, input: { siteId: string; employeeId: string; day?: string | null }) => {
     if (!tenantId) throw new Error("NOT_FOUND");
     await assertSite(tenantId, { employeeId, role }, input.siteId);
-    const detail = await getPresenceDetail(tenantId, input.siteId, input.employeeId);
+    const detail = await getPresenceDetail(
+      tenantId,
+      input.siteId,
+      input.employeeId,
+      typeof input.day === "string" ? input.day : null,
+    );
     if (!detail) throw new Error("NOT_FOUND");
     return detail;
   },
@@ -80,6 +85,7 @@ export const getOnSiteScanLog = withRBAC(
     const text = (v: unknown, max = 100) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
     const iso = (v: unknown) => (typeof v === "string" && !Number.isNaN(Date.parse(v)) ? v : null);
     const log = await getScanLog(tenantId, input.siteId, {
+      day: text(input.day, 10),
       stream: input.stream === "SECURITY" || input.stream === "TIME_CLOCK" ? input.stream : null,
       direction: input.direction === "IN" || input.direction === "OUT" ? input.direction : null,
       rejected: input.rejected === true,

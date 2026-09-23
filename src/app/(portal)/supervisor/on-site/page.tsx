@@ -31,6 +31,7 @@ export default async function OnSitePage({
     group?: string;
     tab?: string;
     scans?: string;
+    day?: string;
   }>;
 }) {
   const session = await auth();
@@ -63,6 +64,7 @@ export default async function OnSitePage({
         group: params.group ?? null,
         tab: params.tab ?? null,
         scans: params.scans ?? null,
+        day: params.day ?? null,
       }}
     />
   );
