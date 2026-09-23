@@ -8,7 +8,7 @@ import { LogOut, PanelLeftClose, PanelLeft, Eye, X, Search } from "lucide-react"
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { BrandIcon, BrandMark } from "./brand-mark";
 import { openCommandPalette } from "./command-palette";
-import { useNavMode, type NavMode } from "./nav-mode";
+import { useNavMode } from "./nav-mode";
 import {
   SECTIONS,
   type NavItem,
@@ -351,7 +351,7 @@ export function Sidebar({
    *
    * <p>`narrow` is "this is the 64px column", which the rail's panel is not.
    */
-  const renderFooter = (narrow: boolean, mode: NavMode) => (
+  const renderFooter = (narrow: boolean) => (
       <div className="flex-none px-3 py-2.5" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
         {viewAsRole && !narrow && (
           <div
@@ -477,20 +477,6 @@ export function Sidebar({
             </div>
           )}
         </div>
-
-        {mode === "grouped" && (
-        <button
-          onClick={() => collapseStore.set(!narrow)}
-          title={narrow ? "Expand sidebar" : "Collapse sidebar"}
-          className={`ta-hoverable mt-1 flex h-8 w-full items-center rounded-md ${
-            narrow ? "justify-center px-0" : "gap-2.5 px-2"
-          }`}
-          style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
-        >
-          {narrow ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-          {!narrow && <span>Collapse</span>}
-        </button>
-        )}
 
         {narrow && (
           <button
@@ -666,7 +652,38 @@ export function Sidebar({
         style={{ borderBottom: "1px solid var(--stroke-divider)" }}
       >
         {collapsed ? <BrandIcon /> : <BrandMark />}
+        {!collapsed && (
+          <>
+            <div className="flex-1" />
+            <button
+              onClick={() => collapseStore.set(true)}
+              title="Collapse sidebar"
+              aria-label="Collapse sidebar"
+              className="ta-hoverable inline-flex h-7 w-7 flex-none items-center justify-center rounded-md"
+              style={{ color: "var(--icon-secondary)" }}
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </button>
+          </>
+        )}
       </div>
+
+      {/* Collapsed there is no room beside the logo, so the way back out sits
+          under it. Still at the top, next to what it resizes, rather than
+          below the person's name where it read as a destination. */}
+      {collapsed && (
+        <div className="flex flex-none justify-center pt-2">
+          <button
+            onClick={() => collapseStore.set(false)}
+            title="Expand sidebar"
+            aria-label="Expand sidebar"
+            className="ta-hoverable inline-flex h-7 w-7 items-center justify-center rounded-md"
+            style={{ color: "var(--icon-secondary)" }}
+          >
+            <PanelLeft className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* The design's search field. It opens the ⌘K palette rather than
           being a second search box with its own behaviour. */}
@@ -775,7 +792,7 @@ export function Sidebar({
         </div>
       )}
 
-      {renderFooter(collapsed, navMode)}
+      {renderFooter(collapsed)}
     </aside>
   );
 }
