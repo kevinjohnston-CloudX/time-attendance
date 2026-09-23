@@ -58,6 +58,7 @@ import {
   MovementsSkeleton,
   MovementsTable,
   PEOPLE_PER_PAGE,
+  SummarySkeleton,
   compareDays,
   flagsFor,
   parseFlag,
@@ -842,6 +843,9 @@ export function OnSiteBoard({
           <MovementsSkeleton />
         ) : (
           <>
+          {/* A day with nobody at all is said once, by the empty state, not
+              by a panel of zeros above it. */}
+          {siteDay.data.people.length > 0 && (
           <MovementsCounts
             views={mvScoped}
             counts={mvCounts}
@@ -860,6 +864,7 @@ export function OnSiteBoard({
               setTab("log");
             }}
           />
+          )}
           {mvRows.length === 0 ? (
           <Card padding={0}>
             <MovementsEmpty
@@ -934,15 +939,18 @@ export function OnSiteBoard({
           )
         ) : (
           <>
-            <ScanLogCounts
-              summary={logSummary}
-              counter={counter}
-              onPick={setCounter}
-              hasGateData={board.site.hasGateData}
-              lastGateScanAt={board.site.lastGateScanAt}
-              tz={tz}
-              when={when}
-            />
+            {(counter !== null ||
+              logSummary.gateTotal + logSummary.clockTotal + logSummary.rejected > 0) && (
+              <ScanLogCounts
+                summary={logSummary}
+                counter={counter}
+                onPick={setCounter}
+                hasGateData={board.site.hasGateData}
+                lastGateScanAt={board.site.lastGateScanAt}
+                tz={tz}
+                when={when}
+              />
+            )}
             {log.rows.length === 0 ? (
               <Card padding={0}>
                 <ScanLogEmpty
@@ -982,6 +990,7 @@ export function OnSiteBoard({
       ) : (
         <>
           {/* ── Headcount ─────────────────────────────────────────────── */}
+          {board.people.length > 0 && (
           <section className={styles.summary} aria-label="Headcount">
             <div
               className={styles.summaryMain}
@@ -1050,6 +1059,7 @@ export function OnSiteBoard({
               </span>
             </div>
           </section>
+          )}
 
           {/* ── People ────────────────────────────────────────────────── */}
           {matches.length === 0 ? (
@@ -1736,11 +1746,11 @@ function EmptyBoard({
     );
   }
   const empty: Record<StatusFilter, [string, string]> = {
-    inside: ["Nobody is in the building", `No one at ${siteName} is through the gate or on the clock right now.`],
+    inside: ["Nobody is in the building", `No one at ${siteName} is inside or on the clock right now.`],
     WORKING: ["Nobody is working", "No one is on the clock and through the gate right now."],
-    NO_GATE_SCAN: ["Everyone on the clock came through the gate", "Nobody is clocked in without a security gate scan."],
-    ON_MEAL: ["Nobody is on a meal or break", "Everyone on the clock is working."],
-    OFF_CLOCK: ["Nobody is inside off the clock", "Everyone who came through the gate is on the clock or has left."],
+    NO_GATE_SCAN: ["Everyone clocked in is inside", "Everyone on the clock came in through the security gate."],
+    ON_MEAL: ["Nobody is on a break", "Everyone on the clock is working."],
+    OFF_CLOCK: ["Everyone inside is clocked in", "Everyone who came in through the security gate is on the clock or has left."],
     ON_SITE: ["No salaried people inside", "No one salaried has come through the gate right now."],
     NOT_ARRIVED: ["Everyone scheduled has arrived", "No one scheduled for today is still missing."],
     LEFT: ["Nobody has left yet", "No one who was here today has gone home."],
@@ -1762,25 +1772,7 @@ function BoardSkeleton() {
   );
   return (
     <div className="flex flex-col gap-4" aria-busy="true" aria-label="Loading Live Attendance">
-      <div className={styles.headcount}>
-        <div className={styles.side}>
-          {bar(220, 44)}
-          {bar("100%", 10)}
-          <div className={styles.counters}>
-            {Array.from({ length: 4 }, (_, i) => (
-              <span key={i}>{bar("100%", 58)}</span>
-            ))}
-          </div>
-        </div>
-        <div className={styles.side}>
-          {bar(160, 20)}
-          <div className={styles.counters}>
-            {Array.from({ length: 3 }, (_, i) => (
-              <span key={i}>{bar("100%", 58)}</span>
-            ))}
-          </div>
-        </div>
-      </div>
+      <SummarySkeleton cards={4} />
       <div className={styles.group}>
         <div className={styles.groupHead}>{bar(180, 18)}</div>
         <div className={styles.grid}>

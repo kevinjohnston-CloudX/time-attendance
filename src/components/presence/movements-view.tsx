@@ -698,41 +698,76 @@ export function MovementsEmpty({ when, filtered, onClear }: { when: string; filt
   );
 }
 
+/** The summary panel's shape while it loads, shared by every tab so the page does not jump. */
+export function SummarySkeleton({ cards }: { cards: number }) {
+  const bar = (w: string | number, h: number) => <span className={styles.skeleton} style={{ width: w, height: h }} />;
+  return (
+    <div className={styles.summary}>
+      <div className={styles.summaryMain} data-cards={cards}>
+        <span className={styles.summaryHero} style={{ cursor: "default" }}>
+          {bar(110, 14)}
+          {bar(96, 44)}
+          {bar(140, 12)}
+        </span>
+        {Array.from({ length: cards }, (_, i) => (
+          <span key={i} className={styles.summaryCard} style={{ cursor: "default" }}>
+            {bar("70%", 14)}
+            {bar(48, 32)}
+          </span>
+        ))}
+      </div>
+      <div className={styles.summaryMore}>
+        <span className={styles.summaryChips}>
+          {[92, 72, 88, 110].map((w) => (
+            <span key={w}>{bar(w, 30)}</span>
+          ))}
+        </span>
+        {bar(120, 14)}
+      </div>
+    </div>
+  );
+}
+
 export function MovementsSkeleton() {
   const bar = (w: string | number, h: number, r?: number) => (
     <span className={styles.skeleton} style={{ width: w, height: h, borderRadius: r }} />
   );
   return (
     <div className="flex flex-col gap-4" aria-busy="true" aria-label="Loading movements">
-    <div className={`${styles.headcount} ${styles.headcountEven}`}>
-      {[5, 9].map((n) => (
-        <div key={n} className={styles.side}>
-          {bar(n === 5 ? 220 : 140, n === 5 ? 44 : 20)}
-          <div className={`${styles.counters} ${styles.flagCounters}`}>
-            {Array.from({ length: n }, (_, i) => (
-              <span key={i}>{bar("100%", 58)}</span>
-            ))}
+      <SummarySkeleton cards={3} />
+      <div className={styles.group}>
+        <div className={styles.mvHead}>
+          {[70, 56, 40, 64, 72].map((w, i) => (
+            <span key={i}>{bar(w, 10)}</span>
+          ))}
+          <span />
+          <span />
+        </div>
+        {Array.from({ length: 6 }, (_, i) => (
+          <div key={i} className={styles.mvRow} style={{ cursor: "default", borderTop: i ? "1px solid var(--stroke-divider)" : undefined }}>
+            <span className={styles.mvWho}>
+              {bar(48, 52, 8)}
+              <span className="flex flex-1 flex-col gap-1.5">
+                {bar("80%", 14)}
+                {bar("55%", 12)}
+                {bar(64, 16)}
+              </span>
+            </span>
+            <span className="flex flex-col gap-1.5">
+              {bar(60, 14)}
+              {bar(70, 10)}
+            </span>
+            <span className="flex flex-col gap-1.5">
+              {bar(60, 14)}
+              {bar(70, 10)}
+            </span>
+            <span className="flex justify-end">{bar(64, 14)}</span>
+            <span className="flex justify-end">{bar(64, 14)}</span>
+            <span className={styles.mvDay}>{bar("100%", 18)}</span>
+            <span />
           </div>
-        </div>
-      ))}
-    </div>
-    <div className={styles.group}>
-      <div className={styles.mvHead}>{bar(120, 12)}</div>
-      {Array.from({ length: 5 }, (_, i) => (
-        <div key={i} className="flex gap-4 border-b px-4 py-4" style={{ borderColor: "var(--stroke-divider)" }}>
-          {bar(64, 72, 10)}
-          <span className="flex w-40 flex-col gap-2">
-            {bar("90%", 14)}
-            {bar("60%", 12)}
-            {bar("50%", 18)}
-          </span>
-          <span className="flex flex-1 flex-col gap-3">
-            {bar("100%", 16)}
-            {bar("100%", 16)}
-          </span>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
     </div>
   );
 }
