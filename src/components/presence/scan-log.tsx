@@ -24,7 +24,8 @@ import { SummarySkeleton } from "./movements-view";
 const POLL_MS = 30_000;
 const SEARCH_DELAY_MS = 300;
 
-export type LogCounter = "gate" | "gate-in" | "gate-out" | "clock" | "clock-in" | "clock-out" | "rejected";
+/** "unknown" is the badges nobody holds, a list of people rather than of scans. */
+export type LogCounter = "gate" | "gate-in" | "gate-out" | "clock" | "clock-in" | "clock-out" | "rejected" | "unknown";
 
 export function counterQuery(c: LogCounter | null): Pick<ScanLogQuery, "stream" | "direction" | "rejected"> {
   const stream: ScanStream | null = c?.startsWith("gate") ? "SECURITY" : c?.startsWith("clock") ? "TIME_CLOCK" : null;
@@ -33,7 +34,7 @@ export function counterQuery(c: LogCounter | null): Pick<ScanLogQuery, "stream" 
 }
 
 export function parseCounter(raw: string | null | undefined): LogCounter | null {
-  const all: LogCounter[] = ["gate", "gate-in", "gate-out", "clock", "clock-in", "clock-out", "rejected"];
+  const all: LogCounter[] = ["gate", "gate-in", "gate-out", "clock", "clock-in", "clock-out", "rejected", "unknown"];
   return all.includes(raw as LogCounter) ? (raw as LogCounter) : null;
 }
 
@@ -247,10 +248,13 @@ export function ScanLogCounts({
   lastGateScanAt,
   tz,
   when,
+  unknownCount = 0,
 }: {
   summary: ScanLogSummary;
   counter: LogCounter | null;
   onPick: (c: LogCounter | null) => void;
+  /** Badges scanned here that nobody in CloudTime holds. */
+  unknownCount?: number;
   hasGateData: boolean;
   lastGateScanAt: string | null;
   tz: string;
@@ -275,6 +279,7 @@ export function ScanLogCounts({
     ...(hasGateData ? [{ key: "gate" as const, label: "Security gate", count: summary.gateTotal }] : []),
     { key: "clock", label: "Time clock", count: summary.clockTotal },
     { key: "rejected", label: "Taps not counted", count: summary.rejected },
+    { key: "unknown", label: "Not in CloudTime", count: unknownCount },
   ];
   const chips = chipList.filter((c) => c.count > 0 || counter === c.key);
 
@@ -338,7 +343,9 @@ export function ScanLogCounts({
               title={
                 c.key === "rejected"
                   ? "Taps the time clock did not accept, usually a second tap too soon, and repeat reads of the same badge. They are left out of every other list and total"
-                  : undefined
+                  : c.key === "unknown"
+                    ? "People who scanned here on a badge no employee holds. Their time clock scans were refused"
+                    : undefined
               }
             >
               {c.key === "gate" ? (
@@ -346,7 +353,7 @@ export function ScanLogCounts({
               ) : c.key === "clock" ? (
                 <Clock className="h-3.5 w-3.5" aria-hidden="true" />
               ) : (
-                <span className={styles.dot} data-tone="error" aria-hidden="true" />
+                <span className={styles.dot} data-tone={c.key === "unknown" ? "warning" : "error"} aria-hidden="true" />
               )}
               <span>{c.label}</span>
               <span className={styles.summaryChipCount}>{c.count.toLocaleString()}</span>

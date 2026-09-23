@@ -939,6 +939,10 @@
   background: var(--fill-error);
 }
 
+.dot[data-tone="warning"] {
+  background: var(--fill-warning);
+}
+
 .logHour {
   display: flex;
   align-items: center;

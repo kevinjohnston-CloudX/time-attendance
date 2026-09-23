@@ -78,6 +78,7 @@ import {
   useScanLog,
   type LogCounter,
 } from "./scan-log";
+import { UnknownBadgesView, unknownBadgesCsv, useUnknownBadges } from "./unknown-badges";
 import styles from "./on-site.module.css";
 import { Face } from "./face";
 
@@ -419,6 +420,9 @@ export function OnSiteBoard({
   const today = board ? siteDate(board.generatedAt, tz) : "";
   // The day already picked stays picked only while it is inside the window.
   const logDayShown = logDay && today && recentDays(today).includes(logDay) ? logDay : "";
+  // Badges nobody holds, for the scan log's "Not in CloudTime" chip. Loaded
+  // with the log so the chip's count is there before anyone picks it.
+  const unknown = useUnknownBadges({ siteId: siteId ?? "", day: logDayShown, active: tab === "log" });
   const when = !logDayShown ? "today" : dayLabel(logDayShown, today) === "Yesterday" ? "yesterday" : `on ${dayLabel(logDayShown, today)}`;
 
   // ── Movements ──
@@ -453,7 +457,8 @@ export function OnSiteBoard({
       .sort(compareDays(mvSort));
   }, [mvScoped, mvFlagShown, query, mvSort]);
   const logSummary = log.page?.summary ?? null;
-  const logTotal = logSummary ? counterTotal(logSummary, counter) : 0;
+  // "Not in CloudTime" counts people, not scans, so it has its own total.
+  const logTotal = counter === "unknown" ? unknown.count : logSummary ? counterTotal(logSummary, counter) : 0;
 
   function pickStatus(next: StatusFilter) {
     setQuery("");
@@ -471,6 +476,12 @@ export function OnSiteBoard({
 
   async function exportLog() {
     if (!board) return;
+    if (counter === "unknown") {
+      if (!unknown.data) return;
+      const stamp = logDayShown || `${today} ${fmtTime(board.generatedAt, tz).replace(/[: ]/g, "")}`;
+      download(unknownBadgesCsv(unknown.data, csvCell, board.site.name), `Not in CloudTime ${board.site.name} ${stamp}.csv`);
+      return;
+    }
     const all = await log.fetchAll();
     if (!all) return;
     const csv = scanLogCsv(all.rows, tz, csvCell, board.site.name);
@@ -547,7 +558,7 @@ export function OnSiteBoard({
   if (!siteId || sites.length === 0) {
     return (
       <div className="flex flex-col gap-4">
-        <Header siteName="" liveLine={null} actions={null} />
+        <Header liveLine={null} actions={null} />
         <Card padding={0}>
           <EmptyState
             icon={<Building2 className="h-8 w-8" />}
@@ -668,7 +679,11 @@ export function OnSiteBoard({
                     <strong style={{ color: "var(--text-primary)", fontWeight: "var(--weight-semibold)" }}>
                       {logTotal.toLocaleString()}
                     </strong>{" "}
-                    {counter ? `${COUNTER_LABEL[counter].toLowerCase()} ${when}` : `scans ${when}`}
+                    {counter === "unknown"
+                      ? `not in CloudTime ${when}`
+                      : counter
+                        ? `${COUNTER_LABEL[counter].toLowerCase()} ${when}`
+                        : `scans ${when}`}
                   </span>
                 </span>
               )}
@@ -771,7 +786,9 @@ export function OnSiteBoard({
                       : ""
                     : tab === "log"
                     ? logSummary
-                      ? `${logTotal.toLocaleString()} ${logTotal === 1 ? "scan" : "scans"}`
+                      ? counter === "unknown"
+                        ? `${logTotal.toLocaleString()} ${logTotal === 1 ? "badge" : "badges"}`
+                        : `${logTotal.toLocaleString()} ${logTotal === 1 ? "scan" : "scans"}`
                       : ""
                     : searching
                       ? `${matches.length.toLocaleString()} ${matches.length === 1 ? "match" : "matches"} in every group`
@@ -940,18 +957,31 @@ export function OnSiteBoard({
         ) : (
           <>
             {(counter !== null ||
+              unknown.count > 0 ||
               logSummary.gateTotal + logSummary.clockTotal + logSummary.rejected > 0) && (
               <ScanLogCounts
                 summary={logSummary}
                 counter={counter}
                 onPick={setCounter}
+                unknownCount={unknown.count}
                 hasGateData={board.site.hasGateData}
                 lastGateScanAt={board.site.lastGateScanAt}
                 tz={tz}
                 when={when}
               />
             )}
-            {log.rows.length === 0 ? (
+            {counter === "unknown" ? (
+              <UnknownBadgesView
+                data={unknown.data}
+                failed={unknown.failed}
+                loading={unknown.loading}
+                tz={tz}
+                when={when}
+                query={query}
+                peopleFiltered={!!dept || !!shift}
+                onRetry={unknown.retry}
+              />
+            ) : log.rows.length === 0 ? (
               <Card padding={0}>
                 <ScanLogEmpty
                   counter={counter}
@@ -1147,7 +1177,7 @@ export function OnSiteBoard({
 
 /* ── Pieces ─────────────────────────────────────────────────────────────── */
 
-function Header({ siteName, liveLine, actions }: { siteName: string; liveLine: React.ReactNode; actions: React.ReactNode }) {
+function Header({ liveLine, actions }: { liveLine: React.ReactNode; actions: React.ReactNode }) {
   // The title stays the same on every site. Which building the numbers belong
   // to leads the line under it instead, so a long site name never crowds the
   // title and the page reads the same wherever you are.
@@ -1818,6 +1848,7 @@ const COUNTER_LABEL: Record<LogCounter, string> = {
   "clock-in": "Time clock in",
   "clock-out": "Time clock out",
   rejected: "Taps not counted",
+  unknown: "Not in CloudTime",
 };
 
 /** How many scans the picked counter stands for, from the same counts it shows. */
