@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui";
 import { PAY_PERIOD_STATUS_LABEL } from "@/lib/state-machines/labels";
@@ -83,15 +83,32 @@ export function PunchHistoryDatePicker({
   const [b, setB] = useState<string | null>(endDate);
   const [hover, setHover] = useState<string | null>(null);
 
-  function toggle() {
-    if (!open) {
-      // Reopening always starts from the range in force, not a half-finished
-      // pick left over from last time.
+  // Opening always starts from the range in force, not a half finished pick
+  // or the last range chosen. Done as the open state changes rather than in
+  // the button's handler, because the empty state's Change Dates opens the
+  // picker too, and it came up showing the previous selection.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
       setA(startDate);
       setB(endDate);
       setHover(null);
       setMonth(+startDate.slice(0, 4) * 12 + (+startDate.slice(5, 7) - 1));
     }
+  }
+
+  // Escape closes it, as every other popover does.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onOpenChange(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onOpenChange]);
+
+  function toggle() {
     onOpenChange(!open);
   }
 

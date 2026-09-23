@@ -158,11 +158,23 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
   );
 
   // Search runs on the server, because payroll's list is the whole company.
-  // Typing waits for a pause rather than sending a request per key.
+  // Typing waits for a pause rather than sending a request per key. Only
+  // typing starts the timer: when Clear all empties the box, the timer must
+  // not fire afterwards with the old filters and put them back, which it would
+  // on any connection slower than 300ms.
+  const typed = useRef(false);
+  const onType = useCallback((v: string) => {
+    typed.current = true;
+    setQuery(v);
+  }, []);
   useEffect(() => {
+    if (!typed.current) return;
     const q = query.trim();
     if (q === data.search) return;
-    const t = setTimeout(() => navigate({ q: q || undefined }), 300);
+    const t = setTimeout(() => {
+      typed.current = false;
+      navigate({ q: q || undefined });
+    }, 300);
     return () => clearTimeout(t);
   }, [query, data.search, navigate]);
 
@@ -188,6 +200,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
   const dirty = data.isCustomRange || !!data.selectedSiteId || !!data.selectedDepartmentId || !!data.search;
 
   function clearAll() {
+    typed.current = false;
     setQuery("");
     // The person you have open is a record, not a filter, and stays open.
     navigate({ startDate: undefined, endDate: undefined, siteId: undefined, departmentId: undefined, q: undefined });
@@ -357,7 +370,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
             </>
           )}
 
-          <SearchInput value={query} onValueChange={setQuery} placeholder="Name, ID or department" width={250} />
+          <SearchInput value={query} onValueChange={onType} placeholder="Name, ID or department" width={250} />
 
           {dirty && (
             <Button hierarchy="link" size="sm" onClick={clearAll}>
@@ -475,9 +488,9 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
         </div>
 
         {/* Punches */}
-        <div className="flex min-w-0 flex-[3_1_480px] flex-col">
+        <div className="ta-tph-punches flex min-w-0 flex-[3_1_480px] flex-col">
           {selected ? (
-            <>
+            <div className={`flex flex-col ${data.punches.length > 0 ? "ta-tph-punches-inner" : ""}`}>
               <div
                 className="ta-tph-head z-[2]"
                 style={{
@@ -488,7 +501,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                 }}
               >
                 <div
-                  className="flex flex-wrap items-center gap-3.5 px-[18px] py-4"
+                  className="ta-tph-info flex flex-wrap items-center gap-3.5 px-[18px] py-4"
                   style={{ borderBottom: "1px solid var(--stroke-divider)" }}
                 >
                   <span
@@ -703,7 +716,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                   />
                 )}
               </div>
-            </>
+            </div>
           ) : (
             <div
               style={{

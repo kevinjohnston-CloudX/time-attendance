@@ -455,7 +455,20 @@ tbody .ta-row:hover {
 .ta-tph-people { position: static; max-width: none; }
 .ta-tph-head { position: static; }
 .ta-tph-list { max-height: 320px; }
+/* Stacked, the five columns are wider than the column they sit in. The punch
+   panel scrolls sideways on its own rather than pushing the whole page wider
+   and cutting off Status. Side by side it must not be a scroll container,
+   or the header could not pin to the page. */
+.ta-tph-punches { overflow-x: auto; }
+.ta-tph-punches-inner { min-width: 580px; }
+/* The name and the totals stay in view while the columns scroll under them:
+   pinned to the left edge, as wide as the column, which stacked is the whole
+   board (100cqw). */
+.ta-tph-info { position: sticky; left: 0; width: 100cqw; box-sizing: border-box; }
 @container (min-width: 734px) {
+  .ta-tph-punches { overflow-x: visible; }
+  .ta-tph-punches-inner { min-width: 0; }
+  .ta-tph-info { position: static; width: auto; }
   .ta-tph-people { position: sticky; top: var(--tph-bar, 0px); max-width: 300px; }
   .ta-tph-head { position: sticky; top: var(--tph-bar, 0px); }
   .ta-tph-list { max-height: calc(100vh - 56px - var(--tph-bar, 0px) - 62px - 16px); }
