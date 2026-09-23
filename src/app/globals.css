@@ -491,3 +491,58 @@ tbody .ta-row:hover {
 #email::-webkit-calendar-picker-indicator {
   display: none !important;
 }
+
+/* The page loading bar (navigation-progress.tsx). It creeps towards 90% and
+   never claims to be done until the page is: the last stretch only happens
+   when the new address lands. Invisible for the first 150ms, so a page that
+   arrives at once never flickers it. */
+.ta-nav-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  height: 3px;
+  pointer-events: none;
+  background: var(--fill-accent);
+  transform-origin: left center;
+  transform: scaleX(0);
+  opacity: 0;
+}
+.ta-nav-progress[data-state="loading"] {
+  opacity: 1;
+  animation: ta-nav-crawl 12s cubic-bezier(0.08, 0.7, 0.2, 1) 150ms both;
+}
+.ta-nav-progress[data-state="finishing"] {
+  transform: scaleX(1);
+  opacity: 0;
+  transition: opacity 250ms ease 150ms;
+}
+@keyframes ta-nav-crawl {
+  0% { transform: scaleX(0); }
+  8% { transform: scaleX(0.35); }
+  100% { transform: scaleX(0.9); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ta-nav-progress[data-state="loading"] {
+    animation: ta-nav-hold 0s linear 150ms both;
+  }
+  @keyframes ta-nav-hold {
+    from, to { transform: scaleX(1); opacity: 0.7; }
+  }
+}
+
+/* A sidebar item whose page is on its way: its label keeps its place and a
+   small ring turns where the count would sit. */
+.ta-nav-spinner {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 9999px;
+  border: 1.5px solid var(--stroke-secondary);
+  border-top-color: var(--icon-accent);
+  animation: ta-spin 700ms linear infinite, ta-fade-in 1ms linear 150ms both;
+  opacity: 0;
+}
+@keyframes ta-spin { to { transform: rotate(360deg); } }
+@keyframes ta-fade-in { from { opacity: 0; } to { opacity: 1; } }

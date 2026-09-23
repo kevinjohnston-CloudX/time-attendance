@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import {
   addMonths,
   differenceInCalendarDays,

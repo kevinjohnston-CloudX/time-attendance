@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import { ChevronRight, Folder, FolderPlus, Pencil, Trash2 } from "lucide-react";
 import { Button, Card } from "@/components/ui";
 import { fieldCls } from "@/components/ui/form-classes";

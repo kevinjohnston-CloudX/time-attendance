@@ -1,6 +1,8 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Providers } from "@/app/_components/providers";
+import { NavigationProgress } from "@/components/layout/navigation-progress";
 import "./globals.css";
 
 /**
@@ -35,6 +37,11 @@ export default function RootLayout({
     // inheriting from it loses the typeface.
     <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body className="antialiased">
+        {/* In a Suspense boundary because it reads the search params, which
+            would otherwise stop every static page from being prerendered. */}
+        <Suspense fallback={null}>
+          <NavigationProgress />
+        </Suspense>
         <Providers>{children}</Providers>
       </body>
     </html>

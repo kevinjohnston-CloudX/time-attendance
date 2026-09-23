@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import { LinkPendingSpinner, useRouter } from "@/components/layout/navigation-progress";
 import { useRef, useState, useEffect, useTransition } from "react";
 import { signOut } from "next-auth/react";
 import { LogOut, Eye, X, Search, ChevronsUpDown } from "lucide-react";
@@ -167,6 +168,7 @@ return (
                 }}
               >
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                <LinkPendingSpinner />
                 {item.badge ? (
                   <span
                     className="inline-flex h-4 min-w-[18px] flex-none items-center justify-center rounded-full px-1.5"
@@ -675,6 +677,7 @@ export function Sidebar({
                   {!collapsed && (
                     <>
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      <LinkPendingSpinner />
                       {item.badge ? (
                         <span
                           className="inline-flex h-4 min-w-[18px] items-center justify-center rounded-full px-1.5"

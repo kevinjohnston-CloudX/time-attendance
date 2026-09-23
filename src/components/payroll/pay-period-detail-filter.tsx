@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import { Select } from "@/components/ui";
 
 type Site = { id: string; name: string };

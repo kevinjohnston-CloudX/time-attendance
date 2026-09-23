@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 
 type Option = { id: string; label: string };
 

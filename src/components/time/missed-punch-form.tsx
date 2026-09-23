@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import { requestMissedPunch } from "@/actions/punch.actions";
 import { PUNCH_TYPE_LABEL, type PunchTypeValue } from "@/lib/state-machines/labels";
 import { Banner, Button, Card, Input, LinkButton, PageHeader, Select, Textarea } from "@/components/ui";

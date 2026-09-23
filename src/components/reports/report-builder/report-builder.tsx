@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import { ArrowLeft, Play, Save, Table2 } from "lucide-react";
 import {
   Banner,

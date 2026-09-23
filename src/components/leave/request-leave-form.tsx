@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import { format, parseISO } from "date-fns";
 import { createLeaveRequest, submitLeaveRequest } from "@/actions/leave.actions";
 import { LeaveDayPicker, type DaySelection, type ShiftInfo } from "./leave-day-picker";

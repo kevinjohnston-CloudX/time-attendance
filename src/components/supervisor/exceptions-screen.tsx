@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import { Inbox } from "lucide-react";
 import { ExceptionCard } from "@/components/supervisor/exception-card";
 import {

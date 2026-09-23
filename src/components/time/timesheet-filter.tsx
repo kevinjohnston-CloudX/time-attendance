@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import { useState } from "react";
 import { fieldCls, smFieldCls } from "@/components/ui/form-classes";
 

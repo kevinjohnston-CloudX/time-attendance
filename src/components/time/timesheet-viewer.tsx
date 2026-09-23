@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useState, type CSSProperties } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import { addDays, eachDayOfInterval, format, isToday, parseISO } from "date-fns";
 import { CalendarX2, ChevronRight } from "lucide-react";
 

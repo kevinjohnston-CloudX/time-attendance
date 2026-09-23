@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import { setupPasswordFromToken } from "@/actions/password.actions";
 import { Banner, Button, Input } from "@/components/ui";
 import { AuthScreen } from "../auth-screen";

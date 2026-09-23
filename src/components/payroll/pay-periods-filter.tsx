@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import { format, addDays } from "date-fns";
 import { ChevronLeft, ChevronRight, Calendar, CalendarCheck } from "lucide-react";
 import { parseUtcDate } from "@/lib/utils/date";

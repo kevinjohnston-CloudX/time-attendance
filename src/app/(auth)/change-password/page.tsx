@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import { signOut } from "next-auth/react";
 import { changePassword } from "@/actions/password.actions";
 import { Banner, Button, Input } from "@/components/ui";

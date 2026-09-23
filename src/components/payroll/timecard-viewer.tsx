@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useTransition, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import {
   format,
   addDays,
