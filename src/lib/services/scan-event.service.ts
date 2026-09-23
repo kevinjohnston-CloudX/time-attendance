@@ -39,9 +39,9 @@ export type RecordedScan = {
    */
   duplicate: boolean;
   /**
-   * True when this is a distinct scan that arrived within {@link REREAD_WINDOW_MS}
-   * of the same badge's previous one in the same stream — the reader firing
-   * twice rather than the person crossing twice.
+   * True when this is a distinct scan that arrived inside the stream's re-read
+   * window (see {@link rereadWindowMsFor}) of the same badge's previous one in
+   * the same stream — the reader firing twice rather than the person crossing.
    *
    * <p>Unlike {@link duplicate} the row IS stored: it is what the reader did,
    * and Oracle logs both crossings too, so dropping it would make the two
@@ -282,7 +282,9 @@ export async function recordScanEvent(input: RecordScanInput): Promise<RecordedS
               direction: { in: ["IN", "OUT"] },
               scanTime: {
                 lt: input.scanTime,
-                gte: new Date(input.scanTime.getTime() - REREAD_WINDOW_MS),
+                gte: new Date(
+                  input.scanTime.getTime() - rereadWindowMsFor(input.stream),
+                ),
               },
             },
             orderBy: { scanTime: "desc" },
@@ -386,6 +388,41 @@ export async function recordScanEvent(input: RecordScanInput): Promise<RecordedS
  * essentially all the repeats and almost nothing real.
  */
 export const REREAD_WINDOW_MS = 60_000;
+
+/**
+ * The gate's own window, which is shorter so that somebody who turns straight
+ * back round is allowed to record it instead of being told they already entered.
+ *
+ * <p>This is a deliberate trade, not a refinement of the number above. Over the
+ * fourteen days to 2026-09-22 there were 424 gate pairs between five and sixty
+ * seconds apart, 359 of them at the same reader, and 253 of those the window
+ * above currently absorbs. Of that 253, 100 are followed by a time clock punch
+ * from the same badge inside ninety minutes — proof the person never left — and
+ * 97 more have no further gate scan for over six hours, which is the shape of a
+ * repeat read followed by the real end-of-shift exit. Shortening the window
+ * turns those back into crossings, and a crossing recorded that is not real
+ * inverts every scan the badge makes for the rest of the day.
+ *
+ * <p>So it is settable without a deploy. GATE_REREAD_WINDOW_MS in the Vercel
+ * environment overrides it; setting it to 60000 restores the old behaviour at
+ * the gate within one redeploy of the edge config, which is the lever to reach
+ * for if inverted directions reappear at NJ299.
+ */
+export const GATE_REREAD_WINDOW_MS = readWindowMs("GATE_REREAD_WINDOW_MS", 5_000);
+
+function readWindowMs(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const parsed = Number(raw);
+  // A typo in an environment variable must not silently disable the guard that
+  // keeps a repeat read from inverting somebody's day.
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+/** Security repeats itself far more than the clock does, and matters more. */
+export function rereadWindowMsFor(stream: ScanStream): number {
+  return stream === "SECURITY" ? GATE_REREAD_WINDOW_MS : REREAD_WINDOW_MS;
+}
 
 /**
  * Records what the timecard pipeline did with a scan already written down.
