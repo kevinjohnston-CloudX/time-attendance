@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useTransition, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import {
+  CheckCircle2,
   Clock,
   Coffee,
   LogIn,
@@ -14,7 +15,7 @@ import {
 } from "lucide-react";
 import { Button, EmptyState, SearchInput, Select, Toast, useToast } from "@/components/ui";
 import { PUNCH_TYPE_LABEL, type PunchTypeValue } from "@/lib/state-machines/labels";
-import type { PunchHistoryData, PunchHistoryParams } from "@/lib/punch-history/punch-history-data";
+import type { PunchHistoryData, PunchHistoryParams, PunchHistoryPunch } from "@/lib/punch-history/punch-history-data";
 import { PunchHistoryDatePicker, dayLabel, rangeLabel } from "./punch-history-date-picker";
 
 /**
@@ -65,6 +66,104 @@ function initials(name: string): string {
 
 function hours(minutes: number): string {
   return (minutes / 60).toFixed(2);
+}
+
+/** "30 min", "1 h 5 min". A dash when there was none. */
+function duration(minutes: number | null): string {
+  if (minutes === null || minutes <= 0) return "\u2014";
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  if (h === 0) return `${m} min`;
+  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
+/**
+ * The shape of one day, read off its punches: when the person arrived and
+ * left, and how long they spent on meal and on breaks.
+ *
+ * <p>Superseded punches are left out, so a corrected time counts once and at
+ * its corrected value. Each start is paired with the next end of the same
+ * kind; an unpaired start adds nothing, which is exactly the missing punch the
+ * day is already flagged for. Durations are real elapsed minutes and do not
+ * depend on the site's timezone.
+ */
+function summarizeDay(punches: PunchHistoryPunch[]) {
+  const live = punches
+    .filter((p) => !p.isSuperseded)
+    .sort((a, b) => new Date(a.punchTime).getTime() - new Date(b.punchTime).getTime());
+
+  const firstIn = live.find((p) => p.punchType === "CLOCK_IN");
+  const lastOut = [...live].reverse().find((p) => p.punchType === "CLOCK_OUT");
+
+  /** Minutes spent, and whether a start was left without its end. */
+  const paired = (startType: string, endType: string): { minutes: number; open: boolean } | null => {
+    let total = 0;
+    let seen = false;
+    let openedAt: number | null = null;
+    for (const p of live) {
+      const t = new Date(p.punchTime).getTime();
+      if (p.punchType === startType) {
+        openedAt = t;
+        seen = true;
+      } else if (p.punchType === endType && openedAt !== null) {
+        total += (t - openedAt) / 60000;
+        openedAt = null;
+      }
+    }
+    return seen ? { minutes: total, open: openedAt !== null } : null;
+  };
+
+  const out = lastOut && firstIn && new Date(lastOut.punchTime) > new Date(firstIn.punchTime) ? lastOut : null;
+  return {
+    inAt: firstIn?.punchTime ?? null,
+    outAt: out?.punchTime ?? null,
+    // A clock out the system wrote, at the end of the day, is the one a
+    // supervisor most needs to see: the person left without punching, and the
+    // hours up to midnight are counting as worked.
+    outIsAuto: out?.source === "SYSTEM",
+    meal: paired("MEAL_START", "MEAL_END"),
+    breaks: paired("BREAK_START", "BREAK_END"),
+    pending: live.filter((p) => !p.isApproved).length,
+  };
+}
+
+/** One labelled fact in a day's summary. */
+function DayFact({
+  label,
+  value,
+  strong,
+  muted,
+  warn,
+  live,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+  muted?: boolean;
+  warn?: boolean;
+  live?: boolean;
+}) {
+  const tone = warn ? "var(--text-warning)" : live ? "var(--text-accent)" : null;
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span
+        className="wms-overline truncate"
+        style={{ color: tone ?? "var(--text-tertiary)" }}
+      >
+        {label}
+      </span>
+      <span
+        className="tabular truncate"
+        style={{
+          font: "var(--type-body2)",
+          fontWeight: strong ? "var(--weight-bold)" : "var(--weight-semibold)",
+          color: tone ?? (muted ? "var(--text-tertiary)" : "var(--text-primary)"),
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
 }
 
 export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
@@ -520,67 +619,122 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
               >
                 {data.punches.length > 0 ? (
                   <>
-                    {data.days.map((day) => (
+                    {data.days.map((day) => {
+                      const dayPunches = data.punches.filter((p) => p.localDate === day.date);
+                      const sum = summarizeDay(dayPunches);
+                      // Worked keeps the pay engine's rules: it only counts
+                      // approved punches, so a day still waiting says so
+                      // rather than showing a zero that reads as no work.
+                      const worked =
+                        day.workedMinutes > 0
+                          ? `${hours(day.workedMinutes)} h`
+                          : day.isClockedIn
+                            ? "In progress"
+                            : day.hasPending
+                              ? "Pending"
+                              : day.hasMissingPunch
+                                ? "\u2014"
+                                : `${hours(0)} h`;
+                      return (
                       <div key={day.date} className="flex flex-col">
+                        {/* The day at a glance. Each fact sits under its own
+                            label, so the day can be read without its rows:
+                            when they came in and left, meal, breaks, and the
+                            hours. One status on the right, quiet when the day
+                            is clean and amber only when it is not. */}
                         <div
-                          className="flex min-h-10 flex-wrap items-center gap-2.5 px-[18px] py-2"
+                          className="flex flex-wrap items-center gap-x-6 gap-y-2 px-[18px] py-2.5"
                           style={{ background: "var(--surface-tertiary)", borderBottom: "1px solid var(--stroke-divider)" }}
                         >
                           <span
-                            className="flex-1"
+                            className="min-w-[120px] whitespace-nowrap"
                             style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}
                           >
                             {dayLabel(day.date, true)}
                           </span>
-                          {day.hasMissingPunch && (
-                            <>
+
+                          <div className="grid flex-1 grid-cols-[repeat(5,minmax(72px,1fr))] gap-4">
+                            <DayFact label="In" value={sum.inAt ? clock(sum.inAt, false) : "\u2014"} muted={!sum.inAt} />
+                            <DayFact
+                              label={sum.outIsAuto ? "Out \u00b7 Auto" : "Out"}
+                              value={sum.outAt ? clock(sum.outAt, false) : day.isClockedIn ? "Still in" : "\u2014"}
+                              muted={!sum.outAt}
+                              warn={sum.outIsAuto}
+                            />
+                            {/* An unended meal or break on a finished day was
+                                never punched back from. On the day still in
+                                progress it is simply happening now, so it is
+                                the live blue there, not a warning. */}
+                            <DayFact
+                              label="Meal"
+                              value={
+                                sum.meal?.open
+                                  ? day.isClockedIn ? "On meal" : "Not ended"
+                                  : duration(sum.meal?.minutes ?? null)
+                              }
+                              muted={!sum.meal?.minutes && !sum.meal?.open}
+                              warn={sum.meal?.open && !day.isClockedIn}
+                              live={sum.meal?.open && day.isClockedIn}
+                            />
+                            <DayFact
+                              label="Breaks"
+                              value={
+                                sum.breaks?.open
+                                  ? day.isClockedIn ? "On break" : "Not ended"
+                                  : duration(sum.breaks?.minutes ?? null)
+                              }
+                              muted={!sum.breaks?.minutes && !sum.breaks?.open}
+                              warn={sum.breaks?.open && !day.isClockedIn}
+                              live={sum.breaks?.open && day.isClockedIn}
+                            />
+                            <DayFact label="Worked" value={worked} strong muted={day.workedMinutes === 0} />
+                          </div>
+
+                          <div className="flex min-w-[150px] flex-none items-center justify-end gap-2.5">
+                            {day.hasMissingPunch ? (
+                              <>
+                                <span
+                                  className="inline-flex items-center gap-1.5 whitespace-nowrap"
+                                  style={{ font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: "var(--text-warning)" }}
+                                >
+                                  <TriangleAlert className="h-[15px] w-[15px]" />
+                                  Missing punch
+                                </span>
+                                {data.canResolveExceptions && exceptionsHref && (
+                                  <Button hierarchy="link" size="sm" onClick={() => router.push(exceptionsHref)}>
+                                    Resolve
+                                  </Button>
+                                )}
+                              </>
+                            ) : day.isClockedIn ? (
+                              <span
+                                className="inline-flex items-center gap-1.5 whitespace-nowrap"
+                                style={{ font: "var(--type-body2)", fontWeight: "var(--weight-medium)", color: "var(--text-accent)" }}
+                              >
+                                <span className="h-[7px] w-[7px] rounded-full" style={{ background: "var(--fill-accent)" }} />
+                                Clocked in
+                              </span>
+                            ) : sum.pending > 0 ? (
                               <span
                                 className="inline-flex items-center gap-1.5 whitespace-nowrap"
                                 style={{ font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: "var(--text-warning)" }}
                               >
-                                <TriangleAlert className="h-[15px] w-[15px]" />
-                                Missing punch
-                              </span>
-                              {data.canResolveExceptions && exceptionsHref && (
-                                <Button hierarchy="link" size="sm" onClick={() => router.push(exceptionsHref)}>
-                                  Resolve exception
-                                </Button>
-                              )}
-                            </>
-                          )}
-                          {day.isClockedIn ? (
-                            <span
-                              className="inline-flex items-center gap-1.5 whitespace-nowrap"
-                              style={{ font: "var(--type-body2)", fontWeight: "var(--weight-medium)", color: "var(--text-accent)" }}
-                            >
-                              <span className="h-[7px] w-[7px] rounded-full" style={{ background: "var(--fill-accent)" }} />
-                              Clocked in
-                            </span>
-                          ) : (
-                            // Hours come from the pay engine, which only counts
-                            // approved punches. A day still waiting on approval
-                            // says so rather than showing a zero that reads as
-                            // nobody having worked.
-                            day.workedMinutes === 0 && day.hasPending ? (
-                              <span className="whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                                Awaiting approval
+                                <span className="h-2 w-2 rounded-full" style={{ background: "var(--fill-warning)" }} />
+                                {sum.pending} pending
                               </span>
                             ) : (
-                              (!day.hasMissingPunch || day.workedMinutes > 0) && (
-                                <span
-                                  className="tabular whitespace-nowrap"
-                                  style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-secondary)" }}
-                                >
-                                  {hours(day.workedMinutes)} h
-                                </span>
-                              )
-                            )
-                          )}
+                              <span
+                                className="inline-flex items-center gap-1.5 whitespace-nowrap"
+                                style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                              >
+                                <CheckCircle2 className="h-[15px] w-[15px]" style={{ color: "var(--icon-success)" }} />
+                                Approved
+                              </span>
+                            )}
+                          </div>
                         </div>
 
-                        {data.punches
-                          .filter((p) => p.localDate === day.date)
-                          .map((p) => {
+                        {dayPunches.map((p) => {
                             const Icon = PUNCH_ICON[p.punchType] ?? Clock;
                             const sup = p.isSuperseded;
                             const fg = sup ? "var(--text-tertiary)" : "var(--text-primary)";
@@ -654,7 +808,8 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                             );
                           })}
                       </div>
-                    ))}
+                      );
+                    })}
                     <div
                       className="tabular px-[18px] py-3"
                       style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
