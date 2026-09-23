@@ -822,7 +822,22 @@ export const FLAG_META: Record<MovementFlag, { label: string; hint: string; tone
   },
   INACTIVE: { label: "Inactive employee", hint: "Scanning on a record that is inactive or terminated", tone: "error" },
   ON_LEAVE: { label: "On leave", hint: "Approved time off that day", tone: "info" },
+  HERE_NOW: { label: "In the building", hint: "Through the security gate and not out again", tone: "info" },
+  SEEN: { label: "People seen", hint: "Scanned at either reader that day", tone: "neutral" },
 };
+
+/** A filter's name where it depends on the site: without a gate, "here" means on the clock. */
+export function flagLabel(f: MovementFlag, hasGate: boolean): string {
+  return f === "HERE_NOW" && !hasGate ? "On the clock" : FLAG_META[f].label;
+}
+
+/** The filter behind the headline number: here now today, seen on a past day. */
+export function heroFlagFor(isToday: boolean): MovementFlag {
+  return isToday ? "HERE_NOW" : "SEEN";
+}
+
+/** Filters that describe where somebody is, not something to look into. */
+const NOT_A_CONCERN: MovementFlag[] = ["ON_LEAVE", "HERE_NOW", "SEEN"];
 
 const NOW_FLAGS: MovementFlag[] = ["INSIDE_OFF_CLOCK", "NO_GATE_SCAN", "SCHEDULED_OUTSIDE", "ON_BREAK", "NOT_ARRIVED"];
 const PAST_FLAGS: MovementFlag[] = ["INSIDE_OFF_CLOCK", "NO_GATE_SCAN", "NOT_ARRIVED"];
@@ -900,6 +915,7 @@ export function MovementsCounts({
   const insideNow = views.filter((v) => (hasGate ? v.now.inside : v.now.clock !== "OUT")).length;
   const seen = views.filter((v) => v.scanCount > 0).length;
   const pick = (f: MovementFlag) => onPick(flag === f ? null : f);
+  const heroFlag = heroFlagFor(isToday);
 
   const heroLabel = isToday ? (hasGate ? "In the building" : "On the clock") : "People seen";
   const heroFigure = isToday ? insideNow : seen;
@@ -913,9 +929,9 @@ export function MovementsCounts({
         <button
           type="button"
           className={styles.summaryHero}
-          aria-pressed={flag === null}
-          onClick={() => onPick(null)}
-          title="Show everyone"
+          aria-pressed={flag === heroFlag}
+          onClick={() => pick(heroFlag)}
+          title={flag === heroFlag ? "Show everyone" : `Show only these ${heroFigure.toLocaleString()}`}
         >
           <span className={styles.summaryLabel}>{heroLabel}</span>
           <span className={styles.summaryHeroFigure}>{heroFigure.toLocaleString()}</span>
@@ -1012,7 +1028,9 @@ export function compareDays(sort: MvSort): (a: PersonDayView, b: PersonDayView) 
     case "inside":
       return (a, b) => b.lanes.totals.insideMin - a.lanes.totals.insideMin || name(a, b);
     case "flags":
-      return (a, b) => b.flags.filter((f) => f !== "ON_LEAVE").length - a.flags.filter((f) => f !== "ON_LEAVE").length || name(a, b);
+      return (a, b) =>
+        b.flags.filter((f) => !NOT_A_CONCERN.includes(f)).length - a.flags.filter((f) => !NOT_A_CONCERN.includes(f)).length ||
+        name(a, b);
     default:
       return name;
   }

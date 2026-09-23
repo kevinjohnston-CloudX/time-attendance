@@ -51,7 +51,6 @@ import { PhotoViewer } from "./face";
 import { clampDay, dayLabel, recentDays } from "@/lib/presence/days";
 import { buildSiteDay, countFlags, scanTotals } from "@/lib/presence/movements";
 import {
-  FLAG_META,
   MV_SORTS,
   MovementsCounts,
   MovementsEmpty,
@@ -60,7 +59,9 @@ import {
   PEOPLE_PER_PAGE,
   SummarySkeleton,
   compareDays,
+  flagLabel,
   flagsFor,
+  heroFlagFor,
   parseFlag,
   parseMvSort,
   useSiteDay,
@@ -443,7 +444,10 @@ export function OnSiteBoard({
   const mvHasGate = !!siteDay.data?.site.hasGateData;
   // A filter that does not apply to this day (on a meal right now, for
   // yesterday) is set aside rather than answering with an empty table.
-  const mvFlagShown = mvFlag && siteDay.data && flagsFor(mvIsToday, mvHasGate).includes(mvFlag) ? mvFlag : null;
+  const mvFlagShown =
+    mvFlag && siteDay.data && (flagsFor(mvIsToday, mvHasGate).includes(mvFlag) || mvFlag === heroFlagFor(mvIsToday))
+      ? mvFlag
+      : null;
   const mvRows = useMemo(() => {
     const needleMv = query.trim().toLowerCase();
     return mvScoped
@@ -757,7 +761,7 @@ export function OnSiteBoard({
                   />
                 )}
                 {tab === "movements" && mvFlagShown && (
-                  <ToggleChip label={FLAG_META[mvFlagShown].label} pressed onClick={() => setMvFlag(null)} />
+                  <ToggleChip label={flagLabel(mvFlagShown, mvHasGate)} pressed onClick={() => setMvFlag(null)} />
                 )}
                 {tab === "log" && counter && (
                   <ToggleChip label={COUNTER_LABEL[counter]} pressed onClick={() => setCounter(null)} />

@@ -2219,10 +2219,16 @@
 }
 
 /* The picked filter: an accent rule along the bottom, the tab idiom. */
+.summaryHero {
+  position: relative;
+}
+
+.summaryHero[aria-pressed="true"],
 .summaryCard[aria-pressed="true"] {
   background: var(--fill-hover);
 }
 
+.summaryHero[aria-pressed="true"]::after,
 .summaryCard[aria-pressed="true"]::after {
   content: "";
   position: absolute;

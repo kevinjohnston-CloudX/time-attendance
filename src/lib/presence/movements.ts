@@ -55,7 +55,11 @@ export type MovementFlag =
   | "MARKED_OUT"
   | "REJECTED"
   | "INACTIVE"
-  | "ON_LEAVE";
+  | "ON_LEAVE"
+  /** Behind the headline number: in the building now (on the clock where no gate reports). */
+  | "HERE_NOW"
+  /** Behind the headline number on a past day: seen at either reader. */
+  | "SEEN";
 
 export const FLAG_ORDER: MovementFlag[] = [
   "INSIDE_OFF_CLOCK",
@@ -72,6 +76,8 @@ export const FLAG_ORDER: MovementFlag[] = [
   "REJECTED",
   "INACTIVE",
   "ON_LEAVE",
+  "HERE_NOW",
+  "SEEN",
 ];
 
 /** Where somebody is at the end of what the day has recorded: now, for today. */
@@ -243,6 +249,8 @@ export function buildPersonDay(
   add("REJECTED", rejected > 0);
   add("INACTIVE", person.inactive && scans.length > 0);
   add("ON_LEAVE", person.onLeave);
+  add("HERE_NOW", isToday && (hasGate ? nowState.inside : nowState.clock !== "OUT"));
+  add("SEEN", scans.some(isShownScan));
 
   const shown = scans.filter(isShownScan);
   const last = shown.length ? Date.parse(shown[shown.length - 1].at) : null;
