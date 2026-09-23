@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, ChevronRight } from "lucide-react";
+import { Home, ChevronRight, PanelLeft } from "lucide-react";
 import { locate } from "./nav-model";
 import { ThemeToggle } from "./theme-toggle";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { NotificationBell } from "./notification-bell";
 import { SegmentedControl } from "@/components/ui";
-import { navModeStore, useNavMode, type NavMode } from "./nav-mode";
+import { navModeStore, useNavMode, collapseStore, useSidebarCollapsed, type NavMode } from "./nav-mode";
 import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
 
 /**
@@ -34,6 +34,7 @@ export function TopBar({
 }) {
   const pathname = usePathname();
   const navMode = useNavMode();
+  const collapsed = useSidebarCollapsed();
   const here = locate(pathname);
 
   return (
@@ -44,6 +45,28 @@ export function TopBar({
         borderBottom: "1px solid var(--stroke-secondary)",
       }}
     >
+      {/* The grouped sidebar's collapse toggle. One button in one place for
+          both states, first in the bar beside the column it resizes. It used
+          to sit in the sidebar's own header, squeezed against the wordmark
+          when open and moved under the logo when closed. The rail has no
+          collapsed state, so it gets no toggle. */}
+      {navMode === "grouped" && (
+        <>
+          <button
+            type="button"
+            onClick={() => collapseStore.set(!collapsed)}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            className="ta-hoverable -ml-1 inline-flex h-7 w-7 flex-none items-center justify-center rounded-md"
+            style={{ color: "var(--icon-secondary)" }}
+          >
+            <PanelLeft className="h-4 w-4" />
+          </button>
+          <span aria-hidden className="h-4 w-px flex-none" style={{ background: "var(--stroke-divider)" }} />
+        </>
+      )}
+
       <nav
         aria-label="Breadcrumb"
         className="flex min-w-0 items-center gap-1.5"

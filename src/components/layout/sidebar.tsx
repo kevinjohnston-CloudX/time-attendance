@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useRef, useState, useEffect, useTransition, useSyncExternalStore } from "react";
+import { useRef, useState, useEffect, useTransition } from "react";
 import { signOut } from "next-auth/react";
-import { LogOut, PanelLeftClose, PanelLeft, Eye, X, Search, ChevronsUpDown } from "lucide-react";
+import { LogOut, Eye, X, Search, ChevronsUpDown } from "lucide-react";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { BrandIcon, BrandMark } from "./brand-mark";
 import { openCommandPalette } from "./command-palette";
-import { useNavMode } from "./nav-mode";
+import { useNavMode, useSidebarCollapsed } from "./nav-mode";
 import {
   SECTIONS,
   type NavItem,
@@ -16,52 +16,6 @@ import {
   INACTIVE_ALLOWED_HREFS,
   activeHref,
 } from "./nav-model";
-
-const COLLAPSE_KEY = "ta.sidebar.collapsed";
-/**
- * Whether the sidebar is collapsed, kept in localStorage so the choice
- * survives a reload — the design system says the toggle persists.
- *
- * <p>Read through useSyncExternalStore rather than copied into state on
- * mount. The server cannot know what this browser stored, so the first render
- * has to say "expanded" and the truth has to arrive afterwards; doing that by
- * hand means a setState inside an effect, which React now flags as a
- * cascading render. useSyncExternalStore is the supported way to say exactly
- * this: here is the server's answer, here is the browser's, re-render when it
- * changes.
- *
- * <p>The "storage" event covers the same account open in a second tab.
- */
-const collapseStore = {
-  listeners: new Set<() => void>(),
-  subscribe(cb: () => void) {
-    collapseStore.listeners.add(cb);
-    window.addEventListener("storage", cb);
-    return () => {
-      collapseStore.listeners.delete(cb);
-      window.removeEventListener("storage", cb);
-    };
-  },
-  get(): boolean {
-    try {
-      return window.localStorage.getItem(COLLAPSE_KEY) === "1";
-    } catch {
-      return false; // private window, blocked storage — expanded is the safe default
-    }
-  },
-  /** What the server renders. It has no browser to ask. */
-  getServer(): boolean {
-    return false;
-  },
-  set(next: boolean) {
-    try {
-      window.localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
-    } catch {
-      /* not worth failing the click over */
-    }
-    collapseStore.listeners.forEach((l) => l());
-  },
-};
 
 function initials(name?: string | null): string {
   if (!name) return "?";
@@ -198,7 +152,7 @@ return (
           </span>
         </div>
 
-        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+        <nav className="ta-scroll flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
           {items.map((item) => {
             const isActive = current === item.href;
           return (
@@ -287,11 +241,7 @@ export function Sidebar({
   const pathname = usePathname();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const collapsed = useSyncExternalStore(
-    collapseStore.subscribe,
-    collapseStore.get,
-    collapseStore.getServer,
-  );
+  const collapsed = useSidebarCollapsed();
   const navMode = useNavMode();
   const [showRolePicker, setShowRolePicker] = useState(false);
   const [pinnedSection, setPinnedSection] = useState<{ id: string; path: string } | null>(null);
@@ -654,38 +604,7 @@ export function Sidebar({
         style={{ borderBottom: "1px solid var(--stroke-divider)" }}
       >
         {collapsed ? <BrandIcon /> : <BrandMark />}
-        {!collapsed && (
-          <>
-            <div className="flex-1" />
-            <button
-              onClick={() => collapseStore.set(true)}
-              title="Collapse sidebar"
-              aria-label="Collapse sidebar"
-              className="ta-hoverable inline-flex h-7 w-7 flex-none items-center justify-center rounded-md"
-              style={{ color: "var(--icon-secondary)" }}
-            >
-              <PanelLeftClose className="h-4 w-4" />
-            </button>
-          </>
-        )}
       </div>
-
-      {/* Collapsed there is no room beside the logo, so the way back out sits
-          under it. Still at the top, next to what it resizes, rather than
-          below the person's name where it read as a destination. */}
-      {collapsed && (
-        <div className="flex flex-none justify-center pt-2">
-          <button
-            onClick={() => collapseStore.set(false)}
-            title="Expand sidebar"
-            aria-label="Expand sidebar"
-            className="ta-hoverable inline-flex h-7 w-7 items-center justify-center rounded-md"
-            style={{ color: "var(--icon-secondary)" }}
-          >
-            <PanelLeft className="h-4 w-4" />
-          </button>
-        </div>
-      )}
 
       {/* The design's search field. It opens the ⌘K palette rather than
           being a second search box with its own behaviour. */}
@@ -717,7 +636,7 @@ export function Sidebar({
         </div>
       )}
 
-      <nav className="flex flex-1 flex-col gap-3.5 overflow-y-auto px-2 pb-3 pt-1">
+      <nav className="ta-scroll flex flex-1 flex-col gap-3.5 overflow-y-auto px-2 pb-3 pt-1">
         {sections.map((section) => (
           <div key={section.id} className="flex flex-col gap-0.5">
             {collapsed ? (

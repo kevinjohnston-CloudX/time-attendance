@@ -54,3 +54,58 @@ export const navModeStore = {
 export function useNavMode(): NavMode {
   return useSyncExternalStore(navModeStore.subscribe, navModeStore.get, navModeStore.getServer);
 }
+
+const COLLAPSE_KEY = "ta.sidebar.collapsed";
+/**
+ * Whether the grouped sidebar is collapsed, kept in localStorage so the choice
+ * survives a reload — the design system says the toggle persists.
+ *
+ * <p>Read through useSyncExternalStore rather than copied into state on
+ * mount. The server cannot know what this browser stored, so the first render
+ * has to say "expanded" and the truth has to arrive afterwards; doing that by
+ * hand means a setState inside an effect, which React now flags as a
+ * cascading render. useSyncExternalStore is the supported way to say exactly
+ * this: here is the server's answer, here is the browser's, re-render when it
+ * changes.
+ *
+ * <p>The "storage" event covers the same account open in a second tab.
+ */
+export const collapseStore = {
+  listeners: new Set<() => void>(),
+  subscribe(cb: () => void) {
+    collapseStore.listeners.add(cb);
+    window.addEventListener("storage", cb);
+    return () => {
+      collapseStore.listeners.delete(cb);
+      window.removeEventListener("storage", cb);
+    };
+  },
+  get(): boolean {
+    try {
+      return window.localStorage.getItem(COLLAPSE_KEY) === "1";
+    } catch {
+      return false; // private window, blocked storage — expanded is the safe default
+    }
+  },
+  /** What the server renders. It has no browser to ask. */
+  getServer(): boolean {
+    return false;
+  },
+  set(next: boolean) {
+    try {
+      window.localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+    } catch {
+      /* not worth failing the click over */
+    }
+    collapseStore.listeners.forEach((l) => l());
+  },
+};
+
+/**
+ * The sidebar draws itself narrow from this, and the top bar draws the toggle
+ * that sets it. Here rather than in the sidebar for the same reason the nav
+ * mode is: the header should not have to import the whole sidebar.
+ */
+export function useSidebarCollapsed(): boolean {
+  return useSyncExternalStore(collapseStore.subscribe, collapseStore.get, collapseStore.getServer);
+}

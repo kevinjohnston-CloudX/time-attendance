@@ -193,7 +193,7 @@ export function CommandPalette({ destinations }: { destinations: Destination[] }
           </kbd>
         </div>
 
-        <div ref={listRef} className="max-h-80 overflow-y-auto py-1.5">
+        <div ref={listRef} className="ta-scroll max-h-80 overflow-y-auto py-1.5">
           {results.length === 0 ? (
             <p className="px-4 py-6 text-center" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
               No page matches “{query}”.
