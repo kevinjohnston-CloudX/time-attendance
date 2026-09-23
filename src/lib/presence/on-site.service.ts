@@ -199,6 +199,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
           id: true,
           employeeCode: true,
           barcode: true,
+          wmsId: true,
           isActive: true,
           terminatedAt: true,
           user: { select: { name: true } },
@@ -345,6 +346,7 @@ export async function getPresenceDetail(
       employeeCode: true,
       jobTitle: true,
       barcode: true,
+      wmsId: true,
       isActive: true,
       terminatedAt: true,
       user: { select: { name: true } },
@@ -403,7 +405,7 @@ export async function getPresenceDetail(
     }),
     carry("SECURITY"),
     carry("TIME_CLOCK"),
-    photoUrls(tenantId, [{ id: emp.id, barcode: emp.barcode }]),
+    photoUrls(tenantId, [{ id: emp.id, barcode: emp.barcode, wmsId: emp.wmsId, employeeCode: emp.employeeCode }]),
   ]);
 
   return {

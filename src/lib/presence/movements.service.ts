@@ -164,6 +164,7 @@ export async function getSiteDay(
           id: true,
           employeeCode: true,
           barcode: true,
+          wmsId: true,
           isActive: true,
           terminatedAt: true,
           user: { select: { name: true } },

@@ -1,10 +1,20 @@
-import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/lib/db";
 
 /**
  * The time clock tablets' photos, one per person, kept in a private S3 bucket
- * under the person's 10 digit badge barcode: `0002362400.jpg`.
+ * under whichever badge the person scanned when the tablet took it: most are
+ * the 6 digit badge number (`129728.jpg`), some the 10 digit barcode
+ * (`2672196388.jpg`).
+ *
+ * <p>Because the name depends on the badge used, not on one field, the file
+ * is found rather than guessed: the bucket's file names are listed every 15
+ * minutes, and each person gets the first of their badges that has a file,
+ * trying the badges they actually scanned with (most recent first), then
+ * their badge number, their barcode and their employee code. If listing ever
+ * stops being allowed, the most recently scanned badge is used as a best
+ * guess and a missing photo falls back to initials in the browser.
  *
  * <p>Server only. The browser never gets the key, only a link S3 signed for
  * one photo that stops working after a while, and only from an action that
@@ -17,19 +27,19 @@ import { db } from "@/lib/db";
  * seconds. Each link lives two hours, so one handed out at the end of a
  * window still has an hour and a half left.
  *
- * <p>Nothing here checks that a photo exists: that would be one request to
- * AWS per person per refresh. A link to a photo that is not there fails in
- * the browser, which then shows the person's initials in the same frame.
- *
  * <p>Off entirely when the ON_SITE_PHOTOS_* settings are missing: every
  * photo is null and the page shows initials, as it did before.
  */
 
 const WINDOW_MS = 30 * 60 * 1000;
 const LINK_SECONDS = 2 * 60 * 60;
-/** How long a person's photo name is remembered before it is looked up again. */
-const KEY_CACHE_MS = 10 * 60 * 1000;
-const BARCODE = /^[0-9]{10}$/;
+/** How often the bucket's file names are read again, for new photos. */
+const LIST_TTL_MS = 15 * 60 * 1000;
+/** How long a person's badges are remembered before they are read again. */
+const BADGE_CACHE_MS = 10 * 60 * 1000;
+const EXTENSIONS = [".jpg", ".jpeg", ".png", ".JPG"];
+/** A guard against a runaway listing, far above the few thousand files there are. */
+const MAX_FILES = 200_000;
 
 let client: S3Client | null | undefined;
 
@@ -48,56 +58,120 @@ function s3(): { client: S3Client; bucket: string } | null {
   return client ? { client, bucket: ON_SITE_PHOTOS_BUCKET } : null;
 }
 
-const keyCache = new Map<string, { key: string | null; at: number }>();
+/* ── The bucket's file names ─────────────────────────────────────────────── */
+
+let files: { names: Set<string>; at: number } | null = null;
+let listing: Promise<void> | null = null;
+
+async function readList(store: { client: S3Client; bucket: string }): Promise<void> {
+  const names = new Set<string>();
+  let token: string | undefined;
+  do {
+    const page = await store.client.send(
+      new ListObjectsV2Command({ Bucket: store.bucket, ContinuationToken: token, MaxKeys: 1000 }),
+    );
+    for (const o of page.Contents ?? []) if (o.Key) names.add(o.Key);
+    token = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (token && names.size < MAX_FILES);
+  files = { names, at: Date.now() };
+}
 
 /**
- * Which photo belongs to each person: their barcode on file, or else the
- * 10 digit badge they last scanned with in the past 30 days, which is how
- * the tablet named the photo when it took it. Remembered for ten minutes.
+ * The file names, read once and then refreshed in the background, so no
+ * request after the first waits on AWS. Null when listing is not allowed.
  */
-async function photoKeys(
-  tenantId: string,
-  people: { id: string; barcode: string | null }[],
-): Promise<Map<string, string | null>> {
-  const now = Date.now();
-  const out = new Map<string, string | null>();
-  const unknown: string[] = [];
-
-  for (const p of people) {
-    if (p.barcode && BARCODE.test(p.barcode)) {
-      out.set(p.id, `${p.barcode}.jpg`);
-      continue;
-    }
-    const hit = keyCache.get(p.id);
-    if (hit && now - hit.at < KEY_CACHE_MS) out.set(p.id, hit.key);
-    else unknown.push(p.id);
+async function fileNames(store: { client: S3Client; bucket: string }): Promise<Set<string> | null> {
+  const stale = !files || Date.now() - files.at > LIST_TTL_MS;
+  if (stale && !listing) {
+    listing = readList(store)
+      .catch(() => {
+        // Keep the last list if there is one; without one, fall back to guessing.
+      })
+      .finally(() => {
+        listing = null;
+      });
   }
+  if (!files && listing) await listing;
+  return files?.names ?? null;
+}
 
+/* ── Which file is whose ─────────────────────────────────────────────────── */
+
+export interface PhotoPerson {
+  id: string;
+  barcode: string | null;
+  wmsId?: string | null;
+  employeeCode?: string | null;
+}
+
+const badgeCache = new Map<string, { badges: string[]; at: number }>();
+
+/** Each person's badges from their scans in the last 60 days, most recent first. */
+async function scannedBadges(tenantId: string, ids: string[]): Promise<Map<string, string[]>> {
+  const now = Date.now();
+  const out = new Map<string, string[]>();
+  const unknown: string[] = [];
+  for (const id of ids) {
+    const hit = badgeCache.get(id);
+    if (hit && now - hit.at < BADGE_CACHE_MS) out.set(id, hit.badges);
+    else unknown.push(id);
+  }
   if (unknown.length) {
     const rows = await db.$queryRaw<{ employeeId: string; badgeCode: string }[]>`
-      SELECT DISTINCT ON (s."employeeId") s."employeeId" AS "employeeId", s."badgeCode" AS "badgeCode"
+      SELECT s."employeeId" AS "employeeId", s."badgeCode" AS "badgeCode"
       FROM   "scan_events" s
       WHERE  s."tenantId" = ${tenantId}
         AND  s."employeeId" = ANY(${unknown})
-        AND  s."badgeCode" ~ '^[0-9]{10}$'
-        AND  s."scanTime" >= ${new Date(now - 30 * 24 * 60 * 60 * 1000)}
-      ORDER  BY s."employeeId", s."scanTime" DESC
+        AND  s."scanTime" >= ${new Date(now - 60 * 24 * 60 * 60 * 1000)}
+      GROUP  BY s."employeeId", s."badgeCode"
+      ORDER  BY s."employeeId", MAX(s."scanTime") DESC
     `;
-    const found = new Map(rows.map((r) => [r.employeeId, `${r.badgeCode}.jpg`]));
+    const found = new Map<string, string[]>();
+    for (const r of rows) (found.get(r.employeeId) ?? found.set(r.employeeId, []).get(r.employeeId)!).push(r.badgeCode);
     for (const id of unknown) {
-      const key = found.get(id) ?? null;
-      keyCache.set(id, { key, at: now });
-      out.set(id, key);
+      const badges = found.get(id) ?? [];
+      badgeCache.set(id, { badges, at: now });
+      out.set(id, badges);
     }
   }
   return out;
 }
 
-/** A signed photo link per person id, or null where there is no photo to point at. */
-export async function photoUrls(
+async function photoKeys(
   tenantId: string,
-  people: { id: string; barcode: string | null }[],
+  store: { client: S3Client; bucket: string },
+  people: PhotoPerson[],
 ): Promise<Map<string, string | null>> {
+  const [names, badges] = await Promise.all([fileNames(store), scannedBadges(tenantId, people.map((p) => p.id))]);
+  const out = new Map<string, string | null>();
+  for (const p of people) {
+    const candidates = [
+      ...(badges.get(p.id) ?? []),
+      p.wmsId,
+      p.barcode,
+      p.employeeCode,
+    ]
+      .map((c) => c?.trim())
+      .filter((c): c is string => !!c && /^[A-Za-z0-9_-]{1,40}$/.test(c));
+    const unique = [...new Set(candidates)];
+    let key: string | null = null;
+    if (names) {
+      outer: for (const c of unique)
+        for (const ext of EXTENSIONS)
+          if (names.has(c + ext)) {
+            key = c + ext;
+            break outer;
+          }
+    } else if (unique.length) {
+      key = `${unique[0]}.jpg`;
+    }
+    out.set(p.id, key);
+  }
+  return out;
+}
+
+/** A signed photo link per person id, or null where there is no photo to point at. */
+export async function photoUrls(tenantId: string, people: PhotoPerson[]): Promise<Map<string, string | null>> {
   const store = s3();
   const out = new Map<string, string | null>();
   if (!store || people.length === 0) {
@@ -107,7 +181,7 @@ export async function photoUrls(
 
   let keys: Map<string, string | null>;
   try {
-    keys = await photoKeys(tenantId, people);
+    keys = await photoKeys(tenantId, store, people);
   } catch {
     // A failed lookup costs the faces, never the page.
     for (const p of people) out.set(p.id, null);

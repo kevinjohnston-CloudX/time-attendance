@@ -162,6 +162,7 @@ export async function getScanLog(
             id: true,
             employeeCode: true,
             barcode: true,
+            wmsId: true,
             user: { select: { name: true } },
             department: { select: { name: true } },
           },
@@ -191,7 +192,7 @@ export async function getScanLog(
       .reduce((n, g) => n + g._count._all, 0);
 
   const more = rows.length > limit;
-  const seen = new Map<string, { id: string; barcode: string | null }>();
+  const seen = new Map<string, { id: string; barcode: string | null; wmsId: string | null; employeeCode: string }>();
   for (const r of rows.slice(0, limit)) if (r.employee) seen.set(r.employee.id, r.employee);
   const photos = await photoUrls(tenantId, [...seen.values()]);
   const page: ScanLogRow[] = rows.slice(0, limit).flatMap((s) =>
