@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, Clock, Coffee, DoorClosed, DoorOpen, X } fro
 import { Badge, Button } from "@/components/ui";
 import { getOnSitePerson } from "@/actions/presence.actions";
 import { addDays, dayLabel, DAYS_BACK } from "@/lib/presence/days";
-import { buildLanes, type DayLanes } from "@/lib/presence/lanes";
+import { buildLanes, leftBuilding, type DayLanes } from "@/lib/presence/lanes";
 import { isShownScan } from "@/lib/presence/scan-rules";
 import type { PresenceDetail, PresencePerson, PresenceScan } from "@/lib/presence/types";
 import { formatTimeOfDay, snapToLocalTime } from "@/lib/utils/date";
@@ -145,9 +145,16 @@ export function PersonPanel({
   const oldest = addDays(today, -DAYS_BACK);
 
   const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
-  const stillHere = !!lanes && isToday && (lanes.gate.some((g) => g.open) || lanes.clock.some((c) => c.open));
-  const neverOut =
-    !!lanes && !isToday && (lanes.gate.some((g) => g.open) || lanes.clock.some((c) => c.open));
+  const where = lanes ? leftBuilding(lanes, hasGateData) : null;
+  const stillHere = !!where && isToday && where.onSite;
+  const neverOut = !!where && !isToday && where.onSite;
+  // Out of the building with the time clock still open: a meal or a break
+  // taken outside, or a day the clock never saw end. Said under the exit time
+  // so it never reads as a shift that ended normally.
+  const stillOn =
+    where && where.leftAt !== null && where.clock !== "OUT"
+      ? { MEAL: "On meal", BREAK: "On break", WORK: "Still clocked in" }[where.clock]
+      : null;
   const tags = [
     person && isToday && person.outsideOnMeal ? <Badge key="out" tone="neutral" size="sm">Outside the building</Badge> : null,
     salaried ? <Badge key="salary" tone="neutral" size="sm">Salary</Badge> : null,
@@ -264,10 +271,20 @@ export function PersonPanel({
                   />
                   <Glance
                     label="Left"
-                    value={stillHere ? null : lanes.lastOut && lanes.firstIn && lanes.lastOut > lanes.firstIn ? time(lanes.lastOut) : null}
+                    value={where?.leftAt ? time(where.leftAt) : null}
                     empty={stillHere ? "On site" : neverOut ? "Never scanned out" : lanes.firstIn ? "Not yet" : "Not seen"}
                     emptyTone={stillHere ? "accent" : neverOut ? "warning" : undefined}
-                    sub={shown.scheduledEnd ? `Ends ${formatTimeOfDay(shown.scheduledEnd)}` : schedule ? "" : "Not scheduled"}
+                    sub={
+                      stillOn && isToday
+                        ? stillOn
+                        : stillOn
+                          ? "Never clocked out"
+                          : shown.scheduledEnd
+                            ? `Ends ${formatTimeOfDay(shown.scheduledEnd)}`
+                            : schedule
+                              ? ""
+                              : "Not scheduled"
+                    }
                   />
                   <Glance
                     label="On the clock"

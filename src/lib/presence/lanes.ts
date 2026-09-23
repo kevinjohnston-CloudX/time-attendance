@@ -170,6 +170,44 @@ export function buildLanes({
   };
 }
 
+/**
+ * What the Left column says: still in the building, or out of it since when,
+ * and what the time clock has them doing meanwhile.
+ *
+ * <p>Where there is a gate, the building is the gate's to say. The time clock
+ * only says whether their day is over, which is a different question:
+ * somebody eating outside has left the building and is still on shift, and
+ * somebody the time clock recorded as starting a meal when they meant to
+ * clock out (2026-09-23, 117 people across three sites) has gone home.
+ * Asking the clock "are they here" showed both as on site.
+ *
+ * <p>Without a gate reading for them, the clock is all there is, so it
+ * decides on its own, as it always has.
+ */
+export function leftBuilding(
+  lanes: DayLanes,
+  hasGate: boolean,
+): { onSite: boolean; leftAt: number | null; clock: ClockState } {
+  const openClock = lanes.clock.find((c) => c.open);
+  const clock: ClockState = openClock ? openClock.kind : "OUT";
+  const gateSeen = hasGate && (lanes.gate.length > 0 || lanes.exitsWithoutEntry.length > 0);
+
+  if (!gateSeen) {
+    const onSite = clock !== "OUT";
+    const leftAt =
+      !onSite && lanes.lastOut && lanes.firstIn && lanes.lastOut > lanes.firstIn ? lanes.lastOut : null;
+    return { onSite, leftAt, clock };
+  }
+
+  if (lanes.gate.some((g) => g.open)) return { onSite: true, leftAt: null, clock };
+  // The overnight auto close is not somebody walking out, so it is no exit time.
+  const exits = [
+    ...lanes.gate.filter((g) => !g.closedBySystem).map((g) => g.end),
+    ...lanes.exitsWithoutEntry.map((s) => Date.parse(s.at)),
+  ];
+  return { onSite: false, leftAt: exits.length ? Math.max(...exits) : null, clock };
+}
+
 /** The parts of `a` not covered by any of `b`. */
 function subtract(a: { start: number; end: number }[], b: { start: number; end: number }[]) {
   let out = a.map((s) => ({ start: s.start, end: s.end }));

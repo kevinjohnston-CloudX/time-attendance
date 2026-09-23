@@ -15,6 +15,7 @@ import {
 import type { LogCounter } from "./scan-log";
 import { STATUS_META, describeScan, fmtDuration, fmtTime, initialsOf } from "./presence-meta";
 import { iconFor } from "./person-panel";
+import { leftBuilding } from "@/lib/presence/lanes";
 import styles from "./on-site.module.css";
 import { ZoomableFace } from "./face";
 import { HomeSiteBadge } from "./home-site";
@@ -256,7 +257,16 @@ function PersonRow({
   const t = v.lanes.totals;
   const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
   const seen = v.scanCount > 0;
-  const present = isToday && (v.now.inside || v.now.clock !== "OUT");
+  // The same rule as the panel's Left card: the gate says whether they are in
+  // the building, the time clock only whether their day is over.
+  const where = leftBuilding(v.lanes, hasGate);
+  const present = isToday && where.onSite;
+  const stillOn =
+    where.leftAt !== null && where.clock !== "OUT"
+      ? isToday
+        ? { MEAL: "On meal", BREAK: "On break", WORK: "Still clocked in" }[where.clock]
+        : "Never clocked out"
+      : null;
   const late = v.flags.includes("LATE");
   const early = v.flags.includes("LEFT_EARLY");
   const carried = v.lines.some((l) => l.carried);
@@ -276,10 +286,10 @@ function PersonRow({
 
   const left = present ? (
     <span className={styles.mvStill}>On site</span>
+  ) : where.leftAt !== null ? (
+    <span data-tone={early ? "warning" : undefined}>{time(where.leftAt)}</span>
   ) : unclosed ? (
     <span className={styles.mvWarn}>Never scanned out</span>
-  ) : v.lastOut !== null ? (
-    <span data-tone={early ? "warning" : undefined}>{time(v.lastOut)}</span>
   ) : null;
 
   return (
@@ -342,7 +352,11 @@ function PersonRow({
         </span>
         <span className={styles.mvFact}>
           <span className={styles.mvFactValue}>{left}</span>
-          {v.schedule && <span className={styles.mvFactSub}>Ends {time(v.schedule.end)}</span>}
+          {stillOn ? (
+            <span className={styles.mvFactSub}>{stillOn}</span>
+          ) : (
+            v.schedule && <span className={styles.mvFactSub}>Ends {time(v.schedule.end)}</span>
+          )}
         </span>
         {hasGate && (
           <span className={`${styles.mvFact} ${styles.mvNum}`}>
