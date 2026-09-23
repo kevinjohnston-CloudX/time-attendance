@@ -362,7 +362,9 @@ export function ExceptionsScreen({
           scroll is movement with nothing to say. */}
       <div
         ref={toolbarRef}
-        className="sticky top-0 z-20 flex flex-col"
+        // Pulled up into the page's top padding so it already sits where it
+        // pins: a bar that does not shrink has no business sliding either.
+        className="sticky top-0 z-20 -mt-4 flex flex-col pt-4"
         style={{ background: "var(--surface-page)" }}
       >
         <div
