@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useRef, useState, useEffect, useTransition, useSyncExternalStore } from "react";
 import { signOut } from "next-auth/react";
-import { LogOut, PanelLeftClose, PanelLeft, Eye, X, Search } from "lucide-react";
+import { LogOut, PanelLeftClose, PanelLeft, Eye, X, Search, ChevronsUpDown } from "lucide-react";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { BrandIcon, BrandMark } from "./brand-mark";
 import { openCommandPalette } from "./command-palette";
@@ -383,7 +383,9 @@ export function Sidebar({
             className={`ta-hoverable flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1 py-1 ${
               canViewAs ? "cursor-pointer" : "cursor-default"
             }`}
-            title={narrow ? (userName ?? undefined) : undefined}
+            title={narrow ? (userName ?? undefined) : canViewAs ? "View as another role" : undefined}
+            aria-haspopup={canViewAs ? "menu" : undefined}
+            aria-expanded={canViewAs ? showRolePicker : undefined}
           >
             <Avatar name={userName} />
             {!narrow && (
@@ -402,8 +404,8 @@ export function Sidebar({
                 </span>
               </span>
             )}
-            {!narrow && canViewAs && !viewAsRole && (
-              <Eye className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--icon-secondary)" }} />
+            {!narrow && canViewAs && (
+              <ChevronsUpDown className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--icon-secondary)" }} />
             )}
           </button>
 
@@ -520,8 +522,8 @@ export function Sidebar({
         onClick={() => canViewAs && setShowRolePicker((v) => !v)}
         title={
           viewAsRole
-            ? `${userName ?? "Signed in"} — viewing as ${viewAsRole}`
-            : `${userName ?? "Signed in"} — ${ROLE_LABEL[realRole ?? ""] ?? realRole}`
+            ? `${userName ?? "Signed in"}, viewing as ${viewAsRole}`
+            : `${userName ?? "Signed in"} (${ROLE_LABEL[realRole ?? ""] ?? realRole})`
         }
         className={`ta-rail-btn inline-flex h-9 w-9 items-center justify-center rounded-lg ${
           canViewAs ? "cursor-pointer" : "cursor-default"
