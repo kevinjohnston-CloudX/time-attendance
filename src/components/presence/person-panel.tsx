@@ -8,7 +8,7 @@ import { addDays, dayLabel, DAYS_BACK } from "@/lib/presence/days";
 import { buildLanes, type DayLanes } from "@/lib/presence/lanes";
 import { isShownScan } from "@/lib/presence/scan-rules";
 import type { PresenceDetail, PresencePerson, PresenceScan } from "@/lib/presence/types";
-import { snapToLocalTime } from "@/lib/utils/date";
+import { formatTimeOfDay, snapToLocalTime } from "@/lib/utils/date";
 import {
   STATUS_META,
   describeScan,
@@ -144,21 +144,33 @@ export function PersonPanel({
   const label = dayLabel(day, today);
   const oldest = addDays(today, -DAYS_BACK);
 
+  const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
+  const stillHere = !!lanes && isToday && (lanes.gate.some((g) => g.open) || lanes.clock.some((c) => c.open));
+  const neverOut =
+    !!lanes && !isToday && (lanes.gate.some((g) => g.open) || lanes.clock.some((c) => c.open));
+  const tags = [
+    person && isToday && person.outsideOnMeal ? <Badge key="out" tone="neutral" size="sm">Outside the building</Badge> : null,
+    salaried ? <Badge key="salary" tone="neutral" size="sm">Salary</Badge> : null,
+    person?.inactive || detail?.inactive ? <Badge key="inactive" tone="error" size="sm">Inactive employee</Badge> : null,
+    detail?.homeSite ?? person?.homeSite ? <HomeSiteBadge key="home" site={detail?.homeSite ?? person?.homeSite ?? null} /> : null,
+  ].filter(Boolean);
+
   return (
     <>
       <div className={styles.scrim} onClick={onClose} aria-hidden="true" />
       <aside className={styles.panel} role="dialog" aria-modal="true" aria-label={name || "Employee"}>
         <div ref={headRef} className={styles.panelHead}>
-          <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>Employee</span>
+          <span className={styles.ppEyebrow}>Employee</span>
           <Button hierarchy="tertiary" size="sm" iconOnly aria-label="Close" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
         </div>
 
         <div className={styles.panelBody}>
-          <div className={styles.identity}>
-            <span className={styles.portrait}>
-              <span className={styles.initials} style={{ fontSize: 36 }} aria-hidden="true">
+          {/* ── Who ── */}
+          <div className={styles.ppProfile}>
+            <span className={styles.ppPortrait}>
+              <span className={styles.initials} style={{ fontSize: 30 }} aria-hidden="true">
                 {name ? initialsOf(name) : ""}
               </span>
               <ZoomableFace
@@ -175,106 +187,99 @@ export function PersonPanel({
                     }))
                 }
               />
-              {meta && isToday && <span className={styles.stripe} style={{ background: meta.color, height: 6 }} />}
             </span>
-            <div className="flex min-w-0 flex-col gap-1.5 pt-1">
+            <div className={styles.ppWho}>
               {name ? (
-                <h2 className="truncate" style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }} title={name}>
+                <h2 className={styles.ppName} title={name}>
                   {name}
                 </h2>
               ) : (
-                <span className={styles.skeleton} style={{ width: 180, height: 24 }} />
+                <span className={styles.skeleton} style={{ width: 180, height: 26 }} />
               )}
-              <span className="line-clamp-2" style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>
+              <span className={styles.ppRole}>
                 {person?.jobTitle ?? detail?.jobTitle ?? person?.department ?? detail?.department ?? ""}
               </span>
-              <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                {/* The live status says where they are now, so it only sits
-                    beside today. On another day the lanes say it instead. */}
-                {person && meta && isToday && (
-                  <Badge tone={meta.badge} dot>
-                    {statusLabel(person)}
-                  </Badge>
-                )}
-                {person && isToday && person.outsideOnMeal && <Badge tone="neutral">Outside the building</Badge>}
-                {salaried && <Badge tone="neutral">Salary</Badge>}
-                {(person?.inactive || detail?.inactive) && <Badge tone="error">Inactive employee</Badge>}
-                <HomeSiteBadge site={detail?.homeSite ?? person?.homeSite ?? null} size="md" />
-              </span>
-              {person && isToday && (
-                <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                  {statusSentence(person, tz, mins, new Date(now).toISOString())}
-                </span>
-              )}
+              {tags.length > 0 && <span className={styles.ppTags}>{tags}</span>}
             </div>
           </div>
 
-          <div className={styles.facts}>
+          {/* The live status says where they are now, so it only sits beside
+              today. On another day the chart says it instead. */}
+          {person && meta && isToday && (
+            <div className={styles.ppStatus} style={{ ["--pp-tone" as string]: meta.color }}>
+              <span className={styles.ppStatusDot} aria-hidden="true" />
+              <span className={styles.ppStatusLabel}>{statusLabel(person)}</span>
+              <span className={styles.ppStatusText}>{statusSentence(person, tz, mins, new Date(now).toISOString())}</span>
+            </div>
+          )}
+
+          <dl className={styles.ppFacts}>
             <Fact label="Employee code" value={person?.employeeCode ?? detail?.employeeCode} />
             <Fact label="Department" value={person ? person.department : detail ? detail.department : undefined} />
             <Fact label="Shift" value={detail ? detail.shift : person ? person.shift : undefined} />
             <Fact label="Supervisor" value={detail ? detail.supervisor ?? "None assigned" : undefined} />
-          </div>
+          </dl>
 
-          <section className="flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-3">
-              <h3 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>Attendance</h3>
-              <div className={styles.dayPick} role="group" aria-label="Day">
-                <Button
-                  hierarchy="tertiary"
-                  size="sm"
-                  iconOnly
+          {/* ── The day ── */}
+          <section className={styles.ppSection}>
+            <div className={styles.ppSectionHead}>
+              <h3 className={styles.ppTitle}>Attendance</h3>
+              <div className={styles.ppDayPick} role="group" aria-label="Day">
+                <button
+                  type="button"
+                  className={styles.ppDayArrow}
                   aria-label="Previous day"
                   disabled={day <= oldest}
                   onClick={() => setDay((d) => addDays(d, -1))}
                 >
                   <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <span className={styles.dayPickLabel} aria-live="polite">
+                </button>
+                <span className={styles.ppDayLabel} aria-live="polite">
                   {label}
                 </span>
-                <Button
-                  hierarchy="tertiary"
-                  size="sm"
-                  iconOnly
+                <button
+                  type="button"
+                  className={styles.ppDayArrow}
                   aria-label="Next day"
                   disabled={isToday}
                   onClick={() => setDay((d) => addDays(d, 1))}
                 >
                   <ChevronRight className="h-4 w-4" />
-                </Button>
+                </button>
               </div>
             </div>
 
             {failed && !shown ? (
-              <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
-                This day could not be loaded. It will be tried again on the next refresh.
-              </p>
+              <p className={styles.ppQuiet}>This day could not be loaded. It will be tried again on the next refresh.</p>
             ) : !shown || !lanes ? (
               <LanesSkeleton />
             ) : (
               <>
-                <Lanes
-                  lanes={lanes}
-                  detail={shown}
-                  hasGateData={hasGateData}
-                  tz={tz}
-                  now={now}
-                />
-                <div className={styles.facts}>
-                  <Fact label={isToday ? "Scheduled today" : "Scheduled"} value={schedule ?? "Not scheduled"} />
-                  <Fact
-                    label="Arrived and left"
-                    value={
-                      lanes.firstIn
-                        ? `${fmtTime(new Date(lanes.firstIn).toISOString(), tz)}${
-                            lanes.lastOut && lanes.lastOut > lanes.firstIn
-                              ? ` to ${fmtTime(new Date(lanes.lastOut).toISOString(), tz)}`
-                              : ""
-                          }`
-                        : "Not seen"
-                    }
+                <div className={styles.ppGlance}>
+                  <Glance
+                    label="Arrived"
+                    value={lanes.firstIn ? time(lanes.firstIn) : null}
+                    empty={isToday ? "Not in yet" : "Not seen"}
+                    sub={shown.scheduledStart ? `Due ${formatTimeOfDay(shown.scheduledStart)}` : "Not scheduled"}
                   />
+                  <Glance
+                    label="Left"
+                    value={stillHere ? null : lanes.lastOut && lanes.firstIn && lanes.lastOut > lanes.firstIn ? time(lanes.lastOut) : null}
+                    empty={stillHere ? "Still here" : neverOut ? "Never scanned out" : lanes.firstIn ? "Not yet" : "Not seen"}
+                    emptyTone={stillHere ? "accent" : neverOut ? "warning" : undefined}
+                    sub={shown.scheduledEnd ? `Ends ${formatTimeOfDay(shown.scheduledEnd)}` : schedule ? "" : "Not scheduled"}
+                  />
+                  <Glance
+                    label="On the clock"
+                    value={lanes.totals.workMin ? fmtDuration(lanes.totals.workMin) : null}
+                    empty="None"
+                    sub={hasGateData ? `Inside ${lanes.totals.insideMin ? fmtDuration(lanes.totals.insideMin) : "none"}` : ""}
+                  />
+                </div>
+
+                <Lanes lanes={lanes} detail={shown} hasGateData={hasGateData} tz={tz} now={now} />
+
+                <dl className={styles.ppTotals}>
                   {hasGateData && <Total label="Inside the building" minutes={lanes.totals.insideMin} />}
                   <Total label="On the clock" minutes={lanes.totals.workMin} />
                   <Total label="Meals and breaks" minutes={lanes.totals.mealMin + lanes.totals.breakMin} />
@@ -294,16 +299,17 @@ export function PersonPanel({
                       flag
                     />
                   )}
-                </div>
+                </dl>
               </>
             )}
           </section>
 
-          <section className="flex flex-col gap-1">
-            <div className="flex items-baseline justify-between gap-3">
-              <h3 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>Scans</h3>
+          {/* ── Every scan ── */}
+          <section className={styles.ppSection}>
+            <div className={styles.ppSectionHead}>
+              <h3 className={styles.ppTitle}>Scans</h3>
               {shown && (
-                <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                <span className={styles.ppCount}>
                   {shownScans.length.toLocaleString()} {shownScans.length === 1 ? "scan" : "scans"}
                 </span>
               )}
@@ -311,14 +317,14 @@ export function PersonPanel({
             {failed && !shown ? null : !shown ? (
               <TimelineSkeleton />
             ) : shownScans.length === 0 ? (
-              <p style={{ margin: "8px 0 0", font: "var(--type-body1)", color: "var(--text-secondary)" }}>
+              <p className={styles.ppQuiet}>
                 {isToday ? "No reader has seen this person today." : "No reader saw this person that day."}
               </p>
             ) : (
               <Timeline scans={shownScans} tz={tz} />
             )}
             {shown && hiddenScans > 0 && (
-              <p style={{ margin: "6px 0 0", font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+              <p className={styles.ppFootnote}>
                 {hiddenScans.toLocaleString()} more {hiddenScans === 1 ? "tap was" : "taps were"} not counted, usually a
                 second tap too soon. The Scan log lists them under Taps not counted.
               </p>
@@ -356,31 +362,57 @@ function statusSentence(p: PresencePerson, tz: string, mins: number | null, nowI
 
 function Fact({ label, value }: { label: string; value: string | null | undefined }) {
   return (
-    <div className={styles.fact}>
-      <span className={styles.factLabel}>{label}</span>
+    <div className={styles.ppFact}>
+      <dt>{label}</dt>
       {value === undefined ? (
-        <span className={styles.skeleton} style={{ width: "60%", height: 14, marginTop: 3 }} />
+        <dd>
+          <span className={styles.skeleton} style={{ width: "60%", height: 14, marginTop: 3 }} />
+        </dd>
       ) : (
-        <span className={styles.factValue} title={value ?? undefined}>
-          {value ?? "None"}
-        </span>
+        <dd title={value ?? undefined}>{value ?? "None"}</dd>
       )}
     </div>
   );
 }
 
-/** A duration in the facts grid. A gap between the readers long enough to matter reads amber. */
+/** One of the three numbers the day is read by, with what it is measured against under it. */
+function Glance({
+  label,
+  value,
+  empty,
+  emptyTone,
+  sub,
+}: {
+  label: string;
+  value: string | null;
+  empty: string;
+  emptyTone?: "accent" | "warning";
+  sub: string;
+}) {
+  return (
+    <div className={styles.ppGlanceCell}>
+      <span className={styles.ppGlanceLabel}>{label}</span>
+      {value ? (
+        <span className={styles.ppGlanceValue}>{value}</span>
+      ) : (
+        <span className={styles.ppGlanceValue} data-empty={emptyTone ?? "true"}>
+          {empty}
+        </span>
+      )}
+      <span className={styles.ppGlanceSub}>{sub}</span>
+    </div>
+  );
+}
+
+/** A duration in the breakdown. A gap between the readers long enough to matter reads amber. */
 function Total({ label, minutes, hint, flag }: { label: string; minutes: number; hint?: string; flag?: boolean }) {
   const noted = flag && minutes >= GAP_WORTH_NOTING_MIN;
   return (
-    <div className={styles.fact} title={hint}>
-      <span className={styles.factLabel}>{label}</span>
-      <span
-        className={`${styles.factValue} tabular`}
-        style={noted ? { color: "var(--text-warning)" } : minutes === 0 ? { color: "var(--text-tertiary)" } : undefined}
-      >
+    <div className={styles.ppTotal} title={hint}>
+      <dt>{label}</dt>
+      <dd data-tone={noted ? "warning" : minutes === 0 ? "quiet" : undefined}>
         {minutes === 0 ? "None" : fmtDuration(minutes)}
-      </span>
+      </dd>
     </div>
   );
 }
@@ -460,72 +492,72 @@ function Lanes({
   const nowAt = isToday && now > from && now < to ? pct(now) : null;
 
   return (
-    <div className={styles.lanes}>
-      <div className={styles.laneRow}>
-        <span className={styles.laneName}>Scheduled</span>
-        <span className={styles.laneTrack} data-quiet="true">
-          {sched ? (
+    <div className={styles.ppChart}>
+      <div className={styles.ppChartBody}>
+        <div className={styles.ppLabels} aria-hidden="true">
+          <span>Security gate</span>
+          <span>Time clock</span>
+        </div>
+        <div className={styles.ppPlot}>
+          {ticks.map((t) => (
+            <span key={t} className={styles.ppGrid} style={{ left: pct(t) }} aria-hidden="true" />
+          ))}
+          {sched && (
             <span
-              className={styles.laneSched}
+              className={styles.ppSched}
               style={{ left: pct(sched.start), width: width(sched.start, sched.end) }}
               title={`Scheduled ${time(sched.start)} to ${time(sched.end)}`}
             />
-          ) : (
-            <span className={styles.laneEmpty}>Not scheduled</span>
           )}
-          {nowAt && <span className={styles.laneNow} style={{ left: nowAt }} aria-hidden="true" />}
-        </span>
+          <div className={styles.ppTracks}>
+            <span className={styles.ppTrack}>
+              {!hasGateData ? (
+                <span className={styles.laneEmpty}>Not reporting at this site</span>
+              ) : lanes.gate.length === 0 ? (
+                <span className={styles.laneEmpty}>Not inside</span>
+              ) : (
+                lanes.gate.map((g) => (
+                  <span
+                    key={g.start}
+                    className={styles.laneSeg}
+                    data-kind="inside"
+                    data-open={g.open && !isToday ? "true" : undefined}
+                    style={{ left: pct(g.start), width: width(g.start, g.end) }}
+                    title={`Inside ${time(g.start)} to ${until(g)} (${fmtDuration((g.end - g.start) / 60000)})${
+                      g.closedBySystem ? ". Never scanned out, closed by the system" : ""
+                    }`}
+                  />
+                ))
+              )}
+            </span>
+            <span className={styles.ppTrack}>
+              {lanes.clock.length === 0 ? (
+                <span className={styles.laneEmpty}>Not clocked in</span>
+              ) : (
+                lanes.clock.map((c) => (
+                  <span
+                    key={c.start}
+                    className={styles.laneSeg}
+                    data-kind={c.kind === "WORK" ? "work" : "meal"}
+                    data-open={c.open && !isToday ? "true" : undefined}
+                    style={{ left: pct(c.start), width: width(c.start, c.end) }}
+                    title={`${c.kind === "WORK" ? "On the clock" : c.kind === "MEAL" ? "Meal" : "Break"} ${time(c.start)} to ${until(c)} (${fmtDuration(
+                      (c.end - c.start) / 60000,
+                    )})${c.closedBySystem ? ". Clocked out by the system" : ""}`}
+                  />
+                ))
+              )}
+            </span>
+          </div>
+          {nowAt && (
+            <span className={styles.ppNow} style={{ left: nowAt }} aria-hidden="true">
+              <span>Now</span>
+            </span>
+          )}
+        </div>
       </div>
 
-      <div className={styles.laneRow}>
-        <span className={styles.laneName}>Security gate</span>
-        <span className={styles.laneTrack}>
-          {!hasGateData ? (
-            <span className={styles.laneEmpty}>Not reporting at this site</span>
-          ) : lanes.gate.length === 0 ? (
-            <span className={styles.laneEmpty}>Not inside</span>
-          ) : (
-            lanes.gate.map((g) => (
-              <span
-                key={g.start}
-                className={styles.laneSeg}
-                data-kind="inside"
-                data-open={g.open && !isToday ? "true" : undefined}
-                style={{ left: pct(g.start), width: width(g.start, g.end) }}
-                title={`Inside ${time(g.start)} to ${until(g)} (${fmtDuration((g.end - g.start) / 60000)})${
-                  g.closedBySystem ? ". Never scanned out, closed by the system" : ""
-                }`}
-              />
-            ))
-          )}
-          {nowAt && <span className={styles.laneNow} style={{ left: nowAt }} aria-hidden="true" />}
-        </span>
-      </div>
-
-      <div className={styles.laneRow}>
-        <span className={styles.laneName}>Time clock</span>
-        <span className={styles.laneTrack}>
-          {lanes.clock.length === 0 ? (
-            <span className={styles.laneEmpty}>Not clocked in</span>
-          ) : (
-            lanes.clock.map((c) => (
-              <span
-                key={c.start}
-                className={styles.laneSeg}
-                data-kind={c.kind === "WORK" ? "work" : "meal"}
-                data-open={c.open && !isToday ? "true" : undefined}
-                style={{ left: pct(c.start), width: width(c.start, c.end) }}
-                title={`${c.kind === "WORK" ? "On the clock" : c.kind === "MEAL" ? "Meal" : "Break"} ${time(c.start)} to ${until(c)} (${fmtDuration(
-                  (c.end - c.start) / 60000,
-                )})${c.closedBySystem ? ". Clocked out by the system" : ""}`}
-              />
-            ))
-          )}
-          {nowAt && <span className={styles.laneNow} style={{ left: nowAt }} aria-hidden="true" />}
-        </span>
-      </div>
-
-      <div className={styles.laneAxis} aria-hidden="true">
+      <div className={styles.ppAxis} aria-hidden="true">
         {ticks.map((t) => (
           <span key={t} style={{ left: pct(t) }}>
             {fmtHour(t, tz)}
@@ -533,7 +565,7 @@ function Lanes({
         ))}
       </div>
 
-      <div className={styles.laneKey}>
+      <div className={styles.ppKey}>
         {hasGateData && (
           <span>
             <i data-kind="inside" /> Inside
@@ -546,7 +578,7 @@ function Lanes({
           <i data-kind="meal" /> Meal or break
         </span>
         <span>
-          <i data-kind="sched" /> Scheduled
+          <i data-kind="sched" /> {sched ? "Scheduled" : "Not scheduled"}
         </span>
       </div>
     </div>
@@ -570,7 +602,7 @@ function LanesSkeleton() {
 
 function Timeline({ scans, tz }: { scans: PresenceScan[]; tz: string }) {
   return (
-    <ol className={styles.timeline}>
+    <ol className={styles.ppTimeline}>
       {scans.map((s) => {
         const { icon, kind } = iconFor(s);
         const notes = [
@@ -579,7 +611,7 @@ function Timeline({ scans, tz }: { scans: PresenceScan[]; tz: string }) {
           s.automatic ? "Added by the system" : null,
         ].filter(Boolean);
         return (
-          <li key={s.id} className={styles.event}>
+          <li key={s.id} className={styles.ppEvent}>
             <span className={styles.eventTime}>{fmtTime(s.at, tz)}</span>
             <span className={styles.eventIcon} data-kind={s.rejected ? "error" : kind} aria-hidden="true">
               {icon}

@@ -2375,3 +2375,510 @@
     border-left: 0;
   }
 }
+
+/* ── Person panel, v2: who, the status, the day at a glance, the chart,
+      the breakdown, every scan. One column, one rhythm. ─────────────── */
+
+.ppEyebrow {
+  font: var(--weight-semibold) 12px/16px var(--font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.ppProfile {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.ppPortrait {
+  position: relative;
+  flex: none;
+  width: 96px;
+  height: 108px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--ps-photo);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 1px var(--stroke-divider);
+}
+
+.ppPortrait img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ppWho {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ppName {
+  margin: 0;
+  font: var(--weight-semibold) 22px/28px var(--font-sans);
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ppRole {
+  font: var(--type-body1);
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ppTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+/* Where they are right now, as one sentence with the status leading it. */
+.ppStatus {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-m);
+  background: var(--surface-secondary);
+  box-shadow: inset 3px 0 0 var(--pp-tone);
+}
+
+.ppStatusDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--pp-tone);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pp-tone) 22%, transparent);
+}
+
+.ppStatusLabel {
+  font: var(--weight-semibold) 15px/20px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.ppStatusText {
+  font: var(--type-body2);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.ppFacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+  margin: 0;
+  padding: 2px 0 20px;
+  border-bottom: 1px solid var(--stroke-divider);
+}
+
+.ppFact {
+  min-width: 0;
+}
+
+.ppFact dt,
+.ppGlanceLabel {
+  font: var(--weight-medium) 12px/16px var(--font-sans);
+  color: var(--text-tertiary);
+}
+
+.ppFact dd {
+  margin: 2px 0 0;
+  font: var(--weight-medium) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ppSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ppSectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+}
+
+.ppTitle {
+  margin: 0;
+  font: var(--weight-semibold) 16px/22px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.ppCount {
+  font: var(--type-body2);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+.ppQuiet {
+  margin: 0;
+  font: var(--type-body1);
+  color: var(--text-secondary);
+}
+
+.ppFootnote {
+  margin: 0;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}
+
+/* The day, one segmented pill: back, which day, forward. */
+.ppDayPick {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 999px;
+  background: var(--surface-card);
+  overflow: hidden;
+}
+
+.ppDayArrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ppDayArrow:hover:not(:disabled) {
+  background: var(--fill-hover);
+  color: var(--text-primary);
+}
+
+.ppDayArrow:disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+.ppDayArrow:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: -2px;
+}
+
+.ppDayLabel {
+  min-width: 96px;
+  padding: 0 6px;
+  text-align: center;
+  font: var(--weight-semibold) 13px/18px var(--font-sans);
+  color: var(--text-primary);
+  white-space: nowrap;
+  border-left: 1px solid var(--stroke-divider);
+  border-right: 1px solid var(--stroke-divider);
+  line-height: 30px;
+}
+
+/* Arrived, left, on the clock: the three numbers the day is read by. */
+.ppGlance {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--stroke-secondary);
+  border-radius: var(--radius-m);
+  overflow: hidden;
+}
+
+.ppGlanceCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 12px 14px 13px;
+}
+
+.ppGlanceCell + .ppGlanceCell {
+  border-left: 1px solid var(--stroke-divider);
+}
+
+.ppGlanceValue {
+  font: var(--weight-semibold) 18px/26px var(--font-sans);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ppGlanceValue[data-empty="true"] {
+  color: var(--text-tertiary);
+  font-weight: var(--weight-medium);
+}
+
+.ppGlanceValue[data-empty="accent"] {
+  color: var(--text-accent);
+}
+
+.ppGlanceValue[data-empty="warning"] {
+  color: var(--text-warning);
+}
+
+.ppGlanceSub {
+  min-height: 16px;
+  font: var(--type-body2);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The chart: two lanes over hour lines, the schedule as a band behind them. */
+.ppChart {
+  --lane-inside: var(--text-accent);
+  --lane-work: var(--fill-success);
+  --lane-meal: var(--fill-warning);
+  --pp-label: 88px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 16px 12px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: var(--radius-m);
+}
+
+.ppChartBody {
+  display: grid;
+  grid-template-columns: var(--pp-label) minmax(0, 1fr);
+  gap: 0 10px;
+}
+
+.ppLabels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  gap: 10px;
+  padding: 10px 0;
+  font: var(--weight-medium) 12px/16px var(--font-sans);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.ppPlot {
+  position: relative;
+  padding: 10px 0;
+}
+
+.ppGrid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--stroke-divider);
+}
+
+.ppSched {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text-accent) 7%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-accent) 22%, transparent);
+}
+
+.ppTracks {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ppTrack {
+  position: relative;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--ta-track);
+  overflow: hidden;
+}
+
+.ppTrack .laneSeg {
+  border-radius: 999px;
+}
+
+.ppNow {
+  position: absolute;
+  top: -4px;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-primary);
+}
+
+.ppNow > span {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font: var(--weight-semibold) 10px/12px var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+.ppAxis {
+  position: relative;
+  height: 16px;
+  margin-left: calc(var(--pp-label) + 10px);
+}
+
+.ppAxis > span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font: var(--weight-medium) 11px/16px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.ppKey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--stroke-divider);
+  font: var(--type-body2);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.ppKey > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.ppKey i {
+  width: 14px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.ppKey i[data-kind="inside"] {
+  background: var(--lane-inside);
+}
+
+.ppKey i[data-kind="work"] {
+  background: var(--lane-work);
+}
+
+.ppKey i[data-kind="meal"] {
+  background: var(--lane-meal);
+}
+
+.ppKey i[data-kind="sched"] {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-accent) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-accent) 30%, transparent);
+}
+
+/* The breakdown: label left, figure right, a hairline between. */
+.ppTotals {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 2px 14px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: var(--radius-m);
+}
+
+.ppTotal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+}
+
+.ppTotal + .ppTotal {
+  border-top: 1px solid var(--stroke-divider);
+}
+
+.ppTotal dt {
+  font: var(--type-body1);
+  color: var(--text-secondary);
+}
+
+.ppTotal dd {
+  margin: 0;
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.ppTotal dd[data-tone="quiet"] {
+  color: var(--text-tertiary);
+  font-weight: var(--weight-medium);
+}
+
+.ppTotal dd[data-tone="warning"] {
+  color: var(--text-warning);
+}
+
+/* Every scan on one connected line, newest first. */
+.ppTimeline {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ppEvent {
+  position: relative;
+  display: grid;
+  grid-template-columns: 68px 28px minmax(0, 1fr);
+  align-items: start;
+  gap: 0 12px;
+  padding: 8px 0 14px;
+}
+
+/* The line runs from each node to the next one. */
+.ppEvent:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: calc(68px + 12px + 13px);
+  top: 38px;
+  bottom: -6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--stroke-divider);
+}
+
+.ppEvent .eventTime {
+  line-height: 28px;
+}
+
+.ppEvent .eventText {
+  padding-top: 4px;
+}
