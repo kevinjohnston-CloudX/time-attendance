@@ -442,3 +442,24 @@ tbody .ta-row:hover {
 .ta-scroll:focus-within::-webkit-scrollbar-thumb {
   background-color: var(--stroke-hover);
 }
+
+/* Team Punch History: the people pane and the punch header pin under the
+   page's bar, flush with where they already rest, as the handoff does. Only
+   side by side. Below the width where both columns fit, the people pane wraps
+   above the punches, and a pinned pane there would park on top of them, so
+   both scroll with the page and the list gets a fixed height instead.
+   A container query, because the sidebar collapses and the viewport width
+   does not say how much room the board has. --tph-bar is the bar's measured
+   height; 56px is the top bar, 62px the pane's own header and a margin. */
+.ta-tph-board { container-type: inline-size; }
+.ta-tph-people { position: static; max-width: none; }
+.ta-tph-head { position: static; }
+.ta-tph-list { max-height: 320px; }
+@container (min-width: 734px) {
+  .ta-tph-people { position: sticky; top: var(--tph-bar, 0px); max-width: 300px; }
+  .ta-tph-head { position: sticky; top: var(--tph-bar, 0px); }
+  .ta-tph-list { max-height: calc(100vh - 56px - var(--tph-bar, 0px) - 62px - 16px); }
+}
+.ta-tph-row { transition: background-color 120ms ease; }
+.ta-tph-row:hover { background: var(--surface-tertiary) !important; }
+.ta-day:hover { box-shadow: inset 0 0 0 1px var(--stroke-hover) !important; }

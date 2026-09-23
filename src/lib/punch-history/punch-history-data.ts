@@ -81,6 +81,8 @@ export type PunchHistoryDay = {
   hasMissingPunch: boolean;
   /** Today, with a clock in and no clock out after it. */
   isClockedIn: boolean;
+  /** Punches still waiting on approval, which the pay engine does not count yet. */
+  hasPending: boolean;
 };
 
 export type PunchHistoryData = {
@@ -311,7 +313,19 @@ export async function loadTeamPunchHistory(
       }),
     ]);
 
-    punches = rows.map((p) => ({
+    // A superseded punch sits directly above the correction that replaced it,
+    // whatever the two times are, so the pair reads as what was recorded and
+    // then what it was changed to. Sorted by time alone, a later original
+    // lands under its own correction.
+    const byId = new Map(rows.map((p) => [p.id, p]));
+    const ordered = rows.filter((p) => !(p.correctedById && byId.has(p.correctedById)));
+    for (const original of rows) {
+      if (!original.correctedById || !byId.has(original.correctedById)) continue;
+      const at = ordered.findIndex((p) => p.id === original.correctedById);
+      ordered.splice(at, 0, original);
+    }
+
+    punches = ordered.map((p) => ({
       id: p.id,
       punchType: p.punchType,
       punchTime: p.punchTime.toISOString(),
@@ -339,6 +353,7 @@ export async function loadTeamPunchHistory(
         workedMinutes: worked.get(date) ?? 0,
         hasMissingPunch: missingDays.has(date),
         isClockedIn: date === today && !!lastIn && !outAfter,
+        hasPending: live.some((p) => !p.isApproved),
       };
     });
   }
