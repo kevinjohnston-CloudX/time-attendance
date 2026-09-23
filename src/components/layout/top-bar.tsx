@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Home, ChevronRight } from "lucide-react";
 import { locate } from "./nav-model";
 import { ThemeToggle } from "./theme-toggle";
+import { KeyboardShortcuts } from "./keyboard-shortcuts";
 
 /**
  * The 56px bar above the content, from the portal design.
@@ -15,12 +16,13 @@ import { ThemeToggle } from "./theme-toggle";
  * highlighted. The trail is built from the same nav model the sidebar renders,
  * so the two cannot disagree about which section a page belongs to.
  *
- * <p>The design also puts a notifications bell, a command palette and an
- * avatar menu up here. None of those have anything behind them yet, and
- * chrome that does nothing when clicked is worse than chrome that is absent,
- * so this ships with the breadcrumb and the theme switch only.
+ * <p>The design also puts a notifications bell and an avatar menu up here.
+ * Neither has anything behind it yet, and chrome that does nothing when
+ * clicked is worse than chrome that is absent, so this carries the
+ * breadcrumb, the theme switch and the shortcuts list only. The command
+ * palette the design draws here is reached from the sidebar search and ⌘K.
  */
-export function TopBar() {
+export function TopBar({ reachableHrefs }: { reachableHrefs: string[] }) {
   const pathname = usePathname();
   const here = locate(pathname);
 
@@ -71,7 +73,10 @@ export function TopBar() {
 
       <div className="flex-1" />
 
-      <ThemeToggle />
+      <div className="flex flex-none items-center gap-2">
+        <ThemeToggle />
+        <KeyboardShortcuts reachableHrefs={reachableHrefs} />
+      </div>
     </header>
   );
 }

@@ -190,7 +190,11 @@ export default async function PortalLayout({
             sidebar, so the sidebar header and the top bar meet at the same
             56px line. */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <TopBar />
+          {/* The palette's destinations are already filtered by this
+              viewer's permissions and by whether they are active, so the
+              shortcuts list is built from the same set rather than a second
+              one that could disagree with it. */}
+          <TopBar reachableHrefs={destinations.map((d) => d.href)} />
           <main className="min-h-0 flex-1 overflow-y-auto">
             <InactiveRouteGuard isInactive={!isEmployeeActive} />
             {/* --space-content: the design moved main padding from 24px to
