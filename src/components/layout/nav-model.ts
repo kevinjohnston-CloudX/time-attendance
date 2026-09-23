@@ -21,6 +21,9 @@ import {
   KeyRound,
   ScrollText,
   SlidersHorizontal,
+  CircleUser,
+  Banknote,
+  Cog,
 } from "lucide-react";
 
 /**
@@ -51,6 +54,13 @@ export type NavItem = {
 export type NavSection = {
   id: string;
   label: string;
+  /**
+   * The rail draws one button per section, so a section needs an icon and a
+   * label short enough to sit under it in 64px. "Administration" does not, so
+   * the rail says "Admin" while every other surface keeps the full name.
+   */
+  icon: React.ElementType;
+  railLabel: string;
   items: NavItem[];
   /**
    * Route prefixes that belong to this section but are not themselves nav
@@ -74,6 +84,8 @@ export type NavSection = {
 export const SECTIONS: NavSection[] = [
   {
     id: "me",
+    icon: CircleUser,
+    railLabel: "Me",
     label: "Me",
     prefixes: ["/dashboard", "/time", "/leave", "/documents", "/accruals"],
     items: [
@@ -93,6 +105,8 @@ export const SECTIONS: NavSection[] = [
   },
   {
     id: "team",
+    icon: Users,
+    railLabel: "Team",
     label: "Team",
     prefixes: ["/supervisor"],
     items: [
@@ -105,6 +119,8 @@ export const SECTIONS: NavSection[] = [
   },
   {
     id: "payroll",
+    icon: Banknote,
+    railLabel: "Payroll",
     label: "Payroll",
     prefixes: ["/payroll", "/reports"],
     items: [
@@ -120,6 +136,8 @@ export const SECTIONS: NavSection[] = [
   },
   {
     id: "admin",
+    icon: Cog,
+    railLabel: "Admin",
     label: "Administration",
     prefixes: ["/admin"],
     items: [

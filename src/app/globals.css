@@ -167,8 +167,21 @@ textarea {
 /* The selected row keeps its tint on hover. Letting the neutral hover win
    there reads as the selection being lost under the cursor. */
 .ta-hoverable[data-active="true"]:hover {
-  background: var(--wms-color-primary-50) !important;
+  background: var(--surface-info) !important;
 }
+/* The rail sits on a dark surface of its own, so --fill-hover, which is tuned
+   for the light card behind the rest of the shell, disappears on it. The
+   design uses a white wash instead, in both themes, because the rail is dark
+   in both. */
+.ta-rail-btn {
+  transition: background-color 120ms ease, color 120ms ease;
+  cursor: pointer;
+}
+.ta-rail-btn:hover {
+  background: rgba(255, 255, 255, 0.10) !important;
+  color: var(--wms-color-base-white) !important;
+}
+
 .ta-outlined {
   transition: border-color 120ms ease, color 120ms ease;
 }
@@ -390,3 +403,15 @@ tbody .ta-row:hover {
 .wms-meta          { font: var(--type-subtitle); color: var(--text-secondary); }
 .wms-label         { font: var(--type-button2); color: var(--text-secondary); }
 .wms-overline      { font: var(--type-overline); color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* The Exceptions rail pins beside the card list, and only beside it.
+
+   Below the width where the two columns fit, the rail wraps above the cards,
+   and a pinned element there parks itself on top of them as they scroll past.
+   A container query rather than a media query, because the portal sidebar
+   collapses and the viewport width does not say how much room this row has. */
+.ta-split { container-type: inline-size; }
+.ta-rail { position: static; }
+@container (min-width: 620px) {
+  .ta-rail { position: sticky; top: var(--ta-rail-top, 0px); }
+}

@@ -207,7 +207,7 @@ export function CommandPalette({ destinations }: { destinations: Destination[] }
                 onClick={() => go(r.href)}
                 className="flex w-full items-center gap-3 px-4 py-2 text-left"
                 style={{
-                  background: i === active ? "var(--wms-color-primary-50)" : "transparent",
+                  background: i === active ? "var(--surface-info)" : "transparent",
                   color: i === active ? "var(--text-accent)" : "var(--text-primary)",
                 }}
               >
