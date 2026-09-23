@@ -15,7 +15,7 @@ import {
   startOfWeek,
   subMonths,
 } from "date-fns";
-import { AlertTriangle, CalendarOff, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
+import { AlertTriangle, CalendarOff, CheckCircle2, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import {
   Badge,
   Banner,
@@ -1511,6 +1511,20 @@ function RequestCard({
   const name = req.employee.user?.name ?? `Employee ${req.employeeId}`;
   const sameDay = differenceInCalendarDays(end, start) === 0;
 
+  // The year only when it is not this one: on a queue of upcoming leave it is
+  // almost always the current year, and repeating it on every card was most of
+  // what made the date line long.
+  const thisYear = new Date().getFullYear();
+  const dayFmt = (d: Date) => format(d, d.getFullYear() === thisYear ? "EEE, MMM d" : "EEE, MMM d, yyyy");
+  const dates = sameDay
+    ? dayFmt(start)
+    : start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()
+      ? `${format(start, "MMM d")} \u2013 ${format(end, end.getFullYear() === thisYear ? "d" : "d, yyyy")}`
+      : `${format(start, "MMM d")} \u2013 ${format(end, end.getFullYear() === thisYear ? "MMM d" : "MMM d, yyyy")}`;
+
+  const hasActions =
+    queue === "pending" || queue === "hr-pending" || (queue === "upcoming" && req.status === "APPROVED");
+
   return (
     <div
       role="button"
@@ -1523,7 +1537,7 @@ function RequestCard({
           onSelect();
         }
       }}
-      className="flex cursor-pointer items-start gap-3 px-4 py-3.5"
+      className="flex cursor-pointer flex-col gap-3 p-4"
       style={{
         border: `1px solid ${selected ? "var(--stroke-accent)" : "var(--stroke-secondary)"}`,
         borderRadius: 10,
@@ -1531,81 +1545,115 @@ function RequestCard({
         transition: "border-color 140ms ease, background 140ms ease",
       }}
     >
-      <span
-        aria-hidden="true"
-        className="flex flex-none items-center justify-center"
-        style={{
-          width: 34,
-          height: 34,
-          borderRadius: 999,
-          background: selected ? "var(--fill-accent)" : "var(--surface-tertiary)",
-          color: selected ? "#fff" : "var(--text-secondary)",
-          font: "var(--weight-semibold) 13px/1 var(--font-sans)",
-        }}
-      >
-        {initialsOf(name)}
-      </span>
-
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <div className="flex items-center gap-2.5">
+      {/* Who, and what kind of leave. */}
+      <div className="flex items-center gap-3">
+        <span
+          aria-hidden="true"
+          className="flex flex-none items-center justify-center"
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 999,
+            background: selected ? "var(--fill-accent)" : "var(--surface-tertiary)",
+            color: selected ? "var(--text-on-accent)" : "var(--text-secondary)",
+            font: "var(--weight-semibold) 13px/1 var(--font-sans)",
+          }}
+        >
+          {initialsOf(name)}
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col">
           <span
-            className="min-w-0 flex-1 truncate"
-            style={{ font: "var(--weight-semibold) 15px/21px var(--font-sans)", color: "var(--text-primary)" }}
+            className="truncate"
+            style={{ font: "var(--weight-semibold) 15px/20px var(--font-sans)", color: "var(--text-primary)" }}
           >
             {name}
           </span>
-          <span className="flex-none">
-            <Badge tone={leaveTone(status)} size="sm">
-              {LEAVE_STATUS_LABEL[status] ?? status}
-            </Badge>
+          <span className="truncate" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+            {req.leaveType.name}
           </span>
         </div>
-
-        <span style={{ font: "var(--type-body1)", color: "var(--text-secondary)", textWrap: "pretty" }}>
-          {req.leaveType.name}
-          {" \u00b7 "}
-          {sameDay
-            ? format(start, "MMM d, yyyy")
-            : `${format(start, "MMM d")} \u2013 ${format(end, "MMM d, yyyy")}`}
+        <span className="flex-none self-start">
+          <Badge tone={leaveTone(status)} size="sm">
+            {LEAVE_STATUS_LABEL[status] ?? status}
+          </Badge>
         </span>
+      </div>
 
-        <span
-          className="tabular"
-          style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-        >
-          {(req.durationMinutes / 60).toFixed(2)} h {"\u00b7"} {days} day{days === 1 ? "" : "s"}
-          {req.submittedAt ? ` \u00b7 Filed ${format(new Date(req.submittedAt), "MMM d")}` : ""}
-        </span>
+      {/* The facts, each under its own label, the way a timesheet summary
+          reads. They used to run together on two gray lines joined by dots,
+          so nothing said which number was the date and which was the amount. */}
+      <dl
+        className="grid grid-cols-[1.4fr_1fr_0.8fr] gap-3 rounded-lg px-3 py-2.5"
+        style={{ margin: 0, background: selected ? "var(--surface-card)" : "var(--surface-tertiary)" }}
+      >
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <dt className="wms-overline" style={{ color: "var(--text-tertiary)" }}>Dates</dt>
+          <dd className="truncate" style={{ margin: 0, font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+            {dates}
+          </dd>
+        </div>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <dt className="wms-overline" style={{ color: "var(--text-tertiary)" }}>Duration</dt>
+          <dd className="tabular truncate" style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-primary)" }}>
+            <span style={{ fontWeight: "var(--weight-semibold)" }}>{(req.durationMinutes / 60).toFixed(2)} h</span>
+            <span style={{ color: "var(--text-tertiary)" }}>
+              {" \u00b7 "}
+              {days} day{days === 1 ? "" : "s"}
+            </span>
+          </dd>
+        </div>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <dt className="wms-overline" style={{ color: "var(--text-tertiary)" }}>Filed</dt>
+          <dd className="tabular truncate" style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-primary)" }}>
+            {req.submittedAt ? format(new Date(req.submittedAt), "MMM d") : "Not filed"}
+          </dd>
+        </div>
+      </dl>
 
-        {/* The overlap line is the reason this screen exists. It names people
-            rather than only reporting that a clash exists, because "who" was
-            always the next question. */}
-        <span
-          className="flex items-start gap-1.5"
-          style={{
-            font: "var(--type-body2)",
-            fontWeight: "var(--weight-medium)",
-            color: clashes.length > 0 ? "var(--text-warning)" : "var(--text-secondary)",
-            textWrap: "pretty",
-          }}
-        >
-          {clashes.length > 0 && (
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" aria-hidden="true" />
-          )}
+      {/* The overlap line is the reason this screen exists. It names people
+          rather than only reporting that a clash exists, because "who" was
+          always the next question. A clear day gets a quiet check, so the
+          warning is the only thing on the card that asks to be read. */}
+      <div
+        className="flex items-start gap-2"
+        style={{
+          font: "var(--type-body2)",
+          fontWeight: clashes.length > 0 ? "var(--weight-medium)" : undefined,
+          color: clashes.length > 0 ? "var(--text-warning)" : "var(--text-secondary)",
+          textWrap: "pretty",
+        }}
+      >
+        {clashes.length > 0 ? (
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
+        ) : (
+          <CheckCircle2 className="mt-0.5 h-4 w-4 flex-none" style={{ color: "var(--icon-success)" }} aria-hidden="true" />
+        )}
+        <span className="min-w-0">
           {clashes.length > 0
             ? `Overlaps approved leave for ${clashes.join(", ")}`
             : "Nobody else on the team is off then"}
         </span>
+      </div>
 
-        {req.note && (
-          <span style={{ font: "var(--type-body2)", color: "var(--text-primary)", textWrap: "pretty" }}>
-            &ldquo;{req.note}&rdquo;
-          </span>
-        )}
-
-        {/* Clicking an action must not also toggle the card selection. */}
+      {req.note && (
         <div
-          className="mt-2 flex flex-wrap items-center gap-2"
+          className="flex flex-col gap-0.5 py-0.5 pl-3"
+          style={{ borderLeft: "2px solid var(--stroke-secondary)" }}
+        >
+          <span className="wms-overline" style={{ color: "var(--text-tertiary)" }}>Note</span>
+          <span style={{ font: "var(--type-body2)", color: "var(--text-primary)", textWrap: "pretty" }}>
+            {req.note}
+          </span>
+        </div>
+      )}
+
+      {/* Only drawn when there is something to do. A posted request has no
+          actions, and the empty row used to leave a band of space at the
+          foot of the card. Clicking an action must not also toggle the card. */}
+      {hasActions && (
+        <div
+          className="flex flex-wrap items-center gap-2 pt-3"
+          style={{ borderTop: "1px solid var(--stroke-divider)" }}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
@@ -1620,7 +1668,8 @@ function RequestCard({
             <LeaveReverseButton leaveRequestId={req.id} />
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
+
