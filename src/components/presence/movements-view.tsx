@@ -275,7 +275,7 @@ function PersonRow({
     ) : null;
 
   const left = present ? (
-    <span className={styles.mvStill}>Still here</span>
+    <span className={styles.mvStill}>On site</span>
   ) : unclosed ? (
     <span className={styles.mvWarn}>Never scanned out</span>
   ) : v.lastOut !== null ? (

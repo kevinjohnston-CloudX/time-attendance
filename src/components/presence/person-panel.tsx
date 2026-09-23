@@ -265,7 +265,7 @@ export function PersonPanel({
                   <Glance
                     label="Left"
                     value={stillHere ? null : lanes.lastOut && lanes.firstIn && lanes.lastOut > lanes.firstIn ? time(lanes.lastOut) : null}
-                    empty={stillHere ? "Still here" : neverOut ? "Never scanned out" : lanes.firstIn ? "Not yet" : "Not seen"}
+                    empty={stillHere ? "On site" : neverOut ? "Never scanned out" : lanes.firstIn ? "Not yet" : "Not seen"}
                     emptyTone={stillHere ? "accent" : neverOut ? "warning" : undefined}
                     sub={shown.scheduledEnd ? `Ends ${formatTimeOfDay(shown.scheduledEnd)}` : schedule ? "" : "Not scheduled"}
                   />
