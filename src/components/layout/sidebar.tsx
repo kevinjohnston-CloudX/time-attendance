@@ -118,7 +118,7 @@ export function SidebarRail({
   isInactive,
   onPickSection,
   onOpenSearch,
-  footer,
+  identity,
 }: {
   sections: { id: string; label: string; railLabel: string; icon: React.ElementType }[];
   activeSectionId?: string;
@@ -128,7 +128,8 @@ export function SidebarRail({
   isInactive?: boolean;
   onPickSection: (id: string) => void;
   onOpenSearch: () => void;
-  footer: React.ReactNode;
+  /** Avatar, view-as and sign out, drawn at the foot of the rail. */
+  identity: React.ReactNode;
 }) {
 return (
     <div className="flex h-full flex-none">
@@ -167,11 +168,13 @@ return (
           );
         })}
 
-        {/* The design puts an avatar and a sign out button down here, because
-            its rail had no panel footer under it. This one does, and it is
-            the same footer the grouped layout uses, so repeating them here
-            put two avatars and two sign out buttons on screen at once. */}
         <div className="flex-1" />
+
+        {/* Who you are and the way out, at the foot of the rail. The panel
+            beside it carries Search alone, which is how the design splits
+            them: a 196px column is too narrow for a name and a role, and
+            putting them there truncated both. */}
+        {identity}
       </aside>
 
       {/* The 196px panel: what is inside the section the rail has open. */}
@@ -267,8 +270,6 @@ return (
             </kbd>
           </button>
         </div>
-
-        {footer}
       </aside>
     </div>
 );
@@ -504,6 +505,117 @@ export function Sidebar({
       </div>
   );
 
+  /**
+   * The foot of the rail: who you are, and the way out.
+   *
+   * <p>64px has no room for a name, so the avatar carries it in a title and
+   * opens the view-as list the grouped footer opens. The list itself opens to
+   * the right rather than above, because a popover inside a 64px column is a
+   * popover nobody can read.
+   */
+  const renderRailIdentity = () => (
+    <div ref={rolePickerRef} className="relative flex flex-none flex-col items-center pb-1">
+      {viewAsRole && (
+        <span
+          title={`Viewing as ${viewAsRole}`}
+          className="mb-1.5 inline-flex h-4 items-center rounded-full px-1.5"
+          style={{
+            font: "var(--type-caption2)",
+            background: "var(--surface-warning)",
+            color: "var(--text-warning)",
+          }}
+        >
+          <Eye className="h-3 w-3" />
+        </span>
+      )}
+
+      <button
+        type="button"
+        onClick={() => canViewAs && setShowRolePicker((v) => !v)}
+        title={
+          viewAsRole
+            ? `${userName ?? "Signed in"} — viewing as ${viewAsRole}`
+            : `${userName ?? "Signed in"} — ${ROLE_LABEL[realRole ?? ""] ?? realRole}`
+        }
+        className={`ta-rail-btn inline-flex h-9 w-9 items-center justify-center rounded-lg ${
+          canViewAs ? "cursor-pointer" : "cursor-default"
+        }`}
+      >
+        <Avatar name={userName} />
+      </button>
+
+      <button
+        onClick={() => signOut({ callbackUrl: "/login" })}
+        title="Sign out"
+        className="ta-rail-btn mt-1 inline-flex h-8 w-8 items-center justify-center rounded-lg"
+        style={{ color: "var(--wms-color-gray-400)" }}
+      >
+        <LogOut className="h-[17px] w-[17px]" />
+      </button>
+
+      {showRolePicker && (
+        <div
+          className="absolute bottom-1 left-full z-50 ml-1 w-56 overflow-hidden rounded-lg py-1.5"
+          style={{
+            background: "var(--surface-card)",
+            border: "1px solid var(--stroke-secondary)",
+            boxShadow: "var(--shadow-menu)",
+          }}
+        >
+          <p
+            className="px-3 pb-1 pt-0.5 uppercase"
+            style={{ font: "var(--type-overline)", color: "var(--text-tertiary)" }}
+          >
+            View as
+          </p>
+          {viewAsOptions.length === 0 && (
+            <p className="px-3 py-2" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+              No roles available
+            </p>
+          )}
+          {viewAsOptions.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              disabled={isPending || r.name === viewAsRole}
+              onClick={() => handleSetViewAs(r.id)}
+              className="ta-hoverable flex w-full items-center px-3 py-1.5 disabled:opacity-40"
+              style={{
+                font: "var(--type-body2)",
+                background: r.name === viewAsRole ? "var(--surface-info)" : "transparent",
+                color: r.name === viewAsRole ? "var(--text-accent)" : "var(--text-secondary)",
+              }}
+            >
+              <span className="min-w-0 flex-1 truncate text-left">{r.name}</span>
+              {r.name === viewAsRole && (
+                <span className="ml-auto flex-none" style={{ font: "var(--type-caption1)" }}>
+                  active
+                </span>
+              )}
+            </button>
+          ))}
+          {viewAsRole && (
+            <>
+              <div className="my-1 h-px" style={{ background: "var(--stroke-divider)" }} />
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={handleClearViewAs}
+                className="ta-hoverable flex w-full items-center gap-2 px-3 py-1.5 disabled:opacity-40"
+                style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+              >
+                <X className="h-3.5 w-3.5 flex-none" />
+                <span className="min-w-0 truncate">
+                  Return to {ROLE_LABEL[realRole ?? ""] ?? realRole}
+                </span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   if (navMode === "rail") {
     /**
      * Which section the panel is showing.
@@ -534,7 +646,7 @@ export function Sidebar({
         isInactive={isInactive}
         onPickSection={(id) => setPinnedSection({ id, path: pathname })}
         onOpenSearch={openCommandPalette}
-        footer={renderFooter(false, navMode)}
+        identity={renderRailIdentity()}
       />
     );
   }
