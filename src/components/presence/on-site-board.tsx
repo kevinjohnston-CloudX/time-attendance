@@ -45,6 +45,17 @@ import {
   statusLabel,
 } from "./presence-meta";
 import { PersonPanel } from "./person-panel";
+import {
+  ScanLogCounts,
+  ScanLogEmpty,
+  ScanLogList,
+  ScanLogSkeleton,
+  counterQuery,
+  parseCounter,
+  scanLogCsv,
+  useScanLog,
+  type LogCounter,
+} from "./scan-log";
 import styles from "./on-site.module.css";
 
 /**
@@ -71,6 +82,7 @@ const ROWS_PER_PAGE = 200;
 
 type StatusFilter = "inside" | PresenceStatus;
 type View = "photos" | "compact" | "list";
+type Tab = "people" | "log";
 
 const ALL_STATUSES = [...INSIDE_STATUSES, ...AWAY_STATUSES];
 
@@ -94,6 +106,8 @@ export function OnSiteBoard({
     view: View;
     sort: string | null;
     group: string | null;
+    tab: string | null;
+    scans: string | null;
   };
 }) {
   const [siteId, setSiteId] = useState(initialSiteId);
@@ -109,6 +123,8 @@ export function OnSiteBoard({
   const [sort, setSort] = useState<Sort>(parseSort(initialFilters.sort));
   const [byDept, setByDept] = useState(initialFilters.group === "dept");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [tab, setTab] = useState<Tab>(initialFilters.tab === "log" ? "log" : "people");
+  const [counter, setCounter] = useState<LogCounter | null>(parseCounter(initialFilters.scans));
 
   const [lastOk, setLastOk] = useState(() => (initialBoard ? Date.now() : 0));
   const [failure, setFailure] = useState<string | null>(null);
@@ -135,11 +151,13 @@ export function OnSiteBoard({
     const sortParam = serializeSort(sort);
     if (sortParam) qs.set("sort", sortParam);
     if (byDept) qs.set("group", "dept");
+    if (tab === "log") qs.set("tab", "log");
+    if (tab === "log" && counter) qs.set("scans", counter);
     const next = `${window.location.pathname}?${qs.toString()}`;
     if (next !== `${window.location.pathname}${window.location.search}`) {
       window.history.replaceState(window.history.state, "", next);
     }
-  }, [siteId, status, dept, shift, view, sort, byDept]);
+  }, [siteId, status, dept, shift, view, sort, byDept, tab, counter]);
 
   // ── Remember who was where, to mark who just moved ──────────────────────
   const absorb = useCallback((next: PresenceBoard, sameSite: boolean) => {
@@ -343,6 +361,12 @@ export function OnSiteBoard({
     [groups, matches, sort],
   );
 
+  // The log lives beside the board and shares its search, department and
+  // shift, so switching views keeps what you were looking for.
+  const log = useScanLog({ siteId, active: tab === "log", counter, departmentId: dept, shiftId: shift, q: query });
+  const logSummary = log.page?.summary ?? null;
+  const logTotal = logSummary ? counterTotal(logSummary, counter) : 0;
+
   function pickStatus(next: StatusFilter) {
     setQuery("");
     setExpanded({});
@@ -357,7 +381,17 @@ export function OnSiteBoard({
   const age = lastOk ? now - lastOk : Infinity;
   const liveState: "live" | "stale" | "paused" = hidden ? "paused" : age > STALE_MS || failure === "error" ? "stale" : "live";
 
+  async function exportLog() {
+    if (!board) return;
+    const all = await log.fetchAll();
+    if (!all) return;
+    const csv = scanLogCsv(all.rows, tz, csvCell);
+    const stamp = `${siteDate(board.generatedAt, tz)} ${fmtTime(board.generatedAt, tz).replace(/[: ]/g, "")}`;
+    download(csv, `Scan log ${board.site.name} ${stamp}.csv`);
+  }
+
   function exportCsv() {
+    if (tab === "log") return void exportLog();
     if (!board) return;
     // The export follows what is on screen, in the order it is on screen.
     const rows = listRows;
@@ -374,13 +408,7 @@ export function OnSiteBoard({
     ])];
     const csv = lines.map((r) => r.map(csvCell).join(",")).join("\r\n");
     const stamp = `${siteDate(board.generatedAt, tz)} ${fmtTime(board.generatedAt, tz).replace(/[: ]/g, "")}`;
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `On Site ${board.site.name} ${stamp}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    download(csv, `On Site ${board.site.name} ${stamp}.csv`);
   }
 
   // ── No site at all ──────────────────────────────────────────────────────
@@ -423,6 +451,18 @@ export function OnSiteBoard({
 
   const actions = (
     <>
+      <SegmentedControl
+        ariaLabel="View"
+        items={[
+          { value: "people", label: "People" },
+          { value: "log", label: "Scan log" },
+        ]}
+        value={tab}
+        onChange={(v) => {
+          setTab(v as Tab);
+          setSelectedId(null);
+        }}
+      />
       {sites.length > 1 && (
         <Select aria-label="Site" value={siteId} onChange={(e) => changeSite(e.target.value)} style={{ minWidth: 160 }}>
           {sites.map((s) => (
@@ -432,7 +472,11 @@ export function OnSiteBoard({
           ))}
         </Select>
       )}
-      <Button hierarchy="secondary" onClick={exportCsv} disabled={!board || matches.length === 0}>
+      <Button
+        hierarchy="secondary"
+        onClick={exportCsv}
+        disabled={!board || (tab === "log" ? log.rows.length === 0 : matches.length === 0)}
+      >
         Export
       </Button>
     </>
@@ -465,7 +509,21 @@ export function OnSiteBoard({
               </h1>
               {/* Slim, the bar keeps the one number this page exists for and
                   whether it is still live, and gives up the sentence. */}
-              {condensed && board && (
+              {condensed && board && tab === "log" && (
+                <span
+                  className="tabular inline-flex items-center gap-2 whitespace-nowrap"
+                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                >
+                  <span className={styles.live} data-state={liveState} aria-hidden="true" />
+                  <span>
+                    <strong style={{ color: "var(--text-primary)", fontWeight: "var(--weight-semibold)" }}>
+                      {logTotal.toLocaleString()}
+                    </strong>{" "}
+                    {counter ? `${COUNTER_LABEL[counter].toLowerCase()} today` : "scans today"}
+                  </span>
+                </span>
+              )}
+              {condensed && board && tab === "people" && (
                 <span
                   className="tabular inline-flex items-center gap-2 whitespace-nowrap"
                   style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
@@ -541,14 +599,22 @@ export function OnSiteBoard({
                   className="tabular ml-auto whitespace-nowrap"
                   style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
                 >
-                  {searching
-                    ? `${matches.length.toLocaleString()} ${matches.length === 1 ? "match" : "matches"} in every group`
-                    : `${matches.length.toLocaleString()} ${matches.length === 1 ? "person" : "people"}`}
+                  {tab === "log"
+                    ? logSummary
+                      ? `${logTotal.toLocaleString()} ${logTotal === 1 ? "scan" : "scans"}`
+                      : ""
+                    : searching
+                      ? `${matches.length.toLocaleString()} ${matches.length === 1 ? "match" : "matches"} in every group`
+                      : `${matches.length.toLocaleString()} ${matches.length === 1 ? "person" : "people"}`}
                 </span>
-                <SortChip sort={sort} onChange={setSort} />
-                {view !== "list" && departments.length > 1 && (
+                {tab === "log" && counter && (
+                  <ToggleChip label={COUNTER_LABEL[counter]} pressed onClick={() => setCounter(null)} />
+                )}
+                {tab === "people" && <SortChip sort={sort} onChange={setSort} />}
+                {tab === "people" && view !== "list" && departments.length > 1 && (
                   <ToggleChip label="By department" pressed={byDept} onClick={() => setByDept((v) => !v)} />
                 )}
+                {tab === "people" && (
                 <SegmentedControl
                   ariaLabel="Layout"
                   size="sm"
@@ -560,6 +626,7 @@ export function OnSiteBoard({
                   value={view}
                   onChange={(v) => setView(v as View)}
                 />
+                )}
               </div>
         )}
       </div>
@@ -572,6 +639,72 @@ export function OnSiteBoard({
             body="Your access may have changed since the page opened. Pick another site, or reload the page."
           />
         </Card>
+      ) : tab === "log" ? (
+        switching || !board || log.failure === "access" || !log.page || !logSummary ? (
+          log.failure === "access" ? (
+            <Card padding={0}>
+              <EmptyState
+                icon={<Building2 className="h-8 w-8" />}
+                title="This site is no longer available to you"
+                body="Your access may have changed since the page opened. Pick another site, or reload the page."
+              />
+            </Card>
+          ) : log.failure === "error" && !log.page ? (
+            <Card padding={0}>
+              <EmptyState
+                icon={<Building2 className="h-8 w-8" />}
+                title="The scan log could not be loaded"
+                body="Something went wrong reading today's scans. Try again, and if it keeps happening, reload the page."
+                action={
+                  <Button hierarchy="secondary" size="sm" onClick={() => void log.retry()}>
+                    Try again
+                  </Button>
+                }
+              />
+            </Card>
+          ) : (
+            <ScanLogSkeleton />
+          )
+        ) : (
+          <>
+            <ScanLogCounts
+              summary={logSummary}
+              counter={counter}
+              onPick={setCounter}
+              hasGateData={board.site.hasGateData}
+              lastGateScanAt={board.site.lastGateScanAt}
+              tz={tz}
+            />
+            {log.rows.length === 0 ? (
+              <Card padding={0}>
+                <ScanLogEmpty
+                  counter={counter}
+                  searching={log.searching}
+                  filtered={!!dept || !!shift}
+                  hasGateData={board.site.hasGateData}
+                  onClear={() => {
+                    setCounter(null);
+                    setQuery("");
+                    setDept("");
+                    setShift("");
+                  }}
+                />
+              </Card>
+            ) : (
+              <ScanLogList
+                rows={log.rows}
+                tz={tz}
+                stickyTop={barHeight}
+                changed={log.changed}
+                selectedId={selectedId}
+                onOpen={setSelectedId}
+                hasMore={log.page.hasMore}
+                loadingMore={log.loadingMore}
+                onShowMore={() => void log.showMore()}
+              />
+            )}
+          </>
+        )
       ) : switching || !board ? (
         <BoardSkeleton />
       ) : (
@@ -1315,6 +1448,35 @@ function barLabel(counts: Record<PresenceStatus, number>, scoped: PresencePerson
     const n = s === "ON_MEAL" ? counts[s] - outsideMeal : counts[s];
     return `${n} ${STATUS_META[s].label.toLowerCase()}`;
   }).join(", ");
+}
+
+const COUNTER_LABEL: Record<LogCounter, string> = {
+  gate: "Security gate scans",
+  "gate-in": "Security gate in",
+  "gate-out": "Security gate out",
+  clock: "Time clock scans",
+  "clock-in": "Time clock in",
+  "clock-out": "Time clock out",
+  rejected: "Not accepted",
+};
+
+/** How many scans the picked counter stands for, from the same counts it shows. */
+function counterTotal(s: NonNullable<ReturnType<typeof useScanLog>["page"]>["summary"], c: LogCounter | null): number {
+  const { stream, direction, rejected } = counterQuery(c);
+  if (rejected) return s.rejected;
+  if (stream === "SECURITY") return direction === "IN" ? s.gateIn : direction === "OUT" ? s.gateOut : s.gateTotal;
+  if (stream === "TIME_CLOCK") return direction === "IN" ? s.clockIn : direction === "OUT" ? s.clockOut : s.clockTotal;
+  return s.gateTotal + s.clockTotal;
+}
+
+function download(csv: string, name: string) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function csvCell(v: string): string {

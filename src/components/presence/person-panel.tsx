@@ -251,7 +251,7 @@ function Timeline({ scans, tz, today }: { scans: PresenceScan[]; tz: string; tod
   return <ol className={styles.timeline}>{items}</ol>;
 }
 
-function iconFor(s: PresenceScan): { icon: ReactNode; kind: "in" | "out" | "meal" } {
+export function iconFor(s: PresenceScan): { icon: ReactNode; kind: "in" | "out" | "meal" | "error" } {
   const cls = "h-3.5 w-3.5";
   if (s.stream === "SECURITY") {
     return s.direction === "IN"
@@ -260,6 +260,9 @@ function iconFor(s: PresenceScan): { icon: ReactNode; kind: "in" | "out" | "meal
   }
   if (s.punchType === "MEAL_START" || s.punchType === "BREAK_START") return { icon: <Coffee className={cls} />, kind: "meal" };
   if (s.punchType === "MEAL_END" || s.punchType === "BREAK_END") return { icon: <Clock className={cls} />, kind: "in" };
+  // The words say what the timecard made of the scan, so the icon does too.
+  if (s.punchType === "CLOCK_IN") return { icon: <Clock className={cls} />, kind: "in" };
+  if (s.punchType === "CLOCK_OUT") return { icon: <Clock className={cls} />, kind: "out" };
   return { icon: <Clock className={cls} />, kind: s.direction === "IN" ? "in" : "out" };
 }
 

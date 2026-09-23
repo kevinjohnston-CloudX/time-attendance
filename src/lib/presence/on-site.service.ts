@@ -46,7 +46,7 @@ type LatestRow = {
 
 type TodayRow = { employeeId: string; firstIn: Date | null; lastOut: Date | null };
 
-function localDateString(at: Date, timezone: string): string {
+export function localDateString(at: Date, timezone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(at);
 }
 

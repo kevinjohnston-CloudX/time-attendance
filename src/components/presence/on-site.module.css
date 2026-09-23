@@ -886,3 +886,242 @@
     transition: none;
   }
 }
+
+/* ── Scan log ───────────────────────────────────────────────────── */
+
+/* The two readers weigh the same, so the log's counts split evenly. */
+.headcountEven {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+@media (max-width: 900px) {
+  .headcountEven {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.readerIcon {
+  flex: none;
+  align-self: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-tertiary);
+  color: var(--icon-secondary);
+  transition: box-shadow 140ms ease;
+}
+
+.total[data-active="true"] .readerIcon {
+  background: var(--surface-card);
+  color: var(--icon-default);
+  box-shadow: inset 0 0 0 2px var(--text-primary);
+}
+
+.footnote {
+  margin: auto 0 0;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}
+
+.dot[data-tone="in"] {
+  background: var(--fill-success);
+}
+
+.dot[data-tone="out"] {
+  background: var(--stroke-default);
+}
+
+.dot[data-tone="error"] {
+  background: var(--fill-error);
+}
+
+.logHour {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+}
+
+.log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.log > li + li .logRow {
+  border-top: 1px solid var(--stroke-divider);
+}
+
+.logRow {
+  display: grid;
+  grid-template-columns: 68px 44px minmax(140px, 1fr) minmax(200px, 1.5fr) minmax(0, auto);
+  align-items: center;
+  gap: 0 14px;
+  width: 100%;
+  padding: 10px 16px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  transition: background 140ms ease;
+}
+
+.logRow:hover {
+  background: var(--fill-hover);
+}
+
+.logRow[aria-pressed="true"] {
+  background: var(--surface-info);
+}
+
+.logRow:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: -2px;
+}
+
+.logRow[data-changed="true"] {
+  animation: arrived 2.4s ease-out 1;
+}
+
+@keyframes arrived {
+  0% {
+    background: var(--surface-info);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.logTime {
+  font: var(--weight-semibold) 13px/18px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* Square with soft corners, like the tile photos, so a face reads as a face
+   and not as an account avatar. */
+.logPhoto {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ps-photo);
+}
+
+.logPhoto .initials {
+  font: var(--weight-semibold) 14px/1 var(--font-sans);
+  letter-spacing: 0;
+  color: var(--text-secondary);
+}
+
+.logPhoto img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.logWho {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.logWhat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.logTags {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Which reader, always visible: the one fact the log is read by. */
+.source {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  font: var(--weight-medium) 12px/16px var(--font-sans);
+}
+
+.source[data-stream="gate"] {
+  background: var(--surface-info);
+  color: var(--text-accent);
+}
+
+.source[data-stream="clock"] {
+  background: var(--surface-tertiary);
+  color: var(--text-secondary);
+}
+
+.eventIcon[data-kind="error"] {
+  background: var(--surface-error);
+  color: var(--icon-error);
+}
+
+.logFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--stroke-divider);
+}
+
+@media (max-width: 760px) {
+  .logRow {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "photo who time"
+      "photo what what"
+      "photo tags tags";
+    gap: 4px 12px;
+  }
+  .logPhoto {
+    grid-area: photo;
+    align-self: start;
+  }
+  .logWho {
+    grid-area: who;
+  }
+  .logTime {
+    grid-area: time;
+  }
+  .logWhat {
+    grid-area: what;
+  }
+  .logTags {
+    grid-area: tags;
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logRow[data-changed="true"] {
+    animation: none;
+  }
+}

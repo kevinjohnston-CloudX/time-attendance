@@ -7,6 +7,9 @@ import { OnSiteBoard } from "@/components/presence/on-site-board";
 /**
  * On Site: who is in the building right now, for HR and loss prevention.
  *
+ * <p>Two views of the same people: who is where right now, and the scan log
+ * of every security gate and time clock scan today.
+ *
  * <p>This half picks the site and draws the first snapshot on the server, so
  * the page opens full rather than empty-then-full. From then on the board
  * polls every 30 seconds on its own; the server keeps no timer.
@@ -26,6 +29,8 @@ export default async function OnSitePage({
     view?: string;
     sort?: string;
     group?: string;
+    tab?: string;
+    scans?: string;
   }>;
 }) {
   const session = await auth();
@@ -56,6 +61,8 @@ export default async function OnSitePage({
         view: params.view === "list" ? "list" : params.view === "compact" ? "compact" : "photos",
         sort: params.sort ?? null,
         group: params.group ?? null,
+        tab: params.tab ?? null,
+        scans: params.scans ?? null,
       }}
     />
   );

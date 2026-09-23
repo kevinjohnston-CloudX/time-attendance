@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { getPresenceBoard, getPresenceDetail, getViewableSites } from "@/lib/presence/on-site.service";
+import { getScanLog, type ScanLogInput } from "@/lib/presence/scan-log.service";
 
 /**
  * On Site: who is in the building right now.
@@ -60,5 +61,39 @@ export const getOnSitePerson = withRBAC(
     const detail = await getPresenceDetail(tenantId, input.siteId, input.employeeId);
     if (!detail) throw new Error("NOT_FOUND");
     return detail;
+  },
+);
+
+/**
+ * Today's scan log at one site, from the gate and the time clock. The same
+ * gate and the same site check as the board: it shows the same people, one
+ * event at a time instead of one status each.
+ *
+ * <p>Everything the browser sends is re-read into a known shape here, so an
+ * unexpected value narrows to nothing rather than reaching the query.
+ */
+export const getOnSiteScanLog = withRBAC(
+  "PRESENCE_VIEW_ANY",
+  async ({ tenantId, employeeId, role }, input: { siteId: string } & ScanLogInput) => {
+    if (!tenantId) throw new Error("NOT_FOUND");
+    await assertSite(tenantId, { employeeId, role }, input.siteId);
+    const text = (v: unknown, max = 100) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+    const iso = (v: unknown) => (typeof v === "string" && !Number.isNaN(Date.parse(v)) ? v : null);
+    const log = await getScanLog(tenantId, input.siteId, {
+      stream: input.stream === "SECURITY" || input.stream === "TIME_CLOCK" ? input.stream : null,
+      direction: input.direction === "IN" || input.direction === "OUT" ? input.direction : null,
+      rejected: input.rejected === true,
+      departmentId: text(input.departmentId),
+      shiftId: text(input.shiftId),
+      q: text(input.q),
+      before:
+        input.before && iso(input.before.at) && text(input.before.id)
+          ? { at: input.before.at, id: input.before.id }
+          : null,
+      since: iso(input.since),
+      limit: typeof input.limit === "number" && Number.isFinite(input.limit) ? input.limit : undefined,
+    });
+    if (!log) throw new Error("NOT_FOUND");
+    return log;
   },
 );

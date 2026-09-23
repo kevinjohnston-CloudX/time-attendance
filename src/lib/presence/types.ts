@@ -111,3 +111,68 @@ export interface PresenceDetail {
   timezone: string;
   scans: PresenceScan[];
 }
+
+/* ── Scan log ──────────────────────────────────────────────────────────── */
+
+export type ScanStream = "SECURITY" | "TIME_CLOCK";
+
+/**
+ * What the scan log is narrowed to. Department, shift and the search narrow
+ * the counts as well as the rows; source, direction and "not accepted" are the
+ * counters themselves, so they only narrow the rows.
+ */
+export interface ScanLogQuery {
+  stream: ScanStream | null;
+  direction: "IN" | "OUT" | null;
+  rejected: boolean;
+  departmentId: string | null;
+  shiftId: string | null;
+  q: string | null;
+}
+
+/** One reader event in the log, with the person it belongs to. */
+export interface ScanLogRow extends PresenceScan {
+  /** The pipeline's own words when the time clock scan was not accepted. */
+  rejectionReason: string | null;
+  /**
+   * The photo the tablet took at this scan, once the photo store is
+   * connected. Until then null, and the row shows the person's photo or
+   * their initials in the same frame.
+   */
+  photoUrl: string | null;
+  person: {
+    id: string;
+    name: string;
+    employeeCode: string;
+    department: string | null;
+    photoUrl: string | null;
+  };
+}
+
+export interface ScanLogSummary {
+  gateIn: number;
+  gateOut: number;
+  gateTotal: number;
+  clockIn: number;
+  clockOut: number;
+  clockTotal: number;
+  /** Time clock scans the timecard did not accept. */
+  rejected: number;
+  /** Different people seen at either reader today. */
+  people: number;
+}
+
+export interface ScanLogPage {
+  /** The site's calendar day the log covers, YYYY-MM-DD. */
+  day: string;
+  rows: ScanLogRow[];
+  /** More rows exist further back than the ones returned. */
+  hasMore: boolean;
+  summary: ScanLogSummary;
+  /**
+   * The newest time any matching scan was recorded. The next poll asks for
+   * rows recorded after it, by arrival rather than by scan time, so a tablet
+   * that was offline and posts its queue late still lands in the log.
+   */
+  watermark: string | null;
+}
