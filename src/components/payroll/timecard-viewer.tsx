@@ -81,6 +81,7 @@ import {
   RefreshCw,
   Users,
 } from "lucide-react";
+import { RefusedScansNotice } from "@/components/payroll/refused-scans-notice";
 
 /**
  * The Timecards workspace, as the portal design lays it out.
@@ -2283,6 +2284,15 @@ export function TimecardViewer({
                   />
                 </div>
               )}
+
+              {/* Scans refused before this person was in CloudTime, which
+                  payroll can add back. Renders nothing when there are none. */}
+              <RefusedScansNotice
+                employeeId={selectedEmployeeId}
+                payPeriodId={selectedPeriodId}
+                canEdit={!!canEdit}
+                onAdded={() => router.refresh()}
+              />
 
               {/* What the grid will and will not do, said once. Edits here are
                   queued rather than written on blur, and a screen that looks
