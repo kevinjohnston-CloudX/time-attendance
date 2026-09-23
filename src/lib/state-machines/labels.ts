@@ -95,3 +95,20 @@ export const LEAVE_STATUS_LABEL: Record<LeaveRequestStatusValue, string> = {
 // LEAVE_STATUS_BADGE lived here as a map of Tailwind classes. Colour is now
 // leaveTone() in @/components/ui, so a leave status is the same colour on
 // every screen and flips with the theme. Labels stay here; only colour moved.
+
+/**
+ * Exception types as people read them. The same words the Exceptions screen
+ * and the dashboard use, in one place for new screens to share.
+ */
+export const EXCEPTION_TYPE_LABEL: Record<string, string> = {
+  MISSING_PUNCH: "Missing Punch",
+  ABSENT: "Absent",
+  SCAN_DISCREPANCY: "Scan Discrepancy",
+  MISSED_MEAL: "Missed Meal",
+  SHORT_BREAK: "Short Break",
+  LONG_SHIFT: "Long Shift",
+  UNSCHEDULED_OT: "Unscheduled OT",
+  LATE_IN: "Late In",
+  EARLY_OUT: "Early Out",
+  CONSECUTIVE_DAYS: "Consecutive Days",
+};
