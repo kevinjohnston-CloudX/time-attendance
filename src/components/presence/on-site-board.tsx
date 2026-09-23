@@ -49,7 +49,7 @@ import {
 import { PersonPanel } from "./person-panel";
 import { PhotoViewer } from "./face";
 import { clampDay, dayLabel, recentDays } from "@/lib/presence/days";
-import { buildSiteDay, countFlags } from "@/lib/presence/movements";
+import { buildSiteDay, countFlags, scanTotals } from "@/lib/presence/movements";
 import {
   FLAG_META,
   MV_SORTS,
@@ -132,6 +132,7 @@ export function OnSiteBoard({
     day: string | null;
     flag: string | null;
     order: string | null;
+    open: string | null;
   };
 }) {
   const [siteId, setSiteId] = useState(initialSiteId);
@@ -154,6 +155,10 @@ export function OnSiteBoard({
   const [mvShown, setMvShown] = useState(PEOPLE_PER_PAGE);
   const [mvFlag, setMvFlag] = useState(parseFlag(initialFilters.flag));
   const [mvSort, setMvSort] = useState<MvSort>(parseMvSort(initialFilters.order));
+  // Everyone's scans open, or each person's on their own. `mvToggled` holds
+  // whoever differs from that default, and is cleared when it changes.
+  const [mvAllOpen, setMvAllOpen] = useState(initialFilters.open === "all");
+  const [mvToggled, setMvToggled] = useState<Set<string>>(new Set());
   const [counter, setCounter] = useState<LogCounter | null>(parseCounter(initialFilters.scans));
   // A past day for the log, or "" for today. The panel opens on the day of
   // the row it was opened from.
@@ -193,11 +198,12 @@ export function OnSiteBoard({
     if (tab !== "people" && logDay) qs.set("day", logDay);
     if (tab === "movements" && mvFlag) qs.set("flag", mvFlag);
     if (tab === "movements" && mvSort !== "name") qs.set("order", mvSort);
+    if (tab === "movements" && mvAllOpen) qs.set("open", "all");
     const next = `${window.location.pathname}?${qs.toString()}`;
     if (next !== `${window.location.pathname}${window.location.search}`) {
       window.history.replaceState(window.history.state, "", next);
     }
-  }, [siteId, status, dept, shift, view, sort, byDept, tab, counter, logDay, mvFlag, mvSort]);
+  }, [siteId, status, dept, shift, view, sort, byDept, tab, counter, logDay, mvFlag, mvSort, mvAllOpen]);
 
   // ── Remember who was where, to mark who just moved ──────────────────────
   const absorb = useCallback((next: PresenceBoard, sameSite: boolean) => {
@@ -422,6 +428,7 @@ export function OnSiteBoard({
     [dayViews, dept, shift],
   );
   const mvCounts = useMemo(() => countFlags(mvScoped), [mvScoped]);
+  const mvTotals = useMemo(() => scanTotals(mvScoped), [mvScoped]);
   const mvIsToday = !!siteDay.data && siteDay.data.day === siteDay.data.today;
   const mvHasGate = !!siteDay.data?.site.hasGateData;
   // A filter that does not apply to this day (on a meal right now, for
@@ -763,6 +770,16 @@ export function OnSiteBoard({
                   <ToggleChip label={FLAG_META[mvFlagShown].label} pressed onClick={() => setMvFlag(null)} />
                 )}
                 {tab === "movements" && <MvSortChip sort={mvSort} onChange={setMvSort} />}
+                {tab === "movements" && (
+                  <ToggleChip
+                    label="All scans"
+                    pressed={mvAllOpen}
+                    onClick={() => {
+                      setMvAllOpen((v) => !v);
+                      setMvToggled(new Set());
+                    }}
+                  />
+                )}
                 {tab === "log" && counter && (
                   <ToggleChip label={COUNTER_LABEL[counter]} pressed onClick={() => setCounter(null)} />
                 )}
@@ -832,6 +849,12 @@ export function OnSiteBoard({
               setMvShown(PEOPLE_PER_PAGE);
             }}
             when={when}
+            totals={mvTotals}
+            onJump={(c) => {
+              setCounter(c);
+              setSelectedId(null);
+              setTab("log");
+            }}
           />
           {mvRows.length === 0 ? (
           <Card padding={0}>
@@ -859,6 +882,15 @@ export function OnSiteBoard({
               setPanelDay(logDayShown || null);
               setSelectedId(id);
             }}
+            isOpen={(id) => mvAllOpen !== mvToggled.has(id)}
+            onToggle={(id) =>
+              setMvToggled((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              })
+            }
             onZoom={(v, src) =>
               setViewing({
                 src,

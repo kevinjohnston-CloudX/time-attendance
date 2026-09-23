@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Clock, DoorOpen, UserRoundX } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, Clock, DoorOpen, UserRoundX } from "lucide-react";
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { getOnSiteMovements } from "@/actions/presence.actions";
 import type { PresenceStatus, SiteDay } from "@/lib/presence/types";
@@ -10,8 +10,11 @@ import {
   type MovementFlag,
   type MovementLine,
   type PersonDayView,
+  type ScanTotals,
 } from "@/lib/presence/movements";
-import { STATUS_META, fmtDuration, fmtShift, fmtTime, initialsOf } from "./presence-meta";
+import type { LogCounter } from "./scan-log";
+import { STATUS_META, describeScan, fmtDuration, fmtShift, fmtTime, initialsOf } from "./presence-meta";
+import { iconFor } from "./person-panel";
 import styles from "./on-site.module.css";
 import { ZoomableFace } from "./face";
 
@@ -142,7 +145,12 @@ export function MovementsTable({
   selectedId,
   onOpen,
   onZoom,
+  isOpen,
+  onToggle,
 }: {
+  /** Whether a person's scans are showing, and the way to show or hide them. */
+  isOpen: (id: string) => boolean;
+  onToggle: (id: string) => void;
   views: PersonDayView[];
   data: SiteDay;
   now: number;
@@ -155,16 +163,26 @@ export function MovementsTable({
 }) {
   const isToday = data.day === data.today;
   const tz = data.site.timezone;
+  const axis = useMemo(() => dayAxis(views, data, now), [views, data, now]);
   return (
     <section className={styles.group} aria-label="Movements">
       <div className={styles.mvHead} style={{ top: stickyTop }} aria-hidden="true">
         <span>Employee</span>
-        <span className={styles.mvHeadLines}>
-          <span>Reader</span>
-          <span>Activity</span>
-          <span>From</span>
-          <span>To</span>
-          <span className={styles.mvNum}>Duration</span>
+        <span className="flex min-w-0 flex-col gap-2">
+          <span className={styles.mvAxis}>
+            {axis.ticks.map((t) => (
+              <span key={t} style={{ left: axis.pct(t) }}>
+                {hourLabel(t, tz)}
+              </span>
+            ))}
+          </span>
+          <span className={styles.mvHeadLines}>
+            <span>Reader</span>
+            <span>Activity</span>
+            <span>From</span>
+            <span>To</span>
+            <span className={styles.mvNum}>Duration</span>
+          </span>
         </span>
       </div>
       <ol className={styles.mvList}>
@@ -179,6 +197,9 @@ export function MovementsTable({
             selected={v.person.id === selectedId}
             onOpen={() => onOpen(v.person.id)}
             onZoom={(src) => onZoom(v, src)}
+            axis={axis}
+            scansOpen={isOpen(v.person.id)}
+            onToggleScans={() => onToggle(v.person.id)}
           />
         ))}
       </ol>
@@ -207,7 +228,12 @@ function PersonBlock({
   selected,
   onOpen,
   onZoom,
+  axis,
+  scansOpen,
+  onToggleScans,
 }: {
+  scansOpen: boolean;
+  onToggleScans: () => void;
   view: PersonDayView;
   isToday: boolean;
   hasGate: boolean;
@@ -216,6 +242,7 @@ function PersonBlock({
   selected: boolean;
   onOpen: () => void;
   onZoom: (src: string) => void;
+  axis: Axis;
 }) {
   const p = v.person;
   const status = statusOfDay(v, isToday, hasGate);
@@ -286,6 +313,7 @@ function PersonBlock({
         </span>
 
         <span className={styles.mvLines}>
+          <Ribbon view={v} axis={axis} isToday={isToday} hasGate={hasGate} tz={tz} now={now} />
           {v.lines.length === 0 ? (
             <span className={styles.mvNone}>
               {p.onLeave
@@ -301,9 +329,223 @@ function PersonBlock({
           ) : (
             v.lines.map((l) => <Line key={l.key} line={l} isToday={isToday} tz={tz} />)
           )}
+          {v.scanCount > 0 && (
+            <>
+              <button
+                type="button"
+                className={styles.scanToggle}
+                aria-expanded={scansOpen}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleScans();
+                }}
+              >
+                <ChevronDown className={styles.chevron} aria-hidden="true" />
+                {scansOpen ? "Hide" : "Show"} {v.scanCount.toLocaleString()} {v.scanCount === 1 ? "scan" : "scans"}
+                {v.rejected > 0 && <span className={styles.scanToggleNote}>{v.rejected} not accepted</span>}
+              </button>
+              {scansOpen && <ScanList scans={v.scans} tz={tz} />}
+            </>
+          )}
         </span>
       </div>
     </li>
+  );
+}
+
+/**
+ * A person's scans, every one, in the order they happened, inside their
+ * block: the same words the Scan log uses, so the two read alike.
+ */
+function ScanList({ scans, tz }: { scans: PersonDayView["scans"]; tz: string }) {
+  return (
+    <ol className={styles.scanList} onClick={(e) => e.stopPropagation()}>
+      {scans.map((s) => {
+        const { icon, kind } = iconFor(s);
+        const gate = s.stream === "SECURITY";
+        return (
+          <li key={s.id} className={styles.scanItem}>
+            <span className={styles.scanTime}>{fmtTime(s.at, tz)}</span>
+            <span className={styles.eventIcon} data-kind={s.rejected ? "error" : kind} aria-hidden="true">
+              {icon}
+            </span>
+            <span className="truncate" style={{ font: "var(--weight-medium) 13px/18px var(--font-sans)", color: "var(--text-primary)" }}>
+              {describeScan(s)}
+            </span>
+            <span className={styles.source} data-stream={gate ? "gate" : "clock"}>
+              {gate ? "Security gate" : "Time clock"}
+            </span>
+            <span className={styles.scanDevice}>{s.device ?? ""}</span>
+            <span className={styles.scanNotes}>
+              {s.rejected && (
+                <Badge tone="error" size="sm">
+                  Not accepted
+                </Badge>
+              )}
+              {s.automatic && (
+                <Badge tone="neutral" size="sm">
+                  Added by the system
+                </Badge>
+              )}
+              {s.reread && (
+                <Badge tone="neutral" size="sm">
+                  Read twice
+                </Badge>
+              )}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/* ── The day ribbon ─────────────────────────────────────────────────────── */
+
+const HOUR = 60 * 60 * 1000;
+
+interface Axis {
+  from: number;
+  to: number;
+  ticks: number[];
+  pct: (t: number) => string;
+  width: (a: number, b: number) => string;
+}
+
+/**
+ * One clock for the whole table, so every person's ribbon lines up with the
+ * next and a glance down the page shows who left at noon. It spans whatever
+ * part of the day anybody on the list was scheduled or seen, in whole hours,
+ * never less than eight. On today that runs to now, or further where
+ * somebody is scheduled later, so the rest of their shift shows ahead.
+ */
+function dayAxis(views: PersonDayView[], data: SiteDay, now: number): Axis {
+  const dayStart = Date.parse(data.dayStart);
+  const dayEnd = Date.parse(data.dayEnd);
+  const isToday = data.day === data.today;
+  let lo = Infinity;
+  let hi = -Infinity;
+  const see = (t: number | null | undefined) => {
+    if (t == null || !Number.isFinite(t)) return;
+    lo = Math.min(lo, t);
+    hi = Math.max(hi, t);
+  };
+  for (const v of views) {
+    for (const s of v.scans) see(Date.parse(s.at));
+    if (v.schedule) {
+      see(v.schedule.start);
+      see(Math.min(v.schedule.end, dayEnd));
+    }
+    if (v.lines.some((l) => l.carried)) see(dayStart);
+  }
+  if (isToday) see(Math.min(now, dayEnd));
+  if (!Number.isFinite(lo)) {
+    lo = dayStart + 6 * HOUR;
+    hi = dayStart + 18 * HOUR;
+  }
+  let from = Math.max(dayStart, Math.floor(lo / HOUR) * HOUR);
+  let to = Math.min(dayEnd, Math.ceil(hi / HOUR) * HOUR);
+  if (to - from < 8 * HOUR) {
+    to = Math.min(from + 8 * HOUR, dayEnd);
+    from = Math.max(to - 8 * HOUR, dayStart);
+  }
+  const span = Math.max(to - from, HOUR);
+  const step = span <= 10 * HOUR ? 1 * HOUR : span <= 16 * HOUR ? 2 * HOUR : 3 * HOUR;
+  const ticks: number[] = [];
+  for (let t = Math.ceil(from / step) * step; t <= to; t += step) ticks.push(t);
+  const clamp = (t: number) => Math.min(Math.max(t, from), to);
+  return {
+    from,
+    to,
+    ticks,
+    pct: (t) => `${(((clamp(t) - from) / span) * 100).toFixed(3)}%`,
+    width: (a, b) => `${(((clamp(b) - clamp(a)) / span) * 100).toFixed(3)}%`,
+  };
+}
+
+const hourFmt = new Map<string, Intl.DateTimeFormat>();
+function hourLabel(ms: number, tz: string): string {
+  let f = hourFmt.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: true });
+    hourFmt.set(tz, f);
+  }
+  return f.format(new Date(ms));
+}
+
+/**
+ * A person's day at a glance, above their lines: the gate on top, the time
+ * clock under it, the scheduled hours as an outline behind both, and a tick
+ * for every single scan, so a burst of scans or a scan that changed nothing
+ * is visible without opening anything.
+ */
+function Ribbon({
+  view: v,
+  axis,
+  isToday,
+  hasGate,
+  tz,
+  now,
+}: {
+  view: PersonDayView;
+  axis: Axis;
+  isToday: boolean;
+  hasGate: boolean;
+  tz: string;
+  now: number;
+}) {
+  const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
+  const nowAt = isToday && now > axis.from && now < axis.to ? axis.pct(now) : null;
+  const tick = (s: PersonDayView["scans"][number]) => (
+    <span
+      key={s.id}
+      className={styles.rbTick}
+      data-kind={s.rejected ? "error" : s.automatic ? "system" : undefined}
+      style={{ left: axis.pct(Date.parse(s.at)) }}
+      title={`${time(Date.parse(s.at))} ${s.stream === "SECURITY" ? "security gate" : "time clock"}${
+        s.rejected ? ", not accepted" : s.automatic ? ", added by the system" : ""
+      }`}
+    />
+  );
+  return (
+    <span className={styles.rb} data-single={hasGate ? undefined : "true"} aria-hidden="true">
+      {v.schedule && (
+        <span
+          className={styles.rbSched}
+          style={{ left: axis.pct(v.schedule.start), width: axis.width(v.schedule.start, v.schedule.end) }}
+          title={`Scheduled ${time(v.schedule.start)} to ${time(v.schedule.end)}`}
+        />
+      )}
+      {hasGate && (
+        <span className={styles.rbTrack} data-lane="gate">
+          {v.lanes.gate.map((g) => (
+            <span
+              key={g.start}
+              className={styles.rbSeg}
+              data-kind="inside"
+              style={{ left: axis.pct(g.start), width: axis.width(g.start, g.end) }}
+              title={`Inside ${time(g.start)} to ${g.open ? (isToday ? "now" : "the end of the day") : time(g.end)}`}
+            />
+          ))}
+          {v.scans.filter((s) => s.stream === "SECURITY").map(tick)}
+        </span>
+      )}
+      <span className={styles.rbTrack} data-lane="clock">
+        {v.lanes.clock.map((c) => (
+          <span
+            key={c.start}
+            className={styles.rbSeg}
+            data-kind={c.kind === "WORK" ? "work" : "meal"}
+            style={{ left: axis.pct(c.start), width: axis.width(c.start, c.end) }}
+            title={`${c.kind === "WORK" ? "On the clock" : c.kind === "MEAL" ? "Meal" : "Break"} ${time(c.start)} to ${
+              c.open ? (isToday ? "now" : "the end of the day") : time(c.end)
+            }`}
+          />
+        ))}
+        {v.scans.filter((s) => s.stream === "TIME_CLOCK").map(tick)}
+      </span>
+      {nowAt && <span className={styles.rbNow} style={{ left: nowAt }} />}
+    </span>
   );
 }
 
@@ -529,6 +771,8 @@ export function MovementsCounts({
   flag,
   onPick,
   when,
+  totals,
+  onJump,
 }: {
   views: PersonDayView[];
   counts: Record<MovementFlag, number>;
@@ -537,6 +781,9 @@ export function MovementsCounts({
   flag: MovementFlag | null;
   onPick: (f: MovementFlag | null) => void;
   when: string;
+  totals: ScanTotals;
+  /** Opens the Scan log, narrowed to the number clicked. */
+  onJump: (c: LogCounter | null) => void;
 }) {
   const available = flagsFor(isToday, hasGate);
   const first = available.filter((f) => (isToday ? NOW_FLAGS : PAST_FLAGS).includes(f));
@@ -574,7 +821,58 @@ export function MovementsCounts({
           ))}
         </div>
       </div>
+
+      {/* Every scan behind the table, counted the way the Scan log counts
+          them, and each number a way into that log. */}
+      <div className={styles.scanTotals}>
+        <span className={styles.scanTotalsLabel}>Scans {when}</span>
+        <TotalLink figure={totals.all} label={totals.all === 1 ? "scan" : "scans"} onClick={() => onJump(null)} strong />
+        {hasGate && (
+          <span className={styles.scanTotalsGroup}>
+            <DoorOpen className="h-3.5 w-3.5" aria-hidden="true" />
+            <TotalLink figure={totals.gate} label="security gate" onClick={() => onJump("gate")} />
+            <TotalLink figure={totals.gateIn} label="in" onClick={() => onJump("gate-in")} quiet />
+            <TotalLink figure={totals.gateOut} label="out" onClick={() => onJump("gate-out")} quiet />
+          </span>
+        )}
+        <span className={styles.scanTotalsGroup}>
+          <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+          <TotalLink figure={totals.clock} label="time clock" onClick={() => onJump("clock")} />
+          <TotalLink figure={totals.clockIn} label="in" onClick={() => onJump("clock-in")} quiet />
+          <TotalLink figure={totals.clockOut} label="out" onClick={() => onJump("clock-out")} quiet />
+          {totals.rejected > 0 && (
+            <TotalLink figure={totals.rejected} label="not accepted" onClick={() => onJump("rejected")} quiet />
+          )}
+        </span>
+      </div>
     </section>
+  );
+}
+
+function TotalLink({
+  figure,
+  label,
+  onClick,
+  strong,
+  quiet,
+}: {
+  figure: number;
+  label: string;
+  onClick: () => void;
+  strong?: boolean;
+  quiet?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className={styles.totalLink}
+      data-strong={strong ? "true" : undefined}
+      data-quiet={quiet ? "true" : undefined}
+      onClick={onClick}
+      title={`Open the Scan log for these ${label === "in" || label === "out" ? `scans ${label}` : `${label} scans`}`}
+    >
+      <span className={styles.totalLinkFigure}>{figure.toLocaleString()}</span> {label}
+    </button>
   );
 }
 

@@ -81,6 +81,8 @@ export interface NowState {
 
 export interface PersonDayView {
   person: DayPerson;
+  /** Every scan that day, oldest first, exactly as recorded. */
+  scans: PresenceScan[];
   lanes: DayLanes;
   lines: MovementLine[];
   flags: MovementFlag[];
@@ -236,6 +238,7 @@ export function buildPersonDay(
 
   return {
     person,
+    scans,
     lanes,
     lines,
     flags,
@@ -250,6 +253,51 @@ export function buildPersonDay(
     lastOut,
     lastActivity: last,
   };
+}
+
+/**
+ * In or out, the way the Scan log counts it: a time clock scan by what the
+ * timecard made of it when it said, otherwise by the tablet's direction.
+ */
+export function scanDirection(s: PresenceScan): "IN" | "OUT" | "UNKNOWN" {
+  if (s.stream === "TIME_CLOCK") {
+    if (s.punchType === "CLOCK_IN" || s.punchType === "MEAL_END" || s.punchType === "BREAK_END") return "IN";
+    if (s.punchType === "CLOCK_OUT" || s.punchType === "MEAL_START" || s.punchType === "BREAK_START") return "OUT";
+  }
+  return s.direction;
+}
+
+export interface ScanTotals {
+  all: number;
+  gate: number;
+  gateIn: number;
+  gateOut: number;
+  clock: number;
+  clockIn: number;
+  clockOut: number;
+  rejected: number;
+}
+
+/** Every scan the people in view made, counted the way the Scan log counts them. */
+export function scanTotals(views: PersonDayView[]): ScanTotals {
+  const t: ScanTotals = { all: 0, gate: 0, gateIn: 0, gateOut: 0, clock: 0, clockIn: 0, clockOut: 0, rejected: 0 };
+  for (const v of views) {
+    for (const s of v.scans) {
+      t.all += 1;
+      const d = scanDirection(s);
+      if (s.stream === "SECURITY") {
+        t.gate += 1;
+        if (d === "IN") t.gateIn += 1;
+        else if (d === "OUT") t.gateOut += 1;
+      } else {
+        t.clock += 1;
+        if (d === "IN") t.clockIn += 1;
+        else if (d === "OUT") t.clockOut += 1;
+        if (s.rejected) t.rejected += 1;
+      }
+    }
+  }
+  return t;
 }
 
 export function buildSiteDay(day: SiteDay, now: number): PersonDayView[] {

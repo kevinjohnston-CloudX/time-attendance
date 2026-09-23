@@ -1760,3 +1760,280 @@
     animation: none;
   }
 }
+
+/* ── Scan totals under the Movements counters ───────────────────── */
+
+.scanTotals {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  padding: 11px 20px;
+  border-top: 1px solid var(--stroke-divider);
+  background: var(--surface-secondary);
+}
+
+.scanTotalsLabel {
+  font: var(--weight-semibold) 11px/16px var(--font-sans);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.scanTotalsGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px 10px;
+  flex-wrap: wrap;
+  color: var(--icon-tertiary);
+}
+
+.totalLink {
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  font: var(--weight-medium) 13px/18px var(--font-sans);
+  color: var(--text-secondary);
+}
+
+.totalLink:hover {
+  background: var(--fill-hover);
+  color: var(--text-primary);
+}
+
+.totalLink:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 1px;
+}
+
+.totalLinkFigure {
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.totalLink[data-strong="true"] .totalLinkFigure {
+  font-size: 15px;
+}
+
+.totalLink[data-quiet="true"],
+.totalLink[data-quiet="true"] .totalLinkFigure {
+  color: var(--text-tertiary);
+  font-weight: var(--weight-medium);
+}
+
+/* ── Day ribbon ─────────────────────────────────────────────────── */
+
+.mvAxis {
+  position: relative;
+  height: 14px;
+  font: var(--weight-medium) 11px/14px var(--font-sans);
+  letter-spacing: 0;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.mvAxis > span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+/* Two thin tracks and the ticks over them. Pointer events stay on, so the
+   stretches and ticks explain themselves on hover. */
+.rb {
+  position: relative;
+  display: block;
+  height: 22px;
+  margin: 2px 0 6px;
+}
+
+.rb[data-single="true"] {
+  height: 12px;
+}
+
+.rbTrack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 7px;
+  border-radius: 3px;
+  background: var(--ta-track);
+}
+
+.rbTrack[data-lane="gate"] {
+  top: 3px;
+}
+
+.rbTrack[data-lane="clock"] {
+  top: 12px;
+}
+
+.rb[data-single="true"] .rbTrack[data-lane="clock"] {
+  top: 3px;
+}
+
+.rbSeg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  border-radius: 3px;
+}
+
+.rbSeg[data-kind="inside"] {
+  background: var(--text-accent);
+}
+
+.rbSeg[data-kind="work"] {
+  background: var(--fill-success);
+}
+
+.rbSeg[data-kind="meal"] {
+  background: var(--fill-warning);
+}
+
+.rbTick {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-primary);
+  box-shadow: 0 0 0 1px var(--surface-card);
+}
+
+.rbTick[data-kind="error"] {
+  background: var(--fill-error);
+}
+
+.rbTick[data-kind="system"] {
+  background: var(--stroke-default);
+}
+
+.rbSched {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border: 1px dashed var(--stroke-default);
+  border-radius: 5px;
+}
+
+.rbNow {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text-accent);
+  border-radius: 1px;
+  opacity: 0.7;
+}
+
+@media (max-width: 760px) {
+  .mvAxis {
+    display: none;
+  }
+}
+
+/* ── A person's scans, inline ───────────────────────────────────── */
+
+.scanToggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 3px 8px 3px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  font: var(--weight-medium) 12px/16px var(--font-sans);
+  color: var(--text-accent);
+}
+
+.scanToggle:hover {
+  background: var(--fill-hover);
+}
+
+.scanToggle:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 1px;
+}
+
+.scanToggle .chevron {
+  margin-left: 0;
+  width: 14px;
+  height: 14px;
+  color: inherit;
+}
+
+.scanToggleNote {
+  color: var(--text-error);
+}
+
+.scanList {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 4px 10px;
+  border-radius: var(--radius-m);
+  background: var(--surface-secondary);
+  cursor: default;
+}
+
+.scanItem {
+  display: grid;
+  grid-template-columns: 64px 28px minmax(120px, 1fr) auto minmax(0, 150px) auto;
+  align-items: center;
+  gap: 0 10px;
+  padding: 5px 0;
+}
+
+.scanItem + .scanItem {
+  border-top: 1px solid var(--stroke-divider);
+}
+
+.scanTime {
+  font: var(--weight-semibold) 12px/16px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.scanDevice {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--type-body2);
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.scanNotes {
+  display: inline-flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 760px) {
+  .scanItem {
+    grid-template-columns: 56px 28px minmax(0, 1fr);
+    row-gap: 2px;
+  }
+  .scanItem > .source,
+  .scanDevice,
+  .scanNotes {
+    grid-column: 3;
+  }
+}
