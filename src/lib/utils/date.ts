@@ -269,3 +269,23 @@ export function nextMidnightInTz(utcDate: Date, timezone: string): Date {
 
   return new Date(2 * nextDayAsIfUtc.getTime() - localEquivalentMs);
 }
+
+/**
+ * An "HH:mm" stored time, written the way every screen in this product writes
+ * times: on a 12 hour clock, with AM or PM.
+ *
+ * <p>Shifts, schedules and punch fields all store 24 hour strings because that
+ * is what the clocks and the database speak. Nobody reading a timecard does,
+ * so nothing reaches a screen in that form.
+ */
+export function formatTimeOfDay(hhmm: string | null | undefined): string | null {
+  if (!hhmm) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!m) return hhmm;
+
+  const hours24 = Number(m[1]);
+  if (hours24 > 23 || Number(m[2]) > 59) return hhmm;
+  const suffix = hours24 >= 12 ? "PM" : "AM";
+  const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+  return `${hours12}:${m[2]} ${suffix}`;
+}

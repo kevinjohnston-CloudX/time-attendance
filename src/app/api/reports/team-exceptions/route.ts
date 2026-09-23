@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { format } from "date-fns";
 import { getTeamExceptions } from "@/actions/supervisor.actions";
+import { formatTimeOfDay } from "@/lib/utils/date";
 
 /**
  * The open exceptions, as a spreadsheet.
@@ -88,10 +89,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         emp.department?.name ?? "",
         EXCEPTION_LABEL[ex.exceptionType] ?? ex.exceptionType,
         format(ex.occurredAt, "yyyy-MM-dd"),
-        ex.scheduled.start ?? "",
-        ex.scheduled.end ?? "",
-        ex.recorded.in ?? "",
-        ex.recorded.out ?? "",
+        // On a 12 hour clock, like every screen. A spreadsheet is read by
+        // the same people.
+        formatTimeOfDay(ex.scheduled.start) ?? "",
+        formatTimeOfDay(ex.scheduled.end) ?? "",
+        formatTimeOfDay(ex.recorded.in) ?? "",
+        formatTimeOfDay(ex.recorded.out) ?? "",
         format(ex.timesheet.payPeriod.startDate, "yyyy-MM-dd"),
         format(ex.timesheet.payPeriod.endDate, "yyyy-MM-dd"),
         ex.description,

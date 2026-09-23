@@ -10,6 +10,7 @@ import {
   resolveException,
 } from "@/actions/supervisor.actions";
 import { Button, Input, LinkButton, Select, Textarea } from "@/components/ui";
+import { formatTimeOfDay } from "@/lib/utils/date";
 import type { ExceptionRow } from "@/components/supervisor/exceptions-screen";
 
 /**
@@ -36,15 +37,18 @@ const SEVERITY_RULE = ["var(--fill-error)", "var(--fill-warning)", "var(--stroke
 
 type Punch = { id: string; punchType: PunchType; roundedTime: Date };
 
+type Meridiem = "AM" | "PM";
+
 /**
- * A time of day, written the way this screen shows them.
+ * A typed time of day, read against the AM or PM the field is set to.
  *
- * <p>The card states scheduled and recorded times on a 24 hour clock, so the
- * field under them reads one too, and 8:30 is the morning. An explicit am or
- * pm is still accepted, because somebody will type it, and a punch entered
- * twelve hours out is a paycheck that is wrong rather than a typo.
+ * <p>Nothing here is inferred. A punch entered twelve hours out is a wrong
+ * paycheck, not a typo somebody notices, so the half of the day is an explicit
+ * control rather than a guess at what 8:30 meant. A time typed on a 24 hour
+ * clock is taken as written, because it cannot mean anything else, and an
+ * explicit am or pm in the text wins over the control.
  */
-function parseTimeOfDay(input: string): { hours: number; minutes: number } | null {
+function parseTimeOfDay(input: string, meridiem: Meridiem): { hours: number; minutes: number } | null {
   const s = input.trim().toLowerCase().replace(/\s+/g, "");
   const m = /^(\d{1,2})(?::?(\d{2}))?(am|pm)?$/.exec(s);
   if (!m) return null;
@@ -52,15 +56,26 @@ function parseTimeOfDay(input: string): { hours: number; minutes: number } | nul
   let hours = Number(m[1]);
   const minutes = m[2] ? Number(m[2]) : 0;
   if (minutes > 59) return null;
+  const typed: Meridiem | null = m[3] ? (m[3] === "pm" ? "PM" : "AM") : null;
 
-  if (m[3]) {
-    if (hours < 1 || hours > 12) return null;
-    if (m[3] === "pm" && hours !== 12) hours += 12;
-    if (m[3] === "am" && hours === 12) hours = 0;
-  } else if (hours > 23) {
-    return null;
+  if (hours === 0 || (hours >= 13 && hours <= 23)) {
+    // A 24 hour time. Saying "13:00 am" is a contradiction, not a correction.
+    return typed ? null : { hours, minutes };
   }
+  if (hours > 12) return null;
+
+  const half = typed ?? meridiem;
+  if (hours === 12) hours = half === "AM" ? 0 : 12;
+  else if (half === "PM") hours += 12;
   return { hours, minutes };
+}
+
+/** An "HH:mm" stored time, split into what the field shows and which half of the day it is. */
+function splitTime(hhmm: string | null): { text: string; meridiem: Meridiem } {
+  const pretty = formatTimeOfDay(hhmm);
+  const m = pretty ? /^(\d{1,2}:\d{2}) (AM|PM)$/.exec(pretty) : null;
+  if (!m) return { text: "", meridiem: "AM" };
+  return { text: m[1], meridiem: m[2] as Meridiem };
 }
 
 function at(day: Date, time: { hours: number; minutes: number }): string {
@@ -71,9 +86,11 @@ function at(day: Date, time: { hours: number; minutes: number }): string {
 
 /** What was recorded, in words, because half a range needs saying rather than drawing. */
 function recordedLabel(recorded: { in: string | null; out: string | null }): string {
-  if (recorded.in && recorded.out) return `${recorded.in} to ${recorded.out}`;
-  if (recorded.in) return `${recorded.in}, no clock out`;
-  if (recorded.out) return `${recorded.out}, no clock in`;
+  const start = formatTimeOfDay(recorded.in);
+  const end = formatTimeOfDay(recorded.out);
+  if (start && end) return `${start} to ${end}`;
+  if (start) return `${start}, no clock out`;
+  if (end) return `${end}, no clock in`;
   return "No punches";
 }
 
@@ -101,9 +118,12 @@ export function ExceptionCard({
   const [loadingPunches, setLoadingPunches] = useState(false);
 
   const [inValue, setInValue] = useState("");
+  const [inHalf, setInHalf] = useState<Meridiem>("AM");
   const [outValue, setOutValue] = useState("");
+  const [outHalf, setOutHalf] = useState<Meridiem>("PM");
   const [punchId, setPunchId] = useState("");
   const [newTime, setNewTime] = useState("");
+  const [newHalf, setNewHalf] = useState<Meridiem>("AM");
   const [reasonId, setReasonId] = useState(reasonCodes[0]?.id ?? "");
   const [detail, setDetail] = useState("");
   const [note, setNote] = useState("");
@@ -142,12 +162,19 @@ export function ExceptionCard({
       const rows = result.success && result.data ? result.data : [];
       setPunches(rows);
       setMode("punch");
-      setInValue(row.recorded.in ?? "");
-      setOutValue(row.recorded.out ?? "");
+      // Prefilled from what is on the timecard, and where there is nothing,
+      // from the half of the day that side of a shift usually falls in.
+      const start = splitTime(row.recorded.in);
+      const end = splitTime(row.recorded.out);
+      setInValue(start.text);
+      setInHalf(start.text ? start.meridiem : splitTime(row.scheduled.start).meridiem);
+      setOutValue(end.text);
+      setOutHalf(end.text ? end.meridiem : (splitTime(row.scheduled.end).meridiem || "PM"));
       const first = rows[0];
       if (first) {
         setPunchId(first.id);
-        setNewTime(format(first.roundedTime, "HH:mm"));
+        setNewTime(format(first.roundedTime, "h:mm"));
+        setNewHalf(format(first.roundedTime, "a").toUpperCase() === "PM" ? "PM" : "AM");
       }
     } finally {
       setLoadingPunches(false);
@@ -178,9 +205,14 @@ export function ExceptionCard({
       setError(null);
 
       if (addsPunches) {
-        const sides: { value: string; existing: Punch | null; punchType: PunchType }[] = [
-          { value: inValue, existing: existingIn, punchType: "CLOCK_IN" },
-          { value: outValue, existing: existingOut, punchType: "CLOCK_OUT" },
+        const sides: {
+          value: string;
+          half: Meridiem;
+          existing: Punch | null;
+          punchType: PunchType;
+        }[] = [
+          { value: inValue, half: inHalf, existing: existingIn, punchType: "CLOCK_IN" },
+          { value: outValue, half: outHalf, existing: existingOut, punchType: "CLOCK_OUT" },
         ];
 
         let wrote = false;
@@ -189,12 +221,19 @@ export function ExceptionCard({
           if (!raw) continue;
           // Unchanged from what is already on the timecard, so there is
           // nothing to write and nothing to put in the audit log.
-          if (side.existing && format(side.existing.roundedTime, "HH:mm") === raw) continue;
-
-          const parsed = parseTimeOfDay(raw);
+          const parsed = parseTimeOfDay(raw, side.half);
           if (!parsed) {
-            setError(`${PUNCH_LABEL[side.punchType]} is not a time. Try 08:00 or 1630.`);
+            setError(`${PUNCH_LABEL[side.punchType]} is not a time. Try 8:00 or 830.`);
             return;
+          }
+          // Unchanged from what is already on the timecard, so there is
+          // nothing to write and nothing to put in the audit log.
+          if (
+            side.existing &&
+            side.existing.roundedTime.getHours() === parsed.hours &&
+            side.existing.roundedTime.getMinutes() === parsed.minutes
+          ) {
+            continue;
           }
 
           const result = side.existing
@@ -224,9 +263,9 @@ export function ExceptionCard({
           return;
         }
       } else {
-        const parsed = parseTimeOfDay(newTime);
+        const parsed = parseTimeOfDay(newTime, newHalf);
         if (!punchId || !parsed) {
-          setError("Pick a punch and a time. Try 08:00 or 1630.");
+          setError("Pick a punch and a time. Try 8:00 or 830.");
           return;
         }
         const result = await correctPunchAndResolve({
@@ -262,7 +301,7 @@ export function ExceptionCard({
 
   const scheduled =
     row.scheduled.start && row.scheduled.end
-      ? `${row.scheduled.start} to ${row.scheduled.end}`
+      ? `${formatTimeOfDay(row.scheduled.start)} to ${formatTimeOfDay(row.scheduled.end)}`
       : "Not scheduled";
 
   const facts: { label: string; value: string; color: string }[] = [
@@ -415,14 +454,18 @@ export function ExceptionCard({
                 <TimeField
                   label="Clock In"
                   value={inValue}
-                  placeholder={row.scheduled.start ?? "08:00"}
+                  meridiem={inHalf}
+                  placeholder={formatTimeOfDay(row.scheduled.start)?.replace(/ [AP]M$/, "") ?? "8:00"}
                   onChange={setInValue}
+                  onMeridiemChange={setInHalf}
                 />
                 <TimeField
                   label="Clock Out"
                   value={outValue}
-                  placeholder={row.scheduled.end ?? "16:30"}
+                  meridiem={outHalf}
+                  placeholder={formatTimeOfDay(row.scheduled.end)?.replace(/ [AP]M$/, "") ?? "4:30"}
                   onChange={setOutValue}
+                  onMeridiemChange={setOutHalf}
                 />
               </>
             ) : (
@@ -440,7 +483,7 @@ export function ExceptionCard({
                   >
                     {(punches ?? []).map((p) => (
                       <option key={p.id} value={p.id}>
-                        {PUNCH_LABEL[p.punchType] ?? p.punchType} {format(p.roundedTime, "MMM d, HH:mm")}
+                        {PUNCH_LABEL[p.punchType] ?? p.punchType} {format(p.roundedTime, "MMM d, h:mm a")}
                       </option>
                     ))}
                   </Select>
@@ -448,8 +491,10 @@ export function ExceptionCard({
                 <TimeField
                   label="New time"
                   value={newTime}
-                  placeholder={row.scheduled.start ?? "08:00"}
+                  meridiem={newHalf}
+                  placeholder={formatTimeOfDay(row.scheduled.start)?.replace(/ [AP]M$/, "") ?? "8:00"}
                   onChange={setNewTime}
+                  onMeridiemChange={setNewHalf}
                 />
               </>
             )}
@@ -481,12 +526,12 @@ export function ExceptionCard({
             </Field>
 
             {reasonCodes.length > 0 && (
-              <Field label="Detail (optional)">
+              <Field label="Detail">
                 <Input
                   aria-label="Detail"
                   value={detail}
                   onChange={(e) => setDetail(e.target.value)}
-                  placeholder="Anything the code does not say"
+                  placeholder="Anything the code does not say (optional)"
                 />
               </Field>
             )}
@@ -508,9 +553,9 @@ export function ExceptionCard({
           className="flex flex-col gap-3 px-4 py-3.5"
           style={{ background: "var(--surface-tertiary)" }}
         >
-          <Field label="Why this is alright">
+          <Field label="Resolution note">
             <Textarea
-              aria-label="Why this is alright"
+              aria-label="Resolution note"
               rows={2}
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -548,27 +593,48 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+/**
+ * A time, with the half of the day beside it rather than inferred from it.
+ *
+ * <p>The toggle is a control and not a hint: this writes to a timecard, and
+ * the difference between 8:00 AM and 8:00 PM is a full shift of pay.
+ */
 function TimeField({
   label,
   value,
+  meridiem,
   placeholder,
   onChange,
+  onMeridiemChange,
 }: {
   label: string;
   value: string;
+  meridiem: Meridiem;
   placeholder: string;
   onChange: (value: string) => void;
+  onMeridiemChange: (value: Meridiem) => void;
 }) {
   return (
     <Field label={label}>
-      <Input
-        aria-label={label}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        inputMode="numeric"
-        className="tabular"
-      />
+      <span className="flex items-center gap-1.5">
+        <Input
+          aria-label={label}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          inputMode="numeric"
+          className="tabular"
+          style={{ flex: 1, minWidth: 0 }}
+        />
+        <Button
+          hierarchy="secondary"
+          size="sm"
+          aria-label={`${label} is ${meridiem}`}
+          onClick={() => onMeridiemChange(meridiem === "AM" ? "PM" : "AM")}
+        >
+          {meridiem}
+        </Button>
+      </span>
     </Field>
   );
 }

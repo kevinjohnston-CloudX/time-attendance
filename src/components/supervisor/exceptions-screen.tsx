@@ -76,11 +76,18 @@ const SEVERITY_RULE = [
   "var(--stroke-secondary)",
 ];
 
-/** The heading above each block, in the handoff's own words. */
+/**
+ * The heading above each block.
+ *
+ * <p>The handoff called these "Needs a fix", "To check" and "To review". The
+ * three standard severity names say the same thing in the words every other
+ * business tool uses, and they are what a supervisor already knows from the
+ * rest of their software. The quiet line beside each one carries the meaning.
+ */
 const SEVERITY_GROUP = [
-  { label: "Needs a fix", hint: "Hours stay wrong until these are corrected" },
-  { label: "To check", hint: "A rule was broken. Confirm or correct it." },
-  { label: "To review", hint: "Logged for the record" },
+  { label: "Critical", hint: "Hours stay wrong until these are corrected" },
+  { label: "Warning", hint: "A rule was broken. Confirm or correct it." },
+  { label: "Informational", hint: "Logged for the record" },
 ];
 
 type Props = {
@@ -366,7 +373,7 @@ export function ExceptionsScreen({
               thing to go when the bar condenses. */}
           {!condensed && (
             <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-              Punch problems to fix before the period closes
+              Missing punches and rule breaks to resolve before close
             </p>
           )}
           <div className="ml-auto flex items-center gap-2">
@@ -392,8 +399,8 @@ export function ExceptionsScreen({
           style={{ borderBottom: "1px solid var(--stroke-secondary)" }}
         >
           <SearchInput
-            aria-label="Find an employee"
-            placeholder="Find an employee"
+            aria-label="Search employees"
+            placeholder="Search employees"
             value={query}
             onValueChange={setQuery}
           />
