@@ -403,7 +403,20 @@ export function MovementsSkeleton() {
     <span className={styles.skeleton} style={{ width: w, height: h, borderRadius: r }} />
   );
   return (
-    <div className={styles.group} aria-busy="true" aria-label="Loading movements">
+    <div className="flex flex-col gap-4" aria-busy="true" aria-label="Loading movements">
+    <div className={`${styles.headcount} ${styles.headcountEven}`}>
+      {[5, 9].map((n) => (
+        <div key={n} className={styles.side}>
+          {bar(n === 5 ? 220 : 140, n === 5 ? 44 : 20)}
+          <div className={`${styles.counters} ${styles.flagCounters}`}>
+            {Array.from({ length: n }, (_, i) => (
+              <span key={i}>{bar("100%", 58)}</span>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+    <div className={styles.group}>
       <div className={styles.mvHead}>{bar(120, 12)}</div>
       {Array.from({ length: 5 }, (_, i) => (
         <div key={i} className="flex gap-4 border-b px-4 py-4" style={{ borderColor: "var(--stroke-divider)" }}>
@@ -420,5 +433,211 @@ export function MovementsSkeleton() {
         </div>
       ))}
     </div>
+    </div>
   );
+}
+
+/* ── Filters ────────────────────────────────────────────────────────────── */
+
+type Tone = "warning" | "error" | "neutral" | "info" | "purple";
+
+/** Names for each filter, standard and short, with the one line that explains it. */
+export const FLAG_META: Record<MovementFlag, { label: string; hint: string; tone: Tone }> = {
+  INSIDE_OFF_CLOCK: {
+    label: "Inside, not clocked in",
+    hint: "Through the security gate and not on the clock. On a past day, 15 minutes or more of it",
+    tone: "purple",
+  },
+  NO_GATE_SCAN: {
+    label: "Clocked in, no gate scan",
+    hint: "On the clock while the security gate has them outside. On a past day, 15 minutes or more of it",
+    tone: "warning",
+  },
+  SCHEDULED_OUTSIDE: {
+    label: "Scheduled now, outside",
+    hint: "Inside their scheduled hours right now and not in the building",
+    tone: "warning",
+  },
+  ON_BREAK: { label: "On meal or break", hint: "Clocked out for a meal or a rest break right now", tone: "warning" },
+  NOT_ARRIVED: { label: "Not arrived", hint: "Scheduled and not seen at either reader", tone: "neutral" },
+  LATE: { label: "Late", hint: "First scan more than 5 minutes after the scheduled start", tone: "warning" },
+  LEFT_EARLY: { label: "Left early", hint: "Last scan out more than 5 minutes before the scheduled end", tone: "warning" },
+  MULTIPLE_EXITS: { label: "Out more than once", hint: "Left through the security gate two or more times", tone: "warning" },
+  LONG_BREAK: { label: `Break over ${LONG_BREAK_MIN} min`, hint: `A meal or break that ran past ${LONG_BREAK_MIN} minutes`, tone: "warning" },
+  EXIT_NO_ENTRY: { label: "Exit, no entry scan", hint: "Left through the security gate without being seen coming in", tone: "error" },
+  MARKED_OUT: { label: "Marked out overnight", hint: "Never scanned out, so the system closed their day", tone: "neutral" },
+  REJECTED: { label: "Scans not accepted", hint: "Time clock scans the timecard refused", tone: "neutral" },
+  INACTIVE: { label: "Inactive record", hint: "Scanning on a record that is inactive or terminated", tone: "error" },
+  ON_LEAVE: { label: "On leave", hint: "Approved time off that day", tone: "info" },
+};
+
+const NOW_FLAGS: MovementFlag[] = ["INSIDE_OFF_CLOCK", "NO_GATE_SCAN", "SCHEDULED_OUTSIDE", "ON_BREAK", "NOT_ARRIVED"];
+const PAST_FLAGS: MovementFlag[] = ["INSIDE_OFF_CLOCK", "NO_GATE_SCAN", "NOT_ARRIVED"];
+const DAY_FLAGS: MovementFlag[] = [
+  "LATE",
+  "LEFT_EARLY",
+  "MULTIPLE_EXITS",
+  "LONG_BREAK",
+  "EXIT_NO_ENTRY",
+  "MARKED_OUT",
+  "REJECTED",
+  "INACTIVE",
+  "ON_LEAVE",
+];
+
+/** Which filters make sense for this day and this site. */
+export function flagsFor(isToday: boolean, hasGate: boolean): MovementFlag[] {
+  const first = (isToday ? NOW_FLAGS : PAST_FLAGS).filter(
+    (f) => hasGate || (f !== "INSIDE_OFF_CLOCK" && f !== "NO_GATE_SCAN"),
+  );
+  const rest = DAY_FLAGS.filter((f) => hasGate || (f !== "MULTIPLE_EXITS" && f !== "EXIT_NO_ENTRY"));
+  return [...first, ...rest];
+}
+
+export function parseFlag(raw: string | null | undefined): MovementFlag | null {
+  return raw && raw in FLAG_META ? (raw as MovementFlag) : null;
+}
+
+const TONE_COLOR: Record<Tone, string> = {
+  warning: "var(--fill-warning)",
+  error: "var(--fill-error)",
+  neutral: "var(--stroke-default)",
+  info: "var(--text-accent)",
+  purple: "var(--ps-offclock)",
+};
+
+/**
+ * The counts above the table, drawn like the People headcount: a big number,
+ * then counters that are also the filters. The left side is where people are
+ * right now (on a past day, how the day went between the readers); the right
+ * side is everything else worth a look that day.
+ */
+export function MovementsCounts({
+  views,
+  counts,
+  isToday,
+  hasGate,
+  flag,
+  onPick,
+  when,
+}: {
+  views: PersonDayView[];
+  counts: Record<MovementFlag, number>;
+  isToday: boolean;
+  hasGate: boolean;
+  flag: MovementFlag | null;
+  onPick: (f: MovementFlag | null) => void;
+  when: string;
+}) {
+  const available = flagsFor(isToday, hasGate);
+  const first = available.filter((f) => (isToday ? NOW_FLAGS : PAST_FLAGS).includes(f));
+  const rest = available.filter((f) => DAY_FLAGS.includes(f));
+  const insideNow = views.filter((v) => (hasGate ? v.now.inside : v.now.clock !== "OUT")).length;
+  const seen = views.filter((v) => v.scanCount > 0).length;
+  const pick = (f: MovementFlag) => onPick(flag === f ? null : f);
+
+  return (
+    <section className={`${styles.headcount} ${styles.headcountEven}`} aria-label="Filters">
+      <div className={styles.side}>
+        <button type="button" className={styles.total} aria-pressed={flag === null} onClick={() => onPick(null)}>
+          <span className={styles.totalFigure}>{(isToday ? insideNow : seen).toLocaleString()}</span>
+          <span className={styles.totalLabel}>
+            {isToday
+              ? hasGate
+                ? `${insideNow === 1 ? "person" : "people"} in the building`
+                : `${insideNow === 1 ? "person" : "people"} on the clock`
+              : `${seen === 1 ? "person" : "people"} seen ${when}`}
+          </span>
+        </button>
+        <div className={`${styles.counters} ${styles.flagCounters}`}>
+          {first.map((f) => (
+            <FlagCounter key={f} flag={f} count={counts[f]} active={flag === f} onClick={() => pick(f)} />
+          ))}
+        </div>
+      </div>
+      <div className={styles.side}>
+        <span style={{ font: "var(--type-h4)", color: "var(--text-secondary)" }}>
+          {isToday ? "During the day" : `During the day, ${when}`}
+        </span>
+        <div className={`${styles.counters} ${styles.flagCounters}`}>
+          {rest.map((f) => (
+            <FlagCounter key={f} flag={f} count={counts[f]} active={flag === f} onClick={() => pick(f)} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FlagCounter({
+  flag,
+  count,
+  active,
+  onClick,
+}: {
+  flag: MovementFlag;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const meta = FLAG_META[flag];
+  return (
+    <button
+      type="button"
+      className={styles.counter}
+      aria-pressed={active}
+      data-empty={count === 0 ? "true" : undefined}
+      onClick={onClick}
+      title={meta.hint}
+    >
+      <span className={styles.counterFigure}>{count.toLocaleString()}</span>
+      <span className={styles.counterLabel}>
+        <span className={styles.dot} style={{ background: TONE_COLOR[meta.tone] }} aria-hidden="true" />
+        <span>{meta.label}</span>
+      </span>
+    </button>
+  );
+}
+
+/* ── Sorting ────────────────────────────────────────────────────────────── */
+
+export type MvSort = "name" | "department" | "arrival" | "latest" | "inside" | "flags";
+
+export const MV_SORTS: { key: MvSort; label: string }[] = [
+  { key: "name", label: "Name" },
+  { key: "department", label: "Department" },
+  { key: "arrival", label: "Arrival time" },
+  { key: "latest", label: "Latest activity" },
+  { key: "inside", label: "Time inside" },
+  { key: "flags", label: "Most flags" },
+];
+
+export function parseMvSort(raw: string | null | undefined): MvSort {
+  return MV_SORTS.some((s) => s.key === raw) ? (raw as MvSort) : "name";
+}
+
+/**
+ * The order of the table. Anything missing (never arrived, no department)
+ * goes last, and ties fall back to the name, so the order never jumps about
+ * between refreshes.
+ */
+export function compareDays(sort: MvSort): (a: PersonDayView, b: PersonDayView) => number {
+  const name = (a: PersonDayView, b: PersonDayView) => a.person.name.localeCompare(b.person.name);
+  const nullsLast = (x: number | null, y: number | null, dir: 1 | -1) =>
+    x === null && y === null ? 0 : x === null ? 1 : y === null ? -1 : dir * (x - y);
+  switch (sort) {
+    case "department":
+      return (a, b) =>
+        (a.person.department ?? "￿").localeCompare(b.person.department ?? "￿") || name(a, b);
+    case "arrival":
+      return (a, b) => nullsLast(a.firstIn, b.firstIn, 1) || name(a, b);
+    case "latest":
+      return (a, b) => nullsLast(a.lastActivity, b.lastActivity, -1) || name(a, b);
+    case "inside":
+      return (a, b) => b.lanes.totals.insideMin - a.lanes.totals.insideMin || name(a, b);
+    case "flags":
+      return (a, b) => b.flags.filter((f) => f !== "ON_LEAVE").length - a.flags.filter((f) => f !== "ON_LEAVE").length || name(a, b);
+    default:
+      return name;
+  }
 }

@@ -1637,3 +1637,19 @@
     grid-area: num;
   }
 }
+
+/* The Movements filters say more than the board's statuses, so their labels
+   may take two lines rather than being cut off. Every counter in a row
+   stretches to the tallest, so the grid stays even. */
+.flagCounters {
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+}
+
+.flagCounters .counterLabel {
+  align-items: flex-start;
+  white-space: normal;
+}
+
+.flagCounters .counterLabel .dot {
+  margin-top: 5px;
+}

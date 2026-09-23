@@ -48,13 +48,21 @@ import {
 } from "./presence-meta";
 import { PersonPanel } from "./person-panel";
 import { clampDay, dayLabel, recentDays } from "@/lib/presence/days";
-import { buildSiteDay } from "@/lib/presence/movements";
+import { buildSiteDay, countFlags } from "@/lib/presence/movements";
 import {
+  FLAG_META,
+  MV_SORTS,
+  MovementsCounts,
   MovementsEmpty,
   MovementsSkeleton,
   MovementsTable,
   PEOPLE_PER_PAGE,
+  compareDays,
+  flagsFor,
+  parseFlag,
+  parseMvSort,
   useSiteDay,
+  type MvSort,
 } from "./movements-view";
 import {
   ScanLogCounts,
@@ -120,6 +128,8 @@ export function OnSiteBoard({
     tab: string | null;
     scans: string | null;
     day: string | null;
+    flag: string | null;
+    order: string | null;
   };
 }) {
   const [siteId, setSiteId] = useState(initialSiteId);
@@ -140,6 +150,8 @@ export function OnSiteBoard({
     initialFilters.tab === "log" ? "log" : initialFilters.tab === "people" ? "people" : "movements",
   );
   const [mvShown, setMvShown] = useState(PEOPLE_PER_PAGE);
+  const [mvFlag, setMvFlag] = useState(parseFlag(initialFilters.flag));
+  const [mvSort, setMvSort] = useState<MvSort>(parseMvSort(initialFilters.order));
   const [counter, setCounter] = useState<LogCounter | null>(parseCounter(initialFilters.scans));
   // A past day for the log, or "" for today. The panel opens on the day of
   // the row it was opened from.
@@ -176,11 +188,13 @@ export function OnSiteBoard({
     if (tab !== "movements") qs.set("tab", tab);
     if (tab === "log" && counter) qs.set("scans", counter);
     if (tab !== "people" && logDay) qs.set("day", logDay);
+    if (tab === "movements" && mvFlag) qs.set("flag", mvFlag);
+    if (tab === "movements" && mvSort !== "name") qs.set("order", mvSort);
     const next = `${window.location.pathname}?${qs.toString()}`;
     if (next !== `${window.location.pathname}${window.location.search}`) {
       window.history.replaceState(window.history.state, "", next);
     }
-  }, [siteId, status, dept, shift, view, sort, byDept, tab, counter, logDay]);
+  }, [siteId, status, dept, shift, view, sort, byDept, tab, counter, logDay, mvFlag, mvSort]);
 
   // ── Remember who was where, to mark who just moved ──────────────────────
   const absorb = useCallback((next: PresenceBoard, sameSite: boolean) => {
@@ -398,19 +412,30 @@ export function OnSiteBoard({
     () => (siteDay.data ? buildSiteDay(siteDay.data, now) : []),
     [siteDay.data, now],
   );
+  // Department and shift narrow the counts as well as the table, as on the
+  // board; the search is for finding one person and narrows only the table.
+  const mvScoped = useMemo(
+    () => dayViews.filter((v) => (!dept || v.person.departmentId === dept) && (!shift || v.person.shiftId === shift)),
+    [dayViews, dept, shift],
+  );
+  const mvCounts = useMemo(() => countFlags(mvScoped), [mvScoped]);
+  const mvIsToday = !!siteDay.data && siteDay.data.day === siteDay.data.today;
+  const mvHasGate = !!siteDay.data?.site.hasGateData;
+  // A filter that does not apply to this day (on a meal right now, for
+  // yesterday) is set aside rather than answering with an empty table.
+  const mvFlagShown = mvFlag && siteDay.data && flagsFor(mvIsToday, mvHasGate).includes(mvFlag) ? mvFlag : null;
   const mvRows = useMemo(() => {
     const needleMv = query.trim().toLowerCase();
-    return dayViews
+    return mvScoped
       .filter(
         (v) =>
-          (!dept || v.person.departmentId === dept) &&
-          (!shift || v.person.shiftId === shift) &&
+          (!mvFlagShown || v.flags.includes(mvFlagShown)) &&
           (!needleMv ||
             v.person.name.toLowerCase().includes(needleMv) ||
             v.person.employeeCode.toLowerCase().includes(needleMv)),
       )
-      .sort((a, b) => a.person.name.localeCompare(b.person.name));
-  }, [dayViews, dept, shift, query]);
+      .sort(compareDays(mvSort));
+  }, [mvScoped, mvFlagShown, query, mvSort]);
   const logSummary = log.page?.summary ?? null;
   const logTotal = logSummary ? counterTotal(logSummary, counter) : 0;
 
@@ -614,6 +639,9 @@ export function OnSiteBoard({
                     </strong>{" "}
                     {mvRows.length === 1 ? "person" : "people"} {when}
                   </span>
+                  {mvFlagShown && (
+                    <ToggleChip label={FLAG_META[mvFlagShown].label} pressed onClick={() => setMvFlag(null)} />
+                  )}
                 </span>
               )}
               {condensed && board && tab === "log" && (
@@ -728,6 +756,10 @@ export function OnSiteBoard({
                     }}
                   />
                 )}
+                {tab === "movements" && mvFlagShown && (
+                  <ToggleChip label={FLAG_META[mvFlagShown].label} pressed onClick={() => setMvFlag(null)} />
+                )}
+                {tab === "movements" && <MvSortChip sort={mvSort} onChange={setMvSort} />}
                 {tab === "log" && counter && (
                   <ToggleChip label={COUNTER_LABEL[counter]} pressed onClick={() => setCounter(null)} />
                 )}
@@ -784,15 +816,30 @@ export function OnSiteBoard({
           </Card>
         ) : switching || !board || !siteDay.data ? (
           <MovementsSkeleton />
-        ) : mvRows.length === 0 ? (
+        ) : (
+          <>
+          <MovementsCounts
+            views={mvScoped}
+            counts={mvCounts}
+            isToday={mvIsToday}
+            hasGate={mvHasGate}
+            flag={mvFlagShown}
+            onPick={(f) => {
+              setMvFlag(f);
+              setMvShown(PEOPLE_PER_PAGE);
+            }}
+            when={when}
+          />
+          {mvRows.length === 0 ? (
           <Card padding={0}>
             <MovementsEmpty
               when={when}
-              filtered={!!dept || !!shift || !!query.trim()}
+              filtered={!!dept || !!shift || !!query.trim() || !!mvFlagShown}
               onClear={() => {
                 setQuery("");
                 setDept("");
                 setShift("");
+                setMvFlag(null);
               }}
             />
           </Card>
@@ -810,6 +857,8 @@ export function OnSiteBoard({
               setSelectedId(id);
             }}
           />
+          )}
+          </>
         )
       ) : tab === "log" ? (
         switching || !board || log.failure === "access" || !log.page || !logSummary ? (
@@ -1410,6 +1459,29 @@ function SortChip({ sort, onChange }: { sort: Sort; onChange: (s: Sort) => void 
         className={styles.pillSelect}
       >
         {options.map((o) => (
+          <option key={o.key} value={o.key}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
+/** The Movements sort, as the same pill the People sort uses. */
+function MvSortChip({ sort, onChange }: { sort: MvSort; onChange: (s: MvSort) => void }) {
+  return (
+    <span className={`ta-chip ${styles.pill}`}>
+      <span>Sort</span>
+      <span className={styles.pillValue}>{MV_SORTS.find((o) => o.key === sort)?.label}</span>
+      <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+      <select
+        aria-label="Sort people by"
+        value={sort}
+        onChange={(e) => onChange(e.target.value as MvSort)}
+        className={styles.pillSelect}
+      >
+        {MV_SORTS.map((o) => (
           <option key={o.key} value={o.key}>
             {o.label}
           </option>
