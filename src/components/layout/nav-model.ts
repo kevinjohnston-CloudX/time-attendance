@@ -24,6 +24,7 @@ import {
   CircleUser,
   Banknote,
   Cog,
+  DoorOpen,
 } from "lucide-react";
 
 /**
@@ -111,6 +112,7 @@ export const SECTIONS: NavSection[] = [
     prefixes: ["/supervisor"],
     items: [
       { label: "Team Overview", href: "/supervisor", icon: Users, permission: "PUNCH_VIEW_TEAM" },
+      { label: "On Site", href: "/supervisor/on-site", icon: DoorOpen, permission: "PRESENCE_VIEW_ANY" },
       { label: "Timesheets", href: "/supervisor/timesheets", icon: ClipboardCheck, permission: "PUNCH_VIEW_TEAM" },
       { label: "Exceptions", href: "/supervisor/exceptions", icon: AlertTriangle, permission: "PUNCH_VIEW_TEAM" },
       { label: "Leave Requests", href: "/supervisor/leave", icon: CalendarClock, permission: "PUNCH_VIEW_TEAM" },

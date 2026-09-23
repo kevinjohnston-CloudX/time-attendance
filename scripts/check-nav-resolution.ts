@@ -45,6 +45,9 @@ check("/payroll/timecards", activeHref("/payroll/timecards", ALL_HREFS), "/payro
 // A child route with no destination of its own falls back to its parent.
 check("/time/timesheet/abc123", activeHref("/time/timesheet/abc123", ALL_HREFS), "/time/timesheet");
 check("/supervisor/timesheets/x", activeHref("/supervisor/timesheets/x", ALL_HREFS), "/supervisor/timesheets");
+// A Team page that is not a supervisor queue still lights its own row, not
+// Team Overview's, even though /supervisor prefixes it.
+check("/supervisor/on-site", activeHref("/supervisor/on-site", ALL_HREFS), "/supervisor/on-site");
 
 // The slash guard: a sibling that merely starts with the same characters is
 // not a child, and must not light up the parent.
@@ -64,6 +67,7 @@ const where = (p: string) => {
 // Destinations name their section and their page.
 check("/dashboard", where("/dashboard"), "Me > Dashboard");
 check("/supervisor/exceptions", where("/supervisor/exceptions"), "Team > Exceptions");
+check("/supervisor/on-site", where("/supervisor/on-site"), "Team > On Site");
 check("/payroll/timecards", where("/payroll/timecards"), "Payroll > Timecards");
 check("/admin/audit", where("/admin/audit"), "Administration > Audit Log");
 
