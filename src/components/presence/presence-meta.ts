@@ -209,3 +209,94 @@ export function comparePeople(a: PresencePerson, b: PresencePerson): number {
   }
   return a.name.localeCompare(b.name);
 }
+
+/* ── Sorting ─────────────────────────────────────────────────────────────── */
+
+export type SortKey = "default" | "name" | "department" | "arrival" | "since" | "scheduled" | "status";
+export type SortDir = "asc" | "desc";
+export interface Sort {
+  key: SortKey;
+  dir: SortDir;
+}
+
+/**
+ * The sort menu, in the order it lists them. "Recommended" is the order each
+ * group already had: names inside, longest meal first, latest arrival first.
+ */
+export const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: "default", label: "Recommended" },
+  { key: "name", label: "Name" },
+  { key: "department", label: "Department" },
+  { key: "arrival", label: "Arrival time" },
+  { key: "since", label: "Time in status" },
+  { key: "scheduled", label: "Scheduled start" },
+];
+
+export const SORT_LABEL: Record<SortKey, string> = {
+  default: "Recommended",
+  name: "Name",
+  department: "Department",
+  arrival: "Arrival time",
+  since: "Time in status",
+  scheduled: "Scheduled start",
+  status: "Status",
+};
+
+const STATUS_ORDER: PresenceStatus[] = [...INSIDE_STATUSES, ...AWAY_STATUSES];
+
+/** In the address bar as "name" or "name-desc", so a sorted board can be shared. */
+export function parseSort(raw: string | null | undefined): Sort {
+  const [key, dir] = (raw ?? "").split("-");
+  if (key && key in SORT_LABEL) return { key: key as SortKey, dir: dir === "desc" ? "desc" : "asc" };
+  return { key: "default", dir: "asc" };
+}
+
+export function serializeSort(s: Sort): string | null {
+  if (s.key === "default") return null;
+  return s.dir === "desc" ? `${s.key}-desc` : s.key;
+}
+
+/**
+ * One comparison for every surface. Anything missing (no department, never
+ * arrived, not scheduled) goes last whichever way the column is sorted, so a
+ * reversed list does not open on a wall of blanks. Ties fall back to name.
+ */
+export function compareBy(sort: Sort, a: PresencePerson, b: PresencePerson): number {
+  if (sort.key === "default") return comparePeople(a, b);
+  const flip = sort.dir === "desc" ? -1 : 1;
+  const text = (x: string | null, y: string | null) => {
+    if (!x && !y) return 0;
+    if (!x) return 1;
+    if (!y) return -1;
+    return flip * x.localeCompare(y);
+  };
+  let r = 0;
+  switch (sort.key) {
+    case "name":
+      r = flip * a.name.localeCompare(b.name);
+      break;
+    case "department":
+      r = text(a.department, b.department);
+      break;
+    case "arrival":
+      r = text(a.firstInToday, b.firstInToday);
+      break;
+    case "since":
+      // Ascending is the oldest start first: whoever has been in this state longest.
+      r = text(a.since, b.since);
+      break;
+    case "scheduled":
+      r = text(a.scheduledStart, b.scheduledStart);
+      break;
+    case "status":
+      r = flip * (STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status));
+      break;
+  }
+  return r || a.name.localeCompare(b.name);
+}
+
+/** People matching a search, by name or employee code. */
+export function matchesSearch(p: PresencePerson, needle: string): boolean {
+  if (!needle) return true;
+  return p.name.toLowerCase().includes(needle) || p.employeeCode.toLowerCase().includes(needle);
+}

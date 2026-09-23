@@ -207,23 +207,69 @@
 
 /* ── Groups and tiles ───────────────────────────────────────────── */
 
+/* clip, not hidden: hidden makes the group a scroll container, and a sticky
+   heading inside one never sticks. clip still rounds the corners. */
 .group {
   background: var(--surface-card);
   border-radius: var(--radius-l);
   box-shadow: var(--shadow-card);
-  overflow: hidden;
+  overflow: clip;
 }
 
+/* The heading pins just under the top bar while its group scrolls past. */
 .groupHead {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
+  position: sticky;
+  z-index: 10;
+  margin: 0;
+  background: var(--surface-card);
   border-bottom: 1px solid var(--stroke-divider);
 }
 
+.group[data-folded="true"] .groupHead {
+  border-bottom-color: transparent;
+}
+
+.groupToggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.groupToggle:hover .chevron,
+.deptHead:hover .chevron {
+  color: var(--icon-default);
+}
+
+.groupToggle:focus-visible,
+.deptHead:focus-visible,
+.sortHead:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: -2px;
+  border-radius: var(--radius-s);
+}
+
+.chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  color: var(--icon-tertiary);
+  transition: transform 160ms ease;
+}
+
+[aria-expanded="false"] > .chevron {
+  transform: rotate(-90deg);
+}
+
 .groupTitle {
-  margin: 0;
   font: var(--type-h4);
   color: var(--text-primary);
   white-space: nowrap;
@@ -247,6 +293,47 @@
   white-space: nowrap;
 }
 
+/* ── Department blocks inside a group ───────────────────────────── */
+
+.dept + .dept {
+  border-top: 1px solid var(--stroke-divider);
+}
+
+.deptHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 16px 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: var(--weight-semibold) 13px/18px var(--font-sans);
+  color: var(--text-secondary);
+}
+
+.dept[data-folded="true"] .deptHead {
+  padding-bottom: 12px;
+}
+
+.deptHead .chevron {
+  margin-left: 0;
+  width: 14px;
+  height: 14px;
+}
+
+.deptCount {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-medium);
+  color: var(--text-tertiary);
+}
+
+.dept .grid {
+  padding-top: 10px;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(152px, 1fr));
@@ -260,6 +347,11 @@
     gap: 10px;
     padding: 12px;
   }
+}
+
+.gridCompact {
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 8px;
 }
 
 .tile {
@@ -384,6 +476,59 @@
   box-shadow: 0 0 0 1px var(--stroke-secondary);
 }
 
+/* Compact: the face and the name, at half the size. */
+.tileCompact {
+  border-radius: 10px;
+}
+
+.tileCompact .photo {
+  aspect-ratio: 1 / 1;
+}
+
+.tileCompact .initials {
+  font-size: 22px;
+}
+
+.tileCompact .stripe {
+  height: 4px;
+}
+
+.tileCompact .tileBody {
+  padding: 6px 8px 8px;
+}
+
+.tileCompact .name {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tileCompact .since {
+  margin-top: 2px;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.tileCompact .since .dot {
+  width: 6px;
+  height: 6px;
+}
+
+.flagDot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--text-secondary);
+  box-shadow: 0 0 0 2px var(--surface-card);
+}
+
+.flagDot[data-tone="error"] {
+  background: var(--fill-error);
+}
+
 .tileBody {
   display: flex;
   flex-direction: column;
@@ -438,7 +583,71 @@
   flex-wrap: wrap;
 }
 
+/* ── Pills in the find row ───────────────────────────────────────── */
+
+/* The same pill as the design system's filter chips. */
+.pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  white-space: nowrap;
+  border-radius: 999px;
+  border: 1px solid var(--stroke-secondary);
+  background: var(--surface-card);
+  font: var(--type-body2);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.pill[data-applied="true"] {
+  border-color: var(--stroke-accent);
+  background: var(--surface-info);
+  color: var(--text-accent);
+}
+
+.pillValue {
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.pillSelect {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.pill:focus-within {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 1px;
+}
+
 /* ── List view ──────────────────────────────────────────────────── */
+
+.sortHead {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sortHead:hover,
+.sortHead[data-active="true"] {
+  color: var(--text-primary);
+}
 
 .row {
   cursor: pointer;
@@ -672,7 +881,8 @@
   .skeleton {
     animation: none;
   }
-  .barPart {
+  .barPart,
+  .chevron {
     transition: none;
   }
 }

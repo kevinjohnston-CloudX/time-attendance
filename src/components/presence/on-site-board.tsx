@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Building2, SearchX, UserRoundX } from "lucide-react";
+import { ArrowDown, ArrowUp, Building2, ChevronDown, SearchX, UserRoundX } from "lucide-react";
 import {
   Badge,
   Button,
@@ -25,8 +25,15 @@ import type { PresenceBoard, PresencePerson, PresenceStatus } from "@/lib/presen
 import {
   AWAY_STATUSES,
   INSIDE_STATUSES,
+  SORT_LABEL,
+  SORT_OPTIONS,
   STATUS_META,
-  comparePeople,
+  compareBy,
+  matchesSearch,
+  parseSort,
+  serializeSort,
+  type Sort,
+  type SortKey,
   fmtDuration,
   fmtShift,
   fmtTime,
@@ -58,10 +65,12 @@ const POLL_MS = 30_000;
 /** Past this without a good answer, the board says it is not updating. */
 const STALE_MS = 90_000;
 const TILES_PER_GROUP = 60;
+/** Compact cards are half the size, so a screenful holds twice as many. */
+const TILES_PER_GROUP_COMPACT = 120;
 const ROWS_PER_PAGE = 200;
 
 type StatusFilter = "inside" | PresenceStatus;
-type View = "photos" | "list";
+type View = "photos" | "compact" | "list";
 
 const ALL_STATUSES = [...INSIDE_STATUSES, ...AWAY_STATUSES];
 
@@ -78,7 +87,14 @@ export function OnSiteBoard({
   sites: { id: string; name: string }[];
   initialSiteId: string | null;
   initialBoard: PresenceBoard | null;
-  initialFilters: { status: string | null; dept: string | null; shift: string | null; view: View };
+  initialFilters: {
+    status: string | null;
+    dept: string | null;
+    shift: string | null;
+    view: View;
+    sort: string | null;
+    group: string | null;
+  };
 }) {
   const [siteId, setSiteId] = useState(initialSiteId);
   const [board, setBoard] = useState(initialBoard);
@@ -90,6 +106,9 @@ export function OnSiteBoard({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, number>>({});
   const [rowsShown, setRowsShown] = useState(ROWS_PER_PAGE);
+  const [sort, setSort] = useState<Sort>(parseSort(initialFilters.sort));
+  const [byDept, setByDept] = useState(initialFilters.group === "dept");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const [lastOk, setLastOk] = useState(() => (initialBoard ? Date.now() : 0));
   const [failure, setFailure] = useState<string | null>(null);
@@ -112,12 +131,15 @@ export function OnSiteBoard({
     if (status !== "inside") qs.set("status", status);
     if (dept) qs.set("dept", dept);
     if (shift) qs.set("shift", shift);
-    if (view === "list") qs.set("view", "list");
+    if (view !== "photos") qs.set("view", view);
+    const sortParam = serializeSort(sort);
+    if (sortParam) qs.set("sort", sortParam);
+    if (byDept) qs.set("group", "dept");
     const next = `${window.location.pathname}?${qs.toString()}`;
     if (next !== `${window.location.pathname}${window.location.search}`) {
       window.history.replaceState(window.history.state, "", next);
     }
-  }, [siteId, status, dept, shift, view]);
+  }, [siteId, status, dept, shift, view, sort, byDept]);
 
   // ── Remember who was where, to mark who just moved ──────────────────────
   const absorb = useCallback((next: PresenceBoard, sameSite: boolean) => {
@@ -230,6 +252,20 @@ export function OnSiteBoard({
     };
   }, []);
 
+  // Section headings pin just under the bar, so they need its live height: it
+  // shrinks on scroll and wraps on a narrow window.
+  const [barHeight, setBarHeight] = useState(0);
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el || typeof ResizeObserver !== "function") return;
+    const ro = new ResizeObserver(() => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      setBarHeight((prev) => (prev === h ? prev : h));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // The clock the durations and "updated 12 seconds ago" read from.
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 5_000);
@@ -276,23 +312,42 @@ export function OnSiteBoard({
   const scheduled = scoped.filter((p) => p.scheduledStart);
   const scheduledArrived = scheduled.filter((p) => p.status !== "NOT_ARRIVED" && p.status !== "ON_LEAVE").length;
 
+  // A search looks at everybody at the site, whichever group is open. The
+  // question behind it is "is this person here", and answering "no match"
+  // because they happen to have left is the wrong answer to it.
   const needle = query.trim().toLowerCase();
+  const searching = needle.length > 0;
   const matches = useMemo(
     () =>
-      scoped.filter((p) => {
-        if (status === "inside" ? !INSIDE_STATUSES.includes(p.status) : p.status !== status) return false;
-        if (!needle) return true;
-        return p.name.toLowerCase().includes(needle) || p.employeeCode.toLowerCase().includes(needle);
-      }),
-    [scoped, status, needle],
+      scoped.filter((p) =>
+        searching
+          ? matchesSearch(p, needle)
+          : status === "inside"
+            ? INSIDE_STATUSES.includes(p.status)
+            : p.status === status,
+      ),
+    [scoped, status, needle, searching],
   );
 
   const groups = useMemo(() => {
-    const order = status === "inside" ? INSIDE_STATUSES : [status];
+    const order = searching ? ALL_STATUSES : status === "inside" ? INSIDE_STATUSES : [status];
     return order
-      .map((s) => ({ status: s, people: matches.filter((p) => p.status === s).sort(comparePeople) }))
+      .map((s) => ({ status: s, people: matches.filter((p) => p.status === s).sort((a, b) => compareBy(sort, a, b)) }))
       .filter((g) => g.people.length > 0);
-  }, [matches, status]);
+  }, [matches, status, searching, sort]);
+
+  // The list is one table, so a column sort orders all of it rather than
+  // sorting inside each status the way the cards do.
+  const listRows = useMemo(
+    () => (sort.key === "default" ? groups.flatMap((g) => g.people) : [...matches].sort((a, b) => compareBy(sort, a, b))),
+    [groups, matches, sort],
+  );
+
+  function pickStatus(next: StatusFilter) {
+    setQuery("");
+    setExpanded({});
+    setStatus(next);
+  }
 
   const selected = selectedId ? people.find((p) => p.id === selectedId) ?? null : null;
   const isFiltered = !!dept || !!shift || !!needle;
@@ -304,9 +359,8 @@ export function OnSiteBoard({
 
   function exportCsv() {
     if (!board) return;
-    const rows = [...matches].sort(
-      (a, b) => ALL_STATUSES.indexOf(a.status) - ALL_STATUSES.indexOf(b.status) || comparePeople(a, b),
-    );
+    // The export follows what is on screen, in the order it is on screen.
+    const rows = listRows;
     const header = ["Name", "Employee code", "Department", "Shift", "Status", "Since", "First in today", "Scheduled"];
     const lines = [header, ...rows.map((p) => [
       p.name,
@@ -424,7 +478,7 @@ export function OnSiteBoard({
                     </strong>{" "}
                     in the building
                   </span>
-                  {status !== "inside" && (
+                  {!searching && status !== "inside" && (
                     <button
                       type="button"
                       className="ta-chip inline-flex items-center gap-1.5 whitespace-nowrap"
@@ -487,13 +541,20 @@ export function OnSiteBoard({
                   className="tabular ml-auto whitespace-nowrap"
                   style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
                 >
-                  {matches.length.toLocaleString()} {matches.length === 1 ? "person" : "people"}
+                  {searching
+                    ? `${matches.length.toLocaleString()} ${matches.length === 1 ? "match" : "matches"} in every group`
+                    : `${matches.length.toLocaleString()} ${matches.length === 1 ? "person" : "people"}`}
                 </span>
+                <SortChip sort={sort} onChange={setSort} />
+                {view !== "list" && departments.length > 1 && (
+                  <ToggleChip label="By department" pressed={byDept} onClick={() => setByDept((v) => !v)} />
+                )}
                 <SegmentedControl
                   ariaLabel="Layout"
                   size="sm"
                   items={[
                     { value: "photos", label: "Photos" },
+                    { value: "compact", label: "Compact" },
                     { value: "list", label: "List" },
                   ]}
                   value={view}
@@ -521,8 +582,8 @@ export function OnSiteBoard({
               <button
                 type="button"
                 className={styles.total}
-                aria-pressed={status === "inside"}
-                onClick={() => setStatus("inside")}
+                aria-pressed={!searching && status === "inside"}
+                onClick={() => pickStatus("inside")}
               >
                 <span className={styles.totalFigure}>{insideTotal.toLocaleString()}</span>
                 <span className={styles.totalLabel}>
@@ -549,7 +610,7 @@ export function OnSiteBoard({
 
               <div className={styles.counters}>
                 {INSIDE_STATUSES.filter((s) => s !== "NO_GATE_SCAN" || board.site.hasGateData).map((s) => (
-                  <Counter key={s} status={s} count={counts[s]} active={status === s} onClick={() => setStatus(status === s ? "inside" : s)} />
+                  <Counter key={s} status={s} count={counts[s]} active={!searching && status === s} onClick={() => pickStatus(status === s ? "inside" : s)} />
                 ))}
               </div>
 
@@ -570,7 +631,7 @@ export function OnSiteBoard({
               <span style={{ font: "var(--type-h4)", color: "var(--text-secondary)" }}>Not in the building</span>
               <div className={styles.counters}>
                 {AWAY_STATUSES.map((s) => (
-                  <Counter key={s} status={s} count={counts[s]} active={status === s} onClick={() => setStatus(status === s ? "inside" : s)} />
+                  <Counter key={s} status={s} count={counts[s]} active={!searching && status === s} onClick={() => pickStatus(status === s ? "inside" : s)} />
                 ))}
               </div>
               <p style={{ margin: "auto 0 0", font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
@@ -589,7 +650,9 @@ export function OnSiteBoard({
           ) : view === "list" ? (
             <Card padding={0}>
               <PeopleTable
-                people={groups.flatMap((g) => g.people)}
+                people={listRows}
+                sort={sort}
+                onSort={setSort}
                 tz={tz}
                 now={now}
                 shown={rowsShown}
@@ -599,47 +662,34 @@ export function OnSiteBoard({
               />
             </Card>
           ) : (
-            groups.map((g) => {
-              const limit = expanded[g.status] ?? TILES_PER_GROUP;
-              const meta = STATUS_META[g.status];
-              return (
-                <section key={g.status} className={styles.group} aria-label={meta.heading}>
-                  <header className={styles.groupHead}>
-                    <span className={styles.dot} style={{ background: meta.color }} aria-hidden="true" />
-                    <h2 className={styles.groupTitle}>{meta.heading}</h2>
-                    <span className={styles.groupCount}>{g.people.length.toLocaleString()}</span>
-                    <span className={styles.groupHint}>{meta.hint}</span>
-                  </header>
-                  <div className={styles.grid}>
-                    {g.people.slice(0, limit).map((p) => (
-                      <PersonTile
-                        key={p.id}
-                        person={p}
-                        tz={tz}
-                        now={now}
-                        selected={p.id === selectedId}
-                        changed={changed.has(p.id)}
-                        onOpen={() => setSelectedId(p.id)}
-                      />
-                    ))}
-                  </div>
-                  {g.people.length > limit && (
-                    <div className={styles.more}>
-                      <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                        Showing {limit.toLocaleString()} of {g.people.length.toLocaleString()}
-                      </span>
-                      <Button
-                        hierarchy="secondary"
-                        size="sm"
-                        onClick={() => setExpanded((e) => ({ ...e, [g.status]: g.people.length }))}
-                      >
-                        Show all {g.people.length.toLocaleString()}
-                      </Button>
-                    </div>
-                  )}
-                </section>
-              );
-            })
+            groups.map((g) => (
+              <Section
+                key={g.status}
+                status={g.status}
+                people={g.people}
+                byDept={byDept}
+                compact={view === "compact"}
+                stickyTop={barHeight}
+                // A search result is never hidden behind a collapsed heading.
+                collapsed={collapsed}
+                ignoreCollapsed={searching}
+                onToggle={(key) => setCollapsed((c) => ({ ...c, [key]: !c[key] }))}
+                expanded={expanded}
+                onShowAll={(key, n) => setExpanded((e) => ({ ...e, [key]: n }))}
+                renderTile={(p) => (
+                  <PersonTile
+                    key={p.id}
+                    person={p}
+                    tz={tz}
+                    now={now}
+                    compact={view === "compact"}
+                    selected={p.id === selectedId}
+                    changed={changed.has(p.id)}
+                    onOpen={() => setSelectedId(p.id)}
+                  />
+                )}
+              />
+            ))
           )}
         </>
       )}
@@ -725,6 +775,7 @@ function PersonTile({
   person: p,
   tz,
   now,
+  compact,
   selected,
   changed,
   onOpen,
@@ -732,6 +783,7 @@ function PersonTile({
   person: PresencePerson;
   tz: string;
   now: number;
+  compact: boolean;
   selected: boolean;
   changed: boolean;
   onOpen: () => void;
@@ -741,12 +793,22 @@ function PersonTile({
   const line =
     p.status === "ON_MEAL" && mins !== null
       ? `${p.breakKind === "BREAK" ? "Break" : "Meal"} for ${fmtDuration(mins)}`
-      : sinceLine(p, tz, new Date(now).toISOString());
+      : compact && p.lateMinutes !== null
+        ? `${fmtDuration(p.lateMinutes)} late`
+        : sinceLine(p, tz, new Date(now).toISOString());
+
+  // Compact keeps the face, the name and the one line that matters, and turns
+  // the flags into a single corner mark with the reason in its tooltip. The
+  // panel still says everything.
+  const flags = [
+    p.outsideOnMeal ? "Outside the building" : null,
+    p.inactive ? "Inactive record" : null,
+  ].filter(Boolean) as string[];
 
   return (
     <button
       type="button"
-      className={styles.tile}
+      className={`${styles.tile} ${compact ? styles.tileCompact : ""}`}
       aria-pressed={selected}
       data-changed={changed ? "true" : undefined}
       onClick={onOpen}
@@ -762,6 +824,16 @@ function PersonTile({
           data-dim={p.status === "NO_GATE_SCAN" || p.outsideOnMeal ? "true" : undefined}
           style={{ background: meta.color }}
         />
+        {compact ? (
+          flags.length > 0 && (
+            <span
+              className={styles.flagDot}
+              data-tone={p.inactive ? "error" : "neutral"}
+              title={flags.join(". ")}
+              aria-label={flags.join(". ")}
+            />
+          )
+        ) : (
         <span className={styles.flag}>
           {p.outsideOnMeal && (
             <span className={styles.flagChip} data-tone="neutral">
@@ -779,13 +851,14 @@ function PersonTile({
             </span>
           )}
         </span>
+        )}
       </span>
       <span className={styles.tileBody}>
         <span className={styles.name}>{p.name}</span>
-        <span className={styles.meta}>{p.department ?? p.employeeCode}</span>
+        {!compact && <span className={styles.meta}>{p.department ?? p.employeeCode}</span>}
         <span className={styles.since}>
           <span className={styles.dot} style={{ background: meta.color }} aria-hidden="true" />
-          <span>{line}</span>
+          <span className={compact && p.lateMinutes !== null ? styles.late : undefined}>{line}</span>
         </span>
       </span>
     </button>
@@ -794,6 +867,8 @@ function PersonTile({
 
 function PeopleTable({
   people,
+  sort,
+  onSort,
   tz,
   now,
   shown,
@@ -802,6 +877,8 @@ function PeopleTable({
   selectedId,
 }: {
   people: PresencePerson[];
+  sort: Sort;
+  onSort: (s: Sort) => void;
   tz: string;
   now: number;
   shown: number;
@@ -814,13 +891,13 @@ function PeopleTable({
       <Table>
         <THead>
           <TR>
-            <TH>Employee</TH>
-            <TH>Department</TH>
-            <TH>Status</TH>
-            <TH>Since</TH>
+            <SortTH label="Employee" sortKey="name" sort={sort} onSort={onSort} />
+            <SortTH label="Department" sortKey="department" sort={sort} onSort={onSort} />
+            <SortTH label="Status" sortKey="status" sort={sort} onSort={onSort} />
+            <SortTH label="Since" sortKey="since" sort={sort} onSort={onSort} />
             <TH numeric>For</TH>
-            <TH>First In</TH>
-            <TH>Scheduled</TH>
+            <SortTH label="First In" sortKey="arrival" sort={sort} onSort={onSort} />
+            <SortTH label="Scheduled" sortKey="scheduled" sort={sort} onSort={onSort} />
           </TR>
         </THead>
         <TBody>
@@ -901,6 +978,224 @@ function PeopleTable({
   );
 }
 
+/**
+ * A column heading you can sort by. Clicking the sorted column again reverses
+ * it; the arrow says which way it runs, and aria-sort says the same to a
+ * screen reader.
+ */
+function SortTH({
+  label,
+  sortKey,
+  sort,
+  onSort,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: Sort;
+  onSort: (s: Sort) => void;
+}) {
+  const active = sort.key === sortKey;
+  const Arrow = sort.dir === "desc" ? ArrowDown : ArrowUp;
+  return (
+    <TH aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+      <button
+        type="button"
+        className={styles.sortHead}
+        data-active={active ? "true" : undefined}
+        onClick={() => onSort(active ? { key: sortKey, dir: sort.dir === "asc" ? "desc" : "asc" } : { key: sortKey, dir: "asc" })}
+      >
+        {label}
+        {active && <Arrow className="h-3 w-3" aria-hidden="true" />}
+      </button>
+    </TH>
+  );
+}
+
+/**
+ * The sort menu, as the same pill the filters use. A real select under the
+ * pill, like FilterSelectChip, so the keyboard and the phone list come free.
+ * It always has a value, so it never shows a clear button.
+ */
+function SortChip({ sort, onChange }: { sort: Sort; onChange: (s: Sort) => void }) {
+  const options = sort.key === "status" ? [...SORT_OPTIONS, { key: "status" as SortKey, label: "Status" }] : SORT_OPTIONS;
+  return (
+    <span className={`ta-chip ${styles.pill}`}>
+      <span>Sort</span>
+      <span className={styles.pillValue}>
+        {SORT_LABEL[sort.key]}
+        {sort.key !== "default" && sort.dir === "desc" ? ", reversed" : ""}
+      </span>
+      <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+      <select
+        aria-label="Sort people by"
+        value={sort.key}
+        onChange={(e) => onChange({ key: e.target.value as SortKey, dir: "asc" })}
+        className={styles.pillSelect}
+      >
+        {options.map((o) => (
+          <option key={o.key} value={o.key}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
+/** An on/off pill in the filter row, drawn like an applied filter when on. */
+function ToggleChip({ label, pressed, onClick }: { label: string; pressed: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className={`ta-chip ${styles.pill}`}
+      data-applied={pressed ? "true" : undefined}
+      aria-pressed={pressed}
+      onClick={onClick}
+    >
+      {pressed && (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+      )}
+      {label}
+    </button>
+  );
+}
+
+/**
+ * One status group on the board: a heading that pins under the top bar and
+ * folds the group away, then the faces, optionally split by department.
+ *
+ * <p>Folding is per group and per department, keyed by status and department
+ * id, so folding Receiving under Working leaves Receiving under Left alone.
+ */
+function Section({
+  status,
+  people,
+  byDept,
+  compact,
+  stickyTop,
+  collapsed,
+  ignoreCollapsed,
+  onToggle,
+  expanded,
+  onShowAll,
+  renderTile,
+}: {
+  status: PresenceStatus;
+  people: PresencePerson[];
+  byDept: boolean;
+  compact: boolean;
+  stickyTop: number;
+  collapsed: Record<string, boolean>;
+  ignoreCollapsed: boolean;
+  onToggle: (key: string) => void;
+  expanded: Record<string, number>;
+  onShowAll: (key: string, n: number) => void;
+  renderTile: (p: PresencePerson) => React.ReactNode;
+}) {
+  const meta = STATUS_META[status];
+  const folded = !ignoreCollapsed && !!collapsed[status];
+  const perGroup = compact ? TILES_PER_GROUP_COMPACT : TILES_PER_GROUP;
+  const depts = byDept ? groupByDepartment(people) : null;
+
+  return (
+    <section className={styles.group} aria-label={meta.heading} data-folded={folded ? "true" : undefined}>
+      <h2 className={styles.groupHead} style={{ top: stickyTop }}>
+        <button type="button" className={styles.groupToggle} aria-expanded={!folded} onClick={() => onToggle(status)}>
+          <span className={styles.dot} style={{ background: meta.color }} aria-hidden="true" />
+          <span className={styles.groupTitle}>{meta.heading}</span>
+          <span className={styles.groupCount}>{people.length.toLocaleString()}</span>
+          <span className={styles.groupHint}>{meta.hint}</span>
+          <ChevronDown className={styles.chevron} aria-hidden="true" />
+        </button>
+      </h2>
+
+      {!folded &&
+        (depts ? (
+          depts.map((d) => {
+            const key = `${status}|${d.id}`;
+            const dFolded = !ignoreCollapsed && !!collapsed[key];
+            return (
+              <div key={key} className={styles.dept} data-folded={dFolded ? "true" : undefined}>
+                <button type="button" className={styles.deptHead} aria-expanded={!dFolded} onClick={() => onToggle(key)}>
+                  <ChevronDown className={styles.chevron} aria-hidden="true" />
+                  <span className="truncate">{d.name}</span>
+                  <span className={styles.deptCount}>{d.people.length.toLocaleString()}</span>
+                </button>
+                {!dFolded && (
+                  <Tiles
+                    people={d.people}
+                    limit={expanded[key] ?? perGroup}
+                    compact={compact}
+                    onShowAll={() => onShowAll(key, d.people.length)}
+                    renderTile={renderTile}
+                  />
+                )}
+              </div>
+            );
+          })
+        ) : (
+          <Tiles
+            people={people}
+            limit={expanded[status] ?? perGroup}
+            compact={compact}
+            onShowAll={() => onShowAll(status, people.length)}
+            renderTile={renderTile}
+          />
+        ))}
+    </section>
+  );
+}
+
+function Tiles({
+  people,
+  limit,
+  compact,
+  onShowAll,
+  renderTile,
+}: {
+  people: PresencePerson[];
+  limit: number;
+  compact: boolean;
+  onShowAll: () => void;
+  renderTile: (p: PresencePerson) => React.ReactNode;
+}) {
+  return (
+    <>
+      <div className={`${styles.grid} ${compact ? styles.gridCompact : ""}`}>{people.slice(0, limit).map(renderTile)}</div>
+      {people.length > limit && (
+        <div className={styles.more}>
+          <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+            Showing {limit.toLocaleString()} of {people.length.toLocaleString()}
+          </span>
+          <Button hierarchy="secondary" size="sm" onClick={onShowAll}>
+            Show all {people.length.toLocaleString()}
+          </Button>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Split a group by department, under each department's own name, in name
+ * order, with anybody who has none at the end. The people keep the order they
+ * were sorted into.
+ */
+function groupByDepartment(people: PresencePerson[]): { id: string; name: string; people: PresencePerson[] }[] {
+  const byId = new Map<string, { id: string; name: string; people: PresencePerson[] }>();
+  for (const p of people) {
+    const id = p.departmentId ?? "none";
+    const entry = byId.get(id) ?? { id, name: p.department ?? "No department", people: [] };
+    entry.people.push(p);
+    byId.set(id, entry);
+  }
+  return [...byId.values()].sort((a, b) =>
+    a.id === "none" ? 1 : b.id === "none" ? -1 : a.name.localeCompare(b.name),
+  );
+}
+
 function EmptyBoard({
   status,
   needle,
@@ -919,7 +1214,11 @@ function EmptyBoard({
       <EmptyState
         icon={<SearchX className="h-8 w-8" />}
         title="No matching people"
-        body={`Nobody here matches "${needle}". The search only looks at the group you have open; try another group or clear the search.`}
+        body={
+          filtered
+            ? `Nobody in the department and shift you have filtered to matches "${needle}". Clear the filters to search the whole site.`
+            : `Nobody at ${siteName} today matches "${needle}". The search covers everyone who is in, has left, is on leave or is scheduled.`
+        }
         action={
           <Button hierarchy="secondary" size="sm" onClick={onClearSearch}>
             Clear search

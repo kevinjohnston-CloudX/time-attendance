@@ -18,7 +18,15 @@ import { OnSiteBoard } from "@/components/presence/on-site-board";
 export default async function OnSitePage({
   searchParams,
 }: {
-  searchParams: Promise<{ site?: string; status?: string; dept?: string; shift?: string; view?: string }>;
+  searchParams: Promise<{
+    site?: string;
+    status?: string;
+    dept?: string;
+    shift?: string;
+    view?: string;
+    sort?: string;
+    group?: string;
+  }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -45,7 +53,9 @@ export default async function OnSitePage({
         status: params.status ?? null,
         dept: params.dept ?? null,
         shift: params.shift ?? null,
-        view: params.view === "list" ? "list" : "photos",
+        view: params.view === "list" ? "list" : params.view === "compact" ? "compact" : "photos",
+        sort: params.sort ?? null,
+        group: params.group ?? null,
       }}
     />
   );
