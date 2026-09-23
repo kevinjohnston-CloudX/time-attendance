@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Clock, DoorOpen, UserRoundX } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, DoorOpen, UserRoundX } from "lucide-react";
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { getOnSiteMovements } from "@/actions/presence.actions";
 import type { PresenceStatus, SiteDay } from "@/lib/presence/types";
@@ -125,12 +125,12 @@ function flagChips(v: PersonDayView, isToday: boolean): { label: string; tone: "
   if (has("LATE") && v.lateMinutes !== null) out.push({ label: `${fmtDuration(v.lateMinutes)} late`, tone: "warning" });
   if (has("LEFT_EARLY") && v.earlyMinutes !== null)
     out.push({ label: `Left ${fmtDuration(v.earlyMinutes)} early`, tone: "warning" });
-  if (has("MULTIPLE_EXITS")) out.push({ label: `Out ${v.exits} times`, tone: "warning" });
-  if (has("LONG_BREAK")) out.push({ label: `Break over ${LONG_BREAK_MIN} min`, tone: "warning" });
-  if (has("EXIT_NO_ENTRY")) out.push({ label: "Exit with no entry scan", tone: "error" });
-  if (has("MARKED_OUT")) out.push({ label: "Marked out overnight", tone: "neutral" });
+  if (has("MULTIPLE_EXITS")) out.push({ label: `Left ${v.exits} times`, tone: "warning" });
+  if (has("LONG_BREAK")) out.push({ label: "Long break", tone: "warning" });
+  if (has("EXIT_NO_ENTRY")) out.push({ label: "Left, never scanned in", tone: "error" });
+  if (has("MARKED_OUT")) out.push({ label: "Never scanned out", tone: "neutral" });
   if (has("REJECTED")) out.push({ label: `${v.rejected} not counted`, tone: "neutral" });
-  if (has("INACTIVE")) out.push({ label: "Inactive record", tone: "error" });
+  if (has("INACTIVE")) out.push({ label: "Inactive employee", tone: "error" });
   return out;
 }
 
@@ -697,29 +697,29 @@ export const FLAG_META: Record<MovementFlag, { label: string; hint: string; tone
     tone: "purple",
   },
   NO_GATE_SCAN: {
-    label: "Clocked in, no gate scan",
+    label: "Clocked in, not inside",
     hint: "On the clock while the security gate has them outside. On a past day, 15 minutes or more of it",
     tone: "warning",
   },
   SCHEDULED_OUTSIDE: {
-    label: "Scheduled now, outside",
+    label: "Scheduled, not here",
     hint: "Inside their scheduled hours right now and not in the building",
     tone: "warning",
   },
-  ON_BREAK: { label: "On meal or break", hint: "Clocked out for a meal or a rest break right now", tone: "warning" },
+  ON_BREAK: { label: "On a break", hint: "Clocked out for a meal or a rest break right now", tone: "warning" },
   NOT_ARRIVED: { label: "Not arrived", hint: "Scheduled and not seen at either reader", tone: "neutral" },
   LATE: { label: "Late", hint: "First scan more than 5 minutes after the scheduled start", tone: "warning" },
   LEFT_EARLY: { label: "Left early", hint: "Last scan out more than 5 minutes before the scheduled end", tone: "warning" },
-  MULTIPLE_EXITS: { label: "Out more than once", hint: "Left through the security gate two or more times", tone: "warning" },
-  LONG_BREAK: { label: `Break over ${LONG_BREAK_MIN} min`, hint: `A meal or break that ran past ${LONG_BREAK_MIN} minutes`, tone: "warning" },
-  EXIT_NO_ENTRY: { label: "Exit, no entry scan", hint: "Left through the security gate without being seen coming in", tone: "error" },
-  MARKED_OUT: { label: "Marked out overnight", hint: "Never scanned out, so the system closed their day", tone: "neutral" },
+  MULTIPLE_EXITS: { label: "Left more than once", hint: "Left through the security gate two or more times", tone: "warning" },
+  LONG_BREAK: { label: "Long break", hint: `A meal or break that ran past ${LONG_BREAK_MIN} minutes`, tone: "warning" },
+  EXIT_NO_ENTRY: { label: "Left, never scanned in", hint: "Left through the security gate without being seen coming in", tone: "error" },
+  MARKED_OUT: { label: "Never scanned out", hint: "Never scanned out, so the system closed their day", tone: "neutral" },
   REJECTED: {
-    label: "Scans not counted",
+    label: "Taps not counted",
     hint: "Had scans the timecard refused, usually a second tap too soon. They are left out of the lists and totals",
     tone: "neutral",
   },
-  INACTIVE: { label: "Inactive record", hint: "Scanning on a record that is inactive or terminated", tone: "error" },
+  INACTIVE: { label: "Inactive employee", hint: "Scanning on a record that is inactive or terminated", tone: "error" },
   ON_LEAVE: { label: "On leave", hint: "Approved time off that day", tone: "info" },
 };
 
@@ -759,10 +759,16 @@ const TONE_COLOR: Record<Tone, string> = {
 };
 
 /**
- * The counts above the table, drawn like the People headcount: a big number,
- * then counters that are also the filters. The left side is where people are
- * right now (on a past day, how the day went between the readers); the right
- * side is everything else worth a look that day.
+ * The summary above the table, in two tiers so it reads in one glance.
+ *
+ * <p>The first tier answers the questions the page is opened for: how many
+ * people are here, and the few situations somebody has to act on (inside and
+ * not clocked in, clocked in and not inside, scheduled and not here). Those
+ * stay on screen at zero, because zero is the answer.
+ *
+ * <p>The second tier is everything else worth a look that day, as small
+ * chips, and only the ones that happened: a row of zeros is noise to somebody
+ * scanning for a problem. Every number is also the filter for it.
  */
 export function MovementsCounts({
   views,
@@ -783,127 +789,88 @@ export function MovementsCounts({
   onPick: (f: MovementFlag | null) => void;
   when: string;
   totals: ScanTotals;
-  /** Opens the Scan log, narrowed to the number clicked. */
+  /** Opens the Scan log. */
   onJump: (c: LogCounter | null) => void;
 }) {
   const available = flagsFor(isToday, hasGate);
-  const first = available.filter((f) => (isToday ? NOW_FLAGS : PAST_FLAGS).includes(f));
-  const rest = available.filter((f) => DAY_FLAGS.includes(f));
+  const lead = (isToday ? NOW_FLAGS : PAST_FLAGS).filter((f) => available.includes(f) && f !== "ON_BREAK");
+  const cards = (hasGate ? lead.filter((f) => f !== "NOT_ARRIVED") : lead).slice(0, 3);
+  const chips = available.filter((f) => !cards.includes(f) && (counts[f] > 0 || flag === f));
   const insideNow = views.filter((v) => (hasGate ? v.now.inside : v.now.clock !== "OUT")).length;
   const seen = views.filter((v) => v.scanCount > 0).length;
   const pick = (f: MovementFlag) => onPick(flag === f ? null : f);
 
+  const heroLabel = isToday ? (hasGate ? "In the building" : "On the clock") : "People seen";
+  const heroFigure = isToday ? insideNow : seen;
+  const heroSub = isToday
+    ? `of ${views.length.toLocaleString()} ${views.length === 1 ? "person" : "people"} today`
+    : when;
+
   return (
-    <section className={`${styles.headcount} ${styles.headcountEven}`} aria-label="Filters">
-      <div className={styles.side}>
-        <button type="button" className={styles.total} aria-pressed={flag === null} onClick={() => onPick(null)}>
-          <span className={styles.totalFigure}>{(isToday ? insideNow : seen).toLocaleString()}</span>
-          <span className={styles.totalLabel}>
-            {isToday
-              ? hasGate
-                ? `${insideNow === 1 ? "person" : "people"} in the building`
-                : `${insideNow === 1 ? "person" : "people"} on the clock`
-              : `${seen === 1 ? "person" : "people"} seen ${when}`}
-          </span>
+    <section className={styles.summary} aria-label="Summary">
+      <div className={styles.summaryMain} data-cards={cards.length}>
+        <button
+          type="button"
+          className={styles.summaryHero}
+          aria-pressed={flag === null}
+          onClick={() => onPick(null)}
+          title="Show everyone"
+        >
+          <span className={styles.summaryLabel}>{heroLabel}</span>
+          <span className={styles.summaryHeroFigure}>{heroFigure.toLocaleString()}</span>
+          <span className={styles.summarySub}>{heroSub}</span>
         </button>
-        <div className={`${styles.counters} ${styles.flagCounters}`}>
-          {first.map((f) => (
-            <FlagCounter key={f} flag={f} count={counts[f]} active={flag === f} onClick={() => pick(f)} />
-          ))}
-        </div>
-      </div>
-      <div className={styles.side}>
-        <span style={{ font: "var(--type-h4)", color: "var(--text-secondary)" }}>
-          {isToday ? "During the day" : `During the day, ${when}`}
-        </span>
-        <div className={`${styles.counters} ${styles.flagCounters}`}>
-          {rest.map((f) => (
-            <FlagCounter key={f} flag={f} count={counts[f]} active={flag === f} onClick={() => pick(f)} />
-          ))}
-        </div>
+        {cards.map((f) => (
+          <button
+            key={f}
+            type="button"
+            className={styles.summaryCard}
+            aria-pressed={flag === f}
+            data-empty={counts[f] === 0 ? "true" : undefined}
+            onClick={() => pick(f)}
+            title={FLAG_META[f].hint}
+          >
+            <span className={styles.summaryLabel}>
+              <span className={styles.dot} style={{ background: TONE_COLOR[FLAG_META[f].tone] }} aria-hidden="true" />
+              <span className="truncate">{FLAG_META[f].label}</span>
+            </span>
+            <span className={styles.summaryFigure}>{counts[f].toLocaleString()}</span>
+          </button>
+        ))}
       </div>
 
-      {/* Every scan behind the table, counted the way the Scan log counts
-          them, and each number a way into that log. */}
-      <div className={styles.scanTotals}>
-        <span className={styles.scanTotalsLabel}>Scans {when}</span>
-        <TotalLink figure={totals.all} label={totals.all === 1 ? "scan" : "scans"} onClick={() => onJump(null)} strong />
-        {hasGate && (
-          <span className={styles.scanTotalsGroup}>
-            <DoorOpen className="h-3.5 w-3.5" aria-hidden="true" />
-            <TotalLink figure={totals.gate} label="security gate" onClick={() => onJump("gate")} />
-            <TotalLink figure={totals.gateIn} label="in" onClick={() => onJump("gate-in")} quiet />
-            <TotalLink figure={totals.gateOut} label="out" onClick={() => onJump("gate-out")} quiet />
-          </span>
+      <div className={styles.summaryMore}>
+        {chips.length > 0 ? (
+          <div className={styles.summaryChips}>
+            {chips.map((f) => (
+              <button
+                key={f}
+                type="button"
+                className={styles.summaryChip}
+                aria-pressed={flag === f}
+                onClick={() => pick(f)}
+                title={FLAG_META[f].hint}
+              >
+                <span className={styles.dot} style={{ background: TONE_COLOR[FLAG_META[f].tone] }} aria-hidden="true" />
+                <span>{FLAG_META[f].label}</span>
+                <span className={styles.summaryChipCount}>{counts[f].toLocaleString()}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>Nothing else to review {when}</span>
         )}
-        <span className={styles.scanTotalsGroup}>
-          <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-          <TotalLink figure={totals.clock} label="time clock" onClick={() => onJump("clock")} />
-          <TotalLink figure={totals.clockIn} label="in" onClick={() => onJump("clock-in")} quiet />
-          <TotalLink figure={totals.clockOut} label="out" onClick={() => onJump("clock-out")} quiet />
-          {totals.rejected > 0 && (
-            <TotalLink figure={totals.rejected} label="not counted" onClick={() => onJump("rejected")} quiet />
-          )}
-        </span>
+        <button type="button" className={styles.summaryScans} onClick={() => onJump(null)} title="Open the Scan log">
+          <span className="tabular" style={{ fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+            {totals.all.toLocaleString()}
+          </span>
+          <span>
+            {totals.all === 1 ? "scan" : "scans"} {when}
+          </span>
+          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
       </div>
     </section>
-  );
-}
-
-function TotalLink({
-  figure,
-  label,
-  onClick,
-  strong,
-  quiet,
-}: {
-  figure: number;
-  label: string;
-  onClick: () => void;
-  strong?: boolean;
-  quiet?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      className={styles.totalLink}
-      data-strong={strong ? "true" : undefined}
-      data-quiet={quiet ? "true" : undefined}
-      onClick={onClick}
-      title={`Open the Scan log for these ${label === "in" || label === "out" ? `scans ${label}` : `${label} scans`}`}
-    >
-      <span className={styles.totalLinkFigure}>{figure.toLocaleString()}</span> {label}
-    </button>
-  );
-}
-
-function FlagCounter({
-  flag,
-  count,
-  active,
-  onClick,
-}: {
-  flag: MovementFlag;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-}) {
-  const meta = FLAG_META[flag];
-  return (
-    <button
-      type="button"
-      className={styles.counter}
-      aria-pressed={active}
-      data-empty={count === 0 ? "true" : undefined}
-      onClick={onClick}
-      title={meta.hint}
-    >
-      <span className={styles.counterFigure}>{count.toLocaleString()}</span>
-      <span className={styles.counterLabel}>
-        <span className={styles.dot} style={{ background: TONE_COLOR[meta.tone] }} aria-hidden="true" />
-        <span>{meta.label}</span>
-      </span>
-    </button>
   );
 }
 

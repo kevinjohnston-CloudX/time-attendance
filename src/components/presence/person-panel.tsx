@@ -197,7 +197,7 @@ export function PersonPanel({
                 )}
                 {person && isToday && person.status === "NO_GATE_SCAN" && <Badge tone="warning">No gate scan</Badge>}
                 {person && isToday && person.outsideOnMeal && <Badge tone="neutral">Outside the building</Badge>}
-                {(person?.inactive || detail?.inactive) && <Badge tone="error">Inactive record</Badge>}
+                {(person?.inactive || detail?.inactive) && <Badge tone="error">Inactive employee</Badge>}
                 <HomeSiteBadge site={detail?.homeSite ?? person?.homeSite ?? null} size="md" />
               </span>
               {person && isToday && (

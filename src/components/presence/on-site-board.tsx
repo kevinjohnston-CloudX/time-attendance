@@ -643,22 +643,15 @@ export function OnSiteBoard({
               </h1>
               {/* Slim, the bar keeps the one number this page exists for and
                   whether it is still live, and gives up the sentence. */}
-              {condensed && board && tab === "movements" && siteDay.data && (
+              {/* Slim, the Movements bar keeps only whether it is live: the
+                  count and the picked filter are already in the row below. */}
+              {condensed && board && tab === "movements" && (
                 <span
-                  className="tabular inline-flex items-center gap-2 whitespace-nowrap"
-                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-                >
-                  <span className={styles.live} data-state={liveState} aria-hidden="true" />
-                  <span>
-                    <strong style={{ color: "var(--text-primary)", fontWeight: "var(--weight-semibold)" }}>
-                      {mvRows.length.toLocaleString()}
-                    </strong>{" "}
-                    {mvRows.length === 1 ? "person" : "people"} {when}
-                  </span>
-                  {mvFlagShown && (
-                    <ToggleChip label={FLAG_META[mvFlagShown].label} pressed onClick={() => setMvFlag(null)} />
-                  )}
-                </span>
+                  className={styles.live}
+                  data-state={liveState}
+                  title={liveState === "live" ? "Live" : liveState === "paused" ? "Paused" : "Not updating"}
+                  aria-label={liveState === "live" ? "Live" : liveState === "paused" ? "Paused" : "Not updating"}
+                />
               )}
               {condensed && board && tab === "log" && (
                 <span
@@ -733,7 +726,23 @@ export function OnSiteBoard({
                   <FilterSelectChip label="Department" value={dept} options={departments} onChange={setDept} />
                 )}
                 {shifts.length > 0 && <FilterSelectChip label="Shift" value={shift} options={shifts} onChange={setShift} />}
-                {isFiltered && (
+                {tab !== "people" && today && (
+                  <DayChip
+                    day={logDayShown}
+                    today={today}
+                    onChange={(d) => {
+                      setLogDay(d);
+                      setMvShown(PEOPLE_PER_PAGE);
+                    }}
+                  />
+                )}
+                {tab === "movements" && mvFlagShown && (
+                  <ToggleChip label={FLAG_META[mvFlagShown].label} pressed onClick={() => setMvFlag(null)} />
+                )}
+                {tab === "log" && counter && (
+                  <ToggleChip label={COUNTER_LABEL[counter]} pressed onClick={() => setCounter(null)} />
+                )}
+                {(isFiltered || (tab === "movements" && !!mvFlagShown)) && (
                   <Button
                     hierarchy="link"
                     size="sm"
@@ -741,6 +750,7 @@ export function OnSiteBoard({
                       setQuery("");
                       setDept("");
                       setShift("");
+                      if (tab === "movements") setMvFlag(null);
                     }}
                   >
                     Clear all
@@ -762,19 +772,6 @@ export function OnSiteBoard({
                       ? `${matches.length.toLocaleString()} ${matches.length === 1 ? "match" : "matches"} in every group`
                       : `${matches.length.toLocaleString()} ${matches.length === 1 ? "person" : "people"}`}
                 </span>
-                {tab !== "people" && today && (
-                  <DayChip
-                    day={logDayShown}
-                    today={today}
-                    onChange={(d) => {
-                      setLogDay(d);
-                      setMvShown(PEOPLE_PER_PAGE);
-                    }}
-                  />
-                )}
-                {tab === "movements" && mvFlagShown && (
-                  <ToggleChip label={FLAG_META[mvFlagShown].label} pressed onClick={() => setMvFlag(null)} />
-                )}
                 {tab === "movements" && <MvSortChip sort={mvSort} onChange={setMvSort} />}
                 {tab === "movements" && (
                   <ToggleChip
@@ -785,9 +782,6 @@ export function OnSiteBoard({
                       setMvToggled(new Set());
                     }}
                   />
-                )}
-                {tab === "log" && counter && (
-                  <ToggleChip label={COUNTER_LABEL[counter]} pressed onClick={() => setCounter(null)} />
                 )}
                 {tab === "people" && <SortChip sort={sort} onChange={setSort} />}
                 {tab === "people" && view !== "list" && departments.length > 1 && (
@@ -1228,7 +1222,7 @@ function PersonTile({
   // panel still says everything.
   const flags = [
     p.outsideOnMeal ? "Outside the building" : null,
-    p.inactive ? "Inactive record" : null,
+    p.inactive ? "Inactive employee" : null,
     p.homeSite ? `Home site: ${p.homeSite}` : null,
   ].filter(Boolean) as string[];
 
@@ -1279,7 +1273,7 @@ function PersonTile({
           )}
           {p.inactive && (
             <span className={styles.flagChip} data-tone="error">
-              Inactive record
+              Inactive employee
             </span>
           )}
           {p.homeSite && (
@@ -1420,7 +1414,7 @@ function PeopleTable({
                     )}
                     {p.inactive && (
                       <Badge tone="error" size="sm">
-                        Inactive record
+                        Inactive employee
                       </Badge>
                     )}
                     <HomeSiteBadge site={p.homeSite} />
