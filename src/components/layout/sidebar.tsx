@@ -194,10 +194,8 @@ export function SidebarRail({
   activeSectionLabel,
   items,
   current,
-  userName,
   isInactive,
   onPickSection,
-  onSignOut,
   onOpenSearch,
   footer,
 }: {
@@ -206,10 +204,8 @@ export function SidebarRail({
   activeSectionLabel: string;
   items: NavItem[];
   current: string | null;
-  userName?: string | null;
   isInactive?: boolean;
   onPickSection: (id: string) => void;
-  onSignOut: () => void;
   onOpenSearch: () => void;
   footer: React.ReactNode;
 }) {
@@ -250,17 +246,11 @@ return (
           );
         })}
 
+        {/* The design puts an avatar and a sign out button down here, because
+            its rail had no panel footer under it. This one does, and it is
+            the same footer the grouped layout uses, so repeating them here
+            put two avatars and two sign out buttons on screen at once. */}
         <div className="flex-1" />
-
-        <Avatar name={userName} />
-        <button
-          onClick={() => onSignOut()}
-          title="Sign out"
-          className="ta-rail-btn mt-2 inline-flex h-8 w-8 flex-none items-center justify-center rounded-lg"
-          style={{ color: "var(--wms-color-gray-400)" }}
-        >
-          <LogOut className="h-[17px] w-[17px]" />
-        </button>
       </aside>
 
       {/* The 196px panel: what is inside the section the rail has open. */}
@@ -626,10 +616,8 @@ export function Sidebar({
         activeSectionLabel={activeSection?.label ?? "Menu"}
         items={activeSection?.items ?? []}
         current={current}
-        userName={userName}
         isInactive={isInactive}
         onPickSection={(id) => setPinnedSection({ id, path: pathname })}
-        onSignOut={() => signOut({ callbackUrl: "/login" })}
         onOpenSearch={openCommandPalette}
         footer={renderFooter(false, navMode)}
       />
