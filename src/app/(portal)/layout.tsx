@@ -205,8 +205,7 @@ export default async function PortalLayout({
           isInactive={!isEmployeeActive}
         />
         {/* Breadcrumb bar sits inside the content column, not above the
-            sidebar, so the sidebar header and the top bar meet at the same
-            56px line. */}
+            sidebar, so it only ever costs the content its own 40px. */}
         <div className="flex min-w-0 flex-1 flex-col">
           {/* The palette's destinations are already filtered by this
               viewer's permissions and by whether they are active, so the

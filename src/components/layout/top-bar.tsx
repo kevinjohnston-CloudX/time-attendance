@@ -12,7 +12,10 @@ import { navModeStore, useNavMode, collapseStore, useSidebarCollapsed, type NavM
 import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
 
 /**
- * The 56px bar above the content, from the portal design.
+ * The bar above the content, from the portal design, at 40px rather than the
+ * design's 56px: it carries a breadcrumb and four small buttons, and every
+ * pixel it takes is a pixel of list the page cannot show. The 28px controls
+ * inside it keep their size.
  *
  * <p>It exists for the breadcrumb. The admin area is three levels deep in
  * places — a site inside Sites inside Administration — and until now the only
@@ -39,7 +42,7 @@ export function TopBar({
 
   return (
     <header
-      className="flex h-14 flex-none items-center gap-3 px-4"
+      className="flex h-10 flex-none items-center gap-3 px-4"
       style={{
         background: "var(--surface-card)",
         borderBottom: "1px solid var(--stroke-secondary)",

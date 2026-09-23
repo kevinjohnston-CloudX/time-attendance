@@ -140,10 +140,9 @@ return (
           borderRight: "1px solid var(--stroke-secondary)",
         }}
       >
-        <div
-          className="flex h-14 flex-none items-center px-3.5"
-          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-        >
+        {/* No rule under the header: the top bar is slimmer than this block,
+            so a line here would stop short of the one across the page. */}
+        <div className="flex h-14 flex-none items-center px-3.5">
           <span
             className="min-w-0 truncate"
             style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}
@@ -598,11 +597,9 @@ export function Sidebar({
         borderRight: "1px solid var(--stroke-secondary)",
       }}
     >
-      {/* 56px, the same as the top bar, so the two line up across the seam. */}
-      <div
-        className="flex h-14 flex-none items-center gap-2.5 px-3.5"
-        style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-      >
+      {/* No rule under the brand. The top bar is 40px and this block is 56,
+          so a line here would sit below the top bar's and read as a stray. */}
+      <div className="flex h-14 flex-none items-center gap-2.5 px-3.5">
         {collapsed ? <BrandIcon /> : <BrandMark />}
       </div>
 
