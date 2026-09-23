@@ -50,9 +50,8 @@ const PUNCH_ICON: Record<string, LucideIcon> = {
   BREAK_END: Coffee,
 };
 
-/** The handoff's five columns, in its own proportions. */
-const COLUMNS =
-  "minmax(150px, 1.4fr) minmax(104px, 1fr) minmax(80px, 0.8fr) minmax(60px, 0.7fr) minmax(100px, 0.9fr)";
+/** A punch row: time, what happened, source, status. */
+const ROW_COLUMNS = "112px minmax(0, 1fr) 88px 104px";
 
 function initials(name: string): string {
   return name
@@ -115,8 +114,8 @@ function summarizeDay(punches: PunchHistoryPunch[]) {
 
   const out = lastOut && firstIn && new Date(lastOut.punchTime) > new Date(firstIn.punchTime) ? lastOut : null;
   return {
-    inAt: firstIn?.punchTime ?? null,
-    outAt: out?.punchTime ?? null,
+    inAt: firstIn?.roundedTime ?? null,
+    outAt: out?.roundedTime ?? null,
     // A clock out the system wrote, at the end of the day, is the one a
     // supervisor most needs to see: the person left without punching, and the
     // hours up to midnight are counting as worked.
@@ -560,18 +559,6 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                     />
                   </div>
                 </div>
-                {data.punches.length > 0 && (
-                  <div
-                    className="grid gap-3 px-[18px] py-2"
-                    style={{ gridTemplateColumns: COLUMNS, borderBottom: "1px solid var(--stroke-divider)" }}
-                  >
-                    {["Punch", "Actual", "Rounded", "Source", "Status"].map((h) => (
-                      <span key={h} className="wms-overline" style={{ color: "var(--text-secondary)", letterSpacing: "0.07em" }}>
-                        {h}
-                      </span>
-                    ))}
-                  </div>
-                )}
               </div>
 
               <div
@@ -726,26 +713,57 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                           </div>
                         </div>
 
+                        {/* The punches under their day, read like a timeline:
+                            the time first, then what happened, where it came
+                            from, and a status only when it is not the normal
+                            one. The rounded time leads because it is the one
+                            that pays; the exact clock time joins it only when
+                            rounding moved it by a minute or more. */}
                         {dayPunches.map((p) => {
                             const Icon = PUNCH_ICON[p.punchType] ?? Clock;
                             const sup = p.isSuperseded;
-                            const fg = sup ? "var(--text-tertiary)" : "var(--text-primary)";
+                            const shift = Math.round(
+                              (new Date(p.roundedTime).getTime() - new Date(p.punchTime).getTime()) / 60000,
+                            );
+                            const flagged = p.source === "MANUAL" || p.source === "SYSTEM";
                             return (
                               <div
                                 key={p.id}
-                                className="grid min-h-[46px] items-center gap-3 px-[18px] py-2"
+                                className="grid min-h-[42px] items-center gap-x-4 px-[18px] py-2"
                                 style={{
-                                  gridTemplateColumns: COLUMNS,
+                                  gridTemplateColumns: ROW_COLUMNS,
                                   borderBottom: "1px solid var(--stroke-divider)",
                                   background: sup ? "var(--surface-tertiary)" : "var(--surface-card)",
                                 }}
+                                title={`Clock time ${clock(p.punchTime, true)}`}
                               >
-                                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                                <span className="flex min-w-0 flex-col">
+                                  <span
+                                    className="tabular whitespace-nowrap"
+                                    style={{
+                                      font: "var(--type-body1)",
+                                      fontWeight: "var(--weight-semibold)",
+                                      color: sup ? "var(--text-tertiary)" : "var(--text-primary)",
+                                      textDecoration: sup ? "line-through" : "none",
+                                    }}
+                                  >
+                                    {clock(p.roundedTime, false)}
+                                  </span>
+                                  {!sup && Math.abs(shift) >= 1 && (
+                                    <span className="tabular whitespace-nowrap" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                                      Clocked {clock(p.punchTime, true)}
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="flex min-w-0 items-center gap-2">
                                   <Icon
                                     className="h-4 w-4 flex-none"
                                     style={{ color: sup ? "var(--icon-disabled)" : "var(--icon-secondary)" }}
                                   />
-                                  <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: fg }}>
+                                  <span
+                                    className="truncate"
+                                    style={{ font: "var(--type-body1)", color: sup ? "var(--text-tertiary)" : "var(--text-primary)" }}
+                                  >
                                     {PUNCH_TYPE_LABEL[p.punchType as PunchTypeValue] ?? p.punchType}
                                   </span>
                                   {p.isCorrection && (
@@ -763,75 +781,40 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                                     </span>
                                   )}
                                 </span>
-                                <span
-                                  className="tabular whitespace-nowrap"
-                                  style={{
-                                    font: "var(--type-body1)",
-                                    fontWeight: "var(--weight-medium)",
-                                    color: fg,
-                                    textDecoration: sup ? "line-through" : "none",
-                                  }}
-                                >
-                                  {clock(p.punchTime, true)}
-                                </span>
-                                {/* How far rounding moved the punch, beside the
-                                    rounded time, only when it moved it by a
-                                    minute or more. Rounding is the part of this
-                                    screen that changes pay, and two similar
-                                    times side by side never said so. */}
-                                <span className="tabular inline-flex items-baseline gap-2 whitespace-nowrap" style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>
-                                  {clock(p.roundedTime, false)}
-                                  {(() => {
-                                    const shift = Math.round(
-                                      (new Date(p.roundedTime).getTime() - new Date(p.punchTime).getTime()) / 60000,
-                                    );
-                                    if (sup || Math.abs(shift) < 1) return null;
-                                    return (
-                                      <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-                                        {shift > 0 ? `+${shift}` : `\u2212${Math.abs(shift)}`} min
-                                      </span>
-                                    );
-                                  })()}
-                                </span>
                                 {/* Routine sources are quiet. Manual and System are
                                     not: one means somebody entered the punch by
                                     hand, the other that the system wrote it. */}
                                 <span
                                   className="truncate"
                                   style={{
-                                    font: "var(--type-body1)",
-                                    fontWeight: !sup && (p.source === "MANUAL" || p.source === "SYSTEM") ? "var(--weight-medium)" : undefined,
-                                    color: sup
-                                      ? "var(--text-tertiary)"
-                                      : p.source === "MANUAL" || p.source === "SYSTEM"
-                                        ? "var(--text-primary)"
-                                        : "var(--text-tertiary)",
+                                    font: "var(--type-body2)",
+                                    fontWeight: !sup && flagged ? "var(--weight-medium)" : undefined,
+                                    color: !sup && flagged ? "var(--text-primary)" : "var(--text-tertiary)",
                                   }}
                                 >
                                   {SOURCE_LABEL[p.source] ?? p.source}
                                 </span>
-{/* Approved is the normal case on almost every row, so it
-                                    is a quiet check rather than the same word six
-                                    times a day. Pending and Superseded keep their
+                                {/* Approved is the normal case and the day heading
+                                    already says it, so an approved row carries no
+                                    status. Pending and Superseded keep their
                                     words, which is what makes them findable. */}
-                                {sup ? (
-                                  <span className="whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                                    Superseded
-                                  </span>
-                                ) : p.isApproved ? (
-                                  <span className="inline-flex items-center" title="Approved">
-                                    <CheckCircle2 className="h-4 w-4" style={{ color: "var(--icon-success)" }} aria-hidden="true" />
+                                <span className="flex justify-end">
+                                  {sup ? (
+                                    <span className="whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                                      Superseded
+                                    </span>
+                                  ) : p.isApproved ? (
                                     <span className="sr-only">Approved</span>
-                                  </span>
-                                ) : (
-                                  <span
-                                    className="inline-flex items-center gap-[7px] whitespace-nowrap"
-                                    style={{ font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: "var(--text-warning)" }}
-                                  >
-                                    <span className="h-2 w-2 flex-none rounded-full" style={{ background: "var(--fill-warning)" }} />
-                                    Pending
-                                  </span>
-                                )}
+                                  ) : (
+                                    <span
+                                      className="inline-flex items-center gap-[7px] whitespace-nowrap"
+                                      style={{ font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: "var(--text-warning)" }}
+                                    >
+                                      <span className="h-2 w-2 flex-none rounded-full" style={{ background: "var(--fill-warning)" }} />
+                                      Pending
+                                    </span>
+                                  )}
+                                </span>
                               </div>
                             );
                           })}
