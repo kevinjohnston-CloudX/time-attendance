@@ -19,6 +19,7 @@ import {
   Toolbar,
   FilterBar,
   FilterChip,
+  PinnedBar,
 } from "@/components/ui";
 import { format } from "date-fns";
 import { FileSearch } from "lucide-react";
@@ -56,39 +57,41 @@ export default async function AuditLogPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Audit Log"
-        subtitle={
-          entityType
-            ? `${total.toLocaleString()} ${entityType} entries`
-            : `${total.toLocaleString()} entries · every configuration and timecard change`
-        }
-      />
+      <PinnedBar>
+        <PageHeader
+          title="Audit Log"
+          subtitle={
+            entityType
+              ? `${total.toLocaleString()} ${entityType} entries`
+              : `${total.toLocaleString()} entries · every configuration and timecard change`
+          }
+        />
 
-      <div className="flex flex-col gap-2.5">
-        {/* Plain GET form, so a filtered view is a URL somebody can send. */}
-        <Toolbar count={total} countLabel="entry">
-          <form method="GET" className="flex flex-wrap items-center gap-2">
-            <Select name="entityType" defaultValue={entityType ?? ""}>
-              <option value="">All types</option>
-              {ENTITY_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </Select>
-            <Button type="submit" hierarchy="secondary">
-              Filter
-            </Button>
-          </form>
-        </Toolbar>
+        <div className="flex flex-col gap-2.5">
+          {/* Plain GET form, so a filtered view is a URL somebody can send. */}
+          <Toolbar count={total} countLabel="entry">
+            <form method="GET" className="flex flex-wrap items-center gap-2">
+              <Select name="entityType" defaultValue={entityType ?? ""}>
+                <option value="">All types</option>
+                {ENTITY_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </Select>
+              <Button type="submit" hierarchy="secondary">
+                Filter
+              </Button>
+            </form>
+          </Toolbar>
 
-        <FilterBar clearHref="/admin/audit">
-          {entityType ? (
-            <FilterChip key="entityType" label="Type" value={entityType} clearHref="/admin/audit" />
-          ) : null}
-        </FilterBar>
-      </div>
+          <FilterBar clearHref="/admin/audit">
+            {entityType ? (
+              <FilterChip key="entityType" label="Type" value={entityType} clearHref="/admin/audit" />
+            ) : null}
+          </FilterBar>
+        </div>
+      </PinnedBar>
 
       <Card padding={0}>
         {logs.length === 0 ? (

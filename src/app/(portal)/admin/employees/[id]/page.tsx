@@ -43,7 +43,7 @@ export default async function EditEmployeePage({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title={employee.user.name}
         subtitle={`${employee.employeeCode} · ${employee.department.name} · ${employee.site.name}`}
         actions={

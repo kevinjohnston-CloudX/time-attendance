@@ -73,7 +73,7 @@ export default async function TenantDetailPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title={tenant.name}
         subtitle={`${tenant.slug} · Created ${format(tenant.createdAt, "MMM d, yyyy")}`}
         actions={

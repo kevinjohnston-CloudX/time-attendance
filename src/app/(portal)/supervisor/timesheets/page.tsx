@@ -13,6 +13,7 @@ import {
   FilterChip,
   LinkButton,
   PageHeader,
+  PinnedBar,
   SegmentedLinks,
   Table,
   TBody,
@@ -107,196 +108,198 @@ export default async function TeamTimesheetsPage({
     <div className="flex flex-col gap-4">
       {/* The "← Team Portal" link is gone: the breadcrumb in the top bar and
           Team Overview in the sidebar both do that job now. */}
-      <PageHeader
-        title="Team Timesheets"
-        subtitle={
-          all.length === 0
-            ? isPayroll
-              ? "Nothing waiting on payroll"
-              : "Nothing waiting on you"
-            : isPayroll
-              ? `${all.length} supervisor-approved ${all.length === 1 ? "timesheet is" : "timesheets are"} waiting on payroll`
-              : `${all.length} ${all.length === 1 ? "timesheet is" : "timesheets are"} waiting on your approval`
-        }
-      />
+      <PinnedBar>
+        <PageHeader
+          title="Team Timesheets"
+          subtitle={
+            all.length === 0
+              ? isPayroll
+                ? "Nothing waiting on payroll"
+                : "Nothing waiting on you"
+              : isPayroll
+                ? `${all.length} supervisor-approved ${all.length === 1 ? "timesheet is" : "timesheets are"} waiting on payroll`
+                : `${all.length} ${all.length === 1 ? "timesheet is" : "timesheets are"} waiting on your approval`
+          }
+        />
 
-      <div className="flex flex-col gap-2.5">
-        <Toolbar count={rows.length} countLabel="timesheet">
-          <SegmentedLinks
-            ariaLabel="Filter timesheets"
-            size="sm"
-            active={view}
-            items={[
-              { value: "all", label: VIEW_LABEL.all, href: href("all", query), count: searched.length },
-              { value: "issues", label: VIEW_LABEL.issues, href: href("issues", query), count: withIssues.length },
-              { value: "clean", label: VIEW_LABEL.clean, href: href("clean", query), count: clean.length },
-            ]}
-          />
+        <div className="flex flex-col gap-2.5">
+          <Toolbar count={rows.length} countLabel="timesheet">
+            <SegmentedLinks
+              ariaLabel="Filter timesheets"
+              size="sm"
+              active={view}
+              items={[
+                { value: "all", label: VIEW_LABEL.all, href: href("all", query), count: searched.length },
+                { value: "issues", label: VIEW_LABEL.issues, href: href("issues", query), count: withIssues.length },
+                { value: "clean", label: VIEW_LABEL.clean, href: href("clean", query), count: clean.length },
+              ]}
+            />
 
-          {/* A plain GET form rather than the kit's SearchInput: this page is a
-              server component, and a narrowed queue has to survive a reload and
-              be sendable to somebody. Styled to match SearchInput because it is
-              the same control; the hidden field is what stops searching from
-              throwing you back to the All tab. */}
-          <form method="GET" role="search" style={{ flex: "0 1 260px", minWidth: 180 }}>
-            {view !== "all" && <input type="hidden" name="view" value={view} />}
-            <label
-              className="ta-field flex h-8 w-full items-center gap-2 rounded-md px-2.5"
-              style={{
-                border: "1px solid var(--stroke-default)",
-                background: "var(--surface-card)",
-              }}
-            >
-              <Search className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} />
-              <input
-                type="search"
-                name="q"
-                defaultValue={query}
-                placeholder="Employee name or code"
-                aria-label="Search this queue"
-                className="min-w-0 flex-1 border-0 bg-transparent outline-none"
-                style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}
+            {/* A plain GET form rather than the kit's SearchInput: this page is a
+                server component, and a narrowed queue has to survive a reload and
+                be sendable to somebody. Styled to match SearchInput because it is
+                the same control; the hidden field is what stops searching from
+                throwing you back to the All tab. */}
+            <form method="GET" role="search" style={{ flex: "0 1 260px", minWidth: 180 }}>
+              {view !== "all" && <input type="hidden" name="view" value={view} />}
+              <label
+                className="ta-field flex h-8 w-full items-center gap-2 rounded-md px-2.5"
+                style={{
+                  border: "1px solid var(--stroke-default)",
+                  background: "var(--surface-card)",
+                }}
+              >
+                <Search className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} />
+                <input
+                  type="search"
+                  name="q"
+                  defaultValue={query}
+                  placeholder="Employee name or code"
+                  aria-label="Search this queue"
+                  className="min-w-0 flex-1 border-0 bg-transparent outline-none"
+                  style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}
+                />
+              </label>
+            </form>
+          </Toolbar>
+
+          <FilterBar clearHref={isNarrowed ? unfiltered : undefined}>
+            {view !== "all" ? (
+              <FilterChip
+                key="view"
+                label="View"
+                value={VIEW_LABEL[view]}
+                clearHref={href("all", query)}
               />
-            </label>
-          </form>
-        </Toolbar>
+            ) : null}
+            {query ? (
+              <FilterChip key="q" label="Search" value={query} clearHref={href(view, "")} />
+            ) : null}
+          </FilterBar>
+        </div>
+      </PinnedBar>
 
-        <FilterBar clearHref={isNarrowed ? unfiltered : undefined}>
-          {view !== "all" ? (
-            <FilterChip
-              key="view"
-              label="View"
-              value={VIEW_LABEL[view]}
-              clearHref={href("all", query)}
-            />
-          ) : null}
-          {query ? (
-            <FilterChip key="q" label="Search" value={query} clearHref={href(view, "")} />
-          ) : null}
-        </FilterBar>
+      <Card padding={0}>
+        {rows.length === 0 ? (
+          <EmptyState
+            icon={<ClipboardCheck size={32} />}
+            title={all.length === 0 ? "Nothing pending review" : "Nothing in this view"}
+            body={
+              all.length === 0
+                ? isPayroll
+                  ? "Timesheets appear here once a supervisor has approved them."
+                  : "Timesheets appear here once employees submit them."
+                : query
+                  ? `No timesheet in this queue matches “${query}”.`
+                  : "Every timesheet in this queue is in one of the other views."
+            }
+            action={
+              isNarrowed ? (
+                <LinkButton href={unfiltered} hierarchy="secondary" size="sm">
+                  Reset filters
+                </LinkButton>
+              ) : undefined
+            }
+          />
+        ) : (
+          <>
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Employee</TH>
+                  <TH>Pay period</TH>
+                  <TH numeric>Hours</TH>
+                  <TH align="center">Issues</TH>
+                  <TH>Status</TH>
+                  <TH align="right">Action</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {rows.map((ts) => {
+                  const reg = ts.overtimeBuckets.find((b) => b.bucket === "REG")?.totalMinutes ?? 0;
+                  const ot = ts.overtimeBuckets.find((b) => b.bucket === "OT")?.totalMinutes ?? 0;
+                  const dt = ts.overtimeBuckets.find((b) => b.bucket === "DT")?.totalMinutes ?? 0;
 
-        <Card padding={0}>
-          {rows.length === 0 ? (
-            <EmptyState
-              icon={<ClipboardCheck size={32} />}
-              title={all.length === 0 ? "Nothing pending review" : "Nothing in this view"}
-              body={
-                all.length === 0
-                  ? isPayroll
-                    ? "Timesheets appear here once a supervisor has approved them."
-                    : "Timesheets appear here once employees submit them."
-                  : query
-                    ? `No timesheet in this queue matches “${query}”.`
-                    : "Every timesheet in this queue is in one of the other views."
-              }
-              action={
-                isNarrowed ? (
-                  <LinkButton href={unfiltered} hierarchy="secondary" size="sm">
-                    Reset filters
-                  </LinkButton>
-                ) : undefined
-              }
-            />
-          ) : (
-            <>
-              <Table>
-                <THead>
-                  <TR>
-                    <TH>Employee</TH>
-                    <TH>Pay period</TH>
-                    <TH numeric>Hours</TH>
-                    <TH align="center">Issues</TH>
-                    <TH>Status</TH>
-                    <TH align="right">Action</TH>
-                  </TR>
-                </THead>
-                <TBody>
-                  {rows.map((ts) => {
-                    const reg = ts.overtimeBuckets.find((b) => b.bucket === "REG")?.totalMinutes ?? 0;
-                    const ot = ts.overtimeBuckets.find((b) => b.bucket === "OT")?.totalMinutes ?? 0;
-                    const dt = ts.overtimeBuckets.find((b) => b.bucket === "DT")?.totalMinutes ?? 0;
-
-                    return (
-                      <TR key={ts.id}>
-                        <TD>
-                          <span style={{ fontWeight: "var(--weight-medium)", whiteSpace: "nowrap" }}>
-                            {ts.employee.user?.name ?? `Employee ${ts.employee.employeeCode}`}
+                  return (
+                    <TR key={ts.id}>
+                      <TD>
+                        <span style={{ fontWeight: "var(--weight-medium)", whiteSpace: "nowrap" }}>
+                          {ts.employee.user?.name ?? `Employee ${ts.employee.employeeCode}`}
+                        </span>
+                      </TD>
+                      <TD style={{ color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                        {format(parseUtcDate(ts.payPeriod.startDate), "MMM d")} –{" "}
+                        {format(addDays(parseUtcDate(ts.payPeriod.endDate), -1), "MMM d, yyyy")}
+                      </TD>
+                      {/* Regular hours carry the column and overtime hangs
+                          underneath, as the design draws it. Three equal
+                          columns spent a third of the table on two figures
+                          that are empty on most rows. */}
+                      <TD numeric>
+                        <span className="inline-flex flex-col items-end">
+                          <span style={{ fontWeight: "var(--weight-medium)" }}>
+                            {(reg / 60).toFixed(2)}
                           </span>
-                        </TD>
-                        <TD style={{ color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
-                          {format(parseUtcDate(ts.payPeriod.startDate), "MMM d")} –{" "}
-                          {format(addDays(parseUtcDate(ts.payPeriod.endDate), -1), "MMM d, yyyy")}
-                        </TD>
-                        {/* Regular hours carry the column and overtime hangs
-                            underneath, as the design draws it. Three equal
-                            columns spent a third of the table on two figures
-                            that are empty on most rows. */}
-                        <TD numeric>
-                          <span className="inline-flex flex-col items-end">
-                            <span style={{ fontWeight: "var(--weight-medium)" }}>
-                              {(reg / 60).toFixed(2)}
+                          {/* These restate the cell's tabular figures: the
+                              `font` shorthand resets font-variant-numeric,
+                              and an OT column whose decimal points do not
+                              line up is one nobody reads down. */}
+                          {ot > 0 && (
+                            <span
+                              style={{
+                                font: "var(--type-caption1)",
+                                fontVariantNumeric: "tabular-nums",
+                                color: "var(--text-warning)",
+                              }}
+                            >
+                              OT {(ot / 60).toFixed(2)}
                             </span>
-                            {/* These restate the cell's tabular figures: the
-                                `font` shorthand resets font-variant-numeric,
-                                and an OT column whose decimal points do not
-                                line up is one nobody reads down. */}
-                            {ot > 0 && (
-                              <span
-                                style={{
-                                  font: "var(--type-caption1)",
-                                  fontVariantNumeric: "tabular-nums",
-                                  color: "var(--text-warning)",
-                                }}
-                              >
-                                OT {(ot / 60).toFixed(2)}
-                              </span>
-                            )}
-                            {dt > 0 && (
-                              <span
-                                style={{
-                                  font: "var(--type-caption1)",
-                                  fontVariantNumeric: "tabular-nums",
-                                  color: "var(--text-error)",
-                                }}
-                              >
-                                DT {(dt / 60).toFixed(2)}
-                              </span>
-                            )}
-                          </span>
-                        </TD>
-                        <TD align="center">
-                          {ts.exceptions.length > 0 ? (
-                            <Badge tone="error" size="sm">
-                              {ts.exceptions.length} open
-                            </Badge>
-                          ) : (
-                            <span style={{ color: "var(--text-tertiary)" }}>—</span>
                           )}
-                        </TD>
-                        <TD>
-                          <Badge tone={statusTone(ts.status)} size="sm">
-                            {TIMESHEET_STATUS_LABEL[ts.status]}
+                          {dt > 0 && (
+                            <span
+                              style={{
+                                font: "var(--type-caption1)",
+                                fontVariantNumeric: "tabular-nums",
+                                color: "var(--text-error)",
+                              }}
+                            >
+                              DT {(dt / 60).toFixed(2)}
+                            </span>
+                          )}
+                        </span>
+                      </TD>
+                      <TD align="center">
+                        {ts.exceptions.length > 0 ? (
+                          <Badge tone="error" size="sm">
+                            {ts.exceptions.length} open
                           </Badge>
-                        </TD>
-                        <TD align="right">
-                          <div className="flex justify-end">
-                            <ApproveTimesheetButtons
-                              timesheetId={ts.id}
-                              status={ts.status}
-                              isPayroll={isPayroll}
-                            />
-                          </div>
-                        </TD>
-                      </TR>
-                    );
-                  })}
-                </TBody>
-              </Table>
-              <TableFooter shown={rows.length} total={all.length} label="timesheets" />
-            </>
-          )}
-        </Card>
-      </div>
+                        ) : (
+                          <span style={{ color: "var(--text-tertiary)" }}>—</span>
+                        )}
+                      </TD>
+                      <TD>
+                        <Badge tone={statusTone(ts.status)} size="sm">
+                          {TIMESHEET_STATUS_LABEL[ts.status]}
+                        </Badge>
+                      </TD>
+                      <TD align="right">
+                        <div className="flex justify-end">
+                          <ApproveTimesheetButtons
+                            timesheetId={ts.id}
+                            status={ts.status}
+                            isPayroll={isPayroll}
+                          />
+                        </div>
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+            <TableFooter shown={rows.length} total={all.length} label="timesheets" />
+          </>
+        )}
+      </Card>
     </div>
   );
 }

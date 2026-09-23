@@ -47,7 +47,7 @@ export default async function RulesSetupPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title="Rules Setup"
         subtitle="Overtime, rounding, meal and holiday rules by rule set"
         actions={

@@ -59,7 +59,7 @@ export default async function PunchHistoryPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title="Punch History"
         subtitle={
           periodLabel ? (

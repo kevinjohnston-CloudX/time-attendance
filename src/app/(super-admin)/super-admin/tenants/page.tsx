@@ -33,7 +33,7 @@ export default async function TenantsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title="Tenants"
         subtitle="Super-admin · every company on this deployment"
         actions={

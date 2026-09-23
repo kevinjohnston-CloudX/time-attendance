@@ -139,7 +139,7 @@ export default async function PunchPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Punch Clock" subtitle="Clock in, take your meal, clock out" />
+      <PageHeader pinned title="Punch Clock" subtitle="Clock in, take your meal, clock out" />
 
       <PunchHero state={today.state as PunchStateValue} context={context} stats={stats} />
 

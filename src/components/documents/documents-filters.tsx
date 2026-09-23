@@ -36,7 +36,12 @@ export function DocumentsFilters({
         style={{
           border: "1px solid var(--stroke-default)",
           background: "var(--surface-card)",
-          flex: "0 1 260px",
+          // A width rather than a 260px flex basis: the form wraps, and a
+          // wrapping row sizes itself from its items' widths, not their
+          // bases, so a basis alone pushed the Filter button onto a line of
+          // its own.
+          width: 260,
+          flex: "0 1 auto",
           minWidth: 160,
         }}
       >

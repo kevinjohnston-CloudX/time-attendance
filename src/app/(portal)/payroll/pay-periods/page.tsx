@@ -274,7 +274,16 @@ export default async function PayPeriodsPage({
       </aside>
 
       {/* ── Right pane: the period as a document ─────────────── */}
-      <div className="h-full flex-1 overflow-y-auto px-6 py-6">
+      {/* Scrolls on its own, inside 24px of padding rather than the page's
+          16px, so the pinned title is told how far to reach. */}
+      <div
+        className="h-full flex-1 overflow-y-auto px-6 py-6"
+        style={{
+          ["--pin-x" as string]: "1.5rem",
+          ["--pin-t" as string]: "1.5rem",
+          ["--pin-stick" as string]: "-1.5rem",
+        }}
+      >
         {!detail ? (
           <div className="flex h-full items-center justify-center">
             <EmptyState
@@ -628,7 +637,7 @@ function PeriodDetail({
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title={
           <span className="flex flex-wrap items-center gap-3">
             <span className="tabular">{label}</span>

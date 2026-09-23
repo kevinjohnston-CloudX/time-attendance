@@ -42,7 +42,7 @@ export default async function ReportsPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title="Reports"
         subtitle="Saved and scheduled payroll reports"
         actions={

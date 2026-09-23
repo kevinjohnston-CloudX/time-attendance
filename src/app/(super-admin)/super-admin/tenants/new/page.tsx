@@ -84,7 +84,7 @@ export default async function NewTenantPage({
 
   return (
     <form action={handleCreate} className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title="New Tenant"
         subtitle="Creates the tenant, its first site, a default rule set and a System Admin who can sign in."
         actions={

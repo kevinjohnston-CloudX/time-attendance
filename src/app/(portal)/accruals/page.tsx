@@ -147,22 +147,23 @@ export default async function AccrualsPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Accruals"
-        subtitle="Leave balances, accrual ledger and adjustments"
-        actions={
-          // Only for the audience that reaches this page through the admin hub.
-          // It is also a main-nav page under Time, and a supervisor who arrived
-          // from the sidebar has no Administration to go back to.
-          canViewAny ? (
-            <LinkButton href="/admin" hierarchy="tertiary">
-              ← Administration
-            </LinkButton>
-          ) : undefined
-        }
-      />
-
       <AccrualsEmployeeList
+        header={
+          <PageHeader
+            title="Accruals"
+            subtitle="Leave balances, accrual ledger and adjustments"
+            actions={
+              // Only for the audience that reaches this page through the admin hub.
+              // It is also a main-nav page under Time, and a supervisor who arrived
+              // from the sidebar has no Administration to go back to.
+              canViewAny ? (
+                <LinkButton href="/admin" hierarchy="tertiary">
+                  ← Administration
+                </LinkButton>
+              ) : undefined
+            }
+          />
+        }
         employees={visible}
         total={total}
         sites={sites}

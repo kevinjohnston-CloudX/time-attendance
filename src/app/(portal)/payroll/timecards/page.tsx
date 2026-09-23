@@ -103,7 +103,7 @@ export default async function TimecardsPage({
             employees" and "no employees in Shipping at the Newark DC" look
             identical without it, and the difference is whether somebody
             concludes a site has nobody to pay. */}
-        <PageHeader
+        <PageHeader pinned
           title="Timecards"
           subtitle={narrowedBy || (narrowed ? "Filtered" : undefined)}
           actions={
@@ -276,7 +276,7 @@ export default async function TimecardsPage({
           and is one-shot per period, so its home is the pay period screen where
           locking happens — a button here would be disabled on every timecard
           anybody is still editing. The link goes there instead. */}
-      <PageHeader
+      <PageHeader pinned
         title="Timecards"
         subtitle={subtitle}
         actions={<LinkButton href="/payroll/pay-periods">Pay Periods</LinkButton>}

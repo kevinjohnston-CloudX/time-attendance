@@ -96,7 +96,7 @@ export default async function MyLeavePage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title="My Leave"
         subtitle="Balances, requests and upcoming time off"
         actions={

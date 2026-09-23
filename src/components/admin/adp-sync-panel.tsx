@@ -265,7 +265,7 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
 
   return (
     <>
-      <PageHeader
+      <PageHeader pinned
         title="ADP Sync"
         subtitle="Sync employee data from ADP Workforce Now"
         actions={

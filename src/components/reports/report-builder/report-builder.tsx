@@ -182,7 +182,7 @@ export function ReportBuilder({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title="New Report"
         subtitle="Pick a data source, shape the columns, schedule delivery"
         actions={

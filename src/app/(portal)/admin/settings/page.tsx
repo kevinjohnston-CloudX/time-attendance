@@ -99,7 +99,7 @@ export default async function CompanySettingsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title="Company Settings"
         subtitle={name}
         actions={

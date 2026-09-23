@@ -153,7 +153,7 @@ export default async function TimesheetPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title="My Timesheet"
         subtitle={subtitle}
         actions={

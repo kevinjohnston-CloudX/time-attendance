@@ -64,15 +64,16 @@ export default async function DocumentsPage({
 
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader
-          title="Documents"
-          subtitle={`Pay statements, policies and signed forms · on file for ${withFiles} ${withFiles === 1 ? "employee" : "employees"}`}
-          actions={
-            canUpload && employees.length > 0 ? <UploadDocumentForm employees={employees} /> : undefined
-          }
-        />
-
         <DocumentsList
+          header={
+            <PageHeader
+              title="Documents"
+              subtitle={`Pay statements, policies and signed forms · on file for ${withFiles} ${withFiles === 1 ? "employee" : "employees"}`}
+              actions={
+                canUpload && employees.length > 0 ? <UploadDocumentForm employees={employees} /> : undefined
+              }
+            />
+          }
           docs={docs}
           q={q}
           type={type}
@@ -97,16 +98,15 @@ export default async function DocumentsPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="My Documents" subtitle="Pay statements, policies and signed forms" />
-
       <DocumentsList
+        header={<PageHeader title="My Documents" subtitle="Pay statements, policies and signed forms" />}
         docs={docs}
         q={q}
         type={type}
         year={year}
         page={page}
         searchPlaceholder="Document name"
-        emptyTitle="Nothing here yet"
+        emptyTitle="No documents yet"
         emptyBody="No documents have been uploaded for you. Anything HR shares with you will show up on this page."
       />
     </div>

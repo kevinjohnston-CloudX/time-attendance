@@ -51,38 +51,39 @@ export default async function EmployeesPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Employees"
-        subtitle="Profiles, badge numbers, assignments and pay"
-        actions={
-          <>
-            <LinkButton href="/admin" hierarchy="tertiary">
-              ← Administration
-            </LinkButton>
-            <CsvUploadForm
-              sites={sites.map((s) => s.name)}
-              departments={departments.map((d) => d.name)}
-              ruleSets={ruleSets.map((r) => r.name)}
-            />
-            <LinkButton href="/admin/adp" hierarchy="secondary">
-              Sync ADP
-            </LinkButton>
-            <CreateEmployeeForm
-              sites={sites}
-              departments={departments}
-              ruleSets={ruleSets}
-              employees={allEmps}
-              customRoles={customRoles}
-              shifts={shifts}
-              holidayRules={holidayRules}
-              payCategories={payCategories ?? []}
-              payTypes={payTypes ?? []}
-            />
-          </>
-        }
-      />
-
       <EmployeesTable
+        header={
+          <PageHeader
+            title="Employees"
+            subtitle="Profiles, badge numbers, assignments and pay"
+            actions={
+              <>
+                <LinkButton href="/admin" hierarchy="tertiary">
+                  ← Administration
+                </LinkButton>
+                <CsvUploadForm
+                  sites={sites.map((s) => s.name)}
+                  departments={departments.map((d) => d.name)}
+                  ruleSets={ruleSets.map((r) => r.name)}
+                />
+                <LinkButton href="/admin/adp" hierarchy="secondary">
+                  Sync ADP
+                </LinkButton>
+                <CreateEmployeeForm
+                  sites={sites}
+                  departments={departments}
+                  ruleSets={ruleSets}
+                  employees={allEmps}
+                  customRoles={customRoles}
+                  shifts={shifts}
+                  holidayRules={holidayRules}
+                  payCategories={payCategories ?? []}
+                  payTypes={payTypes ?? []}
+                />
+              </>
+            }
+          />
+        }
         employees={employees}
         total={total}
         page={page}

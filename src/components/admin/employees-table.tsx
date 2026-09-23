@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import {
   Badge,
@@ -20,6 +20,7 @@ import {
   TD,
   Toolbar,
   statusTone,
+  PinnedBar,
 } from "@/components/ui";
 import { Users } from "lucide-react";
 
@@ -67,6 +68,8 @@ interface Props {
   departments: string[];
   shifts: { id: string; name: string; startTime: string }[];
   currentFilters: { q: string; site: string; dept: string; role: string };
+  /** The page title, pinned together with the filters under it. */
+  header?: ReactNode;
 }
 
 export function EmployeesTable({
@@ -78,6 +81,7 @@ export function EmployeesTable({
   departments,
   shifts,
   currentFilters,
+  header,
 }: Props) {
   const router = useRouter();
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -136,65 +140,68 @@ export function EmployeesTable({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2.5">
-        <Toolbar count={total} countLabel="employee">
-          <SearchInput
-            value={searchValue}
-            onValueChange={onSearchChange}
-            placeholder="Name, email or employee code"
-          />
-          <Select
-            aria-label="Site"
-            value={currentFilters.site}
-            onChange={(e) => onFilterChange("site", e.target.value)}
-          >
-            <option value="">All sites</option>
-            {sites.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </Select>
-          <Select
-            aria-label="Department"
-            value={currentFilters.dept}
-            onChange={(e) => onFilterChange("dept", e.target.value)}
-          >
-            <option value="">All departments</option>
-            {departments.map((d) => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </Select>
-          <Select
-            aria-label="Role"
-            value={currentFilters.role}
-            onChange={(e) => onFilterChange("role", e.target.value)}
-          >
-            <option value="">All roles</option>
-            {Object.entries(ROLE_LABEL).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </Select>
-        </Toolbar>
+      <PinnedBar>
+        {header}
+        <div className="flex flex-col gap-2.5">
+          <Toolbar count={total} countLabel="employee">
+            <SearchInput
+              value={searchValue}
+              onValueChange={onSearchChange}
+              placeholder="Name, email or employee code"
+            />
+            <Select
+              aria-label="Site"
+              value={currentFilters.site}
+              onChange={(e) => onFilterChange("site", e.target.value)}
+            >
+              <option value="">All sites</option>
+              {sites.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </Select>
+            <Select
+              aria-label="Department"
+              value={currentFilters.dept}
+              onChange={(e) => onFilterChange("dept", e.target.value)}
+            >
+              <option value="">All departments</option>
+              {departments.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </Select>
+            <Select
+              aria-label="Role"
+              value={currentFilters.role}
+              onChange={(e) => onFilterChange("role", e.target.value)}
+            >
+              <option value="">All roles</option>
+              {Object.entries(ROLE_LABEL).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </Select>
+          </Toolbar>
 
-        <FilterBar clearHref={isFiltered ? "/admin/employees" : undefined}>
-          {currentFilters.site
-            ? <FilterChip key="site" label="Site" value={currentFilters.site} clearHref={clearOne("site")} />
-            : null}
-          {currentFilters.dept
-            ? <FilterChip key="dept" label="Department" value={currentFilters.dept} clearHref={clearOne("dept")} />
-            : null}
-          {currentFilters.role
-            ? <FilterChip
-                key="role"
-                label="Role"
-                value={ROLE_LABEL[currentFilters.role] ?? currentFilters.role}
-                clearHref={clearOne("role")}
-              />
-            : null}
-          {currentFilters.q
-            ? <FilterChip key="q" label="Search" value={currentFilters.q} clearHref={clearOne("q")} />
-            : null}
-        </FilterBar>
-      </div>
+          <FilterBar clearHref={isFiltered ? "/admin/employees" : undefined}>
+            {currentFilters.site
+              ? <FilterChip key="site" label="Site" value={currentFilters.site} clearHref={clearOne("site")} />
+              : null}
+            {currentFilters.dept
+              ? <FilterChip key="dept" label="Department" value={currentFilters.dept} clearHref={clearOne("dept")} />
+              : null}
+            {currentFilters.role
+              ? <FilterChip
+                  key="role"
+                  label="Role"
+                  value={ROLE_LABEL[currentFilters.role] ?? currentFilters.role}
+                  clearHref={clearOne("role")}
+                />
+              : null}
+            {currentFilters.q
+              ? <FilterChip key="q" label="Search" value={currentFilters.q} clearHref={clearOne("q")} />
+              : null}
+          </FilterBar>
+        </div>
+      </PinnedBar>
 
       <Card padding={0}>
         {employees.length === 0 ? (

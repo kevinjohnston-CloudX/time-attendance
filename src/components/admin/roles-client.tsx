@@ -11,6 +11,7 @@ import {
   EmptyState,
   LinkButton,
   PageHeader,
+  PinnedBar,
   SearchInput,
   Table,
   TableFooter,
@@ -106,27 +107,29 @@ export function RolesClient({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Roles & Permissions"
-        subtitle="Who can see and approve what"
-        actions={
-          <>
-            <LinkButton href="/admin" hierarchy="tertiary">
-              ← Administration
-            </LinkButton>
-            <Button
-              onClick={() => setShowCreate(true)}
-              leadingIcon={<Plus className="h-4 w-4" />}
-            >
-              New Role
-            </Button>
-          </>
-        }
-      />
+      <PinnedBar>
+        <PageHeader
+          title="Roles & Permissions"
+          subtitle="Who can see and approve what"
+          actions={
+            <>
+              <LinkButton href="/admin" hierarchy="tertiary">
+                ← Administration
+              </LinkButton>
+              <Button
+                onClick={() => setShowCreate(true)}
+                leadingIcon={<Plus className="h-4 w-4" />}
+              >
+                New Role
+              </Button>
+            </>
+          }
+        />
 
-      <Toolbar count={visible.length} countLabel="role">
-        <SearchInput value={search} onValueChange={setSearch} placeholder="Role or description" />
-      </Toolbar>
+        <Toolbar count={visible.length} countLabel="role">
+          <SearchInput value={search} onValueChange={setSearch} placeholder="Role or description" />
+        </Toolbar>
+      </PinnedBar>
 
       <Card padding={0}>
         {visible.length === 0 ? (

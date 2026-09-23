@@ -104,7 +104,7 @@ export function RequestLeaveForm({ leaveTypes, shift, layout = "page", onSuccess
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       {isPage && (
-        <PageHeader
+        <PageHeader pinned
           title="Request Leave"
           subtitle="Pick your days and send it for approval"
           actions={

@@ -7,6 +7,7 @@ import {
   Card,
   LinkButton,
   PageHeader,
+  PinnedBar,
   SegmentedLinks,
 } from "@/components/ui";
 import { ApiKeysManager } from "@/components/admin/api-keys-manager";
@@ -56,28 +57,29 @@ export function IntegrationsClient({ apiKeys, tab, loadError }: Props) {
 
   return (
     <>
-      <PageHeader
-        title="Integrations"
-        subtitle="Keys used by timeclocks and exports"
-        actions={
-          <>
-            <LinkButton href="/admin" hierarchy="tertiary">
-              ← Administration
-            </LinkButton>
-            {/* Only on the keys pane — a "New Key" button above the API
-                reference would generate something you cannot see. */}
-            {tab === "api-keys" && (
-              <Button hierarchy="primary" onClick={() => setCreateOpen(true)}>
-                New Key
-              </Button>
-            )}
-          </>
-        }
-      />
+      <PinnedBar>
+        <PageHeader
+          title="Integrations"
+          subtitle="Keys used by timeclocks and exports"
+          actions={
+            <>
+              <LinkButton href="/admin" hierarchy="tertiary">
+                ← Administration
+              </LinkButton>
+              {/* Only on the keys pane — a "New Key" button above the API
+                  reference would generate something you cannot see. */}
+              {tab === "api-keys" && (
+                <Button hierarchy="primary" onClick={() => setCreateOpen(true)}>
+                  New Key
+                </Button>
+              )}
+            </>
+          }
+        />
+        <SegmentedLinks items={TABS} active={tab} ariaLabel="Integrations view" />
+      </PinnedBar>
 
       <div className="flex flex-col gap-4">
-        <SegmentedLinks items={TABS} active={tab} ariaLabel="Integrations view" />
-
         {loadError && (
           <Banner tone="error" title="Could not load the API keys" body={loadError} />
         )}

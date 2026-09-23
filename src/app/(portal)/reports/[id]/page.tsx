@@ -29,7 +29,7 @@ export default async function ReportDetailPage({
     // they cannot open exists.
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader title="Report" subtitle="Saved and scheduled payroll reports" />
+        <PageHeader pinned title="Report" subtitle="Saved and scheduled payroll reports" />
         <Card padding={0}>
           <EmptyState
             icon={<FileSearch className="h-8 w-8" />}

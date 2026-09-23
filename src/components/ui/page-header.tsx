@@ -15,12 +15,16 @@ export function PageHeader({
   title,
   subtitle,
   actions,
+  pinned = false,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;
+  /** Pin it to the top while the page scrolls. For a title alone; a page
+   *  with filters under its title puts both in one PinnedBar instead. */
+  pinned?: boolean;
 }) {
-  return (
+  const header = (
     <div className="flex flex-wrap items-end gap-4">
       <div className="flex min-w-[240px] flex-1 flex-col gap-0.5">
         <h1 style={{ margin: 0, font: "var(--type-h1)", letterSpacing: "-0.02em", color: "var(--text-primary)" }}>
@@ -31,6 +35,26 @@ export function PageHeader({
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
   );
+  return pinned ? <PinnedBar>{header}</PinnedBar> : header;
+}
+
+/**
+ * The top of a page that stays put while the page scrolls: the title, the
+ * page's actions and whatever filters sit under them, so none of it needs a
+ * scroll back up to reach.
+ *
+ * <p>It must be the first thing in the page's column. It pulls itself up
+ * into the layout's top padding so it already sits where it pins and never
+ * slides on the first scroll, and out into the side padding so rows cannot
+ * show through the gutters beside it. The layout's padding comes from
+ * --pin-x and --pin-t, 16px unless a layout says otherwise.
+ *
+ * <p>Its bottom padding is taken back by a matching negative margin, so at
+ * rest the page is spaced exactly as it was, and once pinned the rows sliding
+ * under it still get a strip of clear space.
+ */
+export function PinnedBar({ children }: { children: ReactNode }) {
+  return <div className="ta-pinned flex flex-col gap-4">{children}</div>;
 }
 
 /**

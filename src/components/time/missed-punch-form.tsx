@@ -64,7 +64,7 @@ export function MissedPunchForm() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title="Report Missed Punch"
         subtitle="Submit a missed punch for supervisor approval"
         actions={

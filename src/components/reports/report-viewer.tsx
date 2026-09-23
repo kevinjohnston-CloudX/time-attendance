@@ -306,7 +306,7 @@ export function ReportViewer({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title={report.name}
         subtitle={subtitle}
         actions={

@@ -26,7 +26,7 @@ export default async function NewReportPage() {
   if (!dsResult.success || !filterResult.success) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader title="New Report" subtitle="Pick a data source, shape the columns, schedule delivery" />
+        <PageHeader pinned title="New Report" subtitle="Pick a data source, shape the columns, schedule delivery" />
         <Banner
           tone="error"
           title="The builder could not be loaded"

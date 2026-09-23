@@ -567,7 +567,7 @@ export default async function EmployeeAccrualsPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title={employee.user.name}
         subtitle={`${employee.employeeCode} · Hired ${format(employee.hireDate, "MMM d, yyyy")} · ${year} accrual year`}
         actions={

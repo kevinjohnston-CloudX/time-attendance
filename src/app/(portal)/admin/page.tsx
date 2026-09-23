@@ -101,7 +101,7 @@ export default async function AdminPage() {
       {/* The count moved into the areas card and the filter row, where it is
           next to the thing it counts. The subtitle says how the page is
           organised instead, which is the question someone arriving here asks. */}
-      <PageHeader
+      <PageHeader pinned
         title="Administration"
         subtitle="People, policy and configuration — grouped by what each page controls"
       />

@@ -546,3 +546,23 @@ tbody .ta-row:hover {
 }
 @keyframes ta-spin { to { transform: rotate(360deg); } }
 @keyframes ta-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* The pinned top of a page (PinnedBar in page-header.tsx). --pin-stick is
+   for a pane that scrolls inside its own padding: a sticky box stops at the
+   padding edge, so it has to be told to stick that far above it. */
+.ta-pinned {
+  position: sticky;
+  top: var(--pin-stick, 0);
+  z-index: 20;
+  margin: calc(var(--pin-t, 1rem) * -1) calc(var(--pin-x, 1rem) * -1) -0.75rem;
+  padding: var(--pin-t, 1rem) var(--pin-x, 1rem) 0.75rem;
+  background: var(--surface-page);
+}
+/* In a narrow or short window the filters stack and the bar would cover
+   close to half the screen, so there it scrolls away with the page. */
+@media (max-width: 1023px), (max-height: 599px) {
+  .ta-pinned {
+    position: relative;
+    top: auto;
+  }
+}

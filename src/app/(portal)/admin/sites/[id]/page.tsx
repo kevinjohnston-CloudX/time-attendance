@@ -69,7 +69,7 @@ export default async function SiteDetailPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title={site.name}
         subtitle={`${site.timezone}${site.address ? ` · ${site.address}` : ""}`}
         actions={

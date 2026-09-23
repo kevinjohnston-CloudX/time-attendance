@@ -54,7 +54,7 @@ export default async function SiteSettingsPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title="Company Setup"
         subtitle="Sites, departments, holidays and the codes they use"
         actions={

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { format } from "date-fns";
 import { Download, FileText } from "lucide-react";
 import { DeleteDocumentButton } from "./delete-document-button";
@@ -18,6 +19,7 @@ import {
   THead,
   TR,
   Toolbar,
+  PinnedBar,
 } from "@/components/ui";
 
 /**
@@ -59,6 +61,7 @@ export function DocumentsList({
   searchPlaceholder,
   emptyTitle,
   emptyBody,
+  header,
 }: {
   docs: DocumentRow[];
   basePath?: string;
@@ -71,6 +74,8 @@ export function DocumentsList({
   searchPlaceholder: string;
   emptyTitle: string;
   emptyBody: string;
+  /** The page title, pinned together with the filters under it. */
+  header?: ReactNode;
 }) {
   const typeOptions = buildTypeOptions(docs);
   const yearOptions = [...new Set(docs.map((d) => d.uploadedAt.getFullYear()))].sort((a, b) => b - a);
@@ -110,26 +115,31 @@ export function DocumentsList({
   const filtersApplied = Boolean(needle || type || year);
 
   return (
-    <div className="flex flex-col gap-2.5">
-      <Toolbar count={filtered.length} countLabel="document">
-        <DocumentsFilters
-          q={q}
-          type={type}
-          year={year}
-          typeOptions={typeOptions}
-          yearOptions={yearOptions}
-          placeholder={searchPlaceholder}
-        />
-      </Toolbar>
+    <div className="flex flex-col gap-4">
+      <PinnedBar>
+        {header}
+        <div className="flex flex-col gap-2.5">
+          <Toolbar count={filtered.length} countLabel="document">
+            <DocumentsFilters
+              q={q}
+              type={type}
+              year={year}
+              typeOptions={typeOptions}
+              yearOptions={yearOptions}
+              placeholder={searchPlaceholder}
+            />
+          </Toolbar>
 
-      <FilterBar clearHref={filtersApplied ? basePath : undefined}>
-        {type ? (
-          <FilterChip key="type" label="Type" value={typeLabel} clearHref={filterHref({ type: "" })} />
-        ) : null}
-        {year ? (
-          <FilterChip key="year" label="Year" value={year} clearHref={filterHref({ year: "" })} />
-        ) : null}
-      </FilterBar>
+          <FilterBar clearHref={filtersApplied ? basePath : undefined}>
+            {type ? (
+              <FilterChip key="type" label="Type" value={typeLabel} clearHref={filterHref({ type: "" })} />
+            ) : null}
+            {year ? (
+              <FilterChip key="year" label="Year" value={year} clearHref={filterHref({ year: "" })} />
+            ) : null}
+          </FilterBar>
+        </div>
+      </PinnedBar>
 
       <Card padding={0}>
         {filtered.length === 0 ? (

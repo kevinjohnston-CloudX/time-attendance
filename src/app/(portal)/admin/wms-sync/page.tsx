@@ -135,7 +135,7 @@ export default async function WmsSyncPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <PageHeader pinned
         title="WMS Sync"
         subtitle="Roster, schedules and gate baselines, read out of the warehouse Oracle database"
         actions={

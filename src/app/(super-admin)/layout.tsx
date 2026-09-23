@@ -60,7 +60,13 @@ export default async function SuperAdminLayout({
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+      {/* The pinned page titles reach into this padding, not the portal's. */}
+      <main
+        className="mx-auto max-w-6xl px-6 py-8"
+        style={{ ["--pin-x" as string]: "1.5rem", ["--pin-t" as string]: "2rem" }}
+      >
+        {children}
+      </main>
     </div>
   );
 }
