@@ -775,7 +775,7 @@ export function OnSiteBoard({
                 {tab === "movements" && <MvSortChip sort={mvSort} onChange={setMvSort} />}
                 {tab === "movements" && (
                   <ToggleChip
-                    label="All scans"
+                    label="Expand all"
                     pressed={mvAllOpen}
                     onClick={() => {
                       setMvAllOpen((v) => !v);

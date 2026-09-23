@@ -136,6 +136,13 @@ function flagChips(v: PersonDayView, isToday: boolean): { label: string; tone: "
 
 /* ── The table ──────────────────────────────────────────────────────────── */
 
+/**
+ * One row per person, the same columns for everybody, so the list reads
+ * down: who, when they came in against when they were due, when they left
+ * against when they were due to, how long inside and how long on the clock,
+ * and the day at a glance. The detail behind those numbers (every stretch at
+ * each reader, every scan, the device that took it) folds out under the row.
+ */
 export function MovementsTable({
   views,
   data,
@@ -149,7 +156,7 @@ export function MovementsTable({
   isOpen,
   onToggle,
 }: {
-  /** Whether a person's scans are showing, and the way to show or hide them. */
+  /** Whether a person's detail is showing, and the way to show or hide it. */
   isOpen: (id: string) => boolean;
   onToggle: (id: string) => void;
   views: PersonDayView[];
@@ -164,43 +171,40 @@ export function MovementsTable({
 }) {
   const isToday = data.day === data.today;
   const tz = data.site.timezone;
+  const hasGate = data.site.hasGateData;
   const axis = useMemo(() => dayAxis(views, data, now), [views, data, now]);
   return (
     <section className={styles.group} aria-label="Movements">
-      <div className={styles.mvHead} style={{ top: stickyTop }} aria-hidden="true">
+      <div className={styles.mvHead} data-gate={hasGate ? undefined : "false"} style={{ top: stickyTop }} aria-hidden="true">
         <span>Employee</span>
-        <span className="flex min-w-0 flex-col gap-2">
-          <span className={styles.mvAxis}>
-            {axis.ticks.map((t) => (
-              <span key={t} style={{ left: axis.pct(t) }}>
-                {hourLabel(t, tz)}
-              </span>
-            ))}
-          </span>
-          <span className={styles.mvHeadLines}>
-            <span>Reader</span>
-            <span>Activity</span>
-            <span>From</span>
-            <span>To</span>
-            <span className={styles.mvNum}>Duration</span>
-          </span>
+        <span>Arrived</span>
+        <span>Left</span>
+        {hasGate && <span className={styles.mvNum}>In building</span>}
+        <span className={styles.mvNum}>On the clock</span>
+        <span className={styles.mvAxis}>
+          {axis.ticks.map((t) => (
+            <span key={t} style={{ left: axis.pct(t) }}>
+              {hourLabel(t, tz)}
+            </span>
+          ))}
         </span>
+        <span />
       </div>
       <ol className={styles.mvList}>
         {views.slice(0, shown).map((v) => (
-          <PersonBlock
+          <PersonRow
             key={v.person.id}
             view={v}
             isToday={isToday}
-            hasGate={data.site.hasGateData}
+            hasGate={hasGate}
             tz={tz}
             now={now}
             selected={v.person.id === selectedId}
             onOpen={() => onOpen(v.person.id)}
             onZoom={(src) => onZoom(v, src)}
             axis={axis}
-            scansOpen={isOpen(v.person.id)}
-            onToggleScans={() => onToggle(v.person.id)}
+            open={isOpen(v.person.id)}
+            onToggle={() => onToggle(v.person.id)}
           />
         ))}
       </ol>
@@ -220,7 +224,7 @@ export function MovementsTable({
   );
 }
 
-function PersonBlock({
+function PersonRow({
   view: v,
   isToday,
   hasGate,
@@ -230,11 +234,11 @@ function PersonBlock({
   onOpen,
   onZoom,
   axis,
-  scansOpen,
-  onToggleScans,
+  open,
+  onToggle,
 }: {
-  scansOpen: boolean;
-  onToggleScans: () => void;
+  open: boolean;
+  onToggle: () => void;
   view: PersonDayView;
   isToday: boolean;
   hasGate: boolean;
@@ -249,21 +253,54 @@ function PersonBlock({
   const status = statusOfDay(v, isToday, hasGate);
   const meta = status ? STATUS_META[status] : null;
   const chips = flagChips(v, isToday);
-  const schedule = fmtShift(p.scheduledStart, p.scheduledEnd);
   const t = v.lanes.totals;
+  const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
+  const seen = v.scanCount > 0;
+  const present = isToday && (v.now.inside || v.now.clock !== "OUT");
+  const late = v.flags.includes("LATE");
+  const early = v.flags.includes("LEFT_EARLY");
+  const carried = v.lines.some((l) => l.carried);
+  const unclosed = !isToday && v.lines.some((l) => l.end === null && l.kind !== "EXIT_ONLY");
+  const hasDetail = seen || v.lines.length > 0;
+
+  const arrived =
+    v.firstIn !== null ? (
+      <span data-tone={late ? "warning" : undefined}>{time(v.firstIn)}</span>
+    ) : carried ? (
+      <span className={styles.mvQuiet}>Before midnight</span>
+    ) : p.onLeave ? (
+      <span className={styles.mvQuiet}>On leave</span>
+    ) : v.schedule ? (
+      <span className={styles.mvQuiet}>{isToday && now < v.schedule.start ? "Not in yet" : "Not in"}</span>
+    ) : null;
+
+  const left = present ? (
+    <span className={styles.mvStill}>Still here</span>
+  ) : unclosed ? (
+    <span className={styles.mvWarn}>No scan out</span>
+  ) : v.lastOut !== null ? (
+    <span data-tone={early ? "warning" : undefined}>{time(v.lastOut)}</span>
+  ) : null;
 
   return (
     <li>
-      {/* The whole block opens the person; the face has its own click, to
-          enlarge it, and the name is the keyboard's way in. */}
-      <div className={styles.mvPerson} data-selected={selected ? "true" : undefined} onClick={onOpen}>
+      {/* The row opens the person's panel; the face has its own click, to
+          enlarge it, the name is the keyboard's way in, and the arrow at the
+          end folds the detail out in place. */}
+      <div
+        className={styles.mvRow}
+        data-gate={hasGate ? undefined : "false"}
+        data-selected={selected ? "true" : undefined}
+        data-open={open ? "true" : undefined}
+        onClick={onOpen}
+      >
         <span className={styles.mvWho}>
           <span className={styles.mvPhoto}>
             <span className={styles.initials} aria-hidden="true">
               {initialsOf(p.name)}
             </span>
             <ZoomableFace src={p.photoUrl} name={p.name} onZoom={onZoom} />
-            {meta && <span className={styles.stripe} style={{ background: meta.color, height: 4 }} />}
+            {meta && <span className={styles.stripe} style={{ background: meta.color, height: 3 }} />}
           </span>
           <span className={styles.mvIdentity}>
             <button
@@ -274,11 +311,8 @@ function PersonBlock({
             >
               {p.name}
             </button>
-            <span className={styles.meta}>
-              {p.employeeCode}
-              {(p.jobTitle ?? p.department) ? ` · ${p.jobTitle ?? p.department}` : ""}
-            </span>
-            <span className="mt-1 flex flex-wrap items-center gap-1">
+            <span className={styles.meta}>{p.jobTitle ?? p.department ?? p.employeeCode}</span>
+            <span className={styles.mvBadges}>
               {meta && status && (
                 <Badge tone={meta.badge} size="sm" dot>
                   {status === "ON_MEAL" ? (v.now.clock === "BREAK" ? "On break" : "On meal") : meta.label}
@@ -289,67 +323,82 @@ function PersonBlock({
                   On leave
                 </Badge>
               )}
+              {chips.map((c) => (
+                <Badge key={c.label} tone={c.tone} size="sm">
+                  {c.label}
+                </Badge>
+              ))}
               <HomeSiteBadge site={p.homeSite} />
             </span>
-            <span className={styles.mvFacts}>
-              {schedule ? `Scheduled ${schedule}` : "Not scheduled"}
-            </span>
-            {v.scanCount > 0 && hasGate && (
-              <span className={styles.mvFacts}>{t.insideMin ? `Inside ${fmtDuration(t.insideMin)}` : "Never inside"}</span>
-            )}
-            {v.scanCount > 0 && (
-              <span className={styles.mvFacts}>
-                {t.workMin ? `On the clock ${fmtDuration(t.workMin)}` : "Never on the clock"}
-              </span>
-            )}
-            {chips.length > 0 && (
-              <span className={styles.mvChips}>
-                {chips.map((c) => (
-                  <Badge key={c.label} tone={c.tone} size="sm">
-                    {c.label}
-                  </Badge>
-                ))}
-              </span>
-            )}
           </span>
         </span>
 
-        <span className={styles.mvLines}>
+        <span className={styles.mvFact}>
+          <span className={styles.mvFactValue}>{arrived}</span>
+          {v.schedule && <span className={styles.mvFactSub}>Due {time(v.schedule.start)}</span>}
+        </span>
+        <span className={styles.mvFact}>
+          <span className={styles.mvFactValue}>{left}</span>
+          {v.schedule && <span className={styles.mvFactSub}>Ends {time(v.schedule.end)}</span>}
+        </span>
+        {hasGate && (
+          <span className={`${styles.mvFact} ${styles.mvNum}`}>
+            <span className={styles.mvFactValue}>{seen ? fmtDuration(t.insideMin) : ""}</span>
+          </span>
+        )}
+        <span className={`${styles.mvFact} ${styles.mvNum}`}>
+          <span className={styles.mvFactValue}>{seen ? fmtDuration(t.workMin) : ""}</span>
+        </span>
+        <span className={styles.mvDay}>
           <Ribbon view={v} axis={axis} isToday={isToday} hasGate={hasGate} tz={tz} now={now} />
-          {v.lines.length === 0 ? (
-            <span className={styles.mvNone}>
-              {p.onLeave
-                ? "On approved leave. No scans."
-                : v.schedule
-                  ? isToday && now < v.schedule.start
-                    ? `Not in yet. Due ${fmtTime(new Date(v.schedule.start).toISOString(), tz)}.`
-                    : isToday
-                      ? "Not seen at either reader today."
-                      : "Not seen at either reader that day."
-                  : "No stretches recorded, only scans that changed nothing."}
-            </span>
-          ) : (
-            v.lines.map((l) => <Line key={l.key} line={l} isToday={isToday} tz={tz} />)
-          )}
-          {v.scanCount > 0 && (
-            <>
-              <button
-                type="button"
-                className={styles.scanToggle}
-                aria-expanded={scansOpen}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleScans();
-                }}
-              >
-                <ChevronDown className={styles.chevron} aria-hidden="true" />
-                {scansOpen ? "Hide" : "Show"} {v.scanCount.toLocaleString()} {v.scanCount === 1 ? "scan" : "scans"}
-              </button>
-              {scansOpen && <ScanList scans={v.scans} tz={tz} notCounted={v.notCounted} />}
-            </>
+        </span>
+        <span className={styles.mvToggleCell}>
+          {hasDetail && (
+            <button
+              type="button"
+              className={styles.mvToggle}
+              aria-expanded={open}
+              aria-label={`${open ? "Hide" : "Show"} details for ${p.name}`}
+              title={open ? "Hide details" : "Show details"}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle();
+              }}
+            >
+              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            </button>
           )}
         </span>
       </div>
+
+      {open && hasDetail && (
+        <div className={styles.mvDetail} onClick={(e) => e.stopPropagation()}>
+          {v.lines.length > 0 ? (
+            <div className={styles.mvDetailBlock}>
+              <span className={styles.mvDetailHead} aria-hidden="true">
+                <span>Reader</span>
+                <span>Activity</span>
+                <span>From</span>
+                <span>To</span>
+                <span className={styles.mvNum}>Duration</span>
+              </span>
+              {v.lines.map((l) => (
+                <Line key={l.key} line={l} isToday={isToday} tz={tz} />
+              ))}
+            </div>
+          ) : (
+            <span className={styles.mvNone}>No stretches recorded, only scans that changed nothing.</span>
+          )}
+          {seen && (
+            <div className={styles.mvDetailBlock}>
+              <span className={styles.mvDetailTitle}>
+                {v.scanCount.toLocaleString()} {v.scanCount === 1 ? "scan" : "scans"}
+              </span>
+              <ScanList scans={v.scans} tz={tz} notCounted={v.notCounted} />
+            </div>
+          )}
+        </div>
+      )}
     </li>
   );
 }
