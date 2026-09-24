@@ -435,7 +435,7 @@ export function ExceptionCard({
               sit next to something that does. */}
           <span style={{ marginLeft: "auto" }}>
             <LinkButton
-              href={`/payroll/timecards?payPeriodId=${row.payPeriod.id}&employeeId=${row.employeeId}`}
+              href={`/payroll/timecards?periodId=${row.payPeriod.id}&employeeId=${row.employeeId}`}
               hierarchy="link"
               size="sm"
             >
