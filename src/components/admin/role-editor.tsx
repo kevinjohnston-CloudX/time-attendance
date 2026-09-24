@@ -163,9 +163,10 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
     },
   },
   presence: {
-    summary: "Controls who can see which employees are in the building right now.",
+    summary: "Controls who can see which employees are in the building right now, and who can update their photos.",
     cells: {
       "read:all": "See everyone at a site on Live Attendance, with their gate and time clock scans.",
+      "write:all": "Update an employee's photo from Live Attendance. The photo it replaces is kept.",
     },
   },
   role: {

@@ -328,7 +328,7 @@ function PersonRow({
             <span className={styles.initials} aria-hidden="true">
               {initialsOf(p.name)}
             </span>
-            <ZoomableFace src={p.photoUrl} name={p.name} onZoom={onZoom} />
+            <ZoomableFace src={p.photoUrl} personId={p.id} name={p.name} onZoom={onZoom} />
             {meta && <span className={styles.stripe} style={{ background: meta.color, height: 3 }} />}
           </span>
           <span className={styles.mvIdentity}>

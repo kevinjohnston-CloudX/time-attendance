@@ -1,4 +1,4 @@
-import { GetObjectCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/lib/db";
 
@@ -60,17 +60,22 @@ function s3(): { client: S3Client; bucket: string } | null {
 
 /* ── The bucket's file names ─────────────────────────────────────────────── */
 
-let files: { names: Set<string>; at: number } | null = null;
+/**
+ * Every file name, with when it last changed. The date goes into each link's
+ * signature (see `photoUrls`), so a photo replaced from CloudTime gets a new
+ * link and the browser fetches it instead of showing the one it kept.
+ */
+let files: { names: Map<string, number>; at: number } | null = null;
 let listing: Promise<void> | null = null;
 
 async function readList(store: { client: S3Client; bucket: string }): Promise<void> {
-  const names = new Set<string>();
+  const names = new Map<string, number>();
   let token: string | undefined;
   do {
     const page = await store.client.send(
       new ListObjectsV2Command({ Bucket: store.bucket, ContinuationToken: token, MaxKeys: 1000 }),
     );
-    for (const o of page.Contents ?? []) if (o.Key) names.add(o.Key);
+    for (const o of page.Contents ?? []) if (o.Key) names.set(o.Key, o.LastModified?.getTime() ?? 0);
     token = page.IsTruncated ? page.NextContinuationToken : undefined;
   } while (token && names.size < MAX_FILES);
   files = { names, at: Date.now() };
@@ -80,7 +85,7 @@ async function readList(store: { client: S3Client; bucket: string }): Promise<vo
  * The file names, read once and then refreshed in the background, so no
  * request after the first waits on AWS. Null when listing is not allowed.
  */
-async function fileNames(store: { client: S3Client; bucket: string }): Promise<Set<string> | null> {
+async function fileNames(store: { client: S3Client; bucket: string }): Promise<Map<string, number> | null> {
   const stale = !files || Date.now() - files.at > LIST_TTL_MS;
   if (stale && !listing) {
     listing = readList(store)
@@ -137,6 +142,14 @@ async function scannedBadges(tenantId: string, ids: string[]): Promise<Map<strin
   return out;
 }
 
+/** The names a person's photo could be filed under, in the order they are tried. */
+function candidatesFor(p: PhotoPerson, scanned: string[]): string[] {
+  const all = [...scanned, p.wmsId, p.barcode, p.employeeCode]
+    .map((c) => c?.trim())
+    .filter((c): c is string => !!c && /^[A-Za-z0-9_-]{1,40}$/.test(c));
+  return [...new Set(all)];
+}
+
 async function photoKeys(
   tenantId: string,
   store: { client: S3Client; bucket: string },
@@ -145,15 +158,7 @@ async function photoKeys(
   const [names, badges] = await Promise.all([fileNames(store), scannedBadges(tenantId, people.map((p) => p.id))]);
   const out = new Map<string, string | null>();
   for (const p of people) {
-    const candidates = [
-      ...(badges.get(p.id) ?? []),
-      p.wmsId,
-      p.barcode,
-      p.employeeCode,
-    ]
-      .map((c) => c?.trim())
-      .filter((c): c is string => !!c && /^[A-Za-z0-9_-]{1,40}$/.test(c));
-    const unique = [...new Set(candidates)];
+    const unique = candidatesFor(p, badges.get(p.id) ?? []);
     let key: string | null = null;
     if (names) {
       outer: for (const c of unique)
@@ -188,11 +193,15 @@ export async function photoUrls(tenantId: string, people: PhotoPerson[]): Promis
     return out;
   }
 
-  const signingDate = new Date(Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS);
+  const windowStart = Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS;
   await Promise.all(
     people.map(async (p) => {
       const key = keys.get(p.id) ?? null;
       if (!key) return out.set(p.id, null);
+      // A photo changed inside this window is signed from when it changed, so
+      // its link differs from the one the browser already holds.
+      const changed = files?.names.get(key) ?? 0;
+      const signingDate = new Date(Math.max(windowStart, changed));
       try {
         const url = await getSignedUrl(
           store.client,
@@ -211,4 +220,72 @@ export async function photoUrls(tenantId: string, people: PhotoPerson[]): Promis
     }),
   );
   return out;
+}
+
+/* ── Replacing a photo from CloudTime ────────────────────────────────────── */
+
+/** The largest upload taken. The browser sends about a tenth of this. */
+export const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
+
+export interface SavedPhoto {
+  key: string;
+  versionId: string | null;
+  previousVersionId: string | null;
+  url: string | null;
+}
+
+/**
+ * Files a new photo for a person where the lookup above will find it first:
+ * over the photo they have now (as a .jpg beside it when theirs is another
+ * type, since .jpg is tried first), or, with none, under the badge they
+ * scanned with last. The bucket keeps every version, so the photo it
+ * replaces is not lost, and its version id goes back for the audit log.
+ *
+ * <p>Takes only a JPEG, checked by its first bytes rather than by what the
+ * browser says it is. Nothing here reads the pixels, so it costs the server
+ * no more than passing the file on.
+ */
+export async function savePhoto(tenantId: string, person: PhotoPerson, bytes: Uint8Array): Promise<SavedPhoto> {
+  const store = s3();
+  if (!store) throw new Error("PHOTOS_OFF");
+  if (bytes.length < 1024 || bytes.length > MAX_PHOTO_BYTES) throw new Error("PHOTO_SIZE");
+  if (!(bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)) throw new Error("PHOTO_TYPE");
+
+  // Always the freshest view of the bucket and of their badges: a photo
+  // filed under the wrong name is a person who keeps showing initials.
+  badgeCache.delete(person.id);
+  const [names, badges] = await Promise.all([fileNames(store), scannedBadges(tenantId, [person.id])]);
+  const candidates = candidatesFor(person, badges.get(person.id) ?? []);
+  const current = (await photoKeys(tenantId, store, [person])).get(person.id) ?? null;
+  const base = current && names?.has(current) ? current.replace(/\.[^.]+$/, "") : candidates[0];
+  if (!base) throw new Error("NO_BADGE");
+  const key = `${base}.jpg`;
+
+  let previousVersionId: string | null = null;
+  try {
+    const head = await store.client.send(new HeadObjectCommand({ Bucket: store.bucket, Key: key }));
+    previousVersionId = head.VersionId ?? null;
+  } catch {
+    // Nothing there yet.
+  }
+
+  const put = await store.client.send(
+    new PutObjectCommand({
+      Bucket: store.bucket,
+      Key: key,
+      Body: bytes,
+      ContentType: "image/jpeg",
+      Metadata: { source: "cloudtime" },
+    }),
+  );
+
+  const changedAt = Date.now();
+  files?.names.set(key, changedAt);
+  const url = await getSignedUrl(
+    store.client,
+    new GetObjectCommand({ Bucket: store.bucket, Key: key, ResponseCacheControl: "private, max-age=3600" }),
+    { expiresIn: LINK_SECONDS, signingDate: new Date(changedAt) },
+  ).catch(() => null);
+
+  return { key, versionId: put.VersionId ?? null, previousVersionId, url };
 }

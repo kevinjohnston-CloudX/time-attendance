@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Clock, Coffee, DoorClosed, DoorOpen, X } from "lucide-react";
+import { Camera, ChevronLeft, ChevronRight, Clock, Coffee, DoorClosed, DoorOpen, X } from "lucide-react";
 import { Badge, Button } from "@/components/ui";
 import { getOnSitePerson } from "@/actions/presence.actions";
 import { addDays, dayLabel, DAYS_BACK } from "@/lib/presence/days";
@@ -22,7 +22,8 @@ import {
   statusLabel,
 } from "./presence-meta";
 import styles from "./on-site.module.css";
-import { ZoomableFace } from "./face";
+import { usePhoto, ZoomableFace } from "./face";
+import { PhotoEditor } from "./photo-editor";
 import { HomeSiteBadge } from "./home-site";
 
 /**
@@ -54,6 +55,8 @@ export function PersonPanel({
   refreshedAt,
   onClose,
   onZoom,
+  canEditPhoto = false,
+  onPhotoSaved,
 }: {
   siteId: string;
   employeeId: string;
@@ -69,8 +72,15 @@ export function PersonPanel({
   onClose: () => void;
   /** Opens the photo large; the panel stays open behind it. */
   onZoom?: (src: string, who: { name: string; detail: string }) => void;
+  /**
+   * Whether the viewer may replace this person's photo. Only decides whether
+   * the button is drawn; the save checks the permission again on the server.
+   */
+  canEditPhoto?: boolean;
+  onPhotoSaved?: (employeeId: string, photoUrl: string | null) => void;
 }) {
   const [day, setDay] = useState(initialDay ?? today);
+  const [editingPhoto, setEditingPhoto] = useState(false);
   const [detail, setDetail] = useState<PresenceDetail | null>(null);
   const [failed, setFailed] = useState(false);
   const headRef = useRef<HTMLDivElement>(null);
@@ -138,6 +148,7 @@ export function PersonPanel({
   const shownScans = shown ? shown.scans.filter(isShownScan) : [];
   const hiddenScans = shown ? shown.scans.length - shownScans.length : 0;
   const name = person?.name ?? detail?.name ?? "";
+  const currentPhoto = usePhoto(employeeId, person?.photoUrl ?? detail?.photoUrl);
   const salaried = person?.salaried ?? detail?.salaried ?? false;
   const meta = person ? STATUS_META[person.status] : null;
   const mins = person ? minutesSince(person.since, now) : null;
@@ -183,6 +194,7 @@ export function PersonPanel({
               </span>
               <ZoomableFace
                 src={person?.photoUrl ?? detail?.photoUrl}
+                personId={employeeId}
                 name={name}
                 onZoom={
                   onZoom &&
@@ -195,6 +207,17 @@ export function PersonPanel({
                     }))
                 }
               />
+              {canEditPhoto && name && (
+                <button
+                  type="button"
+                  className={styles.ppPhotoEdit}
+                  aria-label={`Update photo of ${name}`}
+                  title="Update photo"
+                  onClick={() => setEditingPhoto(true)}
+                >
+                  <Camera className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              )}
             </span>
             <div className={styles.ppWho}>
               {name ? (
@@ -350,6 +373,23 @@ export function PersonPanel({
           </section>
         </div>
       </aside>
+
+      {editingPhoto && (
+        <PhotoEditor
+          siteId={siteId}
+          employeeId={employeeId}
+          name={name}
+          detail={[person?.employeeCode ?? detail?.employeeCode, person?.jobTitle ?? detail?.jobTitle ?? person?.department ?? detail?.department]
+            .filter(Boolean)
+            .join(" · ")}
+          currentSrc={currentPhoto}
+          onClose={() => setEditingPhoto(false)}
+          onSaved={(url) => {
+            setEditingPhoto(false);
+            onPhotoSaved?.(employeeId, url);
+          }}
+        />
+      )}
     </>
   );
 }

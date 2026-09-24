@@ -1,9 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Maximize2, X } from "lucide-react";
 import { Button } from "@/components/ui";
 import styles from "./on-site.module.css";
+
+/**
+ * Photos replaced on this page, by person id, until the server's own link
+ * catches up. Every face on the page reads it, so a new photo shows on the
+ * tile, the row and the panel the moment it is saved, not at the next poll.
+ */
+export const PhotoSwaps = createContext<ReadonlyMap<string, string>>(new Map());
+
+/** The photo to draw for a person: the one just saved here, else the server's. */
+export function usePhoto(personId: string | null | undefined, src: string | null | undefined) {
+  const swaps = useContext(PhotoSwaps);
+  return (personId && swaps.get(personId)) || src;
+}
 
 /**
  * A tablet photo laid over the initials already drawn in the same frame.
@@ -14,14 +27,17 @@ import styles from "./on-site.module.css";
  * link (the next signing window) gets a fresh try.
  */
 export function Face({
-  src,
+  src: given,
+  personId,
   alt = "",
   onLoad,
 }: {
   src: string | null | undefined;
+  personId?: string | null;
   alt?: string;
   onLoad?: () => void;
 }) {
+  const src = usePhoto(personId, given);
   const [failed, setFailed] = useState<string | null>(null);
   if (!src || failed === src) return null;
   return (
@@ -37,14 +53,17 @@ export function Face({
  * so it reads as "make this bigger" rather than "open this person".
  */
 export function ZoomableFace({
-  src,
+  src: given,
+  personId,
   name,
   onZoom,
 }: {
   src: string | null | undefined;
+  personId?: string | null;
   name: string;
   onZoom?: (src: string) => void;
 }) {
+  const src = usePhoto(personId, given);
   const [loaded, setLoaded] = useState<string | null>(null);
   return (
     <>

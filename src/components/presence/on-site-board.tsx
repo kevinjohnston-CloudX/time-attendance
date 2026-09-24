@@ -19,6 +19,8 @@ import {
   TH,
   THead,
   TR,
+  Toast,
+  useToast,
 } from "@/components/ui";
 import { getOnSiteBoard } from "@/actions/presence.actions";
 import type { PresenceBoard, PresencePerson, PresenceStatus } from "@/lib/presence/types";
@@ -47,7 +49,7 @@ import {
   statusLabel,
 } from "./presence-meta";
 import { PersonPanel } from "./person-panel";
-import { PhotoViewer } from "./face";
+import { PhotoSwaps, PhotoViewer } from "./face";
 import { clampDay, dayLabel, recentDays } from "@/lib/presence/days";
 import { applyHeldOrder, buildSiteDay, countFlags, holdOrder, scanTotals, type HeldOrder } from "@/lib/presence/movements";
 import {
@@ -129,6 +131,7 @@ export function OnSiteBoard({
   initialSiteId,
   initialBoard,
   initialFilters,
+  canEditPhotos = false,
 }: {
   sites: { id: string; name: string }[];
   initialSiteId: string | null;
@@ -147,8 +150,14 @@ export function OnSiteBoard({
     order: string | null;
     open: string | null;
   };
+  /** Draws Update photo on the employee panel. The save checks again on the server. */
+  canEditPhotos?: boolean;
 }) {
   const [siteId, setSiteId] = useState(initialSiteId);
+  // Photos saved here, drawn at once on every face until the server's own
+  // links carry them.
+  const [photoSwaps, setPhotoSwaps] = useState<ReadonlyMap<string, string>>(new Map());
+  const toast = useToast();
   const [board, setBoard] = useState(initialBoard);
   const [status, setStatus] = useState<StatusFilter>(parseStatus(initialFilters.status));
   const [dept, setDept] = useState(initialFilters.dept ?? "");
@@ -664,7 +673,8 @@ export function OnSiteBoard({
   );
 
   return (
-    <div className={`${styles.board} relative flex flex-col gap-4`}>
+    <PhotoSwaps.Provider value={photoSwaps}>
+      <div className={`${styles.board} relative flex flex-col gap-4`}>
       <span ref={markerRef} aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-px w-px" />
 
       <div ref={barRef} className="sticky top-0 z-20 flex flex-col" style={{ background: "var(--surface-page)" }}>
@@ -1226,13 +1236,20 @@ export function OnSiteBoard({
           refreshedAt={board?.generatedAt ?? ""}
           onClose={() => setSelectedId(null)}
           onZoom={(src, who) => setViewing({ src, ...who })}
+          canEditPhoto={canEditPhotos}
+          onPhotoSaved={(id, url) => {
+            if (url) setPhotoSwaps((m) => new Map(m).set(id, url));
+            toast.flash("Photo updated");
+          }}
         />
       )}
 
       {viewing && (
         <PhotoViewer src={viewing.src} name={viewing.name} detail={viewing.detail} onClose={() => setViewing(null)} />
       )}
-    </div>
+      <Toast message={toast.message} />
+      </div>
+    </PhotoSwaps.Provider>
   );
 }
 
@@ -1259,7 +1276,7 @@ export function Photo({ person, className, alt = "" }: { person: PresencePerson;
       </span>
       {/* The tablet photo, over the initials, which show whenever there is
           no photo, so nothing moves either way. */}
-      <Face src={person.photoUrl} alt={alt} />
+      <Face src={person.photoUrl} personId={person.id} alt={alt} />
     </span>
   );
 }
@@ -1319,7 +1336,7 @@ function PersonTile({
         <span className={styles.initials} aria-hidden="true">
           {initialsOf(p.name)}
         </span>
-        <Face src={p.photoUrl} />
+        <Face src={p.photoUrl} personId={p.id} />
         <span
           className={styles.stripe}
           data-dim={p.status === "NO_GATE_SCAN" || p.outsideOnMeal ? "true" : undefined}

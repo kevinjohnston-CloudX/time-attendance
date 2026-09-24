@@ -612,7 +612,7 @@ function LogRow({
           <span className={styles.initials} aria-hidden="true">
             {initialsOf(r.person.name)}
           </span>
-          <Face src={photo} />
+          <Face src={photo} personId={r.person.id} />
         </span>
 
         <span className={styles.logWho}>

@@ -5,6 +5,8 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { getPresenceBoard, getPresenceDetail, getViewableSites } from "@/lib/presence/on-site.service";
 import { getScanLog, type ScanLogInput } from "@/lib/presence/scan-log.service";
 import { getSiteDay } from "@/lib/presence/movements.service";
+import { MAX_PHOTO_BYTES, savePhoto } from "@/lib/presence/photos";
+import { writeAuditLog } from "@/lib/audit/logger";
 
 /**
  * On Site: who is in the building right now.
@@ -136,3 +138,51 @@ export const getOnSiteMovements = withRBAC(
     return day;
   },
 );
+
+/**
+ * Replaces a person's time clock photo, from the employee panel.
+ *
+ * <p>Gated on PRESENCE_PHOTO_EDIT, which is "Live Attendance, Write" on the
+ * Roles page: system admins hold it with everything, HR admins by default,
+ * and any other role only when an admin ticks it. Anyone else gets FORBIDDEN,
+ * whatever the browser shows. The site is checked like every other action
+ * here, and the person is looked up inside the caller's tenant, so an id from
+ * elsewhere answers NOT_FOUND.
+ *
+ * <p>The browser crops and shrinks the photo before sending it; this only
+ * checks it is a JPEG of a sensible size and files it. Every change is in the
+ * audit log with who made it, and the bucket keeps the photo it replaced.
+ */
+export const updateEmployeePhoto = withRBAC("PRESENCE_PHOTO_EDIT", async ({ tenantId, employeeId, role }, form: FormData) => {
+  if (!tenantId) throw new Error("NOT_FOUND");
+  const siteId = form.get("siteId");
+  const personId = form.get("employeeId");
+  const photo = form.get("photo");
+  if (typeof siteId !== "string" || typeof personId !== "string") throw new Error("NOT_FOUND");
+  if (!(photo instanceof Blob) || photo.size === 0) throw new Error("PHOTO_TYPE");
+  if (photo.size > MAX_PHOTO_BYTES) throw new Error("PHOTO_SIZE");
+
+  await assertSite(tenantId, { employeeId, role }, siteId);
+  const person = await db.employee.findFirst({
+    where: { id: personId, tenantId },
+    select: { id: true, barcode: true, wmsId: true, employeeCode: true },
+  });
+  if (!person) throw new Error("NOT_FOUND");
+
+  const saved = await savePhoto(tenantId, person, new Uint8Array(await photo.arrayBuffer()));
+  await writeAuditLog({
+    tenantId,
+    actorId: employeeId || null,
+    action: "EMPLOYEE_PHOTO_UPDATED",
+    entityType: "EMPLOYEE",
+    entityId: person.id,
+    changes: {
+      file: saved.key,
+      version: saved.versionId,
+      replacedVersion: saved.previousVersionId,
+      bytes: photo.size,
+      siteId,
+    },
+  });
+  return { photoUrl: saved.url };
+});
