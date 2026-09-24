@@ -330,3 +330,29 @@ export function countFlags(views: PersonDayView[]): Record<MovementFlag, number>
   for (const v of views) for (const f of v.flags) c[f] += 1;
   return c;
 }
+
+/* ── Holding the order still between refreshes ─────────────────────────── */
+
+/** The order the list was set to, and the latest movement it had seen then. */
+export interface HeldOrder {
+  ids: string[];
+  mark: number;
+}
+
+export function holdOrder(rows: PersonDayView[]): HeldOrder {
+  return { ids: rows.map((v) => v.person.id), mark: rows.reduce((m, v) => Math.max(m, v.lastActivity ?? 0), 0) };
+}
+
+/**
+ * Today's rows in the order they were held in, with how many people moved
+ * since. Somebody new to the list joins at the end until the order is set
+ * again, so nothing already on screen shifts down.
+ */
+export function applyHeldOrder(rows: PersonDayView[], held: HeldOrder | null): { rows: PersonDayView[]; moved: number } {
+  if (!held) return { rows, moved: 0 };
+  const at = new Map(held.ids.map((id, i) => [id, i]));
+  return {
+    rows: [...rows].sort((a, b) => (at.get(a.person.id) ?? Infinity) - (at.get(b.person.id) ?? Infinity)),
+    moved: rows.filter((v) => (v.lastActivity ?? 0) > held.mark).length,
+  };
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Clock, DoorOpen, UserRoundX } from "lucide-react";
+import { ArrowUp, ChevronDown, ChevronRight, Clock, DoorOpen, UserRoundX } from "lucide-react";
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { getOnSiteMovements } from "@/actions/presence.actions";
 import type { PresenceStatus, SiteDay } from "@/lib/presence/types";
@@ -156,7 +156,12 @@ export function MovementsTable({
   onZoom,
   isOpen,
   onToggle,
+  newCount = 0,
+  onShowNew,
 }: {
+  /** People who moved since the order was last set, and the way to bring them up. */
+  newCount?: number;
+  onShowNew?: () => void;
   /** Whether a person's detail is showing, and the way to show or hide it. */
   isOpen: (id: string) => boolean;
   onToggle: (id: string) => void;
@@ -175,8 +180,9 @@ export function MovementsTable({
   const hasGate = data.site.hasGateData;
   const axis = useMemo(() => dayAxis(views, data, now), [views, data, now]);
   return (
-    <section className={styles.group} aria-label="Movements">
-      <div className={styles.mvHead} data-gate={hasGate ? undefined : "false"} style={{ top: stickyTop }} aria-hidden="true">
+    <section className={styles.group} aria-label="Movements" style={{ scrollMarginTop: stickyTop + 8 }}>
+      <div className={styles.mvHeadWrap} style={{ top: stickyTop }}>
+      <div className={styles.mvHead} data-gate={hasGate ? undefined : "false"} aria-hidden="true">
         <span>Employee</span>
         <span>Arrived</span>
         <span>Left</span>
@@ -190,6 +196,13 @@ export function MovementsTable({
           ))}
         </span>
         <span />
+      </div>
+      {newCount > 0 && onShowNew && (
+        <button type="button" className={styles.mvNewPill} onClick={onShowNew}>
+          <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
+          {newCount.toLocaleString()} new {newCount === 1 ? "movement" : "movements"}
+        </button>
+      )}
       </div>
       <ol className={styles.mvList}>
         {views.slice(0, shown).map((v) => (
@@ -1017,16 +1030,25 @@ export function MovementsCounts({
 export type MvSort = "name" | "department" | "arrival" | "latest" | "inside" | "flags";
 
 export const MV_SORTS: { key: MvSort; label: string }[] = [
+  { key: "latest", label: "Latest activity" },
   { key: "name", label: "Name" },
   { key: "department", label: "Department" },
   { key: "arrival", label: "Arrival time" },
-  { key: "latest", label: "Latest activity" },
   { key: "inside", label: "Time inside" },
   { key: "flags", label: "Most flags" },
 ];
 
+/**
+ * Who moved last comes first: the page is opened to see what is happening,
+ * and a name order puts the one person who just walked out anywhere.
+ */
+export const MV_DEFAULT_SORT: MvSort = "latest";
+
+/** The orders a refresh can change, which the list holds still until asked. */
+export const MV_SORTS_THAT_MOVE: MvSort[] = ["latest", "arrival", "inside", "flags"];
+
 export function parseMvSort(raw: string | null | undefined): MvSort {
-  return MV_SORTS.some((s) => s.key === raw) ? (raw as MvSort) : "name";
+  return MV_SORTS.some((s) => s.key === raw) ? (raw as MvSort) : MV_DEFAULT_SORT;
 }
 
 /**

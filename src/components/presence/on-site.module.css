@@ -3065,3 +3065,57 @@
   border-radius: 1px;
   background: var(--text-primary);
 }
+
+/* The table heading pins as one piece with the new movements pill under it,
+   so the pill stays in view wherever the list is scrolled to. */
+.mvHeadWrap {
+  position: sticky;
+  z-index: 10;
+}
+
+.mvHeadWrap > .mvHead {
+  position: relative;
+}
+
+.mvNewPill {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill-accent);
+  color: var(--text-on-accent);
+  font: var(--weight-semibold) 13px/18px var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(3, 7, 18, 0.18);
+  animation: pillIn 180ms ease-out;
+}
+
+.mvNewPill:hover {
+  background: var(--fill-accent-hover);
+}
+
+.mvNewPill:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 2px;
+}
+
+@keyframes pillIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mvNewPill {
+    animation: none;
+  }
+}

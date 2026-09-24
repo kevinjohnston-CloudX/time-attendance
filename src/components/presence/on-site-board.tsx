@@ -49,9 +49,11 @@ import {
 import { PersonPanel } from "./person-panel";
 import { PhotoViewer } from "./face";
 import { clampDay, dayLabel, recentDays } from "@/lib/presence/days";
-import { buildSiteDay, countFlags, scanTotals } from "@/lib/presence/movements";
+import { applyHeldOrder, buildSiteDay, countFlags, holdOrder, scanTotals, type HeldOrder } from "@/lib/presence/movements";
 import {
+  MV_DEFAULT_SORT,
   MV_SORTS,
+  MV_SORTS_THAT_MOVE,
   MovementsCounts,
   MovementsEmpty,
   MovementsSkeleton,
@@ -205,7 +207,7 @@ export function OnSiteBoard({
     if (tab === "log" && counter) qs.set("scans", counter);
     if (tab !== "people" && logDay) qs.set("day", logDay);
     if (tab === "movements" && mvFlag) qs.set("flag", mvFlag);
-    if (tab === "movements" && mvSort !== "name") qs.set("order", mvSort);
+    if (tab === "movements" && mvSort !== MV_DEFAULT_SORT) qs.set("order", mvSort);
     if (tab === "movements" && mvAllOpen) qs.set("open", "all");
     const next = `${window.location.pathname}?${qs.toString()}`;
     if (next !== `${window.location.pathname}${window.location.search}`) {
@@ -460,6 +462,21 @@ export function OnSiteBoard({
       )
       .sort(compareDays(mvSort));
   }, [mvScoped, mvFlagShown, query, mvSort]);
+
+  // The order holds still between refreshes, so the row being read never
+  // moves under the reader. What changed meanwhile waits behind the "new
+  // movements" pill; picking anything (a sort, a filter, a day) or the pill
+  // itself sets the order again. Orders a refresh cannot change stay live.
+  const mvOrderKey = [siteId, logDayShown, mvSort, mvFlagShown, dept, shift, query.trim()].join("|");
+  const [mvFrozen, setMvFrozen] = useState<(HeldOrder & { key: string }) | null>(null);
+  const mvHolds = MV_SORTS_THAT_MOVE.includes(mvSort);
+  const mvHeld = mvHolds && mvFrozen?.key === mvOrderKey ? mvFrozen : null;
+  const mvLoaded = !!siteDay.data;
+  useEffect(() => {
+    if (!mvHolds || !mvLoaded || mvHeld) return;
+    setMvFrozen({ key: mvOrderKey, ...holdOrder(mvRows) });
+  }, [mvHolds, mvLoaded, mvHeld, mvOrderKey, mvRows]);
+  const { rows: mvDisplayed, moved: mvNewCount } = useMemo(() => applyHeldOrder(mvRows, mvHeld), [mvRows, mvHeld]);
   const logSummary = log.page?.summary ?? null;
   // "Not in CloudTime" counts people, not scans, so it has its own total.
   const logTotal = counter === "unknown" ? unknown.count : logSummary ? counterTotal(logSummary, counter) : 0;
@@ -500,7 +517,7 @@ export function OnSiteBoard({
     const time = (ms: number | null) => (ms === null ? "" : fmtTime(new Date(ms).toISOString(), tzDay));
     const header = ["Name", "Employee code", "Department", "Home site", "Scheduled", "Reader", "Activity", "From", "To", "Minutes", "Notes"];
     const lines: string[][] = [header];
-    for (const v of mvRows) {
+    for (const v of mvDisplayed) {
       const base = [v.person.name, v.person.employeeCode, v.person.department ?? "", v.person.homeSite ?? data.site.name, fmtShift(v.person.scheduledStart, v.person.scheduledEnd) ?? ""];
       if (v.lines.length === 0) {
         lines.push([...base, "", v.person.onLeave ? "On leave" : "Not seen", "", "", "", ""]);
@@ -901,7 +918,13 @@ export function OnSiteBoard({
           </Card>
         ) : (
           <MovementsTable
-            views={mvRows}
+            views={mvDisplayed}
+            newCount={mvNewCount}
+            onShowNew={() => {
+              setMvFrozen(null);
+              setMvShown(PEOPLE_PER_PAGE);
+              document.querySelector('section[aria-label="Movements"]')?.scrollIntoView({ block: "start", behavior: "smooth" });
+            }}
             data={siteDay.data}
             now={now}
             stickyTop={barHeight}
