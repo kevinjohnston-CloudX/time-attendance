@@ -20,7 +20,19 @@ import {
   Toast,
   useToast,
 } from "@/components/ui";
-import { ArrowLeft, ArrowRight, History, KeyRound, Pencil, Wallet } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Briefcase,
+  Building2,
+  CircleDollarSign,
+  ContactRound,
+  History,
+  KeyRound,
+  Pencil,
+  ScanLine,
+  Wallet,
+} from "lucide-react";
 import { useBreadcrumbLeaf } from "@/components/layout/breadcrumb-leaf";
 import styles from "./employee-record.module.css";
 
@@ -147,6 +159,16 @@ const numbered = (c: { number: number; description: string | null }) =>
 /** The audit log writes an empty side as a dash; a person reads "Empty". */
 const shown = (v: string) => (v === "—" || v === "" ? "Empty" : v);
 
+/** A pay code as the payroll team reads it: its number in a small mono tag, then its name. */
+function Coded({ item }: { item: { number: number; description: string | null } }) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-2">
+      <span className={styles.code}>{item.number}</span>
+      {item.description && <span className="min-w-0">{item.description}</span>}
+    </span>
+  );
+}
+
 /** Whether the record is in edit mode, for the field and section helpers. */
 const Editing = createContext(false);
 
@@ -185,25 +207,40 @@ function Field({
       ) : (
         <span className={styles.label}>{label}</span>
       )}
-      {editing ? (
-        children
-      ) : (
-        <span className={`${styles.value}${mono && !empty ? ` ${styles.mono}` : ""}`} data-empty={empty ? "true" : undefined}>
-          {empty ? "Not set" : read}
-        </span>
-      )}
-      {editing ? hint && <span className={styles.hint}>{hint}</span> : readHint && <span className={styles.hint}>{readHint}</span>}
+      <div className={styles.valueCol}>
+        {editing ? (
+          children
+        ) : (
+          <span className={`${styles.value}${mono && !empty ? ` ${styles.mono}` : ""}`} data-empty={empty ? "true" : undefined}>
+            {empty ? "Not set" : read}
+          </span>
+        )}
+        {editing ? hint && <span className={styles.hint}>{hint}</span> : readHint && <span className={styles.hint}>{readHint}</span>}
+      </div>
     </div>
   );
 }
 
-/** A section card; its body switches to field labels while editing. */
-function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
+/** A section card with its icon, title and one quiet line; its body switches to fields while editing. */
+function Section({
+  title,
+  subtitle,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  icon: React.ElementType;
+  children: ReactNode;
+}) {
   const editing = useContext(Editing);
   return (
     <section className={styles.card} data-editing={editing ? "true" : undefined} aria-label={title}>
       <header className={styles.sectionHead}>
-        <div>
+        <span className={styles.sectionIcon} aria-hidden="true">
+          <Icon className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
           <h2 className={styles.sectionTitle}>{title}</h2>
           {subtitle && <p className={styles.sectionSub}>{subtitle}</p>}
         </div>
@@ -326,11 +363,15 @@ export function EditEmployeeForm({
   const barRef = useRef<HTMLDivElement | null>(null);
   const [railPin, setRailPin] = useState<{ top: number; maxHeight: number } | null>(null);
   useLayoutEffect(() => {
-    const bar = barRef.current;
-    if (!bar) return;
-    let scroller: HTMLElement | null = bar.parentElement;
+    const first = barRef.current;
+    if (!first) return;
+    let scroller: HTMLElement | null = first.parentElement;
     while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
     const measure = () => {
+      // Read fresh every time: a hot reload can swap the bar's element, and a
+      // detached one reports no position at all.
+      const bar = barRef.current;
+      if (!bar || !bar.isConnected) return;
       const pinned = getComputedStyle(bar).position === "sticky";
       // The same distance the sections start below the bar (the page's gap
       // less the bar's negative bottom margin), so the card and the first
@@ -341,15 +382,26 @@ export function EditEmployeeForm({
       const top = pinned ? Math.round(bar.getBoundingClientRect().height + below) : 16;
       const view = scroller?.clientHeight ?? window.innerHeight;
       // Less the rail's own 4px of shadow room on each side.
-      setRailPin({ top: top - 4, maxHeight: Math.max(240, view - top - 16) + 8 });
+      const next = { top: top - 4, maxHeight: Math.max(240, view - top - 16) + 8 };
+      setRailPin((prev) => (prev && prev.top === next.top && prev.maxHeight === next.maxHeight ? prev : next));
+    };
+    // Scrolling checks again too (once a frame, and only re-rendering when a
+    // number moved), so a reading taken while the bar was not pinned can
+    // never leave the card under it.
+    let frame = 0;
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(() => { frame = 0; measure(); });
     };
     measure();
     window.addEventListener("resize", measure);
+    (scroller ?? window).addEventListener("scroll", onScroll, { passive: true });
     const ro = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
-    ro?.observe(bar);
+    ro?.observe(first);
     if (scroller) ro?.observe(scroller);
     return () => {
       window.removeEventListener("resize", measure);
+      (scroller ?? window).removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
       ro?.disconnect();
     };
   }, []);
@@ -467,11 +519,6 @@ export function EditEmployeeForm({
         (id === employee.supervisorId ? employee.supervisor?.user.name ?? "" : "")
       : "";
   const roleName = (id: string) => customRoles.find((r) => r.id === id)?.name ?? SYSTEM_ROLE_NAME[employee.role] ?? "";
-  const shiftLabel = (id: string) => {
-    const s = shifts.find((x) => x.id === id);
-    if (s) return `${s.name} (${fmtTime(s.startTime)} to ${fmtTime(s.endTime)})`;
-    return id ? "Retired shift" : "";
-  };
   const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === v.siteId));
   const tone = v.status === "inactive" ? "inactive" : v.status === "on-leave" ? "leave" : "active";
   const statusWord = v.status === "inactive" ? "Inactive" : v.status === "on-leave" ? "On leave" : "Active";
@@ -650,6 +697,7 @@ export function EditEmployeeForm({
 
             {/* ── Employment ─────────────────────────────────────────────── */}
             <Section
+              icon={Briefcase}
               title="Employment"
               subtitle="Site, department and supervisor decide whose queue this person's timesheets land in"
             >
@@ -715,7 +763,7 @@ export function EditEmployeeForm({
                   label="Status"
                   htmlFor="f-status"
                   read={
-                    <span className={`${styles.status} ${styles.statusInline}`} data-tone={tone}>
+                    <span className={`${styles.status} ${styles.statusFlat}`} data-tone={tone}>
                       <span className={styles.dot} aria-hidden="true" />
                       {statusWord}
                     </span>
@@ -734,9 +782,7 @@ export function EditEmployeeForm({
                   <Field label="Termination reason" htmlFor="f-terminationReason" read={v.terminationReason}>
                     {text("terminationReason")}
                   </Field>
-                ) : (
-                  <span aria-hidden="true" />
-                )}
+                ) : null}
 
                 <Field
                   label="Adjusted hire date"
@@ -752,6 +798,7 @@ export function EditEmployeeForm({
 
             {/* ── Pay & rules ────────────────────────────────────────────── */}
             <Section
+              icon={CircleDollarSign}
               title="Pay & Rules"
               subtitle="The rule set computes the hours; the pay method decides whether punches drive pay at all"
             >
@@ -759,7 +806,22 @@ export function EditEmployeeForm({
                 <Field label="Rule set" htmlFor="f-ruleSetId" read={ruleSets.find((r) => r.id === v.ruleSetId)?.name ?? employee.ruleSet.name}>
                   {pick("ruleSetId", ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>))}
                 </Field>
-                <Field label="Shift" htmlFor="f-shiftId" read={shiftLabel(v.shiftId) || "None"}>
+                <Field
+                  label="Shift"
+                  htmlFor="f-shiftId"
+                  read={(() => {
+                    const sh = shifts.find((x) => x.id === v.shiftId);
+                    if (!sh) return v.shiftId ? "Retired shift" : "None";
+                    return (
+                      <span className="flex flex-col gap-0.5">
+                        <span>{sh.name}</span>
+                        <span className={styles.subValue}>
+                          {fmtTime(sh.startTime)} to {fmtTime(sh.endTime)}
+                        </span>
+                      </span>
+                    );
+                  })()}
+                >
                   {pick(
                     "shiftId",
                     <>
@@ -787,7 +849,7 @@ export function EditEmployeeForm({
                   htmlFor="f-payCategoryId"
                   read={(() => {
                     const c = payCategories.find((x) => x.id === v.payCategoryId);
-                    return c ? numbered(c) : "None";
+                    return c ? <Coded item={c} /> : "None";
                   })()}
                 >
                   {pick(
@@ -803,7 +865,7 @@ export function EditEmployeeForm({
                   htmlFor="f-payTypeId"
                   read={(() => {
                     const t = payTypes.find((x) => x.id === v.payTypeId);
-                    return t ? numbered(t) : "None";
+                    return t ? <Coded item={t} /> : "None";
                   })()}
                 >
                   {pick(
@@ -827,7 +889,16 @@ export function EditEmployeeForm({
                 <Field
                   label={v.payType === "SALARY" ? "Pay rate (per year)" : "Pay rate (per hour)"}
                   htmlFor="f-payRate"
-                  read={payRateText}
+                  read={
+                    v.payRate ? (
+                      <span className={styles.amount}>
+                        {payRateText.split(" per ")[0]}
+                        <span className={styles.amountUnit}> per {payRateText.split(" per ")[1]}</span>
+                      </span>
+                    ) : (
+                      ""
+                    )
+                  }
                 >
                   {text("payRate", { type: "number", min: "0.01", step: "0.01", placeholder: "0.00", leadingIcon: <span style={{ color: "var(--text-tertiary)" }}>$</span> })}
                 </Field>
@@ -835,7 +906,7 @@ export function EditEmployeeForm({
             </Section>
 
             {/* ── Badges & IDs ───────────────────────────────────────────── */}
-            <Section title="Badges & IDs" subtitle="What the kiosks, the WMS and ADP know this person by">
+            <Section icon={ScanLine} title="Badges & IDs" subtitle="What the kiosks, the WMS and ADP know this person by">
               <div className={styles.grid}>
                 <Field label="Badge ID (WMS)" htmlFor="f-wmsId" read={v.wmsId} mono>
                   {text("wmsId", { placeholder: "QR code badge ID" })}
@@ -857,7 +928,7 @@ export function EditEmployeeForm({
             </Section>
 
             {/* ── Personal & contact ─────────────────────────────────────── */}
-            <Section title="Personal & Contact" subtitle="Held encrypted and only read back on this screen">
+            <Section icon={ContactRound} title="Personal & Contact" subtitle="Held encrypted and only read back on this screen">
               <div className={styles.grid}>
                 <Field label="Phone 1" htmlFor="f-phone" read={v.phone}>
                   {text("phone", { type: "tel" })}
@@ -865,7 +936,6 @@ export function EditEmployeeForm({
                 <Field label="Phone 2" htmlFor="f-phone2" read={v.phone2}>
                   {text("phone2", { type: "tel" })}
                 </Field>
-                <span aria-hidden="true" />
                 <Field label="Gender" htmlFor="f-gender" read={v.gender}>
                   {text("gender")}
                 </Field>
@@ -902,7 +972,7 @@ export function EditEmployeeForm({
                 <h3 className={styles.groupTitle}>Address</h3>
                 {editing ? (
                   <div className={`${styles.grid} ${styles.editing}`}>
-                    <Field label="Address line 1" htmlFor="f-address1" read="" className={styles.span2}>
+                    <Field label="Address line 1" htmlFor="f-address1" read="">
                       {text("address1")}
                     </Field>
                     <Field label="Address line 2" htmlFor="f-address2" read="">
@@ -924,7 +994,7 @@ export function EditEmployeeForm({
                 ) : (
                   // Read as an address, not as seven boxes.
                   <div className={styles.grid}>
-                    <Field label="Mailing address" read={addressText} className={styles.span2}>
+                    <Field label="Mailing address" read={addressText}>
                       {null}
                     </Field>
                   </div>
@@ -934,9 +1004,9 @@ export function EditEmployeeForm({
 
             {/* ── Site access ────────────────────────────────────────────── */}
             {employeeIsHrOrSysAdmin && (
-              <Section title="Site Access" subtitle="Which sites this HR user can see employees from">
+              <Section icon={Building2} title="Site Access" subtitle="Which sites this HR user can see employees from">
                 {editing && canManageSiteAccess ? (
-                  <>
+                  <div className={styles.accessEdit}>
                     <p className={styles.hint} style={{ margin: 0, font: "var(--type-body2)" }}>
                       {draftAccess.size === 0
                         ? "No sites checked, so this user sees employees at every site."
@@ -959,14 +1029,25 @@ export function EditEmployeeForm({
                         </div>
                       ))}
                     </div>
-                  </>
-                ) : access.size === 0 ? (
-                  <span className={styles.value}>Every site</span>
+                  </div>
                 ) : (
-                  <div className={styles.chips}>
-                    {sites
-                      .filter((s) => access.has(s.id))
-                      .map((s) => <span key={s.id} className={styles.chip}>{s.name}</span>)}
+                  <div className={styles.grid}>
+                    <Field
+                      label="Visible sites"
+                      read={
+                        access.size === 0 ? (
+                          "Every site"
+                        ) : (
+                          <span className={styles.chips}>
+                            {sites
+                              .filter((s) => access.has(s.id))
+                              .map((s) => <span key={s.id} className={styles.chip}>{s.name}</span>)}
+                          </span>
+                        )
+                      }
+                    >
+                      {null}
+                    </Field>
                   </div>
                 )}
                 {editing && !canManageSiteAccess && (
@@ -980,7 +1061,10 @@ export function EditEmployeeForm({
             {/* ── Change history ─────────────────────────────────────────── */}
             <section className={styles.card} aria-label="Change History">
               <header className={styles.sectionHead}>
-                <div>
+                <span className={styles.sectionIcon} aria-hidden="true">
+                  <History className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
                   <h2 className={styles.sectionTitle}>Change History</h2>
                   <p className={styles.sectionSub}>Every field this record has had edited, newest first</p>
                 </div>

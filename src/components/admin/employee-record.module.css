@@ -151,13 +151,6 @@
   white-space: nowrap;
 }
 
-.statusInline {
-  margin-top: 0;
-  height: auto;
-  padding: 0;
-  background: transparent !important;
-}
-
 .dot {
   flex: none;
   width: 8px;
@@ -197,11 +190,24 @@
 
 .sectionHead {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 24px 14px;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 24px;
   border-bottom: 1px solid var(--stroke-divider);
+}
+
+/* A small neutral tile, so each section has something to hold on to at a
+   glance without colour competing with the status. */
+.sectionIcon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-m);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-tertiary);
+  color: var(--icon-secondary);
 }
 
 .sectionTitle {
@@ -211,62 +217,48 @@
 }
 
 .sectionSub {
-  margin: 2px 0 0;
+  margin: 1px 0 0;
   font: var(--type-body2);
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
 }
 
 .sectionBody {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 20px 24px 24px;
+  gap: 8px;
+  padding: 4px 24px 12px;
+  container-type: inline-size;
 }
 
+/* Fields as rows, label beside value, two lists side by side. Rows pair up
+   across the two columns so their dividers run as one line. */
 .grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 20px 24px;
-}
-
-.span2 {
-  grid-column: span 2;
-}
-
-.spanAll {
-  grid-column: 1 / -1;
-}
-
-.group {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding-top: 20px;
-  border-top: 1px solid var(--stroke-divider);
-}
-
-.groupTitle {
-  margin: 0;
-  font: var(--weight-semibold) 11px/16px var(--font-sans);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 40px;
 }
 
 .field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: minmax(120px, min(38%, 200px)) minmax(0, 1fr);
+  gap: 16px;
+  align-items: baseline;
   min-width: 0;
+  padding: 14px 0;
+  border-top: 1px solid var(--stroke-divider);
+}
+
+.grid > .field:nth-child(-n + 2) {
+  border-top: 0;
+}
+
+.editing .field {
+  align-items: center;
+  padding: 10px 0;
 }
 
 .label {
-  font: var(--type-body2);
-  color: var(--text-tertiary);
-}
-
-.editing .label {
-  font: var(--type-button2);
+  font: var(--weight-medium) 13px/20px var(--font-sans);
   color: var(--text-secondary);
 }
 
@@ -275,9 +267,16 @@
   color: var(--text-error);
 }
 
+.valueCol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
 .value {
   min-height: 20px;
-  font: var(--weight-medium) 14px/20px var(--font-sans);
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
   color: var(--text-primary);
   overflow-wrap: anywhere;
   white-space: pre-line;
@@ -288,6 +287,38 @@
   color: var(--text-tertiary);
 }
 
+.subValue {
+  font: var(--type-body2);
+  font-weight: normal;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.amount {
+  font: var(--weight-semibold) 16px/20px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.amountUnit {
+  font: var(--type-body2);
+  font-weight: normal;
+  color: var(--text-secondary);
+}
+
+.code {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--radius-s);
+  background: var(--surface-tertiary);
+  font: var(--weight-semibold) 12px/1 var(--font-mono);
+  color: var(--text-secondary);
+}
+
 .mono {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -295,11 +326,29 @@
 
 .hint {
   font: var(--type-caption1);
+  font-weight: normal;
   color: var(--text-tertiary);
 }
 
-.control {
-  width: 100%;
+.statusFlat {
+  margin-top: 0;
+  height: 24px;
+}
+
+/* A group inside a section: a heading, then its own rows. */
+.group {
+  display: flex;
+  flex-direction: column;
+  padding-top: 18px;
+  border-top: 1px solid var(--stroke-divider);
+}
+
+.groupTitle {
+  margin: 0 0 2px;
+  font: var(--weight-semibold) 11px/16px var(--font-sans);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
 }
 
 /* ── Site access ──────────────────────────────────────────────── */
@@ -320,6 +369,13 @@
   font: var(--weight-medium) 13px/18px var(--font-sans);
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+.accessEdit {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 0 6px;
 }
 
 .checks {
@@ -456,20 +512,15 @@
 }
 
 @media (max-width: 900px) {
-  .grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 640px) {
-  .grid {
+  .field {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .span2 {
-    grid-column: auto;
+    gap: 4px;
   }
   .entry,
   .change {
@@ -481,5 +532,18 @@
   .entry {
     padding-left: 16px;
     padding-right: 16px;
+  }
+}
+
+/* Last in the file so it wins over the base rules. Two lists need about
+   380px each to keep a value like an email whole; below that the card, not
+   the window, decides: one list, every row but the first with its divider
+   back. */
+@container (max-width: 780px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .grid > .field:nth-child(2) {
+    border-top: 1px solid var(--stroke-divider);
   }
 }
