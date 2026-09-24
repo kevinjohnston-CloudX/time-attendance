@@ -12,8 +12,6 @@ import { getPayCodes } from "@/actions/pay-code.actions";
 import { getReasonCodes } from "@/actions/reason-code.actions";
 import { TimecardViewer } from "@/components/payroll/timecard-viewer";
 import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
-import { addDays, format } from "date-fns";
-import { parseUtcDate } from "@/lib/utils/date";
 import { Users } from "lucide-react";
 
 /**
@@ -247,22 +245,9 @@ export default async function TimecardsPage({
       }
     : null;
 
-  // Which period is on screen, spelled out. A screen of hours is only
-  // readable if you know the fortnight they belong to, and until now that was
-  // only visible by reading a dropdown.
-  // Read the same way the period bar inside the viewer reads it: parseUtcDate,
-  // because these columns arrive as UTC midnight and a plain `new Date` shows
-  // the day before anywhere west of UTC; and endDate minus a day, because the
-  // stored end is the boundary, not the last day worked. The two sit forty
-  // pixels apart on this screen, and a header naming a different fortnight
-  // than the grid under it is worse than no header at all.
-  const shownPeriod = periods.find((p) => p.id === selectedPeriodId);
-  const shownStart = shownPeriod ? parseUtcDate(shownPeriod.startDate) : null;
-  const shownEnd = shownPeriod ? addDays(parseUtcDate(shownPeriod.endDate), -1) : null;
+  // The line under the title. The dates themselves are on the pay period
+  // control beside it, and the viewer puts the pay frequency first.
   const subtitle = [
-    shownStart && shownEnd
-      ? `${format(shownStart, "MMM d")} – ${format(shownEnd, "MMM d, yyyy")}`
-      : null,
     `${employees.length} ${employees.length === 1 ? "employee" : "employees"}`,
     canEdit ? null : "Read only",
   ]
@@ -271,21 +256,16 @@ export default async function TimecardsPage({
 
   return (
     <TimecardViewer
-        // The page header, drawn by the viewer above the pay period control
-        // so the two read as one bar. The design gives it a "Send to ADP"
-        // action; that push only works on a locked pay period and happens once
-        // per period, so it lives on Pay Periods, where locking happens, and
-        // this links there.
-        header={
-          <PageHeader
-            title="Timecards"
-            subtitle={subtitle}
-            actions={
-              <LinkButton href="/payroll/pay-periods" hierarchy="secondary">
-                View pay periods
-              </LinkButton>
-            }
-          />
+        // The viewer draws the page header, so the pay period control and
+        // the site and department filters sit in its title row. The design
+        // gives it a "Send to ADP" action; that push only works on a locked
+        // pay period and happens once per period, so it lives on Pay Periods,
+        // where locking happens, and this links there.
+        subtitle={subtitle}
+        headerActions={
+          <LinkButton href="/payroll/pay-periods" hierarchy="secondary">
+            View pay periods
+          </LinkButton>
         }
         payPeriods={periods}
         selectedPeriodId={selectedPeriodId}

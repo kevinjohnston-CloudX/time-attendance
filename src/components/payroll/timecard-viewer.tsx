@@ -21,6 +21,7 @@ import {
   EmptyState,
   FilterSelectChip,
   Input,
+  PageHeader,
   SearchInput,
   SegmentedControl,
   Select,
@@ -249,8 +250,10 @@ interface TimecardViewerProps {
   selectedDepartmentId: string | null;
   userRole: string;
   readOnly?: boolean;
-  /** The page header, drawn above the pay period control. */
-  header?: React.ReactNode;
+  /** The line under the page title, after the pay frequency: the headcount. */
+  subtitle?: string;
+  /** Page actions drawn at the end of the title row, after the pay period. */
+  headerActions?: React.ReactNode;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -678,7 +681,8 @@ export function TimecardViewer({
   selectedDepartmentId,
   userRole,
   readOnly = false,
-  header,
+  subtitle,
+  headerActions,
 }: TimecardViewerProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -1712,159 +1716,164 @@ export function TimecardViewer({
     // each scrolling on its own. The page itself does not scroll, so the
     // person you are on never scrolls away from the hours you are reading.
     <div className="flex flex-col gap-4" style={{ height: "calc(100vh - 5rem)", minHeight: 560 }}>
-      <div className="flex shrink-0 flex-col gap-3">
-        {header}
+      {/* ── One title row ──────────────────────────────────────────
+          The title and what it covers on the left; on the right, who is
+          listed (site, department), which pay period, and the way out to
+          Pay Periods. Every number below belongs to that period, so it
+          sits in the page header rather than in a toolbar of its own. */}
+      <div className="shrink-0">
+        <PageHeader
+          title="Timecards"
+          subtitle={[`${PAY_FREQUENCY_LABEL[payFrequency as PayFrequencyValue] ?? payFrequency} pay period`, subtitle]
+            .filter(Boolean)
+            .join(" · ")}
+          actions={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+                {sites.length > 0 && (
+                  <FilterSelectChip
+                    label="Site"
+                    value={selectedSiteId ?? ""}
+                    options={sites}
+                    // The departments offered are the ones at the site, so a new
+                    // site clears the department with it.
+                    onChange={(v) => navigate(null, selectedPeriodId, v || null, null)}
+                  />
+                )}
+                <FilterSelectChip
+                  label="Department"
+                  value={selectedDepartmentId ?? ""}
+                  options={departments}
+                  onChange={(v) => navigate(selectedEmployeeId, selectedPeriodId, selectedSiteId, v || null)}
+                />
 
-        {/* ── The pay period on screen, and how to move ─────────────────
-            Every number below belongs to it, so it sits with the page title
-            rather than beside the search as one more filter. Site and
-            department narrow who is listed, and live in the link. */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div
-            className="flex items-center gap-1 rounded-lg p-1"
-            style={{ border: "1px solid var(--stroke-secondary)", background: "var(--surface-card)" }}
-          >
-            <Button
-              hierarchy="tertiary"
-              size="sm"
-              iconOnly
-              disabled={!hasPrev}
-              onClick={() => hasPrev && navigate(selectedEmployeeId, sortedPeriods[currentIndex - 1].id)}
-              title="Previous pay period"
-              aria-label="Previous pay period"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
+              <span aria-hidden="true" className="mx-1 h-5 w-px flex-none" style={{ background: "var(--stroke-divider)" }} />
 
-            <div className="relative" ref={calendarRef}>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!showCalendar && selectedPp) setPickerYear(parseUtcDate(selectedPp.startDate).getFullYear());
-                  setShowCalendar((v) => !v);
-                }}
-                title="Jump to a month"
-                aria-label={`Jump to a month. Showing ${selectedPeriodLabel}`}
-                aria-expanded={showCalendar}
-                className="ta-hoverable tabular flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5"
-                style={{
-                  border: 0,
-                  background: "transparent",
-                  cursor: "pointer",
-                  font: "var(--type-body1)",
-                  fontWeight: "var(--weight-semibold)",
-                  color: "var(--text-primary)",
-                }}
+              <div
+                className="flex h-8 flex-none items-center gap-0.5 rounded-lg px-0.5"
+                style={{ border: "1px solid var(--stroke-secondary)", background: "var(--surface-card)" }}
               >
-                <Calendar className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
-                {selectedPeriodLabel}
-              </button>
-              {showCalendar && (
-                <div className="ta-modal absolute left-0 top-full z-50 mt-1 w-56 rounded-lg p-3">
-                  <div className="mb-2.5 flex items-center justify-between">
-                    <Button hierarchy="tertiary" size="sm" iconOnly onClick={() => setPickerYear((y) => y - 1)} aria-label="Previous year">
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <span className="tabular" style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>
-                      {pickerYear}
-                    </span>
-                    <Button hierarchy="tertiary" size="sm" iconOnly onClick={() => setPickerYear((y) => y + 1)} aria-label="Next year">
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  {/* A month with no pay period is disabled rather than
-                      hidden: the gap is information, and a grid that reflowed
-                      would move January under your cursor. */}
-                  <div className="grid grid-cols-4 gap-1">
-                    {MONTHS.map((label, idx) => {
-                      const hasPeriod = monthsWithPeriods.has(idx);
-                      const isSelected = pickerYear === selectedMonthYear && idx === selectedMonthIdx;
-                      const isCurrentMonth = pickerYear === new Date().getFullYear() && idx === new Date().getMonth();
-                      return (
-                        <button
-                          key={label}
-                          type="button"
-                          disabled={!hasPeriod}
-                          onClick={() => handleMonthSelect(idx)}
-                          className={hasPeriod && !isSelected ? "ta-hoverable" : undefined}
-                          style={{
-                            padding: "6px 0",
-                            borderRadius: "var(--radius-s)",
-                            border: 0,
-                            font: "var(--type-button2)",
-                            cursor: hasPeriod ? "pointer" : "default",
-                            background: isSelected
-                              ? "var(--fill-accent)"
-                              : isCurrentMonth && hasPeriod
-                                ? "var(--surface-info)"
-                                : "transparent",
-                            color: isSelected
-                              ? "var(--text-on-accent)"
-                              : !hasPeriod
-                                ? "var(--text-disabled)"
-                                : isCurrentMonth
-                                  ? "var(--text-accent)"
-                                  : "var(--text-primary)",
-                          }}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
+                <Button
+                  hierarchy="tertiary"
+                  size="sm"
+                  iconOnly
+                  disabled={!hasPrev}
+                  onClick={() => hasPrev && navigate(selectedEmployeeId, sortedPeriods[currentIndex - 1].id)}
+                  title="Previous pay period"
+                  aria-label="Previous pay period"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                <div className="relative" ref={calendarRef}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!showCalendar && selectedPp) setPickerYear(parseUtcDate(selectedPp.startDate).getFullYear());
+                      setShowCalendar((v) => !v);
+                    }}
+                    title="Jump to a month"
+                    aria-label={`Jump to a month. Showing ${selectedPeriodLabel}`}
+                    aria-expanded={showCalendar}
+                    className="ta-hoverable tabular flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5"
+                    style={{
+                      border: 0,
+                      background: "transparent",
+                      cursor: "pointer",
+                      font: "var(--type-body1)",
+                      fontWeight: "var(--weight-semibold)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    <Calendar className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+                    {selectedPeriodLabel}
+                  </button>
+                  {showCalendar && (
+                    <div className="ta-modal absolute left-0 top-full z-50 mt-1 w-56 rounded-lg p-3">
+                      <div className="mb-2.5 flex items-center justify-between">
+                        <Button hierarchy="tertiary" size="sm" iconOnly onClick={() => setPickerYear((y) => y - 1)} aria-label="Previous year">
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <span className="tabular" style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>
+                          {pickerYear}
+                        </span>
+                        <Button hierarchy="tertiary" size="sm" iconOnly onClick={() => setPickerYear((y) => y + 1)} aria-label="Next year">
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      {/* A month with no pay period is disabled rather than
+                          hidden: the gap is information, and a grid that reflowed
+                          would move January under your cursor. */}
+                      <div className="grid grid-cols-4 gap-1">
+                        {MONTHS.map((label, idx) => {
+                          const hasPeriod = monthsWithPeriods.has(idx);
+                          const isSelected = pickerYear === selectedMonthYear && idx === selectedMonthIdx;
+                          const isCurrentMonth = pickerYear === new Date().getFullYear() && idx === new Date().getMonth();
+                          return (
+                            <button
+                              key={label}
+                              type="button"
+                              disabled={!hasPeriod}
+                              onClick={() => handleMonthSelect(idx)}
+                              className={hasPeriod && !isSelected ? "ta-hoverable" : undefined}
+                              style={{
+                                padding: "6px 0",
+                                borderRadius: "var(--radius-s)",
+                                border: 0,
+                                font: "var(--type-button2)",
+                                cursor: hasPeriod ? "pointer" : "default",
+                                background: isSelected
+                                  ? "var(--fill-accent)"
+                                  : isCurrentMonth && hasPeriod
+                                    ? "var(--surface-info)"
+                                    : "transparent",
+                                color: isSelected
+                                  ? "var(--text-on-accent)"
+                                  : !hasPeriod
+                                    ? "var(--text-disabled)"
+                                    : isCurrentMonth
+                                      ? "var(--text-accent)"
+                                      : "var(--text-primary)",
+                              }}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
+
+                <Button
+                  hierarchy="tertiary"
+                  size="sm"
+                  iconOnly
+                  disabled={!hasNext}
+                  onClick={() => hasNext && navigate(selectedEmployeeId, sortedPeriods[currentIndex + 1].id)}
+                  title="Next pay period"
+                  aria-label="Next pay period"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+
+                <span aria-hidden="true" className="mx-0.5 h-4 w-px flex-none" style={{ background: "var(--stroke-divider)" }} />
+
+                {/* A word, not an icon: "Today" says what it does to anyone. */}
+                <Button
+                  hierarchy="tertiary"
+                  size="sm"
+                  onClick={() => currentPeriod && navigate(selectedEmployeeId, currentPeriod.id)}
+                  disabled={!currentPeriod || selectedPeriodId === currentPeriod.id}
+                  title="Go to the pay period that includes today"
+                >
+                  Today
+                </Button>
+              </div>
+
+              {headerActions}
             </div>
-
-            <Button
-              hierarchy="tertiary"
-              size="sm"
-              iconOnly
-              disabled={!hasNext}
-              onClick={() => hasNext && navigate(selectedEmployeeId, sortedPeriods[currentIndex + 1].id)}
-              title="Next pay period"
-              aria-label="Next pay period"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-
-            <span aria-hidden="true" className="mx-0.5 h-4 w-px flex-none" style={{ background: "var(--stroke-divider)" }} />
-
-            {/* A word, not an icon: "Today" says what it does to anyone. */}
-            <Button
-              hierarchy="tertiary"
-              size="sm"
-              onClick={() => currentPeriod && navigate(selectedEmployeeId, currentPeriod.id)}
-              disabled={!currentPeriod || selectedPeriodId === currentPeriod.id}
-              title="Go to the pay period that includes today"
-            >
-              Today
-            </Button>
-          </div>
-
-          <span className="whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-            {PAY_FREQUENCY_LABEL[payFrequency as PayFrequencyValue] ?? payFrequency} pay period
-          </span>
-
-          <span className="flex-1" />
-
-          {sites.length > 0 && (
-            <FilterSelectChip
-              label="Site"
-              value={selectedSiteId ?? ""}
-              options={sites}
-              // The departments offered are the ones at the site, so a new
-              // site clears the department with it.
-              onChange={(v) => navigate(null, selectedPeriodId, v || null, null)}
-            />
-          )}
-          <FilterSelectChip
-            label="Department"
-            value={selectedDepartmentId ?? ""}
-            options={departments}
-            onChange={(v) => navigate(selectedEmployeeId, selectedPeriodId, selectedSiteId, v || null)}
-          />
-        </div>
+          }
+        />
       </div>
 
       <div className="grid min-h-0 flex-1 gap-4 [grid-template-columns:300px_minmax(0,1fr)]">
