@@ -24,10 +24,17 @@ function initials(name?: string | null): string {
   return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
-export function Avatar({ name, size = 28 }: { name?: string | null; size?: number }) {
+/**
+ * The signed-in person: their time clock tablet photo when there is one, over
+ * their initials, so a photo that fails to load (or a link that has expired
+ * in a tab left open) steps aside and the initials show with nothing moving.
+ */
+export function Avatar({ name, photo, size = 28 }: { name?: string | null; photo?: string | null; size?: number }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const showPhoto = !!photo && failed !== photo;
   return (
     <span
-      className="inline-flex flex-none items-center justify-center rounded-full"
+      className="relative inline-flex flex-none items-center justify-center overflow-hidden rounded-full"
       style={{
         width: size,
         height: size,
@@ -41,6 +48,16 @@ export function Avatar({ name, size = 28 }: { name?: string | null; size?: numbe
       title={name ?? undefined}
     >
       {initials(name)}
+      {showPhoto && (
+        // eslint-disable-next-line @next/next/no-img-element -- a signed S3 link, not an asset next/image can optimise
+        <img
+          src={photo}
+          alt=""
+          decoding="async"
+          onError={() => setFailed(photo)}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      )}
     </span>
   );
 }
@@ -48,6 +65,8 @@ export function Avatar({ name, size = 28 }: { name?: string | null; size?: numbe
 interface SidebarProps {
   role: string;
   userName?: string | null;
+  /** A signed link to the signed-in person's tablet photo, or null for initials. */
+  userPhoto?: string | null;
   permissions?: string[];
   realRole?: string;
   viewAsRole?: string | null;
@@ -232,6 +251,7 @@ return (
 
 export function Sidebar({
   userName,
+  userPhoto,
   permissions,
   realRole,
   viewAsRole,
@@ -338,7 +358,7 @@ export function Sidebar({
             aria-haspopup={canViewAs ? "menu" : undefined}
             aria-expanded={canViewAs ? showRolePicker : undefined}
           >
-            <Avatar name={userName} />
+            <Avatar name={userName} photo={userPhoto} />
             {!narrow && (
               <span className="min-w-0 flex-1 text-left">
                 <span
@@ -480,7 +500,7 @@ export function Sidebar({
           canViewAs ? "cursor-pointer" : "cursor-default"
         }`}
       >
-        <Avatar name={userName} />
+        <Avatar name={userName} photo={userPhoto} />
       </button>
 
       <button

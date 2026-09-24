@@ -13,6 +13,7 @@ import {
   PinnedBar,
 } from "@/components/ui";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Users } from "lucide-react";
+import { Face } from "@/components/presence/face";
 import styles from "./employees.module.css";
 
 /**
@@ -49,6 +50,8 @@ interface Employee {
   site: { name: string };
   department: { name: string };
   customRole: { id: string; name: string } | null;
+  /** A signed link to the time clock tablet's photo, or null for initials. */
+  photo: string | null;
 }
 
 interface Props {
@@ -236,8 +239,11 @@ export function EmployeesTable({
                       aria-label={`Open ${name}`}
                     >
                       <span className={styles.who}>
+                        {/* The tablet photo over the initials, which show when
+                            there is no photo or it fails to load. */}
                         <span className={styles.avatar} aria-hidden="true">
                           {initialsOf(emp.user.name)}
+                          <Face src={emp.photo} personId={emp.id} />
                         </span>
                         <span className={styles.cell}>
                           <span className={styles.name} title={name}>{name}</span>

@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { withRBAC } from "@/lib/rbac/guard";
+import { photoUrls } from "@/lib/presence/photos";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
 
@@ -151,7 +152,7 @@ export const getEmployees = withRBAC(
     // department, the rule set and the supervisor with their user row too, so
     // a page of 100 people carried 100 password hashes and 100 pay rates into
     // the browser to render a name, a code and a department.
-    const [employees, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       db.employee.findMany({
         where,
         select: {
@@ -165,6 +166,10 @@ export const getEmployees = withRBAC(
           site:       { select: { name: true } },
           department: { select: { name: true } },
           customRole: { select: { id: true, name: true } },
+          // Only to find each person's tablet photo; dropped below, so the
+          // badge numbers never reach the browser, only the signed link.
+          barcode: true,
+          wmsId: true,
         },
         orderBy: { user: { name: "asc" } },
         take: PAGE_SIZE,
@@ -172,6 +177,17 @@ export const getEmployees = withRBAC(
       }),
       db.employee.count({ where }),
     ]);
+
+    let photos = new Map<string, string | null>();
+    try {
+      photos = await photoUrls(tenantId ?? "", rows);
+    } catch {
+      // A failed lookup costs the faces, never the list.
+    }
+    const employees = rows.map(({ barcode: _barcode, wmsId: _wmsId, ...row }) => ({
+      ...row,
+      photo: photos.get(row.id) ?? null,
+    }));
 
     return { employees, total, page, pageSize: PAGE_SIZE };
   }

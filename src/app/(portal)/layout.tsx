@@ -13,6 +13,7 @@ import { getPermissions } from "@/lib/rbac/permissions";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { getLegacyPermissions } from "@/lib/rbac/permission-resolver";
 import { getWaitingOnYou } from "@/lib/dashboard/dashboard-data";
+import { photoUrls } from "@/lib/presence/photos";
 
 const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
@@ -26,13 +27,23 @@ export default async function PortalLayout({
   if (session.user.mustChangePassword) redirect("/change-password");
 
   // Check if the employee is active. Inactive employees get a restricted read-only view.
+  // The same read also carries what the tablet photo lookup needs, so the
+  // sidebar can show the signed-in person's own photo. Only ever their own.
   let isEmployeeActive = true;
+  let userPhoto: string | null = null;
   if (session.user.employeeId) {
     const emp = await db.employee.findUnique({
       where: { id: session.user.employeeId },
-      select: { isActive: true },
+      select: { id: true, isActive: true, tenantId: true, barcode: true, wmsId: true, employeeCode: true },
     });
     isEmployeeActive = emp?.isActive ?? true;
+    if (emp) {
+      try {
+        userPhoto = (await photoUrls(emp.tenantId, [emp])).get(emp.id) ?? null;
+      } catch {
+        userPhoto = null; // a failed lookup shows the initials, never breaks the page
+      }
+    }
   }
 
   let tenantBannerName: string | null = null;
@@ -197,6 +208,7 @@ export default async function PortalLayout({
         <Sidebar
           role={sidebarRole}
           userName={session.user.name}
+          userPhoto={userPhoto}
           permissions={userPermissions}
           realRole={realRole}
           viewAsRole={viewAsRole}
