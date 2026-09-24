@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Building2, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, DoorOpen, Download, SearchX, SlidersHorizontal, UserRoundX } from "lucide-react";
+import { ArrowDown, ArrowUp, Building2, Check, ChevronDown, Clock, DoorOpen, Download, Maximize2, Minimize2, SearchX, SlidersHorizontal, UserRoundX } from "lucide-react";
 import {
   Badge,
   Button,
@@ -180,6 +180,40 @@ export function OnSiteBoard({
   const pickedKey = useMemo(() => [...pickedIds].sort().join(","), [pickedIds]);
   const pickedList = useMemo(() => (pickedKey ? pickedKey.split(",") : []), [pickedKey]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Full screen: the page covers the whole window, sidebar and header
+  // included, and the browser is asked to go full screen too so its own
+  // bars go. If the browser says no, the page still fills the window. The
+  // button in the bar leaves it, and so does Esc, whichever way it came in:
+  // the browser handles Esc itself in its full screen, and the page does
+  // when the browser was never asked or refused, unless Esc was closing a
+  // panel, a menu or the search.
+  const [fullscreen, setFullscreen] = useState(false);
+  const selectedRef = useRef(selectedId);
+  useEffect(() => {
+    selectedRef.current = selectedId;
+  }, [selectedId]);
+  useEffect(() => {
+    if (!fullscreen) return;
+    const root = document.documentElement;
+    if (!document.fullscreenElement && root.requestFullscreen) root.requestFullscreen().catch(() => {});
+    const onChange = () => {
+      if (!document.fullscreenElement) setFullscreen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || document.fullscreenElement || selectedRef.current) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("input, select, textarea, [role='dialog']") || document.querySelector("[role='dialog']")) return;
+      setFullscreen(false);
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("fullscreenchange", onChange);
+      document.removeEventListener("keydown", onKey);
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    };
+  }, [fullscreen]);
   const [expanded, setExpanded] = useState<Record<string, number>>({});
   const [rowsShown, setRowsShown] = useState(ROWS_PER_PAGE);
   const [sort, setSort] = useState<Sort>(parseSort(initialFilters.sort));
@@ -665,43 +699,43 @@ export function OnSiteBoard({
     );
   }
 
-  // Whether the page is still live, as a small status rather than a
-  // sentence: the age of the data is in the tooltip.
-  const liveStatus =
-    liveState === "stale" ? (
-      <span className="inline-flex items-center gap-2 whitespace-nowrap">
-        <span className={styles.live} data-state={liveState} aria-hidden="true" />
-        <span style={{ color: "var(--text-warning)" }}>
-          {lastOk ? `Not updating since ${fmtTime(new Date(lastOk).toISOString(), tz)}` : "Not updating"}
+  const liveLine = (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      {/* With a site button beside the title, the name is already there. */}
+      {siteName && sites.length <= 1 && (
+        <span style={{ color: "var(--text-primary)", fontWeight: "var(--weight-medium)" }}>{siteName}</span>
+      )}
+      <span className={styles.live} data-state={liveState} aria-hidden="true" />
+      {liveState === "paused" ? (
+        <span>Paused while this tab is in the background</span>
+      ) : liveState === "stale" ? (
+        <>
+          <span style={{ color: "var(--text-warning)" }}>
+            {lastOk ? `Not updating. Last updated ${fmtTime(new Date(lastOk).toISOString(), tz)}` : "Not updating"}
+          </span>
+          <Button hierarchy="link" size="sm" onClick={() => void refresh(siteId)}>
+            Try again
+          </Button>
+        </>
+      ) : tab !== "people" && logDayShown ? (
+        <span>Showing {dayLabel(logDayShown, today)}, a finished day</span>
+      ) : (
+        <span>
+          Live · updated {age < 10_000 ? "just now" : `${Math.round(age / 1000)} seconds ago`}
         </span>
-        <Button hierarchy="link" size="sm" onClick={() => void refresh(siteId)}>
-          Try again
-        </Button>
-      </span>
-    ) : (
-      <span
-        className={styles.ctxLive}
-        title={
-          liveState === "paused"
-            ? "Paused while this tab is in the background"
-            : `Updated ${age < 10_000 ? "just now" : `${Math.round(age / 1000)} seconds ago`}`
-        }
-      >
-        <span className={styles.live} data-state={liveState} aria-hidden="true" />
-        {liveState === "paused" ? "Paused" : "Live"}
-      </span>
-    );
+      )}
+    </span>
+  );
 
-  // What the page is looking at: which building, which day, and whether it
-  // is live. People is always the building right now, so its day slot says
-  // so instead of disappearing, and the line keeps its shape on every view.
-  const context = (
-    <div className={styles.ctx}>
-      {sites.length > 1 ? (
-        <span className={`ta-chip ${styles.ctxSite}`}>
-          <Building2 className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+  // The page's actions, one height and one shape: the building it shows,
+  // Export, and full screen.
+  const actions = (
+    <>
+      {sites.length > 1 && (
+        <span className={`ta-chip ${styles.siteBtn}`} title="Site">
+          <Building2 className="h-4 w-4 flex-none" style={{ color: "var(--icon-secondary)" }} aria-hidden="true" />
           <span className="truncate">{siteName}</span>
-          <ChevronDown className="h-3.5 w-3.5 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+          <ChevronDown className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
           <select aria-label="Site" value={siteId} onChange={(e) => changeSite(e.target.value)} className={styles.pillSelect}>
             {sites.map((s) => (
               <option key={s.id} value={s.id}>
@@ -710,81 +744,55 @@ export function OnSiteBoard({
             ))}
           </select>
         </span>
+      )}
+      <Button
+        hierarchy="secondary"
+        leadingIcon={<Download className="h-4 w-4" aria-hidden="true" />}
+        onClick={exportCsv}
+        disabled={
+          !board ||
+          (tab === "log" ? log.rows.length === 0 : tab === "movements" ? mvRows.length === 0 : matches.length === 0)
+        }
+      >
+        Export
+      </Button>
+      {fullscreen ? (
+        <Button
+          hierarchy="secondary"
+          leadingIcon={<Minimize2 className="h-4 w-4" aria-hidden="true" />}
+          onClick={() => setFullscreen(false)}
+          title="Exit full screen (Esc)"
+        >
+          Exit full screen
+        </Button>
       ) : (
-        siteName && (
-          <span className={styles.ctxSiteStatic}>
-            <Building2 className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
-            <span className="truncate">{siteName}</span>
-          </span>
-        )
+        <Button
+          hierarchy="secondary"
+          iconOnly
+          onClick={() => setFullscreen(true)}
+          aria-label="Full screen"
+          title="Full screen"
+        >
+          <Maximize2 className="h-4 w-4" aria-hidden="true" />
+        </Button>
       )}
-      {board && today && (
-        <>
-          <span className={styles.ctxRule} aria-hidden="true" />
-          {tab === "people" ? (
-            <span className={styles.ctxNow}>
-              <Clock className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
-              Right now
-            </span>
-          ) : (
-            <DayStepper
-              day={logDayShown}
-              today={today}
-              onChange={(d) => {
-                setLogDay(d);
-                setMvShown(PEOPLE_PER_PAGE);
-              }}
-            />
-          )}
-        </>
-      )}
-      {/* A finished day is not live, whatever the polling does; saying so
-          next to "Yesterday" would read as a contradiction. A failure to
-          update still shows, since it matters on any day. */}
-      {(tab === "people" || !logDayShown || liveState === "stale") && (
-        <>
-          <span className={styles.ctxRule} aria-hidden="true" />
-          {liveStatus}
-        </>
-      )}
-    </div>
-  );
-
-  const exportButton = (
-    <Button
-      hierarchy="secondary"
-      leadingIcon={<Download className="h-4 w-4" aria-hidden="true" />}
-      onClick={exportCsv}
-      disabled={
-        !board ||
-        (tab === "log" ? log.rows.length === 0 : tab === "movements" ? mvRows.length === 0 : matches.length === 0)
-      }
-    >
-      Export
-    </Button>
+    </>
   );
 
   const ready = board && !switching && failure !== "access";
 
   return (
     <PhotoSwaps.Provider value={photoSwaps}>
-      <div className={`${styles.board} relative flex flex-col gap-4`}>
+      <div className={fullscreen ? styles.fsRoot : undefined}>
+      <div className={`${styles.board} relative flex flex-col gap-4${fullscreen ? " pt-4" : ""}`}>
       <span ref={markerRef} aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-px w-px" />
 
       <div ref={barRef} className="sticky top-0 z-20 flex flex-col" style={{ background: "var(--surface-page)" }}>
-        {/* Row one, what you are looking at: the title, the building, the day
-            and whether it is live. Slim, it all sits on one line. */}
         <div
-          className="flex items-start gap-3"
-          style={{ paddingTop: condensed ? 8 : 0, paddingBottom: condensed ? 8 : 14, transition: "padding 140ms ease" }}
+          className="flex flex-wrap items-center gap-x-3 gap-y-2"
+          style={{ paddingTop: condensed ? 8 : 0, paddingBottom: condensed ? 8 : 12, transition: "padding 140ms ease" }}
         >
-          <div
-            className={
-              condensed
-                ? "flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1"
-                : "flex min-w-0 flex-1 flex-col gap-2"
-            }
-          >
+          <div className="flex min-w-60 flex-1 flex-col gap-0.5">
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
               <h1
                 className="truncate"
@@ -800,68 +808,79 @@ export function OnSiteBoard({
               >
                 Live Attendance
               </h1>
+              {/* Slim, the bar keeps the one number this page exists for and
+                  whether it is still live, and gives up the sentence. */}
+              {/* Slim, the Movements bar keeps only whether it is live: the
+                  count and the picked filter are already in the row below. */}
+              {condensed && board && tab === "movements" && (
+                <span
+                  className={styles.live}
+                  data-state={liveState}
+                  title={liveState === "live" ? "Live" : liveState === "paused" ? "Paused" : "Not updating"}
+                  aria-label={liveState === "live" ? "Live" : liveState === "paused" ? "Paused" : "Not updating"}
+                />
+              )}
+              {condensed && board && tab === "log" && (
+                <span
+                  className="tabular inline-flex items-center gap-2 whitespace-nowrap"
+                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                >
+                  <span className={styles.live} data-state={liveState} aria-hidden="true" />
+                  <span>
+                    <strong style={{ color: "var(--text-primary)", fontWeight: "var(--weight-semibold)" }}>
+                      {logTotal.toLocaleString()}
+                    </strong>{" "}
+                    {counter === "unknown"
+                      ? `not in CloudTime ${when}`
+                      : counter
+                        ? `${COUNTER_LABEL[counter].toLowerCase()} ${when}`
+                        : `scans ${when}`}
+                  </span>
+                </span>
+              )}
+              {condensed && board && tab === "people" && (
+                <span
+                  className="tabular inline-flex items-center gap-2 whitespace-nowrap"
+                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                  title={liveState === "live" ? "Live" : liveState === "paused" ? "Paused" : "Not updating"}
+                >
+                  <span className={styles.live} data-state={liveState} aria-hidden="true" />
+                  <span>
+                    <strong style={{ color: "var(--text-primary)", fontWeight: "var(--weight-semibold)" }}>
+                      {insideTotal.toLocaleString()}
+                    </strong>{" "}
+                    in the building
+                  </span>
+                  {!searching && status !== "all" && (
+                    <button
+                      type="button"
+                      className="ta-chip inline-flex items-center gap-1.5 whitespace-nowrap"
+                      onClick={() => setStatus("all")}
+                      aria-label={`Showing ${status === "inside" ? heroLabel : STATUS_META[status].label}. Show everyone`}
+                      style={{
+                        height: 24,
+                        padding: "0 8px 0 10px",
+                        borderRadius: 999,
+                        border: "1px solid var(--stroke-secondary)",
+                        background: "var(--surface-card)",
+                        font: "var(--type-body2)",
+                        fontWeight: "var(--weight-medium)",
+                        color: "var(--text-secondary)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {status === "inside" ? heroLabel : STATUS_META[status].label}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                        <path d="M18 6 6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </span>
+              )}
             </div>
-            {context}
-            {/* Slim, the count this view is about follows the context. */}
-            {condensed && board && tab === "log" && (
-              <span
-                className="tabular inline-flex items-center gap-2 whitespace-nowrap"
-                style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-              >
-                <span>
-                  <strong style={{ color: "var(--text-primary)", fontWeight: "var(--weight-semibold)" }}>
-                    {logTotal.toLocaleString()}
-                  </strong>{" "}
-                  {counter === "unknown"
-                    ? `not in CloudTime ${when}`
-                    : counter
-                      ? `${COUNTER_LABEL[counter].toLowerCase()} ${when}`
-                      : `scans ${when}`}
-                </span>
-              </span>
-            )}
-            {condensed && board && tab === "people" && (
-              <span
-                className="tabular inline-flex items-center gap-2 whitespace-nowrap"
-                style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-                title={liveState === "live" ? "Live" : liveState === "paused" ? "Paused" : "Not updating"}
-              >
-                <span>
-                  <strong style={{ color: "var(--text-primary)", fontWeight: "var(--weight-semibold)" }}>
-                    {insideTotal.toLocaleString()}
-                  </strong>{" "}
-                  in the building
-                </span>
-                {!searching && status !== "all" && (
-                  <button
-                    type="button"
-                    className="ta-chip inline-flex items-center gap-1.5 whitespace-nowrap"
-                    onClick={() => setStatus("all")}
-                    aria-label={`Showing ${status === "inside" ? heroLabel : STATUS_META[status].label}. Show everyone`}
-                    style={{
-                      height: 24,
-                      padding: "0 8px 0 10px",
-                      borderRadius: 999,
-                      border: "1px solid var(--stroke-secondary)",
-                      background: "var(--surface-card)",
-                      font: "var(--type-body2)",
-                      fontWeight: "var(--weight-medium)",
-                      color: "var(--text-secondary)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {status === "inside" ? heroLabel : STATUS_META[status].label}
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                      <path d="M18 6 6 18M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
-              </span>
-            )}
+            {!condensed && <div style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>{liveLine}</div>}
           </div>
-          <div className="flex flex-none items-center gap-2" style={{ paddingTop: condensed ? 0 : 2 }}>
-            {exportButton}
-          </div>
+          <div className="flex items-center gap-2">{actions}</div>
         </div>
 
         {/* Row two, how you are looking at it: the view, then who, then how
@@ -906,6 +925,16 @@ export function OnSiteBoard({
                 <FilterSelectChip label="Department" value={dept} options={departments} onChange={setDept} />
               )}
               {shifts.length > 0 && <FilterSelectChip label="Shift" value={shift} options={shifts} onChange={setShift} />}
+              {tab !== "people" && today && (
+                <DayChip
+                  day={logDayShown}
+                  today={today}
+                  onChange={(d) => {
+                    setLogDay(d);
+                    setMvShown(PEOPLE_PER_PAGE);
+                  }}
+                />
+              )}
               {tab === "movements" && mvFlagShown && (
                 <ToggleChip label={flagLabel(mvFlagShown, mvHasGate)} pressed onClick={() => setMvFlag(null)} />
               )}
@@ -1395,6 +1424,7 @@ export function OnSiteBoard({
       )}
       <Toast message={toast.message} />
       </div>
+      </div>
     </PhotoSwaps.Provider>
   );
 }
@@ -1789,56 +1819,27 @@ function MvSortChip({ sort, onChange }: { sort: MvSort; onChange: (s: MvSort) =>
 }
 
 /**
- * Which day Movements and the Scan log show: a step back, the day by the
- * name people say it by (click it to jump to any of the recent days), a step
- * forward, and a way home once you have left today.
+ * Which day the scan log shows, as the same pill the sort uses: today and the
+ * six days before, under the names people say them by.
  */
-function DayStepper({ day, today, onChange }: { day: string; today: string; onChange: (d: string) => void }) {
-  const days = recentDays(today);
-  const current = day || today;
-  const at = Math.max(0, days.indexOf(current));
-  const older = days[at + 1] ?? null;
-  const newer = at > 0 ? days[at - 1] : null;
-  const set = (d: string) => onChange(d === today ? "" : d);
+function DayChip({ day, today, onChange }: { day: string; today: string; onChange: (d: string) => void }) {
   return (
-    <span className="inline-flex items-center gap-2">
-      <span className={styles.ctxDay}>
-        <button
-          type="button"
-          className={styles.ctxStep}
-          aria-label="Previous day"
-          title="Previous day"
-          disabled={!older}
-          onClick={() => older && set(older)}
-        >
-          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-        </button>
-        <span className={styles.ctxDayLabel}>
-          {dayLabel(current, today)}
-          <select aria-label="Day" value={current} onChange={(e) => set(e.target.value)} className={styles.pillSelect}>
-            {days.map((d) => (
-              <option key={d} value={d}>
-                {dayLabel(d, today)}
-              </option>
-            ))}
-          </select>
-        </span>
-        <button
-          type="button"
-          className={styles.ctxStep}
-          aria-label="Next day"
-          title="Next day"
-          disabled={!newer}
-          onClick={() => newer && set(newer)}
-        >
-          <ChevronRight className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </span>
-      {current !== today && (
-        <Button hierarchy="link" size="sm" onClick={() => set(today)}>
-          Back to today
-        </Button>
-      )}
+    <span className={`ta-chip ${styles.pill}`} data-applied={day ? "true" : undefined}>
+      <span>Day</span>
+      <span className={styles.pillValue}>{dayLabel(day || today, today)}</span>
+      <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+      <select
+        aria-label="Show scans from"
+        value={day || today}
+        onChange={(e) => onChange(e.target.value === today ? "" : e.target.value)}
+        className={styles.pillSelect}
+      >
+        {recentDays(today).map((d) => (
+          <option key={d} value={d}>
+            {dayLabel(d, today)}
+          </option>
+        ))}
+      </select>
     </span>
   );
 }

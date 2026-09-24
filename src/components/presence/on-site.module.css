@@ -4243,130 +4243,47 @@
   }
 }
 
-/* ── Top bar: what the page is looking at ──────────────────────────────── */
+/* ── Top bar ───────────────────────────────────────────────────────────── */
 
-/* The line under the title: building, day, live. One height, quiet
-   controls, thin rules between them rather than dots or pipes. */
-.ctx {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  min-width: 0;
-  font: var(--type-body2);
-  font-weight: var(--weight-medium);
-  color: var(--text-secondary);
-}
-
-.ctxRule {
-  flex: none;
-  width: 1px;
-  height: 16px;
-  background: var(--stroke-divider);
-}
-
-/* The building, as a quiet control that is plainly clickable on hover. */
-.ctxSite,
-.ctxSiteStatic {
+/* The site, drawn as the secondary button beside it so the page's actions
+   read as one set: 32px, the same border, radius and type as Export. */
+.siteBtn {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: 280px;
-  height: 28px;
+  gap: 8px;
+  max-width: 260px;
+  height: 32px;
+  padding: 0 10px 0 12px;
+  box-sizing: border-box;
   white-space: nowrap;
-  font: var(--type-body1);
-  font-weight: var(--weight-semibold);
+  border: 1px solid var(--stroke-default);
+  border-radius: var(--radius-m);
+  background: var(--surface-card);
+  box-shadow: 0px 1px 2px rgba(0, 0, 0, 0.05);
+  font: var(--type-button1);
   color: var(--text-primary);
-}
-
-.ctxSite {
-  margin-left: -8px;
-  padding: 0 8px;
-  border-radius: 6px;
   cursor: pointer;
 }
 
-.ctxSite:hover {
+.siteBtn:hover {
   background: var(--fill-hover);
 }
 
-.ctxSite:focus-within,
-.ctxStep:focus-visible,
-.ctxDayLabel:focus-within {
+.siteBtn:focus-within {
   outline: 2px solid var(--stroke-accent-focus);
   outline-offset: 1px;
 }
 
-.ctxNow,
-.ctxLive {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  white-space: nowrap;
-}
-
-/* The day: step back, the day, step forward, as one small group. */
-.ctxDay {
-  display: inline-flex;
-  align-items: center;
-  height: 28px;
-  border: 1px solid var(--stroke-secondary);
-  border-radius: 8px;
-  background: var(--surface-card);
-}
-
-.ctxStep {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 26px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--icon-secondary);
-  cursor: pointer;
-}
-
-.ctxStep:first-child {
-  border-radius: 7px 0 0 7px;
-}
-
-.ctxStep:last-child {
-  border-radius: 0 7px 7px 0;
-}
-
-.ctxStep:hover:not(:disabled) {
-  background: var(--fill-hover);
-  color: var(--text-primary);
-}
-
-.ctxStep:disabled {
-  color: var(--icon-disabled, var(--text-disabled));
-  cursor: default;
-}
-
-.ctxDayLabel {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 96px;
-  height: 26px;
-  padding: 0 10px;
-  border-left: 1px solid var(--stroke-divider);
-  border-right: 1px solid var(--stroke-divider);
-  color: var(--text-primary);
-  font-weight: var(--weight-semibold);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.ctxDayLabel:hover {
-  background: var(--fill-hover);
+/* Full screen: over the sidebar and header, scrolling on its own. The bar
+   pins to the very top of it. */
+.fsRoot {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  overflow: auto;
+  padding: 0 24px 24px;
+  background: var(--surface-page);
 }
 
 /* Between the view switch and the filters it narrows. */
