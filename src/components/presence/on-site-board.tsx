@@ -718,7 +718,9 @@ export function OnSiteBoard({
           </Button>
         </>
       ) : tab !== "people" && logDayShown ? (
-        <span>Showing {dayLabel(logDayShown, today)}, a finished day</span>
+        <span>
+          Showing {dayLabel(logDayShown, today) === "Yesterday" ? "yesterday" : dayLabel(logDayShown, today)}, a finished day
+        </span>
       ) : (
         <span>
           Live · updated {age < 10_000 ? "just now" : `${Math.round(age / 1000)} seconds ago`}
@@ -1175,6 +1177,12 @@ export function OnSiteBoard({
                 stillInside={when === "today" ? insideTotal : null}
                 onStillInside={() => {
                   setMvFlag(when === "today" ? heroFlagFor(true) : "MARKED_OUT");
+                  setMvShown(PEOPLE_PER_PAGE);
+                  setSelectedId(null);
+                  setTab("movements");
+                }}
+                onClockClosed={() => {
+                  setMvFlag("CLOCK_CLOSED");
                   setMvShown(PEOPLE_PER_PAGE);
                   setSelectedId(null);
                   setTab("movements");

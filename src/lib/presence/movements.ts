@@ -52,7 +52,10 @@ export type MovementFlag =
   | "LONG_BREAK"
   | "MULTIPLE_EXITS"
   | "EXIT_NO_ENTRY"
+  /** The system closed their day at the security gate. */
   | "MARKED_OUT"
+  /** The system closed their day at the time clock. */
+  | "CLOCK_CLOSED"
   | "REJECTED"
   | "INACTIVE"
   | "ON_LEAVE"
@@ -75,6 +78,7 @@ export const FLAG_ORDER: MovementFlag[] = [
   "MULTIPLE_EXITS",
   "EXIT_NO_ENTRY",
   "MARKED_OUT",
+  "CLOCK_CLOSED",
   "REJECTED",
   "INACTIVE",
   "ON_LEAVE",
@@ -248,7 +252,10 @@ export function buildPersonDay(
   add("LONG_BREAK", breaks.some((b) => (b.end - b.start) / 60000 > LONG_BREAK_MIN));
   add("MULTIPLE_EXITS", exits >= 2);
   add("EXIT_NO_ENTRY", lanes.exitsWithoutEntry.length > 0);
-  add("MARKED_OUT", scans.some((s) => s.automatic && s.direction === "OUT"));
+  // One per reader, the way the Scan log counts them: "scanned out" is the
+  // gate, "clocked out" is the time clock.
+  add("MARKED_OUT", scans.some((s) => s.automatic && s.stream === "SECURITY" && s.direction === "OUT"));
+  add("CLOCK_CLOSED", scans.some((s) => s.automatic && s.stream === "TIME_CLOCK"));
   add("REJECTED", rejected > 0);
   add("INACTIVE", person.inactive && scans.length > 0);
   add("ON_LEAVE", person.onLeave);

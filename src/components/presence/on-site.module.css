@@ -1056,6 +1056,12 @@
   min-width: 0;
 }
 
+@media (min-width: 761px) {
+  .logWhat[data-wide="true"] {
+    grid-column: span 2;
+  }
+}
+
 .logTags {
   display: flex;
   flex-wrap: wrap;
@@ -1460,6 +1466,32 @@
 .mvDay {
   display: block;
   min-width: 0;
+}
+
+/* The flags a row folds away: a quiet pill the size of the badges beside
+   it, which opens the row's detail where every one of them is. */
+.mvMore {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--stroke-default);
+  border-radius: 999px;
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  font: var(--weight-medium) 11px/16px var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mvMore:hover {
+  background: var(--fill-hover);
+  color: var(--text-primary);
+}
+
+.mvMore:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 1px;
 }
 
 .mvBadges {

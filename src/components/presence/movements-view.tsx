@@ -18,7 +18,6 @@ import { iconFor } from "./person-panel";
 import { leftBuilding } from "@/lib/presence/lanes";
 import styles from "./on-site.module.css";
 import { ZoomableFace } from "./face";
-import { HomeSiteBadge } from "./home-site";
 
 /**
  * Movements: one block per person, their photo and name on the left, and on
@@ -114,26 +113,39 @@ export function statusOfDay(v: PersonDayView, isToday: boolean, hasGate: boolean
   return null;
 }
 
-/** The short chips under a name: only what is worth a look. */
-function flagChips(v: PersonDayView, isToday: boolean): { label: string; tone: "warning" | "error" | "neutral" | "info" }[] {
-  const out: { label: string; tone: "warning" | "error" | "neutral" | "info" }[] = [];
+type Chip = { label: string; tone: "warning" | "error" | "neutral" | "info"; rank: number };
+
+/**
+ * The short chips under a name: only what is worth a look, most serious
+ * first. rank 0 is a record problem (left without coming in, an inactive
+ * record), 1 is time that is wrong or missing (late, early, inside or
+ * clocked in apart), 2 is everything else. The row shows the first two and
+ * folds the rest into one "+N", so every row keeps one line of chips.
+ */
+function flagChips(v: PersonDayView, isToday: boolean): Chip[] {
+  const out: Chip[] = [];
   const has = (f: MovementFlag) => v.flags.includes(f);
+  if (has("EXIT_NO_ENTRY")) out.push({ label: "Left, never scanned in", tone: "error", rank: 0 });
+  if (has("INACTIVE")) out.push({ label: "Inactive employee", tone: "error", rank: 0 });
   // Today the status badge says it; on a finished day the chip carries how long.
   if (!isToday && has("INSIDE_OFF_CLOCK"))
-    out.push({ label: `Inside, not clocked in ${fmtDuration(v.lanes.totals.insideOffClockMin)}`, tone: "warning" });
+    out.push({ label: `Inside, not clocked in ${fmtDuration(v.lanes.totals.insideOffClockMin)}`, tone: "warning", rank: 1 });
   if (!isToday && has("NO_GATE_SCAN"))
-    out.push({ label: `Clocked in, not inside ${fmtDuration(v.lanes.totals.workOutsideMin)}`, tone: "warning" });
-  if (has("LATE") && v.lateMinutes !== null) out.push({ label: `${fmtDuration(v.lateMinutes)} late`, tone: "warning" });
+    out.push({ label: `Clocked in, not inside ${fmtDuration(v.lanes.totals.workOutsideMin)}`, tone: "warning", rank: 1 });
+  if (has("LATE") && v.lateMinutes !== null) out.push({ label: `${fmtDuration(v.lateMinutes)} late`, tone: "warning", rank: 1 });
   if (has("LEFT_EARLY") && v.earlyMinutes !== null)
-    out.push({ label: `Left ${fmtDuration(v.earlyMinutes)} early`, tone: "warning" });
-  if (has("MULTIPLE_EXITS")) out.push({ label: `Left ${v.exits} times`, tone: "warning" });
-  if (has("LONG_BREAK")) out.push({ label: "Long break", tone: "warning" });
-  if (has("EXIT_NO_ENTRY")) out.push({ label: "Left, never scanned in", tone: "error" });
-  if (has("MARKED_OUT")) out.push({ label: "Never scanned out", tone: "neutral" });
-  if (has("REJECTED")) out.push({ label: `${v.rejected} ${v.rejected === 1 ? "tap" : "taps"} not counted`, tone: "neutral" });
-  if (has("INACTIVE")) out.push({ label: "Inactive employee", tone: "error" });
-  return out;
+    out.push({ label: `Left ${fmtDuration(v.earlyMinutes)} early`, tone: "warning", rank: 1 });
+  if (has("MULTIPLE_EXITS")) out.push({ label: `Left ${v.exits} times`, tone: "warning", rank: 2 });
+  if (has("LONG_BREAK")) out.push({ label: "Long break", tone: "warning", rank: 2 });
+  if (has("MARKED_OUT")) out.push({ label: "Never scanned out", tone: "neutral", rank: 2 });
+  if (has("CLOCK_CLOSED")) out.push({ label: "Never clocked out", tone: "neutral", rank: 2 });
+  if (has("REJECTED"))
+    out.push({ label: `${v.rejected} ${v.rejected === 1 ? "tap" : "taps"} not counted`, tone: "neutral", rank: 2 });
+  return out.sort((a, b) => a.rank - b.rank);
 }
+
+/** How many chips a row shows before the rest fold into "+N". */
+const ROW_CHIPS = 2;
 
 /* ── The table ──────────────────────────────────────────────────────────── */
 
@@ -275,6 +287,9 @@ function PersonRow({
   const status = statusOfDay(v, isToday, hasGate);
   const meta = status ? STATUS_META[status] : null;
   const chips = flagChips(v, isToday);
+  const metaLine = [p.jobTitle ?? p.department ?? p.employeeCode, p.salaried ? "Salary" : null, p.homeSite ? `From ${p.homeSite}` : null]
+    .filter(Boolean)
+    .join(" · ");
   const t = v.lanes.totals;
   const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
   const seen = v.scanCount > 0;
@@ -344,9 +359,10 @@ function PersonRow({
             >
               {p.name}
             </button>
-            <span className={styles.meta}>
-              {p.jobTitle ?? p.department ?? p.employeeCode}
-              {p.salaried ? " · Salary" : ""}
+            {/* Where they are based is who they are, not a problem, so it
+                sits with the job title rather than among the chips. */}
+            <span className={`${styles.meta} truncate`} title={metaLine}>
+              {metaLine}
             </span>
             <span className={styles.mvBadges}>
               {meta && status && (
@@ -359,12 +375,31 @@ function PersonRow({
                   On leave
                 </Badge>
               )}
-              {chips.map((c) => (
+              {chips.slice(0, ROW_CHIPS).map((c) => (
                 <Badge key={c.label} tone={c.tone} size="sm">
                   {c.label}
                 </Badge>
               ))}
-              <HomeSiteBadge site={p.homeSite} />
+              {chips.length > ROW_CHIPS && (
+                <button
+                  type="button"
+                  className={styles.mvMore}
+                  title={chips
+                    .slice(ROW_CHIPS)
+                    .map((c) => c.label)
+                    .join("\n")}
+                  aria-label={`${chips.length - ROW_CHIPS} more: ${chips
+                    .slice(ROW_CHIPS)
+                    .map((c) => c.label)
+                    .join(", ")}. Show details`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!open) onToggle();
+                  }}
+                >
+                  +{chips.length - ROW_CHIPS}
+                </button>
+              )}
             </span>
           </span>
         </span>
@@ -936,7 +971,16 @@ export const FLAG_META: Record<MovementFlag, { label: string; hint: string; tone
   MULTIPLE_EXITS: { label: "Left more than once", hint: "Left through the security gate two or more times", tone: "warning" },
   LONG_BREAK: { label: "Long break", hint: `A meal or break that ran past ${LONG_BREAK_MIN} minutes`, tone: "warning" },
   EXIT_NO_ENTRY: { label: "Left, never scanned in", hint: "Left through the security gate without being seen coming in", tone: "error" },
-  MARKED_OUT: { label: "Never scanned out", hint: "Never scanned out, so the system closed their day", tone: "neutral" },
+  MARKED_OUT: {
+    label: "Never scanned out",
+    hint: "Never scanned out at the security gate, so the system closed their day",
+    tone: "neutral",
+  },
+  CLOCK_CLOSED: {
+    label: "Never clocked out",
+    hint: "Never clocked out at the time clock, so the system closed their day",
+    tone: "neutral",
+  },
   REJECTED: {
     label: "Taps not counted",
     hint: "Had scans the timecard refused, usually a second tap too soon. They are left out of the lists and totals",
@@ -976,6 +1020,7 @@ const DAY_FLAGS: MovementFlag[] = [
   "LONG_BREAK",
   "EXIT_NO_ENTRY",
   "MARKED_OUT",
+  "CLOCK_CLOSED",
   "REJECTED",
   "INACTIVE",
   "ON_LEAVE",
@@ -986,7 +1031,7 @@ export function flagsFor(isToday: boolean, hasGate: boolean): MovementFlag[] {
   const first = (isToday ? NOW_FLAGS : PAST_FLAGS).filter(
     (f) => hasGate || (f !== "INSIDE_OFF_CLOCK" && f !== "NO_GATE_SCAN"),
   );
-  const rest = DAY_FLAGS.filter((f) => hasGate || (f !== "MULTIPLE_EXITS" && f !== "EXIT_NO_ENTRY"));
+  const rest = DAY_FLAGS.filter((f) => hasGate || (f !== "MULTIPLE_EXITS" && f !== "EXIT_NO_ENTRY" && f !== "MARKED_OUT"));
   return [...first, ...rest];
 }
 

@@ -287,6 +287,7 @@ export function ScanLogCounts({
   unknownCount = 0,
   stillInside,
   onStillInside,
+  onClockClosed,
   clockNow,
   onClockNow,
 }: {
@@ -304,6 +305,8 @@ export function ScanLogCounts({
   stillInside: number | null;
   /** Opens them in Movements (or, on a past day, those who never scanned out). */
   onStillInside: () => void;
+  /** A finished day: open Movements on the people the time clock closed. */
+  onClockClosed: () => void;
   /** Today: how many are on the clock now. */
   clockNow: number | null;
   onClockNow: () => void;
@@ -344,7 +347,7 @@ export function ScanLogCounts({
     lead: isToday
       ? { label: "On the clock", figure: clockNow ?? 0, sub: `of ${summary.peopleClockedIn.toLocaleString()} who clocked in today` }
       : { label: "Never clocked out", figure: summary.clockAutoClosed, sub: `of ${summary.peopleClockedIn.toLocaleString()} who clocked in` },
-    onLead: isToday ? onClockNow : onStillInside,
+    onLead: isToday ? onClockNow : onClockClosed,
     stats: [
       { key: "first-clock", label: "Clocked in", count: summary.peopleClockedIn, unit: "people", hint: "People who clocked in, each counted once. Shows each person's first clock in" },
       { key: "clock-in", label: "In", count: summary.clockIn, unit: "scans" },
@@ -602,6 +605,8 @@ function LogRow({
   const { icon, kind } = iconFor(r);
   const photo = r.photoUrl ?? r.person.photoUrl;
   const gate = r.stream === "SECURITY";
+  const context = contextText(r.context, tz);
+  const hasContext = !!context || !!r.correctedFrom;
   return (
     <li>
       <button
@@ -630,7 +635,10 @@ function LogRow({
           </span>
         </span>
 
-        <span className={styles.logWhat}>
+        {/* With nothing to say in the context column, the event takes it, so
+            "Never clocked out, closed by the system" is not cut short next to
+            an empty space. */}
+        <span className={styles.logWhat} data-wide={hasContext ? undefined : "true"}>
           <span className={styles.eventIcon} data-kind={r.rejected ? "error" : kind} aria-hidden="true">
             {icon}
           </span>
@@ -646,16 +654,18 @@ function LogRow({
           </span>
         </span>
 
-        <span className={styles.logContext}>
-          <span className={styles.logContextText} data-tone={r.context?.long ? "warning" : undefined}>
-            {contextText(r.context, tz)}
-          </span>
-          {r.correctedFrom && (
-            <span className={styles.logCorrected} title={`Recorded at the tap as "${describeOriginal(r)}", corrected in the timecard`}>
-              Corrected, was {describeOriginal(r)?.toLowerCase()}
+        {hasContext && (
+          <span className={styles.logContext}>
+            <span className={styles.logContextText} data-tone={r.context?.long ? "warning" : undefined}>
+              {context}
             </span>
-          )}
-        </span>
+            {r.correctedFrom && (
+              <span className={styles.logCorrected} title={`Recorded at the tap as "${describeOriginal(r)}", corrected in the timecard`}>
+                Corrected, was {describeOriginal(r)?.toLowerCase()}
+              </span>
+            )}
+          </span>
+        )}
 
         {/* Only what is out of the ordinary gets a tag; the reader is named
             under the event, and its icon leads it. */}
