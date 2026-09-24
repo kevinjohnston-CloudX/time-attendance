@@ -1,5 +1,73 @@
 import { db } from "@/lib/db";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
+import { RuleSet } from "@prisma/client";
+
+/**
+ * When an employee moves from one RS-specific rule set to another (e.g., a promotion
+ * that changes from punch-based to autopay), migrate the open timesheet from the old
+ * RS's pay period to the matching period under the new RS.
+ *
+ * Only migrates when both rule sets have periods covering the same date range (same
+ * frequency and anchor). If the schedules differ, the old timesheet stays in place
+ * and a new one will be created on the next punch — history record still tracks the
+ * effective date for split-segment logic.
+ *
+ * Safe to call even if no migration is needed — exits early with no side effects.
+ */
+export async function migrateTimesheetBetweenRuleSets(
+  employeeId: string,
+  oldRuleSetId: string,
+  newRuleSetId: string,
+  ruleSet: RuleSet,
+): Promise<void> {
+  const now = new Date();
+
+  // Find the employee's current open timesheet on the old rule set's period
+  const oldTimesheet = await db.timesheet.findFirst({
+    where: {
+      employeeId,
+      payPeriod: {
+        ruleSetId: oldRuleSetId,
+        startDate: { lte: now },
+        endDate: { gt: now },
+        status: "OPEN",
+      },
+    },
+    include: { payPeriod: { select: { startDate: true, endDate: true } } },
+  });
+  if (!oldTimesheet) return;
+
+  // Find the new rule set's period covering the exact same date range
+  const newPeriod = await db.payPeriod.findFirst({
+    where: {
+      ruleSetId: newRuleSetId,
+      startDate: oldTimesheet.payPeriod.startDate,
+      endDate: oldTimesheet.payPeriod.endDate,
+    },
+  });
+  if (!newPeriod) return;
+
+  const existing = await db.timesheet.findUnique({
+    where: { employeeId_payPeriodId: { employeeId, payPeriodId: newPeriod.id } },
+  });
+
+  if (existing) {
+    // Merge: move punches/exceptions from old → new, delete old
+    await db.punch.updateMany({ where: { timesheetId: oldTimesheet.id }, data: { timesheetId: existing.id } });
+    await db.exception.updateMany({ where: { timesheetId: oldTimesheet.id }, data: { timesheetId: existing.id } }).catch(() => {});
+    await db.overtimeBucket.deleteMany({ where: { timesheetId: oldTimesheet.id } });
+    await db.workSegment.deleteMany({ where: { timesheetId: oldTimesheet.id } });
+    await db.timesheet.delete({ where: { id: oldTimesheet.id } });
+    await rebuildSegments(existing.id, ruleSet).catch(() => {});
+  } else {
+    // Re-point old timesheet to new period and rebuild under new rule set
+    await db.timesheet.update({
+      where: { id: oldTimesheet.id },
+      data: { payPeriodId: newPeriod.id },
+    });
+    await rebuildSegments(oldTimesheet.id, ruleSet).catch(() => {});
+  }
+}
 
 /**
  * When an employee is assigned to a new rule set that has its own pay period schedule,

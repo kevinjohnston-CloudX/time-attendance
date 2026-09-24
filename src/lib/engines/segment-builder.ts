@@ -334,13 +334,11 @@ async function applyAutoPayCredits(
   periodEnd: Date,
   ruleSet: RuleSet,
   shift: { startTime: string; endTime: string; workDays: number[] } | null,
+  creditsFrom?: Date,
 ): Promise<void> {
-  const today = new Date();
-  today.setUTCHours(23, 59, 59, 999);
   const periodEndInclusive = addDays(periodEnd, -1);
-  const rangeEnd = periodEndInclusive < today ? periodEndInclusive : today;
 
-  const allDays = eachDayOfInterval({ start: periodStart, end: rangeEnd });
+  const allDays = eachDayOfInterval({ start: periodStart, end: periodEndInclusive });
 
   // Skip days already covered by real punch-derived WORK segments
   const existing = await db.workSegment.findMany({
@@ -378,6 +376,7 @@ async function applyAutoPayCredits(
     if (dailyMinutes <= 0) return;
 
     for (const d of allDays) {
+      if (creditsFrom && format(d, "yyyy-MM-dd") < format(creditsFrom, "yyyy-MM-dd")) continue;
       if (!shift.workDays.includes(d.getUTCDay())) continue;
       if (coveredDates.has(format(d, "yyyy-MM-dd"))) continue;
       const dateKey = format(d, "yyyy-MM-dd");
@@ -407,6 +406,7 @@ async function applyAutoPayCredits(
     const dayMap = new Map<number, DayRow>((schedule ?? []).map((r) => [r.day, r]));
 
     for (const d of allDays) {
+      if (creditsFrom && format(d, "yyyy-MM-dd") < format(creditsFrom, "yyyy-MM-dd")) continue;
       if (coveredDates.has(format(d, "yyyy-MM-dd"))) continue;
       const row = dayMap.get(d.getUTCDay());
       if (!row?.apply || !row.minutes) continue;
@@ -452,14 +452,12 @@ async function ensureSalarySegments(
   timesheetId: string,
   periodStart: Date,
   periodEnd: Date,
-  defaultPayCodeId?: string | null
+  defaultPayCodeId?: string | null,
+  creditsFrom?: Date,
 ): Promise<void> {
-  const today = new Date();
-  today.setUTCHours(23, 59, 59, 999);
   const periodEndInclusive = addDays(periodEnd, -1);
-  const rangeEnd = periodEndInclusive < today ? periodEndInclusive : today;
 
-  const workDays = eachDayOfInterval({ start: periodStart, end: rangeEnd }).filter(
+  const workDays = eachDayOfInterval({ start: periodStart, end: periodEndInclusive }).filter(
     (d) => !isWeekend(d)
   );
   if (workDays.length === 0) return;
@@ -487,6 +485,7 @@ async function ensureSalarySegments(
   const toCreate: SegmentInput[] = [];
   for (const d of workDays) {
     const dateKey = format(d, "yyyy-MM-dd");
+    if (creditsFrom && dateKey < format(creditsFrom, "yyyy-MM-dd")) continue;
     if (coveredDates.has(dateKey)) continue;
     const leaveMinutes = leaveMinutesByDate.get(dateKey) ?? 0;
     const creditMinutes = SALARY_DAILY_MINUTES - leaveMinutes;
@@ -596,6 +595,22 @@ export async function rebuildSegments(
   const tenantId = timesheet.employee.tenantId;
   const isSalary = timesheet.employee.payType === "SALARY";
 
+  // When this rule set became active mid-period (employee promotion/transfer),
+  // autopay credits should only apply from that date forward; days before it
+  // were punch-based and already have real segments.
+  const midPeriodEntry = await db.employeeRuleSetHistory.findFirst({
+    where: {
+      employeeId: timesheet.employee.id,
+      ruleSetId: ruleSet.id,
+      effectiveDate: {
+        gt: timesheet.payPeriod.startDate,
+        lte: timesheet.payPeriod.endDate,
+      },
+    },
+    orderBy: { effectiveDate: "desc" },
+  });
+  const autoPayCreditsFrom = midPeriodEntry?.effectiveDate ?? undefined;
+
   const punches = await db.punch.findMany({
     where: { timesheetId, isApproved: true, correctedById: null },
     orderBy: { roundedTime: "asc" },
@@ -647,12 +662,12 @@ export async function rebuildSegments(
   }
 
   // Apply pay code to all punch-derived WORK segments.
-  // Salary employees with autoPayEnabled use the salary pay code for punch days too,
-  // so the segment pay code matches what auto-pay assigns for non-punch days.
-  const workPayCodeId =
-    isSalary && ruleSet.autoPayEnabled && ruleSet.autoPayPayCodeId
-      ? ruleSet.autoPayPayCodeId
-      : ruleSet.defaultPayCodeId;
+  // When the rule set has autopay enabled, use autoPayPayCodeId (falling back to
+  // defaultPayCodeId) so punch days and autopay-credit days carry the same pay code.
+  // Without autopay, use defaultPayCodeId.
+  const workPayCodeId = ruleSet.autoPayEnabled
+    ? (ruleSet.autoPayPayCodeId ?? ruleSet.defaultPayCodeId)
+    : ruleSet.defaultPayCodeId;
 
   if (workPayCodeId) {
     segments = segments.map((seg) =>
@@ -797,13 +812,15 @@ export async function rebuildSegments(
       timesheet.payPeriod.endDate,
       ruleSet,
       timesheet.employee.shift ?? null,
+      autoPayCreditsFrom,
     );
   } else if (isSalary) {
     await ensureSalarySegments(
       timesheetId,
       timesheet.payPeriod.startDate,
       timesheet.payPeriod.endDate,
-      ruleSet.defaultPayCodeId
+      ruleSet.defaultPayCodeId,
+      autoPayCreditsFrom,
     );
   }
 
