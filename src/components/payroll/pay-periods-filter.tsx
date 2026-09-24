@@ -5,7 +5,7 @@ import { useRouter } from "@/components/layout/navigation-progress";
 import { format, addDays } from "date-fns";
 import { ChevronLeft, ChevronRight, Calendar, CalendarCheck } from "lucide-react";
 import { parseUtcDate } from "@/lib/utils/date";
-import { Button, Select } from "@/components/ui";
+import { Button, FilterSelectChip } from "@/components/ui";
 
 /**
  * How the pay period rail is narrowed and stepped through.
@@ -43,6 +43,17 @@ interface Props {
   siteId?: string;
   departmentId?: string;
 }
+
+const SCOPE_OPTIONS = [
+  { id: "current", name: "Current" },
+  { id: "ytd", name: "Year to date" },
+];
+
+const STATUS_OPTIONS = [
+  { id: "open", name: "Open" },
+  { id: "ready", name: "Ready" },
+  { id: "locked", name: "Locked" },
+];
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -235,35 +246,26 @@ export function PayPeriodsFilter({
 
   return (
     <div
-      className="relative flex shrink-0 flex-col gap-2 p-2.5"
-      style={{
-        background: "var(--surface-secondary)",
-        borderBottom: "1px solid var(--stroke-divider)",
-      }}
+      className="relative flex shrink-0 flex-col gap-2 px-3 pb-2.5 pt-1"
     >
-      {/* Scope + status + jump-to-today */}
-      <div className="flex items-center gap-1.5">
-        <Select
-          aria-label="Pay period scope"
-          value={currentFilter}
-          onChange={(e) => applyFilter(e.target.value as FilterValue, selectedId)}
-          style={{ flex: "1 1 0", minWidth: 0 }}
-        >
-          <option value="all">All</option>
-          <option value="current">Current</option>
-          <option value="ytd">Year to Date</option>
-        </Select>
-        <Select
-          aria-label="Pay period status"
-          value={statusFilter}
-          onChange={(e) => applyFilter(currentFilter, selectedId, e.target.value as StatusFilter)}
-          style={{ flex: "1 1 0", minWidth: 0 }}
-        >
-          <option value="all">All Status</option>
-          <option value="open">Open</option>
-          <option value="ready">Ready</option>
-          <option value="locked">Locked</option>
-        </Select>
+      {/* Scope and status as the same pills the rest of the app filters
+          with, then the jump back to the current period. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <FilterSelectChip
+          label="Show"
+          allLabel="All periods"
+          value={currentFilter === "all" ? "" : currentFilter}
+          options={SCOPE_OPTIONS}
+          onChange={(v) => applyFilter((v || "all") as FilterValue, selectedId)}
+        />
+        <FilterSelectChip
+          label="Status"
+          allLabel="All statuses"
+          value={statusFilter === "all" ? "" : statusFilter}
+          options={STATUS_OPTIONS}
+          onChange={(v) => applyFilter(currentFilter, selectedId, (v || "all") as StatusFilter)}
+        />
+        <span className="flex-1" />
         <Button
           hierarchy="secondary"
           iconOnly

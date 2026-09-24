@@ -14,40 +14,22 @@ import { PayPeriodActions } from "@/components/payroll/pay-period-actions";
 import { PayPeriodsFilter } from "@/components/payroll/pay-periods-filter";
 import { format, addDays } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
-import { PayPeriodTimesheets } from "@/components/payroll/pay-period-timesheets";
+import { PayPeriodTimesheets, type TimesheetRow } from "@/components/payroll/pay-period-timesheets";
+import { matchesShow, parseShow, type TimesheetShow } from "@/components/payroll/pay-period-show";
 import { PayPeriodDetailFilter } from "@/components/payroll/pay-period-detail-filter";
 import { PayPeriodDownload } from "@/components/payroll/pay-period-download";
 import { PayPeriodExport } from "@/components/payroll/pay-period-export";
-import { CalendarRange, CircleCheck, CircleDashed } from "lucide-react";
-import {
-  Badge,
-  Banner,
-  Card,
-  EmptyState,
-  PageHeader,
-  TBody,
-  TD,
-  TFoot,
-  TH,
-  THead,
-  TR,
-  Table,
-  Toolbar,
-  statusTone,
-  payPeriodTone,
-  type BannerTone,
-} from "@/components/ui";
+import { CalendarRange, CircleAlert, CircleCheck } from "lucide-react";
+import { Badge, Card, EmptyState, PageHeader, payPeriodTone } from "@/components/ui";
 
 /**
- * Pay Periods, as the portal design lays the screen out: the list rail on the
- * left, and on the right the period itself as a document — what is blocking
- * the close, then the totals, then the timesheets.
+ * Pay Periods: the list of periods on the left, and on the right the period
+ * itself. First where its timesheets sit and what is still blocking the close,
+ * side by side, then its hours, then every timesheet.
  *
- * <p>The checklist leads deliberately. The question this screen exists to
- * answer is "can I close this period, and if not, who am I waiting on"; the
- * hours are what you check once the answer is yes. The previous layout opened
- * with three stat tiles, which meant the three numbers that tell you the
- * period is *not* closeable were the last thing on the page.
+ * <p>Approvals and the checklist lead deliberately. The question this screen
+ * exists to answer is "can I close this period, and if not, who am I waiting
+ * on"; the hours are what you check once the answer is yes.
  */
 
 const FREQ_LABEL: Record<string, string> = {
@@ -56,32 +38,6 @@ const FREQ_LABEL: Record<string, string> = {
   SEMI_MONTHLY: "Semi-monthly",
   MONTHLY: "Monthly",
 };
-
-/**
- * Who the next move belongs to at each stage.
- *
- * <p>Named by role rather than by person: the supervisor of record lives on
- * the employee, and this page does not load it. A role tells a payroll clerk
- * which list to chase, which is what the column is for.
- */
-const STAGE_OWNER: Record<TimesheetStatusValue, string> = {
-  OPEN:             "Employee",
-  REJECTED:         "Employee",
-  SUBMITTED:        "Supervisor",
-  SUP_APPROVED:     "Payroll",
-  PAYROLL_APPROVED: "Ready to lock",
-  LOCKED:           "Closed",
-};
-
-/** The approval chain in order, so the table reads as a pipeline. */
-const STAGE_ORDER: TimesheetStatusValue[] = [
-  "OPEN",
-  "REJECTED",
-  "SUBMITTED",
-  "SUP_APPROVED",
-  "PAYROLL_APPROVED",
-  "LOCKED",
-];
 
 type FilterValue = "all" | "current" | "ytd";
 type StatusFilter = "all" | "open" | "ready" | "locked";
@@ -99,9 +55,10 @@ function periodLabel(startDate: Date, endDate: Date): string {
 export default async function PayPeriodsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ id?: string; filter?: string; status?: string; month?: string; siteId?: string; departmentId?: string }>;
+  searchParams: Promise<{ id?: string; filter?: string; status?: string; month?: string; siteId?: string; departmentId?: string; show?: string }>;
 }) {
-  const { id: selectedId, filter, status, month, siteId, departmentId } = await searchParams;
+  const { id: selectedId, filter, status, month, siteId, departmentId, show: showParam } = await searchParams;
+  const show = parseShow(showParam);
   const currentFilter: FilterValue =
     filter === "current" || filter === "ytd" ? filter : "all";
   const statusFilter: StatusFilter =
@@ -247,10 +204,10 @@ export default async function PayPeriodsPage({
             and "no period matches these three filters", and the second is what
             sends somebody looking for periods that were never generated. */}
         <div
-          className="shrink-0 px-4 py-2"
-          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+          className="tabular shrink-0 px-4 py-2 text-right"
+          style={{ borderBottom: "1px solid var(--stroke-divider)", font: "var(--type-body2)", color: "var(--text-tertiary)" }}
         >
-          <Toolbar count={payPeriods.length} countLabel="period" />
+          {payPeriods.length} {payPeriods.length === 1 ? "period" : "periods"}
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -303,6 +260,7 @@ export default async function PayPeriodsPage({
             currentFilter={currentFilter}
             siteId={siteId}
             departmentId={departmentId}
+            show={show}
           />
         )}
       </div>
@@ -371,21 +329,17 @@ function PeriodList({
         <div key={group.name}>
           {showHeaders && (
             <div
-              className="sticky top-0 z-10 px-4 py-1.5"
-              style={{
-                background: "var(--surface-secondary)",
-                borderBottom: "1px solid var(--stroke-divider)",
-              }}
+              className="sticky top-0 z-10 flex items-baseline gap-1.5 px-4 pb-1.5 pt-3"
+              style={{ background: "var(--surface-page)" }}
             >
-              <p className="wms-overline" style={{ margin: 0 }}>
+              <span className="truncate" style={{ font: "var(--type-caption1)", fontWeight: "var(--weight-semibold)", color: "var(--text-secondary)" }}>
                 {group.name}
-                {group.frequency && (
-                  <span style={{ textTransform: "none", color: "var(--text-tertiary)" }}>
-                    {" · "}
-                    {FREQ_LABEL[group.frequency] ?? group.frequency}
-                  </span>
-                )}
-              </p>
+              </span>
+              {group.frequency && (
+                <span className="whitespace-nowrap" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                  {FREQ_LABEL[group.frequency] ?? group.frequency}
+                </span>
+              )}
             </div>
           )}
 
@@ -401,12 +355,12 @@ function PeriodList({
               <Link
                 key={pp.id}
                 href={`/payroll/pay-periods?id=${pp.id}${filterHref}${statusHref}${monthHref}${siteParam}${deptParam}`}
-                className="ta-hoverable flex flex-col gap-1.5 px-4 py-3"
+                className="ta-hoverable mx-2 mb-1 flex flex-col gap-2 rounded-lg px-3 py-2.5"
                 data-active={isSelected ? "true" : undefined}
+                aria-current={isSelected ? "page" : undefined}
                 style={{
-                  borderBottom: "1px solid var(--stroke-divider)",
-                  borderLeft: `2px solid ${isSelected ? "var(--stroke-accent)" : "transparent"}`,
                   background: isSelected ? "var(--surface-info)" : undefined,
+                  boxShadow: isSelected ? "inset 0 0 0 1px var(--stroke-accent)" : undefined,
                   textDecoration: "none",
                 }}
               >
@@ -416,7 +370,7 @@ function PeriodList({
                     style={{
                       font: "var(--type-body1)",
                       fontWeight: "var(--weight-semibold)",
-                      color: "var(--text-primary)",
+                      color: isSelected ? "var(--text-accent)" : "var(--text-primary)",
                     }}
                   >
                     {periodLabel(pp.startDate, pp.endDate)}
@@ -444,9 +398,9 @@ function PeriodList({
                   </span>
                   <span
                     className="tabular shrink-0"
-                    style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+                    style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}
                   >
-                    {total === 0 ? "no timesheets" : `${approved}/${total} approved`}
+                    {total === 0 ? "No timesheets" : `${approved} of ${total} approved`}
                   </span>
                 </div>
               </Link>
@@ -462,6 +416,30 @@ function PeriodList({
 
 type Detail = Extract<Awaited<ReturnType<typeof getPayPeriodDetail>>, { success: true }>["data"];
 
+/**
+ * Where a timesheet sits and whose move it is, in the order they happen. The
+ * bar and the list under it read left to right as the approval chain.
+ *
+ * <p>Named by role rather than by person: the supervisor of record lives on
+ * the employee, and this page does not load it. A role tells a payroll clerk
+ * which list to chase.
+ */
+const STAGES: { status: TimesheetStatusValue; owner: string; color: string }[] = [
+  { status: "OPEN",             owner: "Waiting on the employee",   color: "var(--icon-tertiary)" },
+  { status: "REJECTED",         owner: "Sent back to the employee", color: "var(--fill-error)" },
+  { status: "SUBMITTED",        owner: "Waiting on the supervisor", color: "var(--fill-warning)" },
+  { status: "SUP_APPROVED",     owner: "Waiting on payroll",        color: "var(--fill-accent)" },
+  { status: "PAYROLL_APPROVED", owner: "Ready to lock",             color: "var(--fill-success)" },
+  { status: "LOCKED",           owner: "Closed",                    color: "var(--icon-success)" },
+];
+
+function hoursOf(minutes: number): string {
+  return (minutes / 60).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** A count with thousands separators, as every other figure on the page. */
+const n = (v: number) => v.toLocaleString("en-US");
+
 function PeriodDetail({
   detail,
   ruleSet,
@@ -472,6 +450,7 @@ function PeriodDetail({
   currentFilter,
   siteId,
   departmentId,
+  show,
 }: {
   detail: Detail;
   ruleSet: { name: string; payFrequency: string | null } | null;
@@ -482,14 +461,16 @@ function PeriodDetail({
   currentFilter: FilterValue;
   siteId?: string;
   departmentId?: string;
+  show: TimesheetShow | "";
 }) {
   const { payPeriod, validation } = detail;
   const sheets = payPeriod.timesheets;
   const label = periodLabel(payPeriod.startDate, payPeriod.endDate);
   const lastDay = addDays(parseUtcDate(payPeriod.endDate), -1);
+  const lastDayText = format(lastDay, "EEE, MMM d");
   const isPast = parseUtcDate(payPeriod.endDate) < new Date();
 
-  // ── The approval pipeline, counted once and used three times ──────────────
+  // ── The approval chain, counted once ─────────────────────────────────────
   const byStage = new Map<string, number>();
   for (const ts of sheets) byStage.set(ts.status, (byStage.get(ts.status) ?? 0) + 1);
   const stageCount = (s: TimesheetStatusValue) => byStage.get(s) ?? 0;
@@ -503,9 +484,8 @@ function PeriodDetail({
    * A stage only clears when nothing is still sitting behind it.
    *
    * <p>Counting a stage on its own marked "Supervisor approvals complete" as
-   * clear on a period where every sheet was still open — none had reached a
-   * supervisor yet, so the SUBMITTED count was zero — and the checklist then
-   * contradicted the banner directly above it.
+   * clear on a period where every sheet was still open (none had reached a
+   * supervisor yet, so the SUBMITTED count was zero).
    */
   const awaitingSupervisor = withEmployee + withSupervisor;
   const awaitingPayroll = awaitingSupervisor + withPayroll;
@@ -527,90 +507,88 @@ function PeriodDetail({
   /** PTO, holiday and anything else the rules engine bucketed by pay code. */
   const otherMin = allMin - regMin - otMin - dtMin;
 
+  // ── Links the checklist hands you to ─────────────────────────────────────
+  const baseParams = new URLSearchParams({ id: payPeriod.id });
+  if (currentFilter !== "all") baseParams.set("filter", currentFilter);
+  if (siteId) baseParams.set("siteId", siteId);
+  if (departmentId) baseParams.set("departmentId", departmentId);
+  const showHref = (v: TimesheetShow) => {
+    const p = new URLSearchParams(baseParams);
+    p.set("show", v);
+    return `/payroll/pay-periods?${p}#timesheets`;
+  };
+  const exceptionsHref = `/supervisor/exceptions?payPeriodId=${encodeURIComponent(payPeriod.id)}`;
+
   // ── The close checklist ───────────────────────────────────────────────────
   // Every row is derived from the timesheets this page already loaded, so the
   // checklist can never disagree with the table underneath it.
-  const checklist: { label: string; detail: string; done: boolean }[] = [
+  const checklist: { label: string; detail: string; done: boolean; action?: { href: string; text: string } }[] = [
     {
       label: "Period has ended",
-      detail: isPast
-        ? `Last day was ${format(lastDay, "EEE d MMM")}`
-        : `Still taking punches until ${format(lastDay, "EEE d MMM")}`,
+      detail: isPast ? `Last day was ${lastDayText}` : `Still taking punches until ${lastDayText}`,
       done: isPast,
     },
     {
-      label: "Every timesheet out of the employees' hands",
+      label: "Timesheets submitted",
       detail:
         withEmployee === 0
-          ? "Nothing left open or returned"
-          : `${withEmployee} still open or returned for edit`,
+          ? "Nothing left open or sent back"
+          : `${n(withEmployee)} still open or sent back to the employee`,
       done: withEmployee === 0,
+      action: withEmployee > 0 ? { href: showHref("employee"), text: "Show" } : undefined,
     },
     {
-      label: "Supervisor approvals complete",
+      label: "Supervisor approvals",
       detail:
         awaitingSupervisor === 0
-          ? "Every timesheet carries a supervisor sign-off"
-          : `${awaitingSupervisor} still without a supervisor sign-off`,
+          ? "Every timesheet carries a supervisor sign off"
+          : `${n(awaitingSupervisor)} still without a supervisor sign off`,
       done: awaitingSupervisor === 0,
+      action: withSupervisor > 0 ? { href: showHref("supervisor"), text: "Show" } : undefined,
     },
     {
-      label: "Payroll approvals complete",
-      detail: `${payrollApproved} of ${sheets.length} approved by payroll`,
+      label: "Payroll approvals",
+      detail: `${n(payrollApproved)} of ${n(sheets.length)} approved by payroll`,
       done: awaitingPayroll === 0,
+      action: withPayroll > 0 ? { href: showHref("payroll"), text: "Show" } : undefined,
     },
     {
       label: "Exceptions resolved",
       detail:
         validation.unresolvedExceptions === 0
           ? "No unresolved exception in this period"
-          : `${validation.unresolvedExceptions} unresolved across ${sheetsWithExceptions} timesheet${sheetsWithExceptions === 1 ? "" : "s"}`,
+          : `${n(validation.unresolvedExceptions)} unresolved across ${n(sheetsWithExceptions)} timesheet${sheetsWithExceptions === 1 ? "" : "s"}`,
       done: validation.unresolvedExceptions === 0,
+      action: validation.unresolvedExceptions > 0 ? { href: exceptionsHref, text: "Resolve" } : undefined,
     },
   ];
+  const doneSteps = checklist.filter((c) => c.done).length;
+  const blockingSteps = checklist.length - doneSteps;
 
-  // ── The banner: the one sentence about where this period stands ───────────
-  // The ADP push deliberately stays out of this: PayPeriodActions reports it
-  // in the header, including straight after a push, and a second copy here
-  // would be the same fact written from a different moment in time.
-  const banner: { tone: BannerTone; title: string; body: string } =
+  // ── Where the period stands, as one sentence ─────────────────────────────
+  // Counted in steps, the same unit as the checklist beside it, so the two
+  // can never give different numbers. The ADP push stays in the header,
+  // which reports it including straight after a push.
+  const standing: { tone: "success" | "warning" | "info"; text: string } =
     payPeriod.status === "LOCKED"
-      ? {
-          tone: "success",
-          title: "Period locked",
-          body: `${stageCount("LOCKED")} timesheet${stageCount("LOCKED") === 1 ? " is" : "s are"} locked. Accruals and approved leave for this period have been posted.`,
-        }
+      ? { tone: "success", text: "Locked. Accruals and approved leave for this period have been posted." }
       : payPeriod.status === "READY"
-        ? {
-            tone: "info",
-            title: "Ready to lock",
-            body: "Every timesheet is payroll-approved and every exception is resolved. Locking posts per-period accruals and any approved leave that overlaps the period.",
-          }
-        : validation.isReady
-          ? {
-              tone: "success",
-              title: "Nothing is blocking the close",
-              body: "Every timesheet in this period is payroll-approved with no unresolved exceptions.",
-            }
+        ? { tone: "info", text: "Ready to lock. Locking posts accruals and any approved leave that overlaps the period." }
+        : blockingSteps === 0
+          ? { tone: "success", text: "Nothing is blocking the close. The period can be marked ready." }
           : {
               tone: "warning",
-              title: `${validation.issues.length} item${validation.issues.length === 1 ? "" : "s"} blocking the close`,
-              body: "The period cannot be marked ready until each one clears. The checklist below says who they are waiting on.",
+              text: `${blockingSteps} of ${checklist.length} steps still blocking the close`,
             };
 
   // ── The timesheet table, narrowed the way the filters ask ─────────────────
-  const issuesByTs = new Map<string, string[]>();
-  for (const iss of validation.issues) {
-    const list = issuesByTs.get(iss.timesheetId) ?? [];
-    list.push(iss.issue);
-    issuesByTs.set(iss.timesheetId, list);
-  }
-  const filteredSheets = sheets.filter((ts) => {
+  const inSiteDept = sheets.filter((ts) => {
     if (siteId && ts.employee.siteId !== siteId) return false;
     if (departmentId && ts.employee.departmentId !== departmentId) return false;
     return true;
   });
-  const tileData = filteredSheets.map((ts) => ({
+  const shown = show ? inSiteDept.filter((ts) => matchesShow(show, ts.status, ts.exceptions.length)) : inSiteDept;
+  const rows: TimesheetRow[] = shown.map((ts) => ({
     id: ts.id,
     employeeId: ts.employeeId,
     employeeName: ts.employee.user?.name ?? `Employee ${ts.employeeId}`,
@@ -618,25 +596,27 @@ function PeriodDetail({
     reg: ts.overtimeBuckets.find((b) => b.bucket === "REG")?.totalMinutes ?? 0,
     ot: ts.overtimeBuckets.find((b) => b.bucket === "OT")?.totalMinutes ?? 0,
     dt: ts.overtimeBuckets.find((b) => b.bucket === "DT")?.totalMinutes ?? 0,
-    hasExceptions: ts.exceptions.length > 0,
-    issues: issuesByTs.get(ts.id) ?? [],
+    exceptions: ts.exceptions.length,
     siteId: ts.employee.siteId ?? null,
     siteName: ts.employee.site?.name ?? null,
   }));
-  const narrowed = filteredSheets.length !== sheets.length;
+  const narrowed = rows.length !== sheets.length;
 
   const subtitle = [
     ruleSet?.name,
     ruleSet?.payFrequency && (FREQ_LABEL[ruleSet.payFrequency] ?? ruleSet.payFrequency),
-    // lastDay, not endDate: endDate is exclusive, and printing it raw put a
-    // second, later end date on the same screen as the title and the checklist.
-    `Closes ${format(lastDay, "EEE d MMM")}`,
+    // lastDay, not endDate: endDate is exclusive.
+    `Last day ${lastDayText}`,
   ]
     .filter(Boolean)
     .join(" · ");
 
+  const standingColor =
+    standing.tone === "warning" ? "var(--text-warning)" : standing.tone === "success" ? "var(--text-success)" : "var(--text-accent)";
+  const approvedPct = sheets.length ? Math.round((payrollApproved / sheets.length) * 100) : 0;
+
   return (
-    <div className="flex w-full flex-col gap-4">
+    <div className="@container flex w-full flex-col gap-4">
       <PageHeader pinned
         title={
           <span className="flex flex-wrap items-center gap-3">
@@ -663,65 +643,158 @@ function PeriodDetail({
         }
       />
 
-      <Banner tone={banner.tone} title={banner.title} body={banner.body} />
+      {/* Approvals and the checklist side by side, the same height: how far
+          along the period is, and what is left before it can close. */}
+      {/* Side by side once the pane itself is wide enough, whatever the
+          window is: the period list and the sidebar take their share first. */}
+      <div className="grid items-stretch gap-4 @4xl:grid-cols-2">
+        <Card title="Approvals" subtitle="Where every timesheet in the period sits" fill style={{ height: "100%" }}>
+          {sheets.length === 0 ? (
+            <EmptyState
+              title="No timesheets yet"
+              body="Nothing has been generated for this period. Timesheets appear as employees punch."
+            />
+          ) : (
+            <div className="flex flex-1 flex-col gap-4">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div className="flex flex-col gap-0.5">
+                  <span className="tabular" style={{ font: "var(--type-h1)", letterSpacing: "-0.02em", color: "var(--text-primary)" }}>
+                    {n(payrollApproved)}
+                    <span style={{ font: "var(--type-h4)", color: "var(--text-tertiary)" }}> of {n(sheets.length)}</span>
+                  </span>
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                    timesheets approved by payroll
+                  </span>
+                </div>
+                <span className="tabular" style={{ font: "var(--type-h4)", color: "var(--text-secondary)" }}>
+                  {approvedPct}%
+                </span>
+              </div>
 
-      <Card title="Close Checklist" subtitle="Every step must clear before the period can lock.">
-        <div className="flex flex-col">
-          {checklist.map((c) => (
-            <div
-              key={c.label}
-              className="flex items-center gap-3 py-2.5"
-              style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-            >
-              <span className="inline-flex flex-none">
-                {c.done ? (
-                  <CircleCheck className="h-[18px] w-[18px]" style={{ color: "var(--icon-success)" }} />
-                ) : (
-                  <CircleDashed className="h-[18px] w-[18px]" style={{ color: "var(--icon-secondary)" }} />
+              {/* The chain as one bar, each stage its own colour, so the
+                  period's shape reads before any number does. */}
+              <div
+                className="flex h-2.5 w-full overflow-hidden rounded-full"
+                style={{ background: "var(--ta-track)", gap: 2 }}
+                role="img"
+                aria-label={STAGES.map((st) => `${TIMESHEET_STATUS_LABEL[st.status]} ${stageCount(st.status)}`).join(", ")}
+              >
+                {STAGES.map((st) =>
+                  stageCount(st.status) > 0 ? (
+                    <span
+                      key={st.status}
+                      className="block h-full"
+                      style={{ width: `${(stageCount(st.status) / sheets.length) * 100}%`, background: st.color }}
+                    />
+                  ) : null,
                 )}
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)" }}>
-                  {c.label}
-                </span>
-                <span
-                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" }}
-                >
-                  {c.detail}
-                </span>
-              </span>
-              <Badge tone={c.done ? "success" : "warning"} size="sm">
-                {c.done ? "Clear" : "Blocking"}
-              </Badge>
-            </div>
-          ))}
-        </div>
-      </Card>
+              </div>
 
-      <Card
-        title="Period Totals"
-        subtitle="Every timesheet in the period, before the site and department filters below."
-      >
-        <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr))]">
+              <ul className="m-0 flex list-none flex-col p-0">
+                {STAGES.map((st) => {
+                  const count = stageCount(st.status);
+                  return (
+                    <li
+                      key={st.status}
+                      className="flex items-center gap-2.5 py-2"
+                      style={{ borderTop: "1px solid var(--stroke-divider)", opacity: count === 0 ? 0.55 : 1 }}
+                    >
+                      <span className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: st.color }} aria-hidden="true" />
+                      <span className="whitespace-nowrap" style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-primary)" }}>
+                        {TIMESHEET_STATUS_LABEL[st.status]}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                        {st.owner}
+                      </span>
+                      <span className="tabular whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                        {((count / sheets.length) * 100).toFixed(0)}%
+                      </span>
+                      <span className="tabular w-12 text-right" style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+                        {n(count)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+        </Card>
+
+        <Card
+          title="Close checklist"
+          subtitle={
+            <span style={{ color: standingColor, fontWeight: "var(--weight-medium)" }}>{standing.text}</span>
+          }
+          fill
+          padding={0}
+          style={{ height: "100%" }}
+        >
+          <ul className="m-0 flex list-none flex-col p-0">
+            {checklist.map((c, i) => (
+              <li
+                key={c.label}
+                className="flex items-center gap-3 px-4 py-3"
+                style={{ borderTop: i === 0 ? undefined : "1px solid var(--stroke-divider)" }}
+              >
+                <span className="inline-flex flex-none">
+                  {c.done ? (
+                    <CircleCheck className="h-5 w-5" style={{ color: "var(--icon-success)" }} aria-label="Done" />
+                  ) : (
+                    <CircleAlert className="h-5 w-5" style={{ color: "var(--icon-warning)" }} aria-label="Blocking" />
+                  )}
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-primary)" }}>
+                    {c.label}
+                  </span>
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" }}>
+                    {c.detail}
+                  </span>
+                </span>
+                {c.action ? (
+                  <Link
+                    href={c.action.href}
+                    className="whitespace-nowrap hover:underline"
+                    style={{ font: "var(--type-button2)", color: "var(--text-accent)" }}
+                  >
+                    {c.action.text}
+                  </Link>
+                ) : !c.done ? (
+                  <span className="whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                    Waiting
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </div>
+
+      <Card title="Hours" subtitle="Every timesheet in the period, before the filters below" padding={0}>
+        {/* One panel of figures with dividers between them, as the Dashboard
+            draws its pay period, rather than seven loose tiles. The four hour
+            figures add up to the total; Other pay codes is PTO and holiday. */}
+        <div className="grid [grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))]">
           {[
-            { label: "Employees", value: String(validation.totalTimesheets) },
-            { label: "Total Hours", value: (allMin / 60).toFixed(2) },
-            { label: "Regular", value: (regMin / 60).toFixed(2) },
-            { label: "Overtime", value: (otMin / 60).toFixed(2) },
-            { label: "Double Time", value: (dtMin / 60).toFixed(2) },
-            // Named, not dropped, because the four figures above have to add
-            // up to the total — a gap with no label reads as an error in the
-            // hours rather than as PTO and holiday pay.
-            { label: "Other Pay Codes", value: (otherMin / 60).toFixed(2) },
-            { label: "Approved", value: `${validation.approvedCount} of ${validation.totalTimesheets}` },
-          ].map((kv) => (
-            <div key={kv.label} className="flex min-w-0 flex-col gap-0.5">
+            { label: "Employees", value: n(validation.totalTimesheets) },
+            { label: "Total hours", value: hoursOf(allMin), strong: true },
+            { label: "Regular", value: hoursOf(regMin) },
+            { label: "Overtime", value: hoursOf(otMin), tone: otMin > 0 ? "var(--text-warning)" : undefined },
+            { label: "Double time", value: hoursOf(dtMin), tone: dtMin > 0 ? "var(--text-error)" : undefined },
+            { label: "Other pay codes", value: hoursOf(otherMin) },
+          ].map((kv, i) => (
+            <div
+              key={kv.label}
+              className="flex min-w-0 flex-col gap-1 px-4 py-4"
+              style={{ borderLeft: i === 0 ? undefined : "1px solid var(--stroke-divider)" }}
+            >
               <span className="wms-overline">{kv.label}</span>
               <span
                 className="tabular"
                 style={{
-                  font: "var(--weight-semibold) 16px/22px var(--font-sans)",
-                  color: "var(--text-primary)",
+                  font: "var(--type-h3)",
+                  fontWeight: kv.strong ? "var(--weight-bold)" : "var(--weight-semibold)",
+                  color: kv.tone ?? "var(--text-primary)",
                   overflowWrap: "anywhere",
                 }}
               >
@@ -732,86 +805,34 @@ function PeriodDetail({
         </div>
       </Card>
 
-      <Card
-        title="Approval Progress"
-        subtitle="Where every timesheet in the period currently sits."
-        padding={0}
-      >
-        {sheets.length === 0 ? (
-          <EmptyState
-            title="No timesheets yet"
-            body="Nothing has been generated for this period. Timesheets appear as employees punch."
-          />
-        ) : (
-          <Table>
-            <THead>
-              <TR>
-                <TH>Stage</TH>
-                <TH numeric>Timesheets</TH>
-                <TH numeric>Share</TH>
-                <TH>Waiting On</TH>
-              </TR>
-            </THead>
-            <TBody>
-              {STAGE_ORDER.map((stage) => {
-                const n = stageCount(stage);
-                return (
-                  <TR key={stage}>
-                    <TD>
-                      <Badge tone={statusTone(stage)} size="sm">
-                        {TIMESHEET_STATUS_LABEL[stage]}
-                      </Badge>
-                    </TD>
-                    <TD numeric style={{ color: n === 0 ? "var(--text-tertiary)" : undefined }}>
-                      {n}
-                    </TD>
-                    <TD numeric style={{ color: "var(--text-secondary)" }}>
-                      {((n / sheets.length) * 100).toFixed(1)}%
-                    </TD>
-                    <TD style={{ color: "var(--text-secondary)" }}>{STAGE_OWNER[stage]}</TD>
-                  </TR>
-                );
-              })}
-            </TBody>
-            <TFoot>
-              <TR>
-                <TD style={{ fontWeight: "var(--weight-semibold)" }}>Total</TD>
-                <TD numeric style={{ fontWeight: "var(--weight-semibold)" }}>
-                  {sheets.length}
-                </TD>
-                <TD numeric style={{ fontWeight: "var(--weight-semibold)" }}>100.0%</TD>
-                <TD />
-              </TR>
-            </TFoot>
-          </Table>
-        )}
-      </Card>
-
-      <Card
-        title="Timesheets"
-        subtitle={
-          narrowed
-            ? `${filteredSheets.length} of ${sheets.length} timesheets match the filters`
-            : `${sheets.length} timesheet${sheets.length === 1 ? "" : "s"} in this period`
-        }
-        actions={
-          <PayPeriodDetailFilter
+      <div id="timesheets" style={{ scrollMarginTop: 120 }}>
+        <Card
+          title="Timesheets"
+          subtitle={
+            narrowed
+              ? `${n(rows.length)} of ${n(sheets.length)} timesheets match the filters`
+              : `${n(sheets.length)} timesheet${sheets.length === 1 ? "" : "s"} in this period`
+          }
+          padding={0}
+        >
+          <PayPeriodTimesheets
+            timesheets={rows}
             payPeriodId={payPeriod.id}
-            currentFilter={currentFilter}
-            sites={sites}
-            departments={departments}
-            selectedSiteId={siteId}
-            selectedDepartmentId={departmentId}
+            filtered={narrowed}
+            filters={
+              <PayPeriodDetailFilter
+                payPeriodId={payPeriod.id}
+                currentFilter={currentFilter}
+                sites={sites}
+                departments={departments}
+                selectedSiteId={siteId}
+                selectedDepartmentId={departmentId}
+                show={show}
+              />
+            }
           />
-        }
-        padding={0}
-      >
-        <PayPeriodTimesheets
-          timesheets={tileData}
-          payPeriodId={payPeriod.id}
-          filtered={Boolean(siteId || departmentId)}
-        />
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }

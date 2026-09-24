@@ -1,22 +1,23 @@
 "use client";
 
 import { useRouter } from "@/components/layout/navigation-progress";
-import { Select } from "@/components/ui";
+import { Button, FilterSelectChip } from "@/components/ui";
+import { SHOW_OPTIONS, type TimesheetShow } from "./pay-period-show";
 
 type Site = { id: string; name: string };
 type Dept = { id: string; name: string };
 
 /**
- * Site and department narrowing for the timesheet table, as the design's
- * card-header controls.
+ * Site, department and Show narrowing for the timesheet table, as the same
+ * pills Employees and Live Attendance use.
  *
- * <p>Both live in the query string rather than in state. A payroll clerk
+ * <p>All three live in the query string rather than in state. A payroll clerk
  * working one warehouse sends the link to that warehouse's supervisor, and a
  * filter held in React would arrive showing every site.
  *
  * <p>Picking a site clears the department: the department list the page offers
  * is scoped to the chosen site, so keeping the old one would leave a filter
- * applied that is no longer in the dropdown that set it.
+ * applied that is no longer in the list that set it.
  */
 export function PayPeriodDetailFilter({
   payPeriodId,
@@ -25,6 +26,7 @@ export function PayPeriodDetailFilter({
   departments,
   selectedSiteId,
   selectedDepartmentId,
+  show,
 }: {
   payPeriodId: string;
   currentFilter: string;
@@ -32,43 +34,50 @@ export function PayPeriodDetailFilter({
   departments: Dept[];
   selectedSiteId?: string;
   selectedDepartmentId?: string;
+  show: TimesheetShow | "";
 }) {
   const router = useRouter();
 
-  function buildUrl(siteId: string | null, deptId: string | null) {
+  function go(next: { siteId?: string | null; departmentId?: string | null; show?: string | null }) {
     const params = new URLSearchParams({ id: payPeriodId });
     if (currentFilter !== "all") params.set("filter", currentFilter);
-    if (siteId) params.set("siteId", siteId);
-    if (deptId) params.set("departmentId", deptId);
-    return `/payroll/pay-periods?${params}`;
+    const site = next.siteId === undefined ? selectedSiteId : next.siteId;
+    const dept = next.departmentId === undefined ? selectedDepartmentId : next.departmentId;
+    const shown = next.show === undefined ? show : next.show;
+    if (site) params.set("siteId", site);
+    if (dept) params.set("departmentId", dept);
+    if (shown) params.set("show", shown);
+    router.push(`/payroll/pay-periods?${params}#timesheets`, { scroll: false });
   }
 
+  const any = Boolean(selectedSiteId || selectedDepartmentId || show);
+
   return (
-    <div className="flex items-center gap-2">
-      <Select
-        aria-label="Filter timesheets by site"
+    <>
+      <FilterSelectChip
+        label="Site"
         value={selectedSiteId ?? ""}
-        onChange={(e) => router.push(buildUrl(e.target.value || null, null))}
-      >
-        <option value="">All Sites</option>
-        {sites.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name}
-          </option>
-        ))}
-      </Select>
-      <Select
-        aria-label="Filter timesheets by department"
+        options={sites}
+        onChange={(v) => go({ siteId: v || null, departmentId: null })}
+      />
+      <FilterSelectChip
+        label="Department"
         value={selectedDepartmentId ?? ""}
-        onChange={(e) => router.push(buildUrl(selectedSiteId ?? null, e.target.value || null))}
-      >
-        <option value="">All Departments</option>
-        {departments.map((d) => (
-          <option key={d.id} value={d.id}>
-            {d.name}
-          </option>
-        ))}
-      </Select>
-    </div>
+        options={departments}
+        onChange={(v) => go({ departmentId: v || null })}
+      />
+      <FilterSelectChip
+        label="Show"
+        allLabel="Every timesheet"
+        value={show}
+        options={SHOW_OPTIONS}
+        onChange={(v) => go({ show: v || null })}
+      />
+      {any && (
+        <Button hierarchy="link" size="sm" onClick={() => go({ siteId: null, departmentId: null, show: null })}>
+          Clear all
+        </Button>
+      )}
+    </>
   );
 }
