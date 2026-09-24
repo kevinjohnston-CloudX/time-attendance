@@ -1360,10 +1360,11 @@
 /* ── Movements ──────────────────────────────────────────────────── */
 
 /* One grid for the heading and every row, so the columns line up down the
-   whole list. The day column takes whatever width is left. */
+   whole list. The day column stays compact, at most 300px for the whole
+   day; the employee column takes whatever width is left. */
 .mvHead,
 .mvRow {
-  --mv-cols: minmax(240px, 300px) 104px 104px 96px 104px minmax(160px, 1fr) 36px;
+  --mv-cols: minmax(240px, 1fr) 104px 104px 96px 104px minmax(200px, 300px) 36px;
   display: grid;
   grid-template-columns: var(--mv-cols);
   gap: 0 16px;
@@ -1373,7 +1374,7 @@
 
 .mvHead[data-gate="false"],
 .mvRow[data-gate="false"] {
-  --mv-cols: minmax(240px, 300px) 104px 104px 104px minmax(160px, 1fr) 36px;
+  --mv-cols: minmax(240px, 1fr) 104px 104px 104px minmax(200px, 300px) 36px;
 }
 
 .mvHead {

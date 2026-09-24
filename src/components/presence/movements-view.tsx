@@ -178,7 +178,7 @@ export function MovementsTable({
   const isToday = data.day === data.today;
   const tz = data.site.timezone;
   const hasGate = data.site.hasGateData;
-  const axis = useMemo(() => dayAxis(views, data, now), [views, data, now]);
+  const axis = useMemo(() => dayAxis(data), [data]);
   return (
     <section className={styles.group} aria-label="Movements" style={{ scrollMarginTop: stickyTop + 8 }}>
       <div className={styles.mvHeadWrap} style={{ top: stickyTop }}>
@@ -428,45 +428,18 @@ interface Axis {
 
 /**
  * One clock for the whole table, so every person's day bar lines up with the
- * next and a glance down the page shows who left at noon. It spans whatever
- * part of the day anybody on the list was scheduled or seen, starts on the
- * first busy hour and ends on a labelled one, never less than eight hours.
+ * next and a glance down the page shows who left at noon. Always the whole
+ * day, 12 AM to 12 AM, labelled every six hours, so the scale is the same
+ * on every site and every day and nobody's time falls off an edge.
  */
-function dayAxis(views: PersonDayView[], data: SiteDay, now: number): Axis {
-  const dayStart = Date.parse(data.dayStart);
-  const dayEnd = Date.parse(data.dayEnd);
-  const isToday = data.day === data.today;
-  let lo = Infinity;
-  let hi = -Infinity;
-  const see = (t: number | null | undefined) => {
-    if (t == null || !Number.isFinite(t)) return;
-    lo = Math.min(lo, t);
-    hi = Math.max(hi, t);
-  };
-  for (const v of views) {
-    for (const s of v.scans) see(Date.parse(s.at));
-    if (v.schedule) {
-      see(v.schedule.start);
-      see(Math.min(v.schedule.end, dayEnd));
-    }
-    if (v.lines.some((l) => l.carried)) see(dayStart);
-  }
-  if (isToday) see(Math.min(now, dayEnd));
-  if (!Number.isFinite(lo)) {
-    lo = dayStart + 6 * HOUR;
-    hi = dayStart + 18 * HOUR;
-  }
-  if (hi - lo < 8 * HOUR) {
-    hi = Math.min(lo + 8 * HOUR, dayEnd);
-    lo = Math.max(hi - 8 * HOUR, dayStart);
-  }
-  const from = Math.max(dayStart, Math.floor(lo / HOUR) * HOUR);
-  const rough = hi - from;
-  const step = rough <= 10 * HOUR ? 1 * HOUR : rough <= 16 * HOUR ? 2 * HOUR : 3 * HOUR;
-  const to = Math.min(dayEnd, from + Math.ceil(rough / step) * step);
+function dayAxis(data: SiteDay): Axis {
+  const from = Date.parse(data.dayStart);
+  const to = Date.parse(data.dayEnd);
   const span = Math.max(to - from, HOUR);
   const ticks: number[] = [];
-  for (let t = from; t <= to; t += step) ticks.push(t);
+  for (let t = from; t <= to; t += 6 * HOUR) ticks.push(t);
+  // A day that loses or gains an hour to daylight saving still ends labelled.
+  if (ticks[ticks.length - 1] !== to) ticks.push(to);
   const clamp = (t: number) => Math.min(Math.max(t, from), to);
   return {
     from,
