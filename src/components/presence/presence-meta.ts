@@ -49,8 +49,8 @@ export const STATUS_META: Record<PresenceStatus, StatusMeta> = {
   },
   ON_SITE: {
     label: "On site",
-    heading: "On site, salaried",
-    hint: "Salaried, so not expected to clock in. The security gate saw them come in",
+    heading: "On site, office staff",
+    hint: "Office staff, so not expected to clock in. The security gate saw them come in",
     color: "var(--ps-working)",
     badge: "success",
   },

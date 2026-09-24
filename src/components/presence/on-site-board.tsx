@@ -1523,7 +1523,7 @@ function PersonTile({
         {!compact && (
           <span className={styles.meta}>
             {p.jobTitle ?? p.department ?? p.employeeCode}
-            {p.salaried ? " · Salary" : ""}
+            {p.salaried ? " · Office" : ""}
           </span>
         )}
         {readers && !compact ? (
@@ -2084,7 +2084,7 @@ function EmptyBoard({
     NO_GATE_SCAN: ["Everyone clocked in is inside", "Everyone on the clock came in through the security gate."],
     ON_MEAL: ["Nobody is on a break", "Everyone on the clock is working."],
     OFF_CLOCK: ["Everyone inside is clocked in", "Everyone who came in through the security gate is on the clock or has left."],
-    ON_SITE: ["No salaried people inside", "No one salaried has come through the gate right now."],
+    ON_SITE: ["No office staff inside", "No one from the office has come through the gate right now."],
     NOT_ARRIVED: ["Everyone scheduled has arrived", "No one scheduled for today is still missing."],
     LEFT: ["Nobody has left yet", "No one who was here today has gone home."],
     ON_LEAVE: ["Nobody is on leave today", "No approved time off covers today."],

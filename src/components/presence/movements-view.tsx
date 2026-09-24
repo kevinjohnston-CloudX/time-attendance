@@ -287,7 +287,7 @@ function PersonRow({
   const status = statusOfDay(v, isToday, hasGate);
   const meta = status ? STATUS_META[status] : null;
   const chips = flagChips(v, isToday);
-  const metaLine = [p.jobTitle ?? p.department ?? p.employeeCode, p.salaried ? "Salary" : null, p.homeSite ? `From ${p.homeSite}` : null]
+  const metaLine = [p.jobTitle ?? p.department ?? p.employeeCode, p.salaried ? "Office" : null, p.homeSite ? `From ${p.homeSite}` : null]
     .filter(Boolean)
     .join(" · ");
   const t = v.lanes.totals;

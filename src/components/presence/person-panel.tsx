@@ -169,7 +169,7 @@ export function PersonPanel({
       : null;
   const tags = [
     person && isToday && person.outsideOnMeal ? <Badge key="out" tone="neutral" size="sm">Outside the building</Badge> : null,
-    salaried ? <Badge key="salary" tone="neutral" size="sm">Salary</Badge> : null,
+    salaried ? <Badge key="salary" tone="neutral" size="sm">Office</Badge> : null,
     person?.inactive || detail?.inactive ? <Badge key="inactive" tone="error" size="sm">Inactive employee</Badge> : null,
     detail?.homeSite ?? person?.homeSite ? <HomeSiteBadge key="home" site={detail?.homeSite ?? person?.homeSite ?? null} /> : null,
   ].filter(Boolean);
