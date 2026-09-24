@@ -159,13 +159,16 @@ export function FilterSelectChip({
   options,
   onChange,
   disabled,
+  allLabel,
 }: {
   label: string;
   /** The selected option id, or "" for none. */
   value: string;
-  options: { id: string; name: string }[];
+  options: readonly { id: string; name: string }[];
   onChange: (id: string) => void;
   disabled?: boolean;
+  /** The "no filter" line in the list, when "All <label>s" does not read right. */
+  allLabel?: string;
 }) {
   const applied = value !== "";
   const selected = options.find((o) => o.id === value);
@@ -259,7 +262,66 @@ export function FilterSelectChip({
           cursor: disabled ? "not-allowed" : "pointer",
         }}
       >
-        <option value="">All {label.toLowerCase()}s</option>
+        <option value="">{allLabel ?? `All ${label.toLowerCase()}s`}</option>
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
+/**
+ * A sort order, in the same pill as the filters. It always has a value, so
+ * it shows the order in use and never a clear control. A real `<select>` sits
+ * invisibly over it, as in FilterSelectChip.
+ */
+export function SortSelectChip({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: readonly { id: string; name: string }[];
+  onChange: (id: string) => void;
+}) {
+  const selected = options.find((o) => o.id === value) ?? options[0];
+  return (
+    <span
+      className="ta-chip"
+      style={{
+        position: "relative",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        height: 28,
+        padding: "0 10px",
+        boxSizing: "border-box",
+        whiteSpace: "nowrap",
+        borderRadius: 999,
+        border: "1px solid var(--stroke-secondary)",
+        background: "var(--surface-card)",
+        font: "var(--type-body2)",
+        fontWeight: "var(--weight-medium)",
+        color: "var(--text-secondary)",
+        cursor: "pointer",
+      }}
+    >
+      <span>Sort</span>
+      <span style={{ fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>{selected?.name}</span>
+      <span style={{ display: "inline-flex", color: "var(--icon-tertiary)", lineHeight: 0 }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </span>
+      <select
+        aria-label="Sort by"
+        value={selected?.id ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
+      >
         {options.map((o) => (
           <option key={o.id} value={o.id}>
             {o.name}

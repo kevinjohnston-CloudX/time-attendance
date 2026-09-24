@@ -8,6 +8,7 @@ import {
   Button,
   EmptyState,
   FilterSelectChip,
+  SortSelectChip,
   SearchInput,
   PageHeader,
   PinnedBar,
@@ -15,6 +16,7 @@ import {
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Users } from "lucide-react";
 import { Face } from "@/components/presence/face";
 import { LIST_COOKIE } from "./employees-list-cookie";
+import { LIST_KEYS, MISSING_OPTIONS, PAY_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS } from "./employees-list-options";
 import styles from "./employees.module.css";
 
 /**
@@ -55,6 +57,8 @@ interface Employee {
   photo: string | null;
 }
 
+type Filters = Record<"q" | "site" | "dept" | "role" | "status" | "shift" | "pay" | "missing" | "sort", string>;
+
 interface Props {
   employees: Employee[];
   total: number;
@@ -63,7 +67,7 @@ interface Props {
   sites: string[];
   departments: string[];
   shifts: { id: string; name: string; startTime: string }[];
-  currentFilters: { q: string; site: string; dept: string; role: string };
+  currentFilters: Filters;
   /** The page header, pinned together with the filters under it, and slimmed once the page scrolls. */
   title: ReactNode;
   subtitle?: ReactNode;
@@ -94,32 +98,31 @@ export function EmployeesTable({
   // Keep local search in sync if the server-driven filter changes (e.g. browser back)
   useEffect(() => { setSearchValue(currentFilters.q); }, [currentFilters.q]);
 
-  const buildUrl = useCallback((overrides: Partial<typeof currentFilters & { page: number }>) => {
+  const buildUrl = useCallback((overrides: Partial<Filters & { page: number }>) => {
     const params = new URLSearchParams();
-    const q    = overrides.q    ?? currentFilters.q;
-    const site = overrides.site ?? currentFilters.site;
-    const dept = overrides.dept ?? currentFilters.dept;
-    const role = overrides.role ?? currentFilters.role;
-    const pg   = overrides.page ?? 0;
-    if (q)    params.set("q",    q);
-    if (site) params.set("site", site);
-    if (dept) params.set("dept", dept);
-    if (role) params.set("role", role);
-    if (pg)   params.set("page", String(pg));
+    for (const k of LIST_KEYS) {
+      if (k === "page") continue;
+      const v = overrides[k] ?? currentFilters[k];
+      if (v) params.set(k, v);
+    }
+    const pg = overrides.page ?? 0;
+    if (pg) params.set("page", String(pg));
     const qs = params.toString();
     return `/admin/employees${qs ? `?${qs}` : ""}`;
   }, [currentFilters]);
 
-  function navigate(overrides: Partial<typeof currentFilters & { page: number }>) {
+  function navigate(overrides: Partial<Filters & { page: number }>) {
     const url = buildUrl(overrides);
     rememberList(url);
     router.push(url);
   }
 
+  // Clears the search and filters. The sort stays, since it hides nobody.
   function clearAll() {
     setSearchValue("");
-    rememberList("/admin/employees");
-    router.push("/admin/employees");
+    const url = currentFilters.sort ? `/admin/employees?sort=${encodeURIComponent(currentFilters.sort)}` : "/admin/employees";
+    rememberList(url);
+    router.push(url);
   }
 
   // The list as it is now is what "back to Employees" should bring back, even
@@ -135,15 +138,18 @@ export function EmployeesTable({
     debounceRef.current = setTimeout(() => navigate({ q: val, page: 0 }), 350);
   }
 
-  function onFilterChange(key: "site" | "dept" | "role", val: string) {
+  function onFilterChange(key: Exclude<keyof Filters, "q">, val: string) {
     navigate({ [key]: val, page: 0 });
   }
 
+  // The sort is not a filter: it hides nobody, so it does not count here.
   const isFiltered = Boolean(
-    currentFilters.q || currentFilters.site || currentFilters.dept || currentFilters.role,
+    currentFilters.q || currentFilters.site || currentFilters.dept || currentFilters.role ||
+    currentFilters.status || currentFilters.shift || currentFilters.pay || currentFilters.missing,
   );
 
   const shiftById = new Map(shifts.map((s) => [s.id, s]));
+  const shiftOptions = [...shifts].sort((a, b) => a.name.localeCompare(b.name)).map((s) => ({ id: s.id, name: s.name }));
 
   const shown = employees.length;
   const firstRow = total === 0 ? 0 : page * pageSize + 1;
@@ -155,7 +161,7 @@ export function EmployeesTable({
       <PinnedBar barRef={barRef}>
         <PageHeader title={title} subtitle={subtitle} actions={actions} condensed={condensed} />
         {/* One row, as on Live Attendance: search first, then the filters as
-            pills that show and clear their own value, the count on the right. */}
+            pills that show and clear their own value, the sort and count on the right. */}
         <div className="flex flex-wrap items-center gap-2.5">
           <SearchInput
             value={searchValue}
@@ -181,6 +187,32 @@ export function EmployeesTable({
             options={Object.entries(ROLE_LABEL).map(([id, name]) => ({ id, name }))}
             onChange={(v) => onFilterChange("role", v)}
           />
+          <FilterSelectChip
+            label="Status"
+            allLabel="All statuses"
+            value={currentFilters.status}
+            options={STATUS_OPTIONS}
+            onChange={(v) => onFilterChange("status", v)}
+          />
+          <FilterSelectChip
+            label="Shift"
+            value={currentFilters.shift}
+            options={shiftOptions}
+            onChange={(v) => onFilterChange("shift", v)}
+          />
+          <FilterSelectChip
+            label="Pay method"
+            value={currentFilters.pay}
+            options={PAY_OPTIONS}
+            onChange={(v) => onFilterChange("pay", v)}
+          />
+          <FilterSelectChip
+            label="Missing"
+            allLabel="Any record"
+            value={currentFilters.missing}
+            options={MISSING_OPTIONS}
+            onChange={(v) => onFilterChange("missing", v)}
+          />
           {isFiltered && (
             <Button
               hierarchy="link"
@@ -190,11 +222,20 @@ export function EmployeesTable({
               Clear all
             </Button>
           )}
-          <span
-            className="tabular ml-auto whitespace-nowrap"
-            style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
-          >
-            {total.toLocaleString()} {total === 1 ? "employee" : "employees"}
+          {/* The sort and the count travel together on the right, so on a
+              narrower window the row wraps as filters then order, not mid pill. */}
+          <span className="ml-auto flex items-center gap-2.5">
+            <SortSelectChip
+              value={currentFilters.sort}
+              options={SORT_OPTIONS}
+              onChange={(v) => onFilterChange("sort", v)}
+            />
+            <span
+              className="tabular whitespace-nowrap"
+              style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+            >
+              {total.toLocaleString()} {total === 1 ? "employee" : "employees"}
+            </span>
           </span>
         </div>
       </PinnedBar>
@@ -206,7 +247,7 @@ export function EmployeesTable({
             title={isFiltered ? "No employees match these filters" : "No employees"}
             body={
               isFiltered
-                ? "Try a wider search, or clear the site, department and role filters."
+                ? "Try a wider search, or clear some of the filters."
                 : undefined
             }
             action={

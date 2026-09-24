@@ -9,6 +9,7 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { photoUrls } from "@/lib/presence/photos";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
 import { looksLikeBadge } from "@/lib/presence/people-search.service";
+import { MISSING_OPTIONS, PAY_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
 
@@ -131,8 +132,19 @@ async function getActorSiteRestrictions(employeeId: string, role: string): Promi
 
 export const getEmployees = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ tenantId, employeeId: actorEmpId, role: actorRole }, input?: { page?: number; q?: string; site?: string; dept?: string; role?: string }) => {
-    const { page = 0, q, site, dept, role } = input ?? {};
+  async (
+    { tenantId, employeeId: actorEmpId, role: actorRole },
+    input?: {
+      page?: number; q?: string; site?: string; dept?: string; role?: string;
+      status?: string; shift?: string; pay?: string; missing?: string; sort?: string;
+    },
+  ) => {
+    const { page = 0, q, site, dept, role, shift } = input ?? {};
+    // Only the listed choices count; anything else is no filter at all.
+    const status = pick(STATUS_OPTIONS, input?.status);
+    const pay = pick(PAY_OPTIONS, input?.pay);
+    const missing = pick(MISSING_OPTIONS, input?.missing);
+    const sort = pick(SORT_OPTIONS, input?.sort);
 
     const allowedSiteIds = await getActorSiteRestrictions(actorEmpId, actorRole);
 
@@ -141,6 +153,29 @@ export const getEmployees = withRBAC(
     if (site) where.site = { name: site };
     if (dept) where.department = { name: dept };
     if (role) where.role = { equals: role as Prisma.EnumRoleFilter["equals"] };
+    // The same three states the Status column shows.
+    if (status === "active") Object.assign(where, { isActive: true, onLeave: false });
+    if (status === "leave") Object.assign(where, { isActive: true, onLeave: true });
+    if (status === "inactive") where.isActive = false;
+    if (shift) where.shiftId = shift;
+    if (pay) where.payType = pay;
+    // No badge means neither an employee number nor a barcode, so the time
+    // clock has nothing to match a scan to.
+    if (missing === "badge") Object.assign(where, { wmsId: null, barcode: null });
+    if (missing === "shift" && !shift) where.shiftId = null;
+    if (missing === "supervisor") where.supervisorId = null;
+    if (missing === "pay" && !pay) where.payType = null;
+
+    // Name, then id, behind every order, so a page boundary never splits or
+    // repeats a run of equal values.
+    const byName: Prisma.EmployeeOrderByWithRelationInput[] = [{ user: { name: "asc" } }, { id: "asc" }];
+    const orderBy: Prisma.EmployeeOrderByWithRelationInput[] =
+      sort === "name" ? byName
+      : sort === "code" ? [{ employeeCode: "asc" }, { id: "asc" }]
+      : sort === "dept" ? [{ department: { name: "asc" } }, ...byName]
+      : sort === "hired" ? [{ hireDate: "desc" }, ...byName]
+      : sort === "added" ? [{ createdAt: "desc" }, { id: "asc" }]
+      : [{ isActive: "desc" }, ...byName];
     if (q) {
       where.OR = [
         { user: { name: { contains: q, mode: "insensitive" } } },
@@ -176,7 +211,7 @@ export const getEmployees = withRBAC(
           barcode: true,
           wmsId: true,
         },
-        orderBy: { user: { name: "asc" } },
+        orderBy,
         take: PAGE_SIZE,
         skip: page * PAGE_SIZE,
       }),

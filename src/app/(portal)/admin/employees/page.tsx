@@ -8,6 +8,7 @@ import { CreateEmployeeForm } from "@/components/admin/create-employee-form";
 import { CsvUploadForm } from "@/components/admin/csv-upload-form";
 import { EmployeesTable } from "@/components/admin/employees-table";
 import { LIST_COOKIE } from "@/components/admin/employees-list-cookie";
+import { LIST_KEYS, MISSING_OPTIONS, PAY_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 
 /**
@@ -19,17 +20,15 @@ import { ArrowLeft, RefreshCw } from "lucide-react";
  * is where the sync is configured and where its last result is shown, and a
  * one-click sync from a list is how 214 records get overwritten by accident.
  *
- * <p>The design's All / Active / Terminated view tabs are **not** here.
- * `getEmployees` filters on site, department, role and a search term and
- * nothing else, so an "Active" tab could only hide inactive rows from the one
- * page already fetched. The record count would then describe the fetch rather
- * than the filter, which on a 100-row page with 800 behind it is worse than no
- * tab at all.
+ * <p>The design's All / Active / Terminated view tabs are a Status filter
+ * pill instead, filtered in the query like the others so the count always
+ * describes the filter. With no sort picked, active people come first, since
+ * most records on file belong to people who have left.
  */
 export default async function EmployeesPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ page?: string; q?: string; site?: string; dept?: string; role?: string }>;
+  searchParams?: Promise<Partial<Record<(typeof LIST_KEYS)[number], string>>>;
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -45,7 +44,7 @@ export default async function EmployeesPage({
     if (saved) {
       const from = new URLSearchParams(saved);
       const to = new URLSearchParams();
-      for (const k of ["q", "site", "dept", "role", "page"]) {
+      for (const k of LIST_KEYS) {
         const val = from.get(k);
         if (val) to.set(k, val);
       }
@@ -57,9 +56,17 @@ export default async function EmployeesPage({
   const site = sp?.site ?? "";
   const dept = sp?.dept ?? "";
   const role = sp?.role ?? "";
+  const shift = sp?.shift ?? "";
+  const status = pick(STATUS_OPTIONS, sp?.status);
+  const pay = pick(PAY_OPTIONS, sp?.pay);
+  const missing = pick(MISSING_OPTIONS, sp?.missing);
+  const sort = pick(SORT_OPTIONS, sp?.sort);
 
   const [employeesResult, refDataResult] = await Promise.all([
-    getEmployees({ page, q: q || undefined, site: site || undefined, dept: dept || undefined, role: role || undefined }),
+    getEmployees({
+      page, q: q || undefined, site: site || undefined, dept: dept || undefined, role: role || undefined,
+      status, shift: shift || undefined, pay, missing, sort,
+    }),
     getAdminRefData(),
   ]);
 
@@ -118,7 +125,7 @@ export default async function EmployeesPage({
         // shiftId but does not join the shift, and widening that join would be
         // a query change.
         shifts={shifts}
-        currentFilters={{ q, site, dept, role }}
+        currentFilters={{ q, site, dept, role, status, shift, pay, missing, sort }}
       />
     </div>
   );
