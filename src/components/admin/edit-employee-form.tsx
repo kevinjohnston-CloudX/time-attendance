@@ -608,7 +608,9 @@ export function EditEmployeeForm({
                 ? changeCount === 0
                   ? "Editing. Nothing changed yet."
                   : `Editing. ${changeCount === 1 ? "1 unsaved change" : `${changeCount} unsaved changes`}.`
-                : `${employee.employeeCode} · ${employee.department.name} · ${employee.site.name}`
+                : [v.jobTitle || roleName(v.customRoleId), employee.department.name, employee.site.name]
+                    .filter(Boolean)
+                    .join(" · ")
             }
             actions={
               editing ? (
@@ -685,14 +687,13 @@ export function EditEmployeeForm({
                     <span className={styles.photoHint}>Saved on its own, from the photo window</span>
                   </div>
                 )}
-                <div className="flex min-w-0 flex-col items-center gap-0.5 max-[1180px]:items-start">
-                  <p className={styles.profileName}>{v.name || employee.user.name}</p>
-                  <span className={styles.profileRole}>{v.jobTitle || roleName(v.customRoleId)}</span>
-                  <span className={styles.status} data-tone={tone}>
-                    <span className={styles.dot} aria-hidden="true" />
-                    {statusWord}
-                  </span>
-                </div>
+                {/* The name, title, department and site are in the page
+                    header right beside this card, so the card does not
+                    repeat them. It carries the face and the status. */}
+                <span className={styles.status} data-tone={tone}>
+                  <span className={styles.dot} aria-hidden="true" />
+                  {statusWord}
+                </span>
               </div>
               {/* Assigned once or worked out from other fields, so these stay
                   as text in edit mode too. */}
@@ -826,25 +827,20 @@ export function EditEmployeeForm({
                     </>,
                   )}
                 </Field>
-                <Field
-                  label="Status"
-                  htmlFor="f-status"
-                  read={
-                    <span className={`${styles.status} ${styles.statusFlat}`} data-tone={tone}>
-                      <span className={styles.dot} aria-hidden="true" />
-                      {statusWord}
-                    </span>
-                  }
-                >
-                  {pick(
-                    "status",
-                    <>
-                      <option value="active">Active</option>
-                      <option value="on-leave">On leave</option>
-                      <option value="inactive">Inactive</option>
-                    </>,
-                  )}
-                </Field>
+                {/* Read mode shows status once, on the profile card. The
+                    field only appears here when it can be changed. */}
+                {editing && (
+                  <Field label="Status" htmlFor="f-status" read={null}>
+                    {pick(
+                      "status",
+                      <>
+                        <option value="active">Active</option>
+                        <option value="on-leave">On leave</option>
+                        <option value="inactive">Inactive</option>
+                      </>,
+                    )}
+                  </Field>
+                )}
                 {v.status === "inactive" ? (
                   <Field label="Termination reason" htmlFor="f-terminationReason" read={v.terminationReason}>
                     {text("terminationReason")}

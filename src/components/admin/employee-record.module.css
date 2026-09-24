@@ -98,21 +98,6 @@
   color: var(--text-secondary);
 }
 
-.profileName {
-  max-width: 100%;
-  margin: 0;
-  font: var(--weight-semibold) 18px/24px var(--font-sans);
-  color: var(--text-primary);
-  overflow-wrap: anywhere;
-}
-
-.profileRole {
-  max-width: 100%;
-  font: var(--type-body2);
-  color: var(--text-secondary);
-  overflow-wrap: anywhere;
-}
-
 .facts {
   margin: 0;
   padding: 4px 20px;
@@ -355,11 +340,6 @@
   color: var(--text-tertiary);
 }
 
-.statusFlat {
-  margin-top: 0;
-  height: 24px;
-}
-
 /* A group inside a section: a heading, then its own rows. */
 .group {
   display: flex;
@@ -516,6 +496,9 @@
   }
   .portrait {
     margin-bottom: 0;
+  }
+  .profile > .status {
+    margin-top: 0;
   }
   .facts {
     display: grid;
