@@ -1360,11 +1360,13 @@
 /* ── Movements ──────────────────────────────────────────────────── */
 
 /* One grid for the heading and every row, so the columns line up down the
-   whole list. The day column stays compact, at most 300px for the whole
-   day; the employee column takes whatever width is left. */
+   whole list. The employee column stops at 360px, where more width is only
+   empty space after the chips; the day column grows from 200px to 560px on
+   a big screen; whatever is left spreads evenly over the number columns. */
 .mvHead,
 .mvRow {
-  --mv-cols: minmax(240px, 1fr) 104px 104px 96px 104px minmax(200px, 300px) 36px;
+  --mv-cols: minmax(240px, 360px) minmax(104px, 1fr) minmax(104px, 1fr) minmax(96px, 1fr) minmax(104px, 1fr)
+    minmax(80px, 1fr) minmax(200px, 560px) 36px;
   display: grid;
   grid-template-columns: var(--mv-cols);
   gap: 0 16px;
@@ -1374,7 +1376,8 @@
 
 .mvHead[data-gate="false"],
 .mvRow[data-gate="false"] {
-  --mv-cols: minmax(240px, 1fr) 104px 104px 104px minmax(200px, 300px) 36px;
+  --mv-cols: minmax(240px, 360px) minmax(104px, 1fr) minmax(104px, 1fr) minmax(104px, 1fr) minmax(80px, 1fr)
+    minmax(200px, 560px) 36px;
 }
 
 .mvHead {
@@ -1713,14 +1716,14 @@
 }
 
 /* Narrower, the day bar goes first: the numbers beside it say the same. */
-@media (max-width: 1180px) {
+@media (max-width: 1240px) {
   .mvHead,
   .mvRow {
-    --mv-cols: minmax(220px, 1fr) 96px 96px 92px 100px 36px;
+    --mv-cols: minmax(220px, 1fr) 96px 96px 92px 100px 80px 36px;
   }
   .mvHead[data-gate="false"],
   .mvRow[data-gate="false"] {
-    --mv-cols: minmax(220px, 1fr) 96px 96px 100px 36px;
+    --mv-cols: minmax(220px, 1fr) 96px 96px 100px 80px 36px;
   }
   .mvDay,
   .mvHead .mvAxis {
