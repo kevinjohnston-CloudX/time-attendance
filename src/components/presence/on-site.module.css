@@ -3826,6 +3826,24 @@
   box-shadow: 0 0 0 2px var(--stroke-accent);
 }
 
+/* Shown while a photo is dragged anywhere over the dialog. */
+.peDrop {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed var(--stroke-accent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-card) 88%, transparent);
+  color: var(--text-accent);
+  font: var(--type-button1);
+  pointer-events: none;
+}
+
 .peCurrent,
 .peVideo {
   position: absolute;

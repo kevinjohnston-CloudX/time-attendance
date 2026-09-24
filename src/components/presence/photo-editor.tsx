@@ -8,7 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Camera, ImageUp, X } from "lucide-react";
+import { Camera, ImageDown, ImageUp, X } from "lucide-react";
 import { Button } from "@/components/ui";
 import { updateEmployeePhoto } from "@/actions/presence.actions";
 import { initialsOf } from "./presence-meta";
@@ -75,6 +75,9 @@ export function PhotoEditor({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  // Entering a child fires a leave on the parent, so the drop state counts
+  // how deep the drag is rather than trusting a single leave.
+  const dragDepth = useRef(0);
   const [currentFailed, setCurrentFailed] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
@@ -144,14 +147,19 @@ export function PhotoEditor({
     [image, base, zoom],
   );
 
-  const take = useCallback(async (src: string, revoke: boolean) => {
+  const take = useCallback(async (src: string, revoke: boolean, heic = false) => {
     const img = new Image();
     img.src = src;
     try {
       await img.decode();
     } catch {
       if (revoke) URL.revokeObjectURL(src);
-      setError("That file could not be opened as a photo.");
+      // Safari opens iPhone photos; Chrome and Edge do not.
+      setError(
+        heic
+          ? "This browser cannot open iPhone HEIC photos. Save it as a JPG first, or use Safari."
+          : "That file could not be opened as a photo.",
+      );
       return;
     }
     if (objectUrl.current && objectUrl.current !== src)
@@ -167,12 +175,13 @@ export function PhotoEditor({
   const pickFile = useCallback(
     (file: File | null | undefined) => {
       if (!file) return;
-      if (!file.type.startsWith("image/"))
+      const heic = /\.(heic|heif)$/i.test(file.name) || /heic|heif/i.test(file.type);
+      if (!file.type.startsWith("image/") && !heic)
         return setError("Choose a photo file, such as a JPG or PNG.");
       if (file.size > MAX_INPUT_BYTES)
         return setError("That photo is too large. Choose one under 25 MB.");
       stopCamera();
-      void take(URL.createObjectURL(file), true);
+      void take(URL.createObjectURL(file), true, heic);
     },
     [stopCamera, take],
   );
@@ -316,7 +325,13 @@ export function PhotoEditor({
   const showCurrent = mode === "current" && currentSrc && !currentFailed;
 
   return (
-    <div className={styles.peScrim} onClick={saving ? undefined : onClose}>
+    <div
+      className={styles.peScrim}
+      onClick={saving ? undefined : onClose}
+      // A photo let go of beside the dialog must not open in the tab instead.
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => e.preventDefault()}
+    >
       <div
         ref={dialogRef}
         className={styles.peDialog}
@@ -324,6 +339,28 @@ export function PhotoEditor({
         aria-modal="true"
         aria-labelledby="pe-title"
         onClick={(e) => e.stopPropagation()}
+        onDragEnter={(e) => {
+          if (saving || !e.dataTransfer.types.includes("Files")) return;
+          e.preventDefault();
+          dragDepth.current += 1;
+          setDragOver(true);
+        }}
+        onDragOver={(e) => {
+          if (saving || !e.dataTransfer.types.includes("Files")) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+        }}
+        onDragLeave={() => {
+          dragDepth.current = Math.max(0, dragDepth.current - 1);
+          if (dragDepth.current === 0) setDragOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dragDepth.current = 0;
+          setDragOver(false);
+          if (!saving) pickFile(e.dataTransfer.files?.[0]);
+        }}
       >
         <div className={styles.peHead}>
           <div className="flex min-w-0 flex-col">
@@ -364,17 +401,6 @@ export function PhotoEditor({
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
             onKeyDown={onFrameKey}
-            onDragOver={(e) => {
-              if (mode === "camera") return;
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragOver(false);
-              pickFile(e.dataTransfer.files?.[0]);
-            }}
           >
             {mode === "current" && (
               <>
@@ -426,6 +452,12 @@ export function PhotoEditor({
             {mode === "frame" && (
               <span className={styles.peGuide} aria-hidden="true" />
             )}
+            {dragOver && (
+              <span className={styles.peDrop} aria-hidden="true">
+                <ImageDown className="h-6 w-6" />
+                Drop photo here
+              </span>
+            )}
           </div>
 
           {mode === "frame" && (
@@ -447,7 +479,7 @@ export function PhotoEditor({
               ? "Face the camera, then take the photo."
               : mode === "frame"
                 ? "Drag to position the face in the frame."
-                : "Choose a photo or use the camera. You can frame it before saving."}
+                : "Drag a photo here, choose one, or use the camera. You can frame it before saving."}
           </p>
 
           <div className={styles.peSources}>
