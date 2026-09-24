@@ -300,7 +300,7 @@ export function ScanLogCounts({
   const hero =
     isToday && stillInside !== null
       ? {
-          label: hasGateData ? "Still inside" : "On the clock",
+          label: hasGateData ? "In the building" : "On the clock",
           figure: stillInside,
           sub: hasGateData
             ? `of ${summary.peopleIn.toLocaleString()} who came in today`
