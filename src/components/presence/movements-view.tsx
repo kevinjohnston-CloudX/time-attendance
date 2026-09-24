@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Clock, DoorOpen, UserRoundX } from "lucide-react";
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { getOnSiteMovements } from "@/actions/presence.actions";
@@ -184,7 +184,7 @@ export function MovementsTable({
         <span className={styles.mvNum}>On the clock</span>
         <span className={styles.mvAxis}>
           {axis.ticks.map((t) => (
-            <span key={t} style={{ left: axis.pct(t) }}>
+            <span key={t} style={{ left: axis.pct(t) }} data-edge={t === axis.from ? "start" : t === axis.to ? "end" : undefined}>
               {hourLabel(t, tz)}
             </span>
           ))}
@@ -285,7 +285,7 @@ function PersonRow({
     ) : null;
 
   const left = present ? (
-    <span className={styles.mvStill}>On site</span>
+    <span className={styles.mvHere}>On site</span>
   ) : where.leftAt !== null ? (
     <span data-tone={early ? "warning" : undefined}>{time(where.leftAt)}</span>
   ) : unclosed ? (
@@ -476,11 +476,10 @@ interface Axis {
 }
 
 /**
- * One clock for the whole table, so every person's ribbon lines up with the
+ * One clock for the whole table, so every person's day bar lines up with the
  * next and a glance down the page shows who left at noon. It spans whatever
- * part of the day anybody on the list was scheduled or seen, in whole hours,
- * never less than eight. On today that runs to now, or further where
- * somebody is scheduled later, so the rest of their shift shows ahead.
+ * part of the day anybody on the list was scheduled or seen, starts on the
+ * first busy hour and ends on a labelled one, never less than eight hours.
  */
 function dayAxis(views: PersonDayView[], data: SiteDay, now: number): Axis {
   const dayStart = Date.parse(data.dayStart);
@@ -506,16 +505,17 @@ function dayAxis(views: PersonDayView[], data: SiteDay, now: number): Axis {
     lo = dayStart + 6 * HOUR;
     hi = dayStart + 18 * HOUR;
   }
-  let from = Math.max(dayStart, Math.floor(lo / HOUR) * HOUR);
-  let to = Math.min(dayEnd, Math.ceil(hi / HOUR) * HOUR);
-  if (to - from < 8 * HOUR) {
-    to = Math.min(from + 8 * HOUR, dayEnd);
-    from = Math.max(to - 8 * HOUR, dayStart);
+  if (hi - lo < 8 * HOUR) {
+    hi = Math.min(lo + 8 * HOUR, dayEnd);
+    lo = Math.max(hi - 8 * HOUR, dayStart);
   }
+  const from = Math.max(dayStart, Math.floor(lo / HOUR) * HOUR);
+  const rough = hi - from;
+  const step = rough <= 10 * HOUR ? 1 * HOUR : rough <= 16 * HOUR ? 2 * HOUR : 3 * HOUR;
+  const to = Math.min(dayEnd, from + Math.ceil(rough / step) * step);
   const span = Math.max(to - from, HOUR);
-  const step = span <= 10 * HOUR ? 1 * HOUR : span <= 16 * HOUR ? 2 * HOUR : 3 * HOUR;
   const ticks: number[] = [];
-  for (let t = Math.ceil(from / step) * step; t <= to; t += step) ticks.push(t);
+  for (let t = from; t <= to; t += step) ticks.push(t);
   const clamp = (t: number) => Math.min(Math.max(t, from), to);
   return {
     from,
@@ -537,10 +537,11 @@ function hourLabel(ms: number, tz: string): string {
 }
 
 /**
- * A person's day at a glance, above their lines: the gate on top, the time
- * clock under it, the scheduled hours as an outline behind both, and a tick
- * for every single scan, so a burst of scans or a scan that changed nothing
- * is visible without opening anything.
+ * A person's day at a glance, drawn the way the employee panel draws it: the
+ * scheduled hours as a thin line above, the gate and the time clock as two
+ * rounded bars, a meal as a notch in the clock bar, and, today, both bars
+ * stopping at now with the rest of the shift as an outline. Every scan is in
+ * the detail under the row.
  */
 function Ribbon({
   view: v,
@@ -558,56 +559,76 @@ function Ribbon({
   now: number;
 }) {
   const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
+  const clampNow = Math.min(Math.max(now, axis.from), axis.to);
+  const recordedTo = isToday ? clampNow : axis.to;
   const nowAt = isToday && now > axis.from && now < axis.to ? axis.pct(now) : null;
-  const tick = (s: PersonDayView["scans"][number]) => (
-    <span
-      key={s.id}
-      className={styles.rbTick}
-      data-kind={s.rejected ? "error" : s.automatic ? "system" : undefined}
-      style={{ left: axis.pct(Date.parse(s.at)) }}
-      title={`${time(Date.parse(s.at))} ${s.stream === "SECURITY" ? "security gate" : "time clock"}${
-        s.rejected ? ", not accepted" : s.automatic ? ", added by the system" : ""
-      }`}
-    />
+  const ahead =
+    isToday && v.schedule && v.schedule.end > recordedTo
+      ? { start: Math.max(recordedTo, v.schedule.start), end: v.schedule.end }
+      : null;
+  // A stretch still running is pinned to now from the right, so a meal that
+  // has only just started grows back into the bar, never past the now line.
+  const place = (s: { start: number; end: number; open: boolean }) =>
+    s.open && isToday
+      ? { right: `calc(100% - ${axis.pct(s.end)})`, width: axis.width(s.start, s.end) }
+      : { left: axis.pct(s.start), width: axis.width(s.start, s.end) };
+  const clock = [...v.lanes.clock].sort((a, b) => a.start - b.start);
+  const until = (s: { end: number; open: boolean }) =>
+    s.open ? (isToday ? "now" : "the end of the day") : time(s.end);
+
+  const lane = (key: string, children: ReactNode) => (
+    <span className={styles.rbLane} key={key}>
+      <span className={styles.rbBg} style={{ width: axis.width(axis.from, recordedTo) }} />
+      {ahead && <span className={styles.rbAhead} style={{ left: axis.pct(ahead.start), width: axis.width(ahead.start, ahead.end) }} />}
+      {children}
+    </span>
   );
+
   return (
-    <span className={styles.rb} data-single={hasGate ? undefined : "true"} aria-hidden="true">
-      {v.schedule && (
-        <span
-          className={styles.rbSched}
-          style={{ left: axis.pct(v.schedule.start), width: axis.width(v.schedule.start, v.schedule.end) }}
-          title={`Scheduled ${time(v.schedule.start)} to ${time(v.schedule.end)}`}
-        />
-      )}
-      {hasGate && (
-        <span className={styles.rbTrack} data-lane="gate">
-          {v.lanes.gate.map((g) => (
+    <span className={styles.rb2} data-single={hasGate ? undefined : "true"}>
+      <span className={styles.rbSchedRow}>
+        {v.schedule && (
+          <span
+            className={styles.rbSchedLine}
+            style={{ left: axis.pct(v.schedule.start), width: axis.width(v.schedule.start, v.schedule.end) }}
+            title={`Scheduled ${time(v.schedule.start)} to ${time(v.schedule.end)}`}
+          />
+        )}
+      </span>
+      {hasGate &&
+        lane(
+          "gate",
+          v.lanes.gate.map((g) => (
             <span
               key={g.start}
-              className={styles.rbSeg}
+              className={styles.rbPiece}
               data-kind="inside"
-              style={{ left: axis.pct(g.start), width: axis.width(g.start, g.end) }}
-              title={`Inside ${time(g.start)} to ${g.open ? (isToday ? "now" : "the end of the day") : time(g.end)}`}
+              data-first="true"
+              data-last={g.open && isToday ? undefined : "true"}
+              style={place(g)}
+              title={`Inside ${time(g.start)} to ${until(g)}`}
             />
-          ))}
-          {v.scans.filter((s) => s.stream === "SECURITY").map(tick)}
-        </span>
+          )),
+        )}
+      {lane(
+        "clock",
+        clock.map((c, i) => {
+          const first = i === 0 || clock[i - 1].end !== c.start;
+          const last = i === clock.length - 1 || clock[i + 1].start !== c.end;
+          return (
+            <span
+              key={c.start}
+              className={styles.rbPiece}
+              data-kind={c.kind === "WORK" ? "work" : "meal"}
+              data-first={first ? "true" : undefined}
+              data-last={last && !(c.open && isToday) ? "true" : undefined}
+              style={place(c)}
+              title={`${c.kind === "WORK" ? "On the clock" : c.kind === "MEAL" ? "Meal" : "Break"} ${time(c.start)} to ${until(c)}`}
+            />
+          );
+        }),
       )}
-      <span className={styles.rbTrack} data-lane="clock">
-        {v.lanes.clock.map((c) => (
-          <span
-            key={c.start}
-            className={styles.rbSeg}
-            data-kind={c.kind === "WORK" ? "work" : "meal"}
-            style={{ left: axis.pct(c.start), width: axis.width(c.start, c.end) }}
-            title={`${c.kind === "WORK" ? "On the clock" : c.kind === "MEAL" ? "Meal" : "Break"} ${time(c.start)} to ${
-              c.open ? (isToday ? "now" : "the end of the day") : time(c.end)
-            }`}
-          />
-        ))}
-        {v.scans.filter((s) => s.stream === "TIME_CLOCK").map(tick)}
-      </span>
-      {nowAt && <span className={styles.rbNow} style={{ left: nowAt }} />}
+      {nowAt && <span className={styles.rbNow2} style={{ left: nowAt }} aria-hidden="true" />}
     </span>
   );
 }

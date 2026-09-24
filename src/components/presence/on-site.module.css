@@ -1677,8 +1677,9 @@
   font-weight: var(--weight-regular, 400);
 }
 
-.mvStill {
-  color: var(--text-accent);
+.mvStill,
+.mvHere {
+  color: var(--text-primary);
 }
 
 .mvWarn {
@@ -2195,7 +2196,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 4px;
   min-width: 0;
   margin: 0;
@@ -2264,7 +2265,7 @@
 }
 
 .summaryFigure {
-  font: var(--weight-semibold) 32px/40px var(--font-sans);
+  font: var(--weight-semibold) 32px/48px var(--font-sans);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
@@ -2959,4 +2960,108 @@
 
 .ppEvent .eventText {
   padding-top: 4px;
+}
+
+/* ── Row day bar, v2: the panel chart's language at row size ─────────── */
+
+.mvAxis > span[data-edge="start"] {
+  transform: none;
+}
+
+.mvAxis > span[data-edge="end"] {
+  transform: translateX(-100%);
+}
+
+.rb2 {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.rbSchedRow {
+  position: relative;
+  height: 5px;
+}
+
+/* The scheduled hours: a thin bracket, open at the bottom. */
+.rbSchedLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border: 1.5px solid var(--stroke-default);
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+}
+
+.rbLane {
+  position: relative;
+  height: 8px;
+}
+
+.rbBg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 999px;
+  background: var(--ta-track);
+}
+
+.rbAhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border: 1px dashed var(--stroke-default);
+  border-radius: 999px;
+}
+
+.rbPiece {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+}
+
+.rbPiece[data-first="true"] {
+  border-top-left-radius: 999px;
+  border-bottom-left-radius: 999px;
+}
+
+.rbPiece[data-last="true"] {
+  border-top-right-radius: 999px;
+  border-bottom-right-radius: 999px;
+}
+
+.rbPiece[data-kind="inside"] {
+  background: var(--text-accent);
+}
+
+.rbPiece[data-kind="work"] {
+  background: var(--fill-success);
+}
+
+.rbPiece[data-kind="meal"] {
+  z-index: 1;
+  min-width: 4px;
+  background: var(--fill-warning);
+  box-shadow: 0 0 0 1px var(--surface-card);
+}
+
+.mvRow:hover .rbPiece[data-kind="meal"] {
+  box-shadow: 0 0 0 1px var(--fill-hover);
+}
+
+/* Exactly the lanes' height: from the top of the first bar to the bottom
+   of the last, so the bars meet it rather than stop short of it. */
+.rbNow2 {
+  position: absolute;
+  z-index: 2;
+  top: 11px;
+  bottom: 2px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-primary);
 }
