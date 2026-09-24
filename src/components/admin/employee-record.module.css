@@ -226,49 +226,35 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 4px 24px 12px;
+  padding: 0 24px 8px;
   container-type: inline-size;
 }
 
-/* Fields as cells: label beside value, two to a row, with a rule between
-   the two columns so a row reads as two fields and never as one long line.
-   The rows pair up, so the dividers under them run straight across. */
+/* Fields as label over value, in columns with room between them. The label
+   sits 4px from its own value and 28px from anything else, so which value
+   belongs to which label is settled before anyone reads a word. No lines
+   inside a group; the only rules are the ones between groups. */
 .grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.grid > .field:nth-child(odd) {
-  padding-right: 28px;
-}
-
-.grid > .field:nth-child(even) {
-  padding-left: 28px;
-  border-left: 1px solid var(--stroke-divider);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 26px 32px;
+  padding: 20px 0 16px;
 }
 
 .field {
-  display: grid;
-  grid-template-columns: minmax(110px, min(36%, 170px)) minmax(0, 1fr);
-  gap: 12px;
-  align-items: baseline;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
-  padding: 14px 0;
-  border-top: 1px solid var(--stroke-divider);
-}
-
-.grid > .field:nth-child(-n + 2) {
-  border-top: 0;
-}
-
-.editing .field {
-  align-items: center;
-  padding: 10px 0;
 }
 
 .label {
-  font: var(--weight-medium) 13px/20px var(--font-sans);
+  font: var(--weight-medium) 12.5px/18px var(--font-sans);
   color: var(--text-secondary);
+}
+
+.editing .label {
+  margin-bottom: 2px;
 }
 
 .required {
@@ -284,8 +270,8 @@
 }
 
 .value {
-  min-height: 20px;
-  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  min-height: 22px;
+  font: var(--weight-semibold) 15px/22px var(--font-sans);
   color: var(--text-primary);
   overflow-wrap: anywhere;
   white-space: pre-line;
@@ -352,8 +338,12 @@
   border-top: 1px solid var(--stroke-divider);
 }
 
+.group .grid {
+  padding-top: 14px;
+}
+
 .groupTitle {
-  margin: 0 0 2px;
+  margin: 0;
   font: var(--weight-semibold) 11px/16px var(--font-sans);
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -527,10 +517,6 @@
 }
 
 @media (max-width: 640px) {
-  .field {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-  }
   .entry,
   .change {
     grid-template-columns: minmax(0, 1fr);
@@ -544,21 +530,23 @@
   }
 }
 
-/* Last in the file so it wins over the base rules. Two lists need about
-   380px each to keep a value like an email whole; below that the card, not
-   the window, decides: one list, every row but the first with its divider
-   back. */
-@container (max-width: 780px) {
+/* Last in the file so it wins over the base rules. The card, not the window,
+   decides how many columns fit, so the sidebar and the profile rail are
+   accounted for. */
+@container (max-width: 1040px) {
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 720px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 440px) {
   .grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .grid > .field:nth-child(2) {
-    border-top: 1px solid var(--stroke-divider);
-  }
-  .grid > .field:nth-child(odd),
-  .grid > .field:nth-child(even) {
-    padding-left: 0;
-    padding-right: 0;
-    border-left: 0;
   }
 }
