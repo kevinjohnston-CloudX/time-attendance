@@ -176,6 +176,11 @@ export interface ScanLogQuery {
   departmentId: string | null;
   shiftId: string | null;
   q: string | null;
+  /**
+   * People picked in the search box. With them the log shows those people,
+   * plus anyone matching `q` while more is being typed.
+   */
+  ids?: string[] | null;
 }
 
 /** One reader event in the log, with the person it belongs to. */

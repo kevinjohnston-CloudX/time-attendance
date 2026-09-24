@@ -7,6 +7,7 @@ import { getScanLog, type ScanLogInput } from "@/lib/presence/scan-log.service";
 import { getSiteDay } from "@/lib/presence/movements.service";
 import { MAX_PHOTO_BYTES, savePhoto } from "@/lib/presence/photos";
 import { writeAuditLog } from "@/lib/audit/logger";
+import { MAX_PICKED, peopleByIds, resolveNames, suggestPeople } from "@/lib/presence/people-search.service";
 
 /**
  * On Site: who is in the building right now.
@@ -22,6 +23,13 @@ import { writeAuditLog } from "@/lib/audit/logger";
  * An id outside that list answers NOT_FOUND, the same as one that does not
  * exist.
  */
+
+/** Ids from the browser, kept only when they look like ids, and never more than a search holds. */
+function idList(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null;
+  const ids = v.filter((x): x is string => typeof x === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(x)).slice(0, MAX_PICKED);
+  return ids.length ? ids : null;
+}
 
 async function assertSite(tenantId: string, viewer: { employeeId: string; role: string }, siteId: string) {
   const sites = await getViewableSites(tenantId, viewer);
@@ -97,6 +105,7 @@ export const getOnSiteScanLog = withRBAC(
       departmentId: text(input.departmentId),
       shiftId: text(input.shiftId),
       q: text(input.q),
+      ids: idList(input.ids),
       before:
         input.before && iso(input.before.at) && text(input.before.id)
           ? { at: input.before.at, id: input.before.id }
@@ -186,3 +195,28 @@ export const updateEmployeePhoto = withRBAC("PRESENCE_PHOTO_EDIT", async ({ tena
   });
   return { photoUrl: saved.url };
 });
+
+/**
+ * The search box that holds several people: suggestions while typing, a
+ * pasted list of names, and people restored from a link. The same gate and
+ * site check as the board, and only people this site's pages could show
+ * (based here, or scanned here in the last week) are ever returned.
+ */
+export const findOnSitePeople = withRBAC(
+  "PRESENCE_VIEW_ANY",
+  async (
+    { tenantId, employeeId, role },
+    input: { siteId: string; q?: string; names?: string[]; ids?: string[]; exclude?: string[] },
+  ) => {
+    if (!tenantId) throw new Error("NOT_FOUND");
+    await assertSite(tenantId, { employeeId, role }, input.siteId);
+    if (Array.isArray(input.names)) {
+      const names = input.names.filter((n): n is string => typeof n === "string").slice(0, MAX_PICKED);
+      return { kind: "names" as const, ...(await resolveNames(tenantId, input.siteId, names)) };
+    }
+    const ids = idList(input.ids);
+    if (ids) return { kind: "ids" as const, people: await peopleByIds(tenantId, input.siteId, ids) };
+    const q = typeof input.q === "string" ? input.q.slice(0, 80) : "";
+    return { kind: "suggest" as const, people: await suggestPeople(tenantId, input.siteId, q, idList(input.exclude) ?? []) };
+  },
+);

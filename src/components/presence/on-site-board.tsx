@@ -9,7 +9,6 @@ import {
   EmptyState,
   FilterSelectChip,
   PageHeader,
-  SearchInput,
   SegmentedControl,
   Select,
   Table,
@@ -22,7 +21,9 @@ import {
   Toast,
   useToast,
 } from "@/components/ui";
-import { getOnSiteBoard } from "@/actions/presence.actions";
+import { findOnSitePeople, getOnSiteBoard } from "@/actions/presence.actions";
+import type { PickablePerson } from "@/lib/presence/people-search.service";
+import { MAX_PICKED } from "@/lib/presence/search-limits";
 import type { PresenceBoard, PresencePerson, PresenceStatus } from "@/lib/presence/types";
 import {
   AWAY_STATUSES,
@@ -50,6 +51,7 @@ import {
 } from "./presence-meta";
 import { PersonPanel } from "./person-panel";
 import { PhotoSwaps, PhotoViewer } from "./face";
+import { PeopleSearch, pickedLabel } from "./people-search";
 import { clampDay, dayLabel, recentDays } from "@/lib/presence/days";
 import { applyHeldOrder, buildSiteDay, countFlags, holdOrder, scanTotals, type HeldOrder } from "@/lib/presence/movements";
 import {
@@ -149,6 +151,8 @@ export function OnSiteBoard({
     flag: string | null;
     order: string | null;
     open: string | null;
+    /** People picked in the search, as ids, from a shared link. */
+    people: string | null;
   };
   /** Draws Update photo on the employee panel. The save checks again on the server. */
   canEditPhotos?: boolean;
@@ -164,6 +168,12 @@ export function OnSiteBoard({
   const [shift, setShift] = useState(initialFilters.shift ?? "");
   const [view, setView] = useState<View>(initialFilters.view);
   const [query, setQuery] = useState("");
+  // People picked in the search box. With any picked, every tab shows only
+  // them, plus whoever matches what is still being typed.
+  const [picked, setPicked] = useState<PickablePerson[]>([]);
+  const pickedIds = useMemo(() => new Set(picked.map((p) => p.id)), [picked]);
+  const pickedKey = useMemo(() => [...pickedIds].sort().join(","), [pickedIds]);
+  const pickedList = useMemo(() => (pickedKey ? pickedKey.split(",") : []), [pickedKey]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, number>>({});
   const [rowsShown, setRowsShown] = useState(ROWS_PER_PAGE);
@@ -201,6 +211,19 @@ export function OnSiteBoard({
   const siteRef = useRef(siteId);
   const previous = useRef(new Map<string, PresenceStatus>());
 
+  // People from a shared link come back with their names from the server,
+  // which also drops anyone this site cannot show.
+  const restoredPeople = useRef(false);
+  useEffect(() => {
+    if (restoredPeople.current || !siteId) return;
+    restoredPeople.current = true;
+    const ids = (initialFilters.people ?? "").split(",").filter(Boolean);
+    if (!ids.length) return;
+    void findOnSitePeople({ siteId, ids }).then((res) => {
+      if (res.success && res.data.kind === "ids") setPicked(res.data.people);
+    });
+  }, [siteId, initialFilters.people]);
+
   // ── Filters in the address bar ──────────────────────────────────────────
   // replaceState rather than a navigation: the rows are already here, and a
   // round trip to the server to narrow them would reset the poll and flash the
@@ -221,11 +244,12 @@ export function OnSiteBoard({
     if (tab === "movements" && mvFlag) qs.set("flag", mvFlag);
     if (tab === "movements" && mvSort !== MV_DEFAULT_SORT) qs.set("order", mvSort);
     if (tab === "movements" && mvAllOpen) qs.set("open", "all");
+    if (pickedKey) qs.set("people", pickedKey);
     const next = `${window.location.pathname}?${qs.toString()}`;
     if (next !== `${window.location.pathname}${window.location.search}`) {
       window.history.replaceState(window.history.state, "", next);
     }
-  }, [siteId, status, dept, shift, view, sort, byDept, tab, counter, logDay, mvFlag, mvSort, mvAllOpen]);
+  }, [siteId, status, dept, shift, view, sort, byDept, tab, counter, logDay, mvFlag, mvSort, mvAllOpen, pickedKey]);
 
   // ── Remember who was where, to mark who just moved ──────────────────────
   const absorb = useCallback((next: PresenceBoard, sameSite: boolean) => {
@@ -365,6 +389,7 @@ export function OnSiteBoard({
     setSelectedId(null);
     setDept("");
     setShift("");
+    setPicked([]);
     setExpanded({});
     setSwitching(true);
     setFailure(null);
@@ -405,19 +430,19 @@ export function OnSiteBoard({
   // question behind it is "is this person here", and answering "no match"
   // because they happen to have left is the wrong answer to it.
   const needle = query.trim().toLowerCase();
-  const searching = needle.length > 0;
+  const searching = needle.length > 0 || pickedIds.size > 0;
   const matches = useMemo(
     () =>
       scoped.filter((p) =>
         searching
-          ? matchesSearch(p, needle)
+          ? pickedIds.has(p.id) || (!!needle && matchesSearch(p, needle))
           : status === "all"
             ? true
             : status === "inside"
               ? INSIDE_STATUSES.includes(p.status)
               : p.status === status,
       ),
-    [scoped, status, needle, searching],
+    [scoped, status, needle, searching, pickedIds],
   );
 
   const groups = useMemo(() => {
@@ -436,7 +461,16 @@ export function OnSiteBoard({
 
   // The log lives beside the board and shares its search, department and
   // shift, so switching views keeps what you were looking for.
-  const log = useScanLog({ siteId, active: tab === "log", day: logDay, counter, departmentId: dept, shiftId: shift, q: query });
+  const log = useScanLog({
+    siteId,
+    active: tab === "log",
+    day: logDay,
+    counter,
+    departmentId: dept,
+    shiftId: shift,
+    q: query,
+    ids: pickedList,
+  });
   const today = board ? siteDate(board.generatedAt, tz) : "";
   // The day already picked stays picked only while it is inside the window.
   const logDayShown = logDay && today && recentDays(today).includes(logDay) ? logDay : "";
@@ -473,18 +507,20 @@ export function OnSiteBoard({
       .filter(
         (v) =>
           (!mvFlagShown || v.flags.includes(mvFlagShown)) &&
-          (!needleMv ||
-            v.person.name.toLowerCase().includes(needleMv) ||
-            v.person.employeeCode.toLowerCase().includes(needleMv)),
+          ((!needleMv && !pickedIds.size) ||
+            pickedIds.has(v.person.id) ||
+            (!!needleMv &&
+              (v.person.name.toLowerCase().includes(needleMv) ||
+                v.person.employeeCode.toLowerCase().includes(needleMv)))),
       )
       .sort(compareDays(mvSort));
-  }, [mvScoped, mvFlagShown, query, mvSort]);
+  }, [mvScoped, mvFlagShown, query, mvSort, pickedIds]);
 
   // The order holds still between refreshes, so the row being read never
   // moves under the reader. What changed meanwhile waits behind the "new
   // movements" pill; picking anything (a sort, a filter, a day) or the pill
   // itself sets the order again. Orders a refresh cannot change stay live.
-  const mvOrderKey = [siteId, logDayShown, mvSort, mvFlagShown, dept, shift, query.trim()].join("|");
+  const mvOrderKey = [siteId, logDayShown, mvSort, mvFlagShown, dept, shift, query.trim(), pickedKey].join("|");
   const [mvFrozen, setMvFrozen] = useState<(HeldOrder & { key: string }) | null>(null);
   const mvHolds = MV_SORTS_THAT_MOVE.includes(mvSort);
   const mvHeld = mvHolds && mvFrozen?.key === mvOrderKey ? mvFrozen : null;
@@ -498,14 +534,27 @@ export function OnSiteBoard({
   // "Not in CloudTime" counts people, not scans, so it has its own total.
   const logTotal = counter === "unknown" ? unknown.count : logSummary ? counterTotal(logSummary, counter) : 0;
 
+  // Picked people this tab has nothing on, named once so an absence never
+  // reads as the search failing. The Scan log only says so once every page
+  // of it is loaded, since a person may be further down.
+  const pickedAbsent = useMemo(() => {
+    if (!picked.length) return [];
+    let shown: Set<string> | null = null;
+    if (tab === "movements" && siteDay.data) shown = new Set(mvRows.map((v) => v.person.id));
+    if (tab === "people" && board) shown = new Set(matches.map((p) => p.id));
+    if (tab === "log" && counter !== "unknown" && log.page && !log.page.hasMore) shown = new Set(log.rows.map((r) => r.person.id));
+    return shown ? picked.filter((p) => !shown.has(p.id)) : [];
+  }, [picked, tab, siteDay.data, mvRows, board, matches, counter, log.page, log.rows]);
+
   function pickStatus(next: StatusFilter) {
     setQuery("");
+    setPicked([]);
     setExpanded({});
     setStatus(next);
   }
 
   const selected = selectedId ? people.find((p) => p.id === selectedId) ?? null : null;
-  const isFiltered = !!dept || !!shift || !!needle;
+  const isFiltered = !!dept || !!shift || !!needle || picked.length > 0;
   const siteName = board?.site.name ?? sites.find((s) => s.id === siteId)?.name ?? "";
   /** What the building total card is called, so the header chip can name it the same way. */
   const heroLabel = board?.site.hasGateData === false ? "On the clock" : "In the building";
@@ -775,14 +824,22 @@ export function OnSiteBoard({
 
         {board && !switching && failure !== "access" && (
               <div className="flex flex-wrap items-center gap-2.5 pb-3">
-                <SearchInput
-                  placeholder="Name or employee code"
-                  value={query}
-                  onValueChange={(v) => {
-                    setQuery(v);
-                    setExpanded({});
-                  }}
-                />
+                {siteId && (
+                  <PeopleSearch
+                    siteId={siteId}
+                    picked={picked}
+                    onPickedChange={(next) => {
+                      setPicked(next);
+                      setExpanded({});
+                    }}
+                    text={query}
+                    onTextChange={(v) => {
+                      setQuery(v);
+                      setExpanded({});
+                    }}
+                    max={MAX_PICKED}
+                  />
+                )}
                 {departments.length > 0 && (
                   <FilterSelectChip label="Department" value={dept} options={departments} onChange={setDept} />
                 )}
@@ -809,6 +866,7 @@ export function OnSiteBoard({
                     size="sm"
                     onClick={() => {
                       setQuery("");
+                      setPicked([]);
                       setDept("");
                       setShift("");
                       if (tab === "movements") setMvFlag(null);
@@ -864,6 +922,12 @@ export function OnSiteBoard({
                 />
                 )}
               </div>
+        )}
+        {pickedAbsent.length > 0 && (
+          <p className="-mt-1 pb-3" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+            {tab === "people" ? "Not on today's roster: " : tab === "log" ? `No scans ${when} for ` : `No activity ${when} for `}
+            {listNames(pickedAbsent.map((p) => pickedLabel(p, picked)))}.
+          </p>
         )}
       </div>
 
@@ -927,9 +991,10 @@ export function OnSiteBoard({
           <Card padding={0}>
             <MovementsEmpty
               when={when}
-              filtered={!!dept || !!shift || !!query.trim() || !!mvFlagShown}
+              filtered={!!dept || !!shift || !!query.trim() || picked.length > 0 || !!mvFlagShown}
               onClear={() => {
                 setQuery("");
+                setPicked([]);
                 setDept("");
                 setShift("");
                 setMvFlag(null);
@@ -1053,6 +1118,7 @@ export function OnSiteBoard({
                   onClear={() => {
                     setCounter(null);
                     setQuery("");
+                    setPicked([]);
                     setDept("");
                     setShift("");
                   }}
@@ -1165,7 +1231,17 @@ export function OnSiteBoard({
           {/* ── People ────────────────────────────────────────────────── */}
           {matches.length === 0 ? (
             <Card padding={0}>
-              <EmptyBoard status={status} needle={query.trim()} filtered={!!dept || !!shift} siteName={siteName} onClearSearch={() => setQuery("")} />
+              <EmptyBoard
+                status={status}
+                needle={query.trim()}
+                pickedNames={picked.map((p) => p.name)}
+                filtered={!!dept || !!shift}
+                siteName={siteName}
+                onClearSearch={() => {
+                  setQuery("");
+                  setPicked([]);
+                }}
+              />
             </Card>
           ) : view === "list" ? (
             <Card padding={0}>
@@ -1822,28 +1898,41 @@ function groupByDepartment(people: PresencePerson[]): { id: string; name: string
   );
 }
 
+/** "A", "A and B", "A, B and C". */
+function listNames(names: string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
 function EmptyBoard({
   status,
   needle,
+  pickedNames,
   filtered,
   siteName,
   onClearSearch,
 }: {
   status: StatusFilter;
   needle: string;
+  pickedNames: string[];
   filtered: boolean;
   siteName: string;
   onClearSearch: () => void;
 }) {
-  if (needle) {
+  if (needle || pickedNames.length) {
+    const who = pickedNames.length === 1 ? pickedNames[0] : "the people you picked";
     return (
       <EmptyState
         icon={<SearchX className="h-8 w-8" />}
         title="No matching people"
         body={
-          filtered
-            ? `Nobody in the department and shift you have filtered to matches "${needle}". Clear the filters to search the whole site.`
-            : `Nobody at ${siteName} matches "${needle}". The search covers everyone based at this site and anyone else seen here today.`
+          pickedNames.length && !needle
+            ? filtered
+              ? `Nobody in the department and shift you have filtered to is ${who}. Clear the filters to see them.`
+              : `${pickedNames.length === 1 ? `${who} is not` : `None of ${who} are`} on the ${siteName} roster today. People lists everyone based here and anyone seen here today; Movements and the Scan log reach back further.`
+            : filtered
+              ? `Nobody in the department and shift you have filtered to matches "${needle}". Clear the filters to search the whole site.`
+              : `Nobody at ${siteName} matches "${needle}". The search covers everyone based at this site and anyone else seen here today.`
         }
         action={
           <Button hierarchy="secondary" size="sm" onClick={onClearSearch}>

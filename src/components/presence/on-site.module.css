@@ -3943,3 +3943,218 @@
     animation: none;
   }
 }
+
+/* ── Search: several people at once ─────────────────────────────────────── */
+
+.psWrap {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 260px;
+  max-width: min(640px, 100%);
+}
+
+/* The shared search box, grown to hold chips: one line while it can, then
+   wrapping, so four names never push the filters off the bar. */
+.psField {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-height: 32px;
+  padding: 3px 6px 3px 10px;
+  border: 1px solid var(--stroke-default);
+  border-radius: 6px;
+  background: var(--surface-card);
+  cursor: text;
+}
+
+.psInput {
+  flex: 1 1 120px;
+  min-width: 120px;
+  height: 24px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font: var(--type-body1);
+  color: var(--text-primary);
+  appearance: none;
+}
+
+.psInput::-webkit-search-cancel-button,
+.psInput::-webkit-search-decoration {
+  -webkit-appearance: none;
+  display: none;
+}
+
+.psInput::placeholder {
+  color: var(--text-tertiary);
+}
+
+.psChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 200px;
+  height: 24px;
+  padding: 0 2px 0 8px;
+  border-radius: 5px;
+  background: var(--surface-info);
+  color: var(--text-accent);
+  font: var(--type-body2);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.psChipX,
+.psClear {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.psChipX {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: inherit;
+}
+
+.psChipX:hover {
+  background: color-mix(in srgb, var(--fill-accent) 14%, transparent);
+}
+
+.psClear {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  color: var(--text-tertiary);
+}
+
+.psClear:hover {
+  background: var(--fill-hover);
+  color: var(--text-primary);
+}
+
+.psChipX:focus-visible,
+.psClear:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 1px;
+}
+
+.psPanel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  width: max(100%, 360px);
+  max-width: calc(100vw - 32px);
+  padding: 4px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 8px;
+  background: var(--surface-card);
+  box-shadow: var(--shadow-menu);
+}
+
+.psList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 336px;
+  overflow-y: auto;
+}
+
+.psOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.psOption[aria-selected="true"] {
+  background: var(--fill-hover);
+}
+
+.psFace {
+  position: relative;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ps-photo);
+}
+
+.psFace img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.psName {
+  font: var(--type-body1);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.psMeta {
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.psTag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-error);
+  color: var(--text-error);
+  font: var(--type-caption1);
+  white-space: nowrap;
+}
+
+.psEmpty {
+  padding: 10px 8px;
+  font: var(--type-body2);
+  color: var(--text-secondary);
+}
+
+.psNote {
+  margin: 0 0 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--surface-info);
+  color: var(--text-primary);
+  font: var(--type-body2);
+}
+
+.psNote[data-tone="warning"] {
+  background: var(--surface-warning);
+  color: var(--text-warning);
+}
+
+.psHint {
+  margin: 4px 0 0;
+  padding: 8px 8px 4px;
+  border-top: 1px solid var(--stroke-divider);
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}

@@ -73,6 +73,8 @@ type State = {
   loadingMore: boolean;
 };
 
+const NO_IDS: readonly string[] = [];
+
 /**
  * Loads the log, keeps it live while it is on screen, and pages further back
  * on request.
@@ -89,6 +91,7 @@ export function useScanLog({
   departmentId,
   shiftId,
   q,
+  ids = NO_IDS,
 }: {
   siteId: string | null;
   active: boolean;
@@ -98,6 +101,8 @@ export function useScanLog({
   departmentId: string;
   shiftId: string;
   q: string;
+  /** People picked in the search box; the log shows them plus any match for `q`. */
+  ids?: readonly string[];
 }) {
   const [state, setState] = useState<State>({ page: null, rows: [], failure: null, loadingMore: false });
   const [changed, setChanged] = useState<Set<string>>(new Set());
@@ -117,8 +122,9 @@ export function useScanLog({
       departmentId: departmentId || null,
       shiftId: shiftId || null,
       q: needle || null,
+      ids: ids.length ? [...ids].sort() : null,
     }),
-    [day, counter, departmentId, shiftId, needle],
+    [day, counter, departmentId, shiftId, needle, ids],
   );
   const key = `${siteId}|${JSON.stringify(query)}`;
 
@@ -250,7 +256,7 @@ export function useScanLog({
     ...state,
     changed,
     lastOk,
-    searching: !!needle,
+    searching: !!needle || ids.length > 0,
     retry: loadHead,
     showMore,
     fetchAll,

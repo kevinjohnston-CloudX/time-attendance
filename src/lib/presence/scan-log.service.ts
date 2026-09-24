@@ -79,18 +79,22 @@ export async function getScanLog(
 
   const scope = await siteScope(tenantId, siteId);
   const q = input.q?.trim() || null;
+  const ids = input.ids?.length ? input.ids : null;
+  // The people picked, and whoever matches what is still being typed.
+  const who: Prisma.EmployeeWhereInput[] = [
+    ...(ids ? [{ id: { in: ids } }] : []),
+    ...(q
+      ? [
+          { employeeCode: { contains: q, mode: "insensitive" as const } },
+          { user: { name: { contains: q, mode: "insensitive" as const } } },
+        ]
+      : []),
+  ];
   const employee: Prisma.EmployeeWhereInput = {
     tenantId,
     ...(input.departmentId ? { departmentId: input.departmentId } : {}),
     ...(input.shiftId ? { shiftId: input.shiftId } : {}),
-    ...(q
-      ? {
-          OR: [
-            { employeeCode: { contains: q, mode: "insensitive" } },
-            { user: { name: { contains: q, mode: "insensitive" } } },
-          ],
-        }
-      : {}),
+    ...(who.length ? { OR: who } : {}),
   };
 
   // What the counts cover: the day, the site and the people filters.

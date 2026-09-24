@@ -35,6 +35,7 @@ export default async function OnSitePage({
     flag?: string;
     order?: string;
     open?: string;
+    people?: string;
   }>;
 }) {
   const session = await auth();
@@ -73,6 +74,7 @@ export default async function OnSitePage({
         flag: params.flag ?? null,
         order: params.order ?? null,
         open: params.open ?? null,
+        people: params.people ?? null,
       }}
     />
   );
