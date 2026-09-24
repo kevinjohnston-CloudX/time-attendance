@@ -392,6 +392,9 @@ export const updateEmployee = withRBAC(
     if (barcode !== undefined) diff("Badge barcode", current.barcode, barcode);
     if (adpWorkerId !== undefined) diff("ADP Worker ID", current.adpWorkerId, adpWorkerId);
     if (terminationReason !== undefined) diff("Termination Reason", current.terminationReason, terminationReason);
+    if (adjustedHireDate !== undefined) {
+      diff("Adjusted Hire Date", current.adjustedHireDate ? current.adjustedHireDate.toISOString().slice(0, 10) : null, adjustedHireDate);
+    }
     if (payType !== undefined) diff("Pay Type", current.payType, payType);
     if (payRate !== undefined) {
       const cur = current.payRate != null ? parseFloat(String(current.payRate)) : null;
