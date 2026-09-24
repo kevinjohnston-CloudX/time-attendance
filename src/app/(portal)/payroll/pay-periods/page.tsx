@@ -19,7 +19,7 @@ import { matchesShow, parseShow, type TimesheetShow } from "@/components/payroll
 import { PayPeriodDetailFilter } from "@/components/payroll/pay-period-detail-filter";
 import { PayPeriodDownload } from "@/components/payroll/pay-period-download";
 import { PayPeriodExport } from "@/components/payroll/pay-period-export";
-import { CalendarRange, CircleAlert, CircleCheck } from "lucide-react";
+import { CalendarRange, Check, CircleAlert, CircleCheck } from "lucide-react";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, payPeriodTone } from "@/components/ui";
 import { PayPeriodsShell } from "@/components/payroll/pay-periods-shell";
 
@@ -182,7 +182,7 @@ export default async function PayPeriodsPage({
           actions={
             <>
               <LinkButton href="/payroll/timecards" hierarchy="tertiary">
-                Timecards
+                View timecards
               </LinkButton>
               {/* The period's own actions, for the period open below. */}
               {detail && periodText && (
@@ -535,66 +535,72 @@ function PeriodDetail({
   };
   const exceptionsHref = `/supervisor/exceptions?payPeriodId=${encodeURIComponent(payPeriod.id)}`;
 
-  // ── The close checklist ───────────────────────────────────────────────────
-  // Every row is derived from the timesheets this page already loaded, so the
-  // checklist can never disagree with the table underneath it.
-  const checklist: { label: string; detail: string; done: boolean; action?: { href: string; text: string } }[] = [
+  // ── The close, as five steps ──────────────────────────────────────────────
+  // Every step is derived from the timesheets this page already loaded, so the
+  // tracker can never disagree with the table underneath it. Each has a short
+  // name for the stepper, a short count under it, the full sentence for when it
+  // is the next thing to do, and where to go to clear it.
+  const steps: {
+    label: string;
+    caption: string;
+    detail: string;
+    done: boolean;
+    action?: { href: string; text: string };
+  }[] = [
     {
-      label: "Period has ended",
-      detail: isPast ? `Last day was ${lastDayText}` : `Still taking punches until ${lastDayText}`,
+      label: "Period ended",
+      caption: isPast ? `Ended ${lastDayText}` : `Ends ${lastDayText}`,
+      detail: isPast ? `The last day was ${lastDayText}.` : `Still taking punches until ${lastDayText}.`,
       done: isPast,
     },
     {
-      label: "Timesheets submitted",
-      detail:
-        withEmployee === 0
-          ? "Nothing left open or sent back"
-          : `${n(withEmployee)} still open or sent back to the employee`,
+      label: "Submitted",
+      caption: withEmployee === 0 ? "Done" : `${n(withEmployee)} not submitted`,
+      detail: `${n(withEmployee)} ${withEmployee === 1 ? "timesheet has" : "timesheets have"} not been submitted by the employee yet.`,
       done: withEmployee === 0,
-      action: withEmployee > 0 ? { href: showHref("employee"), text: "Show" } : undefined,
+      action: withEmployee > 0 ? { href: showHref("employee"), text: `See ${withEmployee === 1 ? "this timesheet" : `these ${n(withEmployee)} timesheets`}` } : undefined,
     },
     {
-      label: "Supervisor approvals",
-      detail:
-        awaitingSupervisor === 0
-          ? "Every timesheet carries a supervisor sign off"
-          : `${n(awaitingSupervisor)} still without a supervisor sign off`,
+      label: "Supervisor approved",
+      caption: awaitingSupervisor === 0 ? "Done" : `${n(awaitingSupervisor)} waiting`,
+      detail: `${n(awaitingSupervisor)} ${awaitingSupervisor === 1 ? "timesheet still needs" : "timesheets still need"} a supervisor to approve ${awaitingSupervisor === 1 ? "it" : "them"}.`,
       done: awaitingSupervisor === 0,
-      action: withSupervisor > 0 ? { href: showHref("supervisor"), text: "Show" } : undefined,
+      action: withSupervisor > 0 ? { href: showHref("supervisor"), text: `See ${withSupervisor === 1 ? "this timesheet" : `these ${n(withSupervisor)} timesheets`}` } : undefined,
     },
     {
-      label: "Payroll approvals",
-      detail: `${n(payrollApproved)} of ${n(sheets.length)} approved by payroll`,
+      label: "Payroll approved",
+      caption: awaitingPayroll === 0 ? "Done" : `${n(awaitingPayroll)} waiting`,
+      detail: `${n(awaitingPayroll)} ${awaitingPayroll === 1 ? "timesheet still needs" : "timesheets still need"} payroll to approve ${awaitingPayroll === 1 ? "it" : "them"}. ${n(payrollApproved)} of ${n(sheets.length)} are approved.`,
       done: awaitingPayroll === 0,
-      action: withPayroll > 0 ? { href: showHref("payroll"), text: "Show" } : undefined,
+      action: withPayroll > 0 ? { href: showHref("payroll"), text: `See ${withPayroll === 1 ? "this timesheet" : `these ${n(withPayroll)} timesheets`}` } : undefined,
     },
     {
       label: "Exceptions resolved",
-      detail:
-        validation.unresolvedExceptions === 0
-          ? "No unresolved exception in this period"
-          : `${n(validation.unresolvedExceptions)} unresolved across ${n(sheetsWithExceptions)} timesheet${sheetsWithExceptions === 1 ? "" : "s"}`,
+      caption: validation.unresolvedExceptions === 0 ? "Done" : `${n(validation.unresolvedExceptions)} to fix`,
+      detail: `${n(validation.unresolvedExceptions)} ${validation.unresolvedExceptions === 1 ? "problem" : "problems"}, like a missed punch, still ${validation.unresolvedExceptions === 1 ? "needs" : "need"} fixing on ${n(sheetsWithExceptions)} ${sheetsWithExceptions === 1 ? "timesheet" : "timesheets"}.`,
       done: validation.unresolvedExceptions === 0,
-      action: validation.unresolvedExceptions > 0 ? { href: exceptionsHref, text: "Resolve" } : undefined,
+      action: validation.unresolvedExceptions > 0 ? { href: exceptionsHref, text: "Fix exceptions" } : undefined,
     },
   ];
-  const doneSteps = checklist.filter((c) => c.done).length;
-  const blockingSteps = checklist.length - doneSteps;
+  const blocking = steps.filter((c) => !c.done);
+  // The next thing to do: the first step still open that somebody can act on
+  // from here, else the first one still open (the period not having ended).
+  const next = blocking.find((c) => c.action) ?? blocking[0] ?? null;
 
   // ── Where the period stands, as one sentence ─────────────────────────────
-  // Counted in steps, the same unit as the checklist beside it, so the two
-  // can never give different numbers. The ADP push stays in the header,
-  // which reports it including straight after a push.
-  const standing: { tone: "success" | "warning" | "info"; text: string } =
+  // The ADP push stays in the header, which reports it including straight
+  // after a push.
+  const standing: { tone: "success" | "warning" | "info"; title: string; text: string } =
     payPeriod.status === "LOCKED"
-      ? { tone: "success", text: "Locked. Accruals and approved leave for this period have been posted." }
+      ? { tone: "success", title: "Locked", text: "This period is closed. Its hours, time off balances and approved leave are final." }
       : payPeriod.status === "READY"
-        ? { tone: "info", text: "Ready to lock. Locking posts accruals and any approved leave that overlaps the period." }
-        : blockingSteps === 0
-          ? { tone: "success", text: "Nothing is blocking the close. The period can be marked ready." }
+        ? { tone: "info", title: "Ready to lock", text: "Everything is approved. Lock the period to make its hours final and post time off, then export it to ADP." }
+        : !next
+          ? { tone: "success", title: "Everything is done", text: "Click Mark Ready at the top to get this period ready for payroll." }
           : {
               tone: "warning",
-              text: `${blockingSteps} of ${checklist.length} steps still blocking the close`,
+              title: "This period cannot be closed yet",
+              text: `Next step: ${next.detail}`,
             };
 
   // ── The timesheet table, narrowed the way the filters ask ─────────────────
@@ -629,7 +635,7 @@ function PeriodDetail({
 
   const standingColor =
     standing.tone === "warning" ? "var(--text-warning)" : standing.tone === "success" ? "var(--text-success)" : "var(--text-accent)";
-  const approvedPct = sheets.length ? Math.round((payrollApproved / sheets.length) * 100) : 0;
+  const liveStages = STAGES.filter((st) => stageCount(st.status) > 0);
 
   return (
     <div className="flex w-full flex-col gap-4">
@@ -648,166 +654,182 @@ function PeriodDetail({
         <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{subtitle}</span>
       </div>
 
-      {/* Approvals and the checklist side by side, the same height: how far
-          along the period is, and what is left before it can close. */}
-      {/* Side by side once the pane itself is wide enough, whatever the
-          window is: the period list and the sidebar take their share first. */}
-      <div className="grid items-stretch gap-4 @4xl:grid-cols-2">
-        <Card title="Approvals" subtitle="Where every timesheet in the period sits" fill style={{ height: "100%" }}>
-          {sheets.length === 0 ? (
-            <EmptyState
-              title="No timesheets yet"
-              body="Nothing has been generated for this period. Timesheets appear as employees punch."
-            />
-          ) : (
-            <div className="flex flex-1 flex-col gap-4">
-              <div className="flex flex-wrap items-end justify-between gap-3">
-                <div className="flex flex-col gap-0.5">
-                  <span className="tabular" style={{ font: "var(--type-h1)", letterSpacing: "-0.02em", color: "var(--text-primary)" }}>
-                    {n(payrollApproved)}
-                    <span style={{ font: "var(--type-h4)", color: "var(--text-tertiary)" }}> of {n(sheets.length)}</span>
-                  </span>
-                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                    timesheets approved by payroll
-                  </span>
-                </div>
-                <span className="tabular" style={{ font: "var(--type-h4)", color: "var(--text-secondary)" }}>
-                  {approvedPct}%
-                </span>
-              </div>
-
-              {/* The chain as one bar, each stage its own colour, so the
-                  period's shape reads before any number does. */}
-              <div
-                className="flex h-2.5 w-full overflow-hidden rounded-full"
-                style={{ background: "var(--ta-track)", gap: 2 }}
-                role="img"
-                aria-label={STAGES.map((st) => `${TIMESHEET_STATUS_LABEL[st.status]} ${stageCount(st.status)}`).join(", ")}
-              >
-                {STAGES.map((st) =>
-                  stageCount(st.status) > 0 ? (
-                    <span
-                      key={st.status}
-                      className="block h-full"
-                      style={{ width: `${(stageCount(st.status) / sheets.length) * 100}%`, background: st.color }}
-                    />
-                  ) : null,
-                )}
-              </div>
-
-              <ul className="m-0 flex list-none flex-col p-0">
-                {STAGES.map((st) => {
-                  const count = stageCount(st.status);
-                  return (
-                    <li
-                      key={st.status}
-                      className="flex items-center gap-2.5 py-2"
-                      style={{ borderTop: "1px solid var(--stroke-divider)", opacity: count === 0 ? 0.55 : 1 }}
-                    >
-                      <span className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: st.color }} aria-hidden="true" />
-                      <span className="whitespace-nowrap" style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-primary)" }}>
-                        {TIMESHEET_STATUS_LABEL[st.status]}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                        {st.owner}
-                      </span>
-                      <span className="tabular whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                        {((count / sheets.length) * 100).toFixed(0)}%
-                      </span>
-                      <span className="tabular w-12 text-right" style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
-                        {n(count)}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
-        </Card>
-
-        <Card
-          title="Close checklist"
-          subtitle={
-            <span style={{ color: standingColor, fontWeight: "var(--weight-medium)" }}>{standing.text}</span>
-          }
-          fill
-          padding={0}
-          style={{ height: "100%" }}
-        >
-          <ul className="m-0 flex list-none flex-col p-0">
-            {checklist.map((c, i) => (
-              <li
-                key={c.label}
-                className="flex items-center gap-3 px-4 py-3"
-                style={{ borderTop: i === 0 ? undefined : "1px solid var(--stroke-divider)" }}
-              >
-                <span className="inline-flex flex-none">
-                  {c.done ? (
-                    <CircleCheck className="h-5 w-5" style={{ color: "var(--icon-success)" }} aria-label="Done" />
-                  ) : (
-                    <CircleAlert className="h-5 w-5" style={{ color: "var(--icon-warning)" }} aria-label="Blocking" />
-                  )}
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-primary)" }}>
-                    {c.label}
-                  </span>
-                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" }}>
-                    {c.detail}
-                  </span>
-                </span>
-                {c.action ? (
-                  <Link
-                    href={c.action.href}
-                    className="whitespace-nowrap hover:underline"
-                    style={{ font: "var(--type-button2)", color: "var(--text-accent)" }}
+      {/* The close as one slim tracker: the five steps across, then the
+          one thing to do next with the way to do it. Every step still open
+          links to where it is cleared. */}
+      <Card padding={0}>
+        {/* One row when the pane has room, as a stepper reads; on a laptop
+            it wraps into a tidy grid rather than cutting steps off. Each
+            step draws the line to its right and below; the card clips the
+            ones at its edge, so a half empty last row stays clean. */}
+        <ol className="m-0 grid list-none p-0 [grid-template-columns:repeat(auto-fit,minmax(170px,1fr))]">
+          {steps.map((st, i) => {
+            const isNext = st === next;
+            const tone = st.done ? "var(--icon-success)" : isNext ? "var(--fill-warning)" : "var(--stroke-secondary)";
+            const inner = (
+              <>
+                <span className="flex items-center gap-2">
+                  <span
+                    className="tabular inline-flex h-6 w-6 flex-none items-center justify-center rounded-full"
+                    style={{
+                      background: st.done ? "var(--surface-success)" : isNext ? "var(--surface-warning)" : "var(--surface-card)",
+                      boxShadow: `inset 0 0 0 1.5px ${tone}`,
+                      color: st.done ? "var(--icon-success)" : isNext ? "var(--text-warning)" : "var(--text-tertiary)",
+                      font: "var(--type-caption1)",
+                      fontWeight: "var(--weight-semibold)",
+                    }}
+                    aria-hidden="true"
                   >
-                    {c.action.text}
-                  </Link>
-                ) : !c.done ? (
-                  <span className="whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                    Waiting
+                    {st.done ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} /> : i + 1}
                   </span>
-                ) : null}
+                  <span
+                    className="truncate"
+                    style={{
+                      font: "var(--type-body2)",
+                      fontWeight: "var(--weight-semibold)",
+                      color: st.done ? "var(--text-secondary)" : "var(--text-primary)",
+                    }}
+                  >
+                    {st.label}
+                  </span>
+                </span>
+                <span
+                  className="tabular truncate pl-8"
+                  style={{
+                    font: "var(--type-caption1)",
+                    color: st.done ? "var(--text-success)" : isNext ? "var(--text-warning)" : "var(--text-tertiary)",
+                    fontWeight: isNext ? "var(--weight-semibold)" : undefined,
+                  }}
+                >
+                  {st.caption}
+                </span>
+              </>
+            );
+            return (
+              <li
+                key={st.label}
+                className="min-w-0"
+                style={{ boxShadow: "1px 0 0 var(--stroke-divider), 0 1px 0 var(--stroke-divider)" }}
+                aria-current={isNext ? "step" : undefined}
+              >
+                {st.action ? (
+                  <Link
+                    href={st.action.href}
+                    className="ta-hoverable flex h-full flex-col gap-1 px-4 py-3"
+                    style={{ textDecoration: "none" }}
+                    title={st.detail}
+                  >
+                    {inner}
+                  </Link>
+                ) : (
+                  <div className="flex h-full flex-col gap-1 px-4 py-3" title={st.detail}>
+                    {inner}
+                  </div>
+                )}
               </li>
-            ))}
-          </ul>
-        </Card>
-      </div>
+            );
+          })}
+        </ol>
 
-      <Card title="Hours" subtitle="Every timesheet in the period, before the filters below" padding={0}>
-        {/* One panel of figures with dividers between them, as the Dashboard
-            draws its pay period, rather than seven loose tiles. The four hour
-            figures add up to the total; Other pay codes is PTO and holiday. */}
-        <div className="grid [grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))]">
+        <div
+          className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3"
+          style={{ borderTop: "1px solid var(--stroke-divider)", background: standing.tone === "warning" ? "var(--surface-warning)" : standing.tone === "success" ? "var(--surface-success)" : "var(--surface-info)" }}
+        >
+          <span className="inline-flex flex-none" style={{ color: standingColor }}>
+            {standing.tone === "warning" ? <CircleAlert className="h-5 w-5" aria-hidden="true" /> : <CircleCheck className="h-5 w-5" aria-hidden="true" />}
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+              {standing.title}
+            </span>
+            <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{standing.text}</span>
+          </span>
+          {next?.action && payPeriod.status === "OPEN" && (
+            <LinkButton href={next.action.href} hierarchy="secondary" size="sm">
+              {next.action.text}
+            </LinkButton>
+          )}
+        </div>
+      </Card>
+
+      {/* The period in numbers, one row, then where its timesheets sit in the
+          approval chain as one bar with a chip per stage that has anyone in it. */}
+      <Card padding={0}>
+        <div className="grid [grid-template-columns:repeat(auto-fit,minmax(min(100%,128px),1fr))]">
           {[
-            { label: "Employees", value: n(validation.totalTimesheets) },
+            { label: "Timesheets", value: n(sheets.length) },
+            { label: "Approved", value: `${n(payrollApproved)} of ${n(sheets.length)}`, tone: payrollApproved === sheets.length && sheets.length > 0 ? "var(--text-success)" : undefined },
+            { label: "Exceptions", value: n(validation.unresolvedExceptions), sub: validation.unresolvedExceptions ? `${n(sheetsWithExceptions)} ${sheetsWithExceptions === 1 ? "person" : "people"}` : undefined, tone: validation.unresolvedExceptions ? "var(--text-error)" : undefined },
             { label: "Total hours", value: hoursOf(allMin), strong: true },
             { label: "Regular", value: hoursOf(regMin) },
             { label: "Overtime", value: hoursOf(otMin), tone: otMin > 0 ? "var(--text-warning)" : undefined },
             { label: "Double time", value: hoursOf(dtMin), tone: dtMin > 0 ? "var(--text-error)" : undefined },
+            // Named, not dropped, because the hour figures have to add up to
+            // the total: PTO, holiday and other pay codes.
             { label: "Other pay codes", value: hoursOf(otherMin) },
           ].map((kv, i) => (
             <div
               key={kv.label}
-              className="flex min-w-0 flex-col gap-1 px-4 py-4"
+              className="flex min-w-0 flex-col gap-1 px-4 py-3.5"
               style={{ borderLeft: i === 0 ? undefined : "1px solid var(--stroke-divider)" }}
             >
-              <span className="wms-overline">{kv.label}</span>
+              <span className="wms-overline truncate">{kv.label}</span>
               <span
-                className="tabular"
+                className="tabular truncate"
                 style={{
-                  font: "var(--type-h3)",
+                  font: "var(--type-h4)",
                   fontWeight: kv.strong ? "var(--weight-bold)" : "var(--weight-semibold)",
                   color: kv.tone ?? "var(--text-primary)",
-                  overflowWrap: "anywhere",
                 }}
               >
                 {kv.value}
               </span>
+              {kv.sub && (
+                <span className="truncate" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                  {kv.sub}
+                </span>
+              )}
             </div>
           ))}
         </div>
+
+        {sheets.length > 0 && (
+          <div className="flex flex-col gap-2.5 px-4 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+            <div
+              className="flex h-2 w-full overflow-hidden rounded-full"
+              style={{ background: "var(--ta-track)", gap: 2 }}
+              role="img"
+              aria-label={liveStages.map((st) => `${TIMESHEET_STATUS_LABEL[st.status]} ${stageCount(st.status)}`).join(", ")}
+            >
+              {liveStages.map((st) => (
+                <span
+                  key={st.status}
+                  className="block h-full"
+                  style={{ width: `${(stageCount(st.status) / sheets.length) * 100}%`, background: st.color }}
+                />
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+              {liveStages.map((st) => (
+                <span key={st.status} className="inline-flex items-center gap-1.5 whitespace-nowrap" title={st.owner}>
+                  <span className="h-2 w-2 flex-none rounded-full" style={{ background: st.color }} aria-hidden="true" />
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                    {TIMESHEET_STATUS_LABEL[st.status]}
+                  </span>
+                  <span className="tabular" style={{ font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+                    {n(stageCount(st.status))}
+                  </span>
+                  <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                    {st.owner.toLowerCase()}
+                  </span>
+                </span>
+              ))}
+              <span className="ml-auto" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                Every timesheet in the period, before the filters below
+              </span>
+            </div>
+          </div>
+        )}
       </Card>
 
       <div id="timesheets" style={{ scrollMarginTop: "calc(var(--pp-bar) + 1rem)" }}>

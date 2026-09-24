@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { format, addDays } from "date-fns";
-import { ChevronLeft, ChevronRight, Calendar, CalendarCheck } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar } from "lucide-react";
 import { parseUtcDate } from "@/lib/utils/date";
 import { Button, FilterSelectChip } from "@/components/ui";
 
@@ -415,16 +415,15 @@ export function PayPeriodsFilter({
 
         <span aria-hidden="true" className="mx-0.5 h-4 w-px flex-none" style={{ background: "var(--stroke-divider)" }} />
 
+        {/* A word, not an icon: "Today" says what it does to anyone. */}
         <Button
           hierarchy="tertiary"
           size="sm"
-          iconOnly
           onClick={jumpToCurrent}
           disabled={isOnCurrentPeriod}
-          title="Jump to the current pay period"
-          aria-label="Jump to the current pay period"
+          title="Go to the pay period that includes today"
         >
-          <CalendarCheck className="h-4 w-4" />
+          Today
         </Button>
       </div>
     </div>

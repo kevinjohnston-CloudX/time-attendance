@@ -90,7 +90,7 @@ export function PayPeriodExport({ payPeriodId, label, sites }: Props) {
         onClick={() => setOpen(true)}
         leadingIcon={<FileDown className="h-4 w-4" />}
       >
-        Export
+        Export to ADP
       </Button>
 
       {open && (

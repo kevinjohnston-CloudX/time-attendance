@@ -78,7 +78,7 @@ export function PayPeriodDownload({ payPeriodId, label }: Props) {
           aria-haspopup="menu"
           leadingIcon={<Download className="h-4 w-4" />}
         >
-          Reports
+          Download reports
         </Button>
 
         {open && (
