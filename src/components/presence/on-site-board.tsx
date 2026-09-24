@@ -727,10 +727,24 @@ export function OnSiteBoard({
     </span>
   );
 
-  // The page's actions, one height and one shape: the building it shows,
-  // Export, and full screen.
+  // The page's controls, one height: which view (it changes the whole page,
+  // so it sits with the title rather than among the filters), the building
+  // it shows, Export, and full screen.
   const actions = (
     <>
+      <SegmentedControl
+        ariaLabel="View"
+        items={[
+          { value: "movements", label: "Movements" },
+          { value: "people", label: "People" },
+          { value: "log", label: "Scan log" },
+        ]}
+        value={tab}
+        onChange={(v) => {
+          setTab(v as Tab);
+          setSelectedId(null);
+        }}
+      />
       {sites.length > 1 && (
         <span className={`ta-chip ${styles.siteBtn}`} title="Site">
           <Building2 className="h-4 w-4 flex-none" style={{ color: "var(--icon-secondary)" }} aria-hidden="true" />
@@ -883,27 +897,13 @@ export function OnSiteBoard({
           <div className="flex items-center gap-2">{actions}</div>
         </div>
 
-        {/* Row two, how you are looking at it: the view, then who, then how
-            the list is ordered and laid out. The count and the order sit in
+        {/* Row two, how you are looking at it: search first, then who, then
+            how the list is ordered and laid out. The count and the order sit in
             the same place on every view, and each view's own layout choices
             live behind one View button, so the row keeps its shape. */}
         <div className="flex flex-wrap items-center gap-2.5 pb-3">
-          <SegmentedControl
-            ariaLabel="View"
-            items={[
-              { value: "movements", label: "Movements" },
-              { value: "people", label: "People" },
-              { value: "log", label: "Scan log" },
-            ]}
-            value={tab}
-            onChange={(v) => {
-              setTab(v as Tab);
-              setSelectedId(null);
-            }}
-          />
           {ready && (
             <>
-              <span className={styles.barRule} aria-hidden="true" />
               {siteId && (
                 <PeopleSearch
                   siteId={siteId}

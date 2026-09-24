@@ -4286,15 +4286,6 @@
   background: var(--surface-page);
 }
 
-/* Between the view switch and the filters it narrows. */
-.barRule {
-  flex: none;
-  width: 1px;
-  height: 20px;
-  margin: 0 2px;
-  background: var(--stroke-divider);
-}
-
 /* ── Top bar: View options ─────────────────────────────────────────────── */
 
 .voPanel {
