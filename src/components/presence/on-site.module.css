@@ -3410,146 +3410,6 @@
   }
 }
 
-/* ── Scan log summary: a reader's counts as one grouped chip ───────────── */
-
-.summaryGroup {
-  display: inline-flex;
-  align-items: stretch;
-  height: 30px;
-  border: 1px solid var(--stroke-secondary);
-  border-radius: 999px;
-  background: var(--surface-card);
-  overflow: hidden;
-}
-
-.summaryGroupItem {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 11px;
-  border: 0;
-  background: transparent;
-  font: var(--weight-medium) 13px/18px var(--font-sans);
-  color: var(--text-secondary);
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background 140ms ease;
-}
-
-.summaryGroupItem + .summaryGroupItem {
-  border-left: 1px solid var(--stroke-divider);
-}
-
-.summaryGroupItem:first-child {
-  padding-left: 12px;
-}
-
-.summaryGroupItem:hover {
-  background: var(--fill-hover);
-  color: var(--text-primary);
-}
-
-.summaryGroupItem[aria-pressed="true"] {
-  background: var(--surface-info);
-  color: var(--text-primary);
-}
-
-.summaryGroupItem:focus-visible {
-  outline: 2px solid var(--stroke-accent-focus);
-  outline-offset: -2px;
-}
-
-.summaryNote[data-wrap="true"] {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  white-space: normal;
-  text-align: right;
-}
-
-.summaryAll {
-  padding: 2px 6px;
-  margin-right: -6px;
-  border: 0;
-  border-radius: var(--radius-s);
-  background: transparent;
-  font: var(--type-body2);
-  color: var(--text-secondary);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.summaryAll:hover {
-  background: var(--fill-hover);
-}
-
-.summaryAll[aria-pressed="true"] {
-  color: var(--text-primary);
-}
-
-/* ── Scan log summary as one band: people on the left, scans on the right ── */
-
-.summary[data-layout="band"] .summaryMain {
-  grid-template-columns: repeat(3, minmax(150px, 220px)) minmax(0, 1fr);
-}
-
-.summary[data-layout="band"] .summaryMain[data-cards="1"] {
-  grid-template-columns: repeat(2, minmax(150px, 220px)) minmax(0, 1fr);
-}
-
-.summary[data-layout="band"] .summaryHero,
-.summary[data-layout="band"] .summaryCard {
-  padding: 16px 22px 18px;
-}
-
-.summary[data-layout="band"] .summaryHeroFigure {
-  font-size: 40px;
-  line-height: 44px;
-}
-
-.summary[data-layout="band"] .summaryFigure {
-  line-height: 44px;
-}
-
-.summarySide {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 10px;
-  min-width: 0;
-  padding: 14px 22px;
-  border-left: 1px solid var(--stroke-divider);
-}
-
-.summarySide .summaryNote[data-wrap="true"] {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 12px;
-  margin-left: 0;
-  text-align: left;
-}
-
-.summarySide .summaryAll {
-  margin: 0 0 0 -6px;
-}
-
-@media (max-width: 1100px) {
-  .summary[data-layout="band"] .summaryMain,
-  .summary[data-layout="band"] .summaryMain[data-cards="1"] {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .summary[data-layout="band"] .summaryMain[data-cards="1"] {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .summarySide {
-    grid-column: 1 / -1;
-    border-left: 0;
-    border-top: 1px solid var(--stroke-divider);
-  }
-}
-
 /* What the scan means next to the one before it. */
 .logContext {
   min-width: 0;
@@ -3564,4 +3424,265 @@
 .logContext[data-tone="warning"] {
   color: var(--text-warning);
   font-weight: var(--weight-medium);
+}
+
+/* ── Scan log: one panel per reader, twins side by side ─────────────────── */
+
+.rpGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.rpPanel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface-card);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.rpHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 10px 14px 10px 18px;
+  border-bottom: 1px solid var(--stroke-divider);
+}
+
+.rpMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--surface-secondary);
+  color: var(--text-secondary);
+}
+
+.rpTitle {
+  flex: 1;
+  min-width: 0;
+  font: var(--weight-semibold) 15px/20px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.rpTotal {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 999px;
+  background: var(--surface-card);
+  font: var(--weight-medium) 13px/18px var(--font-sans);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.rpTotal .tabular {
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.rpTotal:hover {
+  border-color: var(--stroke-hover);
+}
+
+.rpTotal[aria-pressed="true"] {
+  border-color: var(--stroke-accent);
+  background: var(--surface-info);
+}
+
+/* The lead number, then three equal figures, on one line. */
+.rpBody {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 2fr);
+}
+
+.rpLead,
+.rpStat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: background 140ms ease;
+  position: relative;
+}
+
+.rpLead {
+  padding: 18px 20px 20px;
+}
+
+.rpLead:hover,
+.rpStat:hover {
+  background: var(--fill-hover);
+}
+
+.rpLeadLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.rpLeadLabel svg {
+  color: var(--text-tertiary);
+  transition: transform 140ms ease;
+}
+
+.rpLead:hover .rpLeadLabel svg {
+  transform: translateX(2px);
+  color: var(--text-primary);
+}
+
+.rpLeadFigure {
+  margin-top: 2px;
+  font: var(--weight-bold) 44px/48px var(--font-sans);
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.rpSub {
+  font: var(--type-body2);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.rpStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-left: 1px solid var(--stroke-divider);
+}
+
+.rpStat {
+  justify-content: center;
+  padding: 18px 18px 20px;
+}
+
+.rpStat + .rpStat {
+  border-left: 1px solid var(--stroke-divider);
+}
+
+.rpStatLabel {
+  font: var(--weight-medium) 13px/18px var(--font-sans);
+  color: var(--text-secondary);
+}
+
+.rpStatFigure {
+  font: var(--weight-semibold) 28px/36px var(--font-sans);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.rpStat[data-empty="true"] .rpStatFigure {
+  color: var(--text-tertiary);
+}
+
+.rpStat[aria-pressed="true"] {
+  background: var(--fill-hover);
+}
+
+.rpStat[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--fill-accent);
+}
+
+.rpLead:focus-visible,
+.rpStat:focus-visible,
+.rpTotal:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: -2px;
+}
+
+/* What went wrong at this reader, or a quiet all clear. */
+.rpFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  min-height: 52px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--stroke-divider);
+  background: var(--surface-secondary);
+}
+
+.rpQuiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}
+
+.rpQuiet svg {
+  color: var(--icon-success, var(--text-success));
+}
+
+.rpNote {
+  margin-left: auto;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* A gate that does not report keeps its place, so the page never shifts. */
+.rpOff {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 22px 20px;
+}
+
+.rpOffTitle {
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  color: var(--text-secondary);
+}
+
+.rpOffText {
+  max-width: 420px;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 1240px) {
+  .rpGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .rpBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rpStats {
+    border-left: 0;
+    border-top: 1px solid var(--stroke-divider);
+  }
 }

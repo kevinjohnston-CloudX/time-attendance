@@ -957,6 +957,7 @@ export const FLAG_META: Record<MovementFlag, { label: string; hint: string; tone
   ON_LEAVE: { label: "On leave", hint: "Approved time off that day", tone: "info" },
   HERE_NOW: { label: "In the building", hint: "Through the security gate and not out again", tone: "info" },
   SEEN: { label: "People seen", hint: "Scanned at either reader that day", tone: "neutral" },
+  ON_CLOCK_NOW: { label: "On the clock", hint: "Clocked in and working right now", tone: "info" },
 };
 
 /** A filter's name where it depends on the site: without a gate, "here" means on the clock. */
@@ -970,7 +971,12 @@ export function heroFlagFor(isToday: boolean): MovementFlag {
 }
 
 /** Filters that describe where somebody is, not something to look into. */
-const NOT_A_CONCERN: MovementFlag[] = ["ON_LEAVE", "HERE_NOW", "SEEN"];
+const NOT_A_CONCERN: MovementFlag[] = ["ON_LEAVE", "HERE_NOW", "SEEN", "ON_CLOCK_NOW"];
+
+/** Filters other pages open Movements on, which it accepts whatever the day offers. */
+export function isViewFlag(f: MovementFlag, isToday: boolean): boolean {
+  return f === heroFlagFor(isToday) || (isToday && f === "ON_CLOCK_NOW");
+}
 
 const NOW_FLAGS: MovementFlag[] = ["INSIDE_OFF_CLOCK", "NO_GATE_SCAN", "SCHEDULED_OUTSIDE", "ON_BREAK", "NOT_ARRIVED"];
 const PAST_FLAGS: MovementFlag[] = ["INSIDE_OFF_CLOCK", "NO_GATE_SCAN", "NOT_ARRIVED"];

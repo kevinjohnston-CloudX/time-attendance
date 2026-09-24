@@ -236,6 +236,8 @@ export interface ScanLogSummary {
   rejected: number;
   /** Gate exits the system wrote overnight for people who never scanned out. */
   gateAutoClosed: number;
+  /** Time clock outs the system wrote overnight for people who never clocked out. */
+  clockAutoClosed: number;
   /** Different people seen at either reader today. */
   people: number;
   /** Different people who came in through the gate at least once, each counted once. */

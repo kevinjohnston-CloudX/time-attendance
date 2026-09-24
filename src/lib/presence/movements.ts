@@ -59,7 +59,9 @@ export type MovementFlag =
   /** Behind the headline number: in the building now (on the clock where no gate reports). */
   | "HERE_NOW"
   /** Behind the headline number on a past day: seen at either reader. */
-  | "SEEN";
+  | "SEEN"
+  /** On the clock right now, working rather than on a meal or break. */
+  | "ON_CLOCK_NOW";
 
 export const FLAG_ORDER: MovementFlag[] = [
   "INSIDE_OFF_CLOCK",
@@ -78,6 +80,7 @@ export const FLAG_ORDER: MovementFlag[] = [
   "ON_LEAVE",
   "HERE_NOW",
   "SEEN",
+  "ON_CLOCK_NOW",
 ];
 
 /** Where somebody is at the end of what the day has recorded: now, for today. */
@@ -250,6 +253,7 @@ export function buildPersonDay(
   add("INACTIVE", person.inactive && scans.length > 0);
   add("ON_LEAVE", person.onLeave);
   add("HERE_NOW", isToday && (hasGate ? nowState.inside : nowState.clock !== "OUT"));
+  add("ON_CLOCK_NOW", isToday && nowState.clock === "WORK");
   add("SEEN", scans.some(isShownScan));
 
   const shown = scans.filter(isShownScan);

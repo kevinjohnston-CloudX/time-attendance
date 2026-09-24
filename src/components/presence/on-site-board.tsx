@@ -64,6 +64,7 @@ import {
   flagLabel,
   flagsFor,
   heroFlagFor,
+  isViewFlag,
   parseFlag,
   parseMvSort,
   useSiteDay,
@@ -384,6 +385,9 @@ export function OnSiteBoard({
   }, [scoped]);
 
   const insideTotal = scoped.filter((p) => p.inside).length;
+  // On the clock and working, not on a meal or break: what the time clock
+  // panel on the Scan log leads with.
+  const clockNowTotal = scoped.filter((p) => p.clock?.state === "WORK" && !p.clock.automatic).length;
   const outsideOnMeal = scoped.filter((p) => p.outsideOnMeal).length;
   const scheduled = scoped.filter((p) => p.scheduledStart);
   const scheduledArrived = scheduled.filter((p) => p.status !== "NOT_ARRIVED" && p.status !== "ON_LEAVE").length;
@@ -451,7 +455,7 @@ export function OnSiteBoard({
   // A filter that does not apply to this day (on a meal right now, for
   // yesterday) is set aside rather than answering with an empty table.
   const mvFlagShown =
-    mvFlag && siteDay.data && (flagsFor(mvIsToday, mvHasGate).includes(mvFlag) || mvFlag === heroFlagFor(mvIsToday))
+    mvFlag && siteDay.data && (flagsFor(mvIsToday, mvHasGate).includes(mvFlag) || isViewFlag(mvFlag, mvIsToday))
       ? mvFlag
       : null;
   const mvRows = useMemo(() => {
@@ -1000,6 +1004,13 @@ export function OnSiteBoard({
                 stillInside={when === "today" ? insideTotal : null}
                 onStillInside={() => {
                   setMvFlag(when === "today" ? heroFlagFor(true) : "MARKED_OUT");
+                  setMvShown(PEOPLE_PER_PAGE);
+                  setSelectedId(null);
+                  setTab("movements");
+                }}
+                clockNow={when === "today" ? clockNowTotal : null}
+                onClockNow={() => {
+                  setMvFlag("ON_CLOCK_NOW");
                   setMvShown(PEOPLE_PER_PAGE);
                   setSelectedId(null);
                   setTab("movements");

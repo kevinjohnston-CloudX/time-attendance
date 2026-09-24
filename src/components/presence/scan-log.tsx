@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronRight, Clock, DoorOpen, ScanLine, SearchX } from "lucide-react";
+import { Check, ChevronRight, Clock, DoorOpen, ScanLine, SearchX } from "lucide-react";
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { getOnSiteScanLog } from "@/actions/presence.actions";
 import type { ScanLogPage, ScanLogQuery, ScanLogRow, ScanLogSummary, ScanStream } from "@/lib/presence/types";
@@ -264,11 +264,11 @@ function compareRows(a: ScanLogRow, b: ScanLogRow): number {
 /* ── Counts ─────────────────────────────────────────────────────────────── */
 
 /**
- * The Scan log's summary, people first, because the questions loss
- * prevention brings here are about people: how many are still inside, how
- * many came in, how many clocked in, each person counted once. The scan
- * counts behind them are the chips, one group per reader, and every number
- * is still the filter for it.
+ * The Scan log's summary as its two sources of truth, side by side: one
+ * panel per reader, read the same way in both. Who is there now, then the
+ * people it saw (each counted once), then its scans in and out, then what
+ * went wrong at it. Every number is the filter for it, and the lead number
+ * opens those people in Movements.
  */
 export function ScanLogCounts({
   summary,
@@ -281,6 +281,8 @@ export function ScanLogCounts({
   unknownCount = 0,
   stillInside,
   onStillInside,
+  clockNow,
+  onClockNow,
 }: {
   summary: ScanLogSummary;
   counter: LogCounter | null;
@@ -292,195 +294,201 @@ export function ScanLogCounts({
   tz: string;
   /** "today", "yesterday" or "on Mon, Sep 21". */
   when: string;
-  /** Today: how many are in the building now (on the clock where no gate reports). */
+  /** Today: how many are in the building now. */
   stillInside: number | null;
-  /** Opens those people in Movements. */
+  /** Opens them in Movements (or, on a past day, those who never scanned out). */
   onStillInside: () => void;
+  /** Today: how many are on the clock now. */
+  clockNow: number | null;
+  onClockNow: () => void;
 }) {
   const isToday = when === "today";
   const pick = (c: LogCounter) => onPick(counter === c ? null : c);
-  const all = summary.gateTotal + summary.clockTotal;
 
-  // The lead number: who is left, today; who never scanned out, on a past day.
-  const hero =
-    isToday && stillInside !== null
-      ? {
-          label: hasGateData ? "In the building" : "On the clock",
-          figure: stillInside,
-          sub: hasGateData
-            ? `of ${summary.peopleIn.toLocaleString()} who came in today`
-            : `of ${summary.peopleClockedIn.toLocaleString()} who clocked in today`,
-          opens: true,
-        }
-      : hasGateData
-        ? {
-            label: "Never scanned out",
-            figure: summary.gateAutoClosed,
-            sub: `of ${summary.peopleIn.toLocaleString()} who came in ${when}`,
-            opens: true,
-          }
-        : { label: "People seen", figure: summary.people, sub: when, opens: false };
+  const gate: ReaderPanelProps = {
+    icon: <DoorOpen className="h-4 w-4" aria-hidden="true" />,
+    title: "Security gate",
+    total: { key: "gate", count: summary.gateTotal },
+    lead: isToday
+      ? { label: "In the building", figure: stillInside ?? 0, sub: `of ${summary.peopleIn.toLocaleString()} who came in today` }
+      : { label: "Never scanned out", figure: summary.gateAutoClosed, sub: `of ${summary.peopleIn.toLocaleString()} who came in` },
+    onLead: onStillInside,
+    stats: [
+      { key: "first-in", label: "Came in", count: summary.peopleIn, unit: "people", hint: "People who came in through the gate, each counted once. Shows each person's first entry" },
+      { key: "gate-in", label: "In", count: summary.gateIn, unit: "scans" },
+      { key: "gate-out", label: "Out", count: summary.gateOut, unit: "scans" },
+    ],
+    exceptions: [
+      {
+        key: "missed",
+        label: "Missed gate scans",
+        count: summary.missedGate,
+        tone: "warning",
+        hint: "An entry with no exit before the next entry, or an exit with no entry before the next exit. This is why gate ins minus outs can differ from who is in the building",
+      },
+    ],
+    note: isToday && lastGateScanAt ? `Last scan at ${fmtTime(lastGateScanAt, tz)}` : null,
+    quiet: "No missed scans",
+  };
 
-  const cards: { key: LogCounter; label: string; count: number; hint: string }[] = [
-    ...(hasGateData
-      ? [
-          {
-            key: "first-in" as const,
-            label: "Came in",
-            count: summary.peopleIn,
-            hint: "People who came in through the security gate, each counted once. Shows each person's first entry",
-          },
-        ]
-      : []),
-    {
-      key: "first-clock",
-      label: "Clocked in",
-      count: summary.peopleClockedIn,
-      hint: "People who clocked in, each counted once. Shows each person's first clock in",
-    },
-  ];
-
-  const groups: { icon: ReactNode; items: { key: LogCounter; label: string; count: number }[] }[] = [
-    ...(hasGateData
-      ? [
-          {
-            icon: <DoorOpen className="h-3.5 w-3.5" aria-hidden="true" />,
-            items: [
-              { key: "gate" as const, label: "Security gate", count: summary.gateTotal },
-              { key: "gate-in" as const, label: "In", count: summary.gateIn },
-              { key: "gate-out" as const, label: "Out", count: summary.gateOut },
-            ],
-          },
-        ]
-      : []),
-    {
-      icon: <Clock className="h-3.5 w-3.5" aria-hidden="true" />,
-      items: [
-        { key: "clock", label: "Time clock", count: summary.clockTotal },
-        { key: "clock-in", label: "In", count: summary.clockIn },
-        { key: "clock-out", label: "Out", count: summary.clockOut },
-      ],
-    },
-  ];
-  const extras = [
-    {
-      key: "rejected" as const,
-      label: "Taps not counted",
-      count: summary.rejected,
-      tone: "error",
-      hint: "Taps the time clock did not accept, usually a second tap too soon, and repeat reads of the same badge. They are left out of every other list and total",
-    },
-    {
-      key: "missed" as const,
-      label: "Missed gate scans",
-      count: summary.missedGate,
-      tone: "warning",
-      hint: "An entry with no exit before the next entry, or an exit with no entry before the next exit. This is why gate ins minus outs can differ from who is in the building",
-    },
-    {
-      key: "unknown" as const,
-      label: "Not in CloudTime",
-      count: unknownCount,
-      tone: "warning",
-      hint: "People who scanned here on a badge no employee holds. Their time clock scans were refused",
-    },
-  ].filter((c) => c.count > 0 || counter === c.key);
-
-  const gateNote = !hasGateData
-    ? "The security gate here has not reported in the last 36 hours."
-    : isToday
-      ? `Last security gate scan at ${fmtTime(lastGateScanAt, tz)}.`
-      : summary.gateTotal === 0
-        ? `No security gate scans ${when}.`
-        : "";
+  const clock: ReaderPanelProps = {
+    icon: <Clock className="h-4 w-4" aria-hidden="true" />,
+    title: "Time clock",
+    total: { key: "clock", count: summary.clockTotal },
+    lead: isToday
+      ? { label: "On the clock", figure: clockNow ?? 0, sub: `of ${summary.peopleClockedIn.toLocaleString()} who clocked in today` }
+      : { label: "Never clocked out", figure: summary.clockAutoClosed, sub: `of ${summary.peopleClockedIn.toLocaleString()} who clocked in` },
+    onLead: isToday ? onClockNow : onStillInside,
+    stats: [
+      { key: "first-clock", label: "Clocked in", count: summary.peopleClockedIn, unit: "people", hint: "People who clocked in, each counted once. Shows each person's first clock in" },
+      { key: "clock-in", label: "In", count: summary.clockIn, unit: "scans" },
+      { key: "clock-out", label: "Out", count: summary.clockOut, unit: "scans" },
+    ],
+    exceptions: [
+      {
+        key: "rejected",
+        label: "Taps not counted",
+        count: summary.rejected,
+        tone: "error",
+        hint: "Taps the time clock did not accept, usually a second tap too soon, and repeat reads of the same badge. They are left out of every other list and total",
+      },
+      {
+        key: "unknown",
+        label: "Not in CloudTime",
+        count: unknownCount,
+        tone: "warning",
+        hint: "People who scanned here on a badge no employee holds. Their time clock scans were refused",
+      },
+    ],
+    note: null,
+    quiet: "Every tap was counted",
+  };
 
   return (
-    <section className={styles.summary} aria-label="Scans" data-layout="band">
-      <div className={styles.summaryMain} data-cards={cards.length}>
+    <section className={styles.rpGrid} aria-label="Scans">
+      {hasGateData ? (
+        <ReaderPanel {...gate} counter={counter} pick={pick} />
+      ) : (
+        <div className={styles.rpPanel} data-off="true">
+          <div className={styles.rpHead}>
+            <span className={styles.rpMark} aria-hidden="true">
+              <DoorOpen className="h-4 w-4" />
+            </span>
+            <span className={styles.rpTitle}>Security gate</span>
+          </div>
+          <div className={styles.rpOff}>
+            <span className={styles.rpOffTitle}>Not reporting</span>
+            <span className={styles.rpOffText}>
+              The security gate here has not reported in the last 36 hours, so people are counted from the time clock.
+            </span>
+          </div>
+        </div>
+      )}
+      <ReaderPanel {...clock} counter={counter} pick={pick} />
+    </section>
+  );
+}
+
+interface ReaderPanelProps {
+  icon: ReactNode;
+  title: string;
+  total: { key: LogCounter; count: number };
+  lead: { label: string; figure: number; sub: string };
+  onLead: () => void;
+  stats: { key: LogCounter; label: string; count: number; unit: string; hint?: string }[];
+  exceptions: { key: LogCounter; label: string; count: number; tone: "warning" | "error"; hint: string }[];
+  note: string | null;
+  /** Said when nothing went wrong, so the panel reads as checked, not empty. */
+  quiet: string;
+}
+
+function ReaderPanel({
+  icon,
+  title,
+  total,
+  lead,
+  onLead,
+  stats,
+  exceptions,
+  note,
+  quiet,
+  counter,
+  pick,
+}: ReaderPanelProps & { counter: LogCounter | null; pick: (c: LogCounter) => void }) {
+  const shown = exceptions.filter((e) => e.count > 0 || counter === e.key);
+  return (
+    <div className={styles.rpPanel}>
+      <div className={styles.rpHead}>
+        <span className={styles.rpMark} aria-hidden="true">
+          {icon}
+        </span>
+        <span className={styles.rpTitle}>{title}</span>
         <button
           type="button"
-          className={styles.summaryHero}
-          aria-pressed={hero.opens ? undefined : counter === null}
-          onClick={() => (hero.opens ? onStillInside() : onPick(null))}
-          title={hero.opens ? "Show these people in Movements" : "Show every scan"}
+          className={styles.rpTotal}
+          aria-pressed={counter === total.key}
+          onClick={() => pick(total.key)}
+          title={`Show every ${title.toLowerCase()} scan`}
         >
-          <span className={styles.summaryLabel}>
-            {hero.label}
-            {hero.opens && <ChevronRight className="h-4 w-4" aria-hidden="true" />}
-          </span>
-          <span className={styles.summaryHeroFigure}>{hero.figure.toLocaleString()}</span>
-          <span className={styles.summarySub}>{hero.sub}</span>
+          <span className="tabular">{total.count.toLocaleString()}</span> {total.count === 1 ? "scan" : "scans"}
         </button>
-        {cards.map((c) => (
-          <button
-            key={c.key}
-            type="button"
-            className={styles.summaryCard}
-            aria-pressed={counter === c.key}
-            data-empty={c.count === 0 ? "true" : undefined}
-            onClick={() => pick(c.key)}
-            title={c.hint}
-          >
-            <span className={styles.summaryLabel}>
-              <span className="truncate">{c.label}</span>
-            </span>
-            <span className={styles.summaryFigure}>{c.count.toLocaleString()}</span>
-            <span className={styles.summarySub}>{c.count === 1 ? "person" : "people"}, counted once each</span>
-          </button>
-        ))}
-        <div className={styles.summarySide}>
-        <div className={styles.summaryChips}>
-          {groups.map((g) => (
-            <span key={g.items[0].key} className={styles.summaryGroup}>
-              {g.items.map((c, i) => (
-                <button
-                  key={c.key}
-                  type="button"
-                  className={styles.summaryGroupItem}
-                  aria-pressed={counter === c.key}
-                  onClick={() => pick(c.key)}
-                >
-                  {i === 0 && g.icon}
-                  <span>{c.label}</span>
-                  <span className={styles.summaryChipCount}>{c.count.toLocaleString()}</span>
-                </button>
-              ))}
-            </span>
-          ))}
-          {extras.map((c) => (
+      </div>
+
+      <div className={styles.rpBody}>
+        <button type="button" className={styles.rpLead} onClick={onLead} title="Show these people in Movements">
+          <span className={styles.rpLeadLabel}>
+            {lead.label}
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <span className={styles.rpLeadFigure}>{lead.figure.toLocaleString()}</span>
+          <span className={styles.rpSub}>{lead.sub}</span>
+        </button>
+        <div className={styles.rpStats}>
+          {stats.map((s) => (
             <button
-              key={c.key}
+              key={s.key}
               type="button"
-              className={styles.summaryChip}
-              aria-pressed={counter === c.key}
-              onClick={() => pick(c.key)}
-              title={c.hint}
+              className={styles.rpStat}
+              aria-pressed={counter === s.key}
+              data-empty={s.count === 0 ? "true" : undefined}
+              onClick={() => pick(s.key)}
+              title={s.hint}
             >
-              <span className={styles.dot} data-tone={c.tone} aria-hidden="true" />
-              <span>{c.label}</span>
-              <span className={styles.summaryChipCount}>{c.count.toLocaleString()}</span>
+              <span className={styles.rpStatLabel}>{s.label}</span>
+              <span className={styles.rpStatFigure}>{s.count.toLocaleString()}</span>
+              <span className={styles.rpSub}>{s.unit}</span>
             </button>
           ))}
         </div>
-        <span className={styles.summaryNote} data-wrap="true">
-          <button
-            type="button"
-            className={styles.summaryAll}
-            aria-pressed={counter === null}
-            onClick={() => onPick(null)}
-            title="Show every scan"
-          >
-            <span className="tabular" style={{ fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
-              {all.toLocaleString()}
-            </span>{" "}
-            {all === 1 ? "scan" : "scans"} by {summary.people.toLocaleString()} {summary.people === 1 ? "person" : "people"}
-          </button>
-          {gateNote && <span>{gateNote}</span>}
-        </span>
-      </div>
       </div>
 
-    </section>
+      <div className={styles.rpFoot}>
+        {shown.length > 0 ? (
+          <span className="flex min-w-0 flex-wrap items-center gap-2">
+            {shown.map((e) => (
+              <button
+                key={e.key}
+                type="button"
+                className={styles.summaryChip}
+                aria-pressed={counter === e.key}
+                onClick={() => pick(e.key)}
+                title={e.hint}
+              >
+                <span className={styles.dot} data-tone={e.tone} aria-hidden="true" />
+                <span>{e.label}</span>
+                <span className={styles.summaryChipCount}>{e.count.toLocaleString()}</span>
+              </button>
+            ))}
+          </span>
+        ) : (
+          <span className={styles.rpQuiet}>
+            <Check className="h-3.5 w-3.5" aria-hidden="true" />
+            {quiet}
+          </span>
+        )}
+        {note && <span className={styles.rpNote}>{note}</span>}
+      </div>
+    </div>
   );
 }
 

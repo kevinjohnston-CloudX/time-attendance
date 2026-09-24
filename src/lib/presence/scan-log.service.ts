@@ -187,7 +187,7 @@ export async function getScanLog(
       ? { AND: [filtered, { OR: [{ scanTime: { lt: before.at } }, { scanTime: before.at, id: { lt: before.id } }] }] }
       : filtered;
 
-  const [rows, byStream, rejected, autoClosed, people, newest, peopleIn, peopleClockedIn] = await Promise.all([
+  const [rows, byStream, rejected, autoClosed, people, newest, peopleIn, peopleClockedIn, clockAutoClosed] = await Promise.all([
     db.scanEvent.findMany({
       where: rowWhere,
       orderBy: [{ scanTime: "desc" }, { id: "desc" }],
@@ -227,6 +227,7 @@ export async function getScanLog(
     db.scanEvent.aggregate({ where: base, _max: { createdAt: true } }),
     db.scanEvent.groupBy({ by: ["employeeId"], where: { AND: [counted, gateIn] } }),
     db.scanEvent.groupBy({ by: ["employeeId"], where: { AND: [counted, clockIn] } }),
+    db.scanEvent.count({ where: { ...base, stream: "TIME_CLOCK", directionSource: "AUTO_CLOSE" } }),
   ]);
 
   // A handful of groups, folded here only to apply the time clock rule above.
@@ -288,6 +289,7 @@ export async function getScanLog(
       clockTotal: count("TIME_CLOCK"),
       rejected,
       gateAutoClosed: autoClosed,
+      clockAutoClosed,
       people: people.filter((p) => p.employeeId).length,
       peopleIn: peopleIn.filter((p) => p.employeeId).length,
       peopleClockedIn: peopleClockedIn.filter((p) => p.employeeId).length,
