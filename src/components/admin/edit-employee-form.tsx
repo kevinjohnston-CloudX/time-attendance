@@ -570,6 +570,16 @@ export function EditEmployeeForm({
     </Select>
   );
 
+  /**
+   * A saved value the pick list no longer offers (a retired shift, a role or
+   * pay code switched off) stays as an option, so the select shows it rather
+   * than falling back to the first choice, which a save would then write.
+   */
+  const keep = (key: Key, offered: { id: string }[], label: string) => {
+    const val = saved[key] as string;
+    return val && !offered.some((o) => o.id === val) ? <option value={val}>{label}</option> : null;
+  };
+
   const lastChange = logs[0];
 
   return (
@@ -716,6 +726,7 @@ export function EditEmployeeForm({
                   {pick(
                     "customRoleId",
                     <>
+                      {keep("customRoleId", customRoles, `${roleName(saved.customRoleId)} (no longer offered)`)}
                       {customRoles.filter((r) => r.isSystem).map((r) => (
                         <option key={r.id} value={r.id}>{r.name}</option>
                       ))}
@@ -753,6 +764,18 @@ export function EditEmployeeForm({
                     "supervisorId",
                     <>
                       <option value="">None</option>
+                      {/* The pick list is active people only. A saved
+                          supervisor who has left stays listed, so the field
+                          shows who it really is instead of falling back to
+                          None (which the old form then saved). */}
+                      {employee.supervisorId &&
+                        employee.supervisor &&
+                        !employees.some((e) => e.id === employee.supervisorId) && (
+                          <option value={employee.supervisorId}>
+                            {employee.supervisor.user.name}
+                            {employee.supervisor.isActive ? "" : " (inactive)"}
+                          </option>
+                        )}
                       {employees
                         .filter((e) => e.id !== employee.id)
                         .map((e) => <option key={e.id} value={e.id}>{e.user.name}</option>)}
@@ -804,7 +827,13 @@ export function EditEmployeeForm({
             >
               <div className={styles.grid}>
                 <Field label="Rule set" htmlFor="f-ruleSetId" read={ruleSets.find((r) => r.id === v.ruleSetId)?.name ?? employee.ruleSet.name}>
-                  {pick("ruleSetId", ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>))}
+                  {pick(
+                    "ruleSetId",
+                    <>
+                      {keep("ruleSetId", ruleSets, `${employee.ruleSet.name} (no longer offered)`)}
+                      {ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>)}
+                    </>,
+                  )}
                 </Field>
                 <Field
                   label="Shift"
@@ -826,6 +855,7 @@ export function EditEmployeeForm({
                     "shiftId",
                     <>
                       <option value="">None</option>
+                      {keep("shiftId", shifts, "Retired shift")}
                       {shifts.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name} ({fmtTime(s.startTime)} to {fmtTime(s.endTime)})
@@ -834,11 +864,12 @@ export function EditEmployeeForm({
                     </>,
                   )}
                 </Field>
-                <Field label="Holiday rule" htmlFor="f-holidayRuleId" read={holidayRules.find((r) => r.id === v.holidayRuleId)?.name ?? "None"}>
+                <Field label="Holiday rule" htmlFor="f-holidayRuleId" read={holidayRules.find((r) => r.id === v.holidayRuleId)?.name ?? (v.holidayRuleId ? "Retired holiday rule" : "None")}>
                   {pick(
                     "holidayRuleId",
                     <>
                       <option value="">None</option>
+                      {keep("holidayRuleId", holidayRules, "Retired holiday rule")}
                       {holidayRules.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </>,
                   )}
@@ -849,13 +880,14 @@ export function EditEmployeeForm({
                   htmlFor="f-payCategoryId"
                   read={(() => {
                     const c = payCategories.find((x) => x.id === v.payCategoryId);
-                    return c ? <Coded item={c} /> : "None";
+                    return c ? <Coded item={c} /> : v.payCategoryId ? "Retired pay category" : "None";
                   })()}
                 >
                   {pick(
                     "payCategoryId",
                     <>
                       <option value="">None</option>
+                      {keep("payCategoryId", payCategories, "Retired pay category")}
                       {payCategories.map((c) => <option key={c.id} value={c.id}>{numbered(c)}</option>)}
                     </>,
                   )}
@@ -865,13 +897,14 @@ export function EditEmployeeForm({
                   htmlFor="f-payTypeId"
                   read={(() => {
                     const t = payTypes.find((x) => x.id === v.payTypeId);
-                    return t ? <Coded item={t} /> : "None";
+                    return t ? <Coded item={t} /> : v.payTypeId ? "Retired pay type" : "None";
                   })()}
                 >
                   {pick(
                     "payTypeId",
                     <>
                       <option value="">None</option>
+                      {keep("payTypeId", payTypes, "Retired pay type")}
                       {payTypes.map((pt) => <option key={pt.id} value={pt.id}>{numbered(pt)}</option>)}
                     </>,
                   )}
