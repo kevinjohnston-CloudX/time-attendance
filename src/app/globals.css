@@ -218,6 +218,17 @@ textarea {
   border-color: var(--stroke-accent);
   box-shadow: var(--focus-ring-tight);
 }
+/* A search box keeps the plain look: no native rounded style, no native
+   clear cross or magnifier beside the one the design draws. */
+.ta-field input[type="search"] {
+  appearance: none;
+  -webkit-appearance: none;
+}
+.ta-field input[type="search"]::-webkit-search-cancel-button,
+.ta-field input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  display: none;
+}
 
 /* Panels and overlays.
 

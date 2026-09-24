@@ -58,7 +58,21 @@ export function SearchInput({
       }}
     >
       <Search className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} />
+      {/* A search box, said every way browsers and password managers look
+          for it, so none of them offers to save or fill a login here. */}
       <input
+        type="search"
+        name="q"
+        role="searchbox"
+        aria-label={placeholder ?? "Search"}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        data-1p-ignore=""
+        data-lpignore="true"
+        data-bwignore="true"
+        data-form-type="other"
         value={value}
         onChange={(e: ChangeEvent<HTMLInputElement>) => onValueChange(e.target.value)}
         placeholder={placeholder}
