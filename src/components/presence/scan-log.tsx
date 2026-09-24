@@ -640,8 +640,15 @@ function LogRow({
           </span>
         </span>
 
-        <span className={styles.logContext} data-tone={r.context?.long ? "warning" : undefined}>
-          {contextText(r.context, tz)}
+        <span className={styles.logContext}>
+          <span className={styles.logContextText} data-tone={r.context?.long ? "warning" : undefined}>
+            {contextText(r.context, tz)}
+          </span>
+          {r.correctedFrom && (
+            <span className={styles.logCorrected} title={`Recorded at the tap as "${describeOriginal(r)}", corrected in the timecard`}>
+              Corrected, was {describeOriginal(r)?.toLowerCase()}
+            </span>
+          )}
         </span>
 
         {/* Only what is out of the ordinary gets a tag; the reader is named
@@ -656,13 +663,6 @@ function LogRow({
             <Badge tone="neutral" size="sm">
               Added by the system
             </Badge>
-          )}
-          {r.correctedFrom && (
-            <span title={`Recorded at the tap as "${describeOriginal(r)}", corrected in the timecard`}>
-              <Badge tone="info" size="sm">
-                Corrected, was {describeOriginal(r)?.toLowerCase()}
-              </Badge>
-            </span>
           )}
           {r.reread && (
             <Badge tone="neutral" size="sm">

@@ -964,7 +964,9 @@
    right after the name, so the eye does not cross an empty stretch. */
 .logRow {
   display: grid;
-  grid-template-columns: 72px 40px minmax(200px, 300px) minmax(240px, 1fr) minmax(180px, 1fr) auto;
+  /* The tag column is a fixed width: each row is its own grid, so a column
+     sized by its content would shift the others on the rows that have a tag. */
+  grid-template-columns: 72px 40px minmax(200px, 300px) minmax(240px, 1fr) minmax(180px, 1fr) 150px;
   align-items: center;
   gap: 0 14px;
   width: 100%;
@@ -1056,9 +1058,9 @@
 
 .logTags {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
 }
@@ -3412,16 +3414,33 @@
 
 /* What the scan means next to the one before it. */
 .logContext {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
-  font: var(--type-body2);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
+}
+
+.logContextText,
+.logCorrected {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.logContext[data-tone="warning"] {
+.logContextText {
+  font: var(--type-body2);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+/* What the tap was first recorded as, quiet under what it means now. */
+.logCorrected {
+  font: var(--type-caption1);
+  color: var(--text-tertiary);
+}
+
+.logContextText[data-tone="warning"] {
   color: var(--text-warning);
   font-weight: var(--weight-medium);
 }
