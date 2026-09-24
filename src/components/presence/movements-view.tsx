@@ -198,6 +198,11 @@ export function MovementsTable({
               {hourLabel(t, tz)}
             </span>
           ))}
+          {isToday && now > axis.from && now < axis.to && (
+            <span className={styles.mvNowTag} style={{ left: axis.pct(now) }}>
+              {fmtTime(new Date(now).toISOString(), tz)}
+            </span>
+          )}
         </span>
         <span />
       </div>
@@ -295,6 +300,9 @@ function PersonRow({
   const carried = v.lines.some((l) => l.carried);
   const unclosed = !isToday && v.lines.some((l) => l.end === null && l.kind !== "EXIT_ONLY");
   const hasDetail = seen || v.lines.length > 0;
+  // One thin line at now, drawn the full height of each row so the rows
+  // join it into a single line down the table.
+  const nowAt = isToday && now > axis.from && now < axis.to ? axis.pct(now) : null;
 
   const arrived =
     v.firstIn !== null ? (
@@ -390,7 +398,8 @@ function PersonRow({
           <span className={styles.mvFactValue}>{seen ? fmtDuration(t.workMin) : ""}</span>
         </span>
         <span className={styles.mvDay}>
-          <Ribbon view={v} axis={axis} isToday={isToday} hasGate={hasGate} tz={tz} now={now} />
+          <Ribbon view={v} axis={axis} isToday={isToday} hasGate={hasGate} tz={tz} />
+          {nowAt && <span className={styles.rbNow2} style={{ left: nowAt }} aria-hidden="true" />}
         </span>
         <span className={styles.mvToggleCell}>
           {hasDetail && (
@@ -548,15 +557,82 @@ function hourLabel(ms: number, tz: string): string {
   return f.format(new Date(ms));
 }
 
+type DayKind = "work" | "onsite" | "offclock" | "outside" | "pause";
+
+const KIND_LABEL: Record<DayKind, string> = {
+  work: "Working",
+  onsite: "On site",
+  offclock: "Inside, not clocked in",
+  outside: "Clocked in, not inside",
+  pause: "On a break",
+};
+
+interface DaySegment {
+  kind: DayKind;
+  start: number;
+  end: number;
+  /** Came in from yesterday, or began before the scale does. */
+  fromBefore: boolean;
+  /** Never really ended: still open on a finished day, or closed by the system. */
+  softEnd: boolean;
+}
+
 /**
- * A person's day at a glance: the scheduled shift as a soft band behind
- * everything, the gate and the time clock as two rounded bars on it, a meal
- * as a notch in the clock bar, and, today, a line at now. The band is the
- * same shape on every row that has a shift, so a gap in it reads as missing
- * time at a glance and a bar outside it as time off schedule. Faint hour
- * lines carry the header's scale down the rows. Time carried in from
- * yesterday enters from the left edge, faded, rather than starting anywhere.
- * Every scan is in the detail under the row.
+ * The gate and the time clock folded into one line: at every moment, where
+ * the person was and whether they were on the clock. Inside and working is
+ * the normal case; inside and not clocked in, and clocked in and not inside,
+ * are the two states the page counts at the top, in the same colours; a meal
+ * or break is a pause. Without a gate only the clock is known, so on the
+ * clock is simply working. Salaried people do not use the time clock, so
+ * inside is their normal day, drawn like working (the flags agree).
+ */
+function daySegments(v: PersonDayView, hasGate: boolean, isToday: boolean): DaySegment[] {
+  const gate = hasGate ? v.lanes.gate : [];
+  const clock = v.lanes.clock;
+  const pieces = [...gate, ...clock];
+  if (pieces.length === 0) return [];
+  const cuts = [...new Set(pieces.flatMap((p) => [p.start, p.end]))].sort((a, b) => a - b);
+  const soft = (p: (typeof pieces)[number]) => p.closedBySystem || (p.open && !isToday);
+  const out: DaySegment[] = [];
+  for (let k = 0; k < cuts.length - 1; k++) {
+    const a = cuts[k];
+    const b = cuts[k + 1];
+    const mid = (a + b) / 2;
+    const g = gate.find((p) => p.start <= mid && p.end > mid);
+    const c = clock.find((p) => p.start <= mid && p.end > mid);
+    const inside = !!g;
+    const kind: DayKind | null = c
+      ? c.kind === "WORK"
+        ? hasGate && !inside
+          ? "outside"
+          : "work"
+        : "pause"
+      : inside
+        ? v.person.salaried
+          ? "onsite"
+          : "offclock"
+        : null;
+    if (!kind) continue;
+    const fromBefore = [g, c].some((p) => p && !p.startScan && p.start === a);
+    const softEnd = [g, c].some((p) => p && p.end === b && soft(p));
+    const last = out[out.length - 1];
+    if (last && last.kind === kind && last.end === a) {
+      last.end = b;
+      last.softEnd = softEnd;
+    } else out.push({ kind, start: a, end: b, fromBefore, softEnd });
+  }
+  return out;
+}
+
+/**
+ * A person's day at a glance, one bar on the shared scale. The scheduled
+ * shift is an outlined capsule the bar fills, so the same shape repeats on
+ * every scheduled row and a late start, an early leave or a gap shows as
+ * empty outline. The bar is coloured by state (see daySegments), so a normal
+ * day is one solid green bar and anything unusual is a patch of colour. An
+ * end that runs off the scale, comes in from yesterday or never really
+ * closed fades out rather than stopping. The separate gate and clock times
+ * are in the tooltips and the detail under the row.
  */
 function Ribbon({
   view: v,
@@ -564,46 +640,19 @@ function Ribbon({
   isToday,
   hasGate,
   tz,
-  now,
 }: {
   view: PersonDayView;
   axis: Axis;
   isToday: boolean;
   hasGate: boolean;
   tz: string;
-  now: number;
 }) {
   const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
-  const nowAt = isToday && now > axis.from && now < axis.to ? axis.pct(now) : null;
   const since = v.clockCarried ? `${weekdayLabel(v.clockCarried.since, tz)} ${time(v.clockCarried.since)}` : "yesterday";
-  // A stretch still running is pinned to now from the right, so a meal that
-  // has only just started grows back into the bar, never past the now line.
-  const place = (s: { start: number; end: number; open: boolean }) =>
-    s.open && isToday
-      ? { right: `calc(100% - ${axis.pct(s.end)})`, width: axis.width(s.start, s.end) }
-      : { left: axis.pct(s.start), width: axis.width(s.start, s.end) };
-  const clock = [...v.lanes.clock].sort((a, b) => a.start - b.start);
-  // Off the scale at either end, or carried in from yesterday: that end fades.
-  const cut = (s: { start: number; end: number; startScan: unknown }) => {
-    const before = !s.startScan || s.start < axis.from;
-    const after = s.end > axis.to;
-    return before && after ? "both" : before ? "start" : after ? "end" : undefined;
-  };
-  const until = (s: { end: number; open: boolean }) =>
-    s.open ? (isToday ? "now" : "the end of the day") : time(s.end);
-
-  const lane = (key: string, children: ReactNode) => (
-    <span className={styles.rbLane} key={key}>
-      {children}
-    </span>
-  );
+  const segs = daySegments(v, hasGate, isToday).filter((s) => s.end > axis.from && s.start < axis.to);
 
   return (
-    <span
-      className={styles.rb2}
-      data-single={hasGate ? undefined : "true"}
-      style={{ "--rb-step": axis.stepShare } as CSSProperties}
-    >
+    <span className={styles.rb2} style={{ "--rb-step": axis.stepShare } as CSSProperties}>
       {v.schedule && (
         <span
           className={styles.rbShift}
@@ -611,44 +660,29 @@ function Ribbon({
           title={`Scheduled ${time(v.schedule.start)} to ${time(v.schedule.end)}`}
         />
       )}
-      {hasGate &&
-        lane(
-          "gate",
-          v.lanes.gate.map((g) => (
-            <span
-              key={g.start}
-              className={styles.rbPiece}
-              data-kind="inside"
-              data-first={cut(g) === "start" || cut(g) === "both" ? undefined : "true"}
-              data-cut={cut(g)}
-              data-last={(g.open && isToday) || cut(g) === "end" || cut(g) === "both" ? undefined : "true"}
-              style={place(g)}
-              title={`Inside ${g.startScan ? time(g.start) : "since yesterday"} to ${until(g)}`}
-            />
-          )),
-        )}
-      {lane(
-        "clock",
-        clock.map((c, i) => {
-          const carried = !c.startScan;
-          const edge = cut(c);
-          const first = edge !== "start" && edge !== "both" && (i === 0 || clock[i - 1].end !== c.start);
-          const last = edge !== "end" && edge !== "both" && (i === clock.length - 1 || clock[i + 1].start !== c.end);
+      <span className={styles.rbBar}>
+        {segs.map((s, i) => {
+          const before = s.fromBefore || s.start < axis.from;
+          const after = s.softEnd || s.end > axis.to;
+          const joinsPrev = i > 0 && segs[i - 1].end === s.start;
+          const joinsNext = i < segs.length - 1 && segs[i + 1].start === s.end;
+          const open = isToday && [...v.lanes.gate, ...v.lanes.clock].some((p) => p.open && p.end === s.end);
+          const from = s.fromBefore ? `since ${since}` : time(s.start);
+          const to = s.softEnd ? "no scan out" : open ? "now" : time(s.end);
           return (
             <span
-              key={c.start}
+              key={s.start}
               className={styles.rbPiece}
-              data-kind={c.kind === "WORK" ? "work" : "meal"}
-              data-first={first ? "true" : undefined}
-              data-cut={edge}
-              data-last={last && !(c.open && isToday) ? "true" : undefined}
-              style={place(c)}
-              title={`${c.kind === "WORK" ? "On the clock" : c.kind === "MEAL" ? "Meal" : "Break"} ${carried ? `since ${since}` : time(c.start)} to ${until(c)}`}
+              data-kind={s.kind}
+              data-first={before || joinsPrev ? undefined : "true"}
+              data-last={after || joinsNext ? undefined : "true"}
+              data-cut={before && after ? "both" : before ? "start" : after ? "end" : undefined}
+              style={{ left: axis.pct(s.start), width: axis.width(s.start, s.end) }}
+              title={`${KIND_LABEL[s.kind]}, ${from} to ${to}`}
             />
           );
-        }),
-      )}
-      {nowAt && <span className={styles.rbNow2} style={{ left: nowAt }} aria-hidden="true" />}
+        })}
+      </span>
     </span>
   );
 }

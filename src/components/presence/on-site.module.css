@@ -1446,7 +1446,6 @@
 }
 
 .mvDay {
-  display: block;
   min-width: 0;
 }
 
@@ -2988,33 +2987,41 @@
 .rb2 {
   position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 0;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  height: 24px;
   background-image: linear-gradient(to right, var(--stroke-divider) 1px, transparent 1px);
   background-size: var(--rb-step, 12.5%) 100%;
   background-repeat: repeat-x;
 }
 
-/* The scheduled shift, behind both bars, a little taller than they are. */
+/* The scheduled shift: an outlined capsule the bar sits inside. */
 .rbShift {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--ta-track) 75%, transparent);
+  top: 3px;
+  bottom: 3px;
+  border: 1px solid var(--stroke-default);
+  border-radius: 999px;
+  background: var(--surface-card);
 }
 
-.rbLane {
+.mvRow:hover .rbShift {
+  background: var(--fill-hover);
+}
+
+.rbBar {
   position: relative;
-  height: 8px;
+  flex: 1;
+  height: 12px;
 }
 
 .rbPiece {
   position: absolute;
   top: 0;
   bottom: 0;
-  min-width: 2px;
+  min-width: 3px;
 }
 
 .rbPiece[data-first="true"] {
@@ -3027,52 +3034,73 @@
   border-bottom-right-radius: 999px;
 }
 
-/* Runs off the scale (or in from yesterday): that end fades, so it reads as
-   coming from beyond the edge rather than starting or stopping there. */
+/* The same colours as the counts at the top of the page. */
+.rbPiece[data-kind="work"],
+.rbPiece[data-kind="onsite"] {
+  background: var(--ps-working);
+}
+
+.rbPiece[data-kind="offclock"] {
+  background: var(--ps-offclock);
+}
+
+.rbPiece[data-kind="outside"] {
+  background: var(--fill-warning);
+}
+
+/* A meal or break: the bar goes quiet for it rather than stopping. */
+.rbPiece[data-kind="pause"] {
+  background: var(--stroke-default);
+}
+
+/* Runs off the scale, in from yesterday, or never scanned out: that end
+   fades, so it reads as going beyond the edge rather than stopping there. */
 .rbPiece[data-cut="start"] {
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 24px);
-  mask-image: linear-gradient(to right, transparent, #000 24px);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 28px);
+  mask-image: linear-gradient(to right, transparent, #000 28px);
 }
 
 .rbPiece[data-cut="end"] {
-  -webkit-mask-image: linear-gradient(to left, transparent, #000 24px);
-  mask-image: linear-gradient(to left, transparent, #000 24px);
+  -webkit-mask-image: linear-gradient(to left, transparent, #000 28px);
+  mask-image: linear-gradient(to left, transparent, #000 28px);
 }
 
 .rbPiece[data-cut="both"] {
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
-  mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
 }
 
-.rbPiece[data-kind="inside"] {
-  background: var(--text-accent);
+/* The day cell takes the row's full height, padding included, so the now
+   line in each row meets the next one's and reads as one line. */
+@media (min-width: 1181px) {
+  .mvDay {
+    position: relative;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    margin: -12px 0;
+  }
 }
 
-.rbPiece[data-kind="work"] {
-  background: var(--fill-success);
-}
-
-.rbPiece[data-kind="meal"] {
-  z-index: 1;
-  min-width: 4px;
-  background: var(--fill-warning);
-  box-shadow: 0 0 0 1px var(--surface-card);
-}
-
-.mvRow:hover .rbPiece[data-kind="meal"] {
-  box-shadow: 0 0 0 1px var(--fill-hover);
-}
-
-/* The height of the shift band, less a hair, so it reads as a mark on it. */
 .rbNow2 {
   position: absolute;
   z-index: 2;
-  top: 2px;
-  bottom: 2px;
-  width: 2px;
-  margin-left: -1px;
-  border-radius: 1px;
-  background: var(--text-primary);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--fill-accent);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* Now, in the heading, over whichever hour label it lands on. */
+.mvNowTag {
+  z-index: 1;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--fill-accent);
+  color: var(--text-on-accent);
+  font: var(--weight-semibold) 11px/14px var(--font-sans);
 }
 
 /* The table heading pins as one piece with the new movements pill under it,
