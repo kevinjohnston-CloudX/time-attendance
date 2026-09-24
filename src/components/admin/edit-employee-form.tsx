@@ -34,6 +34,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useBreadcrumbLeaf } from "@/components/layout/breadcrumb-leaf";
+import { PhotoViewer, ZoomableFace } from "@/components/presence/face";
 import styles from "./employee-record.module.css";
 
 /**
@@ -70,6 +71,8 @@ type EmployeeWithRelations = Omit<Employee, "payRate"> & {
 
 interface Props {
   employee: EmployeeWithRelations;
+  /** A signed link to the time clock tablet's photo, or null for initials. */
+  photo: string | null;
   sites: Site[];
   departments: (Department & { sites: { site: Site }[] })[];
   ruleSets: RuleSet[];
@@ -252,6 +255,7 @@ function Section({
 
 export function EditEmployeeForm({
   employee,
+  photo,
   sites,
   departments,
   ruleSets,
@@ -278,6 +282,7 @@ export function EditEmployeeForm({
   const [tempMessage, setTempMessage] = useState("");
   const [logField, setLogField] = useState("");
   const [logDays, setLogDays] = useState(0);
+  const [zoomed, setZoomed] = useState<string | null>(null);
 
   // Site access section is only shown when the employee being edited is HR_ADMIN or SYSTEM_ADMIN
   const employeeIsHrOrSysAdmin = ["HR_ADMIN", "SYSTEM_ADMIN"].includes(employee.role);
@@ -640,7 +645,19 @@ export function EditEmployeeForm({
           <aside className={styles.rail} style={railPin ?? undefined}>
             <div className={styles.card}>
               <div className={styles.profile}>
-                <span className={styles.avatar} aria-hidden="true">{initialsOf(v.name || employee.user.name)}</span>
+                {/* The tablet's photo over the initials: a person with no
+                    photo, or one that fails to load, shows the initials. */}
+                <span className={styles.portrait}>
+                  <span className={styles.portraitInitials} aria-hidden="true">
+                    {initialsOf(v.name || employee.user.name)}
+                  </span>
+                  <ZoomableFace
+                    src={photo}
+                    personId={employee.id}
+                    name={employee.user.name ?? employee.employeeCode}
+                    onZoom={setZoomed}
+                  />
+                </span>
                 <div className="flex min-w-0 flex-col items-center gap-0.5 max-[1180px]:items-start">
                   <p className={styles.profileName}>{v.name || employee.user.name}</p>
                   <span className={styles.profileRole}>{v.jobTitle || roleName(v.customRoleId)}</span>
@@ -1169,6 +1186,15 @@ export function EditEmployeeForm({
       </Editing.Provider>
 
       <Toast message={toast.message} />
+
+      {zoomed && (
+        <PhotoViewer
+          src={zoomed}
+          name={employee.user.name ?? employee.employeeCode}
+          detail={`${employee.employeeCode} · ${employee.department.name} · ${employee.site.name}`}
+          onClose={() => setZoomed(null)}
+        />
+      )}
 
       {/* ── Temp password modal ───────────────────────────────────────────── */}
       {showPasswordModal && (
