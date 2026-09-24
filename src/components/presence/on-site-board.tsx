@@ -1065,9 +1065,8 @@ export function OnSiteBoard({
           <MovementsSkeleton />
         ) : (
           <>
-          {/* A day with nobody at all is said once, by the empty state, not
-              by a panel of zeros above it. */}
-          {siteDay.data.people.length > 0 && (
+          {/* The counts are always there, zeros included, so the page keeps
+              its shape on a quiet day and right after midnight. */}
           <MovementsCounts
             views={mvScoped}
             counts={mvCounts}
@@ -1086,7 +1085,6 @@ export function OnSiteBoard({
               setTab("log");
             }}
           />
-          )}
           {mvRows.length === 0 ? (
           <Card padding={0}>
             <MovementsEmpty
@@ -1168,9 +1166,7 @@ export function OnSiteBoard({
           )
         ) : (
           <>
-            {(counter !== null ||
-              unknown.count > 0 ||
-              logSummary.gateTotal + logSummary.clockTotal + logSummary.rejected > 0) && (
+            {/* Always drawn, zeros included, like the other views. */}
               <ScanLogCounts
                 summary={logSummary}
                 counter={counter}
@@ -1195,7 +1191,6 @@ export function OnSiteBoard({
                 tz={tz}
                 when={when}
               />
-            )}
             {counter === "unknown" ? (
               <UnknownBadgesView
                 data={unknown.data}
@@ -1247,7 +1242,7 @@ export function OnSiteBoard({
       ) : (
         <>
           {/* ── Headcount ─────────────────────────────────────────────── */}
-          {board.people.length > 0 && (
+          {/* Always drawn, zeros included, like the other views. */}
           <section className={styles.summary} aria-label="Headcount">
             <div
               className={styles.summaryMain}
@@ -1326,7 +1321,6 @@ export function OnSiteBoard({
               </span>
             </div>
           </section>
-          )}
 
           {/* ── People ────────────────────────────────────────────────── */}
           {matches.length === 0 ? (
