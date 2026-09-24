@@ -105,7 +105,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
   const scope = await siteScope(tenantId, siteId);
   const here = scansHereSql(scope);
 
-  const [latest, todayRows, lastGate, scheduled, leaveRequests, onLeaveFlags] = await Promise.all([
+  const [latest, todayRows, lastGate, scheduled, leaveRequests, onLeaveFlags, roster] = await Promise.all([
     // Newest IN/OUT per person per stream. UNKNOWN is left out before the
     // DISTINCT ON, not after, so an unresolvable scan never hides the real
     // state underneath it. So is a time clock scan the timecard refused: it
@@ -174,6 +174,12 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       where: { tenantId, siteId, isActive: true, onLeave: true },
       select: { id: true },
     }),
+    // Everybody whose home is this site, so the board's All view is the whole
+    // roster and not only the people who have a reason to be here today.
+    db.employee.findMany({
+      where: { tenantId, siteId, isActive: true },
+      select: { id: true },
+    }),
   ]);
 
   const gateById = new Map<string, LatestRow>();
@@ -185,6 +191,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
   const scheduleById = new Map(scheduled.map((s) => [s.employeeId, s]));
   const onLeave = new Set([...leaveRequests.map((l) => l.employeeId), ...onLeaveFlags.map((e) => e.id)]);
   const hasGateData = lastGate !== null;
+  const rosterIds = new Set(roster.map((e) => e.id));
 
   const ids = new Set<string>([
     ...gateById.keys(),
@@ -192,6 +199,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
     ...todayById.keys(),
     ...scheduleById.keys(),
     ...onLeave,
+    ...rosterIds,
   ]);
 
   const employees = ids.size
@@ -261,6 +269,10 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       status = "ON_LEAVE";
     } else if (schedule) {
       status = "NOT_ARRIVED";
+    } else if (rosterIds.has(emp.id)) {
+      // Only this site's own people. Somebody from another building who
+      // scanned here yesterday is not this roster's to list.
+      status = "NOT_SCHEDULED";
     }
 
     if (!status) continue;

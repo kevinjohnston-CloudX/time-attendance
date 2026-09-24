@@ -374,6 +374,8 @@ function statusSentence(p: PresencePerson, tz: string, mins: number | null, nowI
       return p.lateMinutes !== null ? `${fmtDuration(p.lateMinutes)} past the scheduled start` : "Not due yet";
     case "ON_LEAVE":
       return "Approved time off today";
+    case "NOT_SCHEDULED":
+      return "Not scheduled today, and not seen at any reader";
   }
 }
 

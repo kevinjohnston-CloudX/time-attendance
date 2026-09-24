@@ -107,7 +107,7 @@ const TILES_PER_GROUP = 60;
 const TILES_PER_GROUP_COMPACT = 120;
 const ROWS_PER_PAGE = 200;
 
-type StatusFilter = "inside" | PresenceStatus;
+type StatusFilter = "all" | "inside" | PresenceStatus;
 type View = "photos" | "compact" | "list";
 type Tab = "movements" | "people" | "log";
 
@@ -117,8 +117,10 @@ const ALL_STATUSES = [...INSIDE_STATUSES, ...AWAY_STATUSES];
 const CARD_STATUSES = INSIDE_STATUSES.filter((s) => s !== "ON_SITE");
 const CHIP_STATUSES: PresenceStatus[] = ["ON_SITE", ...AWAY_STATUSES];
 
+/** Everyone is the default; "inside" is the building total, picked from its card. */
 function parseStatus(raw: string | null): StatusFilter {
-  return raw && (ALL_STATUSES as string[]).includes(raw) ? (raw as PresenceStatus) : "inside";
+  if (raw === "inside") return "inside";
+  return raw && (ALL_STATUSES as string[]).includes(raw) ? (raw as PresenceStatus) : "all";
 }
 
 export function OnSiteBoard({
@@ -196,7 +198,7 @@ export function OnSiteBoard({
   useEffect(() => {
     const qs = new URLSearchParams();
     if (siteId) qs.set("site", siteId);
-    if (status !== "inside") qs.set("status", status);
+    if (status !== "all") qs.set("status", status);
     if (dept) qs.set("dept", dept);
     if (shift) qs.set("shift", shift);
     if (view !== "photos") qs.set("view", view);
@@ -396,15 +398,17 @@ export function OnSiteBoard({
       scoped.filter((p) =>
         searching
           ? matchesSearch(p, needle)
-          : status === "inside"
-            ? INSIDE_STATUSES.includes(p.status)
-            : p.status === status,
+          : status === "all"
+            ? true
+            : status === "inside"
+              ? INSIDE_STATUSES.includes(p.status)
+              : p.status === status,
       ),
     [scoped, status, needle, searching],
   );
 
   const groups = useMemo(() => {
-    const order = searching ? ALL_STATUSES : status === "inside" ? INSIDE_STATUSES : [status];
+    const order = searching || status === "all" ? ALL_STATUSES : status === "inside" ? INSIDE_STATUSES : [status];
     return order
       .map((s) => ({ status: s, people: matches.filter((p) => p.status === s).sort((a, b) => compareBy(sort, a, b)) }))
       .filter((g) => g.people.length > 0);
@@ -490,6 +494,8 @@ export function OnSiteBoard({
   const selected = selectedId ? people.find((p) => p.id === selectedId) ?? null : null;
   const isFiltered = !!dept || !!shift || !!needle;
   const siteName = board?.site.name ?? sites.find((s) => s.id === siteId)?.name ?? "";
+  /** What the building total card is called, so the header chip can name it the same way. */
+  const heroLabel = board?.site.hasGateData === false ? "On the clock" : "In the building";
 
   // ── Live line ───────────────────────────────────────────────────────────
   const age = lastOk ? now - lastOk : Infinity;
@@ -721,12 +727,12 @@ export function OnSiteBoard({
                     </strong>{" "}
                     in the building
                   </span>
-                  {!searching && status !== "inside" && (
+                  {!searching && status !== "all" && (
                     <button
                       type="button"
                       className="ta-chip inline-flex items-center gap-1.5 whitespace-nowrap"
-                      onClick={() => setStatus("inside")}
-                      aria-label={`Showing ${STATUS_META[status].label}. Show everyone inside`}
+                      onClick={() => setStatus("all")}
+                      aria-label={`Showing ${status === "inside" ? heroLabel : STATUS_META[status].label}. Show everyone`}
                       style={{
                         height: 24,
                         padding: "0 8px 0 10px",
@@ -739,7 +745,7 @@ export function OnSiteBoard({
                         cursor: "pointer",
                       }}
                     >
-                      {STATUS_META[status].label}
+                      {status === "inside" ? heroLabel : STATUS_META[status].label}
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                         <path d="M18 6 6 18M6 6l12 12" />
                       </svg>
@@ -1057,10 +1063,10 @@ export function OnSiteBoard({
                 type="button"
                 className={styles.summaryHero}
                 aria-pressed={!searching && status === "inside"}
-                onClick={() => pickStatus("inside")}
+                onClick={() => pickStatus(status === "inside" ? "all" : "inside")}
                 title="Show everyone in the building"
               >
-                <span className={styles.summaryLabel}>{board.site.hasGateData ? "In the building" : "On the clock"}</span>
+                <span className={styles.summaryLabel}>{heroLabel}</span>
                 <span className={styles.summaryHeroFigure}>{insideTotal.toLocaleString()}</span>
                 <span className={styles.summarySub}>
                   {scheduled.length === 0
@@ -1075,7 +1081,7 @@ export function OnSiteBoard({
                   className={styles.summaryCard}
                   aria-pressed={!searching && status === s}
                   data-empty={counts[s] === 0 ? "true" : undefined}
-                  onClick={() => pickStatus(status === s ? "inside" : s)}
+                  onClick={() => pickStatus(status === s ? "all" : s)}
                   title={STATUS_META[s].hint}
                 >
                   <span className={styles.summaryLabel}>
@@ -1088,13 +1094,23 @@ export function OnSiteBoard({
             </div>
             <div className={styles.summaryMore}>
               <div className={styles.summaryChips}>
+                <button
+                  type="button"
+                  className={styles.summaryChip}
+                  aria-pressed={!searching && status === "all"}
+                  onClick={() => pickStatus("all")}
+                  title="Everyone based at this site, and anyone else seen here today"
+                >
+                  <span>All</span>
+                  <span className={styles.summaryChipCount}>{scoped.length.toLocaleString()}</span>
+                </button>
                 {CHIP_STATUSES.filter((s) => counts[s] > 0 || (!searching && status === s)).map((s) => (
                   <button
                     key={s}
                     type="button"
                     className={styles.summaryChip}
                     aria-pressed={!searching && status === s}
-                    onClick={() => pickStatus(status === s ? "inside" : s)}
+                    onClick={() => pickStatus(status === s ? "all" : s)}
                     title={STATUS_META[s].hint}
                   >
                     <span className={styles.dot} style={{ background: STATUS_META[s].color }} aria-hidden="true" />
@@ -1792,7 +1808,7 @@ function EmptyBoard({
         body={
           filtered
             ? `Nobody in the department and shift you have filtered to matches "${needle}". Clear the filters to search the whole site.`
-            : `Nobody at ${siteName} today matches "${needle}". The search covers everyone who is in, has left, is on leave or is scheduled.`
+            : `Nobody at ${siteName} matches "${needle}". The search covers everyone based at this site and anyone else seen here today.`
         }
         action={
           <Button hierarchy="secondary" size="sm" onClick={onClearSearch}>
@@ -1803,6 +1819,7 @@ function EmptyBoard({
     );
   }
   const empty: Record<StatusFilter, [string, string]> = {
+    all: ["Nobody at this site", `No one is based at ${siteName} or has been seen here today.`],
     inside: ["Nobody is in the building", `No one at ${siteName} is inside or on the clock right now.`],
     WORKING: ["Nobody is working", "No one is on the clock and through the gate right now."],
     NO_GATE_SCAN: ["Everyone clocked in is inside", "Everyone on the clock came in through the security gate."],
@@ -1812,6 +1829,7 @@ function EmptyBoard({
     NOT_ARRIVED: ["Everyone scheduled has arrived", "No one scheduled for today is still missing."],
     LEFT: ["Nobody has left yet", "No one who was here today has gone home."],
     ON_LEAVE: ["Nobody is on leave today", "No approved time off covers today."],
+    NOT_SCHEDULED: ["Everyone is scheduled today", "Everyone based at this site has a shift today or has been seen."],
   };
   const [title, body] = empty[status];
   return (

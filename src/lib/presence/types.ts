@@ -23,6 +23,7 @@
  *   <li>LEFT: seen today, now out.</li>
  *   <li>ON_LEAVE: approved time off today, not seen.</li>
  *   <li>NOT_ARRIVED: scheduled today, not seen.</li>
+ *   <li>NOT_SCHEDULED: on this site's roster, not scheduled today, not seen.</li>
  * </ul>
  */
 export type PresenceStatus =
@@ -33,7 +34,8 @@ export type PresenceStatus =
   | "NO_GATE_SCAN"
   | "LEFT"
   | "ON_LEAVE"
-  | "NOT_ARRIVED";
+  | "NOT_ARRIVED"
+  | "NOT_SCHEDULED";
 
 export interface PresencePerson {
   id: string;

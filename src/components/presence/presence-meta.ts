@@ -75,11 +75,18 @@ export const STATUS_META: Record<PresenceStatus, StatusMeta> = {
     color: "var(--ps-left)",
     badge: "info",
   },
+  NOT_SCHEDULED: {
+    label: "Not scheduled",
+    heading: "Not scheduled today",
+    hint: "Based at this site, with no shift today and not seen at any reader",
+    color: "var(--ps-left)",
+    badge: "neutral",
+  },
 };
 
 /** The four that make up the building total, in the order the board lists them. */
 export const INSIDE_STATUSES: PresenceStatus[] = ["WORKING", "NO_GATE_SCAN", "ON_MEAL", "OFF_CLOCK", "ON_SITE"];
-export const AWAY_STATUSES: PresenceStatus[] = ["NOT_ARRIVED", "LEFT", "ON_LEAVE"];
+export const AWAY_STATUSES: PresenceStatus[] = ["NOT_ARRIVED", "LEFT", "ON_LEAVE", "NOT_SCHEDULED"];
 
 /** A meal and a break share a status; the tile still says which one it is. */
 export function statusLabel(p: PresencePerson): string {
@@ -158,6 +165,8 @@ export function sinceLine(p: PresencePerson, timeZone: string, nowIso: string): 
       return p.scheduledStart ? `Due ${formatTimeOfDay(p.scheduledStart)}` : "Scheduled today";
     case "ON_LEAVE":
       return "Approved time off";
+    case "NOT_SCHEDULED":
+      return "Not scheduled today";
   }
 }
 
