@@ -34,10 +34,18 @@ export const getPayPeriods = withRBAC("PAY_PERIOD_MANAGE", async ({ tenantId }, 
 export const getPayPeriodDetail = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (
-    _actor,
+    { tenantId },
     input: { payPeriodId: string }
   ) => {
     const { payPeriodId } = payPeriodIdSchema.parse(input);
+
+    // Scoped to the caller's company in the query itself: an id from another
+    // tenant finds nothing, the same as an id that does not exist.
+    const inScope = await db.payPeriod.findFirst({
+      where: { id: payPeriodId, ...(tenantId ? { tenantId } : {}) },
+      select: { id: true },
+    });
+    if (!inScope) throw new Error("Pay period not found");
 
     const [payPeriod, validation] = await Promise.all([
       db.payPeriod.findUniqueOrThrow({
