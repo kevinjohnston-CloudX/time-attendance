@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { bulkCreateEmployees } from "@/actions/admin.actions";
 import { Upload, Download, FileSpreadsheet, X } from "lucide-react";
 import type { CsvEmployeeRow } from "@/lib/validators/admin.schema";
+import { Button } from "@/components/ui";
 
 interface Props {
   sites: string[];
@@ -196,13 +197,13 @@ export function CsvUploadForm({ sites, departments, ruleSets }: Props) {
 
   return (
     <>
-      <button
+      <Button
+        hierarchy="secondary"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        leadingIcon={<Upload className="h-4 w-4" aria-hidden="true" />}
       >
-        <Upload className="h-4 w-4" />
         Import CSV
-      </button>
+      </Button>
 
       {open && (
         <div

@@ -6,6 +6,7 @@ import { getEmployees, getAdminRefData } from "@/actions/admin.actions";
 import { CreateEmployeeForm } from "@/components/admin/create-employee-form";
 import { CsvUploadForm } from "@/components/admin/csv-upload-form";
 import { EmployeesTable } from "@/components/admin/employees-table";
+import { ArrowLeft, RefreshCw } from "lucide-react";
 
 /**
  * Employees, on the portal design's list template.
@@ -56,15 +57,23 @@ export default async function EmployeesPage({
         subtitle="Profiles, badge numbers, assignments and pay"
         actions={
               <>
-                <LinkButton href="/admin" hierarchy="tertiary">
-                  ← Administration
+                <LinkButton
+                  href="/admin"
+                  hierarchy="tertiary"
+                  leadingIcon={<ArrowLeft className="h-4 w-4" aria-hidden="true" />}
+                >
+                  Administration
                 </LinkButton>
                 <CsvUploadForm
                   sites={sites.map((s) => s.name)}
                   departments={departments.map((d) => d.name)}
                   ruleSets={ruleSets.map((r) => r.name)}
                 />
-                <LinkButton href="/admin/adp" hierarchy="secondary">
+                <LinkButton
+                  href="/admin/adp"
+                  hierarchy="secondary"
+                  leadingIcon={<RefreshCw className="h-4 w-4" aria-hidden="true" />}
+                >
                   Sync ADP
                 </LinkButton>
                 <CreateEmployeeForm

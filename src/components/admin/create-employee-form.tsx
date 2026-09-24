@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createEmployee } from "@/actions/admin.actions";
 import type { Site, Department, RuleSet } from "@prisma/client";
 import { Banner, Button, Input, SegmentedControl, Select } from "@/components/ui";
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 
 /**
  * "Add Employee" — the design's primary action on the employee list.
@@ -207,7 +207,9 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
   return (
     <>
-      <Button onClick={() => setOpen(true)}>Add Employee</Button>
+      <Button onClick={() => setOpen(true)} leadingIcon={<Plus className="h-4 w-4" aria-hidden="true" />}>
+        Add Employee
+      </Button>
 
       {open && (
         <div

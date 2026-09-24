@@ -1,43 +1,33 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { useCondensingBar } from "@/components/layout/use-condensing-bar";
 import {
-  Badge,
   Button,
-  Card,
   EmptyState,
-  FilterBar,
-  FilterChip,
-  LinkButton,
+  FilterSelectChip,
   SearchInput,
-  Select,
-  Table,
-  THead,
-  TBody,
-  TR,
-  TH,
-  TD,
-  Toolbar,
-  statusTone,
   PageHeader,
   PinnedBar,
 } from "@/components/ui";
-import { Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Users } from "lucide-react";
+import styles from "./employees.module.css";
 
 /**
- * The employee list, on the design's list template: toolbar, applied-filter
- * chips, then the table in a padding-free card.
+ * The employee list, in Live Attendance's language: one row of search and
+ * filter pills under the title, then a card of two line rows on one grid.
  *
- * <p>Columns are the design's — Employee, Employee ID, Department, Shift, Role,
- * Status — which means Role is plain text. It was a badge coloured by a local
- * map with no dark-mode entries, and colouring five roles differently made the
- * one column that does carry a warning, Status, compete with four that never do.
+ * <p>Columns are Employee, Employee ID, Department, Shift, Role and Status.
+ * Where a column has two facts they stack (name over email, department over
+ * site, shift over its start time) so every row has the same rhythm. Status
+ * is a dot and a word, the only colour in the row. Role stays plain text.
  *
  * <p>Filters stay where they were, in the query string. A filtered employee
  * list is something HR sends to a supervisor, and it has to survive being
- * pasted into a message.
+ * pasted into a message. Each pill shows and clears its own value, so there
+ * is no second row of applied chips repeating them.
  */
 
 const ROLE_LABEL: Record<string, string> = {
@@ -90,7 +80,7 @@ export function EmployeesTable({
   actions,
 }: Props) {
   const router = useRouter();
-  const { barRef, markerRef, condensed } = useCondensingBar();
+  const { barRef, markerRef, condensed, barHeight } = useCondensingBar();
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // Local state for search input so typing feels instant (debounced URL push)
@@ -134,11 +124,6 @@ export function EmployeesTable({
     currentFilters.q || currentFilters.site || currentFilters.dept || currentFilters.role,
   );
 
-  // Clearing one chip has to keep the other three, and drop the page with them
-  // — page 4 of an unfiltered list is a different set of people from page 4 of
-  // a filtered one.
-  const clearOne = (key: "q" | "site" | "dept" | "role") => buildUrl({ [key]: "", page: 0 });
-
   const shiftById = new Map(shifts.map((s) => [s.id, s]));
 
   const shown = employees.length;
@@ -150,68 +135,55 @@ export function EmployeesTable({
       <span ref={markerRef} aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-px w-px" />
       <PinnedBar barRef={barRef}>
         <PageHeader title={title} subtitle={subtitle} actions={actions} condensed={condensed} />
-        <div className="flex flex-col gap-2.5">
-          <Toolbar count={total} countLabel="employee">
-            <SearchInput
-              value={searchValue}
-              onValueChange={onSearchChange}
-              placeholder="Name, email or employee code"
-            />
-            <Select
-              aria-label="Site"
-              value={currentFilters.site}
-              onChange={(e) => onFilterChange("site", e.target.value)}
+        {/* One row, as on Live Attendance: search first, then the filters as
+            pills that show and clear their own value, the count on the right. */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <SearchInput
+            value={searchValue}
+            onValueChange={onSearchChange}
+            placeholder="Name, email or employee code"
+            width={320}
+          />
+          <FilterSelectChip
+            label="Site"
+            value={currentFilters.site}
+            options={sites.map((s) => ({ id: s, name: s }))}
+            onChange={(v) => onFilterChange("site", v)}
+          />
+          <FilterSelectChip
+            label="Department"
+            value={currentFilters.dept}
+            options={departments.map((d) => ({ id: d, name: d }))}
+            onChange={(v) => onFilterChange("dept", v)}
+          />
+          <FilterSelectChip
+            label="Role"
+            value={currentFilters.role}
+            options={Object.entries(ROLE_LABEL).map(([id, name]) => ({ id, name }))}
+            onChange={(v) => onFilterChange("role", v)}
+          />
+          {isFiltered && (
+            <Button
+              hierarchy="link"
+              size="sm"
+              onClick={() => {
+                setSearchValue("");
+                router.push("/admin/employees");
+              }}
             >
-              <option value="">All sites</option>
-              {sites.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </Select>
-            <Select
-              aria-label="Department"
-              value={currentFilters.dept}
-              onChange={(e) => onFilterChange("dept", e.target.value)}
-            >
-              <option value="">All departments</option>
-              {departments.map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </Select>
-            <Select
-              aria-label="Role"
-              value={currentFilters.role}
-              onChange={(e) => onFilterChange("role", e.target.value)}
-            >
-              <option value="">All roles</option>
-              {Object.entries(ROLE_LABEL).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </Select>
-          </Toolbar>
-
-          <FilterBar clearHref={isFiltered ? "/admin/employees" : undefined}>
-            {currentFilters.site
-              ? <FilterChip key="site" label="Site" value={currentFilters.site} clearHref={clearOne("site")} />
-              : null}
-            {currentFilters.dept
-              ? <FilterChip key="dept" label="Department" value={currentFilters.dept} clearHref={clearOne("dept")} />
-              : null}
-            {currentFilters.role
-              ? <FilterChip
-                  key="role"
-                  label="Role"
-                  value={ROLE_LABEL[currentFilters.role] ?? currentFilters.role}
-                  clearHref={clearOne("role")}
-                />
-              : null}
-            {currentFilters.q
-              ? <FilterChip key="q" label="Search" value={currentFilters.q} clearHref={clearOne("q")} />
-              : null}
-          </FilterBar>
+              Clear all
+            </Button>
+          )}
+          <span
+            className="tabular ml-auto whitespace-nowrap"
+            style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+          >
+            {total.toLocaleString()} {total === 1 ? "employee" : "employees"}
+          </span>
         </div>
       </PinnedBar>
 
-      <Card padding={0}>
+      <section className={styles.panel} aria-label="Employees">
         {employees.length === 0 ? (
           <EmptyState
             icon={<Users className="h-8 w-8" />}
@@ -226,7 +198,10 @@ export function EmployeesTable({
                 <Button
                   size="sm"
                   hierarchy="secondary"
-                  onClick={() => router.push("/admin/employees")}
+                  onClick={() => {
+                    setSearchValue("");
+                    router.push("/admin/employees");
+                  }}
                 >
                   Clear filters
                 </Button>
@@ -235,155 +210,154 @@ export function EmployeesTable({
           />
         ) : (
           <>
-            <Table>
-              <THead>
-                <TR>
-                  <TH>Employee</TH>
-                  <TH>Employee ID</TH>
-                  <TH>Department</TH>
-                  <TH>Shift</TH>
-                  <TH>Role</TH>
-                  <TH>Status</TH>
-                  <TH align="right" />
-                </TR>
-              </THead>
-              <TBody>
-                {employees.map((emp) => {
-                  const shift = emp.shiftId ? shiftById.get(emp.shiftId) : undefined;
-                  const href = `/admin/employees/${emp.id}`;
-                  return (
-                    <TR key={emp.id} onClick={() => router.push(href)}>
-                      <TD>
-                        <span className="flex flex-col">
-                          <span style={{ fontWeight: "var(--weight-medium)", whiteSpace: "nowrap" }}>
-                            {emp.user.name}
-                          </span>
+            <div className={styles.head} style={{ top: barHeight }} role="presentation">
+              <span>Employee</span>
+              <span className={styles.wide}>Employee ID</span>
+              <span className={styles.wide}>Department</span>
+              <span className={styles.optional}>Shift</span>
+              <span className={styles.optional}>Role</span>
+              <span>Status</span>
+              <span />
+            </div>
+            <ul className={styles.list}>
+              {employees.map((emp) => {
+                const shift = emp.shiftId ? shiftById.get(emp.shiftId) : undefined;
+                const name = emp.user.name ?? emp.employeeCode;
+                const role = emp.customRole ? emp.customRole.name : ROLE_LABEL[emp.role] ?? emp.role;
+                const tone = !emp.isActive ? "inactive" : emp.onLeave ? "leave" : "active";
+                return (
+                  <li key={emp.id}>
+                    {/* The whole row is the link, so middle click and "open in
+                        new tab" work on a list HR walks down. */}
+                    <Link
+                      href={`/admin/employees/${emp.id}`}
+                      className={styles.row}
+                      data-inactive={emp.isActive ? undefined : "true"}
+                      aria-label={`Open ${name}`}
+                    >
+                      <span className={styles.who}>
+                        <span className={styles.avatar} aria-hidden="true">
+                          {initialsOf(emp.user.name)}
+                        </span>
+                        <span className={styles.cell}>
+                          <span className={styles.name} title={name}>{name}</span>
                           {emp.user.email && (
-                            <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-                              {emp.user.email}
-                            </span>
+                            <span className={styles.sub} title={emp.user.email}>{emp.user.email}</span>
                           )}
                         </span>
-                      </TD>
-                      <TD
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          font: "var(--type-body2)",
-                          color: "var(--text-secondary)",
-                        }}
-                      >
+                      </span>
+                      <span className={`${styles.code} ${styles.wide}`} title={emp.employeeCode}>
                         {emp.employeeCode}
-                      </TD>
-                      <TD style={{ color: "var(--text-secondary)" }}>
-                        {emp.department.name}
-                        <span style={{ color: "var(--text-tertiary)" }}> · {emp.site.name}</span>
-                      </TD>
-                      <TD style={{ color: "var(--text-secondary)" }}>
+                      </span>
+                      <span className={`${styles.cell} ${styles.wide}`}>
+                        <span className={styles.secondary} title={emp.department.name}>{emp.department.name}</span>
+                        <span className={styles.sub} title={emp.site.name}>{emp.site.name}</span>
+                      </span>
+                      <span className={`${styles.cell} ${styles.optional}`}>
                         {shift ? (
                           <>
-                            {shift.name}
-                            {/* 24-hour, as the shift itself is stored and as the
-                                shift editor shows it — a night shift written
-                                "10:00 PM" in one screen and "22:00" in the next
-                                is how the wrong one gets assigned. */}
-                            <span className="tabular" style={{ color: "var(--text-tertiary)" }}>
-                              {" "}({shift.startTime})
-                            </span>
+                            <span className={styles.secondary} title={shift.name}>{shift.name}</span>
+                            <span className={`${styles.sub} tabular`}>Starts {clock12(shift.startTime)}</span>
                           </>
                         ) : emp.shiftId ? (
                           // The lookup only carries active shifts, so an
                           // employee left on a retired one has to say that
                           // rather than read as unscheduled.
-                          <span style={{ color: "var(--text-tertiary)" }}>Retired shift</span>
+                          <span className={styles.muted}>Retired shift</span>
                         ) : (
-                          <span style={{ color: "var(--text-tertiary)" }}>—</span>
+                          <span className={styles.muted}>No shift</span>
                         )}
-                      </TD>
-                      <TD style={{ color: "var(--text-secondary)" }}>
-                        {emp.customRole ? emp.customRole.name : ROLE_LABEL[emp.role] ?? emp.role}
-                      </TD>
-                      <TD>
-                        {!emp.isActive ? (
-                          // statusTone has no employment branch: it would answer
-                          // "warning" here, and an amber pill on someone who left
-                          // in 2023 reads as something to action. The design puts
-                          // Terminated and Inactive in neutral, which is Badge's
-                          // own default — no local map either way.
-                          <Badge size="sm">Inactive</Badge>
-                        ) : emp.onLeave ? (
-                          <Badge tone="warning" size="sm" dot>On Leave</Badge>
-                        ) : (
-                          <Badge tone={statusTone("ACTIVE")} size="sm" dot>Active</Badge>
-                        )}
-                      </TD>
-                      <TD align="right">
-                        {/* An anchor, not the row handler, so middle-click and
-                            "open in new tab" work on a list HR walks down.
-                            The click must stop here: the row's own handler sits
-                            on the <tr>, and without this a ctrl-click opens the
-                            record in a new tab *and* navigates the tab you were
-                            reading away from the filtered list. */}
-                        <span
-                          className="inline-flex"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <LinkButton href={href} hierarchy="secondary" size="sm">
-                            Open
-                          </LinkButton>
-                        </span>
-                      </TD>
-                    </TR>
-                  );
-                })}
-              </TBody>
-            </Table>
+                      </span>
+                      <span className={`${styles.secondary} ${styles.optional}`} title={role}>{role}</span>
+                      <span className={styles.status} data-tone={tone}>
+                        <span className={styles.dot} aria-hidden="true" />
+                        {tone === "inactive" ? "Inactive" : tone === "leave" ? "On leave" : "Active"}
+                      </span>
+                      <ChevronRight className={styles.chevron} aria-hidden="true" />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
 
-            <div
-              className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5"
-              style={{
-                borderTop: "1px solid var(--stroke-divider)",
-                font: "var(--type-body2)",
-                color: "var(--text-secondary)",
-              }}
-            >
+            <div className={styles.footer}>
               <span className="tabular">
                 {shown === total
                   ? `${total.toLocaleString()} ${total === 1 ? "employee" : "employees"}`
-                  : `Showing ${firstRow.toLocaleString()}–${lastRow.toLocaleString()} of ${total.toLocaleString()} employees`}
+                  : `${firstRow.toLocaleString()} to ${lastRow.toLocaleString()} of ${total.toLocaleString()} employees`}
               </span>
               {totalPages > 1 && (
-                <div className="flex items-center gap-1">
-                  <Button size="sm" hierarchy="tertiary" onClick={() => navigate({ page: 0 })} disabled={page === 0}>
-                    «
+                <div className={styles.pager}>
+                  <Button
+                    size="sm"
+                    hierarchy="tertiary"
+                    iconOnly
+                    aria-label="First page"
+                    title="First page"
+                    onClick={() => navigate({ page: 0 })}
+                    disabled={page === 0}
+                  >
+                    <ChevronsLeft className="h-4 w-4" aria-hidden="true" />
                   </Button>
-                  <Button size="sm" hierarchy="tertiary" onClick={() => navigate({ page: page - 1 })} disabled={page === 0}>
-                    ‹ Prev
+                  <Button
+                    size="sm"
+                    hierarchy="tertiary"
+                    iconOnly
+                    aria-label="Previous page"
+                    title="Previous page"
+                    onClick={() => navigate({ page: page - 1 })}
+                    disabled={page === 0}
+                  >
+                    <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                   </Button>
-                  <span className="tabular px-1" style={{ color: "var(--text-tertiary)" }}>
+                  <span className={`${styles.pageOf} tabular`}>
                     Page {page + 1} of {totalPages}
                   </span>
                   <Button
                     size="sm"
                     hierarchy="tertiary"
+                    iconOnly
+                    aria-label="Next page"
+                    title="Next page"
                     onClick={() => navigate({ page: page + 1 })}
                     disabled={page >= totalPages - 1}
                   >
-                    Next ›
+                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
                   </Button>
                   <Button
                     size="sm"
                     hierarchy="tertiary"
+                    iconOnly
+                    aria-label="Last page"
+                    title="Last page"
                     onClick={() => navigate({ page: totalPages - 1 })}
                     disabled={page >= totalPages - 1}
                   >
-                    »
+                    <ChevronsRight className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 </div>
               )}
             </div>
           </>
         )}
-      </Card>
+      </section>
     </div>
   );
+}
+
+/** Two letters for the circle beside a name: first and last word. */
+function initialsOf(name: string | null): string {
+  const words = (name ?? "").replace(/[^\p{L}\s'-]/gu, " ").trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "?";
+  const first = words[0][0] ?? "";
+  const last = words.length > 1 ? words[words.length - 1][0] ?? "" : "";
+  return (first + last).toUpperCase();
+}
+
+/** A stored "HH:MM" start time on the 12 hour clock, as every screen shows time. */
+function clock12(hhmm: string): string {
+  const m = /^(\d{1,2}):(\d{2})/.exec(hhmm);
+  if (!m) return hhmm;
+  const h = Number(m[1]) % 24;
+  return `${h % 12 === 0 ? 12 : h % 12}:${m[2]} ${h < 12 ? "AM" : "PM"}`;
 }
