@@ -509,6 +509,24 @@ const PAID_LEAVE_BUCKETS = new Set(["PTO", "SICK", "HOLIDAY", "FMLA", "BEREAVEME
  * instead of a colour, so it reads as a summary of the column rather than
  * another record in it.
  */
+/** One labelled number on the line under the person's name. */
+function PeriodFigure({ label, value, tone, strong = false }: { label: string; value: string; tone?: string; strong?: boolean }) {
+  return (
+    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+      <span>{label}</span>
+      <span
+        className="tabular"
+        style={{
+          color: tone ?? "var(--text-primary)",
+          fontWeight: strong ? "var(--weight-semibold)" : "var(--weight-medium)",
+        }}
+      >
+        {value}
+      </span>
+    </span>
+  );
+}
+
 function SummaryRow({
   label,
   reg,
@@ -864,6 +882,36 @@ export function TimecardViewer({
 
   // Employee pay rate for summary calculations
   const rate = timecard?.employee.payRate ?? null;
+
+  // The period's hours, for the line under the person's name and the
+  // Summary's Totals row, worked out once so the two always agree. Days
+  // with a missed punch are left out, as the Summary always has: their
+  // hours are not real until the punch is fixed.
+  const missedPunchDays = new Set(
+    (timecard?.exceptions ?? [])
+      .filter((e) => e.exceptionType === "MISSING_PUNCH")
+      .map((e) => format(parseISO(e.occurredAt), "yyyy-MM-dd"))
+  );
+  const periodTotals = (() => {
+    const byBucket: Record<string, number> = {};
+    for (const s of timecard?.segments ?? []) {
+      if (!s.isPaid) continue;
+      if (missedPunchDays.has(format(parseUtcDate(s.segmentDate), "yyyy-MM-dd"))) continue;
+      const eb = (s.payBucketOverride && !["REG", "OT", "DT"].includes(s.payBucketOverride))
+        ? s.payBucketOverride
+        : s.payBucket;
+      byBucket[eb] = (byBucket[eb] ?? 0) + s.durationMinutes;
+    }
+    const paidLeave = Object.entries(byBucket)
+      .filter(([k]) => PAID_LEAVE_BUCKETS.has(k))
+      .reduce((sum, [, v]) => sum + v, 0);
+    return {
+      reg: (byBucket["REG"] ?? 0) + paidLeave,
+      ot: byBucket["OT"] ?? 0,
+      dt: byBucket["DT"] ?? 0,
+      total: Object.values(byBucket).reduce((a, b) => a + b, 0),
+    };
+  })();
 
   // Reset state when employee changes
   useEffect(() => {
@@ -2172,6 +2220,37 @@ export function TimecardViewer({
                       </>
                     )}
                   </p>
+                  {/* The period at a glance, so nobody scrolls to the Summary
+                      to learn whether this person needs a look. */}
+                  {timecard && (
+                    <p
+                      className="m-0 mt-1 flex flex-wrap items-center gap-x-4 gap-y-1"
+                      style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                    >
+                      <PeriodFigure label="Total" value={minutesToHoursDecimal(periodTotals.total)} strong />
+                      <PeriodFigure label="Regular" value={minutesToHoursDecimal(periodTotals.reg)} />
+                      <PeriodFigure
+                        label="Overtime"
+                        value={minutesToHoursDecimal(periodTotals.ot)}
+                        tone={periodTotals.ot > 0 ? "var(--text-warning)" : undefined}
+                      />
+                      {periodTotals.dt > 0 && (
+                        <PeriodFigure label="Double" value={minutesToHoursDecimal(periodTotals.dt)} tone="var(--text-error)" />
+                      )}
+                      <PeriodFigure
+                        label={timecard.exceptionCount === 1 ? "Exception" : "Exceptions"}
+                        value={String(timecard.exceptionCount)}
+                        tone={timecard.exceptionCount > 0 ? "var(--text-error)" : undefined}
+                      />
+                      {missedPunchDays.size > 0 && (
+                        <span style={{ color: "var(--text-tertiary)" }}>
+                          {missedPunchDays.size === 1
+                            ? "1 day with a missed punch is not counted"
+                            : `${missedPunchDays.size} days with a missed punch are not counted`}
+                        </span>
+                      )}
+                    </p>
+                  )}
                 </div>
 
                 {/* The decisions first, then the tools. */}
@@ -3604,36 +3683,12 @@ export function TimecardViewer({
                               ])
                             );
 
-                          // Dates with a MISSING_PUNCH exception — segments on these days
-                          // are excluded from totals since the hours are unreliable.
-                          const missingPunchDates = new Set(
-                            (timecard?.exceptions ?? [])
-                              .filter((e) => e.exceptionType === "MISSING_PUNCH")
-                              .map((e) => format(parseISO(e.occurredAt), "yyyy-MM-dd"))
-                          );
+                          // Days with a missed punch are left out of every grouping.
+                          const missingPunchDates = missedPunchDays;
 
                           if (summaryGroupBy === "total") {
-                            // Recompute from segments so missing-punch days are excluded
-                            const filteredBucketMap: Record<string, number> = {};
-                            for (const s of (timecard?.segments ?? [])) {
-                              if (!s.isPaid) continue;
-                              const sd = format(parseUtcDate(s.segmentDate), "yyyy-MM-dd");
-                              if (missingPunchDates.has(sd)) continue;
-                              const eb = (s.payBucketOverride && !["REG", "OT", "DT"].includes(s.payBucketOverride))
-                                ? s.payBucketOverride
-                                : s.payBucket;
-                              filteredBucketMap[eb] = (filteredBucketMap[eb] ?? 0) + s.durationMinutes;
-                            }
-                            const paidLeaveMinutes = Object.entries(filteredBucketMap)
-                              .filter(([k]) => PAID_LEAVE_BUCKETS.has(k))
-                              .reduce((s, [, v]) => s + v, 0);
-                            const reg = (filteredBucketMap["REG"] ?? 0) + paidLeaveMinutes;
-                            const ot = filteredBucketMap["OT"] ?? 0;
-                            const dt = filteredBucketMap["DT"] ?? 0;
-                            const total = Object.values(filteredBucketMap).reduce(
-                              (a, b) => a + b,
-                              0
-                            );
+                            // The same figures as the line under the name.
+                            const { reg, ot, dt, total } = periodTotals;
                             return (
                               <SummaryRow
                                 label="Totals"
