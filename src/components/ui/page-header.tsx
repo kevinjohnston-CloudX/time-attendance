@@ -37,7 +37,10 @@ export function PageHeader({
             font: "var(--type-h1)",
             letterSpacing: "-0.02em",
             color: "var(--text-primary)",
-            ...(condensed ? { fontSize: 20, lineHeight: "26px" } : {}),
+            // Both sizes set every time: dropping a size set over the font
+            // shorthand leaves the title with no size at all, not the full one.
+            fontSize: condensed ? 20 : 30,
+            lineHeight: condensed ? "26px" : "36px",
             transition: "font-size 140ms ease, line-height 140ms ease",
           }}
         >
