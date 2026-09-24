@@ -1,7 +1,7 @@
 "use client";
 
 import { Search } from "lucide-react";
-import type { ChangeEvent, ReactNode, SelectHTMLAttributes } from "react";
+import { useId, type ChangeEvent, type ReactNode, type SelectHTMLAttributes } from "react";
 
 /**
  * The two controls a list toolbar is made of, from the portal design.
@@ -47,6 +47,7 @@ export function SearchInput({
   placeholder?: string;
   width?: number;
 }) {
+  const searchId = `search-${useId().replace(/:/g, "")}`;
   return (
     <label
       className="ta-field flex h-8 items-center gap-2 rounded-md px-2.5"
@@ -59,11 +60,15 @@ export function SearchInput({
     >
       <Search className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} />
       {/* A search box, said every way browsers and password managers look
-          for it, so none of them offers to save or fill a login here. */}
+          for it, so none of them offers to save or fill a login here. The
+          name says "search" too: Safari and the iCloud Passwords extension
+          read a field's name, and "q" told them nothing. */}
       <input
         type="search"
-        name="q"
+        name="search"
+        id={searchId}
         role="searchbox"
+        enterKeyHint="search"
         aria-label={placeholder ?? "Search"}
         autoComplete="off"
         autoCorrect="off"
