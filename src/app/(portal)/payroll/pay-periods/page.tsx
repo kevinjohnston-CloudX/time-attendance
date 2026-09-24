@@ -177,14 +177,22 @@ export default async function PayPeriodsPage({
         className="sticky top-0 flex h-full w-80 shrink-0 flex-col overflow-hidden"
         style={{ borderRight: "1px solid var(--stroke-secondary)" }}
       >
-        <div className="flex shrink-0 items-center justify-between gap-2 px-4 pt-6 pb-3">
+        <div className="flex shrink-0 items-baseline justify-between gap-2 px-4 pt-6 pb-3">
           {/* A panel title, not a page title: PageHeader's 30px would swamp a
-              320px column. --type-h3 is the design's panel/slide-out size. */}
-          <h1 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>Pay Periods</h1>
+              320px column. The count beside it is the difference between
+              "there are no locked periods" and "nothing matches these
+              filters", and the second is what sends somebody looking for
+              periods that were never generated. */}
+          <span className="flex min-w-0 items-baseline gap-2">
+            <h1 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>Pay Periods</h1>
+            <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+              {payPeriods.length}
+            </span>
+          </span>
           <Link
             href="/payroll/timecards"
             style={{ font: "var(--type-button2)", color: "var(--text-accent)" }}
-            className="hover:underline"
+            className="whitespace-nowrap hover:underline"
           >
             Timecards
           </Link>
@@ -200,17 +208,7 @@ export default async function PayPeriodsPage({
           departmentId={departmentId}
         />
 
-        {/* The count is the difference between "there are no locked periods"
-            and "no period matches these three filters", and the second is what
-            sends somebody looking for periods that were never generated. */}
-        <div
-          className="tabular shrink-0 px-4 py-2 text-right"
-          style={{ borderBottom: "1px solid var(--stroke-divider)", font: "var(--type-body2)", color: "var(--text-tertiary)" }}
-        >
-          {payPeriods.length} {payPeriods.length === 1 ? "period" : "periods"}
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
+        <div className="ta-scroll flex-1 overflow-y-auto pb-4" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
           {payPeriods.length === 0 ? (
             <EmptyState
               title="No pay periods"
@@ -276,11 +274,16 @@ type PayPeriodRow = Extract<
 >["data"][number];
 
 /**
- * The rail, grouped by rule set.
+ * The list, grouped by date range rather than by rule set.
  *
- * <p>The headers only appear when there is more than one rule set. A single
- * "Default" band above every row in a 320px column is a heading that carries
- * no information and costs a line per group.
+ * <p>Most rule sets share their dates, so grouped by rule set the same range
+ * printed on every row and the one thing that differs, which rule set it is,
+ * sat in a band above. Grouped by dates, the range is said once and each row
+ * names its rule set. Groups run newest first, as the periods load.
+ *
+ * <p>Open is the normal state, so only Ready and Locked carry a badge. Rule
+ * sets with no timesheets in the range are listed last and dimmed: they are
+ * real periods, but there is nothing in them to approve.
  */
 function PeriodList({
   payPeriods,
@@ -299,23 +302,16 @@ function PeriodList({
   siteId?: string;
   departmentId?: string;
 }) {
-  const groupMap = new Map<
-    string,
-    { name: string; frequency: string | null; periods: PayPeriodRow[] }
-  >();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const groupMap = new Map<string, { start: Date; end: Date; periods: PayPeriodRow[] }>();
   for (const pp of payPeriods) {
-    const key = pp.ruleSetId ?? "__tenant__";
-    if (!groupMap.has(key)) {
-      groupMap.set(key, {
-        name: pp.ruleSet?.name ?? "Default",
-        frequency: (pp.ruleSet?.payFrequency as string | null | undefined) ?? null,
-        periods: [],
-      });
-    }
+    const key = `${pp.startDate.toISOString()}|${pp.endDate.toISOString()}`;
+    if (!groupMap.has(key)) groupMap.set(key, { start: pp.startDate, end: pp.endDate, periods: [] });
     groupMap.get(key)!.periods.push(pp);
   }
   const groups = [...groupMap.values()];
-  const showHeaders = groups.length > 1;
 
   const siteParam = siteId ? `&siteId=${siteId}` : "";
   const deptParam = departmentId ? `&departmentId=${departmentId}` : "";
@@ -325,89 +321,109 @@ function PeriodList({
 
   return (
     <div className="flex flex-col">
-      {groups.map((group) => (
-        <div key={group.name}>
-          {showHeaders && (
+      {groups.map((group) => {
+        const isCurrent = parseUtcDate(group.start) <= today && today <= parseUtcDate(group.end);
+        const freqs = [...new Set(group.periods.map((pp) => pp.ruleSet?.payFrequency).filter(Boolean))] as string[];
+        const rows = [...group.periods].sort(
+          (a, b) =>
+            Number(a.timesheets.length === 0) - Number(b.timesheets.length === 0) ||
+            (a.ruleSet?.name ?? "Default").localeCompare(b.ruleSet?.name ?? "Default"),
+        );
+        return (
+          <section key={`${group.start.toISOString()}|${group.end.toISOString()}`} aria-label={periodLabel(group.start, group.end)}>
             <div
-              className="sticky top-0 z-10 flex items-baseline gap-1.5 px-4 pb-1.5 pt-3"
+              className="sticky top-0 z-10 flex items-center gap-2 px-4 pb-2 pt-4"
               style={{ background: "var(--surface-page)" }}
             >
-              <span className="truncate" style={{ font: "var(--type-caption1)", fontWeight: "var(--weight-semibold)", color: "var(--text-secondary)" }}>
-                {group.name}
+              <span className="tabular truncate" style={{ font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+                {periodLabel(group.start, group.end)}
               </span>
-              {group.frequency && (
+              {freqs.length === 1 && (
                 <span className="whitespace-nowrap" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-                  {FREQ_LABEL[group.frequency] ?? group.frequency}
+                  {FREQ_LABEL[freqs[0]] ?? freqs[0]}
+                </span>
+              )}
+              {isCurrent && (
+                <span
+                  className="ml-auto whitespace-nowrap rounded-full px-2"
+                  style={{
+                    background: "var(--surface-info)",
+                    color: "var(--text-accent)",
+                    font: "var(--type-caption1)",
+                    fontWeight: "var(--weight-semibold)",
+                    lineHeight: "20px",
+                  }}
+                >
+                  Current
                 </span>
               )}
             </div>
-          )}
 
-          {group.periods.map((pp) => {
-            const total = pp.timesheets.length;
-            const approved = pp.timesheets.filter(
-              (ts) => ts.status === "PAYROLL_APPROVED" || ts.status === "LOCKED"
-            ).length;
-            const isSelected = pp.id === selectedId;
-            const pct = total > 0 ? (approved / total) * 100 : 0;
+            <div className="flex flex-col gap-0.5 px-2">
+              {rows.map((pp) => {
+                const total = pp.timesheets.length;
+                const approved = pp.timesheets.filter(
+                  (ts) => ts.status === "PAYROLL_APPROVED" || ts.status === "LOCKED"
+                ).length;
+                const isSelected = pp.id === selectedId;
+                const pct = total > 0 ? (approved / total) * 100 : 0;
+                const name = pp.ruleSet?.name ?? "Default";
 
-            return (
-              <Link
-                key={pp.id}
-                href={`/payroll/pay-periods?id=${pp.id}${filterHref}${statusHref}${monthHref}${siteParam}${deptParam}`}
-                className="ta-hoverable mx-2 mb-1 flex flex-col gap-2 rounded-lg px-3 py-2.5"
-                data-active={isSelected ? "true" : undefined}
-                aria-current={isSelected ? "page" : undefined}
-                style={{
-                  background: isSelected ? "var(--surface-info)" : undefined,
-                  boxShadow: isSelected ? "inset 0 0 0 1px var(--stroke-accent)" : undefined,
-                  textDecoration: "none",
-                }}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span
-                    className="tabular truncate"
+                return (
+                  <Link
+                    key={pp.id}
+                    href={`/payroll/pay-periods?id=${pp.id}${filterHref}${statusHref}${monthHref}${siteParam}${deptParam}`}
+                    className="ta-hoverable flex flex-col gap-1.5 rounded-lg px-3 py-2"
+                    data-active={isSelected ? "true" : undefined}
+                    aria-current={isSelected ? "page" : undefined}
+                    title={name}
                     style={{
-                      font: "var(--type-body1)",
-                      fontWeight: "var(--weight-semibold)",
-                      color: isSelected ? "var(--text-accent)" : "var(--text-primary)",
+                      background: isSelected ? "var(--surface-info)" : undefined,
+                      textDecoration: "none",
+                      opacity: total === 0 && !isSelected ? 0.6 : 1,
                     }}
                   >
-                    {periodLabel(pp.startDate, pp.endDate)}
-                  </span>
-                  <span className="shrink-0">
-                    <Badge tone={payPeriodTone(pp.status)} size="sm">
-                      {PAY_PERIOD_STATUS_LABEL[pp.status]}
-                    </Badge>
-                  </span>
-                </div>
-
-                {/* How much of the period is signed off, as a bar rather than
-                    a fraction alone: the rail is scanned down, and "182/214"
-                    on six rows is six sums to do. */}
-                <div className="flex items-center gap-2">
-                  <span
-                    className="h-1 flex-1 overflow-hidden rounded-full"
-                    style={{ background: "var(--ta-track)" }}
-                    role="presentation"
-                  >
-                    <span
-                      className="block h-full"
-                      style={{ width: `${pct}%`, background: "var(--fill-success)" }}
-                    />
-                  </span>
-                  <span
-                    className="tabular shrink-0"
-                    style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}
-                  >
-                    {total === 0 ? "No timesheets" : `${approved} of ${total} approved`}
-                  </span>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      ))}
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="min-w-0 flex-1 truncate"
+                        style={{
+                          font: "var(--type-body1)",
+                          fontWeight: isSelected ? "var(--weight-semibold)" : "var(--weight-medium)",
+                          color: isSelected ? "var(--text-accent)" : "var(--text-primary)",
+                        }}
+                      >
+                        {name}
+                      </span>
+                      {pp.status !== "OPEN" && (
+                        <Badge tone={payPeriodTone(pp.status)} size="sm">
+                          {PAY_PERIOD_STATUS_LABEL[pp.status]}
+                        </Badge>
+                      )}
+                    </span>
+                    {/* How much of the period is signed off, as a bar beside
+                        the count: the list is scanned down. An empty period
+                        has nothing to fill, so it says so instead. */}
+                    <span className="flex items-center gap-2.5">
+                      {total > 0 && (
+                        <span
+                          className="block h-1 flex-1 overflow-hidden rounded-full"
+                          style={{ background: "var(--ta-track)" }}
+                          role="presentation"
+                        >
+                          <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: "var(--fill-success)" }} />
+                        </span>
+                      )}
+                      <span className="tabular whitespace-nowrap" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                        {total === 0 ? "No timesheets" : `${approved.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} approved`}
+                      </span>
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }

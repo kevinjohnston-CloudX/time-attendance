@@ -232,7 +232,6 @@ export function PayPeriodsFilter({
     : -1;
   const selectedMonthYear = monthParam ? parseInt(monthParam.slice(0, 4)) : -1;
 
-  const narrowed = currentFilter !== "all" || statusFilter !== "all" || inMonthMode;
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -245,11 +244,10 @@ export function PayPeriodsFilter({
   }, [showPicker]);
 
   return (
-    <div
-      className="relative flex shrink-0 flex-col gap-2 px-3 pb-2.5 pt-1"
-    >
+    <div className="relative flex shrink-0 flex-col gap-2.5 px-4 pb-3">
       {/* Scope and status as the same pills the rest of the app filters
-          with, then the jump back to the current period. */}
+          with, the way back to everything beside them, and the jump to the
+          current period at the end. */}
       <div className="flex flex-wrap items-center gap-1.5">
         <FilterSelectChip
           label="Show"
@@ -265,21 +263,24 @@ export function PayPeriodsFilter({
           options={STATUS_OPTIONS}
           onChange={(v) => applyFilter(currentFilter, selectedId, (v || "all") as StatusFilter)}
         />
-        <span className="flex-1" />
-        <Button
-          hierarchy="secondary"
-          iconOnly
-          onClick={jumpToCurrent}
-          disabled={isOnCurrentPeriod}
-          title="Jump to current pay period"
-          aria-label="Jump to current pay period"
-        >
-          <CalendarCheck className="h-4 w-4" />
-        </Button>
+        {/* One way back to the unfiltered list. Without it, undoing a scope,
+            a status and a month is three separate controls, and the usual
+            outcome is a clerk who believes half the periods no longer exist. */}
+        {/* A single pill clears itself with its own x; the link is for when
+            there is more than one thing to undo, or a month with no pill. */}
+        {(inMonthMode || (currentFilter !== "all" && statusFilter !== "all")) && (
+          <Button hierarchy="link" size="sm" onClick={() => applyFilter("all", selectedId, "all")}>
+            Clear
+          </Button>
+        )}
       </div>
 
-      {/* Step through periods — or, once a month is picked, through months */}
-      <div className="flex items-center gap-0.5">
+      {/* Step through periods, or once a month is picked, through months.
+          The label in the middle is the month picker itself. */}
+      <div
+        className="flex items-center gap-1 rounded-lg p-1"
+        style={{ border: "1px solid var(--stroke-secondary)", background: "var(--surface-card)" }}
+      >
         <Button
           hierarchy="tertiary"
           size="sm"
@@ -295,37 +296,9 @@ export function PayPeriodsFilter({
           <ChevronLeft className="h-4 w-4" />
         </Button>
 
-        <span
-          className="tabular flex-1 truncate text-center"
-          style={{
-            font: "var(--type-body2)",
-            fontWeight: "var(--weight-medium)",
-            color: "var(--text-secondary)",
-          }}
-        >
-          {label}
-        </span>
-
-        <Button
-          hierarchy="tertiary"
-          size="sm"
-          iconOnly
-          disabled={!hasNext}
-          onClick={() => {
-            if (inMonthMode) navigateMonth(1);
-            else if (currentIndex < filtered.length - 1) applyFilter(currentFilter, filtered[currentIndex + 1].id);
-          }}
-          title={inMonthMode ? "Next month" : "Next pay period"}
-          aria-label={inMonthMode ? "Next month" : "Next pay period"}
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-
-        <div className="relative" ref={pickerRef}>
-          <Button
-            hierarchy="tertiary"
-            size="sm"
-            iconOnly
+        <div className="relative min-w-0 flex-1" ref={pickerRef}>
+          <button
+            type="button"
             onClick={() => {
               if (!showPicker) {
                 setPickerYear(
@@ -338,16 +311,25 @@ export function PayPeriodsFilter({
               }
               setShowPicker((v) => !v);
             }}
-            title="Jump to month"
-            aria-label="Jump to month"
+            title="Jump to a month"
+            aria-label={`Jump to a month. Showing ${label}`}
             aria-expanded={showPicker}
-            style={inMonthMode ? { color: "var(--text-accent)" } : undefined}
+            className="ta-hoverable tabular flex h-7 w-full items-center justify-center gap-1.5 rounded-md px-2"
+            style={{
+              border: 0,
+              background: "transparent",
+              cursor: "pointer",
+              font: "var(--type-body2)",
+              fontWeight: "var(--weight-semibold)",
+              color: inMonthMode ? "var(--text-accent)" : "var(--text-primary)",
+            }}
           >
-            <Calendar className="h-4 w-4" />
-          </Button>
+            <Calendar className="h-3.5 w-3.5 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+            <span className="truncate">{label}</span>
+          </button>
 
           {showPicker && (
-            <div className="ta-modal absolute right-0 top-full z-50 mt-1 w-52 rounded-lg p-3">
+            <div className="ta-modal absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-lg p-3">
               <div className="mb-2.5 flex items-center justify-between">
                 <Button
                   hierarchy="tertiary"
@@ -358,10 +340,7 @@ export function PayPeriodsFilter({
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span
-                  className="tabular"
-                  style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}
-                >
+                <span className="tabular" style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>
                   {pickerYear}
                 </span>
                 <Button
@@ -418,18 +397,36 @@ export function PayPeriodsFilter({
             </div>
           )}
         </div>
-      </div>
 
-      {/* One way back to the unfiltered rail. Without it, undoing a scope, a
-          status and a month is three separate controls, and the usual outcome
-          is a clerk who believes half the periods no longer exist. */}
-      {narrowed && (
-        <div className="flex justify-end">
-          <Button hierarchy="link" size="sm" onClick={() => applyFilter("all", selectedId, "all")}>
-            Clear filters
-          </Button>
-        </div>
-      )}
+        <Button
+          hierarchy="tertiary"
+          size="sm"
+          iconOnly
+          disabled={!hasNext}
+          onClick={() => {
+            if (inMonthMode) navigateMonth(1);
+            else if (currentIndex < filtered.length - 1) applyFilter(currentFilter, filtered[currentIndex + 1].id);
+          }}
+          title={inMonthMode ? "Next month" : "Next pay period"}
+          aria-label={inMonthMode ? "Next month" : "Next pay period"}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+
+        <span aria-hidden="true" className="mx-0.5 h-4 w-px flex-none" style={{ background: "var(--stroke-divider)" }} />
+
+        <Button
+          hierarchy="tertiary"
+          size="sm"
+          iconOnly
+          onClick={jumpToCurrent}
+          disabled={isOnCurrentPeriod}
+          title="Jump to the current pay period"
+          aria-label="Jump to the current pay period"
+        >
+          <CalendarCheck className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   );
 }
