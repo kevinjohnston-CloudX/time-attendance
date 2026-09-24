@@ -33,7 +33,8 @@ export { MAX_PICKED };
 /** The most a suggestion list shows. */
 const SUGGESTIONS = 8;
 
-async function reachable(tenantId: string, siteId: string): Promise<Prisma.EmployeeWhereInput> {
+/** The people a site's pages may show: based here, or scanned here in the last week. */
+export async function reachable(tenantId: string, siteId: string): Promise<Prisma.EmployeeWhereInput> {
   const [site, scope] = await Promise.all([
     db.site.findFirst({ where: { id: siteId, tenantId }, select: { timezone: true } }),
     siteScope(tenantId, siteId),

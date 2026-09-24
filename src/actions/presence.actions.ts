@@ -7,7 +7,10 @@ import { getScanLog, type ScanLogInput } from "@/lib/presence/scan-log.service";
 import { getSiteDay } from "@/lib/presence/movements.service";
 import { MAX_PHOTO_BYTES, savePhoto } from "@/lib/presence/photos";
 import { writeAuditLog } from "@/lib/audit/logger";
-import { MAX_PICKED, peopleByIds, resolveNames, suggestPeople } from "@/lib/presence/people-search.service";
+import { MAX_PICKED, peopleByIds, reachable, resolveNames, suggestPeople } from "@/lib/presence/people-search.service";
+import { gateReadsCloudTimeSchedule } from "@/lib/presence/gate-schedule";
+import { localDateString } from "@/lib/presence/on-site.service";
+import { setScheduleDay } from "@/lib/services/schedule-sync.service";
 
 /**
  * On Site: who is in the building right now.
@@ -195,6 +198,75 @@ export const updateEmployeePhoto = withRBAC("PRESENCE_PHOTO_EDIT", async ({ tena
   });
   return { photoUrl: saved.url };
 });
+
+/**
+ * Add to schedule: puts somebody on today's schedule from Live Attendance,
+ * for a person the gate turned away because they had no shift.
+ *
+ * <p>Refused while the gates still check Oracle (see gate-schedule.ts),
+ * because until then the day would change what CloudTime shows and not who
+ * gets in. The button is drawn greyed out for the same reason.
+ *
+ * <p>Needs EMPLOYEE_MANAGE, the same as the WMS sync page, on top of being
+ * able to open this site's board: seeing a building is not the same as
+ * deciding who works in it. Only people this site's pages can show (based
+ * here, or scanned here in the last week) can be added, only for today in
+ * their own site's timezone (the day the gate check reads), and never over a
+ * shift they already have. The day is kept as a CloudTime edit, so the next
+ * WMS pull does not undo it; if WMS later schedules the same day differently,
+ * the day is flagged on the WMS sync page instead of either side being lost.
+ */
+export const addToTodaysSchedule = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async (
+    { tenantId, employeeId, role },
+    input: { siteId: string; employeeId: string; startTime: string; endTime: string; mealMinutes: number | null },
+  ) => {
+    if (!tenantId) throw new Error("NOT_FOUND");
+    if (!gateReadsCloudTimeSchedule()) throw new Error("NOT_LIVE");
+    const hhmm = (v: unknown) => (typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : null);
+    const startTime = hhmm(input.startTime);
+    const endTime = hhmm(input.endTime);
+    if (!startTime || !endTime || startTime === endTime) throw new Error("BAD_TIME");
+    const meal = input.mealMinutes;
+    if (meal !== null && !(Number.isInteger(meal) && meal >= 0 && meal <= 120)) throw new Error("BAD_TIME");
+    if (typeof input.siteId !== "string" || typeof input.employeeId !== "string") throw new Error("NOT_FOUND");
+
+    await assertSite(tenantId, { employeeId, role }, input.siteId);
+    const person = await db.employee.findFirst({
+      where: { AND: [await reachable(tenantId, input.siteId), { id: input.employeeId }] },
+      select: { id: true, isActive: true, terminatedAt: true, site: { select: { timezone: true } } },
+    });
+    if (!person) throw new Error("NOT_FOUND");
+    if (!person.isActive || person.terminatedAt) throw new Error("INACTIVE");
+
+    const today = localDateString(new Date(), person.site?.timezone || "America/New_York");
+    const existing = await db.scheduleDay.findFirst({
+      where: { tenantId, employeeId: person.id, workDate: new Date(`${today}T00:00:00.000Z`) },
+      select: { isWorkday: true, startTime: true, endTime: true, mealMinutes: true },
+    });
+    if (existing?.isWorkday) throw new Error("ALREADY_SCHEDULED");
+
+    await setScheduleDay(tenantId, person.id, today, { isWorkday: true, startTime, endTime, mealMinutes: meal }, employeeId || undefined);
+    await writeAuditLog({
+      tenantId,
+      actorId: employeeId || null,
+      action: "SCHEDULE_DAY_ADDED",
+      entityType: "EMPLOYEE",
+      entityId: person.id,
+      changes: {
+        workDate: today,
+        startTime,
+        endTime,
+        mealMinutes: meal,
+        replaced: existing ? { isWorkday: existing.isWorkday, startTime: existing.startTime, endTime: existing.endTime } : null,
+        siteId: input.siteId,
+        from: "Live Attendance",
+      },
+    });
+    return { workDate: today, startTime, endTime };
+  },
+);
 
 /**
  * The search box that holds several people: suggestions while typing, a

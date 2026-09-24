@@ -4003,6 +4003,75 @@
   color: var(--text-tertiary);
 }
 
+
+/* ── Add to schedule ────────────────────────────────────────────────────── */
+
+/* The strip in the panel, under the day at a glance, for somebody with no
+   shift today. */
+.ppSchedule {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: var(--radius-m);
+  background: var(--surface-secondary);
+}
+
+.ppScheduleText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ppScheduleTitle {
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.ppScheduleSub {
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}
+
+.ppSchedule > :last-child {
+  flex: none;
+}
+
+.sdBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+}
+
+.sdRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sdField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sdLabel {
+  font: var(--weight-medium) 13px/18px var(--font-sans);
+  color: var(--text-secondary);
+}
+
+.sdHint {
+  margin: 0;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .peScrim {
     animation: none;

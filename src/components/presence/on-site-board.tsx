@@ -136,6 +136,7 @@ export function OnSiteBoard({
   initialBoard,
   initialFilters,
   canEditPhotos = false,
+  scheduling = null,
 }: {
   sites: { id: string; name: string }[];
   initialSiteId: string | null;
@@ -158,6 +159,12 @@ export function OnSiteBoard({
   };
   /** Draws Update photo on the employee panel. The save checks again on the server. */
   canEditPhotos?: boolean;
+  /**
+   * Draws Add to schedule on the employee panel, for viewers allowed to use
+   * it; `live` is false while the gates still check Oracle, and the button is
+   * greyed out. The save checks both again on the server.
+   */
+  scheduling?: { live: boolean } | null;
 }) {
   const [siteId, setSiteId] = useState(initialSiteId);
   // Photos saved here, drawn at once on every face until the server's own
@@ -1381,6 +1388,11 @@ export function OnSiteBoard({
           onPhotoSaved={(id, url) => {
             if (url) setPhotoSwaps((m) => new Map(m).set(id, url));
             toast.flash("Photo updated");
+          }}
+          scheduling={scheduling}
+          onScheduled={() => {
+            if (siteId) void refresh(siteId);
+            toast.flash("Added to today's schedule");
           }}
         />
       )}

@@ -11,6 +11,7 @@ import {
 } from "@/actions/supervisor.actions";
 import { Button, Input, LinkButton, Select, Textarea } from "@/components/ui";
 import { formatTimeOfDay } from "@/lib/utils/date";
+import { parseTimeOfDay, type Meridiem } from "@/lib/utils/time-of-day";
 import type { ExceptionRow } from "@/components/supervisor/exceptions-screen";
 
 /**
@@ -36,39 +37,6 @@ const SEVERITY_INK = ["var(--text-error)", "var(--text-warning)", "var(--text-se
 const SEVERITY_RULE = ["var(--fill-error)", "var(--fill-warning)", "var(--stroke-secondary)"];
 
 type Punch = { id: string; punchType: PunchType; roundedTime: Date };
-
-type Meridiem = "AM" | "PM";
-
-/**
- * A typed time of day, read against the AM or PM the field is set to.
- *
- * <p>Nothing here is inferred. A punch entered twelve hours out is a wrong
- * paycheck, not a typo somebody notices, so the half of the day is an explicit
- * control rather than a guess at what 8:30 meant. A time typed on a 24 hour
- * clock is taken as written, because it cannot mean anything else, and an
- * explicit am or pm in the text wins over the control.
- */
-function parseTimeOfDay(input: string, meridiem: Meridiem): { hours: number; minutes: number } | null {
-  const s = input.trim().toLowerCase().replace(/\s+/g, "");
-  const m = /^(\d{1,2})(?::?(\d{2}))?(am|pm)?$/.exec(s);
-  if (!m) return null;
-
-  let hours = Number(m[1]);
-  const minutes = m[2] ? Number(m[2]) : 0;
-  if (minutes > 59) return null;
-  const typed: Meridiem | null = m[3] ? (m[3] === "pm" ? "PM" : "AM") : null;
-
-  if (hours === 0 || (hours >= 13 && hours <= 23)) {
-    // A 24 hour time. Saying "13:00 am" is a contradiction, not a correction.
-    return typed ? null : { hours, minutes };
-  }
-  if (hours > 12) return null;
-
-  const half = typed ?? meridiem;
-  if (hours === 12) hours = half === "AM" ? 0 : 12;
-  else if (half === "PM") hours += 12;
-  return { hours, minutes };
-}
 
 /** An "HH:mm" stored time, split into what the field shows and which half of the day it is. */
 function splitTime(hhmm: string | null): { text: string; meridiem: Meridiem } {

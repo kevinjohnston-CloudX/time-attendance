@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Camera, ChevronLeft, ChevronRight, Clock, Coffee, DoorClosed, DoorOpen, X } from "lucide-react";
+import { CalendarPlus, Camera, ChevronLeft, ChevronRight, Clock, Coffee, DoorClosed, DoorOpen, X } from "lucide-react";
 import { Badge, Button } from "@/components/ui";
 import { getOnSitePerson } from "@/actions/presence.actions";
 import { addDays, dayLabel, DAYS_BACK } from "@/lib/presence/days";
@@ -24,6 +24,7 @@ import {
 import styles from "./on-site.module.css";
 import { usePhoto, ZoomableFace } from "./face";
 import { PhotoEditor } from "./photo-editor";
+import { ScheduleDayDialog } from "./schedule-day-dialog";
 import { HomeSiteBadge } from "./home-site";
 
 /**
@@ -57,6 +58,8 @@ export function PersonPanel({
   onZoom,
   canEditPhoto = false,
   onPhotoSaved,
+  scheduling = null,
+  onScheduled,
 }: {
   siteId: string;
   employeeId: string;
@@ -78,9 +81,19 @@ export function PersonPanel({
    */
   canEditPhoto?: boolean;
   onPhotoSaved?: (employeeId: string, photoUrl: string | null) => void;
+  /**
+   * Whether the viewer may add somebody to today's schedule, and whether that
+   * is switched on yet. Null draws nothing; the save checks both again on the
+   * server.
+   */
+  scheduling?: { live: boolean } | null;
+  onScheduled?: () => void;
 }) {
   const [day, setDay] = useState(initialDay ?? today);
   const [editingPhoto, setEditingPhoto] = useState(false);
+  const [addingShift, setAddingShift] = useState(false);
+  // Bumped after a save, so the day is read again with its new shift.
+  const [savedShifts, setSavedShifts] = useState(0);
   const [detail, setDetail] = useState<PresenceDetail | null>(null);
   const [failed, setFailed] = useState(false);
   const headRef = useRef<HTMLDivElement>(null);
@@ -93,7 +106,7 @@ export function PersonPanel({
 
   const isToday = day === today;
   // Only today moves, so only today re-reads on every board refresh.
-  const refreshKey = isToday ? refreshedAt : "";
+  const refreshKey = isToday ? `${refreshedAt}|${savedShifts}` : "";
 
   useEffect(() => {
     let live = true;
@@ -318,6 +331,31 @@ export function PersonPanel({
                   />
                 </div>
 
+                {/* Somebody with no shift today, for a viewer who may give
+                    them one. Greyed out while the gates still check WMS,
+                    because until then a shift here opens no door. */}
+                {scheduling && isToday && !shown.scheduledStart && !(person?.inactive || shown.inactive) && (
+                  <div className={styles.ppSchedule}>
+                    <div className={styles.ppScheduleText}>
+                      <span className={styles.ppScheduleTitle}>Not on today&apos;s schedule</span>
+                      <span className={styles.ppScheduleSub}>
+                        {scheduling.live
+                          ? "Add a shift for today so the gate lets them in."
+                          : "Available once the gates check CloudTime's schedule."}
+                      </span>
+                    </div>
+                    <Button
+                      hierarchy="secondary"
+                      size="sm"
+                      leadingIcon={<CalendarPlus className="h-3.5 w-3.5" aria-hidden="true" />}
+                      disabled={!scheduling.live}
+                      onClick={() => setAddingShift(true)}
+                    >
+                      Add to schedule
+                    </Button>
+                  </div>
+                )}
+
                 <Lanes lanes={lanes} detail={shown} hasGateData={hasGateData} tz={tz} now={now} />
 
                 <dl className={styles.ppTotals}>
@@ -387,6 +425,21 @@ export function PersonPanel({
           onSaved={(url) => {
             setEditingPhoto(false);
             onPhotoSaved?.(employeeId, url);
+          }}
+        />
+      )}
+
+      {addingShift && scheduling?.live && (
+        <ScheduleDayDialog
+          siteId={siteId}
+          employeeId={employeeId}
+          name={name}
+          dayLabel={label}
+          onClose={() => setAddingShift(false)}
+          onSaved={() => {
+            setAddingShift(false);
+            setSavedShifts((n) => n + 1);
+            onScheduled?.();
           }}
         />
       )}

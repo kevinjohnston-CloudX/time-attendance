@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getOnSiteBoard, getOnSiteSites } from "@/actions/presence.actions";
 import { OnSiteBoard } from "@/components/presence/on-site-board";
+import { gateReadsCloudTimeSchedule } from "@/lib/presence/gate-schedule";
 
 /**
  * On Site: who is in the building right now, for HR and loss prevention.
@@ -50,7 +51,10 @@ export default async function OnSitePage({
   const siteId = sites.some((s) => s.id === params.site) ? params.site! : defaultSiteId;
 
   const boardResult = siteId ? await getOnSiteBoard({ siteId }) : null;
-  const canEditPhotos = await userHasPermission(session.user, "PRESENCE_PHOTO_EDIT");
+  const [canEditPhotos, canSchedule] = await Promise.all([
+    userHasPermission(session.user, "PRESENCE_PHOTO_EDIT"),
+    userHasPermission(session.user, "EMPLOYEE_MANAGE"),
+  ]);
   // A failure here is a real fault, not an empty building: the error boundary
   // says so and offers a retry, rather than drawing a board of zeros.
   if (boardResult && !boardResult.success) throw new Error(boardResult.error);
@@ -61,6 +65,7 @@ export default async function OnSitePage({
       initialSiteId={siteId}
       initialBoard={boardResult?.success ? boardResult.data : null}
       canEditPhotos={canEditPhotos}
+      scheduling={canSchedule ? { live: gateReadsCloudTimeSchedule() } : null}
       initialFilters={{
         status: params.status ?? null,
         dept: params.dept ?? null,
