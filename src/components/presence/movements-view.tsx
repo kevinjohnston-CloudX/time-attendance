@@ -9,7 +9,6 @@ import {
   GAP_MIN,
   LONG_BREAK_MIN,
   type MovementFlag,
-  type MovementLine,
   type PersonDayView,
   type ScanTotals,
 } from "@/lib/presence/movements";
@@ -221,6 +220,7 @@ export function MovementsTable({
             open={isOpen(v.person.id)}
             onToggle={() => onToggle(v.person.id)}
             dayStart={Date.parse(data.dayStart)}
+            dayEnd={Date.parse(data.dayEnd)}
           />
         ))}
       </ol>
@@ -253,10 +253,12 @@ function PersonRow({
   open,
   onToggle,
   dayStart,
+  dayEnd,
 }: {
   open: boolean;
   onToggle: () => void;
   dayStart: number;
+  dayEnd: number;
   view: PersonDayView;
   isToday: boolean;
   hasGate: boolean;
@@ -406,52 +408,9 @@ function PersonRow({
       </div>
 
       {open && hasDetail && (
-        <DayParts view={v} isToday={isToday} hasGate={hasGate} tz={tz} now={now} axis={axis} dayStart={dayStart} />
+        <DayStory view={v} isToday={isToday} hasGate={hasGate} tz={tz} now={now} dayStart={dayStart} dayEnd={dayEnd} />
       )}
     </li>
-  );
-}
-
-/**
- * A person's scans, every one, in the order they happened, inside their
- * block: the same words the Scan log uses, so the two read alike.
- */
-function ScanList({ scans, tz, notCounted }: { scans: PersonDayView["scans"]; tz: string; notCounted: number }) {
-  return (
-    <ol className={styles.scanList} onClick={(e) => e.stopPropagation()}>
-      {scans.map((s) => {
-        const { icon, kind } = iconFor(s);
-        const gate = s.stream === "SECURITY";
-        return (
-          <li key={s.id} className={styles.scanItem}>
-            <span className={styles.scanTime}>{fmtTime(s.at, tz)}</span>
-            <span className={styles.eventIcon} data-kind={s.rejected ? "error" : kind} aria-hidden="true">
-              {icon}
-            </span>
-            <span className="truncate" style={{ font: "var(--weight-medium) 13px/18px var(--font-sans)", color: "var(--text-primary)" }}>
-              {describeScan(s)}
-            </span>
-            <span className={styles.source} data-stream={gate ? "gate" : "clock"}>
-              {gate ? "Security gate" : "Time clock"}
-            </span>
-            <span className={styles.scanDevice}>{s.device ?? ""}</span>
-            <span className={styles.scanNotes}>
-              {s.automatic && (
-                <Badge tone="neutral" size="sm">
-                  Added by the system
-                </Badge>
-              )}
-            </span>
-          </li>
-        );
-      })}
-      {notCounted > 0 && (
-        <li className={styles.scanHidden}>
-          {notCounted.toLocaleString()} more {notCounted === 1 ? "tap was" : "taps were"} not counted, usually a second
-          tap too soon. The Scan log lists them under Taps not counted.
-        </li>
-      )}
-    </ol>
   );
 }
 
@@ -625,197 +584,233 @@ function Ribbon({
   );
 }
 
-const KIND_LABEL: Record<MovementLine["kind"], string> = {
-  INSIDE: "Inside the building",
-  WORK: "On the clock",
-  MEAL: "Meal",
-  BREAK: "Break",
-  EXIT_ONLY: "Left, never scanned in",
+/* ── A person's day, as a story ─────────────────────────────────────────── */
+
+type StoryState = "WORKING" | "MEAL" | "BREAK" | "INSIDE_OFF" | "ON_SITE" | "OUT_WORKING" | "OUT_MEAL" | "OUTSIDE";
+
+const STATE_LABEL: Record<StoryState, string> = {
+  WORKING: "Working",
+  MEAL: "On meal",
+  BREAK: "On break",
+  INSIDE_OFF: "Inside, not clocked in",
+  ON_SITE: "On site",
+  OUT_WORKING: "Clocked in, not inside",
+  OUT_MEAL: "On a break, outside",
+  OUTSIDE: "Out of the building",
 };
 
-const STILL: Record<MovementLine["kind"], string> = {
-  INSIDE: "Still inside",
-  WORK: "Still on the clock",
-  MEAL: "Still on meal",
-  BREAK: "Still on break",
-  EXIT_ONLY: "",
-};
+/** A stretch this short between two scans says nothing worth a line. */
+const QUIET_MS = 2 * 60 * 1000;
 
-type PartKind = MovementLine["kind"] | "GAP_OFF" | "GAP_OUT";
-
-/** One piece of a person's day: a stretch at a reader, or a gap between the two. */
-interface DayPart {
+interface StoryNode {
   key: string;
-  kind: PartKind;
-  start: number | null;
-  end: number | null;
+  at: number;
+  /** "Yesterday", "Now", "End of day", or the time. */
+  when: string;
+  text: string;
+  meta: string | null;
+  kind: "in" | "out" | "meal" | "system" | "now" | "end";
+  note: string | null;
+}
+
+interface StoryLink {
+  state: StoryState;
   minutes: number;
-  carried: boolean;
-  closedBySystem: boolean;
-  devices: string[];
+  running: boolean;
+  worth: boolean;
 }
 
-const GAP_LABEL = { GAP_OFF: "Inside, not clocked in", GAP_OUT: "Clocked in, not inside" } as const;
-
 /**
- * The day as parts, in the order they began: every stretch at each reader,
- * and between them the gaps worth seeing (inside and not clocked in, clocked
- * in and not inside), which are the numbers loss prevention reads first and
- * otherwise has to work out from two lists.
+ * What the person was doing at a moment, from both readers at once: the gate
+ * says in or out of the building, the clock says working, on a meal or off.
  */
-function dayParts(v: PersonDayView, isToday: boolean, now: number, dayStart: number): DayPart[] {
-  const parts: DayPart[] = v.lines.map((l) => ({
-    key: l.key,
-    kind: l.kind,
-    start: l.start,
-    end: l.end,
-    minutes: l.minutes,
-    carried: l.carried,
-    closedBySystem: l.closedBySystem,
-    devices: [...new Set([l.startDevice, l.endDevice].filter((d): d is string => !!d))],
-  }));
-  const running = (end: number) => isToday && Math.abs(end - now) < 60_000;
-  const gap = (kind: "GAP_OFF" | "GAP_OUT", g: { start: number; end: number }) => {
-    const minutes = Math.floor((g.end - g.start) / 60000);
-    if (minutes < 1) return;
-    parts.push({
-      key: `${kind}${g.start}`,
-      kind,
-      start: g.start,
-      end: running(g.end) ? null : g.end,
-      minutes,
-      carried: false,
-      closedBySystem: false,
-      devices: [],
+function stateAt(v: PersonDayView, t: number, hasGate: boolean): StoryState | null {
+  const inside = hasGate ? v.lanes.gate.some((g) => g.start <= t && t < g.end) : true;
+  const c = v.lanes.clock.find((s) => s.start <= t && t < s.end);
+  const clock = c ? c.kind : "OUT";
+  if (inside) {
+    if (clock === "WORK") return "WORKING";
+    if (clock === "MEAL") return "MEAL";
+    if (clock === "BREAK") return "BREAK";
+    if (!hasGate) return null;
+    return v.person.salaried ? "ON_SITE" : "INSIDE_OFF";
+  }
+  if (clock === "WORK") return "OUT_WORKING";
+  if (clock === "MEAL" || clock === "BREAK") return "OUT_MEAL";
+  return "OUTSIDE";
+}
+
+function linkWorth(state: StoryState, minutes: number): boolean {
+  if (state === "INSIDE_OFF" || state === "OUT_WORKING") return minutes >= GAP_MIN;
+  if (state === "MEAL" || state === "BREAK" || state === "OUT_MEAL") return minutes > LONG_BREAK_MIN;
+  return false;
+}
+
+function buildStory(v: PersonDayView, isToday: boolean, hasGate: boolean, now: number, dayStart: number, dayEnd: number, tz: string) {
+  const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
+  const exitOnly = new Set(v.lanes.exitsWithoutEntry.map((s) => s.id));
+  const nodes: StoryNode[] = [];
+
+  const carried = v.lines.some((l) => l.carried);
+  if (carried) {
+    const s = stateAt(v, dayStart, hasGate);
+    nodes.push({
+      key: "carried",
+      at: dayStart,
+      when: "Yesterday",
+      text: s === "WORKING" ? "Still on the clock from yesterday" : "Still inside from yesterday",
+      meta: null,
+      kind: "in",
+      note: null,
     });
-  };
-  if (!v.person.salaried) v.lanes.gaps.insideOffClock.forEach((g) => gap("GAP_OFF", g));
-  v.lanes.gaps.workOutside.forEach((g) => gap("GAP_OUT", g));
-  const startOf = (p: DayPart) => p.start ?? (p.kind === "EXIT_ONLY" ? p.end ?? dayStart : dayStart);
-  return parts.sort((a, b) => startOf(a) - startOf(b));
+  }
+
+  for (const s of [...v.scans].sort((a, b) => a.at.localeCompare(b.at))) {
+    const at = Date.parse(s.at);
+    const { kind } = iconFor(s);
+    nodes.push({
+      key: s.id,
+      at,
+      when: time(at),
+      text: describeScan(s),
+      meta: [s.stream === "SECURITY" ? "Security gate" : "Time clock", s.device].filter(Boolean).join(" · "),
+      kind: s.automatic ? "system" : kind === "meal" ? "meal" : kind === "in" ? "in" : "out",
+      note: s.automatic ? "Added by the system" : exitOnly.has(s.id) ? "No entry scan before it" : null,
+    });
+  }
+
+  const end = isToday ? Math.min(now, dayEnd) : dayEnd;
+  const last = nodes.length ? nodes[nodes.length - 1].at : null;
+  const openState = last !== null && end - last > 60_000 ? stateAt(v, (last + end) / 2, hasGate) : null;
+  if (openState && openState !== "OUTSIDE") {
+    nodes.push(
+      isToday
+        ? {
+            key: "now",
+            at: end,
+            when: "Now",
+            text:
+              openState === "WORKING"
+                ? "Still on the clock"
+                : openState === "MEAL" || openState === "BREAK" || openState === "OUT_MEAL"
+                  ? `Still on ${openState === "BREAK" ? "break" : "a meal"}`
+                  : openState === "OUT_WORKING"
+                    ? "Still clocked in, not inside"
+                    : "Still inside",
+            meta: null,
+            kind: "now",
+            note: null,
+          }
+        : { key: "end", at: end, when: "End of day", text: "Never scanned out", meta: null, kind: "end", note: null },
+    );
+  }
+
+  const links: (StoryLink | null)[] = nodes.slice(1).map((n, i) => {
+    const a = nodes[i].at;
+    const b = n.at;
+    if (b - a < QUIET_MS) return null;
+    const state = stateAt(v, (a + b) / 2, hasGate);
+    if (!state) return null;
+    const minutes = Math.floor((b - a) / 60000);
+    return { state, minutes, running: n.kind === "now", worth: linkWorth(state, minutes) };
+  });
+  return { nodes, links };
 }
 
 /**
- * A person's day folded out as rows of the same table: each part lines up
- * under Arrived and Left, its length under the reader it belongs to, and its
- * own piece of the day bar under the person's bar.
+ * A person's day folded out as one story, top to bottom: every scan is a
+ * point, and the line to the next one says what they were doing and for how
+ * long, with only what needs a look in amber. Beside it, the day's totals.
+ * The day bar in the row above already draws the shape; this reads it out.
  */
-function DayParts({
+function DayStory({
   view: v,
   isToday,
   hasGate,
   tz,
   now,
-  axis,
   dayStart,
+  dayEnd,
 }: {
   view: PersonDayView;
   isToday: boolean;
   hasGate: boolean;
   tz: string;
   now: number;
-  axis: Axis;
   dayStart: number;
+  dayEnd: number;
 }) {
-  const [scansOpen, setScansOpen] = useState(false);
-  const parts = dayParts(v, isToday, now, dayStart);
-  const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
-  const endOf = (p: DayPart) => p.end ?? (isToday ? Math.min(now, axis.to) : axis.to);
+  const { nodes, links } = buildStory(v, isToday, hasGate, now, dayStart, dayEnd, tz);
+  const t = v.lanes.totals;
+  const totals: { label: string; minutes: number; worth?: boolean }[] = [
+    { label: "Working", minutes: t.workMin },
+    ...(hasGate ? [{ label: "Inside the building", minutes: t.insideMin }] : []),
+    { label: "Meals and breaks", minutes: t.mealMin + t.breakMin },
+    ...(hasGate && !v.person.salaried
+      ? [{ label: "Inside, not clocked in", minutes: t.insideOffClockMin, worth: t.insideOffClockMin >= GAP_MIN }]
+      : []),
+    ...(hasGate ? [{ label: "Clocked in, not inside", minutes: t.workOutsideMin, worth: t.workOutsideMin >= GAP_MIN }] : []),
+  ];
 
   return (
-    <div className={styles.mvParts} onClick={(e) => e.stopPropagation()}>
-      {parts.length === 0 && (
-        <div className={styles.mvPart} data-gate={hasGate ? undefined : "false"}>
-          <span className={styles.mvPartWho}>
-            <span className={styles.mvQuiet}>No stretches recorded, only scans that changed nothing.</span>
+    <div className={styles.dsWrap} onClick={(e) => e.stopPropagation()}>
+      <div className={styles.dsCard}>
+        <ol className={styles.dsStory}>
+          {nodes.length === 0 && <li className={styles.dsEmpty}>No scans that day.</li>}
+          {nodes.map((n, i) => {
+            const link = i < links.length ? links[i] : null;
+            const isLast = i === nodes.length - 1;
+            return (
+              <li key={n.key} className={styles.dsItem}>
+                <span className={styles.dsWhen} data-kind={n.kind}>
+                  {n.when}
+                </span>
+                <span className={styles.dsRail} aria-hidden="true">
+                  <span className={styles.dsDot} data-kind={n.kind} />
+                  {!isLast && <span className={styles.dsLine} data-state={link?.state} />}
+                </span>
+                <span className={styles.dsBody}>
+                  <span className={styles.dsEvent}>
+                    <span className={styles.dsText} data-kind={n.kind}>
+                      {n.text}
+                    </span>
+                    {n.meta && <span className={styles.dsMeta}>{n.meta}</span>}
+                  </span>
+                  {n.note && <span className={styles.dsNote}>{n.note}</span>}
+                  {link && (
+                    <span className={styles.dsLink} data-worth={link.worth ? "true" : undefined}>
+                      {STATE_LABEL[link.state]}
+                      <span className={styles.dsLinkTime}>
+                        {fmtDuration(link.minutes)}
+                        {link.running ? " so far" : ""}
+                      </span>
+                    </span>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+
+        <aside className={styles.dsTotals} aria-label="Totals">
+          <span className={styles.dsTotalsTitle}>Totals</span>
+          <dl>
+            {totals.map((x) => (
+              <div key={x.label} className={styles.dsTotal}>
+                <dt>{x.label}</dt>
+                <dd data-tone={x.worth ? "warning" : x.minutes === 0 ? "quiet" : undefined}>
+                  {x.minutes === 0 ? "None" : fmtDuration(x.minutes)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <span className={styles.dsFoot}>
+            {v.scanCount.toLocaleString()} {v.scanCount === 1 ? "scan" : "scans"}
+            {v.notCounted > 0 &&
+              `. ${v.notCounted.toLocaleString()} more ${v.notCounted === 1 ? "tap was" : "taps were"} not counted, usually a second tap too soon.`}
           </span>
-        </div>
-      )}
-      {parts.map((p) => {
-        const gapPart = p.kind === "GAP_OFF" || p.kind === "GAP_OUT";
-        const onGate = p.kind === "INSIDE" || p.kind === "EXIT_ONLY" || p.kind === "GAP_OFF";
-        const long =
-          (gapPart && p.minutes >= GAP_MIN) || ((p.kind === "MEAL" || p.kind === "BREAK") && p.minutes > LONG_BREAK_MIN);
-        const label = gapPart ? GAP_LABEL[p.kind as "GAP_OFF" | "GAP_OUT"] : KIND_LABEL[p.kind as MovementLine["kind"]];
-        const length = p.kind === "EXIT_ONLY" ? "" : fmtDuration(p.minutes);
-        return (
-          <div key={p.key} className={styles.mvPart} data-gate={hasGate ? undefined : "false"} data-gap={gapPart ? "true" : undefined}>
-            <span className={styles.mvPartWho}>
-              <span className={styles.mvKind} data-kind={p.kind} aria-hidden="true" />
-              <span className="flex min-w-0 flex-col">
-                <span className={styles.mvPartLabel} data-tone={long ? "warning" : undefined}>
-                  {label}
-                </span>
-                {p.devices.length > 0 && <span className={styles.mvDevice}>{p.devices.join(" · ")}</span>}
-              </span>
-            </span>
-            <span className={styles.mvFact}>
-              <span className={styles.mvPartTime}>
-                {p.kind === "EXIT_ONLY" ? (
-                  <span className={styles.mvQuiet}>Never scanned in</span>
-                ) : p.carried ? (
-                  <span className={styles.mvQuiet}>Since yesterday</span>
-                ) : p.start !== null ? (
-                  time(p.start)
-                ) : null}
-              </span>
-            </span>
-            <span className={styles.mvFact}>
-              <span className={styles.mvPartTime}>
-                {p.end === null ? (
-                  isToday ? (
-                    <span className={styles.mvQuiet}>{gapPart ? "Now" : STILL[p.kind as MovementLine["kind"]]}</span>
-                  ) : (
-                    <span className={styles.mvWarn}>Never scanned out</span>
-                  )
-                ) : (
-                  time(p.end)
-                )}
-              </span>
-              {p.closedBySystem && <span className={styles.mvWarnSmall}>Closed by the system</span>}
-            </span>
-            {hasGate && (
-              <span className={`${styles.mvFact} ${styles.mvNum}`}>
-                <span className={styles.mvPartTime} data-tone={long && onGate ? "warning" : undefined}>
-                  {onGate ? length : ""}
-                </span>
-              </span>
-            )}
-            <span className={`${styles.mvFact} ${styles.mvNum}`}>
-              <span className={styles.mvPartTime} data-tone={long && !onGate ? "warning" : undefined}>
-                {onGate ? "" : length}
-              </span>
-            </span>
-            <span className={styles.mvDay}>
-              <span className={styles.mvPartBar}>
-                {p.kind !== "EXIT_ONLY" && (
-                  <span
-                    className={styles.mvPartPiece}
-                    data-kind={p.kind}
-                    style={{
-                      left: axis.pct(p.start ?? axis.from),
-                      width: axis.width(p.start ?? axis.from, endOf(p)),
-                    }}
-                  />
-                )}
-                {p.kind === "EXIT_ONLY" && p.end !== null && (
-                  <span className={styles.mvPartMark} style={{ left: axis.pct(p.end) }} />
-                )}
-              </span>
-            </span>
-            <span />
-          </div>
-        );
-      })}
-      {v.scanCount > 0 && (
-        <div className={styles.mvPartFoot}>
-          <button type="button" className={styles.scanToggle} aria-expanded={scansOpen} onClick={() => setScansOpen((o) => !o)}>
-            <ChevronDown className={styles.chevron} aria-hidden="true" />
-            {scansOpen ? "Hide" : "Show"} {v.scanCount.toLocaleString()} {v.scanCount === 1 ? "scan" : "scans"}
-          </button>
-          {scansOpen && <ScanList scans={v.scans} tz={tz} notCounted={v.notCounted} />}
-        </div>
-      )}
+        </aside>
+      </div>
     </div>
   );
 }
