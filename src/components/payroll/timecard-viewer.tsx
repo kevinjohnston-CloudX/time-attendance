@@ -172,6 +172,7 @@ type TimecardDetail = {
     employeeCode: string;
     payRate: number | null;
     payType: string | null;
+    shift: { mealConfig: { autoDeduct?: boolean; minMealMinutes?: number; maxMealMinutes?: number; meals?: { workAtLeastHours: number; deductMinutes: number }[] } | null } | null;
     ruleSet: { autoDeductMeal: boolean; mealBreakMinutes: number; mealBreakAfterMinutes: number; overtimeRequiresAuth: boolean; allowTimesheetOtAuth: boolean; defaultPayCodeId: string | null };
   };
   punches: TimecardPunch[];
@@ -1380,10 +1381,20 @@ export function TimecardViewer({
     });
   }
 
+  // Effective meal deduction settings: shift overrides ruleset, matching segment-builder logic.
+  const shiftMeal = timecard?.employee.shift?.mealConfig;
+  const shiftFirstMeal = shiftMeal?.meals?.[0];
+  const effectiveAutoDeductMeal = timecard
+    ? (timecard.employee.shift ? (shiftMeal?.autoDeduct ?? false) : timecard.employee.ruleSet.autoDeductMeal)
+    : false;
+  const effectiveMealBreakAfterMinutes = shiftMeal?.autoDeduct && shiftFirstMeal
+    ? Math.round(shiftFirstMeal.workAtLeastHours * 60)
+    : (timecard?.employee.ruleSet.mealBreakAfterMinutes ?? 0);
+
   // Column count for colSpan on expanded rows
   // Base: chevron + date + notes-icon + in + out + reg + ot + dt + total = 9
   // +1 if pay codes column exists, +1 if reason codes column exists, +1 if delete column shown
-  const colCount = 9 + (payCodes.length > 0 ? 1 : 0) + (reasonCodes.length > 0 ? 1 : 0) + (timecard?.employee.ruleSet.autoDeductMeal ? 1 : 0) + (canDeleteManual ? 1 : 0);
+  const colCount = 9 + (payCodes.length > 0 ? 1 : 0) + (reasonCodes.length > 0 ? 1 : 0) + (effectiveAutoDeductMeal ? 1 : 0) + (canDeleteManual ? 1 : 0);
 
   const canApprove =
     timecard &&
@@ -1950,7 +1961,7 @@ export function TimecardViewer({
                       <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">OT</th>
                       <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">DT</th>
                       <th className="pl-3 pr-8 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Total</th>
-                      {timecard?.employee.ruleSet.autoDeductMeal && (
+                      {effectiveAutoDeductMeal && (
                         <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Meal</th>
                       )}
                       {canDeleteManual && <th className="w-8 px-1 py-1.5" />}
@@ -2531,7 +2542,7 @@ export function TimecardViewer({
                             </td>
 
                             {/* Meal waiver cell */}
-                            {timecard?.employee.ruleSet.autoDeductMeal && (() => {
+                            {effectiveAutoDeductMeal && (() => {
                               const rawWorkMins = daySegments.filter((s) => s.segmentType === "WORK").reduce((a, s) => a + s.durationMinutes, 0);
                               const mealSeg = daySegments.find((s) => s.segmentType === "MEAL");
                               const totalWorkForThreshold = rawWorkMins + (mealSeg?.durationMinutes ?? 0);
@@ -2540,7 +2551,7 @@ export function TimecardViewer({
                               const effectiveHasWaiver = waiverToggled ? !dbWaiver : !!dbWaiver;
                               return (
                                 <td className="px-3 py-1 text-left" onClick={(e) => e.stopPropagation()}>
-                                  {totalWorkForThreshold <= (timecard?.employee.ruleSet.mealBreakAfterMinutes ?? 0) ? (
+                                  {totalWorkForThreshold <= effectiveMealBreakAfterMinutes ? (
                                     <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
                                   ) : effectiveHasWaiver ? (
                                     <div className="flex items-center gap-1.5">
@@ -2767,7 +2778,7 @@ export function TimecardViewer({
                                 <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
                                 <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
                                 <td className="pl-3 pr-8 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
-                                {timecard?.employee.ruleSet.autoDeductMeal && <td />}
+                                {effectiveAutoDeductMeal && <td />}
                                 {/* Delete manual pair — continuation row */}
                                 {canDeleteManual && (() => {
                                   const isManualPair = pairIn?.source === "MANUAL" && pairOut?.source === "MANUAL";

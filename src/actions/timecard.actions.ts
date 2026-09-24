@@ -198,6 +198,7 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
           include: {
             user: true,
             department: true,
+            shift: { select: { mealConfig: true } },
             ruleSet: {
               select: {
                 autoDeductMeal: true,
@@ -363,6 +364,7 @@ export const getTimecardDetail = withRBAC(
           include: {
             user: true,
             department: true,
+            shift: { select: { mealConfig: true } },
             ruleSet: {
               select: {
                 autoDeductMeal: true,
