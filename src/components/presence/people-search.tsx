@@ -41,6 +41,7 @@ export function PeopleSearch({
   text,
   onTextChange,
   max,
+  onBadgeHolders,
 }: {
   siteId: string;
   picked: PickablePerson[];
@@ -48,6 +49,8 @@ export function PeopleSearch({
   text: string;
   onTextChange: (next: string) => void;
   max: number;
+  /** Who holds the badge number typed, for the tables to match it too. */
+  onBadgeHolders?: (forText: string, ids: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [found, setFound] = useState<{ for: string; people: PickablePerson[] }>({ for: "", people: [] });
@@ -57,6 +60,10 @@ export function PeopleSearch({
   const wrapRef = useRef<HTMLDivElement>(null);
   const listId = useId();
   const pickedRef = useRef(picked);
+  const onBadgeHoldersRef = useRef(onBadgeHolders);
+  useEffect(() => {
+    onBadgeHoldersRef.current = onBadgeHolders;
+  }, [onBadgeHolders]);
   useEffect(() => {
     pickedRef.current = picked;
   }, [picked]);
@@ -70,7 +77,9 @@ export function PeopleSearch({
     const t = setTimeout(async () => {
       const res = await findOnSitePeople({ siteId, q: needle, exclude: pickedRef.current.map((p) => p.id) }).catch(() => null);
       if (!live) return;
-      setFound({ for: needle, people: res?.success && res.data.kind === "suggest" ? res.data.people : [] });
+      const people = res?.success && res.data.kind === "suggest" ? res.data.people : [];
+      setFound({ for: needle, people });
+      onBadgeHoldersRef.current?.(needle, people.filter((p) => p.badge).map((p) => p.id));
       setActive(0);
     }, SUGGEST_DELAY_MS);
     return () => {
@@ -203,7 +212,7 @@ export function PeopleSearch({
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={showList && options[active] ? `${listId}-${options[active].id}` : undefined}
-          aria-label="Search people by name or employee code"
+          aria-label="Search people by name, employee code or badge"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
@@ -213,7 +222,7 @@ export function PeopleSearch({
           data-bwignore="true"
           data-form-type="other"
           value={text}
-          placeholder={picked.length ? "Add another person" : "Name or employee code"}
+          placeholder={picked.length ? "Add another person" : "Name, employee code or badge"}
           className={styles.psInput}
           onChange={(e) => {
             onTextChange(e.target.value);
@@ -275,7 +284,9 @@ export function PeopleSearch({
                     </span>
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className={styles.psName}>{p.name}</span>
-                      <span className={styles.psMeta}>{[p.employeeCode, p.department].filter(Boolean).join(" · ")}</span>
+                      <span className={styles.psMeta}>
+                        {[p.badge ? `Badge ${p.badge}` : null, p.employeeCode, p.department].filter(Boolean).join(" · ")}
+                      </span>
                     </span>
                     {p.inactive && <span className={styles.psTag}>Inactive</span>}
                   </li>
@@ -287,7 +298,7 @@ export function PeopleSearch({
               )}
             </ul>
           )}
-          <p className={styles.psHint}>Pick people to follow several at once. To add a list, paste names separated by commas.</p>
+          <p className={styles.psHint}>Pick people to follow several at once. To add a list, paste names or badge numbers separated by commas.</p>
         </div>
       )}
     </div>

@@ -128,6 +128,8 @@ function parseStatus(raw: string | null): StatusFilter {
   return raw && (ALL_STATUSES as string[]).includes(raw) ? (raw as PresenceStatus) : "all";
 }
 
+const NO_IDS: ReadonlySet<string> = new Set();
+
 export function OnSiteBoard({
   sites,
   initialSiteId,
@@ -172,6 +174,10 @@ export function OnSiteBoard({
   // them, plus whoever matches what is still being typed.
   const [picked, setPicked] = useState<PickablePerson[]>([]);
   const pickedIds = useMemo(() => new Set(picked.map((p) => p.id)), [picked]);
+  // A badge number typed and not yet picked: the server says whose it is
+  // (the browser has no badge numbers), and those people match it too.
+  const [badgeHit, setBadgeHit] = useState<{ for: string; ids: Set<string> }>({ for: "", ids: new Set() });
+  const badgeIds = badgeHit.for && badgeHit.for === query.trim() ? badgeHit.ids : NO_IDS;
   const pickedKey = useMemo(() => [...pickedIds].sort().join(","), [pickedIds]);
   const pickedList = useMemo(() => (pickedKey ? pickedKey.split(",") : []), [pickedKey]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -435,14 +441,14 @@ export function OnSiteBoard({
     () =>
       scoped.filter((p) =>
         searching
-          ? pickedIds.has(p.id) || (!!needle && matchesSearch(p, needle))
+          ? pickedIds.has(p.id) || badgeIds.has(p.id) || (!!needle && matchesSearch(p, needle))
           : status === "all"
             ? true
             : status === "inside"
               ? INSIDE_STATUSES.includes(p.status)
               : p.status === status,
       ),
-    [scoped, status, needle, searching, pickedIds],
+    [scoped, status, needle, searching, pickedIds, badgeIds],
   );
 
   const groups = useMemo(() => {
@@ -509,12 +515,13 @@ export function OnSiteBoard({
           (!mvFlagShown || v.flags.includes(mvFlagShown)) &&
           ((!needleMv && !pickedIds.size) ||
             pickedIds.has(v.person.id) ||
+            badgeIds.has(v.person.id) ||
             (!!needleMv &&
               (v.person.name.toLowerCase().includes(needleMv) ||
                 v.person.employeeCode.toLowerCase().includes(needleMv)))),
       )
       .sort(compareDays(mvSort));
-  }, [mvScoped, mvFlagShown, query, mvSort, pickedIds]);
+  }, [mvScoped, mvFlagShown, query, mvSort, pickedIds, badgeIds]);
 
   // The order holds still between refreshes, so the row being read never
   // moves under the reader. What changed meanwhile waits behind the "new
@@ -838,6 +845,7 @@ export function OnSiteBoard({
                       setExpanded({});
                     }}
                     max={MAX_PICKED}
+                    onBadgeHolders={(forText, ids) => setBadgeHit({ for: forText, ids: new Set(ids) })}
                   />
                 )}
                 {departments.length > 0 && (

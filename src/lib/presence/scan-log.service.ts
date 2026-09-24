@@ -1,12 +1,14 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
+import { badgeWhere } from "@/lib/utils/badge-lookup";
 import { addDays, clampDay } from "./days";
 import { localDateString } from "./on-site.service";
 import { photoUrls } from "./photos";
 import { NOT_COUNTED_OUTCOMES } from "./scan-rules";
 import { PUNCH_CHAIN, currentPunch } from "./effective-punch";
 import { scansHere, siteScope } from "./site-scope";
+import { looksLikeBadge } from "./people-search.service";
 import { LONG_BREAK_MIN } from "./movements";
 import type { ScanContext, ScanLogPage, ScanLogQuery, ScanLogRow } from "./types";
 
@@ -87,6 +89,8 @@ export async function getScanLog(
       ? [
           { employeeCode: { contains: q, mode: "insensitive" as const } },
           { user: { name: { contains: q, mode: "insensitive" as const } } },
+          // A whole badge number, read the way the time clock reads it.
+          ...(looksLikeBadge(q) ? [badgeWhere(q)] : []),
         ]
       : []),
   ];
