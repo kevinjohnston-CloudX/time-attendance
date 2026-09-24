@@ -7,6 +7,7 @@ import { TopBar } from "@/components/layout/top-bar";
 import { CommandPalette, type Destination } from "@/components/layout/command-palette";
 import { SECTIONS, ADMIN_GROUPS, INACTIVE_ALLOWED_HREFS } from "@/components/layout/nav-model";
 import { InactiveRouteGuard } from "@/components/layout/inactive-route-guard";
+import { EmployeesListForget } from "@/components/admin/employees-list-forget";
 import { exitTenant } from "@/actions/super-admin.actions";
 import { SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
 import { getPermissions } from "@/lib/rbac/permissions";
@@ -226,6 +227,7 @@ export default async function PortalLayout({
           <TopBar reachableHrefs={destinations.map((d) => d.href)} waiting={waiting} />
           <main className="min-h-0 flex-1 overflow-y-auto">
             <InactiveRouteGuard isInactive={!isEmployeeActive} />
+            <EmployeesListForget />
             {/* --space-content: the design moved main padding from 24px to
                 16px so tables get the width back. */}
             <div className="px-4 pb-6 pt-4">{children}</div>
