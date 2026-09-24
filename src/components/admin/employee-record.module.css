@@ -7,14 +7,13 @@
   grid-template-columns: 300px minmax(0, 1fr);
   gap: 20px;
   align-items: start;
-  max-width: 1320px;
 }
 
 .rail {
   position: sticky;
   /* Clear of the page bar (title, subtitle and its top padding) until the
      page has measured the bar itself. */
-  top: 108px;
+  top: 86px;
   /* Scrolls itself only in a window too short for it. The 4px of padding
      (taken back by the margin) keeps the card's shadow from being clipped. */
   overflow-y: auto;

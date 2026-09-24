@@ -332,7 +332,13 @@ export function EditEmployeeForm({
     while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
     const measure = () => {
       const pinned = getComputedStyle(bar).position === "sticky";
-      const top = pinned ? Math.round(bar.getBoundingClientRect().height) + 16 : 16;
+      // The same distance the sections start below the bar (the page's gap
+      // less the bar's negative bottom margin), so the card and the first
+      // section share one top line whether or not the page has scrolled.
+      const below =
+        parseFloat(getComputedStyle(bar.parentElement ?? bar).rowGap || "0") +
+        parseFloat(getComputedStyle(bar).marginBottom || "0");
+      const top = pinned ? Math.round(bar.getBoundingClientRect().height + below) : 16;
       const view = scroller?.clientHeight ?? window.innerHeight;
       // Less the rail's own 4px of shadow room on each side.
       setRailPin({ top: top - 4, maxHeight: Math.max(240, view - top - 16) + 8 });
