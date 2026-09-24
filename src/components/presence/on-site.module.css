@@ -2106,7 +2106,9 @@
 
 .scanItem {
   display: grid;
-  grid-template-columns: 64px 28px minmax(120px, 1fr) auto minmax(0, 150px) auto;
+  /* Fixed columns, so the reader and the device line up down the list
+     whatever each row holds. */
+  grid-template-columns: 64px 28px minmax(120px, 1fr) 112px minmax(0, 160px) auto;
   align-items: center;
   gap: 0 10px;
   padding: 5px 0;
@@ -3117,5 +3119,180 @@
 @media (prefers-reduced-motion: reduce) {
   .mvNewPill {
     animation: none;
+  }
+}
+
+/* ── A person's day, folded out as rows of the same table ─────────────── */
+
+.mvKind[data-kind="GAP_OFF"] {
+  background: var(--ps-offclock);
+}
+
+.mvKind[data-kind="GAP_OUT"] {
+  background: var(--fill-warning);
+}
+
+/* The parts sit on a quiet band under the person, in the table's own grid. */
+.mvParts {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 0 10px;
+  background: var(--surface-secondary);
+  border-top: 1px solid var(--stroke-divider);
+  cursor: default;
+}
+
+.mvPart {
+  display: grid;
+  grid-template-columns: var(--mv-cols);
+  gap: 0 16px;
+  align-items: center;
+  min-height: 44px;
+  padding: 6px 16px;
+  --mv-cols: minmax(240px, 300px) 104px 104px 96px 104px minmax(160px, 1fr) 36px;
+}
+
+.mvPart[data-gate="false"] {
+  --mv-cols: minmax(240px, 300px) 104px 104px 104px minmax(160px, 1fr) 36px;
+}
+
+.mvPart + .mvPart {
+  border-top: 1px solid var(--stroke-divider);
+}
+
+/* Set in under the name, past the face, so it reads as belonging to it. */
+.mvPartWho {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 60px;
+}
+
+.mvPartLabel {
+  font: var(--weight-medium) 13px/18px var(--font-sans);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mvPart[data-gap="true"] .mvPartLabel {
+  color: var(--text-secondary);
+}
+
+.mvPartLabel[data-tone="warning"],
+.mvPart[data-gap="true"] .mvPartLabel[data-tone="warning"] {
+  color: var(--text-warning);
+}
+
+.mvPartTime {
+  font: var(--weight-medium) 13px/18px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.mvPartTime[data-tone="warning"] {
+  color: var(--text-warning);
+}
+
+/* Each part's own piece of the day, on the same clock as the bar above. */
+.mvPartBar {
+  position: relative;
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ta-track) 70%, transparent);
+}
+
+.mvPartPiece {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 3px;
+  border-radius: 999px;
+}
+
+.mvPartPiece[data-kind="INSIDE"] {
+  background: var(--text-accent);
+}
+
+.mvPartPiece[data-kind="WORK"] {
+  background: var(--fill-success);
+}
+
+.mvPartPiece[data-kind="MEAL"],
+.mvPartPiece[data-kind="BREAK"] {
+  background: var(--fill-warning);
+}
+
+/* A gap is a hole in the day, drawn as a hatched outline, not a bar. */
+.mvPartPiece[data-kind="GAP_OFF"],
+.mvPartPiece[data-kind="GAP_OUT"] {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--fill-warning) 55%, transparent) 0 3px,
+    transparent 3px 6px
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fill-warning) 70%, transparent);
+}
+
+.mvPartPiece[data-kind="GAP_OFF"] {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--ps-offclock) 55%, transparent) 0 3px,
+    transparent 3px 6px
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ps-offclock) 70%, transparent);
+}
+
+.mvPartMark {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--fill-error);
+}
+
+.mvPartFoot {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 16px 0 92px;
+}
+
+.mvPartFoot .scanList {
+  margin-top: 6px;
+  max-width: 900px;
+  background: var(--surface-card);
+}
+
+@media (max-width: 1180px) {
+  .mvPart {
+    --mv-cols: minmax(220px, 1fr) 96px 96px 92px 100px 36px;
+  }
+  .mvPart[data-gate="false"] {
+    --mv-cols: minmax(220px, 1fr) 96px 96px 100px 36px;
+  }
+}
+
+@media (max-width: 760px) {
+  .mvPart,
+  .mvPart[data-gate="false"] {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 2px 12px;
+  }
+  .mvPartWho {
+    grid-column: 1 / -1;
+    padding-left: 0;
+  }
+  .mvPart > .mvDay,
+  .mvPart > :last-child {
+    display: none;
+  }
+  .mvPartFoot {
+    padding-left: 16px;
   }
 }

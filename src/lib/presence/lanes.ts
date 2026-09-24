@@ -48,6 +48,13 @@ export interface DayLanes {
   lastOut: number | null;
   /** Gate exits with no entry before them: out through the gate, never seen coming in. */
   exitsWithoutEntry: PresenceScan[];
+  /** The stretches behind the two gap totals, in order, so a day can list them. */
+  gaps: {
+    /** Inside the building, not on the clock and not on a meal or break. */
+    insideOffClock: { start: number; end: number }[];
+    /** On the clock while the gate had them outside. */
+    workOutside: { start: number; end: number }[];
+  };
 }
 
 type ClockState = ClockKind | "OUT";
@@ -167,6 +174,10 @@ export function buildLanes({
     firstIn: ins.length ? ins[0] : null,
     lastOut: outs.length ? outs[outs.length - 1] : null,
     exitsWithoutEntry,
+    gaps: {
+      insideOffClock: offClockInside.sort((a, b) => a.start - b.start),
+      workOutside: workOutside.sort((a, b) => a.start - b.start),
+    },
   };
 }
 

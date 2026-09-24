@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowUp, ChevronDown, ChevronRight, Clock, DoorOpen, UserRoundX } from "lucide-react";
+import { ArrowUp, ChevronDown, ChevronRight, UserRoundX } from "lucide-react";
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { getOnSiteMovements } from "@/actions/presence.actions";
 import type { PresenceStatus, SiteDay } from "@/lib/presence/types";
 import {
+  GAP_MIN,
   LONG_BREAK_MIN,
   type MovementFlag,
   type MovementLine,
@@ -219,6 +220,7 @@ export function MovementsTable({
             axis={axis}
             open={isOpen(v.person.id)}
             onToggle={() => onToggle(v.person.id)}
+            dayStart={Date.parse(data.dayStart)}
           />
         ))}
       </ol>
@@ -250,9 +252,11 @@ function PersonRow({
   axis,
   open,
   onToggle,
+  dayStart,
 }: {
   open: boolean;
   onToggle: () => void;
+  dayStart: number;
   view: PersonDayView;
   isToday: boolean;
   hasGate: boolean;
@@ -402,32 +406,7 @@ function PersonRow({
       </div>
 
       {open && hasDetail && (
-        <div className={styles.mvDetail} onClick={(e) => e.stopPropagation()}>
-          {v.lines.length > 0 ? (
-            <div className={styles.mvDetailBlock}>
-              <span className={styles.mvDetailHead} aria-hidden="true">
-                <span>Reader</span>
-                <span>Activity</span>
-                <span>From</span>
-                <span>To</span>
-                <span className={styles.mvNum}>Duration</span>
-              </span>
-              {v.lines.map((l) => (
-                <Line key={l.key} line={l} isToday={isToday} tz={tz} />
-              ))}
-            </div>
-          ) : (
-            <span className={styles.mvNone}>No stretches recorded, only scans that changed nothing.</span>
-          )}
-          {seen && (
-            <div className={styles.mvDetailBlock}>
-              <span className={styles.mvDetailTitle}>
-                {v.scanCount.toLocaleString()} {v.scanCount === 1 ? "scan" : "scans"}
-              </span>
-              <ScanList scans={v.scans} tz={tz} notCounted={v.notCounted} />
-            </div>
-          )}
-        </div>
+        <DayParts view={v} isToday={isToday} hasGate={hasGate} tz={tz} now={now} axis={axis} dayStart={dayStart} />
       )}
     </li>
   );
@@ -662,57 +641,182 @@ const STILL: Record<MovementLine["kind"], string> = {
   EXIT_ONLY: "",
 };
 
-function Line({ line: l, isToday, tz }: { line: MovementLine; isToday: boolean; tz: string }) {
-  const gate = l.reader === "gate";
+type PartKind = MovementLine["kind"] | "GAP_OFF" | "GAP_OUT";
+
+/** One piece of a person's day: a stretch at a reader, or a gap between the two. */
+interface DayPart {
+  key: string;
+  kind: PartKind;
+  start: number | null;
+  end: number | null;
+  minutes: number;
+  carried: boolean;
+  closedBySystem: boolean;
+  devices: string[];
+}
+
+const GAP_LABEL = { GAP_OFF: "Inside, not clocked in", GAP_OUT: "Clocked in, not inside" } as const;
+
+/**
+ * The day as parts, in the order they began: every stretch at each reader,
+ * and between them the gaps worth seeing (inside and not clocked in, clocked
+ * in and not inside), which are the numbers loss prevention reads first and
+ * otherwise has to work out from two lists.
+ */
+function dayParts(v: PersonDayView, isToday: boolean, now: number, dayStart: number): DayPart[] {
+  const parts: DayPart[] = v.lines.map((l) => ({
+    key: l.key,
+    kind: l.kind,
+    start: l.start,
+    end: l.end,
+    minutes: l.minutes,
+    carried: l.carried,
+    closedBySystem: l.closedBySystem,
+    devices: [...new Set([l.startDevice, l.endDevice].filter((d): d is string => !!d))],
+  }));
+  const running = (end: number) => isToday && Math.abs(end - now) < 60_000;
+  const gap = (kind: "GAP_OFF" | "GAP_OUT", g: { start: number; end: number }) => {
+    const minutes = Math.floor((g.end - g.start) / 60000);
+    if (minutes < 1) return;
+    parts.push({
+      key: `${kind}${g.start}`,
+      kind,
+      start: g.start,
+      end: running(g.end) ? null : g.end,
+      minutes,
+      carried: false,
+      closedBySystem: false,
+      devices: [],
+    });
+  };
+  if (!v.person.salaried) v.lanes.gaps.insideOffClock.forEach((g) => gap("GAP_OFF", g));
+  v.lanes.gaps.workOutside.forEach((g) => gap("GAP_OUT", g));
+  const startOf = (p: DayPart) => p.start ?? (p.kind === "EXIT_ONLY" ? p.end ?? dayStart : dayStart);
+  return parts.sort((a, b) => startOf(a) - startOf(b));
+}
+
+/**
+ * A person's day folded out as rows of the same table: each part lines up
+ * under Arrived and Left, its length under the reader it belongs to, and its
+ * own piece of the day bar under the person's bar.
+ */
+function DayParts({
+  view: v,
+  isToday,
+  hasGate,
+  tz,
+  now,
+  axis,
+  dayStart,
+}: {
+  view: PersonDayView;
+  isToday: boolean;
+  hasGate: boolean;
+  tz: string;
+  now: number;
+  axis: Axis;
+  dayStart: number;
+}) {
+  const [scansOpen, setScansOpen] = useState(false);
+  const parts = dayParts(v, isToday, now, dayStart);
   const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
-  const long = (l.kind === "MEAL" || l.kind === "BREAK") && l.minutes > LONG_BREAK_MIN;
+  const endOf = (p: DayPart) => p.end ?? (isToday ? Math.min(now, axis.to) : axis.to);
 
   return (
-    <span className={styles.mvLine} data-kind={l.kind}>
-      <span className={styles.mvCell}>
-        <span className={styles.source} data-stream={gate ? "gate" : "clock"}>
-          {gate ? <DoorOpen className="h-3.5 w-3.5" aria-hidden="true" /> : <Clock className="h-3.5 w-3.5" aria-hidden="true" />}
-          {gate ? "Security gate" : "Time clock"}
-        </span>
-      </span>
-      <span className={`${styles.mvCell} ${styles.mvWhat}`}>
-        <span className={styles.mvKind} data-kind={l.kind} aria-hidden="true" />
-        <span className="truncate">{KIND_LABEL[l.kind]}</span>
-      </span>
-      <span className={`${styles.mvCell} ${styles.mvTime}`}>
-        {l.kind === "EXIT_ONLY" ? (
-          <span className={styles.mvQuiet}>Never scanned in</span>
-        ) : l.carried ? (
-          <span className={styles.mvQuiet}>Since yesterday</span>
-        ) : (
-          <>
-            <span>{l.start !== null ? time(l.start) : ""}</span>
-            {l.startDevice && <span className={styles.mvDevice}>{l.startDevice}</span>}
-          </>
-        )}
-      </span>
-      <span className={`${styles.mvCell} ${styles.mvTime}`}>
-        {l.end === null ? (
-          isToday ? (
-            <span className={styles.mvStill}>{STILL[l.kind]}</span>
-          ) : (
-            <span className={styles.mvWarn}>Never scanned out</span>
-          )
-        ) : (
-          <>
-            <span>{time(l.end)}</span>
-            {l.closedBySystem ? (
-              <span className={styles.mvWarnSmall}>Closed by the system</span>
-            ) : (
-              l.endDevice && <span className={styles.mvDevice}>{l.endDevice}</span>
+    <div className={styles.mvParts} onClick={(e) => e.stopPropagation()}>
+      {parts.length === 0 && (
+        <div className={styles.mvPart} data-gate={hasGate ? undefined : "false"}>
+          <span className={styles.mvPartWho}>
+            <span className={styles.mvQuiet}>No stretches recorded, only scans that changed nothing.</span>
+          </span>
+        </div>
+      )}
+      {parts.map((p) => {
+        const gapPart = p.kind === "GAP_OFF" || p.kind === "GAP_OUT";
+        const onGate = p.kind === "INSIDE" || p.kind === "EXIT_ONLY" || p.kind === "GAP_OFF";
+        const long =
+          (gapPart && p.minutes >= GAP_MIN) || ((p.kind === "MEAL" || p.kind === "BREAK") && p.minutes > LONG_BREAK_MIN);
+        const label = gapPart ? GAP_LABEL[p.kind as "GAP_OFF" | "GAP_OUT"] : KIND_LABEL[p.kind as MovementLine["kind"]];
+        const length = p.kind === "EXIT_ONLY" ? "" : fmtDuration(p.minutes);
+        return (
+          <div key={p.key} className={styles.mvPart} data-gate={hasGate ? undefined : "false"} data-gap={gapPart ? "true" : undefined}>
+            <span className={styles.mvPartWho}>
+              <span className={styles.mvKind} data-kind={p.kind} aria-hidden="true" />
+              <span className="flex min-w-0 flex-col">
+                <span className={styles.mvPartLabel} data-tone={long ? "warning" : undefined}>
+                  {label}
+                </span>
+                {p.devices.length > 0 && <span className={styles.mvDevice}>{p.devices.join(" · ")}</span>}
+              </span>
+            </span>
+            <span className={styles.mvFact}>
+              <span className={styles.mvPartTime}>
+                {p.kind === "EXIT_ONLY" ? (
+                  <span className={styles.mvQuiet}>Never scanned in</span>
+                ) : p.carried ? (
+                  <span className={styles.mvQuiet}>Since yesterday</span>
+                ) : p.start !== null ? (
+                  time(p.start)
+                ) : null}
+              </span>
+            </span>
+            <span className={styles.mvFact}>
+              <span className={styles.mvPartTime}>
+                {p.end === null ? (
+                  isToday ? (
+                    <span className={styles.mvQuiet}>{gapPart ? "Now" : STILL[p.kind as MovementLine["kind"]]}</span>
+                  ) : (
+                    <span className={styles.mvWarn}>Never scanned out</span>
+                  )
+                ) : (
+                  time(p.end)
+                )}
+              </span>
+              {p.closedBySystem && <span className={styles.mvWarnSmall}>Closed by the system</span>}
+            </span>
+            {hasGate && (
+              <span className={`${styles.mvFact} ${styles.mvNum}`}>
+                <span className={styles.mvPartTime} data-tone={long && onGate ? "warning" : undefined}>
+                  {onGate ? length : ""}
+                </span>
+              </span>
             )}
-          </>
-        )}
-      </span>
-      <span className={`${styles.mvCell} ${styles.mvNum}`} data-long={long ? "true" : undefined}>
-        {l.kind === "EXIT_ONLY" ? "" : fmtDuration(l.minutes)}
-      </span>
-    </span>
+            <span className={`${styles.mvFact} ${styles.mvNum}`}>
+              <span className={styles.mvPartTime} data-tone={long && !onGate ? "warning" : undefined}>
+                {onGate ? "" : length}
+              </span>
+            </span>
+            <span className={styles.mvDay}>
+              <span className={styles.mvPartBar}>
+                {p.kind !== "EXIT_ONLY" && (
+                  <span
+                    className={styles.mvPartPiece}
+                    data-kind={p.kind}
+                    style={{
+                      left: axis.pct(p.start ?? axis.from),
+                      width: axis.width(p.start ?? axis.from, endOf(p)),
+                    }}
+                  />
+                )}
+                {p.kind === "EXIT_ONLY" && p.end !== null && (
+                  <span className={styles.mvPartMark} style={{ left: axis.pct(p.end) }} />
+                )}
+              </span>
+            </span>
+            <span />
+          </div>
+        );
+      })}
+      {v.scanCount > 0 && (
+        <div className={styles.mvPartFoot}>
+          <button type="button" className={styles.scanToggle} aria-expanded={scansOpen} onClick={() => setScansOpen((o) => !o)}>
+            <ChevronDown className={styles.chevron} aria-hidden="true" />
+            {scansOpen ? "Hide" : "Show"} {v.scanCount.toLocaleString()} {v.scanCount === 1 ? "scan" : "scans"}
+          </button>
+          {scansOpen && <ScanList scans={v.scans} tz={tz} notCounted={v.notCounted} />}
+        </div>
+      )}
+    </div>
   );
 }
 
