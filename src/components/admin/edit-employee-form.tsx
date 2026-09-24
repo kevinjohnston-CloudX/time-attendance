@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { updateEmployee, updateHrSiteAccess } from "@/actions/admin.actions";
@@ -315,15 +315,34 @@ export function EditEmployeeForm({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  // The rail pins just under the page bar.
+  // The rail pins just under the page bar, and never taller than the window
+  // leaves it, so its top and its button are always on screen. Measured
+  // before the first paint and again whenever the bar or the window changes.
+  // Where the bar itself does not pin (a short or narrow window), the rail
+  // does not leave room for it. Until measured, the stylesheet's offset holds.
   const barRef = useRef<HTMLDivElement | null>(null);
-  const [barHeight, setBarHeight] = useState(0);
-  useEffect(() => {
+  const [railPin, setRailPin] = useState<{ top: number; maxHeight: number } | null>(null);
+  useLayoutEffect(() => {
     const bar = barRef.current;
-    if (!bar || typeof ResizeObserver !== "function") return;
-    const ro = new ResizeObserver(() => setBarHeight(bar.getBoundingClientRect().height));
-    ro.observe(bar);
-    return () => ro.disconnect();
+    if (!bar) return;
+    let scroller: HTMLElement | null = bar.parentElement;
+    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
+    const measure = () => {
+      const pinned = getComputedStyle(bar).position === "sticky";
+      const top = pinned ? Math.round(bar.getBoundingClientRect().height) + 16 : 16;
+      const view = scroller?.clientHeight ?? window.innerHeight;
+      // Less the rail's own 4px of shadow room on each side.
+      setRailPin({ top: top - 4, maxHeight: Math.max(240, view - top - 16) + 8 });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
+    ro?.observe(bar);
+    if (scroller) ro?.observe(scroller);
+    return () => {
+      window.removeEventListener("resize", measure);
+      ro?.disconnect();
+    };
   }, []);
 
   function set<K extends Key>(key: K, value: Values[K]) {
@@ -552,7 +571,7 @@ export function EditEmployeeForm({
 
         <div className={styles.layout}>
           {/* ── Profile rail ───────────────────────────────────────────── */}
-          <aside className={styles.rail} style={{ top: barHeight + 16 }}>
+          <aside className={styles.rail} style={railPin ?? undefined}>
             <div className={styles.card}>
               <div className={styles.profile}>
                 <span className={styles.avatar} aria-hidden="true">{initialsOf(v.name || employee.user.name)}</span>
