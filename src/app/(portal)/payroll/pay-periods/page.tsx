@@ -20,7 +20,8 @@ import { PayPeriodDetailFilter } from "@/components/payroll/pay-period-detail-fi
 import { PayPeriodDownload } from "@/components/payroll/pay-period-download";
 import { PayPeriodExport } from "@/components/payroll/pay-period-export";
 import { CalendarRange, CircleAlert, CircleCheck } from "lucide-react";
-import { Badge, Card, EmptyState, PageHeader, payPeriodTone } from "@/components/ui";
+import { Badge, Card, EmptyState, LinkButton, PageHeader, payPeriodTone } from "@/components/ui";
+import { PayPeriodsShell } from "@/components/payroll/pay-periods-shell";
 
 /**
  * Pay Periods: the list of periods on the left, and on the right the period
@@ -170,99 +171,102 @@ export default async function PayPeriodsPage({
 
   const adpConfigured = getAdpConfig() !== null;
 
+  const periodText = detail ? periodLabel(detail.payPeriod.startDate, detail.payPeriod.endDate) : null;
+
   return (
-    <div className="ta-bleed flex items-start gap-0">
-      {/* ── Left pane: the list ──────────────────────────────── */}
-      <aside
-        className="sticky top-0 flex h-full w-80 shrink-0 flex-col overflow-hidden"
-        style={{ borderRight: "1px solid var(--stroke-secondary)" }}
-      >
-        <div className="flex shrink-0 items-baseline justify-between gap-2 px-4 pt-6 pb-3">
-          {/* A panel title, not a page title: PageHeader's 30px would swamp a
-              320px column. The count beside it is the difference between
-              "there are no locked periods" and "nothing matches these
-              filters", and the second is what sends somebody looking for
-              periods that were never generated. */}
-          <span className="flex min-w-0 items-baseline gap-2">
-            <h1 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>Pay Periods</h1>
+    <PayPeriodsShell
+      header={
+        <PageHeader
+          title="Pay Periods"
+          subtitle="Approve, close and export each pay period"
+          actions={
+            <>
+              <LinkButton href="/payroll/timecards" hierarchy="tertiary">
+                Timecards
+              </LinkButton>
+              {/* The period's own actions, for the period open below. */}
+              {detail && periodText && (
+                <>
+                  <PayPeriodExport payPeriodId={detail.payPeriod.id} label={periodText} sites={sites} />
+                  <PayPeriodDownload payPeriodId={detail.payPeriod.id} label={periodText} />
+                  <PayPeriodActions
+                    payPeriodId={detail.payPeriod.id}
+                    status={detail.payPeriod.status}
+                    isReady={detail.validation.isReady}
+                    isPast={parseUtcDate(detail.payPeriod.endDate) < new Date()}
+                    adpConfigured={adpConfigured}
+                    payrollRun={payrollRun}
+                  />
+                </>
+              )}
+            </>
+          }
+        />
+      }
+      rail={
+        <>
+          {/* The count is the difference between "there are no locked
+              periods" and "nothing matches these filters", and the second is
+              what sends somebody looking for periods that were never generated. */}
+          <div className="flex shrink-0 items-baseline justify-between gap-2 px-4 pb-3 pt-3.5">
+            <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>Periods</span>
             <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
               {payPeriods.length}
             </span>
-          </span>
-          <Link
-            href="/payroll/timecards"
-            style={{ font: "var(--type-button2)", color: "var(--text-accent)" }}
-            className="whitespace-nowrap hover:underline"
-          >
-            Timecards
-          </Link>
-        </div>
-
-        <PayPeriodsFilter
-          allPayPeriods={serialisedAll}
-          selectedId={selectedId}
-          currentFilter={currentFilter}
-          statusFilter={statusFilter}
-          monthParam={monthParam ?? undefined}
-          siteId={siteId}
-          departmentId={departmentId}
-        />
-
-        <div className="ta-scroll flex-1 overflow-y-auto pb-4" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
-          {payPeriods.length === 0 ? (
-            <EmptyState
-              title="No pay periods"
-              body="Nothing matches the scope, status and month above."
-            />
-          ) : (
-            <PeriodList
-              payPeriods={payPeriods}
-              selectedId={selectedId}
-              currentFilter={currentFilter}
-              statusFilter={statusFilter}
-              monthParam={monthParam}
-              siteId={siteId}
-              departmentId={departmentId}
-            />
-          )}
-        </div>
-      </aside>
-
-      {/* ── Right pane: the period as a document ─────────────── */}
-      {/* Scrolls on its own, inside 24px of padding rather than the page's
-          16px, so the pinned title is told how far to reach. */}
-      <div
-        className="h-full flex-1 overflow-y-auto px-6 py-6"
-        style={{
-          ["--pin-x" as string]: "1.5rem",
-          ["--pin-t" as string]: "1.5rem",
-          ["--pin-stick" as string]: "-1.5rem",
-        }}
-      >
-        {!detail ? (
-          <div className="flex h-full items-center justify-center">
-            <EmptyState
-              icon={<CalendarRange className="h-8 w-8" />}
-              title="Select a pay period"
-              body="Pick one on the left to see what is blocking its close, the hours it holds and every timesheet in it."
-            />
           </div>
-        ) : (
-          <PeriodDetail
-            detail={detail}
-            ruleSet={allPayPeriods.find((pp) => pp.id === detail!.payPeriod.id)?.ruleSet ?? null}
-            payrollRun={payrollRun}
-            adpConfigured={adpConfigured}
-            sites={sites}
-            departments={departments}
+
+          <PayPeriodsFilter
+            allPayPeriods={serialisedAll}
+            selectedId={selectedId}
             currentFilter={currentFilter}
+            statusFilter={statusFilter}
+            monthParam={monthParam ?? undefined}
             siteId={siteId}
             departmentId={departmentId}
-            show={show}
           />
-        )}
-      </div>
-    </div>
+
+          <div className="ta-scroll min-h-0 flex-1 overflow-y-auto pb-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+            {payPeriods.length === 0 ? (
+              <EmptyState
+                title="No pay periods"
+                body="Nothing matches the scope, status and month above."
+              />
+            ) : (
+              <PeriodList
+                payPeriods={payPeriods}
+                selectedId={selectedId}
+                currentFilter={currentFilter}
+                statusFilter={statusFilter}
+                monthParam={monthParam}
+                siteId={siteId}
+                departmentId={departmentId}
+              />
+            )}
+          </div>
+        </>
+      }
+    >
+      {!detail ? (
+        <Card>
+          <EmptyState
+            icon={<CalendarRange className="h-8 w-8" />}
+            title="Select a pay period"
+            body="Pick one on the left to see what is blocking its close, the hours it holds and every timesheet in it."
+          />
+        </Card>
+      ) : (
+        <PeriodDetail
+          detail={detail}
+          ruleSet={allPayPeriods.find((pp) => pp.id === detail!.payPeriod.id)?.ruleSet ?? null}
+          sites={sites}
+          departments={departments}
+          currentFilter={currentFilter}
+          siteId={siteId}
+          departmentId={departmentId}
+          show={show}
+        />
+      )}
+    </PayPeriodsShell>
   );
 }
 
@@ -333,7 +337,7 @@ function PeriodList({
           <section key={`${group.start.toISOString()}|${group.end.toISOString()}`} aria-label={periodLabel(group.start, group.end)}>
             <div
               className="sticky top-0 z-10 flex items-center gap-2 px-4 pb-2 pt-4"
-              style={{ background: "var(--surface-page)" }}
+              style={{ background: "var(--surface-card)" }}
             >
               <span className="tabular truncate" style={{ font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
                 {periodLabel(group.start, group.end)}
@@ -459,8 +463,6 @@ const n = (v: number) => v.toLocaleString("en-US");
 function PeriodDetail({
   detail,
   ruleSet,
-  payrollRun,
-  adpConfigured,
   sites,
   departments,
   currentFilter,
@@ -470,8 +472,6 @@ function PeriodDetail({
 }: {
   detail: Detail;
   ruleSet: { name: string; payFrequency: string | null } | null;
-  payrollRun: { id: string; exportedAt: Date | null; pushedCount: number; skippedCount: number; errorCount: number } | null;
-  adpConfigured: boolean;
   sites: { id: string; name: string }[];
   departments: { id: string; name: string }[];
   currentFilter: FilterValue;
@@ -632,32 +632,21 @@ function PeriodDetail({
   const approvedPct = sheets.length ? Math.round((payrollApproved / sheets.length) * 100) : 0;
 
   return (
-    <div className="@container flex w-full flex-col gap-4">
-      <PageHeader pinned
-        title={
-          <span className="flex flex-wrap items-center gap-3">
-            <span className="tabular">{label}</span>
-            <Badge tone={payPeriodTone(payPeriod.status)}>
-              {PAY_PERIOD_STATUS_LABEL[payPeriod.status]}
-            </Badge>
-          </span>
-        }
-        subtitle={subtitle}
-        actions={
-          <>
-            <PayPeriodExport payPeriodId={payPeriod.id} label={label} sites={sites} />
-            <PayPeriodDownload payPeriodId={payPeriod.id} label={label} />
-            <PayPeriodActions
-              payPeriodId={payPeriod.id}
-              status={payPeriod.status}
-              isReady={validation.isReady}
-              isPast={isPast}
-              adpConfigured={adpConfigured}
-              payrollRun={payrollRun}
-            />
-          </>
-        }
-      />
+    <div className="flex w-full flex-col gap-4">
+      {/* The period open, as the heading of this side: a step under the
+          page title, with its rule set, frequency and last day under it. */}
+      <div className="flex flex-col gap-1">
+        <span className="flex flex-wrap items-center gap-2.5">
+          <h2
+            className="tabular"
+            style={{ margin: 0, font: "var(--type-h2)", fontWeight: "var(--weight-bold)", letterSpacing: "-0.01em", color: "var(--text-primary)" }}
+          >
+            {label}
+          </h2>
+          <Badge tone={payPeriodTone(payPeriod.status)}>{PAY_PERIOD_STATUS_LABEL[payPeriod.status]}</Badge>
+        </span>
+        <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{subtitle}</span>
+      </div>
 
       {/* Approvals and the checklist side by side, the same height: how far
           along the period is, and what is left before it can close. */}
@@ -821,7 +810,7 @@ function PeriodDetail({
         </div>
       </Card>
 
-      <div id="timesheets" style={{ scrollMarginTop: 120 }}>
+      <div id="timesheets" style={{ scrollMarginTop: "calc(var(--pp-bar) + 1rem)" }}>
         <Card
           title="Timesheets"
           subtitle={
