@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { DAYS_BACK, addDays, clampDay } from "./days";
 import { photoUrls } from "./photos";
+import { EFFECTIVE_STATE_SQL, PUNCH_CHAIN, PUNCH_CHAIN_JOINS, currentPunch } from "./effective-punch";
 import { scansHere, scansHereSql, siteScope } from "./site-scope";
 import { NOT_COUNTED_OUTCOMES } from "./scan-rules";
 import type {
@@ -120,9 +121,10 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
              s."direction"::text       AS direction,
              s."directionSource"::text AS source,
              s."scanTime"              AS "scanTime",
-             s."timecardStateAfter"    AS "stateAfter"
+             COALESCE(${EFFECTIVE_STATE_SQL}, s."timecardStateAfter") AS "stateAfter"
       FROM   "scan_events" s
       JOIN   "employees" e ON e.id = s."employeeId"
+      ${PUNCH_CHAIN_JOINS}
       WHERE  s."tenantId" = ${tenantId}
         AND  e."tenantId" = ${tenantId}
         AND  s."scanTime" >= ${windowStart}
@@ -422,6 +424,7 @@ export async function getPresenceDetail(
     timecardPunchType: true,
     deviceName: true,
     outcome: true,
+    punch: PUNCH_CHAIN,
   } as const;
 
   // The state at midnight: the newest IN or OUT of each kind before the day.
@@ -475,9 +478,9 @@ export async function getPresenceDetail(
     today,
     dayStart: dayStart.toISOString(),
     dayEnd: dayEnd.toISOString(),
-    scans: scans.map(toScan),
-    carryGate: carryGate ? toScan(carryGate) : null,
-    carryClock: carryClock ? toScan(carryClock) : null,
+    scans: scans.map((s) => toScan(withCurrentPunch(s))),
+    carryGate: carryGate ? toScan(withCurrentPunch(carryGate)) : null,
+    carryClock: carryClock ? toScan(withCurrentPunch(carryClock)) : null,
   };
 }
 
@@ -490,15 +493,24 @@ export type ScanRow = {
   timecardPunchType: string | null;
   deviceName: string | null;
   outcome: string;
+  /** The punch type after any approved correction, when it is known. */
+  currentPunchType?: string | null;
 };
 
+/** A scan read with its punch chain, reduced to the punch type in force now. */
+export function withCurrentPunch<T extends ScanRow & { punch?: Parameters<typeof currentPunch>[0] }>(r: T): ScanRow {
+  return { ...r, currentPunchType: currentPunch(r.punch)?.punchType ?? null };
+}
+
 export function toScan(s: ScanRow): PresenceScan {
+  const type = s.currentPunchType ?? s.timecardPunchType;
   return {
     id: s.id,
     at: s.scanTime.toISOString(),
     stream: s.stream,
     direction: s.direction,
-    punchType: s.timecardPunchType,
+    punchType: type,
+    correctedFrom: s.timecardPunchType && type !== s.timecardPunchType ? s.timecardPunchType : null,
     device: s.deviceName,
     automatic: s.directionSource === "AUTO_CLOSE" || s.directionSource === "SEEDED",
     reread: s.directionSource === "REREAD",

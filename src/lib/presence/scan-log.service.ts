@@ -5,6 +5,7 @@ import { addDays, clampDay } from "./days";
 import { localDateString } from "./on-site.service";
 import { photoUrls } from "./photos";
 import { NOT_COUNTED_OUTCOMES } from "./scan-rules";
+import { PUNCH_CHAIN, currentPunch } from "./effective-punch";
 import { scansHere, siteScope } from "./site-scope";
 import { LONG_BREAK_MIN } from "./movements";
 import type { ScanContext, ScanLogPage, ScanLogQuery, ScanLogRow } from "./types";
@@ -40,25 +41,10 @@ const SYSTEM = ["AUTO_CLOSE", "SEEDED"];
  */
 const CLOCK_IN_TYPES = ["CLOCK_IN", "MEAL_END", "BREAK_END"];
 const CLOCK_OUT_TYPES = ["CLOCK_OUT", "MEAL_START", "BREAK_START"];
-const CLOCK_TYPES = [...CLOCK_IN_TYPES, ...CLOCK_OUT_TYPES];
-
 function clockDirection(punchType: string | null, direction: "IN" | "OUT" | "UNKNOWN"): "IN" | "OUT" | "UNKNOWN" {
   if (punchType && CLOCK_IN_TYPES.includes(punchType)) return "IN";
   if (punchType && CLOCK_OUT_TYPES.includes(punchType)) return "OUT";
   return direction;
-}
-
-function directionWhere(stream: "SECURITY" | "TIME_CLOCK", dir: "IN" | "OUT"): Prisma.ScanEventWhereInput {
-  if (stream === "SECURITY") return { direction: dir };
-  return {
-    OR: [
-      { timecardPunchType: { in: dir === "IN" ? CLOCK_IN_TYPES : CLOCK_OUT_TYPES } },
-      {
-        direction: dir,
-        OR: [{ timecardPunchType: null }, { timecardPunchType: { notIn: CLOCK_TYPES } }],
-      },
-    ],
-  };
 }
 
 const PAGE = 100;
@@ -129,35 +115,30 @@ export async function getScanLog(
   // A real entry through the gate, and a real clock in (not a return from a
   // meal): the two kinds a person is counted once for.
   const gateIn: Prisma.ScanEventWhereInput = { stream: "SECURITY", direction: "IN" };
-  const clockIn: Prisma.ScanEventWhereInput = {
-    stream: "TIME_CLOCK",
-    OR: [{ timecardPunchType: "CLOCK_IN" }, { timecardPunchType: null, direction: "IN" }],
-  };
 
-  // Each person's first scan of that kind, for "first entry" and "first clock
-  // in". One site and one day, so a few thousand rows at most.
-  // What every counted scan that day means next to the one before it, for
-  // the row text, and for the gate scans that have no partner.
-  const contexts = await scanContexts(counted);
+  // Every counted scan that day, once, with the punch type in force now (a
+  // correction in the timecard wins over the type saved at the tap). It gives
+  // the time clock's counts and filters, each person's first entry and first
+  // clock in, and what every scan means next to the one before it. One site
+  // and one day, so a few thousand rows at most.
+  const dayScans = await readDay(counted);
+  const contexts = scanContexts(dayScans);
   const missedIds = [...contexts].filter(([, c]) => c.kind === "reentry" || c.kind === "reexit").map(([id]) => id);
-
+  const clockScans = dayScans.filter((d) => d.stream === "TIME_CLOCK");
+  const clockDir = (d: DayScan) => clockDirection(d.type, d.direction);
+  const firstOf = (list: DayScan[]) => {
+    const seenPeople = new Set<string>();
+    const ids: string[] = [];
+    for (const r of list) {
+      if (!r.employeeId || seenPeople.has(r.employeeId)) continue;
+      seenPeople.add(r.employeeId);
+      ids.push(r.id);
+    }
+    return ids;
+  };
+  const clockIns = clockScans.filter((d) => d.type === "CLOCK_IN");
   const firstIds = input.first
-    ? await db.scanEvent
-        .findMany({
-          where: { AND: [counted, input.first === "gate" ? gateIn : clockIn] },
-          orderBy: [{ scanTime: "asc" }, { id: "asc" }],
-          select: { id: true, employeeId: true },
-        })
-        .then((rows) => {
-          const seenPeople = new Set<string>();
-          const ids: string[] = [];
-          for (const r of rows) {
-            if (!r.employeeId || seenPeople.has(r.employeeId)) continue;
-            seenPeople.add(r.employeeId);
-            ids.push(r.id);
-          }
-          return ids;
-        })
+    ? firstOf(input.first === "gate" ? dayScans.filter((d) => d.stream === "SECURITY" && d.direction === "IN") : clockIns)
     : null;
 
   // What the rows cover: that, narrowed by whichever counter is picked. A
@@ -172,7 +153,14 @@ export async function getScanLog(
     narrow.push({ NOT: notCounted });
     if (input.stream) {
       narrow.push({ stream: input.stream });
-      if (input.direction) narrow.push(directionWhere(input.stream, input.direction));
+      if (input.direction) {
+        const dir = input.direction;
+        narrow.push(
+          input.stream === "SECURITY"
+            ? { direction: dir }
+            : { id: { in: clockScans.filter((d) => clockDir(d) === dir).map((d) => d.id) } },
+        );
+      }
     }
   }
   const filtered: Prisma.ScanEventWhereInput = { AND: narrow };
@@ -187,7 +175,7 @@ export async function getScanLog(
       ? { AND: [filtered, { OR: [{ scanTime: { lt: before.at } }, { scanTime: before.at, id: { lt: before.id } }] }] }
       : filtered;
 
-  const [rows, byStream, rejected, autoClosed, people, newest, peopleIn, peopleClockedIn, clockAutoClosed] = await Promise.all([
+  const [rows, gateGroups, rejected, autoClosed, people, newest, peopleIn, clockAutoClosed] = await Promise.all([
     db.scanEvent.findMany({
       where: rowWhere,
       orderBy: [{ scanTime: "desc" }, { id: "desc" }],
@@ -202,6 +190,7 @@ export async function getScanLog(
         deviceName: true,
         outcome: true,
         rejectionReason: true,
+        punch: PUNCH_CHAIN,
         employee: {
           select: {
             id: true,
@@ -217,8 +206,8 @@ export async function getScanLog(
       },
     }),
     db.scanEvent.groupBy({
-      by: ["stream", "direction", "timecardPunchType"],
-      where: counted,
+      by: ["direction"],
+      where: { AND: [counted, { stream: "SECURITY" }] },
       _count: { _all: true },
     }),
     db.scanEvent.count({ where: { AND: [base, notCounted] } }),
@@ -226,20 +215,11 @@ export async function getScanLog(
     db.scanEvent.groupBy({ by: ["employeeId"], where: counted }),
     db.scanEvent.aggregate({ where: base, _max: { createdAt: true } }),
     db.scanEvent.groupBy({ by: ["employeeId"], where: { AND: [counted, gateIn] } }),
-    db.scanEvent.groupBy({ by: ["employeeId"], where: { AND: [counted, clockIn] } }),
     db.scanEvent.count({ where: { ...base, stream: "TIME_CLOCK", directionSource: "AUTO_CLOSE" } }),
   ]);
 
-  // A handful of groups, folded here only to apply the time clock rule above.
-  const count = (stream: string, direction?: string) =>
-    byStream
-      .filter(
-        (g) =>
-          g.stream === stream &&
-          (!direction ||
-            (stream === "TIME_CLOCK" ? clockDirection(g.timecardPunchType, g.direction) : g.direction) === direction),
-      )
-      .reduce((n, g) => n + g._count._all, 0);
+  const gateCount = (direction?: string) =>
+    gateGroups.filter((g) => !direction || g.direction === direction).reduce((n, g) => n + g._count._all, 0);
 
   const more = rows.length > limit;
   const seen = new Map<string, { id: string; barcode: string | null; wmsId: string | null; employeeCode: string }>();
@@ -252,8 +232,9 @@ export async function getScanLog(
             id: s.id,
             at: s.scanTime.toISOString(),
             stream: s.stream,
-            direction: s.stream === "TIME_CLOCK" ? clockDirection(s.timecardPunchType, s.direction) : s.direction,
-            punchType: s.timecardPunchType,
+            direction: s.stream === "TIME_CLOCK" ? clockDirection(typeNow(s), s.direction) : s.direction,
+            punchType: typeNow(s),
+            correctedFrom: s.timecardPunchType && typeNow(s) !== s.timecardPunchType ? s.timecardPunchType : null,
             device: s.deviceName,
             automatic: s.directionSource === "AUTO_CLOSE" || s.directionSource === "SEEDED",
             reread: s.directionSource === "REREAD",
@@ -281,18 +262,18 @@ export async function getScanLog(
     rows: page,
     hasMore: more,
     summary: {
-      gateIn: count("SECURITY", "IN"),
-      gateOut: count("SECURITY", "OUT"),
-      gateTotal: count("SECURITY"),
-      clockIn: count("TIME_CLOCK", "IN"),
-      clockOut: count("TIME_CLOCK", "OUT"),
-      clockTotal: count("TIME_CLOCK"),
+      gateIn: gateCount("IN"),
+      gateOut: gateCount("OUT"),
+      gateTotal: gateCount(),
+      clockIn: clockScans.filter((d) => clockDir(d) === "IN").length,
+      clockOut: clockScans.filter((d) => clockDir(d) === "OUT").length,
+      clockTotal: clockScans.length,
       rejected,
       gateAutoClosed: autoClosed,
       clockAutoClosed,
       people: people.filter((p) => p.employeeId).length,
       peopleIn: peopleIn.filter((p) => p.employeeId).length,
-      peopleClockedIn: peopleClockedIn.filter((p) => p.employeeId).length,
+      peopleClockedIn: new Set(clockIns.map((d) => d.employeeId)).size,
       missedGate: missedIds.length,
     },
     watermark: newest._max.createdAt?.toISOString() ?? null,
@@ -311,13 +292,39 @@ const SAME_PASS_MS = 5 * 60 * 1000;
  * counted scans the totals use, for the people on the page and this day
  * only, in one query.
  */
-async function scanContexts(counted: Prisma.ScanEventWhereInput): Promise<Map<string, ScanContext>> {
-  const out = new Map<string, ScanContext>();
-  const all = await db.scanEvent.findMany({
+type DayScan = {
+  id: string;
+  employeeId: string | null;
+  scanTime: Date;
+  stream: "SECURITY" | "TIME_CLOCK";
+  direction: "IN" | "OUT" | "UNKNOWN";
+  /** The punch type in force now, corrections included. */
+  type: string | null;
+};
+
+/** A scan's punch type now: the last approved correction, or what the tap was saved as. */
+function typeNow(s: { timecardPunchType: string | null; punch?: Parameters<typeof currentPunch>[0] }): string | null {
+  return currentPunch(s.punch)?.punchType ?? s.timecardPunchType;
+}
+
+async function readDay(counted: Prisma.ScanEventWhereInput): Promise<DayScan[]> {
+  const rows = await db.scanEvent.findMany({
     where: counted,
     orderBy: [{ scanTime: "asc" }, { id: "asc" }],
-    select: { id: true, employeeId: true, scanTime: true, stream: true, direction: true, timecardPunchType: true },
+    select: { id: true, employeeId: true, scanTime: true, stream: true, direction: true, timecardPunchType: true, punch: PUNCH_CHAIN },
   });
+  return rows.map((r) => ({
+    id: r.id,
+    employeeId: r.employeeId,
+    scanTime: r.scanTime,
+    stream: r.stream,
+    direction: r.direction,
+    type: r.stream === "TIME_CLOCK" ? typeNow(r) : null,
+  }));
+}
+
+function scanContexts(all: DayScan[]): Map<string, ScanContext> {
+  const out = new Map<string, ScanContext>();
   const mins = (a: Date, b: Date) => Math.max(0, Math.floor((b.getTime() - a.getTime()) / 60000));
   const byPerson = new Map<string, typeof all>();
   for (const s of all) if (s.employeeId) (byPerson.get(s.employeeId) ?? byPerson.set(s.employeeId, []).get(s.employeeId)!).push(s);
@@ -354,7 +361,7 @@ async function scanContexts(counted: Prisma.ScanEventWhereInput): Promise<Map<st
         }
         continue;
       }
-      const type = s.timecardPunchType ?? (s.direction === "IN" ? "CLOCK_IN" : s.direction === "OUT" ? "CLOCK_OUT" : null);
+      const type = s.type ?? (s.direction === "IN" ? "CLOCK_IN" : s.direction === "OUT" ? "CLOCK_OUT" : null);
       if (type === "CLOCK_IN") {
         out.set(s.id, sawClockIn && offFrom ? { kind: "off", minutes: mins(offFrom, s.scanTime), long: false } : { kind: "firstClock", minutes: null, long: false });
         sawClockIn = true;

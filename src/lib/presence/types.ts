@@ -112,6 +112,11 @@ export interface PresenceScan {
   reread: boolean;
   /** A time clock scan the timecard refused, errored on, or never finished. */
   rejected: boolean;
+  /**
+   * What the tap was first recorded as, when a correction in the timecard has
+   * since changed it; `punchType` is then the corrected one.
+   */
+  correctedFrom?: string | null;
 }
 
 export interface PresenceDetail {

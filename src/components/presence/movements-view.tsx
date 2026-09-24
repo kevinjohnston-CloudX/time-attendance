@@ -13,7 +13,7 @@ import {
   type ScanTotals,
 } from "@/lib/presence/movements";
 import type { LogCounter } from "./scan-log";
-import { STATUS_META, describeScan, fmtDuration, fmtTime, initialsOf } from "./presence-meta";
+import { STATUS_META, describeOriginal, describeScan, fmtDuration, fmtTime, initialsOf } from "./presence-meta";
 import { iconFor } from "./person-panel";
 import { leftBuilding } from "@/lib/presence/lanes";
 import styles from "./on-site.module.css";
@@ -675,7 +675,13 @@ function buildStory(v: PersonDayView, isToday: boolean, hasGate: boolean, now: n
       text: describeScan(s),
       meta: [s.stream === "SECURITY" ? "Security gate" : "Time clock", s.device].filter(Boolean).join(" · "),
       kind: s.automatic ? "system" : kind === "meal" ? "meal" : kind === "in" ? "in" : "out",
-      note: s.automatic ? "Added by the system" : exitOnly.has(s.id) ? "No entry scan before it" : null,
+      note: s.automatic
+        ? "Added by the system"
+        : s.correctedFrom
+          ? `Corrected in the timecard, recorded as ${describeOriginal(s)?.toLowerCase()}`
+          : exitOnly.has(s.id)
+            ? "No entry scan before it"
+            : null,
     });
   }
 

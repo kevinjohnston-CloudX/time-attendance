@@ -1,8 +1,9 @@
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { addDays, clampDay } from "./days";
-import { LOOKBACK_MS, localDateString, toScan, type ScanRow } from "./on-site.service";
+import { LOOKBACK_MS, localDateString, toScan, withCurrentPunch, type ScanRow } from "./on-site.service";
 import { photoUrls } from "./photos";
+import { EFFECTIVE_TYPE_SQL, PUNCH_CHAIN, PUNCH_CHAIN_JOINS } from "./effective-punch";
 import { scansHere, scansHereSql, siteScope } from "./site-scope";
 import type { DayPerson, PresenceScan, SiteDay } from "./types";
 
@@ -83,6 +84,7 @@ export async function getSiteDay(
         timecardPunchType: true,
         deviceName: true,
         outcome: true,
+        punch: PUNCH_CHAIN,
       },
     }),
     // Where each person stood at midnight: their last IN or OUT of each kind
@@ -100,10 +102,12 @@ export async function getSiteDay(
              s."direction"::text         AS direction,
              s."directionSource"::text   AS "directionSource",
              s."timecardPunchType"       AS "timecardPunchType",
+             ${EFFECTIVE_TYPE_SQL}       AS "currentPunchType",
              s."deviceName"              AS "deviceName",
              s."outcome"::text           AS outcome
       FROM   "scan_events" s
       JOIN   "employees" e ON e.id = s."employeeId"
+      ${PUNCH_CHAIN_JOINS}
       WHERE  s."tenantId" = ${tenantId}
         AND  e."tenantId" = ${tenantId}
         AND  s."scanTime" >= ${new Date(dayStart.getTime() - LOOKBACK_MS)}
@@ -146,7 +150,7 @@ export async function getSiteDay(
   const scans: Record<string, PresenceScan[]> = {};
   for (const r of rows.slice(0, MAX_SCANS).reverse()) {
     if (!r.employeeId) continue;
-    (scans[r.employeeId] ??= []).push(toScan(r));
+    (scans[r.employeeId] ??= []).push(toScan(withCurrentPunch(r)));
   }
 
   // A night that ended outside and off the clock says nothing about today,

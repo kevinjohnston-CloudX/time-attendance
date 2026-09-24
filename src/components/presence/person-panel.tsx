@@ -11,6 +11,7 @@ import type { PresenceDetail, PresencePerson, PresenceScan } from "@/lib/presenc
 import { formatTimeOfDay, snapToLocalTime } from "@/lib/utils/date";
 import {
   STATUS_META,
+  describeOriginal,
   describeScan,
   fmtDuration,
   fmtShift,
@@ -698,6 +699,7 @@ function Timeline({ scans, tz }: { scans: PresenceScan[]; tz: string }) {
           s.stream === "SECURITY" ? "Security gate" : "Time clock",
           s.device,
           s.automatic ? "Added by the system" : null,
+          s.correctedFrom ? `corrected, recorded as ${describeOriginal(s)?.toLowerCase()}` : null,
         ].filter(Boolean);
         return (
           <li key={s.id} className={styles.ppEvent}>

@@ -5,7 +5,7 @@ import { Check, ChevronRight, Clock, DoorOpen, ScanLine, SearchX } from "lucide-
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { getOnSiteScanLog } from "@/actions/presence.actions";
 import type { ScanLogPage, ScanLogQuery, ScanLogRow, ScanLogSummary, ScanStream } from "@/lib/presence/types";
-import { describeScan, fmtDuration, fmtTime, initialsOf } from "./presence-meta";
+import { describeOriginal, describeScan, fmtDuration, fmtTime, initialsOf } from "./presence-meta";
 import { iconFor } from "./person-panel";
 import styles from "./on-site.module.css";
 import { Face } from "./face";
@@ -657,6 +657,13 @@ function LogRow({
               Added by the system
             </Badge>
           )}
+          {r.correctedFrom && (
+            <span title={`Recorded at the tap as "${describeOriginal(r)}", corrected in the timecard`}>
+              <Badge tone="info" size="sm">
+                Corrected, was {describeOriginal(r)?.toLowerCase()}
+              </Badge>
+            </span>
+          )}
           {r.reread && (
             <Badge tone="neutral" size="sm">
               Read twice
@@ -787,7 +794,12 @@ export function scanLogCsv(rows: ScanLogRow[], tz: string, cell: (v: string) => 
       describeScan(r),
       r.device ?? "",
       r.stream === "SECURITY" ? "" : r.rejected ? "No" : "Yes",
-      [r.rejected ? r.rejectionReason : null, r.automatic ? "Added by the system" : null, r.reread ? "Read twice" : null]
+      [
+        r.rejected ? r.rejectionReason : null,
+        r.automatic ? "Added by the system" : null,
+        r.correctedFrom ? `Corrected in the timecard, recorded as ${describeOriginal(r)}` : null,
+        r.reread ? "Read twice" : null,
+      ]
         .filter(Boolean)
         .join(". "),
     ]),

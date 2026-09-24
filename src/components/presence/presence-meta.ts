@@ -170,6 +170,11 @@ export function sinceLine(p: PresencePerson, timeZone: string, nowIso: string): 
   }
 }
 
+/** How a corrected scan was first recorded, in the same words: "Started meal". */
+export function describeOriginal(s: PresenceScan): string | null {
+  return s.correctedFrom ? describeScan({ ...s, punchType: s.correctedFrom, correctedFrom: null }) : null;
+}
+
 /** What a reader event means, in words a person at HR would use. */
 export function describeScan(s: PresenceScan): string {
   if (s.stream === "SECURITY") {
