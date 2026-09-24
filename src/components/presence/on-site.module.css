@@ -1422,7 +1422,9 @@
 /* An open row and its detail: one tinted surface, edge to edge, so the two
    read as a single thing. Hover still answers on the row itself. */
 .mvItem[data-open="true"] {
-  background: var(--surface-secondary);
+  /* Half way to the hover fill: a tint in both themes (the secondary
+     surface is the card colour in dark), and still quieter than hover. */
+  background: color-mix(in srgb, var(--fill-hover) 55%, var(--surface-card));
 }
 
 .mvFact {
