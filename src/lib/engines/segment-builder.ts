@@ -6,7 +6,13 @@ import { startOfDayInTz, nextMidnightInTz, endOfDayInTz, roundDurationMinutes } 
 import type { Punch, RuleSet, PayBucket, SegmentType, HolidayCreditMethod } from "@prisma/client";
 import type { MealConfig } from "@/actions/shift.actions";
 
-type EffectiveMealCfg = { mealBreakAfterMinutes: number; mealBreakMinutes: number };
+type EffectiveMealCfg = {
+  mealBreakAfterMinutes: number;
+  mealBreakMinutes: number;
+  minMealMinutes: number;   // lower bound: punch gap shorter than this is not a meal
+  maxMealMinutes: number;   // upper bound: punch gap longer than this is not a meal
+  disableMinDeduction: boolean; // true = use actual gap; false = enforce mealBreakMinutes minimum
+};
 
 const SALARY_DAILY_MINUTES = 480; // 8 h
 
@@ -147,6 +153,80 @@ export function computeSegments(
 }
 
 /**
+ * Validate real MEAL segments (from actual MEAL_START/MEAL_END punches) against
+ * the shift's configured punch-gap range and minimum-deduction rules.
+ *
+ * - Gap outside [minMealMinutes, maxMealMinutes]: not a real meal → merge back into WORK
+ * - Gap within range but shorter than mealBreakMinutes and !disableMinDeduction:
+ *   inflate MEAL to mealBreakMinutes (minimum deduction enforced), shorten adjacent WORK
+ * - Gap within range and (disableMinDeduction or gap >= mealBreakMinutes): keep as-is
+ *
+ * Must run before applyAutoMealDeduction so days that lose their real MEAL segment
+ * here still get the synthetic auto-deduct applied.
+ */
+function applyMealPunchValidation(
+  segments: SegmentInput[],
+  cfg: EffectiveMealCfg
+): SegmentInput[] {
+  const { minMealMinutes, maxMealMinutes, mealBreakMinutes, disableMinDeduction } = cfg;
+  const mealSegs = segments.filter(s => s.segmentType === "MEAL");
+  if (mealSegs.length === 0) return segments;
+
+  const toRemove = new Set<SegmentInput>();
+  const toAdd: SegmentInput[] = [];
+
+  for (const meal of mealSegs) {
+    const gapMins = meal.durationMinutes;
+
+    const before = segments.find(
+      s => s.segmentType === "WORK" && s.endTime.getTime() === meal.startTime.getTime()
+    );
+    const after = segments.find(
+      s => s.segmentType === "WORK" && s.startTime.getTime() === meal.endTime.getTime()
+    );
+
+    if (gapMins < minMealMinutes || gapMins > maxMealMinutes) {
+      // Invalid gap — this isn't a meal, fold back into WORK
+      toRemove.add(meal);
+      if (before && after) {
+        toRemove.add(before);
+        toRemove.add(after);
+        toAdd.push({
+          ...before,
+          endTime: after.endTime,
+          durationMinutes: before.durationMinutes + gapMins + after.durationMinutes,
+        });
+      } else if (before) {
+        toRemove.add(before);
+        toAdd.push({ ...before, endTime: meal.endTime, durationMinutes: before.durationMinutes + gapMins });
+      } else if (after) {
+        toRemove.add(after);
+        toAdd.push({ ...after, startTime: meal.startTime, durationMinutes: after.durationMinutes + gapMins });
+      }
+    } else if (!disableMinDeduction && gapMins < mealBreakMinutes) {
+      // Valid meal but shorter than the required minimum — inflate to minimum,
+      // trimming the same amount from the after-WORK segment.
+      const extraMins = mealBreakMinutes - gapMins;
+      const newMealEnd = new Date(meal.endTime.getTime() + extraMins * 60_000);
+
+      toRemove.add(meal);
+      toAdd.push({ ...meal, endTime: newMealEnd, durationMinutes: mealBreakMinutes });
+
+      if (after) {
+        toRemove.add(after);
+        const newAfterMins = after.durationMinutes - extraMins;
+        if (newAfterMins > 0) {
+          toAdd.push({ ...after, startTime: newMealEnd, durationMinutes: newAfterMins });
+        }
+      }
+    }
+    // else: valid gap, disableMinDeduction true or gap >= minimum → keep as-is
+  }
+
+  return [...segments.filter(s => !toRemove.has(s)), ...toAdd];
+}
+
+/**
  * For NJ-style auto-deduct employees: after computing segments from punches,
  * inject a synthetic MEAL segment on any day where the employee worked more
  * than ruleSet.mealBreakAfterMinutes, unless that day is in waivedDates.
@@ -193,9 +273,9 @@ function applyAutoMealDeduction(
     );
 
     // Find the segment that contains the meal start point
-    const mealStartMs =
+    let mealStartMs =
       sorted[0].startTime.getTime() + cfg.mealBreakAfterMinutes * 60_000;
-    const mealEndMs = mealStartMs + cfg.mealBreakMinutes * 60_000;
+    let mealEndMs = mealStartMs + cfg.mealBreakMinutes * 60_000;
 
     const target = sorted.find(
       (seg) =>
@@ -203,6 +283,16 @@ function applyAutoMealDeduction(
         seg.endTime.getTime() > mealStartMs
     );
     if (!target) continue; // Meal point falls in a gap — skip deduction
+
+    // If the meal window extends past the target segment's end (employee clocked out
+    // before the meal finished), slide the meal back so it ends at clock-out.
+    // This implements a true HOURS_WORKED deduction: paid = total pair - meal minutes.
+    if (mealEndMs > target.endTime.getTime()) {
+      mealEndMs = target.endTime.getTime();
+      mealStartMs = mealEndMs - cfg.mealBreakMinutes * 60_000;
+      // If even the adjusted meal start is before the segment start, skip
+      if (mealStartMs < target.startTime.getTime()) continue;
+    }
 
     toRemove.add(target);
 
@@ -645,15 +735,22 @@ export async function rebuildSegments(
     mealBreakMinutes: shiftMeal?.autoDeduct && shiftFirstMeal
       ? shiftFirstMeal.deductMinutes
       : ruleSet.mealBreakMinutes,
+    minMealMinutes: shiftMeal?.minMealMinutes ?? 0,
+    maxMealMinutes: shiftMeal?.maxMealMinutes ?? Infinity,
+    disableMinDeduction: shiftMeal?.disableMinDeduction ?? false,
   };
 
-  let segments = rawSegments;
+  // Validate real MEAL punch gaps against shift rules (only meaningful when a shift
+  // with configured bounds is assigned). Runs before auto-deduct so invalid gaps
+  // become WORK and still trigger the synthetic deduction on that day.
+  let segments = shiftMeal ? applyMealPunchValidation(rawSegments, effectiveMealCfg) : rawSegments;
+
   if (effectiveAutoDeductMeal) {
     const waivers = await db.mealWaiver.findMany({ where: { timesheetId } });
     const waivedDates = new Set(
       waivers.map((w) => format(w.segmentDate, "yyyy-MM-dd"))
     );
-    segments = applyAutoMealDeduction(rawSegments, effectiveMealCfg, waivedDates);
+    segments = applyAutoMealDeduction(segments, effectiveMealCfg, waivedDates);
   }
 
   // Pair rounding runs after meal deduction so the rounded total already excludes unpaid breaks
