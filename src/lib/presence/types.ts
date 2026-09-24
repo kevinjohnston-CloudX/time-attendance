@@ -172,7 +172,22 @@ export interface ScanLogQuery {
 }
 
 /** One reader event in the log, with the person it belongs to. */
+/**
+ * What a scan means next to the one before it, for the same person at the
+ * same reader that day: how long they had been inside when they left, how
+ * long they were out before coming back, how long a meal ran.
+ */
+export interface ScanContext {
+  kind: "inside" | "out" | "firstIn" | "worked" | "working" | "meal" | "break" | "off" | "firstClock";
+  /** Null for a first of the day, which has nothing before it. */
+  minutes: number | null;
+  /** Long enough to be worth a look: a meal or break over the limit. */
+  long: boolean;
+}
+
 export interface ScanLogRow extends PresenceScan {
+  /** What this scan means next to the one before it, when there is one. */
+  context: ScanContext | null;
   /** The pipeline's own words when the time clock scan was not accepted. */
   rejectionReason: string | null;
   /**

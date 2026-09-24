@@ -5,7 +5,7 @@ import { ChevronRight, Clock, DoorOpen, ScanLine, SearchX } from "lucide-react";
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { getOnSiteScanLog } from "@/actions/presence.actions";
 import type { ScanLogPage, ScanLogQuery, ScanLogRow, ScanLogSummary, ScanStream } from "@/lib/presence/types";
-import { describeScan, fmtTime, initialsOf } from "./presence-meta";
+import { describeScan, fmtDuration, fmtTime, initialsOf } from "./presence-meta";
 import { iconFor } from "./person-panel";
 import styles from "./on-site.module.css";
 import { Face } from "./face";
@@ -383,7 +383,7 @@ export function ScanLogCounts({
         : "";
 
   return (
-    <section className={styles.summary} aria-label="Scans">
+    <section className={styles.summary} aria-label="Scans" data-layout="band">
       <div className={styles.summaryMain} data-cards={cards.length}>
         <button
           type="button"
@@ -416,9 +416,7 @@ export function ScanLogCounts({
             <span className={styles.summarySub}>{c.count === 1 ? "person" : "people"}, counted once each</span>
           </button>
         ))}
-      </div>
-
-      <div className={styles.summaryMore}>
+        <div className={styles.summarySide}>
         <div className={styles.summaryChips}>
           {groups.map((g) => (
             <span key={g.items[0].key} className={styles.summaryGroup}>
@@ -468,6 +466,8 @@ export function ScanLogCounts({
           {gateNote && <span>{gateNote}</span>}
         </span>
       </div>
+      </div>
+
     </section>
   );
 }
@@ -620,6 +620,10 @@ function LogRow({
           </span>
         </span>
 
+        <span className={styles.logContext} data-tone={r.context?.long ? "warning" : undefined}>
+          {contextText(r.context)}
+        </span>
+
         {/* Only what is out of the ordinary gets a tag; the reader is named
             under the event, and its icon leads it. */}
         <span className={styles.logTags}>
@@ -642,6 +646,32 @@ function LogRow({
       </button>
     </li>
   );
+}
+
+/** A scan next to the one before it, in words: "After 12 hr 4 min inside". */
+function contextText(c: ScanLogRow["context"]): string {
+  if (!c) return "";
+  const d = c.minutes === null ? "" : c.minutes < 1 ? "less than a minute" : fmtDuration(c.minutes);
+  switch (c.kind) {
+    case "inside":
+      return `After ${d} inside`;
+    case "out":
+      return `Back after ${d} out`;
+    case "firstIn":
+      return "First entry today";
+    case "worked":
+      return `Worked ${d}`;
+    case "working":
+      return `After ${d} working`;
+    case "meal":
+      return `Meal of ${d}`;
+    case "break":
+      return `Break of ${d}`;
+    case "off":
+      return `Back after ${d} off the clock`;
+    case "firstClock":
+      return "First clock in today";
+  }
 }
 
 /* ── States ─────────────────────────────────────────────────────────────── */

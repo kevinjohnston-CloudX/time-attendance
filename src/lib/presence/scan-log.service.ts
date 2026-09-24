@@ -6,7 +6,8 @@ import { localDateString } from "./on-site.service";
 import { photoUrls } from "./photos";
 import { NOT_COUNTED_OUTCOMES } from "./scan-rules";
 import { scansHere, siteScope } from "./site-scope";
-import type { ScanLogPage, ScanLogQuery, ScanLogRow } from "./types";
+import { LONG_BREAK_MIN } from "./movements";
+import type { ScanContext, ScanLogPage, ScanLogQuery, ScanLogRow } from "./types";
 
 /**
  * Every reader event at one site on one day, today unless asked, from both the security gate and the
@@ -235,7 +236,10 @@ export async function getScanLog(
   const more = rows.length > limit;
   const seen = new Map<string, { id: string; barcode: string | null; wmsId: string | null; employeeCode: string }>();
   for (const r of rows.slice(0, limit)) if (r.employee) seen.set(r.employee.id, r.employee);
-  const photos = await photoUrls(tenantId, [...seen.values()]);
+  const [photos, contexts] = await Promise.all([
+    photoUrls(tenantId, [...seen.values()]),
+    scanContexts(counted, [...seen.keys()]),
+  ]);
   const page: ScanLogRow[] = rows.slice(0, limit).flatMap((s) =>
     s.employee
       ? [
@@ -250,6 +254,7 @@ export async function getScanLog(
             reread: s.directionSource === "REREAD",
             rejected: s.stream === "TIME_CLOCK" && (REJECTED as readonly string[]).includes(s.outcome),
             rejectionReason: s.rejectionReason,
+            context: contexts.get(s.id) ?? null,
             photoUrl: null,
             person: {
               id: s.employee.id,
@@ -285,4 +290,74 @@ export async function getScanLog(
     },
     watermark: newest._max.createdAt?.toISOString() ?? null,
   };
+}
+
+/* ── What each scan means next to the one before it ──────────────────────── */
+
+/**
+ * For every counted scan the page shows, the step it completes: leaving
+ * after so long inside, coming back after so long out, clocking out after so
+ * long on the clock, returning from a meal of so long. Read from the same
+ * counted scans the totals use, for the people on the page and this day
+ * only, in one query.
+ */
+async function scanContexts(counted: Prisma.ScanEventWhereInput, people: string[]): Promise<Map<string, ScanContext>> {
+  const out = new Map<string, ScanContext>();
+  if (people.length === 0) return out;
+  const all = await db.scanEvent.findMany({
+    where: { AND: [counted, { employeeId: { in: people } }] },
+    orderBy: [{ scanTime: "asc" }, { id: "asc" }],
+    select: { id: true, employeeId: true, scanTime: true, stream: true, direction: true, timecardPunchType: true },
+  });
+  const mins = (a: Date, b: Date) => Math.max(0, Math.floor((b.getTime() - a.getTime()) / 60000));
+  const byPerson = new Map<string, typeof all>();
+  for (const s of all) if (s.employeeId) (byPerson.get(s.employeeId) ?? byPerson.set(s.employeeId, []).get(s.employeeId)!).push(s);
+
+  for (const scans of byPerson.values()) {
+    let lastIn: Date | null = null;
+    let lastOut: Date | null = null;
+    let sawGateIn = false;
+    let workFrom: Date | null = null;
+    let offFrom: Date | null = null;
+    let pause: { at: Date; kind: "meal" | "break" } | null = null;
+    let sawClockIn = false;
+    for (const s of scans) {
+      if (s.stream === "SECURITY") {
+        if (s.direction === "IN") {
+          out.set(s.id, lastOut ? { kind: "out", minutes: mins(lastOut, s.scanTime), long: false } : { kind: "firstIn", minutes: null, long: false });
+          if (!sawGateIn || lastOut) lastIn = s.scanTime;
+          sawGateIn = true;
+          lastOut = null;
+        } else if (s.direction === "OUT") {
+          if (lastIn && !lastOut) out.set(s.id, { kind: "inside", minutes: mins(lastIn, s.scanTime), long: false });
+          lastOut = s.scanTime;
+        }
+        continue;
+      }
+      const type = s.timecardPunchType ?? (s.direction === "IN" ? "CLOCK_IN" : s.direction === "OUT" ? "CLOCK_OUT" : null);
+      if (type === "CLOCK_IN") {
+        out.set(s.id, sawClockIn && offFrom ? { kind: "off", minutes: mins(offFrom, s.scanTime), long: false } : { kind: "firstClock", minutes: null, long: false });
+        sawClockIn = true;
+        workFrom = s.scanTime;
+        offFrom = null;
+        pause = null;
+      } else if (type === "CLOCK_OUT") {
+        if (workFrom) out.set(s.id, { kind: "worked", minutes: mins(workFrom, s.scanTime), long: false });
+        workFrom = null;
+        offFrom = s.scanTime;
+      } else if (type === "MEAL_START" || type === "BREAK_START") {
+        if (workFrom) out.set(s.id, { kind: "working", minutes: mins(workFrom, s.scanTime), long: false });
+        workFrom = null;
+        pause = { at: s.scanTime, kind: type === "MEAL_START" ? "meal" : "break" };
+      } else if (type === "MEAL_END" || type === "BREAK_END") {
+        if (pause) {
+          const m = mins(pause.at, s.scanTime);
+          out.set(s.id, { kind: pause.kind, minutes: m, long: m > LONG_BREAK_MIN });
+        }
+        pause = null;
+        workFrom = s.scanTime;
+      }
+    }
+  }
+  return out;
 }
