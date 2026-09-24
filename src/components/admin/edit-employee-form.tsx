@@ -21,6 +21,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { ArrowLeft, ArrowRight, History, KeyRound, Pencil, Wallet } from "lucide-react";
+import { useBreadcrumbLeaf } from "@/components/layout/breadcrumb-leaf";
 import styles from "./employee-record.module.css";
 
 /**
@@ -229,6 +230,8 @@ export function EditEmployeeForm({
 }: Props) {
   const router = useRouter();
   const toast = useToast();
+  // The top bar's trail ends on this person: Administration, Employees, their name.
+  useBreadcrumbLeaf(employee.user.name ?? employee.employeeCode);
   const [isPending, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, ChevronRight, PanelLeft } from "lucide-react";
 import { locate } from "./nav-model";
+import { useBreadcrumbLeafFor } from "./breadcrumb-leaf";
 import { ThemeToggle } from "./theme-toggle";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { NotificationBell } from "./notification-bell";
@@ -39,6 +40,7 @@ export function TopBar({
   const navMode = useNavMode();
   const collapsed = useSidebarCollapsed();
   const here = locate(pathname);
+  const leaf = useBreadcrumbLeafFor(pathname);
 
   return (
     <header
@@ -87,20 +89,29 @@ export function TopBar({
         {here && (
           <>
             <ChevronRight className="h-3.5 w-3.5 flex-none" style={{ color: "var(--icon-disabled)" }} />
-            <span
-              className="uppercase tracking-[0.04em]"
-              style={here.item ? undefined : { color: "var(--text-primary)" }}
-            >
-              {here.section.label}
-            </span>
-            {/* No leaf on a record page — the section is as far as the nav
-                model can honestly say. */}
+            <Crumb
+              label={here.section.label}
+              href={here.section.href}
+              current={!here.item && !leaf && pathname === here.section.href}
+              last={!here.item && !leaf}
+            />
             {here.item && (
               <>
                 <ChevronRight className="h-3.5 w-3.5 flex-none" style={{ color: "var(--icon-disabled)" }} />
-                <span className="truncate uppercase tracking-[0.04em]" style={{ color: "var(--text-primary)" }}>
-                  {here.item.label}
-                </span>
+                <Crumb
+                  label={here.item.label}
+                  href={here.item.href}
+                  current={!leaf && pathname === here.item.href}
+                  last={!leaf}
+                />
+              </>
+            )}
+            {/* A record page names itself, so the trail ends on the record
+                rather than on the list it came from. */}
+            {leaf && (
+              <>
+                <ChevronRight className="h-3.5 w-3.5 flex-none" style={{ color: "var(--icon-disabled)" }} />
+                <Crumb label={leaf} current last />
               </>
             )}
           </>
@@ -133,5 +144,43 @@ export function TopBar({
         <NotificationBell items={waiting} />
       </div>
     </header>
+  );
+}
+
+/**
+ * One step of the trail. Every step before the page you are on is a link back
+ * to it; the page you are on is plain text in the primary colour.
+ */
+function Crumb({
+  label,
+  href,
+  current = false,
+  last = false,
+}: {
+  label: string;
+  href?: string;
+  current?: boolean;
+  last?: boolean;
+}) {
+  const cls = `uppercase tracking-[0.04em] whitespace-nowrap${last ? " min-w-0 truncate" : ""}`;
+  if (href && !current) {
+    return (
+      <Link
+        href={href}
+        className={`ta-crumb ${cls} rounded px-1 -mx-1`}
+        style={{ color: last ? "var(--text-primary)" : undefined }}
+      >
+        {label}
+      </Link>
+    );
+  }
+  return (
+    <span
+      className={cls}
+      aria-current={current ? "page" : undefined}
+      style={last ? { color: "var(--text-primary)" } : undefined}
+    >
+      {label}
+    </span>
   );
 }

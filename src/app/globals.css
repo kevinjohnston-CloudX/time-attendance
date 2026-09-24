@@ -169,6 +169,19 @@ textarea {
 .ta-hoverable[data-active="true"]:hover {
   background: var(--surface-info) !important;
 }
+/* A breadcrumb step you can go back to: it reads as the trail until the
+   pointer is on it, then answers like a link. */
+.ta-crumb {
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.ta-crumb:hover {
+  color: var(--text-accent) !important;
+  background: var(--fill-hover);
+}
+.ta-crumb:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 1px;
+}
 /* The rail sits on a dark surface of its own, so --fill-hover, which is tuned
    for the light card behind the rest of the shell, disappears on it. The
    design uses a white wash instead, in both themes, because the rail is dark

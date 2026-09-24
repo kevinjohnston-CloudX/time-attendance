@@ -55,6 +55,8 @@ export type NavItem = {
 export type NavSection = {
   id: string;
   label: string;
+  /** The section's own hub page, when it has one, so the breadcrumb can link to it. */
+  href?: string;
   /**
    * The rail draws one button per section, so a section needs an icon and a
    * label short enough to sit under it in 64px. "Administration" does not, so
@@ -141,6 +143,7 @@ export const SECTIONS: NavSection[] = [
     icon: Cog,
     railLabel: "Admin",
     label: "Administration",
+    href: "/admin",
     prefixes: ["/admin"],
     items: [
       { label: "Employees", href: "/admin/employees", icon: IdCard, permission: "EMPLOYEE_MANAGE" },
