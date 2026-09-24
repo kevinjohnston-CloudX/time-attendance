@@ -188,7 +188,6 @@ export function MovementsTable({
         <span>Left</span>
         {hasGate && <span className={styles.mvNum}>In building</span>}
         <span className={styles.mvNum}>On the clock</span>
-        <span className={styles.mvNum}>Breaks</span>
         <span className={styles.mvAxis}>
           {axis.ticks.map((t) => (
             <span key={t} style={{ left: axis.pct(t) }} data-edge={t === axis.from ? "start" : t === axis.to ? "end" : undefined}>
@@ -275,7 +274,6 @@ function PersonRow({
   const meta = status ? STATUS_META[status] : null;
   const chips = flagChips(v, isToday);
   const t = v.lanes.totals;
-  const breakMin = t.mealMin + t.breakMin;
   const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
   const seen = v.scanCount > 0;
   // The same rule as the panel's Left card: the gate says whether they are in
@@ -392,17 +390,6 @@ function PersonRow({
           ) : (
             <span className={styles.mvFactValue}>{seen ? fmtDuration(t.workMin) : ""}</span>
           )}
-        </span>
-        <span className={`${styles.mvFact} ${styles.mvNum}`}>
-          {/* Meals and rest breaks together, as the time clock took them. A
-              break over the long break limit reads in warning, like its flag. */}
-          {breakMin > 0 ? (
-            <span className={styles.mvFactValue}>
-              <span data-tone={v.flags.includes("LONG_BREAK") ? "warning" : undefined}>{fmtDuration(breakMin)}</span>
-            </span>
-          ) : seen && t.workMin > 0 ? (
-            <span className={styles.mvQuiet}>None</span>
-          ) : null}
         </span>
         <span className={styles.mvDay}>
           <Ribbon view={v} axis={axis} isToday={isToday} hasGate={hasGate} tz={tz} now={now} />
