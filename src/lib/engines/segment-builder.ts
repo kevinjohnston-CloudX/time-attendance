@@ -6,6 +6,17 @@ import { startOfDayInTz, nextMidnightInTz, endOfDayInTz, roundDurationMinutes } 
 import type { Punch, RuleSet, PayBucket, SegmentType, HolidayCreditMethod } from "@prisma/client";
 import type { MealConfig } from "@/actions/shift.actions";
 
+type MealPremiumRowCfg = {
+  applyFromMinutes: number;    // window start relative to shift start (minutes)
+  applyToMinutes: number;      // window end relative to shift start — shift must pass this for rule to trigger
+  minimumMealMinutes: number;  // minimum qualifying meal duration
+  payMinutes: number;          // premium credit minutes
+  payCodeId: string | null;
+  unlessHoursExceed: boolean;  // suppress if total worked > unlessHoursExceedMinutes
+  unlessHoursExceedMinutes: number;
+  unlessPunchedMeal: boolean;  // only real MEAL_START/MEAL_END punches suppress premium (vs. any MEAL segment)
+};
+
 type EffectiveMealCfg = {
   mealBreakAfterMinutes: number;
   mealBreakMinutes: number;
@@ -601,6 +612,138 @@ async function ensureSalarySegments(
   }
 }
 
+/**
+ * Compute meal break premium segments for days where a qualifying meal was not taken.
+ *
+ * For each active MealPremiumRow, the rule triggers when:
+ *  - The shift span (clock-in to clock-out) exceeds row.applyToMinutes
+ *  - No qualifying meal occurred within [shiftStart + applyFromMinutes, shiftStart + applyToMinutes]
+ *  - Optional suppressions (unlessHoursExceed, unlessPunchedMeal) do not apply
+ *
+ * Returns MEAL_PREMIUM SegmentInputs appended after the shift, one per triggered row per day.
+ */
+function computeMealPremiums(
+  timesheetId: string,
+  segments: SegmentInput[],
+  punches: Punch[],
+  ruleSet: RuleSet,
+  timezone: string,
+): SegmentInput[] {
+  if (!ruleSet.mealBreakPremiumEnabled) return [];
+
+  const rows = (ruleSet.mealPremiumRows as MealPremiumRowCfg[] | null) ?? [];
+  const activeRows = rows.filter(r => r.payMinutes > 0 && r.payCodeId);
+  if (activeRows.length === 0) return [];
+
+  const premiums: SegmentInput[] = [];
+
+  // Group work + meal segments by local calendar day
+  const dayKeys = new Set(
+    segments.filter(s => s.segmentType === "WORK").map(s => format(s.segmentDate, "yyyy-MM-dd"))
+  );
+
+  for (const dayKey of dayKeys) {
+    const daySegs = segments.filter(s => format(s.segmentDate, "yyyy-MM-dd") === dayKey);
+    const workSegs = daySegs.filter(s => s.segmentType === "WORK");
+    const mealSegs = daySegs.filter(s => s.segmentType === "MEAL");
+
+    if (workSegs.length === 0) continue;
+
+    // Punches for this local calendar day (keyed by actual punchTime in site tz)
+    const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: timezone });
+    const dayPunches = punches.filter(p => fmt.format(p.punchTime) === dayKey);
+
+    // Shift span and start — use actual punch times when configured, else rounded segment times
+    let shiftStartMs: number;
+    let shiftSpanMins: number;
+    if (ruleSet.mealPremiumUseActualForWindow) {
+      const clockIns = dayPunches.filter(p => p.punchType === "CLOCK_IN");
+      const clockOuts = dayPunches.filter(p => p.punchType === "CLOCK_OUT");
+      if (clockIns.length === 0 || clockOuts.length === 0) continue;
+      shiftStartMs = clockIns[0].punchTime.getTime();
+      const shiftEndMs = clockOuts[clockOuts.length - 1].punchTime.getTime();
+      shiftSpanMins = (shiftEndMs - shiftStartMs) / 60_000;
+    } else {
+      const sorted = [...workSegs].sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+      shiftStartMs = sorted[0].startTime.getTime();
+      const lastWork = sorted[sorted.length - 1];
+      shiftSpanMins = (lastWork.endTime.getTime() - shiftStartMs) / 60_000
+        + mealSegs.reduce((s, m) => s + m.durationMinutes, 0);
+    }
+
+    const totalWorkedMins = workSegs.reduce((s, w) => s + w.durationMinutes, 0);
+    const realMealStarts = dayPunches.filter(p => p.punchType === "MEAL_START");
+    const lastWorkSeg = workSegs.reduce((a, b) => a.endTime > b.endTime ? a : b);
+
+    let premiumsThisDay = 0;
+
+    for (const row of activeRows) {
+      if (premiumsThisDay >= ruleSet.mealBreakPremiumMaxPerDay) break;
+
+      // Trigger: shift must extend past the end of the required meal window
+      if (shiftSpanMins < row.applyToMinutes) continue;
+
+      // unlessHoursExceed: suppress when total worked exceeds threshold
+      if (row.unlessHoursExceed && totalWorkedMins > row.unlessHoursExceedMinutes) continue;
+
+      // Window within which a qualifying meal must have occurred
+      const windowStartMs = shiftStartMs + row.applyFromMinutes * 60_000;
+      const windowEndMs = shiftStartMs + row.applyToMinutes * 60_000;
+
+      let hasQualifyingMeal = false;
+
+      if (row.unlessPunchedMeal) {
+        // Only real MEAL_START/MEAL_END punch pairs count
+        for (const ms of realMealStarts) {
+          const msPunchMs = ruleSet.mealPremiumUseActualForWindow
+            ? ms.punchTime.getTime()
+            : ms.roundedTime.getTime();
+          if (msPunchMs < windowStartMs || msPunchMs >= windowEndMs) continue;
+          const me = dayPunches.find(p => p.punchType === "MEAL_END" && p.punchTime > ms.punchTime);
+          if (!me) continue;
+          const gapMins = ruleSet.mealPremiumUseActualForMinimum
+            ? (me.punchTime.getTime() - ms.punchTime.getTime()) / 60_000
+            : (mealSegs.find(s => Math.abs(s.startTime.getTime() - ms.roundedTime.getTime()) < 2 * 60_000)?.durationMinutes ?? 0);
+          if (gapMins >= row.minimumMealMinutes) { hasQualifyingMeal = true; break; }
+        }
+      } else {
+        // Any MEAL segment whose start falls within the window qualifies
+        for (const mealSeg of mealSegs) {
+          if (mealSeg.startTime.getTime() < windowStartMs || mealSeg.startTime.getTime() >= windowEndMs) continue;
+          if (mealSeg.durationMinutes >= row.minimumMealMinutes) { hasQualifyingMeal = true; break; }
+        }
+      }
+
+      if (hasQualifyingMeal) continue;
+
+      // Premium is owed
+      let premiumMins = row.payMinutes;
+      if (ruleSet.mealPremiumLimitToPayMinutes) {
+        const totalMealMins = mealSegs.reduce((s, m) => s + m.durationMinutes, 0);
+        premiumMins = Math.min(premiumMins, totalWorkedMins - totalMealMins);
+      }
+      if (premiumMins <= 0) continue;
+
+      premiums.push({
+        timesheetId,
+        segmentType: "MEAL_PREMIUM",
+        startTime: lastWorkSeg.endTime,
+        endTime: new Date(lastWorkSeg.endTime.getTime() + premiumMins * 60_000),
+        durationMinutes: premiumMins,
+        segmentDate: lastWorkSeg.segmentDate,
+        isPaid: true,
+        payBucket: "REG",
+        payCodeId: row.payCodeId,
+        isSplit: false,
+      });
+
+      premiumsThisDay++;
+    }
+  }
+
+  return premiums;
+}
+
 export async function rebuildSegments(
   timesheetId: string,
   ruleSet: RuleSet
@@ -756,6 +899,13 @@ export async function rebuildSegments(
   // Pair rounding runs after meal deduction so the rounded total already excludes unpaid breaks
   if (ruleSet.pairRoundingEnabled) {
     segments = applyPairRounding(segments, ruleSet);
+  }
+
+  // Meal break premiums: detect days where no qualifying meal was taken and credit
+  // the configured penalty pay code. Runs after all deduction logic is settled.
+  if (ruleSet.mealBreakPremiumEnabled) {
+    const premiumSegs = computeMealPremiums(timesheetId, segments, punches, ruleSet, timezone);
+    segments = [...segments, ...premiumSegs];
   }
 
   // Apply pay code to all punch-derived WORK segments.
