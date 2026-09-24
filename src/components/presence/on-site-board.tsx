@@ -51,6 +51,7 @@ import {
 import { PersonPanel } from "./person-panel";
 import { PhotoSwaps, PhotoViewer } from "./face";
 import { PeopleSearch, pickedLabel } from "./people-search";
+import { useCondensingBar } from "@/components/layout/use-condensing-bar";
 import { clampDay, dayLabel, recentDays } from "@/lib/presence/days";
 import { applyHeldOrder, buildSiteDay, countFlags, holdOrder, scanTotals, type HeldOrder } from "@/lib/presence/movements";
 import {
@@ -370,50 +371,8 @@ export function OnSiteBoard({
 
   // ── The pinned bar ──────────────────────────────────────────────────────
   // The title, the actions and the find row stay on screen while the faces
-  // scroll, and shrink to one slim row once the page has moved. Measured the
-  // way Leave Requests does it: the distance between the pinned bar and a
-  // marker that scrolls away, so it works whichever element is scrolling.
-  const barRef = useRef<HTMLDivElement | null>(null);
-  const markerRef = useRef<HTMLSpanElement | null>(null);
-  const [condensed, setCondensed] = useState(false);
-
-  useEffect(() => {
-    let frame = 0;
-    const read = () => {
-      frame = 0;
-      const bar = barRef.current;
-      const marker = markerRef.current;
-      if (!bar || !marker) return;
-      const travelled = bar.getBoundingClientRect().top - marker.getBoundingClientRect().top;
-      // Two thresholds, so a page sitting right on the line cannot flicker.
-      setCondensed((prev) => (prev ? travelled > 4 : travelled > 16));
-    };
-    const onScroll = () => {
-      if (!frame) frame = requestAnimationFrame(read);
-    };
-    read();
-    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
-    window.addEventListener("resize", onScroll, { passive: true });
-    return () => {
-      document.removeEventListener("scroll", onScroll, { capture: true });
-      window.removeEventListener("resize", onScroll);
-      if (frame) cancelAnimationFrame(frame);
-    };
-  }, []);
-
-  // Section headings pin just under the bar, so they need its live height: it
-  // shrinks on scroll and wraps on a narrow window.
-  const [barHeight, setBarHeight] = useState(0);
-  useEffect(() => {
-    const el = barRef.current;
-    if (!el || typeof ResizeObserver !== "function") return;
-    const ro = new ResizeObserver(() => {
-      const h = Math.round(el.getBoundingClientRect().height);
-      setBarHeight((prev) => (prev === h ? prev : h));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  // scroll, and shrink to one slim row once the page has moved.
+  const { barRef, markerRef, condensed, barHeight } = useCondensingBar();
 
   // The clock the durations and "updated 12 seconds ago" read from.
   useEffect(() => {
@@ -804,7 +763,11 @@ export function OnSiteBoard({
       <div className={`${styles.board} relative flex flex-col gap-4${fullscreen ? " pt-4" : ""}`}>
       <span ref={markerRef} aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-px w-px" />
 
-      <div ref={barRef} className="sticky top-0 z-20 flex flex-col" style={{ background: "var(--surface-page)" }}>
+      <div
+        ref={barRef}
+        className="sticky top-0 z-20 flex flex-col"
+        style={{ background: "var(--surface-page)", marginBottom: "var(--pin-gap, 0px)" }}
+      >
         <div
           className="flex flex-wrap items-center gap-x-3 gap-y-2"
           style={{ paddingTop: condensed ? 8 : 0, paddingBottom: condensed ? 8 : 12, transition: "padding 140ms ease" }}

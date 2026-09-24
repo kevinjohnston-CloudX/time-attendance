@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { LinkButton, PageHeader } from "@/components/ui";
+import { LinkButton } from "@/components/ui";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getEmployees, getAdminRefData } from "@/actions/admin.actions";
 import { CreateEmployeeForm } from "@/components/admin/create-employee-form";
@@ -52,11 +52,9 @@ export default async function EmployeesPage({
   return (
     <div className="flex flex-col gap-4">
       <EmployeesTable
-        header={
-          <PageHeader
-            title="Employees"
-            subtitle="Profiles, badge numbers, assignments and pay"
-            actions={
+        title="Employees"
+        subtitle="Profiles, badge numbers, assignments and pay"
+        actions={
               <>
                 <LinkButton href="/admin" hierarchy="tertiary">
                   ← Administration
@@ -81,8 +79,6 @@ export default async function EmployeesPage({
                   payTypes={payTypes ?? []}
                 />
               </>
-            }
-          />
         }
         employees={employees}
         total={total}

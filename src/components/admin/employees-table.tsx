@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
+import { useCondensingBar } from "@/components/layout/use-condensing-bar";
 import {
   Badge,
   Button,
@@ -20,6 +21,7 @@ import {
   TD,
   Toolbar,
   statusTone,
+  PageHeader,
   PinnedBar,
 } from "@/components/ui";
 import { Users } from "lucide-react";
@@ -68,8 +70,10 @@ interface Props {
   departments: string[];
   shifts: { id: string; name: string; startTime: string }[];
   currentFilters: { q: string; site: string; dept: string; role: string };
-  /** The page title, pinned together with the filters under it. */
-  header?: ReactNode;
+  /** The page header, pinned together with the filters under it, and slimmed once the page scrolls. */
+  title: ReactNode;
+  subtitle?: ReactNode;
+  actions?: ReactNode;
 }
 
 export function EmployeesTable({
@@ -81,9 +85,12 @@ export function EmployeesTable({
   departments,
   shifts,
   currentFilters,
-  header,
+  title,
+  subtitle,
+  actions,
 }: Props) {
   const router = useRouter();
+  const { barRef, markerRef, condensed } = useCondensingBar();
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // Local state for search input so typing feels instant (debounced URL push)
@@ -139,9 +146,10 @@ export function EmployeesTable({
   const lastRow = page * pageSize + shown;
 
   return (
-    <div className="flex flex-col gap-4">
-      <PinnedBar>
-        {header}
+    <div className="relative flex flex-col gap-4">
+      <span ref={markerRef} aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-px w-px" />
+      <PinnedBar barRef={barRef}>
+        <PageHeader title={title} subtitle={subtitle} actions={actions} condensed={condensed} />
         <div className="flex flex-col gap-2.5">
           <Toolbar count={total} countLabel="employee">
             <SearchInput

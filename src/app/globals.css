@@ -565,7 +565,9 @@ tbody .ta-row:hover {
   position: sticky;
   top: var(--pin-stick, 0);
   z-index: 20;
-  margin: calc(var(--pin-t, 1rem) * -1) calc(var(--pin-x, 1rem) * -1) -0.75rem;
+  /* --pin-gap is the height a slimmed bar gave up (useCondensingBar), kept
+     as margin so the page under it does not move. */
+  margin: calc(var(--pin-t, 1rem) * -1) calc(var(--pin-x, 1rem) * -1) calc(var(--pin-gap, 0px) - 0.75rem);
   padding: var(--pin-t, 1rem) var(--pin-x, 1rem) 0.75rem;
   background: var(--surface-page);
 }

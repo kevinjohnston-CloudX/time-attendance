@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 /**
  * Page title, one line of context, and the page-level actions.
@@ -16,6 +16,7 @@ export function PageHeader({
   subtitle,
   actions,
   pinned = false,
+  condensed = false,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
@@ -23,14 +24,28 @@ export function PageHeader({
   /** Pin it to the top while the page scrolls. For a title alone; a page
    *  with filters under its title puts both in one PinnedBar instead. */
   pinned?: boolean;
+  /** The slim form a pinned bar takes once the page has scrolled (see
+   *  useCondensingBar): a smaller title and no subtitle. */
+  condensed?: boolean;
 }) {
   const header = (
-    <div className="flex flex-wrap items-end gap-4">
+    <div className={`flex flex-wrap gap-4 ${condensed ? "items-center" : "items-end"}`}>
       <div className="flex min-w-[240px] flex-1 flex-col gap-0.5">
-        <h1 style={{ margin: 0, font: "var(--type-h1)", letterSpacing: "-0.02em", color: "var(--text-primary)" }}>
+        <h1
+          style={{
+            margin: 0,
+            font: "var(--type-h1)",
+            letterSpacing: "-0.02em",
+            color: "var(--text-primary)",
+            ...(condensed ? { fontSize: 20, lineHeight: "26px" } : {}),
+            transition: "font-size 140ms ease, line-height 140ms ease",
+          }}
+        >
           {title}
         </h1>
-        {subtitle && <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>{subtitle}</p>}
+        {subtitle && !condensed && (
+          <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>{subtitle}</p>
+        )}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
@@ -53,8 +68,12 @@ export function PageHeader({
  * rest the page is spaced exactly as it was, and once pinned the rows sliding
  * under it still get a strip of clear space.
  */
-export function PinnedBar({ children }: { children: ReactNode }) {
-  return <div className="ta-pinned flex flex-col gap-4">{children}</div>;
+export function PinnedBar({ children, barRef }: { children: ReactNode; barRef?: Ref<HTMLDivElement> }) {
+  return (
+    <div ref={barRef} className="ta-pinned flex flex-col gap-4">
+      {children}
+    </div>
+  );
 }
 
 /**
