@@ -7,6 +7,8 @@ import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { withRBAC } from "@/lib/rbac/guard";
 import { photoUrls } from "@/lib/presence/photos";
+import { badgeWhere } from "@/lib/utils/badge-lookup";
+import { looksLikeBadge } from "@/lib/presence/people-search.service";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
 
@@ -144,6 +146,9 @@ export const getEmployees = withRBAC(
         { user: { name: { contains: q, mode: "insensitive" } } },
         { user: { email: { contains: q, mode: "insensitive" } } },
         { employeeCode: { contains: q, mode: "insensitive" } },
+        // A badge number or barcode, matched the way the kiosks match a scan
+        // (zero padding and re-issued cards included), as Live Attendance does.
+        ...(looksLikeBadge(q) ? [badgeWhere(q)] : []),
       ];
     }
 
