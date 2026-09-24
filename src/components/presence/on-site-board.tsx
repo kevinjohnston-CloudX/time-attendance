@@ -997,6 +997,13 @@ export function OnSiteBoard({
                 counter={counter}
                 onPick={setCounter}
                 unknownCount={unknown.count}
+                stillInside={when === "today" ? insideTotal : null}
+                onStillInside={() => {
+                  setMvFlag(when === "today" ? heroFlagFor(true) : "MARKED_OUT");
+                  setMvShown(PEOPLE_PER_PAGE);
+                  setSelectedId(null);
+                  setTab("movements");
+                }}
                 hasGateData={board.site.hasGateData}
                 lastGateScanAt={board.site.lastGateScanAt}
                 tz={tz}
@@ -1894,12 +1901,15 @@ const COUNTER_LABEL: Record<LogCounter, string> = {
   "clock-out": "Time clock out",
   rejected: "Taps not counted",
   unknown: "Not in CloudTime",
+  "first-in": "First entry per person",
+  "first-clock": "First clock in per person",
 };
 
 /** How many scans the picked counter stands for, from the same counts it shows. */
 function counterTotal(s: NonNullable<ReturnType<typeof useScanLog>["page"]>["summary"], c: LogCounter | null): number {
-  const { stream, direction, rejected } = counterQuery(c);
+  const { stream, direction, rejected, first } = counterQuery(c);
   if (rejected) return s.rejected;
+  if (first) return first === "gate" ? s.peopleIn : s.peopleClockedIn;
   if (stream === "SECURITY") return direction === "IN" ? s.gateIn : direction === "OUT" ? s.gateOut : s.gateTotal;
   if (stream === "TIME_CLOCK") return direction === "IN" ? s.clockIn : direction === "OUT" ? s.clockOut : s.clockTotal;
   return s.gateTotal + s.clockTotal;

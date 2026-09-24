@@ -960,13 +960,16 @@
   border-top: 1px solid var(--stroke-divider);
 }
 
+/* Time, face, who, what happened, and only then any tag: the event sits
+   right after the name, so the eye does not cross an empty stretch. */
 .logRow {
   display: grid;
-  grid-template-columns: 68px 44px minmax(140px, 1fr) minmax(200px, 1.5fr) minmax(0, auto);
+  grid-template-columns: 72px 40px minmax(200px, 300px) minmax(0, 1fr) auto;
   align-items: center;
   gap: 0 14px;
   width: 100%;
-  padding: 10px 16px;
+  min-height: 60px;
+  padding: 8px 16px;
   border: 0;
   background: transparent;
   text-align: left;
@@ -1013,8 +1016,8 @@
    and not as an account avatar. */
 .logPhoto {
   position: relative;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
   overflow: hidden;
   display: inline-flex;
@@ -3401,4 +3404,82 @@
     border-left: 0;
     border-top: 1px solid var(--stroke-divider);
   }
+}
+
+/* ── Scan log summary: a reader's counts as one grouped chip ───────────── */
+
+.summaryGroup {
+  display: inline-flex;
+  align-items: stretch;
+  height: 30px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 999px;
+  background: var(--surface-card);
+  overflow: hidden;
+}
+
+.summaryGroupItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 0;
+  background: transparent;
+  font: var(--weight-medium) 13px/18px var(--font-sans);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.summaryGroupItem + .summaryGroupItem {
+  border-left: 1px solid var(--stroke-divider);
+}
+
+.summaryGroupItem:first-child {
+  padding-left: 12px;
+}
+
+.summaryGroupItem:hover {
+  background: var(--fill-hover);
+  color: var(--text-primary);
+}
+
+.summaryGroupItem[aria-pressed="true"] {
+  background: var(--surface-info);
+  color: var(--text-primary);
+}
+
+.summaryGroupItem:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: -2px;
+}
+
+.summaryNote[data-wrap="true"] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  white-space: normal;
+  text-align: right;
+}
+
+.summaryAll {
+  padding: 2px 6px;
+  margin-right: -6px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  font: var(--type-body2);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.summaryAll:hover {
+  background: var(--fill-hover);
+}
+
+.summaryAll[aria-pressed="true"] {
+  color: var(--text-primary);
 }

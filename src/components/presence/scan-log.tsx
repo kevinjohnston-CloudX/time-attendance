@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clock, DoorOpen, ScanLine, SearchX } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ChevronRight, Clock, DoorOpen, ScanLine, SearchX } from "lucide-react";
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { getOnSiteScanLog } from "@/actions/presence.actions";
 import type { ScanLogPage, ScanLogQuery, ScanLogRow, ScanLogSummary, ScanStream } from "@/lib/presence/types";
@@ -25,16 +25,39 @@ const POLL_MS = 30_000;
 const SEARCH_DELAY_MS = 300;
 
 /** "unknown" is the badges nobody holds, a list of people rather than of scans. */
-export type LogCounter = "gate" | "gate-in" | "gate-out" | "clock" | "clock-in" | "clock-out" | "rejected" | "unknown";
+export type LogCounter =
+  | "gate"
+  | "gate-in"
+  | "gate-out"
+  | "clock"
+  | "clock-in"
+  | "clock-out"
+  | "rejected"
+  | "unknown"
+  | "first-in"
+  | "first-clock";
 
-export function counterQuery(c: LogCounter | null): Pick<ScanLogQuery, "stream" | "direction" | "rejected"> {
+export function counterQuery(c: LogCounter | null): Pick<ScanLogQuery, "stream" | "direction" | "rejected" | "first"> {
+  if (c === "first-in") return { stream: null, direction: null, rejected: false, first: "gate" };
+  if (c === "first-clock") return { stream: null, direction: null, rejected: false, first: "clock" };
   const stream: ScanStream | null = c?.startsWith("gate") ? "SECURITY" : c?.startsWith("clock") ? "TIME_CLOCK" : null;
   const direction = c?.endsWith("-in") ? "IN" : c?.endsWith("-out") ? "OUT" : null;
-  return { stream, direction, rejected: c === "rejected" };
+  return { stream, direction, rejected: c === "rejected", first: null };
 }
 
 export function parseCounter(raw: string | null | undefined): LogCounter | null {
-  const all: LogCounter[] = ["gate", "gate-in", "gate-out", "clock", "clock-in", "clock-out", "rejected", "unknown"];
+  const all: LogCounter[] = [
+    "gate",
+    "gate-in",
+    "gate-out",
+    "clock",
+    "clock-in",
+    "clock-out",
+    "rejected",
+    "unknown",
+    "first-in",
+    "first-clock",
+  ];
   return all.includes(raw as LogCounter) ? (raw as LogCounter) : null;
 }
 
@@ -236,9 +259,11 @@ function compareRows(a: ScanLogRow, b: ScanLogRow): number {
 /* ── Counts ─────────────────────────────────────────────────────────────── */
 
 /**
- * The same two tier summary as Movements: every scan first, then in and out
- * at each reader, which stay on screen at zero, then the reader totals and
- * the taps that did not count as chips. Every number is the filter for it.
+ * The Scan log's summary, people first, because the questions loss
+ * prevention brings here are about people: how many are still inside, how
+ * many came in, how many clocked in, each person counted once. The scan
+ * counts behind them are the chips, one group per reader, and every number
+ * is still the filter for it.
  */
 export function ScanLogCounts({
   summary,
@@ -249,6 +274,8 @@ export function ScanLogCounts({
   tz,
   when,
   unknownCount = 0,
+  stillInside,
+  onStillInside,
 }: {
   summary: ScanLogSummary;
   counter: LogCounter | null;
@@ -260,40 +287,100 @@ export function ScanLogCounts({
   tz: string;
   /** "today", "yesterday" or "on Mon, Sep 21". */
   when: string;
+  /** Today: how many are in the building now (on the clock where no gate reports). */
+  stillInside: number | null;
+  /** Opens those people in Movements. */
+  onStillInside: () => void;
 }) {
   const isToday = when === "today";
   const pick = (c: LogCounter) => onPick(counter === c ? null : c);
   const all = summary.gateTotal + summary.clockTotal;
 
-  const cards: { key: LogCounter; label: string; tone: "in" | "out"; count: number }[] = [
+  // The lead number: who is left, today; who never scanned out, on a past day.
+  const hero =
+    isToday && stillInside !== null
+      ? {
+          label: hasGateData ? "Still inside" : "On the clock",
+          figure: stillInside,
+          sub: hasGateData
+            ? `of ${summary.peopleIn.toLocaleString()} who came in today`
+            : `of ${summary.peopleClockedIn.toLocaleString()} who clocked in today`,
+          opens: true,
+        }
+      : hasGateData
+        ? {
+            label: "Never scanned out",
+            figure: summary.gateAutoClosed,
+            sub: `of ${summary.peopleIn.toLocaleString()} who came in ${when}`,
+            opens: true,
+          }
+        : { label: "People seen", figure: summary.people, sub: when, opens: false };
+
+  const cards: { key: LogCounter; label: string; count: number; hint: string }[] = [
     ...(hasGateData
       ? [
-          { key: "gate-in" as const, label: "Security gate in", tone: "in" as const, count: summary.gateIn },
-          { key: "gate-out" as const, label: "Security gate out", tone: "out" as const, count: summary.gateOut },
+          {
+            key: "first-in" as const,
+            label: "Came in",
+            count: summary.peopleIn,
+            hint: "People who came in through the security gate, each counted once. Shows each person's first entry",
+          },
         ]
       : []),
-    { key: "clock-in", label: "Time clock in", tone: "in", count: summary.clockIn },
-    { key: "clock-out", label: "Time clock out", tone: "out", count: summary.clockOut },
+    {
+      key: "first-clock",
+      label: "Clocked in",
+      count: summary.peopleClockedIn,
+      hint: "People who clocked in, each counted once. Shows each person's first clock in",
+    },
   ];
-  const chipList: { key: LogCounter; label: string; count: number }[] = [
-    ...(hasGateData ? [{ key: "gate" as const, label: "Security gate", count: summary.gateTotal }] : []),
-    { key: "clock", label: "Time clock", count: summary.clockTotal },
-    { key: "rejected", label: "Taps not counted", count: summary.rejected },
-    { key: "unknown", label: "Not in CloudTime", count: unknownCount },
-  ];
-  const chips = chipList.filter((c) => c.count > 0 || counter === c.key);
 
-  const note = !hasGateData
+  const groups: { icon: ReactNode; items: { key: LogCounter; label: string; count: number }[] }[] = [
+    ...(hasGateData
+      ? [
+          {
+            icon: <DoorOpen className="h-3.5 w-3.5" aria-hidden="true" />,
+            items: [
+              { key: "gate" as const, label: "Security gate", count: summary.gateTotal },
+              { key: "gate-in" as const, label: "In", count: summary.gateIn },
+              { key: "gate-out" as const, label: "Out", count: summary.gateOut },
+            ],
+          },
+        ]
+      : []),
+    {
+      icon: <Clock className="h-3.5 w-3.5" aria-hidden="true" />,
+      items: [
+        { key: "clock", label: "Time clock", count: summary.clockTotal },
+        { key: "clock-in", label: "In", count: summary.clockIn },
+        { key: "clock-out", label: "Out", count: summary.clockOut },
+      ],
+    },
+  ];
+  const extras = [
+    {
+      key: "rejected" as const,
+      label: "Taps not counted",
+      count: summary.rejected,
+      tone: "error",
+      hint: "Taps the time clock did not accept, usually a second tap too soon, and repeat reads of the same badge. They are left out of every other list and total",
+    },
+    {
+      key: "unknown" as const,
+      label: "Not in CloudTime",
+      count: unknownCount,
+      tone: "warning",
+      hint: "People who scanned here on a badge no employee holds. Their time clock scans were refused",
+    },
+  ].filter((c) => c.count > 0 || counter === c.key);
+
+  const gateNote = !hasGateData
     ? "The security gate here has not reported in the last 36 hours."
     : isToday
       ? `Last security gate scan at ${fmtTime(lastGateScanAt, tz)}.`
       : summary.gateTotal === 0
         ? `No security gate scans ${when}.`
-        : summary.gateAutoClosed === 0
-          ? "Everyone who came in scanned out."
-          : `${summary.gateAutoClosed.toLocaleString()} ${summary.gateAutoClosed === 1 ? "person" : "people"} never scanned out and ${
-              summary.gateAutoClosed === 1 ? "was" : "were"
-            } closed by the system.`;
+        : "";
 
   return (
     <section className={styles.summary} aria-label="Scans">
@@ -301,17 +388,16 @@ export function ScanLogCounts({
         <button
           type="button"
           className={styles.summaryHero}
-          aria-pressed={counter === null}
-          onClick={() => onPick(null)}
-          title="Show every scan"
+          aria-pressed={hero.opens ? undefined : counter === null}
+          onClick={() => (hero.opens ? onStillInside() : onPick(null))}
+          title={hero.opens ? "Show these people in Movements" : "Show every scan"}
         >
-          <span className={styles.summaryLabel}>Scans {when}</span>
-          <span className={styles.summaryHeroFigure}>{all.toLocaleString()}</span>
-          <span className={styles.summarySub}>
-            {summary.people === 0
-              ? "Nobody scanned"
-              : `by ${summary.people.toLocaleString()} ${summary.people === 1 ? "person" : "people"}`}
+          <span className={styles.summaryLabel}>
+            {hero.label}
+            {hero.opens && <ChevronRight className="h-4 w-4" aria-hidden="true" />}
           </span>
+          <span className={styles.summaryHeroFigure}>{hero.figure.toLocaleString()}</span>
+          <span className={styles.summarySub}>{hero.sub}</span>
         </button>
         {cards.map((c) => (
           <button
@@ -321,46 +407,66 @@ export function ScanLogCounts({
             aria-pressed={counter === c.key}
             data-empty={c.count === 0 ? "true" : undefined}
             onClick={() => pick(c.key)}
+            title={c.hint}
           >
             <span className={styles.summaryLabel}>
-              <span className={styles.dot} data-tone={c.tone} aria-hidden="true" />
               <span className="truncate">{c.label}</span>
             </span>
             <span className={styles.summaryFigure}>{c.count.toLocaleString()}</span>
+            <span className={styles.summarySub}>{c.count === 1 ? "person" : "people"}, counted once each</span>
           </button>
         ))}
       </div>
 
       <div className={styles.summaryMore}>
         <div className={styles.summaryChips}>
-          {chips.map((c) => (
+          {groups.map((g) => (
+            <span key={g.items[0].key} className={styles.summaryGroup}>
+              {g.items.map((c, i) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  className={styles.summaryGroupItem}
+                  aria-pressed={counter === c.key}
+                  onClick={() => pick(c.key)}
+                >
+                  {i === 0 && g.icon}
+                  <span>{c.label}</span>
+                  <span className={styles.summaryChipCount}>{c.count.toLocaleString()}</span>
+                </button>
+              ))}
+            </span>
+          ))}
+          {extras.map((c) => (
             <button
               key={c.key}
               type="button"
               className={styles.summaryChip}
               aria-pressed={counter === c.key}
               onClick={() => pick(c.key)}
-              title={
-                c.key === "rejected"
-                  ? "Taps the time clock did not accept, usually a second tap too soon, and repeat reads of the same badge. They are left out of every other list and total"
-                  : c.key === "unknown"
-                    ? "People who scanned here on a badge no employee holds. Their time clock scans were refused"
-                    : undefined
-              }
+              title={c.hint}
             >
-              {c.key === "gate" ? (
-                <DoorOpen className="h-3.5 w-3.5" aria-hidden="true" />
-              ) : c.key === "clock" ? (
-                <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-              ) : (
-                <span className={styles.dot} data-tone={c.key === "unknown" ? "warning" : "error"} aria-hidden="true" />
-              )}
+              <span className={styles.dot} data-tone={c.tone} aria-hidden="true" />
               <span>{c.label}</span>
               <span className={styles.summaryChipCount}>{c.count.toLocaleString()}</span>
             </button>
           ))}
         </div>
-        <span className={styles.summaryNote}>{note}</span>
+        <span className={styles.summaryNote} data-wrap="true">
+          <button
+            type="button"
+            className={styles.summaryAll}
+            aria-pressed={counter === null}
+            onClick={() => onPick(null)}
+            title="Show every scan"
+          >
+            <span className="tabular" style={{ fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+              {all.toLocaleString()}
+            </span>{" "}
+            {all === 1 ? "scan" : "scans"} by {summary.people.toLocaleString()} {summary.people === 1 ? "person" : "people"}
+          </button>
+          {gateNote && <span>{gateNote}</span>}
+        </span>
       </div>
     </section>
   );
@@ -507,16 +613,16 @@ function LogRow({
               {describeScan(r)}
             </span>
             <span className="truncate" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-              {r.rejected && r.rejectionReason ? r.rejectionReason : r.device ?? ""}
+              {[gate ? "Security gate" : "Time clock", r.rejected && r.rejectionReason ? r.rejectionReason : r.device]
+                .filter(Boolean)
+                .join(" · ")}
             </span>
           </span>
         </span>
 
+        {/* Only what is out of the ordinary gets a tag; the reader is named
+            under the event, and its icon leads it. */}
         <span className={styles.logTags}>
-          <span className={styles.source} data-stream={gate ? "gate" : "clock"}>
-            {gate ? <DoorOpen className="h-3.5 w-3.5" aria-hidden="true" /> : <Clock className="h-3.5 w-3.5" aria-hidden="true" />}
-            {gate ? "Security gate" : "Time clock"}
-          </span>
           {r.rejected && (
             <Badge tone="error" size="sm">
               Not accepted

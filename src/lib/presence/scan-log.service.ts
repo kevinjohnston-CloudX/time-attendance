@@ -125,11 +125,42 @@ export async function getScanLog(
     AND: [base, { NOT: notCounted }, { directionSource: { notIn: SYSTEM as never } }],
   };
 
+  // A real entry through the gate, and a real clock in (not a return from a
+  // meal): the two kinds a person is counted once for.
+  const gateIn: Prisma.ScanEventWhereInput = { stream: "SECURITY", direction: "IN" };
+  const clockIn: Prisma.ScanEventWhereInput = {
+    stream: "TIME_CLOCK",
+    OR: [{ timecardPunchType: "CLOCK_IN" }, { timecardPunchType: null, direction: "IN" }],
+  };
+
+  // Each person's first scan of that kind, for "first entry" and "first clock
+  // in". One site and one day, so a few thousand rows at most.
+  const firstIds = input.first
+    ? await db.scanEvent
+        .findMany({
+          where: { AND: [counted, input.first === "gate" ? gateIn : clockIn] },
+          orderBy: [{ scanTime: "asc" }, { id: "asc" }],
+          select: { id: true, employeeId: true },
+        })
+        .then((rows) => {
+          const seenPeople = new Set<string>();
+          const ids: string[] = [];
+          for (const r of rows) {
+            if (!r.employeeId || seenPeople.has(r.employeeId)) continue;
+            seenPeople.add(r.employeeId);
+            ids.push(r.id);
+          }
+          return ids;
+        })
+    : null;
+
   // What the rows cover: that, narrowed by whichever counter is picked. A
   // direction always comes with its reader, because every counter has one.
   const narrow: Prisma.ScanEventWhereInput[] = [base];
   if (input.rejected) narrow.push(notCounted);
-  else {
+  else if (firstIds) {
+    narrow.push({ NOT: notCounted }, { id: { in: firstIds } });
+  } else {
     narrow.push({ NOT: notCounted });
     if (input.stream) {
       narrow.push({ stream: input.stream });
@@ -148,7 +179,7 @@ export async function getScanLog(
       ? { AND: [filtered, { OR: [{ scanTime: { lt: before.at } }, { scanTime: before.at, id: { lt: before.id } }] }] }
       : filtered;
 
-  const [rows, byStream, rejected, autoClosed, people, newest] = await Promise.all([
+  const [rows, byStream, rejected, autoClosed, people, newest, peopleIn, peopleClockedIn] = await Promise.all([
     db.scanEvent.findMany({
       where: rowWhere,
       orderBy: [{ scanTime: "desc" }, { id: "desc" }],
@@ -186,6 +217,8 @@ export async function getScanLog(
     db.scanEvent.count({ where: { ...base, stream: "SECURITY", directionSource: "AUTO_CLOSE" } }),
     db.scanEvent.groupBy({ by: ["employeeId"], where: counted }),
     db.scanEvent.aggregate({ where: base, _max: { createdAt: true } }),
+    db.scanEvent.groupBy({ by: ["employeeId"], where: { AND: [counted, gateIn] } }),
+    db.scanEvent.groupBy({ by: ["employeeId"], where: { AND: [counted, clockIn] } }),
   ]);
 
   // A handful of groups, folded here only to apply the time clock rule above.
@@ -247,6 +280,8 @@ export async function getScanLog(
       rejected,
       gateAutoClosed: autoClosed,
       people: people.filter((p) => p.employeeId).length,
+      peopleIn: peopleIn.filter((p) => p.employeeId).length,
+      peopleClockedIn: peopleClockedIn.filter((p) => p.employeeId).length,
     },
     watermark: newest._max.createdAt?.toISOString() ?? null,
   };

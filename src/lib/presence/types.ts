@@ -161,6 +161,11 @@ export interface ScanLogQuery {
   stream: ScanStream | null;
   direction: "IN" | "OUT" | null;
   rejected: boolean;
+  /**
+   * Only each person's first scan of a kind that day: their first entry
+   * through the gate, or their first clock in. One row per person.
+   */
+  first?: "gate" | "clock" | null;
   departmentId: string | null;
   shiftId: string | null;
   q: string | null;
@@ -201,6 +206,10 @@ export interface ScanLogSummary {
   gateAutoClosed: number;
   /** Different people seen at either reader today. */
   people: number;
+  /** Different people who came in through the gate at least once, each counted once. */
+  peopleIn: number;
+  /** Different people who clocked in at least once, each counted once. */
+  peopleClockedIn: number;
 }
 
 export interface ScanLogPage {
