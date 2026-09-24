@@ -28,7 +28,7 @@ interface Props {
   payCategories: { id: string; number: number; description: string | null }[];
   payTypes: { id: string; number: number; description: string | null }[];
   jobTitles: { id: string; name: string; externalId: string | null }[];
-  agencies: { id: string; code: number; description: string; inactiveOn: string | null }[];
+  agencies: { id: string; code: number; description: string; inactiveOn: Date | string | null }[];
   logs: Array<{
     id: string;
     createdAt: string;
