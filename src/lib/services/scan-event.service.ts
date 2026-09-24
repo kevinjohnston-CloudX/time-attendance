@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { findEmployeeIdentityByBadge } from "@/lib/utils/badge-lookup";
 import { snapToLocalTime } from "@/lib/utils/date";
+import { toTabletVerdict } from "@/lib/services/tablet-verdict";
 import type {
   Prisma,
   ScanDirection,
@@ -435,7 +436,15 @@ export function rereadWindowMsFor(stream: ScanStream): number {
 }
 
 /**
- * Records what the timecard pipeline did with a scan already written down.
+ * Records what the timecard pipeline did with a scan already written down —
+ * in the tablet's words, not the pipeline's.
+ *
+ * The pipeline may answer MEAL_START leaving MEAL; the tablets' log says
+ * CLOCK_OUT leaving OUT, because that is all a tablet did or knows. The
+ * translation lives in {@link toTabletVerdict}, and this is the only writer of
+ * the two verdict columns, so nothing payroll decides can change what the
+ * tablets' record says a scan was. A punch type the translation does not
+ * recognise is kept as sent, so the record never loses the pipeline's words.
  *
  * Deliberately never throws: this is bookkeeping on a reporting table, and a
  * failure here must not cost an employee a punch the pipeline already
@@ -453,13 +462,15 @@ export async function resolveScanOutcome(
   },
 ): Promise<void> {
   try {
+    const verdict = toTabletVerdict(result);
     await db.scanEvent.update({
       where: { id: scanEventId },
       data: {
         outcome: result.outcome,
         punchId: result.punchId ?? null,
-        timecardPunchType: result.punchType ?? null,
-        timecardStateAfter: result.stateAfter ?? null,
+        timecardPunchType: verdict.punchType ?? result.punchType ?? null,
+        // A refused punch has no state; do not invent one for it.
+        timecardStateAfter: result.stateAfter == null ? null : verdict.stateAfter,
         rejectionReason: result.rejectionReason ?? null,
       },
     });

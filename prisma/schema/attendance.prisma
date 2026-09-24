@@ -178,11 +178,13 @@ model ScanEvent {
   outcome ScanOutcome @default(PENDING)
   /// The pipeline's own words when it refused the scan.
   rejectionReason String?
-  /// CLOCK_IN / CLOCK_OUT / MEAL_START / … as the pipeline classified it.
+  /// CLOCK_IN or CLOCK_OUT: the pipeline's verdict reduced to the two punch
+  /// types a tablet knows (see tablet-verdict.ts). Rows written before
+  /// 2026-09-24 may still carry the pipeline's own MEAL_* / BREAK_* words.
   timecardPunchType String?
-  /// WORK / OUT / MEAL / BREAK — the state the pipeline left the employee in.
-  /// WORK means on the clock; anything else means not. That is what gets
-  /// compared against this row's independently resolved `direction`.
+  /// WORK or OUT — whether the pipeline left the employee on the clock. That
+  /// is what gets compared against this row's independently resolved
+  /// `direction`. Null when the pipeline refused the scan.
   timecardStateAfter String?
 
   /// What the legacy cajaapi call reported, when it reported anything. Recorded
