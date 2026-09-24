@@ -4158,3 +4158,81 @@
   font: var(--type-body2);
   color: var(--text-tertiary);
 }
+
+/* ── Not in CloudTime ────────────────────────────────────────────────────── */
+
+.ubList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Who, when, what became of the badge, what it cost: the same columns in
+   both groups, so the two cards read as one list. */
+.ubRow {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(180px, 1fr) minmax(200px, 1.1fr) 170px;
+  align-items: center;
+  gap: 0 24px;
+  min-height: 64px;
+  padding: 10px 20px;
+}
+
+.ubRow + .ubRow {
+  border-top: 1px solid var(--stroke-divider);
+}
+
+.ubCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ubMain {
+  font: var(--weight-medium) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ubMain[data-quiet="true"] {
+  color: var(--text-tertiary);
+}
+
+.ubMain[data-tone="warning"] {
+  color: var(--text-warning);
+}
+
+.ubSub {
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ubCost {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .ubRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 16px;
+  }
+  .ubRow > .ubCell:nth-child(2),
+  .ubRow > .ubCell:nth-child(3) {
+    grid-column: 1;
+  }
+  .ubCost {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    align-self: start;
+  }
+}

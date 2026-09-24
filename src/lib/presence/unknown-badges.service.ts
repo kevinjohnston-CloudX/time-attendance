@@ -49,7 +49,18 @@ export interface UnknownBadge {
    * Somebody holds this badge now. They were added after these scans, which
    * stay unmatched and whose punches were never recorded.
    */
-  addedAs: { id: string; name: string } | null;
+  addedAs: {
+    id: string;
+    name: string;
+    /**
+     * How the badge became theirs, from the audit log: a new record, or the
+     * badge put on a record that already existed. Null when no entry says.
+     */
+    how: "created" | "badge" | null;
+    /** Who did it and when, from the same entry. */
+    by: string | null;
+    at: string | null;
+  } | null;
   /** Where the badge stands in the WMS review queue, or null if never staged. */
   reviewStatus: "NEW" | "IGNORED" | "RESOLVED" | null;
 }
@@ -153,11 +164,48 @@ export async function getUnknownBadges(
         barcode: true,
         wmsId: true,
         employeeCode: true,
+        createdAt: true,
         user: { select: { name: true } },
         badges: { select: { barcode: true } },
       },
     }),
   ]);
+
+  // Who gave each holder their badge: the entry that created the record, or,
+  // for a record older than the scans, the edit that set its badge.
+  const audits = holders.length
+    ? await db.auditLog.findMany({
+        where: {
+          tenantId,
+          entityType: "EMPLOYEE",
+          entityId: { in: holders.map((h) => h.id) },
+          action: { in: ["EMPLOYEE_CREATED", "EMPLOYEE_UPDATED"] },
+          createdAt: { gte: snapToLocalTime("00:00", addDays(day, -30), timezone) },
+        },
+        orderBy: { createdAt: "desc" },
+        select: {
+          entityId: true,
+          action: true,
+          changes: true,
+          createdAt: true,
+          actor: { select: { user: { select: { name: true } } } },
+        },
+      })
+    : [];
+  const setsBadge = (changes: unknown) =>
+    Array.isArray((changes as { fields?: unknown })?.fields) &&
+    (changes as { fields: { field?: string }[] }).fields.some((f) => /badge|barcode/i.test(f.field ?? ""));
+  const addedBy = (holderId: string, createdAt: Date, firstScan: Date) => {
+    const mine = audits.filter((a) => a.entityId === holderId);
+    const entry =
+      createdAt >= firstScan
+        ? mine.find((a) => a.action === "EMPLOYEE_CREATED")
+        : mine.find((a) => a.action === "EMPLOYEE_UPDATED" && a.createdAt >= firstScan && setsBadge(a.changes));
+    const how: "created" | "badge" = createdAt >= firstScan ? "created" : "badge";
+    return entry
+      ? { how, by: entry.actor?.user?.name?.trim() || "The system", at: entry.createdAt.toISOString() }
+      : { how: createdAt >= firstScan ? how : null, by: null, at: createdAt >= firstScan ? createdAt.toISOString() : null };
+  };
 
   const candidateFor = (code: string) => {
     const f = forms(code);
@@ -190,7 +238,9 @@ export async function getUnknownBadges(
       lastReader: lastReader.get(code) ?? null,
       gateScans: s.gate,
       refusedPunches: s.clock,
-      addedAs: h ? { id: h.id, name: h.user?.name?.trim() || `Employee ${h.employeeCode}` } : null,
+      addedAs: h
+        ? { id: h.id, name: h.user?.name?.trim() || `Employee ${h.employeeCode}`, ...addedBy(h.id, h.createdAt, s.first) }
+        : null,
       reviewStatus: c?.status ?? null,
     };
   });

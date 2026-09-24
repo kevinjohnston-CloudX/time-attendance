@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { BadgeHelp } from "lucide-react";
-import { Badge, Button, Card, EmptyState, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
+import { Badge, Button, Card, EmptyState } from "@/components/ui";
 import { getOnSiteUnknownBadges } from "@/actions/unknown-badges.actions";
 import type { UnknownBadge, UnknownBadgeDay } from "@/lib/presence/unknown-badges.service";
 import { fmtTime } from "./presence-meta";
+import styles from "./on-site.module.css";
 
 /**
  * Badges scanned here that match nobody in CloudTime, for loss prevention.
@@ -174,22 +175,32 @@ export function UnknownBadgesView({
         title="Not in CloudTime"
         subtitle={
           notHeld.length === 0
-            ? "Everyone listed below has since been added"
-            : "Scanned here on a badge no employee holds. Their time clock scans were refused, so none of it is on a timecard"
+            ? "Everyone who scanned here on an unknown badge has since been added"
+            : "Scanned here on a badge no employee holds, so their time clock punches were refused"
         }
         actions={<CountPill n={notHeld.length} tone={notHeld.length ? "warning" : "neutral"} />}
       >
-        {notHeld.length > 0 && <BadgeTable rows={notHeld} tz={tz} />}
+        {notHeld.length > 0 && (
+          <ul className={styles.ubList}>
+            {notHeld.map((b) => (
+              <BadgeRow key={b.badgeCode} b={b} tz={tz} day={data.day} />
+            ))}
+          </ul>
+        )}
       </Card>
 
       {addedLater.length > 0 && (
         <Card
           padding={0}
           title={when === "today" ? "Added later today" : "Added later"}
-          subtitle="In CloudTime now, but their punches from before they were added were not recorded"
+          subtitle="In CloudTime now, but punches from before they were added are not on their timecard"
           actions={<CountPill n={addedLater.length} tone="neutral" />}
         >
-          <BadgeTable rows={addedLater} tz={tz} added />
+          <ul className={styles.ubList}>
+            {addedLater.map((b) => (
+              <BadgeRow key={b.badgeCode} b={b} tz={tz} day={data.day} />
+            ))}
+          </ul>
         </Card>
       )}
     </div>
@@ -204,69 +215,93 @@ function CountPill({ n, tone }: { n: number; tone: "warning" | "neutral" }) {
   );
 }
 
-function BadgeTable({ rows, tz, added = false }: { rows: UnknownBadge[]; tz: string; added?: boolean }) {
+/** "at 3:53 PM" on the day shown, "Sep 24 at 3:53 PM" on any other. */
+function addedWhen(at: string, tz: string, day: string): string {
+  const d = new Date(at);
+  const local = d.toLocaleDateString("en-CA", { timeZone: tz });
+  const time = fmtTime(at, tz);
+  return local === day ? `at ${time}` : `${d.toLocaleDateString("en-US", { timeZone: tz, month: "short", day: "numeric" })} at ${time}`;
+}
+
+const REVIEW: Record<NonNullable<UnknownBadge["reviewStatus"]> | "none", { text: string; tone?: "warning" }> = {
+  NEW: { text: "On the missing employees list" },
+  IGNORED: { text: "Marked ignored in WMS Sync", tone: "warning" },
+  RESOLVED: { text: "Marked resolved, still no record", tone: "warning" },
+  none: { text: "Not on the missing employees list" },
+};
+
+/**
+ * One badge as one row, read left to right the same way in both groups: who
+ * it is, when they were here, what became of the badge, and what it cost
+ * them. The two groups share the columns, so the page reads as one list.
+ */
+function BadgeRow({ b, tz, day }: { b: UnknownBadge; tz: string; day: string }) {
+  const added = b.addedAs;
+  const name = added ? added.name : b.wmsName;
+  const seen =
+    fmtTime(b.firstSeen, tz) === fmtTime(b.lastSeen, tz)
+      ? `At ${fmtTime(b.firstSeen, tz)}`
+      : `${fmtTime(b.firstSeen, tz)} to ${fmtTime(b.lastSeen, tz)}`;
+  const review = REVIEW[b.reviewStatus ?? "none"];
+
   return (
-    <Table>
-      <THead>
-        <TR>
-          <TH>{added ? "Now in CloudTime as" : "Name in the WMS"}</TH>
-          <TH>Badge</TH>
-          <TH>Department</TH>
-          <TH>First seen</TH>
-          <TH>Last seen</TH>
-          <TH>Last reader</TH>
-          <TH numeric>Gate scans</TH>
-          <TH numeric>Refused punches</TH>
-        </TR>
-      </THead>
-      <TBody>
-        {rows.map((b) => (
-          <TR key={b.badgeCode}>
-            <TD>
-              <span
-                className="block max-w-[220px] truncate"
-                style={{
-                  font: "var(--weight-medium) 14px/20px var(--font-sans)",
-                  color: added || b.wmsName ? "var(--text-primary)" : "var(--text-tertiary)",
-                }}
-                title={added ? b.addedAs?.name : b.wmsName ?? undefined}
-              >
-                {added ? b.addedAs?.name : b.wmsName ?? "Name unknown"}
-              </span>
-            </TD>
-            <TD>
-              <span className="tabular whitespace-nowrap">{b.badgeCode}</span>
-            </TD>
-            <TD>
-              <span className="block max-w-[180px] truncate" title={b.wmsDepartment ?? undefined}>
-                {b.wmsDepartment ?? ""}
-              </span>
-            </TD>
-            <TD>
-              <span className="tabular whitespace-nowrap">{fmtTime(b.firstSeen, tz)}</span>
-            </TD>
-            <TD>
-              <span className="tabular whitespace-nowrap">{fmtTime(b.lastSeen, tz)}</span>
-            </TD>
-            <TD>
-              <span className="block max-w-[180px] truncate" title={b.lastReader ?? undefined}>
-                {b.lastReader ?? ""}
-              </span>
-            </TD>
-            <TD numeric>{b.gateScans.toLocaleString()}</TD>
-            <TD numeric>
-              {b.refusedPunches > 0 ? (
-                <Badge tone={added ? "neutral" : "error"} size="sm">
-                  {b.refusedPunches.toLocaleString()}
-                </Badge>
-              ) : (
-                "0"
-              )}
-            </TD>
-          </TR>
-        ))}
-      </TBody>
-    </Table>
+    <li className={styles.ubRow}>
+      <span className={styles.ubCell}>
+        <span className={styles.ubMain} data-quiet={name ? undefined : "true"} title={name ?? undefined}>
+          {name ?? "Name unknown"}
+        </span>
+        <span className={styles.ubSub}>
+          Badge <span className="tabular">{b.badgeCode}</span>
+          {b.wmsDepartment ? ` · ${b.wmsDepartment}` : ""}
+        </span>
+      </span>
+
+      <span className={styles.ubCell}>
+        <span className={`${styles.ubMain} tabular`}>{seen}</span>
+        <span className={styles.ubSub} title={b.lastReader ?? undefined}>
+          {b.lastReader ? `Last at ${b.lastReader}` : ""}
+        </span>
+      </span>
+
+      <span className={styles.ubCell}>
+        {added ? (
+          <>
+            <span className={styles.ubMain} title={added.by ?? undefined}>
+              {added.by
+                ? `${added.how === "badge" ? "Badge added by" : "Added by"} ${added.by}`
+                : added.how === "badge"
+                  ? "Badge added later"
+                  : "Added later"}
+            </span>
+            <span className={styles.ubSub}>
+              {added.at ? addedWhen(added.at, tz, day) : "Not recorded in the audit log"}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className={styles.ubMain} data-tone={review.tone}>
+              {review.text}
+            </span>
+            <span className={styles.ubSub}>
+              {b.wmsName ? "Name from the WMS" : "No name in the WMS for this badge"}
+            </span>
+          </>
+        )}
+      </span>
+
+      <span className={styles.ubCost}>
+        {b.refusedPunches > 0 ? (
+          <Badge tone={added ? "warning" : "error"} size="sm">
+            {b.refusedPunches.toLocaleString()} {added ? (b.refusedPunches === 1 ? "punch missing" : "punches missing") : b.refusedPunches === 1 ? "punch refused" : "punches refused"}
+          </Badge>
+        ) : (
+          <span className={styles.ubSub}>No time clock punches</span>
+        )}
+        <span className={`${styles.ubSub} tabular`}>
+          {b.gateScans.toLocaleString()} {b.gateScans === 1 ? "gate scan" : "gate scans"}
+        </span>
+      </span>
+    </li>
   );
 }
 
@@ -274,7 +309,7 @@ function BadgeTable({ rows, tz, added = false }: { rows: UnknownBadge[]; tz: str
 export function unknownBadgesCsv(data: UnknownBadgeDay, cell: (v: string) => string, site: string): string {
   const tz = data.timezone;
   const header = [
-    "Site", "Day", "Status", "Name in the WMS", "Now in CloudTime as", "Badge", "Department",
+    "Site", "Day", "Status", "Name in the WMS", "Now in CloudTime as", "Added by", "Added at", "Badge", "Department",
     "First seen", "Last seen", "Last reader", "Gate scans", "Refused punches",
   ];
   const ordered = [...data.badges.filter((b) => !b.addedAs), ...data.badges.filter((b) => b.addedAs)];
@@ -284,6 +319,8 @@ export function unknownBadgesCsv(data: UnknownBadgeDay, cell: (v: string) => str
     b.addedAs ? "Added later" : "Not in CloudTime",
     b.wmsName ?? "",
     b.addedAs?.name ?? "",
+    b.addedAs?.by ?? "",
+    b.addedAs?.at ? fmtTime(b.addedAs.at, tz) : "",
     b.badgeCode,
     b.wmsDepartment ?? "",
     fmtTime(b.firstSeen, tz),
