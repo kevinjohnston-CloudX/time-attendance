@@ -61,3 +61,4 @@ design-kit.html
 # and auth secret in it, one `git add -A` away from being published.
 .env*
 !.env.example
+_ops/
