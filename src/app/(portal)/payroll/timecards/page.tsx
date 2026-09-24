@@ -270,19 +270,23 @@ export default async function TimecardsPage({
     .join(" · ");
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* The design gives this header a "Send to ADP" action. The export exists
-          (pushPayrollToAdp) but it refuses anything except a locked pay period
-          and is one-shot per period, so its home is the pay period screen where
-          locking happens — a button here would be disabled on every timecard
-          anybody is still editing. The link goes there instead. */}
-      <PageHeader pinned
-        title="Timecards"
-        subtitle={subtitle}
-        actions={<LinkButton href="/payroll/pay-periods">Pay Periods</LinkButton>}
-      />
-
-      <TimecardViewer
+    <TimecardViewer
+        // The page header, drawn by the viewer above the pay period control
+        // so the two read as one bar. The design gives it a "Send to ADP"
+        // action; that push only works on a locked pay period and happens once
+        // per period, so it lives on Pay Periods, where locking happens, and
+        // this links there.
+        header={
+          <PageHeader
+            title="Timecards"
+            subtitle={subtitle}
+            actions={
+              <LinkButton href="/payroll/pay-periods" hierarchy="secondary">
+                View pay periods
+              </LinkButton>
+            }
+          />
+        }
         payPeriods={periods}
         selectedPeriodId={selectedPeriodId}
         employees={employees}
@@ -309,6 +313,5 @@ export default async function TimecardsPage({
         departments={departments}
         selectedDepartmentId={sp.departmentId ?? null}
       />
-    </div>
   );
 }

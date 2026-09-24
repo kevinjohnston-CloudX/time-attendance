@@ -19,8 +19,7 @@ import {
   Button,
   Checkbox,
   EmptyState,
-  FilterBar,
-  FilterChip,
+  FilterSelectChip,
   Input,
   SearchInput,
   SegmentedControl,
@@ -29,7 +28,6 @@ import {
   THead,
   TR,
   Textarea,
-  Toolbar,
   statusTone,
   type BannerTone,
 } from "@/components/ui";
@@ -74,7 +72,6 @@ import {
   Plus,
   X,
   Calendar,
-  CalendarCheck,
   UserCircle,
   StickyNote,
   Check,
@@ -250,6 +247,8 @@ interface TimecardViewerProps {
   selectedDepartmentId: string | null;
   userRole: string;
   readOnly?: boolean;
+  /** The page header, drawn above the pay period control. */
+  header?: React.ReactNode;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -380,6 +379,34 @@ const VIEW_SEGMENTS: { value: string; label: string }[] = [
   { value: "ALL", label: "All" },
   { value: "SUBMITTED", label: "Submitted" },
   { value: "SUP_APPROVED", label: "Ready to pay" },
+];
+
+/** Every status, for the Status pill. "Not open" is everything past the employee. */
+const STATUS_FILTER_OPTIONS = [
+  { id: "ALL_EXCLUDING_OPEN", name: "Not open" },
+  { id: "OPEN", name: "Open" },
+  { id: "SUBMITTED", name: "Submitted" },
+  { id: "SUP_APPROVED", name: "Supervisor approved" },
+  { id: "PAYROLL_APPROVED", name: "Payroll approved" },
+  { id: "LOCKED", name: "Locked" },
+];
+
+const PAY_TYPE_FILTER_OPTIONS = [
+  { id: "HOURLY", name: "Hourly" },
+  { id: "SALARY", name: "Salary" },
+];
+
+const EXCEPTION_FILTER_OPTIONS = [
+  { id: "ALL_EXCEPTIONS", name: "Has any exception" },
+  { id: "MISSING_PUNCH", name: "Missed punch" },
+  { id: "LONG_SHIFT", name: "Long shift" },
+  { id: "SHORT_BREAK", name: "Short break" },
+  { id: "MISSED_MEAL", name: "Missed meal" },
+  { id: "UNSCHEDULED_OT", name: "Unscheduled overtime" },
+  { id: "CONSECUTIVE_DAYS", name: "Too many days in a row" },
+  { id: "ABSENT", name: "Absent" },
+  { id: "LATE_IN", name: "Late" },
+  { id: "EARLY_OUT", name: "Left early" },
 ];
 
 // ─── Recalculate button ──────────────────────────────────────────────────────
@@ -608,6 +635,7 @@ export function TimecardViewer({
   selectedDepartmentId,
   userRole,
   readOnly = false,
+  header,
 }: TimecardViewerProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -1535,29 +1563,6 @@ export function TimecardViewer({
     hasUnauthorizedOt && !!timecard?.employee.ruleSet.allowTimesheetOtAuth;
 
   /**
-   * The same URL {@link navigate} pushes, as an href.
-   *
-   * <p>The filter chips have to be links rather than click handlers: a payroll
-   * list narrowed to one department is something people send each other, and a
-   * chip that only mutated component state could not be middle-clicked, copied
-   * or reloaded. Clearing the site clears the department with it, because the
-   * departments offered are the ones at that site — exactly what the site
-   * dropdown already does.
-   */
-  function filterHref(sid: string | null, did: string | null) {
-    const params = new URLSearchParams();
-    if (selectedEmployeeId) params.set("employeeId", selectedEmployeeId);
-    if (selectedPeriodId) params.set("periodId", selectedPeriodId);
-    if (sid) params.set("siteId", sid);
-    if (did) params.set("departmentId", did);
-    return `/payroll/timecards?${params.toString()}`;
-  }
-
-  const siteName = sites.find((s) => s.id === selectedSiteId)?.name ?? null;
-  const departmentName =
-    departments.find((d) => d.id === selectedDepartmentId)?.name ?? null;
-
-  /**
    * The banner over the grid: where this timecard sits, and what is stopping it.
    *
    * <p>Only shown when there is something to say. An open, clean timecard gets
@@ -1630,311 +1635,256 @@ export function TimecardViewer({
     }
   })();
 
+  const selectedPeriodLabel = (() => {
+    const sel = sortedPeriods[currentIndex];
+    if (!sel) return "No pay period";
+    const s = parseUtcDate(sel.startDate);
+    const e = addDays(parseUtcDate(sel.endDate), -1);
+    return `${format(s, "MMM d")} – ${format(e, "MMM d, yyyy")}`;
+  })();
+
+  // The list's filters that are on, for the one "Clear" that undoes them.
+  const listNarrowed =
+    statusFilter !== "ALL" || payTypeFilter !== "ALL" || exceptionFilter !== "ALL" || !activeOnly || !!search.trim();
+
   return (
-    <div
-      className="ta-card flex h-[calc(100vh-7.25rem)] flex-col overflow-hidden rounded-xl"
-      style={{ border: "1px solid var(--stroke-secondary)" }}
-    >
-      {/* ── Period bar: which fortnight is on screen, and how to move ───
-          Kept on its own row above the toolbar. The period is not a filter on
-          the list — it is what every number under it means, and putting it
-          beside the search box is how it gets read as one more way to narrow
-          rows. */}
-      <div
-        className="shrink-0 flex flex-wrap items-center gap-2 px-4 py-2"
-        style={{
-          borderBottom: "1px solid var(--stroke-divider)",
-          background: "var(--surface-tertiary)",
-        }}
-      >
-        <Badge tone="info" size="sm">
-          {PAY_FREQUENCY_LABEL[payFrequency as PayFrequencyValue] ?? payFrequency}
-        </Badge>
+    // The whole window, as a workspace: the header and the pay period control
+    // on top, then the people on the left and their timecard on the right,
+    // each scrolling on its own. The page itself does not scroll, so the
+    // person you are on never scrolls away from the hours you are reading.
+    <div className="flex flex-col gap-4" style={{ height: "calc(100vh - 5rem)", minHeight: 560 }}>
+      <div className="flex shrink-0 flex-col gap-3">
+        {header}
 
-        {/* Jump to current pay period */}
-        <Button
-          hierarchy="tertiary"
-          size="sm"
-          iconOnly
-          onClick={() => currentPeriod && navigate(selectedEmployeeId, currentPeriod.id)}
-          disabled={!currentPeriod || selectedPeriodId === currentPeriod.id}
-          title="Jump to current pay period"
-        >
-          <CalendarCheck className="h-4 w-4" />
-        </Button>
-
-        {/* Previous / Next arrows with date display */}
-        <div className="flex items-center gap-1">
-          <Button
-            hierarchy="tertiary"
-            size="sm"
-            iconOnly
-            disabled={!hasPrev}
-            onClick={() =>
-              hasPrev && navigate(selectedEmployeeId, sortedPeriods[currentIndex - 1].id)
-            }
-            title="Previous pay period"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span
-            className="tabular min-w-[220px] text-center"
-            style={{
-              font: "var(--type-body2)",
-              fontWeight: "var(--weight-medium)",
-              color: "var(--text-secondary)",
-            }}
-          >
-            {(() => {
-              const sel = sortedPeriods[currentIndex];
-              if (!sel) return "—";
-              const s = parseUtcDate(sel.startDate);
-              const e = addDays(parseUtcDate(sel.endDate), -1);
-              return `${format(s, "MM/dd/yyyy")} (${format(s, "EEE")}) – ${format(e, "MM/dd/yyyy")} (${format(e, "EEE")})`;
-            })()}
-          </span>
-          <Button
-            hierarchy="tertiary"
-            size="sm"
-            iconOnly
-            disabled={!hasNext}
-            onClick={() =>
-              hasNext && navigate(selectedEmployeeId, sortedPeriods[currentIndex + 1].id)
-            }
-            title="Next pay period"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {/* Month/year jump picker */}
-        <div className="relative" ref={calendarRef}>
-          <Button
-            hierarchy="tertiary"
-            size="sm"
-            iconOnly
-            onClick={() => {
-              if (!showCalendar && selectedPp) {
-                setPickerYear(parseUtcDate(selectedPp.startDate).getFullYear());
-              }
-              setShowCalendar((v) => !v);
-            }}
-            title="Jump to month"
-          >
-            <Calendar className="h-4 w-4" />
-          </Button>
-          {showCalendar && (
-            <div className="ta-modal absolute left-0 top-full z-50 mt-1 w-52 rounded-lg p-3">
-              {/* Year navigation */}
-              <div className="mb-2.5 flex items-center justify-between">
-                <Button hierarchy="tertiary" size="sm" iconOnly onClick={() => setPickerYear((y) => y - 1)} title="Previous year">
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>
-                  {pickerYear}
-                </span>
-                <Button hierarchy="tertiary" size="sm" iconOnly onClick={() => setPickerYear((y) => y + 1)} title="Next year">
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-              {/* Month grid. A month with no pay period is disabled rather than
-                  hidden — the gap is information, and a grid that reflowed
-                  would move January under your cursor. */}
-              <div className="grid grid-cols-4 gap-1">
-                {MONTHS.map((label, idx) => {
-                  const hasPeriod = monthsWithPeriods.has(idx);
-                  const isSelected = pickerYear === selectedMonthYear && idx === selectedMonthIdx;
-                  const isCurrentMonth =
-                    pickerYear === new Date().getFullYear() && idx === new Date().getMonth();
-                  return (
-                    <button
-                      key={label}
-                      type="button"
-                      disabled={!hasPeriod}
-                      onClick={() => handleMonthSelect(idx)}
-                      className={hasPeriod ? "ta-field" : undefined}
-                      style={{
-                        padding: "6px 0",
-                        borderRadius: "var(--radius-s)",
-                        border: "1px solid transparent",
-                        font: "var(--type-button2)",
-                        cursor: hasPeriod ? "pointer" : "default",
-                        background: isSelected
-                          ? "var(--fill-accent)"
-                          : isCurrentMonth && hasPeriod
-                            ? "var(--surface-info)"
-                            : "transparent",
-                        color: isSelected
-                          ? "var(--text-on-accent)"
-                          : !hasPeriod
-                            ? "var(--text-disabled)"
-                            : isCurrentMonth
-                              ? "var(--text-accent)"
-                              : "var(--text-primary)",
-                      }}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="flex-1" />
-
-        {/* Site and department. Both are query parameters, so a list narrowed
-            to one department survives a reload and can be sent to somebody —
-            and the chips under this row are what take them off again. */}
-        {sites.length > 0 && (
-          <label className="flex items-center gap-2">
-            <span className="wms-overline">Site</span>
-            <Select
-              value={selectedSiteId ?? ""}
-              onChange={(e) => navigate(null, selectedPeriodId, e.target.value || null, null)}
-              aria-label="Site"
-            >
-              <option value="">All Sites</option>
-              {sites.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </Select>
-          </label>
-        )}
-
-        <label className="flex items-center gap-2">
-          <span className="wms-overline">Dept</span>
-          <Select
-            value={selectedDepartmentId ?? ""}
-            onChange={(e) =>
-              navigate(selectedEmployeeId, selectedPeriodId, selectedSiteId, e.target.value || null)
-            }
-            aria-label="Department"
-          >
-            <option value="">All Departments</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </Select>
-        </label>
-      </div>
-
-      {/* ── Toolbar: which view, what you are searching, how many matched ──
-          The count is the filtered one, not the tenant total. "No employees"
-          and "no employees matching Submitted at this site" look identical
-          without it, and the difference is whether somebody concludes a
-          department has nothing left to approve. */}
-      <div
-        className="shrink-0 flex flex-col gap-2 px-4 py-2.5"
-        style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-      >
-        <Toolbar count={filteredEmployees.length} countLabel="employee">
-          <SegmentedControl
-            size="sm"
-            ariaLabel="Timecard view"
-            items={VIEW_SEGMENTS}
-            // A status picked in the rail that no segment names — Open, Locked,
-            // Payroll Approved — lights none of them, which is honest: you are
-            // not looking at any of the three views.
-            value={VIEW_SEGMENTS.some((v) => v.value === statusFilter) ? statusFilter : ""}
-            onChange={setStatusFilter}
-          />
-          <SearchInput
-            value={search}
-            onValueChange={setSearch}
-            placeholder="Search employees…"
-            width={240}
-          />
-        </Toolbar>
-
-        {/* A chip appears whenever the parameter is set, even when the name
-            behind it cannot be resolved — a site that has since been
-            deactivated still filters the list, and a filter with no chip is a
-            filter nobody can take off. */}
-        <FilterBar clearHref={selectedSiteId || selectedDepartmentId ? filterHref(null, null) : undefined}>
-          {selectedSiteId && (
-            <FilterChip
-              key="site"
-              label="Site"
-              value={siteName ?? "Filtered"}
-              clearHref={filterHref(null, null)}
-            />
-          )}
-          {selectedDepartmentId && (
-            <FilterChip
-              key="dept"
-              label="Department"
-              value={departmentName ?? "Filtered"}
-              clearHref={filterHref(selectedSiteId, null)}
-            />
-          )}
-        </FilterBar>
-      </div>
-
-      {/* ── Split pane ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-[264px_1fr] flex-1 min-h-0">
-        {/* ── Left: employee list ─────────────────────────────────────── */}
-        <div
-          className="flex flex-col min-h-0"
-          style={{ borderRight: "1px solid var(--stroke-secondary)" }}
-        >
-          {/* The refinements the three view segments do not cover. Status is
-              here in full rather than only as the segments: four of its values
-              — Open, Excluding Open, Payroll Approved, Locked — are how payroll
-              finds the cards that are *not* ready, and dropping them to fit
-              three tabs would have taken away the only way to ask "who has not
-              submitted yet". Both controls write the same state. */}
+        {/* ── The pay period on screen, and how to move ─────────────────
+            Every number below belongs to it, so it sits with the page title
+            rather than beside the search as one more filter. Site and
+            department narrow who is listed, and live in the link. */}
+        <div className="flex flex-wrap items-center gap-2.5">
           <div
-            className="shrink-0 flex flex-col gap-2 p-2.5"
-            style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+            className="flex items-center gap-1 rounded-lg p-1"
+            style={{ border: "1px solid var(--stroke-secondary)", background: "var(--surface-card)" }}
           >
-            <Select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              aria-label="Timesheet status"
-              style={{ width: "100%" }}
+            <Button
+              hierarchy="tertiary"
+              size="sm"
+              iconOnly
+              disabled={!hasPrev}
+              onClick={() => hasPrev && navigate(selectedEmployeeId, sortedPeriods[currentIndex - 1].id)}
+              title="Previous pay period"
+              aria-label="Previous pay period"
             >
-              <option value="ALL">All Statuses</option>
-              <option value="ALL_EXCLUDING_OPEN">Excluding Open</option>
-              <option value="OPEN">Open</option>
-              <option value="SUBMITTED">Submitted</option>
-              <option value="SUP_APPROVED">Supervisor Approved</option>
-              <option value="PAYROLL_APPROVED">Payroll Approved</option>
-              <option value="LOCKED">Locked</option>
-            </Select>
-            <Select
-              value={payTypeFilter}
-              onChange={(e) => setPayTypeFilter(e.target.value)}
-              aria-label="Pay type"
-              style={{ width: "100%" }}
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+
+            <div className="relative" ref={calendarRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!showCalendar && selectedPp) setPickerYear(parseUtcDate(selectedPp.startDate).getFullYear());
+                  setShowCalendar((v) => !v);
+                }}
+                title="Jump to a month"
+                aria-label={`Jump to a month. Showing ${selectedPeriodLabel}`}
+                aria-expanded={showCalendar}
+                className="ta-hoverable tabular flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5"
+                style={{
+                  border: 0,
+                  background: "transparent",
+                  cursor: "pointer",
+                  font: "var(--type-body1)",
+                  fontWeight: "var(--weight-semibold)",
+                  color: "var(--text-primary)",
+                }}
+              >
+                <Calendar className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+                {selectedPeriodLabel}
+              </button>
+              {showCalendar && (
+                <div className="ta-modal absolute left-0 top-full z-50 mt-1 w-56 rounded-lg p-3">
+                  <div className="mb-2.5 flex items-center justify-between">
+                    <Button hierarchy="tertiary" size="sm" iconOnly onClick={() => setPickerYear((y) => y - 1)} aria-label="Previous year">
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="tabular" style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>
+                      {pickerYear}
+                    </span>
+                    <Button hierarchy="tertiary" size="sm" iconOnly onClick={() => setPickerYear((y) => y + 1)} aria-label="Next year">
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {/* A month with no pay period is disabled rather than
+                      hidden: the gap is information, and a grid that reflowed
+                      would move January under your cursor. */}
+                  <div className="grid grid-cols-4 gap-1">
+                    {MONTHS.map((label, idx) => {
+                      const hasPeriod = monthsWithPeriods.has(idx);
+                      const isSelected = pickerYear === selectedMonthYear && idx === selectedMonthIdx;
+                      const isCurrentMonth = pickerYear === new Date().getFullYear() && idx === new Date().getMonth();
+                      return (
+                        <button
+                          key={label}
+                          type="button"
+                          disabled={!hasPeriod}
+                          onClick={() => handleMonthSelect(idx)}
+                          className={hasPeriod && !isSelected ? "ta-hoverable" : undefined}
+                          style={{
+                            padding: "6px 0",
+                            borderRadius: "var(--radius-s)",
+                            border: 0,
+                            font: "var(--type-button2)",
+                            cursor: hasPeriod ? "pointer" : "default",
+                            background: isSelected
+                              ? "var(--fill-accent)"
+                              : isCurrentMonth && hasPeriod
+                                ? "var(--surface-info)"
+                                : "transparent",
+                            color: isSelected
+                              ? "var(--text-on-accent)"
+                              : !hasPeriod
+                                ? "var(--text-disabled)"
+                                : isCurrentMonth
+                                  ? "var(--text-accent)"
+                                  : "var(--text-primary)",
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Button
+              hierarchy="tertiary"
+              size="sm"
+              iconOnly
+              disabled={!hasNext}
+              onClick={() => hasNext && navigate(selectedEmployeeId, sortedPeriods[currentIndex + 1].id)}
+              title="Next pay period"
+              aria-label="Next pay period"
             >
-              <option value="ALL">All Pay Types</option>
-              <option value="HOURLY">Hourly</option>
-              <option value="SALARY">Salary</option>
-            </Select>
-            <Select
-              value={exceptionFilter}
-              onChange={(e) => setExceptionFilter(e.target.value)}
-              aria-label="Exception type"
-              style={{ width: "100%" }}
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+
+            <span aria-hidden="true" className="mx-0.5 h-4 w-px flex-none" style={{ background: "var(--stroke-divider)" }} />
+
+            {/* A word, not an icon: "Today" says what it does to anyone. */}
+            <Button
+              hierarchy="tertiary"
+              size="sm"
+              onClick={() => currentPeriod && navigate(selectedEmployeeId, currentPeriod.id)}
+              disabled={!currentPeriod || selectedPeriodId === currentPeriod.id}
+              title="Go to the pay period that includes today"
             >
-              <option value="ALL">All</option>
-              <option value="ALL_EXCEPTIONS">All Exceptions</option>
-              <option value="MISSING_PUNCH">Missing Punch</option>
-              <option value="LONG_SHIFT">Long Shift</option>
-              <option value="SHORT_BREAK">Short Break</option>
-              <option value="MISSED_MEAL">Missed Meal</option>
-              <option value="UNSCHEDULED_OT">Unscheduled OT</option>
-              <option value="CONSECUTIVE_DAYS">Consecutive Days</option>
-              <option value="ABSENT">Absent</option>
-              <option value="LATE_IN">Late In</option>
-              <option value="EARLY_OUT">Early Out</option>
-            </Select>
-            <Checkbox checked={activeOnly} onChange={setActiveOnly} label="Active only" />
+              Today
+            </Button>
           </div>
 
-          <div className="flex-1 overflow-y-auto" style={{ background: "var(--surface-card)" }}>
+          <span className="whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+            {PAY_FREQUENCY_LABEL[payFrequency as PayFrequencyValue] ?? payFrequency} pay period
+          </span>
+
+          <span className="flex-1" />
+
+          {sites.length > 0 && (
+            <FilterSelectChip
+              label="Site"
+              value={selectedSiteId ?? ""}
+              options={sites}
+              // The departments offered are the ones at the site, so a new
+              // site clears the department with it.
+              onChange={(v) => navigate(null, selectedPeriodId, v || null, null)}
+            />
+          )}
+          <FilterSelectChip
+            label="Department"
+            value={selectedDepartmentId ?? ""}
+            options={departments}
+            onChange={(v) => navigate(selectedEmployeeId, selectedPeriodId, selectedSiteId, v || null)}
+          />
+        </div>
+      </div>
+
+      <div className="grid min-h-0 flex-1 gap-4 [grid-template-columns:300px_minmax(0,1fr)]">
+        {/* ── Left: who ─────────────────────────────────────────────── */}
+        <aside
+          className="flex min-h-0 flex-col overflow-hidden"
+          style={{ background: "var(--surface-card)", borderRadius: "var(--radius-l)", boxShadow: "var(--shadow-card)" }}
+        >
+          {/* The count is the filtered one, not the total. "No employees" and
+              "no employees matching Submitted at this site" look identical
+              without it. */}
+          <div className="flex shrink-0 items-baseline justify-between gap-2 px-4 pb-2.5 pt-3.5">
+            <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>Employees</span>
+            <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+              {filteredEmployees.length.toLocaleString("en-US")}
+            </span>
+          </div>
+
+          <div className="flex shrink-0 flex-col gap-2.5 px-4 pb-3" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
+            {/* Wrapped: the field sizes itself with a flex basis, which in
+                this column would become its height. */}
+            <div className="flex">
+              <SearchInput value={search} onValueChange={setSearch} placeholder="Name, ID or department" width={268} />
+            </div>
+            {/* The three views most visits start from. The Status pill below
+                has every status, and both write the same filter, so a status
+                no view names lights none of them. */}
+            <SegmentedControl
+              size="sm"
+              fullWidth
+              ariaLabel="Which timecards to list"
+              items={VIEW_SEGMENTS}
+              value={VIEW_SEGMENTS.some((v) => v.value === statusFilter) ? statusFilter : ""}
+              onChange={setStatusFilter}
+            />
+            <div className="flex flex-wrap items-center gap-1.5">
+              <FilterSelectChip
+                label="Status"
+                allLabel="All statuses"
+                value={statusFilter === "ALL" ? "" : statusFilter}
+                options={STATUS_FILTER_OPTIONS}
+                onChange={(v) => setStatusFilter(v || "ALL")}
+              />
+              <FilterSelectChip
+                label="Pay type"
+                allLabel="All pay types"
+                value={payTypeFilter === "ALL" ? "" : payTypeFilter}
+                options={PAY_TYPE_FILTER_OPTIONS}
+                onChange={(v) => setPayTypeFilter(v || "ALL")}
+              />
+              <FilterSelectChip
+                label="Exceptions"
+                allLabel="Any or none"
+                value={exceptionFilter === "ALL" ? "" : exceptionFilter}
+                options={EXCEPTION_FILTER_OPTIONS}
+                onChange={(v) => setExceptionFilter(v || "ALL")}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <Checkbox checked={activeOnly} onChange={setActiveOnly} label="Active employees only" />
+              {listNarrowed && (
+                <Button
+                  hierarchy="link"
+                  size="sm"
+                  onClick={() => {
+                    setSearch("");
+                    setStatusFilter("ALL");
+                    setPayTypeFilter("ALL");
+                    setExceptionFilter("ALL");
+                    setActiveOnly(true);
+                  }}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="ta-scroll min-h-0 flex-1 overflow-y-auto pb-2">
             {filteredEmployees.length === 0 && (
               // Says which of the two empty lists this is. "No employees" after
               // narrowing to Submitted reads as "this site is clean", and that
@@ -1950,125 +1900,130 @@ export function TimecardViewer({
               />
             )}
             {(() => {
-              // Group employees by site, preserving alphabetical order within each group
+              // Grouped by site, alphabetical within each group.
               const groupMap = new Map<string, { siteName: string; employees: EmployeeListItem[] }>();
               for (const emp of filteredEmployees) {
                 const key = emp.siteId ?? "__none__";
-                const label = emp.siteName ?? "No Site";
+                const label = emp.siteName ?? "No site";
                 if (!groupMap.has(key)) groupMap.set(key, { siteName: label, employees: [] });
                 groupMap.get(key)!.employees.push(emp);
               }
-              const groups = Array.from(groupMap.values()).sort((a, b) =>
-                a.siteName.localeCompare(b.siteName)
-              );
-              const showHeaders = groups.length > 1 || (groups.length === 1 && groups[0].siteName !== "No Site");
+              const groups = Array.from(groupMap.values()).sort((a, b) => a.siteName.localeCompare(b.siteName));
+              const showHeaders = groups.length > 1 || (groups.length === 1 && groups[0].siteName !== "No site");
 
               return groups.map((group) => (
                 <React.Fragment key={group.siteName}>
                   {showHeaders && (
                     <div
-                      className="sticky top-0 z-10 px-3 py-1.5"
-                      style={{
-                        background: "var(--surface-tertiary)",
-                        borderBottom: "1px solid var(--stroke-secondary)",
-                      }}
+                      className="sticky top-0 z-10 flex items-baseline gap-2 px-4 pb-1.5 pt-3"
+                      style={{ background: "var(--surface-card)" }}
                     >
-                      <span className="wms-overline">{group.siteName}</span>
+                      <span className="truncate" style={{ font: "var(--type-caption1)", fontWeight: "var(--weight-semibold)", color: "var(--text-secondary)" }}>
+                        {group.siteName}
+                      </span>
+                      <span className="tabular" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                        {group.employees.length}
+                      </span>
                     </div>
                   )}
-                  {group.employees.map((emp) => {
-                    const isSelected = emp.employeeId === selectedEmployeeId;
-                    const empStatus = emp.status ?? "OPEN";
-                    const empExceptions = emp.exceptionTypes ?? [];
-                    const canQuickApprove = emp.timesheetId && (empStatus === "SUBMITTED" || empStatus === "SUP_APPROVED");
-                    return (
-                      <div
-                        key={emp.employeeId}
-                        onClick={() => navigate(emp.employeeId)}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(emp.employeeId); }}
-                        tabIndex={0}
-                        role="button"
-                        aria-current={isSelected ? "true" : undefined}
-                        // The selected row carries an accent rail as well as the
-                        // tint: on a list scrolled past the fold, a tint alone
-                        // is easy to lose against the hover state next to it.
-                        className={`flex w-full cursor-pointer flex-col px-3 py-2.5 text-left transition-colors ${isSelected ? "" : "hover:bg-[var(--ta-row-hover)]"}`}
-                        style={{
-                          borderBottom: "1px solid var(--stroke-divider)",
-                          borderLeft: `3px solid ${isSelected ? "var(--fill-accent)" : "transparent"}`,
-                          paddingLeft: 9,
-                          background: isSelected ? "var(--surface-info)" : undefined,
-                        }}
-                      >
-                        <div className="flex w-full items-center justify-between gap-2">
-                          <p
-                            className="m-0 flex min-w-0 items-center gap-1.5 truncate"
-                            style={{
-                              font: "var(--type-body1)",
-                              fontWeight: "var(--weight-medium)",
-                              color: isSelected ? "var(--text-primary)" : "var(--text-secondary)",
-                            }}
-                          >
-                            {empExceptions.length > 0 && (
-                              <span
-                                title={`${empExceptions.length} exception${empExceptions.length !== 1 ? "s" : ""}`}
-                                className="inline-block h-2 w-2 shrink-0 rounded-full"
-                                style={{ background: "var(--fill-warning)" }}
-                              />
-                            )}
-                            {emp.name}
-                          </p>
-                          <div className="flex shrink-0 items-center gap-1.5">
+                  <div className="flex flex-col gap-0.5 px-2">
+                    {group.employees.map((emp) => {
+                      const isSelected = emp.employeeId === selectedEmployeeId;
+                      const empStatus = emp.status ?? "OPEN";
+                      const empExceptions = emp.exceptionTypes ?? [];
+                      const canQuickApprove = !readOnly && emp.timesheetId && (empStatus === "SUBMITTED" || empStatus === "SUP_APPROVED");
+                      return (
+                        <div
+                          key={emp.employeeId}
+                          onClick={() => navigate(emp.employeeId)}
+                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(emp.employeeId); }}
+                          tabIndex={0}
+                          role="button"
+                          aria-current={isSelected ? "true" : undefined}
+                          className="ta-hoverable flex w-full cursor-pointer flex-col gap-1 rounded-lg px-3 py-2 text-left"
+                          data-active={isSelected ? "true" : undefined}
+                          style={{ background: isSelected ? "var(--surface-info)" : undefined }}
+                        >
+                          <div className="flex w-full items-center justify-between gap-2">
+                            <span
+                              className="min-w-0 truncate"
+                              title={emp.name}
+                              style={{
+                                font: "var(--type-body1)",
+                                fontWeight: isSelected ? "var(--weight-semibold)" : "var(--weight-medium)",
+                                color: isSelected ? "var(--text-accent)" : "var(--text-primary)",
+                              }}
+                            >
+                              {emp.name}
+                            </span>
                             {emp.totalMinutes !== undefined && (
-                              <span
-                                className="tabular"
-                                style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
-                              >
-                                {minutesToHoursDecimal(emp.totalMinutes)}h
+                              <span className="tabular flex-none whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                                {minutesToHoursDecimal(emp.totalMinutes)} h
                               </span>
                             )}
-                            {canQuickApprove && (
-                              <Button
-                                hierarchy="primary"
-                                tone="success"
-                                size="sm"
-                                iconOnly
-                                onClick={(e) => { e.stopPropagation(); handleQuickApprove(emp as EmployeeListItem & { timesheetId: string; status: string }); }}
-                                disabled={approvingId === emp.timesheetId}
-                                title={empStatus === "SUP_APPROVED" ? "Payroll Approve" : "Approve"}
-                                style={{ width: 20, height: 20 }}
-                              >
-                                {approvingId === emp.timesheetId ? "…" : <Check className="h-3 w-3" />}
-                              </Button>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="min-w-0 truncate" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                              {emp.employeeCode} · {emp.department}
+                            </span>
+                            {emp.status && (
+                              <span className="flex-none">
+                                <Badge tone={statusTone(empStatus)} size="sm">
+                                  {TIMESHEET_STATUS_LABEL[empStatus as TimesheetStatusValue] ?? empStatus}
+                                </Badge>
+                              </span>
                             )}
                           </div>
-                        </div>
-                        <div className="mt-1 flex items-center justify-between gap-2">
-                          <p
-                            className="m-0 truncate"
-                            style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
-                          >
-                            {emp.employeeCode} · {emp.department}
-                          </p>
-                          {emp.status && (
-                            <span className="shrink-0">
-                              <Badge tone={statusTone(empStatus)} size="sm">
-                                {TIMESHEET_STATUS_LABEL[empStatus as TimesheetStatusValue] ?? empStatus}
-                              </Badge>
-                            </span>
+                          {(empExceptions.length > 0 || canQuickApprove) && (
+                            <div className="flex items-center justify-between gap-2">
+                              {empExceptions.length > 0 ? (
+                                <span
+                                  className="tabular inline-flex h-5 items-center whitespace-nowrap rounded-full px-2"
+                                  style={{
+                                    background: "var(--surface-warning)",
+                                    color: "var(--text-warning)",
+                                    font: "var(--type-caption1)",
+                                    fontWeight: "var(--weight-semibold)",
+                                  }}
+                                >
+                                  {empExceptions.length} {empExceptions.length === 1 ? "exception" : "exceptions"}
+                                </span>
+                              ) : (
+                                <span />
+                              )}
+                              {canQuickApprove && (
+                                <Button
+                                  hierarchy="secondary"
+                                  tone="success"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleQuickApprove(emp as EmployeeListItem & { timesheetId: string; status: string });
+                                  }}
+                                  disabled={approvingId === emp.timesheetId}
+                                  leadingIcon={<Check className="h-3.5 w-3.5" />}
+                                  title={empStatus === "SUP_APPROVED" ? "Approve for payroll" : "Approve as supervisor"}
+                                >
+                                  {approvingId === emp.timesheetId ? "Approving…" : "Approve"}
+                                </Button>
+                              )}
+                            </div>
                           )}
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </React.Fragment>
               ));
             })()}
           </div>
-        </div>
+        </aside>
 
-        {/* ── Right: timecard detail ──────────────────────────────────── */}
-        <div className="flex flex-col min-h-0" style={{ background: "var(--surface-card)" }}>
+        {/* ── Right: their timecard ─────────────────────────────────── */}
+        <section
+          className="flex min-h-0 flex-col overflow-hidden"
+          style={{ background: "var(--surface-card)", borderRadius: "var(--radius-l)", boxShadow: "var(--shadow-card)" }}
+        >
           {!selectedEmployeeId || !days ? (
             <div className="flex flex-1 items-center justify-center">
               <EmptyState
@@ -2079,7 +2034,7 @@ export function TimecardViewer({
             </div>
           ) : (
             <>
-              {/* ── Employee header with status + actions ─────────────── */}
+              {/* ── Who, where their timecard stands, and what can be done ── */}
               {(() => {
                 const listEmp = employees.find((e) => e.employeeId === selectedEmployeeId);
                 const displayName = timecard?.employee.user?.name ?? listEmp?.name ?? selectedEmployeeId;
@@ -2088,64 +2043,131 @@ export function TimecardViewer({
                 const displayPayType = timecard?.employee.payType ?? null;
                 return (
               <div
-                className="shrink-0 flex flex-wrap items-center justify-between gap-3 px-5 py-3"
+                className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-5 py-4"
                 style={{ borderBottom: "1px solid var(--stroke-divider)" }}
               >
-                <div className="flex flex-wrap items-center gap-3">
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <h2 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
-                        {displayName}
-                      </h2>
-                      {selectedEmployeeId && (
-                        <Button
-                          hierarchy="tertiary"
-                          size="sm"
-                          iconOnly
-                          onClick={() => router.push(`/admin/employees/${selectedEmployeeId}`)}
-                          title="Go to employee profile"
-                          style={{ width: 24, height: 24 }}
-                        >
-                          <UserCircle className="h-4 w-4" style={{ color: "var(--icon-secondary)" }} />
-                        </Button>
-                      )}
-                    </div>
-                    <p
-                      className="m-0 flex items-center gap-1.5"
-                      style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                <div className="flex min-w-0 flex-col gap-1">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <h2
+                      className="truncate"
+                      style={{ margin: 0, font: "var(--type-h3)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}
                     >
-                      {displayCode} · {displayDept}
-                      {/* Pay type is not a status, so it takes no tone. A salary
-                          card and an hourly card are two kinds of record, not
-                          two severities, and giving them colours competes with
-                          the approval badge sitting next to them. */}
-                      {displayPayType && (
-                        <Badge size="sm">
-                          {displayPayType === "SALARY" ? "Salary" : "Hourly"}
-                        </Badge>
-                      )}
-                    </p>
+                      {displayName}
+                    </h2>
+                    {timecard ? (
+                      <Badge tone={statusTone(timecard.status)}>
+                        {TIMESHEET_STATUS_LABEL[timecard.status as TimesheetStatusValue] ?? timecard.status}
+                      </Badge>
+                    ) : (
+                      <Badge>No punches yet</Badge>
+                    )}
                   </div>
-                  {timecard ? (
-                    <Badge tone={statusTone(timecard.status)} size="sm">
-                      {TIMESHEET_STATUS_LABEL[
-                        timecard.status as TimesheetStatusValue
-                      ] ?? timecard.status}
-                    </Badge>
-                  ) : (
-                    <Badge size="sm">No Punches</Badge>
-                  )}
-                  {/* Exceptions and unauthorised overtime are spelled out in the
-                      banner below rather than as two more pills up here — this
-                      row is already carrying the name, the code, the department,
-                      the pay type and the status. */}
+                  <p className="m-0 flex flex-wrap items-center gap-x-1.5" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                    <span>{displayCode}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>{displayDept}</span>
+                    {/* Pay type is not a status, so it takes no colour. */}
+                    {displayPayType && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span>{displayPayType === "SALARY" ? "Salary" : "Hourly"}</span>
+                      </>
+                    )}
+                    {selectedEmployeeId && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <a
+                          href={`/admin/employees/${selectedEmployeeId}`}
+                          onClick={(e) => { e.preventDefault(); router.push(`/admin/employees/${selectedEmployeeId}`); }}
+                          className="inline-flex items-center gap-1 hover:underline"
+                          style={{ color: "var(--text-accent)", fontWeight: "var(--weight-medium)" }}
+                        >
+                          <UserCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                          View profile
+                        </a>
+                      </>
+                    )}
+                  </p>
                 </div>
 
-                {/* Approval / Reject */}
+                {/* The decisions first, then the tools. */}
                 <div className="flex flex-wrap items-center gap-2">
+                  {actionError && (
+                    <p className="m-0" style={{ font: "var(--type-body2)", color: "var(--text-error)" }}>
+                      {actionError}
+                    </p>
+                  )}
+                  {showRejectForm ? (
+                    <form onSubmit={handleReject} className="flex items-center gap-2">
+                      <input
+                        value={rejectNote}
+                        onChange={(e) => setRejectNote(e.target.value)}
+                        placeholder="Why is it being sent back?"
+                        required
+                        autoFocus
+                        aria-label="Reason for sending the timecard back"
+                        className="ta-field w-60 rounded-md px-2.5"
+                        style={{
+                          height: 32,
+                          border: "1px solid var(--stroke-default)",
+                          background: "var(--surface-card)",
+                          color: "var(--text-primary)",
+                          font: "var(--type-body2)",
+                          outline: "none",
+                        }}
+                      />
+                      <Button type="submit" size="sm" tone="error" disabled={isPending || !rejectNote.trim()}>
+                        {isPending ? "Sending…" : "Send back"}
+                      </Button>
+                      <Button
+                        hierarchy="link"
+                        size="sm"
+                        onClick={() => {
+                          setShowRejectForm(false);
+                          setRejectNote("");
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </form>
+                  ) : (
+                    <>
+                      {canApprove && (
+                        <Button
+                          size="sm"
+                          tone="success"
+                          onClick={handleApprove}
+                          disabled={isPending}
+                          leadingIcon={<Check className="h-3.5 w-3.5" />}
+                        >
+                          {isPending
+                            ? "Saving…"
+                            : timecard.status === "SUP_APPROVED"
+                              ? "Approve for payroll"
+                              : "Approve"}
+                        </Button>
+                      )}
+                      {canReject && (
+                        <Button
+                          hierarchy="secondary"
+                          size="sm"
+                          tone="error"
+                          onClick={() => setShowRejectForm(true)}
+                          disabled={isPending}
+                          title="Send this timecard back to be corrected"
+                        >
+                          Send back
+                        </Button>
+                      )}
+                      {canAuthorizeOt && (
+                        <Button size="sm" tone="warning" onClick={handleAuthorizeOt} disabled={isPending}>
+                          {isPending ? "Saving…" : "Approve overtime"}
+                        </Button>
+                      )}
+                    </>
+                  )}
                   {canEdit && (
                     <>
-                      {timecard && <RecalculateButton timesheetId={timecard.timesheetId} />}
                       <Button
                         hierarchy="secondary"
                         size="sm"
@@ -2165,107 +2187,9 @@ export function TimecardViewer({
                           setShowAddEntryModal(true);
                         }}
                       >
-                        Add Entry
+                        Add time
                       </Button>
-                    </>
-                  )}
-                  {canEdit && hasPendingChanges && (
-                    <>
-                      <Button
-                        hierarchy="secondary"
-                        size="sm"
-                        onClick={handleDiscardChanges}
-                        disabled={isPending}
-                      >
-                        Discard
-                      </Button>
-                      <Button size="sm" onClick={handleSaveChanges} disabled={isPending}>
-                        {isPending ? "Saving…" : "Save Changes"}
-                      </Button>
-                    </>
-                  )}
-                  {actionError && (
-                    <p
-                      className="m-0"
-                      style={{ font: "var(--type-body2)", color: "var(--text-error)" }}
-                    >
-                      {actionError}
-                    </p>
-                  )}
-                  {showRejectForm ? (
-                    <form onSubmit={handleReject} className="flex items-center gap-2">
-                      <input
-                        value={rejectNote}
-                        onChange={(e) => setRejectNote(e.target.value)}
-                        placeholder="Reason for rejection…"
-                        required
-                        autoFocus
-                        className="ta-field w-48 rounded-md px-2.5"
-                        style={{
-                          height: 24,
-                          border: "1px solid var(--stroke-default)",
-                          background: "var(--surface-card)",
-                          color: "var(--text-primary)",
-                          font: "var(--type-body2)",
-                          outline: "none",
-                        }}
-                      />
-                      <Button
-                        type="submit"
-                        size="sm"
-                        tone="error"
-                        disabled={isPending || !rejectNote.trim()}
-                      >
-                        {isPending ? "…" : "Confirm"}
-                      </Button>
-                      <Button
-                        hierarchy="link"
-                        size="sm"
-                        onClick={() => {
-                          setShowRejectForm(false);
-                          setRejectNote("");
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                    </form>
-                  ) : (
-                    <>
-                      {canReject && (
-                        <Button
-                          hierarchy="secondary"
-                          size="sm"
-                          tone="error"
-                          onClick={() => setShowRejectForm(true)}
-                          disabled={isPending}
-                        >
-                          Reject
-                        </Button>
-                      )}
-                      {canAuthorizeOt && (
-                        <Button
-                          size="sm"
-                          tone="warning"
-                          onClick={handleAuthorizeOt}
-                          disabled={isPending}
-                        >
-                          {isPending ? "Saving…" : "Authorize OT"}
-                        </Button>
-                      )}
-                      {canApprove && (
-                        <Button
-                          size="sm"
-                          tone="success"
-                          onClick={handleApprove}
-                          disabled={isPending}
-                        >
-                          {isPending
-                            ? "Saving…"
-                            : timecard.status === "SUP_APPROVED"
-                              ? "Payroll Approve"
-                              : "Approve"}
-                        </Button>
-                      )}
+                      {timecard && <RecalculateButton timesheetId={timecard.timesheetId} />}
                     </>
                   )}
                 </div>
@@ -2273,15 +2197,27 @@ export function TimecardViewer({
                 );
               })()}
 
-              {/* The sheet's state, as the timesheet template opens with it.
-                  Only rendered when there is something to say — see sheetNotice. */}
+              {/* Where this timecard stands, when there is something to say,
+                  as one quiet line rather than a box. See sheetNotice. */}
               {sheetNotice && (
-                <div className="shrink-0 px-5 py-3">
-                  <Banner
-                    tone={sheetNotice.tone}
-                    title={sheetNotice.title}
-                    body={sheetNotice.body}
-                  />
+                <div
+                  className="flex shrink-0 items-start gap-2.5 px-5 py-2.5"
+                  style={{
+                    borderBottom: "1px solid var(--stroke-divider)",
+                    background:
+                      sheetNotice.tone === "error"
+                        ? "var(--surface-error)"
+                        : sheetNotice.tone === "warning"
+                          ? "var(--surface-warning)"
+                          : sheetNotice.tone === "success"
+                            ? "var(--surface-success)"
+                            : "var(--surface-info)",
+                  }}
+                  role="status"
+                >
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-primary)" }}>
+                    <strong style={{ fontWeight: "var(--weight-semibold)" }}>{sheetNotice.title}.</strong> {sheetNotice.body}
+                  </span>
                 </div>
               )}
 
@@ -2294,28 +2230,16 @@ export function TimecardViewer({
                 onAdded={() => router.refresh()}
               />
 
-              {/* What the grid will and will not do, said once. Edits here are
-                  queued rather than written on blur, and a screen that looks
-                  like a spreadsheet but is not one is how somebody navigates
-                  away believing a correction was saved. */}
-              <div
-                className="shrink-0 flex flex-wrap items-center gap-3 px-5 py-2"
-                style={{
-                  borderBottom: "1px solid var(--stroke-divider)",
-                  background: "var(--surface-secondary)",
-                }}
-              >
+              {/* What the grid will and will not do, said once. Edits are
+                  queued rather than written on the spot, and a screen that
+                  looks like a spreadsheet but is not one is how somebody leaves
+                  believing a correction was saved. */}
+              <div className="shrink-0 px-5 py-2" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
                 <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                   {canEdit
-                    ? "Click a time, an hours figure or a code to change it. Nothing is written until you press Save Changes."
-                    : "Read only — these hours cannot be changed from here."}
+                    ? "To change a time, hours or a code, click it. Nothing is saved until you press Save changes."
+                    : "Read only. These hours cannot be changed from here."}
                 </span>
-                <div className="flex-1" />
-                {hasPendingChanges && (
-                  <Badge tone="warning" size="sm">
-                    {pendingChangeCount} unsaved
-                  </Badge>
-                )}
               </div>
 
               {/* ── Scrollable timecard table + summary ──────────────── */}
@@ -3523,6 +3447,33 @@ export function TimecardViewer({
                   </tbody>
                 </table>
               </div>
+              {/* ── Unsaved changes, impossible to miss ──────────────────
+                  Edits in the grid are queued, not written, so the way to
+                  write them sits where the eye ends up after making one, and
+                  says how many are waiting. */}
+              {canEdit && hasPendingChanges && (
+                <div
+                  className="flex shrink-0 flex-wrap items-center gap-3 px-5 py-3"
+                  style={{ borderTop: "1px solid var(--stroke-warning)", background: "var(--surface-warning)" }}
+                  role="status"
+                >
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+                      {pendingChangeCount} unsaved {pendingChangeCount === 1 ? "change" : "changes"}
+                    </span>
+                    <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                      Save them to update this timecard, or discard them to put it back as it was.
+                    </span>
+                  </span>
+                  <Button hierarchy="secondary" size="sm" onClick={handleDiscardChanges} disabled={isPending}>
+                    Discard changes
+                  </Button>
+                  <Button size="sm" onClick={handleSaveChanges} disabled={isPending}>
+                    {isPending ? "Saving…" : "Save changes"}
+                  </Button>
+                </div>
+              )}
+
               <div className="shrink-0">
 
                 {/* ── Color Legend ──────────────────────────────────── */}
@@ -3832,7 +3783,7 @@ export function TimecardViewer({
               </div>
             </>
           )}
-        </div>
+        </section>
       </div>
 
       {/* Notes Modal */}
