@@ -17,6 +17,7 @@ import { Button, EmptyState, SearchInput, Select, Toast, useToast } from "@/comp
 import { PUNCH_TYPE_LABEL, type PunchTypeValue } from "@/lib/state-machines/labels";
 import type { PunchHistoryData, PunchHistoryParams, PunchHistoryPunch } from "@/lib/punch-history/punch-history-data";
 import { PunchHistoryDatePicker, dayLabel, rangeLabel } from "./punch-history-date-picker";
+import { Face, PhotoViewer, ZoomableFace } from "@/components/presence/face";
 
 /**
  * Team Punch History, as the Claude Design handoff lays it out: a pinned bar
@@ -133,6 +134,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
   const [query, setQuery] = useState(data.search);
   const { message: toast, flash } = useToast();
   const [exporting, setExporting] = useState(false);
+  const [zoomed, setZoomed] = useState<string | null>(null);
 
   // Clock time on the site's clock, 12 hour, always.
   const clock = useCallback(
@@ -446,8 +448,10 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                       cursor: "pointer",
                     }}
                   >
+                    {/* The tablet photo over the initials, which show when
+                        there is no photo or it fails to load. */}
                     <span
-                      className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-full"
+                      className="relative inline-flex h-8 w-8 flex-none items-center justify-center overflow-hidden rounded-full [&>img]:absolute [&>img]:inset-0 [&>img]:h-full [&>img]:w-full [&>img]:object-cover"
                       style={{
                         background: on ? "var(--fill-accent)" : "var(--surface-tertiary)",
                         color: on ? "var(--text-on-accent)" : "var(--text-secondary)",
@@ -456,6 +460,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                       }}
                     >
                       {initials(e.name)}
+                      <Face src={e.photoUrl} personId={e.id} />
                     </span>
                     <span className="flex min-w-0 flex-1 flex-col gap-px">
                       <span
@@ -523,7 +528,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                   style={{ borderBottom: "1px solid var(--stroke-divider)" }}
                 >
                   <span
-                    className="inline-flex h-11 w-11 flex-none items-center justify-center rounded-full"
+                    className="relative inline-flex h-11 w-11 flex-none items-center justify-center overflow-hidden rounded-full [&>img]:absolute [&>img]:inset-0 [&>img]:h-full [&>img]:w-full [&>img]:object-cover"
                     style={{
                       background: "var(--surface-info)",
                       color: "var(--text-accent)",
@@ -532,6 +537,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                     }}
                   >
                     {initials(selected.name)}
+                    <ZoomableFace src={selected.photoUrl} personId={selected.id} name={selected.name} onZoom={setZoomed} />
                   </span>
                   <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-0.5">
                     <span
@@ -859,6 +865,15 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
           )}
         </div>
       </div>
+
+      {zoomed && selected && (
+        <PhotoViewer
+          src={zoomed}
+          name={selected.name}
+          detail={[selected.employeeCode, selected.department, selected.site].filter(Boolean).join(" · ")}
+          onClose={() => setZoomed(null)}
+        />
+      )}
 
       <Toast message={toast} />
     </div>

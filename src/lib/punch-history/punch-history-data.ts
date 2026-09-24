@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { endOfDayInTz, snapToLocalTime } from "@/lib/utils/date";
+import { photoUrls } from "@/lib/presence/photos";
 
 /**
  * Everything the Team Punch History screen and its export read, in one place,
@@ -57,6 +58,8 @@ export type PunchHistoryEmployee = {
   name: string;
   employeeCode: string;
   department: string;
+  /** A signed link to the time clock tablet's photo, or null for initials. */
+  photoUrl: string | null;
   /** An open missing punch exception on a day inside the range. */
   hasMissingPunch: boolean;
 };
@@ -110,6 +113,7 @@ export type PunchHistoryData = {
     name: string;
     employeeCode: string;
     department: string;
+    photoUrl: string | null;
     site: string | null;
   } | null;
   punches: PunchHistoryPunch[];
@@ -247,6 +251,9 @@ export async function loadTeamPunchHistory(
     user: { select: { name: true } },
     department: { select: { name: true } },
     site: { select: { name: true, timezone: true } },
+    // Only to find each person's tablet photo; never sent to the browser.
+    barcode: true,
+    wmsId: true,
   } satisfies Prisma.EmployeeSelect;
 
   const [sites, departments, list, employeeTotal, scopedTotal, firstSite] = await Promise.all([
@@ -304,6 +311,14 @@ export async function loadTeamPunchHistory(
   // date is read straight off the instant.
   const listIds = list.map((e) => e.id);
   const flagIds = selectedRow && !listIds.includes(selectedRow.id) ? [...listIds, selectedRow.id] : listIds;
+
+  // Tablet photos for the list and the person open, fetched alongside the
+  // punches. Only people already in scope above are looked up, and a failed
+  // lookup costs the faces, never the page.
+  const photosFor = selectedRow && !listIds.includes(selectedRow.id) ? [...list, selectedRow] : list;
+  const photosLoad = tenantId
+    ? photoUrls(tenantId, photosFor).catch(() => new Map<string, string | null>())
+    : Promise.resolve(new Map<string, string | null>());
   const missing = flagIds.length
     ? await db.exception.findMany({
         where: {
@@ -317,11 +332,14 @@ export async function loadTeamPunchHistory(
     : [];
   const flagged = new Set(missing.map((m) => m.timesheet.employeeId));
 
+  // Filled in once the punches are read, just before the page data is built.
+  let photos = new Map<string, string | null>();
   const toEmployee = (e: (typeof list)[number]) => ({
     id: e.id,
     name: e.user?.name ?? e.employeeCode,
     employeeCode: e.employeeCode,
     department: e.department?.name ?? "No department",
+    photoUrl: photos.get(e.id) ?? null,
   });
 
   let punches: PunchHistoryPunch[] = [];
@@ -391,6 +409,7 @@ export async function loadTeamPunchHistory(
   }
 
   const live = punches.filter((p) => !p.isSuperseded);
+  photos = await photosLoad;
   return {
     isPayroll,
     canResolveExceptions,
