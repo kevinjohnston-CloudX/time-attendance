@@ -35,6 +35,8 @@ export type PunchHistoryParams = {
   siteId?: string;
   departmentId?: string;
   q?: string;
+  /** "attention": only people with a missing or pending punch in the range. */
+  show?: string;
 };
 
 type Viewer = {
@@ -62,6 +64,8 @@ export type PunchHistoryEmployee = {
   photoUrl: string | null;
   /** An open missing punch exception on a day inside the range. */
   hasMissingPunch: boolean;
+  /** Punches in the range still waiting on approval. */
+  pendingCount: number;
 };
 
 export type PunchHistoryPunch = {
@@ -75,12 +79,28 @@ export type PunchHistoryPunch = {
   isApproved: boolean;
   isSuperseded: boolean;
   isCorrection: boolean;
+  /** Deleted by someone. Still shown, struck through, so the record is complete. */
+  isRemoved: boolean;
+  /**
+   * Who changed this punch by hand, and when: a correction, a punch added on
+   * the timecard, or a removal. Null for a punch the clock recorded.
+   */
+  change: {
+    kind: "corrected" | "added" | "removed";
+    /** Null when nobody is recorded, as with the system's own corrections. */
+    by: string | null;
+    at: string | null;
+    /** The reason somebody typed. Notes the system wrote itself are left out. */
+    reason: string | null;
+  } | null;
 };
 
 export type PunchHistoryDay = {
   date: string;
   /** Paid time on the clock for the day, from the pay engine's segments. */
   workedMinutes: number;
+  /** Unpaid meal time the pay engine took out, punched or deducted automatically. */
+  mealMinutes: number;
   hasMissingPunch: boolean;
   /** Today, with a clock in and no clock out after it. */
   isClockedIn: boolean;
@@ -103,6 +123,8 @@ export type PunchHistoryData = {
   selectedSiteId: string | null;
   selectedDepartmentId: string | null;
   search: string;
+  /** Only people with a missing or pending punch in the range are listed. */
+  attentionOnly: boolean;
   employees: PunchHistoryEmployee[];
   /** Everyone the filters and search match, before the list cap. */
   employeeTotal: number;
@@ -149,6 +171,58 @@ function pairCorrections<T extends { id: string; correctedById: string | null }>
     ordered.splice(ordered.findIndex((p) => p.id === original.correctedById), 0, original);
   }
   return ordered;
+}
+
+/**
+ * A removal is stored as a hidden stand in: a punch that "corrects" the one
+ * deleted, never approved, with a note starting VOID. It is not a punch
+ * anybody made, so it is never shown or counted; the punch it removed is
+ * shown as removed instead.
+ */
+function isRemovalMarker(p: { correctsId: string | null; isApproved: boolean; note: string | null }): boolean {
+  return !!p.correctsId && !p.isApproved && (p.note ?? "").startsWith("VOID");
+}
+
+/**
+ * Notes the system or a repair wrote for itself rather than a reason a person
+ * gave. They explain internals nobody on this screen can act on.
+ */
+const MACHINE_NOTE = /^(AUTO-CORRECTED|Relabelled|Device:|Removed by payroll$|Manual entry deleted$)/;
+
+function humanReason(note: string | null): string | null {
+  const text = (note ?? "").replace(/^VOID:?\s*/, "").trim();
+  return text && !MACHINE_NOTE.test(text) ? text : null;
+}
+
+/** A punch still waiting on approval, in the range. Removal markers are not punches. */
+function pendingPunchWhere(from: Date, to: Date): Prisma.PunchWhereInput {
+  return {
+    isRejected: false,
+    isApproved: false,
+    correctedById: null,
+    roundedTime: { gte: from, lte: to },
+    // A null note must still count, and NOT on a null column matches nothing.
+    OR: [{ note: null }, { NOT: { note: { startsWith: "VOID" } } }],
+  };
+}
+
+/** An open missing punch exception on a date in the range (filed at noon UTC on the site's date). */
+function missingExceptionWhere(startDate: string, endDate: string): Prisma.ExceptionWhereInput {
+  return {
+    exceptionType: "MISSING_PUNCH",
+    resolvedAt: null,
+    occurredAt: { gte: new Date(`${startDate}T00:00:00.000Z`), lte: new Date(`${endDate}T23:59:59.999Z`) },
+  };
+}
+
+/** People with something to look at in the range: a missing punch, or one waiting on approval. */
+function attentionWhere(startDate: string, endDate: string, from: Date, to: Date): Prisma.EmployeeWhereInput {
+  return {
+    OR: [
+      { timesheets: { some: { exceptions: { some: missingExceptionWhere(startDate, endDate) } } } },
+      { punches: { some: pendingPunchWhere(from, to) } },
+    ],
+  };
 }
 
 /**
@@ -256,7 +330,9 @@ export async function loadTeamPunchHistory(
     wmsId: true,
   } satisfies Prisma.EmployeeSelect;
 
-  const [sites, departments, list, employeeTotal, scopedTotal, firstSite] = await Promise.all([
+  const attentionOnly = params.show === "attention";
+
+  const [sites, departments, firstSite, named] = await Promise.all([
     isPayroll
       ? db.site.findMany({
           where: { isActive: true, ...(tenantId ? { tenantId } : {}) },
@@ -275,40 +351,58 @@ export async function loadTeamPunchHistory(
           select: { id: true, name: true },
         })
       : Promise.resolve([]),
-    db.employee.findMany({
-      where: matching,
-      select: employeeSelect,
-      orderBy: { user: { name: "asc" } },
-      take: EMPLOYEE_LIST_CAP,
-    }),
-    db.employee.count({ where: matching }),
-    search ? db.employee.count({ where: filtered }) : Promise.resolve(-1),
     db.site.findFirst({
       where: { isActive: true, ...(tenantId ? { tenantId } : {}) },
       orderBy: { name: "asc" },
       select: { timezone: true },
     }),
+    // The person being looked at: the one the URL names, if and only if they
+    // are inside this viewer's scope and the site and department filters.
+    // Search and Needs attention do not unselect anyone, the same as in the
+    // design: narrowing the list to find the next person should not blank the
+    // record you are still reading.
+    params.employeeId
+      ? db.employee.findFirst({ where: { ...filtered, id: params.employeeId }, select: employeeSelect })
+      : Promise.resolve(null),
   ]);
 
-  // The person being looked at: the one the URL names, if and only if they are
-  // inside this viewer's scope and the site and department filters, else the
-  // first match. Search does not unselect anyone, the same as in the design:
-  // narrowing the list to find the next person should not blank the record
-  // you are still reading.
-  const named = params.employeeId
-    ? await db.employee.findFirst({ where: { ...filtered, id: params.employeeId }, select: employeeSelect })
-    : null;
+  // The range is needed before the list when the list is narrowed to people
+  // with something in it, so it is read on the named person's clock, else the
+  // first site's, and read again below if the person opened is on another.
+  const listTz = named?.site?.timezone ?? firstSite?.timezone ?? FALLBACK_TZ;
+  const listRange = await resolveRange(tenantId, params, listTz);
+  const listWhere: Prisma.EmployeeWhereInput = attentionOnly
+    ? {
+        AND: [
+          matching,
+          attentionWhere(
+            listRange.startDate,
+            listRange.endDate,
+            snapToLocalTime("00:00", listRange.startDate, listTz),
+            endOfDayInTz(listRange.endDate, listTz),
+          ),
+        ],
+      }
+    : matching;
+
+  const [list, employeeTotal, scopedTotal] = await Promise.all([
+    db.employee.findMany({
+      where: listWhere,
+      select: employeeSelect,
+      orderBy: { user: { name: "asc" } },
+      take: EMPLOYEE_LIST_CAP,
+    }),
+    db.employee.count({ where: listWhere }),
+    search || attentionOnly ? db.employee.count({ where: filtered }) : Promise.resolve(-1),
+  ]);
+
   const selectedRow = params.employeeId ? named : (list[0] ?? null);
-
   const timezone = selectedRow?.site?.timezone ?? firstSite?.timezone ?? FALLBACK_TZ;
-
-  const { today, payPeriods, isCustomRange, startDate, endDate } = await resolveRange(tenantId, params, timezone);
+  const { today, payPeriods, isCustomRange, startDate, endDate } =
+    timezone === listTz ? listRange : await resolveRange(tenantId, params, timezone);
   const rangeStart = snapToLocalTime("00:00", startDate, timezone);
   const rangeEnd = endOfDayInTz(endDate, timezone);
 
-  // Open missing punch exceptions in range, for the list's flags and the
-  // day headers. The engine files them at noon UTC on the site's date, so the
-  // date is read straight off the instant.
   const listIds = list.map((e) => e.id);
   const flagIds = selectedRow && !listIds.includes(selectedRow.id) ? [...listIds, selectedRow.id] : listIds;
 
@@ -319,18 +413,24 @@ export async function loadTeamPunchHistory(
   const photosLoad = tenantId
     ? photoUrls(tenantId, photosFor).catch(() => new Map<string, string | null>())
     : Promise.resolve(new Map<string, string | null>());
-  const missing = flagIds.length
-    ? await db.exception.findMany({
-        where: {
-          exceptionType: "MISSING_PUNCH",
-          resolvedAt: null,
-          occurredAt: { gte: new Date(`${startDate}T00:00:00.000Z`), lte: new Date(`${endDate}T23:59:59.999Z`) },
-          timesheet: { employeeId: { in: flagIds } },
-        },
-        select: { occurredAt: true, timesheet: { select: { employeeId: true } } },
-      })
-    : [];
+
+  // Open missing punch exceptions and waiting punches in range, for the list's
+  // flags and the day headers. Both counted in SQL, for the list at once.
+  const [missing, pendingByPerson] = flagIds.length
+    ? await Promise.all([
+        db.exception.findMany({
+          where: { ...missingExceptionWhere(startDate, endDate), timesheet: { employeeId: { in: flagIds } } },
+          select: { occurredAt: true, timesheet: { select: { employeeId: true } } },
+        }),
+        db.punch.groupBy({
+          by: ["employeeId"],
+          where: { ...pendingPunchWhere(rangeStart, rangeEnd), employeeId: { in: flagIds } },
+          _count: { _all: true },
+        }),
+      ])
+    : [[], []];
   const flagged = new Set(missing.map((m) => m.timesheet.employeeId));
+  const pendingCount = new Map(pendingByPerson.map((g) => [g.employeeId, g._count._all]));
 
   // Filled in once the punches are read, just before the page data is built.
   let photos = new Map<string, string | null>();
@@ -345,7 +445,7 @@ export async function loadTeamPunchHistory(
   let punches: PunchHistoryPunch[] = [];
   let days: PunchHistoryDay[] = [];
   if (selectedRow) {
-    const [rows, segments] = await Promise.all([
+    const [rows, segments, meals] = await Promise.all([
       db.punch.findMany({
         where: { employeeId: selectedRow.id, isRejected: false, roundedTime: { gte: rangeStart, lte: rangeEnd } },
         orderBy: [{ roundedTime: "asc" }, { punchTime: "asc" }],
@@ -358,6 +458,10 @@ export async function loadTeamPunchHistory(
           isApproved: true,
           correctedById: true,
           correctsId: true,
+          note: true,
+          approvedById: true,
+          approvedAt: true,
+          createdAt: true,
         },
       }),
       // Summed in SQL, per day. Paid work and paid breaks: the time the pay
@@ -373,23 +477,74 @@ export async function loadTeamPunchHistory(
         },
         _sum: { durationMinutes: true },
       }),
+      // The meal the engine took out, per day. With no meal punches this is
+      // the automatic deduction, which is otherwise invisible on the page.
+      db.workSegment.groupBy({
+        by: ["segmentDate"],
+        where: {
+          timesheet: { employeeId: selectedRow.id },
+          segmentType: "MEAL",
+          isPaid: false,
+          segmentDate: { gte: new Date(`${startDate}T00:00:00.000Z`), lte: new Date(`${endDate}T00:00:00.000Z`) },
+        },
+        _sum: { durationMinutes: true },
+      }),
     ]);
 
-    punches = pairCorrections(rows).map((p) => ({
-      id: p.id,
-      punchType: p.punchType,
-      punchTime: p.punchTime.toISOString(),
-      roundedTime: p.roundedTime.toISOString(),
-      localDate: localDateOf(p.roundedTime, timezone),
-      source: p.source,
-      isApproved: p.isApproved,
-      isSuperseded: !!p.correctedById,
-      isCorrection: !!p.correctsId,
-    }));
+    // Removal markers come out of the list; the punch each one removed is
+    // marked instead. Who changed what is stored as an employee id, resolved
+    // here to a name inside this tenant.
+    const removals = new Map(rows.filter(isRemovalMarker).map((m) => [m.correctsId!, m]));
+    const shown = rows.filter((p) => !isRemovalMarker(p));
+    const actorIds = [
+      ...new Set(
+        [...shown, ...removals.values()]
+          .filter((p) => p.correctsId || p.source === "MANUAL")
+          .map((p) => p.approvedById)
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    const actors = actorIds.length
+      ? await db.employee.findMany({
+          where: { id: { in: actorIds }, ...(tenantId ? { tenantId } : {}) },
+          select: { id: true, employeeCode: true, user: { select: { name: true } } },
+        })
+      : [];
+    const actorName = new Map(actors.map((a) => [a.id, a.user?.name ?? a.employeeCode]));
+    const changeOf = (kind: "corrected" | "added" | "removed", p: (typeof rows)[number]) => ({
+      kind,
+      by: p.approvedById ? (actorName.get(p.approvedById) ?? null) : null,
+      at: (p.approvedAt ?? p.createdAt).toISOString(),
+      reason: humanReason(p.note),
+    });
+
+    punches = pairCorrections(shown).map((p) => {
+      const removal = removals.get(p.id);
+      return {
+        id: p.id,
+        punchType: p.punchType,
+        punchTime: p.punchTime.toISOString(),
+        roundedTime: p.roundedTime.toISOString(),
+        localDate: localDateOf(p.roundedTime, timezone),
+        source: p.source,
+        isApproved: p.isApproved,
+        isSuperseded: !!p.correctedById,
+        isCorrection: !!p.correctsId,
+        isRemoved: !!removal,
+        change: removal
+          ? changeOf("removed", removal)
+          : p.correctsId
+            ? changeOf("corrected", p)
+            : p.source === "MANUAL"
+              ? changeOf("added", p)
+              : null,
+      };
+    });
 
     const worked = new Map(
       segments.map((s) => [s.segmentDate.toISOString().slice(0, 10), s._sum.durationMinutes ?? 0]),
     );
+    const mealTaken = new Map(meals.map((s) => [s.segmentDate.toISOString().slice(0, 10), s._sum.durationMinutes ?? 0]));
     const missingDays = new Set(
       missing.filter((m) => m.timesheet.employeeId === selectedRow.id).map((m) => m.occurredAt.toISOString().slice(0, 10)),
     );
@@ -401,6 +556,7 @@ export async function loadTeamPunchHistory(
       return {
         date,
         workedMinutes: worked.get(date) ?? 0,
+        mealMinutes: mealTaken.get(date) ?? 0,
         hasMissingPunch: missingDays.has(date),
         isClockedIn: date === today && !!lastIn && !outAfter,
         hasPending: live.some((p) => !p.isApproved),
@@ -424,7 +580,12 @@ export async function loadTeamPunchHistory(
     selectedSiteId,
     selectedDepartmentId,
     search,
-    employees: list.map((e) => ({ ...toEmployee(e), hasMissingPunch: flagged.has(e.id) })),
+    attentionOnly,
+    employees: list.map((e) => ({
+      ...toEmployee(e),
+      hasMissingPunch: flagged.has(e.id),
+      pendingCount: pendingCount.get(e.id) ?? 0,
+    })),
     employeeTotal,
     scopedTotal: scopedTotal < 0 ? employeeTotal : scopedTotal,
     selected: selectedRow ? { ...toEmployee(selectedRow), site: selectedRow.site?.name ?? null } : null,
@@ -453,7 +614,7 @@ export type PunchExportRow = {
   actual: string;
   rounded: string;
   source: string;
-  status: "Approved" | "Pending" | "Superseded";
+  status: "Approved" | "Pending" | "Superseded" | "Removed";
   isCorrection: boolean;
 };
 
@@ -477,13 +638,24 @@ export async function loadPunchExport(viewer: Viewer, params: PunchHistoryParams
     orderBy: { name: "asc" },
     select: { timezone: true },
   });
-  const { startDate, endDate } = await resolveRange(tenantId, params, firstSite?.timezone ?? FALLBACK_TZ);
+  const tz = firstSite?.timezone ?? FALLBACK_TZ;
+  const { startDate, endDate } = await resolveRange(tenantId, params, tz);
+  // The same people the list shows, Needs attention included.
+  const whom: Prisma.EmployeeWhereInput =
+    params.show === "attention"
+      ? {
+          AND: [
+            matching,
+            attentionWhere(startDate, endDate, snapToLocalTime("00:00", startDate, tz), endOfDayInTz(endDate, tz)),
+          ],
+        }
+      : matching;
 
   // A day either side, because each site draws its own midnight. Rows outside
   // their own site's dates are dropped below.
   const where: Prisma.PunchWhereInput = {
     isRejected: false,
-    employee: matching,
+    employee: whom,
     roundedTime: {
       gte: new Date(Date.parse(`${startDate}T00:00:00.000Z`) - 86_400_000),
       lte: new Date(Date.parse(`${endDate}T23:59:59.999Z`) + 86_400_000),
@@ -506,10 +678,11 @@ export async function loadPunchExport(viewer: Viewer, params: PunchHistoryParams
         isApproved: true,
         correctedById: true,
         correctsId: true,
+        note: true,
       },
     }),
     db.employee.findMany({
-      where: matching,
+      where: whom,
       select: {
         id: true,
         employeeCode: true,
@@ -541,8 +714,10 @@ export async function loadPunchExport(viewer: Viewer, params: PunchHistoryParams
     MEAL_END: "End Meal", BREAK_START: "Start Break", BREAK_END: "End Break",
   };
 
+  // A removal marker is not a punch: the punch it removed is written as Removed.
+  const removed = new Set(punches.filter(isRemovalMarker).map((m) => m.correctsId!));
   const rows: PunchExportRow[] = [];
-  for (const p of pairCorrections(punches)) {
+  for (const p of pairCorrections(punches.filter((x) => !isRemovalMarker(x)))) {
     const e = who.get(p.employeeId);
     if (!e) continue;
     const c = clockFor(e.site?.timezone ?? FALLBACK_TZ);
@@ -558,7 +733,7 @@ export async function loadPunchExport(viewer: Viewer, params: PunchHistoryParams
       actual: c.secs.format(p.punchTime),
       rounded: c.mins.format(p.roundedTime),
       source: SOURCE[p.source] ?? p.source,
-      status: p.correctedById ? "Superseded" : p.isApproved ? "Approved" : "Pending",
+      status: removed.has(p.id) ? "Removed" : p.correctedById ? "Superseded" : p.isApproved ? "Approved" : "Pending",
       isCorrection: !!p.correctsId,
     });
   }

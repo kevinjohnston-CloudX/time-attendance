@@ -35,6 +35,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     siteId: sp.get("siteId") ?? undefined,
     departmentId: sp.get("departmentId") ?? undefined,
     q: sp.get("q") ?? undefined,
+    show: sp.get("show") ?? undefined,
   });
 
   if (!result.ok) {

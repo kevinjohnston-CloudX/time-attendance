@@ -25,17 +25,20 @@ export default function Loading() {
   return (
     <div className="flex flex-col" aria-busy="true" aria-label="Loading team punch history">
       <div className="flex flex-col gap-3.5 pb-3.5">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <Bar w={290} h={30} />
-          <Bar w={300} />
-          <span className="ml-auto">
-            <Bar w={64} h={28} />
+        <div className="flex flex-wrap items-end gap-4">
+          <span className="flex flex-1 flex-col gap-1.5">
+            <Bar w={290} h={30} />
+            <Bar w={380} h={14} />
           </span>
+          <Bar w={64} h={28} />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           <Bar w={210} h={32} />
           <Bar w={64} h={32} />
           <Bar w={250} h={32} />
+          <Bar w={70} h={28} round />
+          <Bar w={110} h={28} round />
+          <Bar w={70} h={28} round />
         </div>
       </div>
 

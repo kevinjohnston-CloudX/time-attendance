@@ -13,7 +13,7 @@ import {
   UtensilsCrossed,
   type LucideIcon,
 } from "lucide-react";
-import { Button, EmptyState, SearchInput, Select, Toast, useToast } from "@/components/ui";
+import { Button, EmptyState, FilterSelectChip, PageHeader, SearchInput, Toast, useToast } from "@/components/ui";
 import { PUNCH_TYPE_LABEL, type PunchTypeValue } from "@/lib/state-machines/labels";
 import type { PunchHistoryData, PunchHistoryParams, PunchHistoryPunch } from "@/lib/punch-history/punch-history-data";
 import { PunchHistoryDatePicker, dayLabel, rangeLabel } from "./punch-history-date-picker";
@@ -51,8 +51,10 @@ const PUNCH_ICON: Record<string, LucideIcon> = {
   BREAK_END: Coffee,
 };
 
-/** A punch row: time, what happened, source, status. */
-const ROW_COLUMNS = "112px minmax(0, 1fr) 88px 104px";
+/** A punch row: the time, then what happened and where from, then a status only when it is not the normal one. */
+const ROW_COLUMNS = "112px minmax(0, 1fr) auto";
+
+const SHOW_OPTIONS = [{ id: "attention", name: "Needs attention" }];
 
 function initials(name: string): string {
   return name
@@ -149,6 +151,27 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
     [data.timezone],
   );
 
+  /**
+   * Who changed a punch and when, as one quiet line under it: "By Paulett
+   * Laje · Sep 23 at 4:10 PM · Forgot to clock out". A correction already
+   * carries its tag, so its line starts with the person.
+   */
+  const changeLine = useCallback(
+    (c: NonNullable<PunchHistoryPunch["change"]>) => {
+      const who =
+        c.kind === "corrected"
+          ? c.by ? `By ${c.by}` : "Made automatically"
+          : c.kind === "added"
+            ? c.by ? `Added by ${c.by}` : "Added by hand"
+            : c.by ? `Removed by ${c.by}` : "Removed";
+      const when = c.at
+        ? `${new Intl.DateTimeFormat("en-US", { timeZone: data.timezone, month: "short", day: "numeric" }).format(new Date(c.at))} at ${clock(c.at, false)}`
+        : null;
+      return [who, when, c.reason].filter(Boolean).join(" · ");
+    },
+    [clock, data.timezone],
+  );
+
   // ── Pinned bar, and the height the panes sit under ──
   const barRef = useRef<HTMLDivElement | null>(null);
   const [barHeight, setBarHeight] = useState(112);
@@ -174,6 +197,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
     siteId: data.selectedSiteId ?? undefined,
     departmentId: data.selectedDepartmentId ?? undefined,
     q: data.search || undefined,
+    show: data.attentionOnly ? "attention" : undefined,
   };
 
   const navigate = useCallback(
@@ -231,13 +255,14 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
     barRef.current?.closest("main")?.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  const dirty = data.isCustomRange || !!data.selectedSiteId || !!data.selectedDepartmentId || !!data.search;
+  const dirty =
+    data.isCustomRange || !!data.selectedSiteId || !!data.selectedDepartmentId || !!data.search || data.attentionOnly;
 
   function clearAll() {
     typed.current = false;
     setQuery("");
     // The person you have open is a record, not a filter, and stays open.
-    navigate({ startDate: undefined, endDate: undefined, siteId: undefined, departmentId: undefined, q: undefined });
+    navigate({ startDate: undefined, endDate: undefined, siteId: undefined, departmentId: undefined, q: undefined, show: undefined });
   }
 
   /**
@@ -253,6 +278,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
     if (data.selectedSiteId) params.set("siteId", data.selectedSiteId);
     if (data.selectedDepartmentId) params.set("departmentId", data.selectedDepartmentId);
     if (data.search) params.set("q", data.search);
+    if (data.attentionOnly) params.set("show", "attention");
     setExporting(true);
     flash("Preparing your download");
     try {
@@ -293,7 +319,9 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
 
   // Which empty the list is showing. Each has a different next step.
   const noPeopleText =
-    data.scopedTotal === 0
+    data.attentionOnly && data.scopedTotal > 0 && !data.search
+      ? "No one has a missing or pending punch in these dates."
+      : data.scopedTotal === 0
       ? data.selectedSiteId || data.selectedDepartmentId
         ? "No employees in this site or department."
         : data.isPayroll
@@ -317,12 +345,10 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
         className="sticky top-0 z-20 -mx-4 -mt-4 flex flex-col gap-3.5 px-4 pb-3.5 pt-4"
         style={{ background: "var(--surface-page)" }}
       >
-        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-          <h1 className="wms-page-title">Team Punch History</h1>
-          <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-            Punches by employee, with source and approval status
-          </p>
-          <div className="ml-auto flex items-center gap-2 self-center">
+        <PageHeader
+          title="Team Punch History"
+          subtitle="Every punch by employee, where it came from, and whether it is approved"
+          actions={
             <Button
               hierarchy="secondary"
               size="sm"
@@ -332,10 +358,12 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
             >
               {exporting ? "Exporting" : "Export"}
             </Button>
-          </div>
-        </div>
+          }
+        />
 
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Dates first, since they decide everything below, then the search
+            and the filters as the same pills Employees and Live Attendance use. */}
+        <div className="flex flex-wrap items-center gap-2.5">
           <PunchHistoryDatePicker
             startDate={data.startDate}
             endDate={data.endDate}
@@ -349,49 +377,33 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
           <Button hierarchy="secondary" onClick={() => navigate({ startDate: data.today, endDate: data.today })}>
             Today
           </Button>
-
-          {data.isPayroll && (
-            <>
-              <span aria-hidden="true" className="mx-1 h-5 w-px flex-none" style={{ background: "var(--stroke-secondary)" }} />
-              {data.sites.length > 0 && (
-                <Select
-                  aria-label="Site"
-                  title="Site"
-                  value={data.selectedSiteId ?? ""}
-                  // Departments are listed per site, and the person you had
-                  // open may not work at the new one.
-                  onChange={(e) =>
-                    navigate({ siteId: e.target.value || undefined, departmentId: undefined, employeeId: undefined })
-                  }
-                  style={activeSelect(!!data.selectedSiteId)}
-                >
-                  <option value="">All sites</option>
-                  {data.sites.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </Select>
-              )}
-              <Select
-                aria-label="Department"
-                title="Department"
-                value={data.selectedDepartmentId ?? ""}
-                onChange={(e) => navigate({ departmentId: e.target.value || undefined, employeeId: undefined })}
-                style={activeSelect(!!data.selectedDepartmentId)}
-              >
-                <option value="">All departments</option>
-                {data.departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </Select>
-            </>
-          )}
-
+          <span aria-hidden="true" className="mx-0.5 h-5 w-px flex-none" style={{ background: "var(--stroke-secondary)" }} />
           <SearchInput value={query} onValueChange={onType} placeholder="Name, ID or department" width={250} />
-
+          {data.isPayroll && data.sites.length > 0 && (
+            <FilterSelectChip
+              label="Site"
+              value={data.selectedSiteId ?? ""}
+              options={data.sites}
+              // Departments are listed per site, and the person you had open
+              // may not work at the new one.
+              onChange={(v) => navigate({ siteId: v || undefined, departmentId: undefined, employeeId: undefined })}
+            />
+          )}
+          {data.isPayroll && (
+            <FilterSelectChip
+              label="Department"
+              value={data.selectedDepartmentId ?? ""}
+              options={data.departments}
+              onChange={(v) => navigate({ departmentId: v || undefined, employeeId: undefined })}
+            />
+          )}
+          <FilterSelectChip
+            label="Show"
+            allLabel="Everyone"
+            value={data.attentionOnly ? "attention" : ""}
+            options={SHOW_OPTIONS}
+            onChange={(v) => navigate({ show: v || undefined })}
+          />
           {dirty && (
             <Button hierarchy="link" size="sm" onClick={clearAll}>
               Clear all
@@ -477,9 +489,25 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                         {e.employeeCode} · {e.department}
                       </span>
                     </span>
+                    {/* What needs looking at, as one small tinted mark each:
+                        a missing punch, and how many are waiting on approval. */}
+                    {e.pendingCount > 0 && (
+                      <span
+                        title={`${e.pendingCount} ${e.pendingCount === 1 ? "punch" : "punches"} waiting on approval in these dates`}
+                        className="tabular inline-flex h-5 flex-none items-center whitespace-nowrap rounded-full px-1.5"
+                        style={{
+                          background: "var(--surface-warning)",
+                          color: "var(--text-warning)",
+                          font: "var(--type-caption1)",
+                          fontWeight: "var(--weight-semibold)",
+                        }}
+                      >
+                        {e.pendingCount} pending
+                      </span>
+                    )}
                     {e.hasMissingPunch && (
-                      <span title="Missing punch in this date range" className="inline-flex flex-none" style={{ color: "var(--text-warning)" }}>
-                        <TriangleAlert className="h-4 w-4" />
+                      <span title="Missing punch in these dates" className="inline-flex flex-none" style={{ color: "var(--text-warning)" }}>
+                        <TriangleAlert className="h-4 w-4" aria-label="Missing punch" />
                       </span>
                     )}
                   </button>
@@ -608,6 +636,11 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                         } else {
                           shape.push({ text: day.isClockedIn ? `In since ${from}` : `${from}, no clock out` });
                         }
+                      }
+                      // No meal punched, but the pay engine took one out: the automatic
+                      // deduction, the one gap between the times and the hours.
+                      if (!sum.meal && day.mealMinutes > 0) {
+                        shape.push({ text: `Meal ${duration(day.mealMinutes)}, deducted` });
                       }
                       for (const [label, part, verb] of [
                         ["Meal", sum.meal, "On meal"],
@@ -761,51 +794,68 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                                     </span>
                                   )}
                                 </span>
-                                <span className="flex min-w-0 items-center gap-2">
-                                  <Icon
-                                    className="h-4 w-4 flex-none"
-                                    style={{ color: sup ? "var(--icon-disabled)" : "var(--icon-secondary)" }}
-                                  />
-                                  <span
-                                    className="truncate"
-                                    style={{ font: "var(--type-body1)", color: sup ? "var(--text-tertiary)" : "var(--text-primary)" }}
-                                  >
-                                    {PUNCH_TYPE_LABEL[p.punchType as PunchTypeValue] ?? p.punchType}
-                                  </span>
-                                  {p.isCorrection && (
+                                <span className="flex min-w-0 flex-col gap-0.5">
+                                  <span className="flex min-w-0 items-center gap-2">
+                                    <Icon
+                                      className="h-4 w-4 flex-none"
+                                      style={{ color: sup ? "var(--icon-disabled)" : "var(--icon-secondary)" }}
+                                    />
                                     <span
-                                      className="whitespace-nowrap rounded px-1.5"
+                                      className="truncate"
+                                      style={{ font: "var(--type-body1)", color: sup ? "var(--text-tertiary)" : "var(--text-primary)" }}
+                                    >
+                                      {PUNCH_TYPE_LABEL[p.punchType as PunchTypeValue] ?? p.punchType}
+                                    </span>
+                                    {p.isCorrection && (
+                                      <span
+                                        className="whitespace-nowrap rounded px-1.5"
+                                        style={{
+                                          background: "var(--surface-info)",
+                                          color: "var(--text-accent)",
+                                          font: "var(--type-caption1)",
+                                          fontWeight: "var(--weight-medium)",
+                                          lineHeight: "18px",
+                                        }}
+                                      >
+                                        Correction
+                                      </span>
+                                    )}
+                                    {/* Where it came from, right beside what it
+                                        was. Routine sources are quiet. Manual and
+                                        System are not: one means somebody entered
+                                        it by hand, the other that the system wrote it. */}
+                                    <span aria-hidden="true" style={{ color: "var(--text-tertiary)" }}>·</span>
+                                    <span
+                                      className="whitespace-nowrap"
                                       style={{
-                                        background: "var(--surface-info)",
-                                        color: "var(--text-accent)",
-                                        font: "var(--type-caption1)",
-                                        fontWeight: "var(--weight-medium)",
-                                        lineHeight: "18px",
+                                        font: "var(--type-body2)",
+                                        fontWeight: !sup && flagged ? "var(--weight-medium)" : undefined,
+                                        color: !sup && flagged ? "var(--text-primary)" : "var(--text-tertiary)",
                                       }}
                                     >
-                                      Correction
+                                      {SOURCE_LABEL[p.source] ?? p.source}
+                                    </span>
+                                  </span>
+                                  {p.change && (
+                                    <span
+                                      className="truncate pl-6"
+                                      style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}
+                                      title={p.change.reason ?? undefined}
+                                    >
+                                      {changeLine(p.change)}
                                     </span>
                                   )}
                                 </span>
-                                {/* Routine sources are quiet. Manual and System are
-                                    not: one means somebody entered the punch by
-                                    hand, the other that the system wrote it. */}
-                                <span
-                                  className="truncate"
-                                  style={{
-                                    font: "var(--type-body2)",
-                                    fontWeight: !sup && flagged ? "var(--weight-medium)" : undefined,
-                                    color: !sup && flagged ? "var(--text-primary)" : "var(--text-tertiary)",
-                                  }}
-                                >
-                                  {SOURCE_LABEL[p.source] ?? p.source}
-                                </span>
                                 {/* Approved is the normal case and the day heading
                                     already says it, so an approved row carries no
-                                    status. Pending and Superseded keep their
-                                    words, which is what makes them findable. */}
+                                    status. Removed, Superseded and Pending keep
+                                    their words, which is what makes them findable. */}
                                 <span className="flex justify-end">
-                                  {sup ? (
+                                  {p.isRemoved ? (
+                                    <span className="whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                                      Removed
+                                    </span>
+                                  ) : sup ? (
                                     <span className="whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
                                       Superseded
                                     </span>
@@ -878,15 +928,6 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
       <Toast message={toast} />
     </div>
   );
-}
-
-/** A filter that is on reads as on: accent outline and accent text. */
-function activeSelect(on: boolean): CSSProperties {
-  return {
-    maxWidth: 220,
-    borderColor: on ? "var(--stroke-accent)" : "var(--stroke-default)",
-    color: on ? "var(--text-accent)" : "var(--text-primary)",
-  };
 }
 
 function Stat({ value, label, tone }: { value: string; label: string; tone?: string }) {
