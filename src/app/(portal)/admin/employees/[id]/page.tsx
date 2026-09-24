@@ -3,17 +3,12 @@ import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getEmployeeById, getAdminRefData, getEmployeeAuditLogs, getHrSiteAccess } from "@/actions/admin.actions";
 import { EditEmployeeForm } from "@/components/admin/edit-employee-form";
-import { LinkButton, PageHeader } from "@/components/ui";
 
 /**
- * One employee, on the design's doc template: a header with the way back and
- * the related screen, then a single column of sections.
- *
- * <p>There is no page-level "Save Changes". The record is written by three
- * different calls — assignment, personal details and pay each go up on their
- * own — and one header button could only ever fire one of them. Each section
- * carries the save that belongs to it, so the button you press is next to the
- * fields it writes.
+ * One employee. The record opens to read, with Edit in the pinned header;
+ * editing turns every section into fields at once and one Save changes
+ * writes only what changed. The header lives in the record component, since
+ * its buttons change with the mode.
  */
 export default async function EditEmployeePage({
   params,
@@ -43,21 +38,6 @@ export default async function EditEmployeePage({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader pinned
-        title={employee.user.name}
-        subtitle={`${employee.employeeCode} · ${employee.department.name} · ${employee.site.name}`}
-        actions={
-          <>
-            <LinkButton href="/admin/employees" hierarchy="tertiary">
-              ← Employees
-            </LinkButton>
-            <LinkButton href={`/admin/accruals/${id}`} hierarchy="secondary">
-              View Accruals
-            </LinkButton>
-          </>
-        }
-      />
-
       <EditEmployeeForm
         employee={employee}
         sites={sites}

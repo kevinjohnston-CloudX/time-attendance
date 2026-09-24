@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition, useState, type ReactNode, type SelectHTMLAttributes } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { updateEmployee, updateHrSiteAccess } from "@/actions/admin.actions";
@@ -9,35 +9,34 @@ import type { Site, Department, RuleSet, Employee } from "@prisma/client";
 import {
   Banner,
   Button,
-  Card,
   Checkbox,
   EmptyState,
   Input,
+  LinkButton,
+  PageHeader,
+  PinnedBar,
   SegmentedControl,
   Select,
-  Table,
-  THead,
-  TBody,
-  TR,
-  TH,
-  TD,
+  Toast,
+  useToast,
 } from "@/components/ui";
-import { History } from "lucide-react";
+import { ArrowLeft, ArrowRight, History, KeyRound, Pencil, Wallet } from "lucide-react";
+import styles from "./employee-record.module.css";
 
 /**
- * The employee record, on the design's doc template: one column of sections
- * instead of the five tabs this used to be.
+ * The employee record. It opens to read: every section shows its values as
+ * text, and one Edit button turns each value into its field where it stands.
+ * Save changes writes the whole record at once; Cancel puts every field back.
  *
- * <p>The tabs went because they were hiding, not organising. Three of them —
- * General, Personal and Pay — each posted their own `updateEmployee` call with
- * their own fields, so "Save Changes" meant something different depending on
- * which tab happened to be open, and there was no way to see that from the
- * button. As sections, each save sits under the fields it writes and says so.
+ * <p>One save, but not one overwrite. Only the fields that were actually
+ * changed are sent, so on a record two people edit in the same afternoon a
+ * one-field correction still only touches that field. That also keeps two
+ * side effects honest: the badge barcode is marked as set by hand (so the
+ * Oracle sync leaves it alone) only when somebody changed the barcode, and
+ * the adjusted hire date is only written when somebody changed it.
  *
- * <p>The three calls are still three calls. Merging them into one form would
- * mean a single save writing pay rate, address and site assignment together,
- * and on a record two people edit in the same afternoon that turns a
- * one-field correction into an overwrite of everything else.
+ * <p>Site access is its own call on the server, so it goes second, and only
+ * when the checked sites differ from what was saved.
  */
 
 /**
@@ -77,8 +76,55 @@ interface Props {
   actorRole: string;
 }
 
-/** Which section a save belongs to, so its result lands on the right card. */
-type Section = "general" | "personal" | "pay" | "site-access";
+const SYSTEM_ROLE_NAME: Record<string, string> = {
+  EMPLOYEE: "Employee",
+  SUPERVISOR: "Supervisor",
+  PAYROLL_ADMIN: "Payroll Admin",
+  HR_ADMIN: "HR Admin",
+  SYSTEM_ADMIN: "System Admin",
+  SUPER_ADMIN: "Super Admin",
+};
+
+const MARITAL = ["Single", "Married", "Divorced", "Widowed", "Other"];
+
+/** Every value the record edits, as the text its field holds. */
+type Values = {
+  name: string;
+  email: string;
+  jobTitle: string;
+  customRoleId: string;
+  siteId: string;
+  departmentId: string;
+  supervisorId: string;
+  status: "active" | "on-leave" | "inactive";
+  terminationReason: string;
+  adjustedHireDate: string;
+  wmsId: string;
+  barcode: string;
+  adpWorkerId: string;
+  ruleSetId: string;
+  shiftId: string;
+  holidayRuleId: string;
+  payCategoryId: string;
+  payTypeId: string;
+  payType: string;
+  payRate: string;
+  gender: string;
+  maritalStatus: string;
+  phone: string;
+  phone2: string;
+  emergencyContact: string;
+  emergencyPhone: string;
+  emergencyRelationship: string;
+  address1: string;
+  address2: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  country: string;
+};
+
+type Key = keyof Values;
 
 function fmtTime(hhmm: string): string {
   const [h, m] = hhmm.split(":").map(Number);
@@ -86,183 +132,340 @@ function fmtTime(hhmm: string): string {
   return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${ampm}`;
 }
 
-/**
- * The doc template's field grid: columns that drop out rather than squeeze.
- *
- * <p>`auto-fit` with a `min(100%, max(200px, …))` floor is what keeps a
- * three-across form readable in the 440px the sidebar leaves on a laptop — the
- * columns collapse to one instead of producing three 130px selects whose
- * options are all elided.
- */
-function fieldGrid(cols: number): React.CSSProperties {
-  return {
-    display: "grid",
-    gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, max(200px, ${Math.floor(96 / cols)}%)), 1fr))`,
-    gap: 12,
-  };
+function initialsOf(name: string | null): string {
+  const words = (name ?? "").replace(/[^\p{L}\s'-]/gu, " ").trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "?";
+  const first = words[0][0] ?? "";
+  const last = words.length > 1 ? words[words.length - 1][0] ?? "" : "";
+  return (first + last).toUpperCase();
 }
 
-/**
- * A labelled select.
- *
- * <p>The kit ships `Input` with its own label/hint stack but `Select` as a bare
- * control, and the kit is shared and not ours to change. This wraps `Select` in
- * the same 6px stack so a select and a text input side by side in the grid sit
- * on the same baseline instead of one riding 18px high.
- */
-function SelectField({
+const numbered = (c: { number: number; description: string | null }) =>
+  `${c.number}${c.description ? ` · ${c.description}` : ""}`;
+
+/** The audit log writes an empty side as a dash; a person reads "Empty". */
+const shown = (v: string) => (v === "—" || v === "" ? "Empty" : v);
+
+/** Whether the record is in edit mode, for the field and section helpers. */
+const Editing = createContext(false);
+
+/** One field: its value as text in read mode, its control in edit mode. */
+function Field({
   label,
+  htmlFor,
+  read,
   children,
-  id,
-  ...rest
-}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; children: ReactNode }) {
-  const fieldId = id ?? `s-${label.replace(/\s+/g, "-").toLowerCase()}`;
+  hint,
+  readHint,
+  required,
+  mono,
+  className,
+}: {
+  label: string;
+  htmlFor?: string;
+  read: ReactNode;
+  children: ReactNode;
+  hint?: string;
+  /** Shown under the value in read mode too, when it says something about the value. */
+  readHint?: string;
+  required?: boolean;
+  mono?: boolean;
+  className?: string;
+}) {
+  const editing = useContext(Editing);
+  const empty = read === "" || read == null;
   return (
-    <div className="flex w-full flex-col gap-1.5">
-      <label htmlFor={fieldId} style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>
-        {label}
-      </label>
-      <Select id={fieldId} {...rest}>
-        {children}
-      </Select>
+    <div className={`${styles.field}${className ? ` ${className}` : ""}`}>
+      {editing ? (
+        <label htmlFor={htmlFor} className={styles.label}>
+          {label}
+          {required && <span className={styles.required} aria-hidden="true">*</span>}
+        </label>
+      ) : (
+        <span className={styles.label}>{label}</span>
+      )}
+      {editing ? (
+        children
+      ) : (
+        <span className={`${styles.value}${mono && !empty ? ` ${styles.mono}` : ""}`} data-empty={empty ? "true" : undefined}>
+          {empty ? "Not set" : read}
+        </span>
+      )}
+      {editing ? hint && <span className={styles.hint}>{hint}</span> : readHint && <span className={styles.hint}>{readHint}</span>}
     </div>
   );
 }
 
-/** One label-over-value pair in a read-only card, as the design draws them. */
-function Kv({ label, children }: { label: string; children: ReactNode }) {
+/** A section card; its body switches to field labels while editing. */
+function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
+  const editing = useContext(Editing);
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="wms-overline">{label}</span>
-      <span
-        className="tabular"
-        style={{
-          font: "var(--weight-semibold) 16px/22px var(--font-sans)",
-          color: "var(--text-primary)",
-          overflowWrap: "anywhere",
-        }}
-      >
-        {children}
-      </span>
-    </div>
+    <section className={styles.card} data-editing={editing ? "true" : undefined} aria-label={title}>
+      <header className={styles.sectionHead}>
+        <div>
+          <h2 className={styles.sectionTitle}>{title}</h2>
+          {subtitle && <p className={styles.sectionSub}>{subtitle}</p>}
+        </div>
+      </header>
+      <div className={`${styles.sectionBody}${editing ? ` ${styles.editing}` : ""}`}>{children}</div>
+    </section>
   );
 }
 
-/** A full-width rule inside a field grid, for the groups within one form. */
-function GroupHeading({ children }: { children: ReactNode }) {
-  return (
-    <p
-      className="wms-overline"
-      style={{
-        gridColumn: "1 / -1",
-        margin: 0,
-        paddingBottom: 4,
-        borderBottom: "1px solid var(--stroke-divider)",
-      }}
-    >
-      {children}
-    </p>
-  );
-}
-
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, logs, hrSiteAccess, actorRole }: Props) {
+export function EditEmployeeForm({
+  employee,
+  sites,
+  departments,
+  ruleSets,
+  employees,
+  customRoles,
+  shifts,
+  holidayRules,
+  payCategories,
+  payTypes,
+  logs,
+  hrSiteAccess,
+  actorRole,
+}: Props) {
   const router = useRouter();
+  const toast = useToast();
   const [isPending, startTransition] = useTransition();
-  const [feedback, setFeedback] = useState<{ section: Section; tone: "error" | "success"; text: string } | null>(null);
-  /** Which section's save is in flight — the three share one transition. */
-  const [savingSection, setSavingSection] = useState<Section | null>(null);
-  const [selectedSiteId, setSelectedSiteId] = useState(employee.siteId);
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [tempPassword, setTempPasswordValue] = useState("");
   const [tempStatus, setTempStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [tempMessage, setTempMessage] = useState("");
-  const [status, setStatus] = useState<"active" | "on-leave" | "inactive">(
-    !employee.isActive ? "inactive" : employee.onLeave ? "on-leave" : "active"
-  );
-  const [payType, setPayType] = useState<string>(employee.payType ?? "HOURLY");
   const [logField, setLogField] = useState("");
   const [logDays, setLogDays] = useState(0);
-  const [selectedSiteAccess, setSelectedSiteAccess] = useState<Set<string>>(new Set(hrSiteAccess));
-  const [siteAccessSaving, setSiteAccessSaving] = useState(false);
 
   // Site access section is only shown when the employee being edited is HR_ADMIN or SYSTEM_ADMIN
   const employeeIsHrOrSysAdmin = ["HR_ADMIN", "SYSTEM_ADMIN"].includes(employee.role);
   // Only HR_ADMIN / SYSTEM_ADMIN actors can manage site access
   const canManageSiteAccess = ["HR_ADMIN", "SYSTEM_ADMIN"].includes(actorRole);
 
-  const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === selectedSiteId));
+  // The role the record is on: its custom role, else the system role of the
+  // same name. The select has no empty option, so this is also what it shows.
+  const roleId =
+    employee.customRoleId ??
+    customRoles.find((r) => r.isSystem && r.name === SYSTEM_ROLE_NAME[employee.role])?.id ??
+    customRoles[0]?.id ??
+    "";
 
-  function save(section: Section, fields: Record<string, unknown>) {
-    setFeedback(null);
-    setSavingSection(section);
+  const saved: Values = useMemo(
+    () => ({
+      name: employee.user.name ?? "",
+      email: employee.user.email ?? "",
+      jobTitle: employee.jobTitle ?? "",
+      customRoleId: roleId,
+      siteId: employee.siteId,
+      departmentId: employee.departmentId,
+      supervisorId: employee.supervisorId ?? "",
+      status: !employee.isActive ? "inactive" : employee.onLeave ? "on-leave" : "active",
+      terminationReason: employee.terminationReason ?? "",
+      adjustedHireDate: employee.adjustedHireDate ? format(employee.adjustedHireDate, "yyyy-MM-dd") : "",
+      wmsId: employee.wmsId ?? "",
+      barcode: employee.barcode ?? "",
+      adpWorkerId: employee.adpWorkerId ?? "",
+      ruleSetId: employee.ruleSetId,
+      shiftId: employee.shiftId ?? "",
+      holidayRuleId: employee.holidayRuleId ?? "",
+      payCategoryId: employee.payCategoryId ?? "",
+      payTypeId: employee.payTypeId ?? "",
+      payType: employee.payType ?? "HOURLY",
+      payRate: employee.payRate != null ? String(Number(employee.payRate)) : "",
+      gender: employee.gender ?? "",
+      maritalStatus: employee.maritalStatus ?? "",
+      phone: employee.phone ?? "",
+      phone2: employee.phone2 ?? "",
+      emergencyContact: employee.emergencyContact ?? "",
+      emergencyPhone: employee.emergencyPhone ?? "",
+      emergencyRelationship: employee.emergencyRelationship ?? "",
+      address1: employee.address1 ?? "",
+      address2: employee.address2 ?? "",
+      city: employee.city ?? "",
+      state: employee.state ?? "",
+      zipCode: employee.zipCode ?? "",
+      country: employee.country ?? "",
+    }),
+    [employee, roleId],
+  );
+  const savedAccess = useMemo(() => new Set(hrSiteAccess), [hrSiteAccess]);
+
+  const [draft, setDraft] = useState<Values>(saved);
+  const [draftAccess, setDraftAccess] = useState<Set<string>>(savedAccess);
+
+  // Read mode always shows what is saved; edit mode shows the draft.
+  const v = editing ? draft : saved;
+  const access = editing ? draftAccess : savedAccess;
+
+  const changed = (Object.keys(saved) as Key[]).filter((k) => draft[k] !== saved[k]);
+  const accessChanged =
+    canManageSiteAccess &&
+    employeeIsHrOrSysAdmin &&
+    (draftAccess.size !== savedAccess.size || [...draftAccess].some((id) => !savedAccess.has(id)));
+  const changeCount = changed.length + (accessChanged ? 1 : 0);
+  const dirty = editing && changeCount > 0;
+
+  // Leaving the page with unsaved edits asks first.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  // The rail pins just under the page bar.
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [barHeight, setBarHeight] = useState(0);
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar || typeof ResizeObserver !== "function") return;
+    const ro = new ResizeObserver(() => setBarHeight(bar.getBoundingClientRect().height));
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, []);
+
+  function set<K extends Key>(key: K, value: Values[K]) {
+    setDraft((d) => {
+      const next = { ...d, [key]: value };
+      // A department only exists at some sites. Moving site keeps the
+      // department when the new site has it, and otherwise takes the first
+      // one the new site offers, as the list below shows.
+      if (key === "siteId") {
+        const offered = departments.filter((dep) => dep.sites.some((ds) => ds.site.id === value));
+        if (!offered.some((dep) => dep.id === next.departmentId)) next.departmentId = offered[0]?.id ?? "";
+      }
+      return next;
+    });
+  }
+
+  function startEditing() {
+    setDraft(saved);
+    setDraftAccess(new Set(savedAccess));
+    setError(null);
+    setEditing(true);
+  }
+
+  function cancel() {
+    if (dirty && !window.confirm("Discard your unsaved changes?")) return;
+    setEditing(false);
+    setError(null);
+  }
+
+  function payload() {
+    const out: Record<string, unknown> = { employeeId: employee.id };
+    for (const k of changed) {
+      const val = draft[k];
+      switch (k) {
+        case "status":
+          out.isActive = val !== "inactive";
+          out.onLeave = val === "on-leave";
+          break;
+        case "payRate":
+          out.payRate = val ? parseFloat(val) : null;
+          break;
+        case "customRoleId":
+        case "supervisorId":
+        case "shiftId":
+        case "holidayRuleId":
+        case "payCategoryId":
+        case "payTypeId":
+        case "adjustedHireDate":
+          out[k] = val || null;
+          break;
+        default:
+          out[k] = val;
+      }
+    }
+    return out;
+  }
+
+  function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (changeCount === 0) {
+      setEditing(false);
+      return;
+    }
+    if (!draft.departmentId) {
+      setError("Pick a department. The site you chose has none linked to it yet.");
+      return;
+    }
+    setError(null);
     startTransition(async () => {
-      const result = await updateEmployee({ employeeId: employee.id, ...fields } as Parameters<typeof updateEmployee>[0]);
-      if (!result.success) {
-        setFeedback({ section, tone: "error", text: result.error });
-      } else {
-        setFeedback({ section, tone: "success", text: "Saved." });
-        router.refresh();
+      try {
+        await write();
+      } catch {
+        setError("The changes could not be saved. Check the connection and try again.");
       }
     });
   }
 
-  function handleGeneral(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    save("general", {
-      name: fd.get("name") as string,
-      email: fd.get("email") as string,
-      customRoleId: (fd.get("customRoleId") as string) || null,
-      siteId: fd.get("siteId") as string,
-      departmentId: fd.get("departmentId") as string,
-      supervisorId: (fd.get("supervisorId") as string) || null,
-      isActive: fd.get("status") !== "inactive",
-      onLeave: fd.get("status") === "on-leave",
-      wmsId: fd.get("wmsId") as string,
-      // Editing the barcode by hand marks it as an override, so the nightly
-      // Oracle sync leaves it alone instead of undoing the correction.
-      barcode: fd.get("barcode") as string,
-      adpWorkerId: fd.get("adpWorkerId") as string,
-      jobTitle: fd.get("jobTitle") as string,
-      terminationReason: fd.get("terminationReason") as string,
+  /** Writes the record, then site access. Returns early with a message on a refusal. */
+  async function write() {
+    if (changed.length > 0) {
+      const result = await updateEmployee(payload() as Parameters<typeof updateEmployee>[0]);
+      if (!result.success) {
+        setError(result.error);
+        return;
+      }
+    }
+    if (accessChanged) {
+      const result = await updateHrSiteAccess({ employeeId: employee.id, siteIds: Array.from(draftAccess) });
+      if (!result.success) {
+        setError(
+          changed.length > 0
+            ? `The record was saved, but site access was not: ${result.error ?? "it could not be saved."}`
+            : result.error ?? "Site access could not be saved.",
+        );
+        router.refresh();
+        return;
+      }
+    }
+    startTransition(() => {
+      router.refresh();
+      setEditing(false);
     });
+    toast.flash(changeCount === 1 ? "1 change saved" : `${changeCount} changes saved`);
   }
 
-  function handlePersonal(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    save("personal", {
-      gender: fd.get("gender") as string,
-      maritalStatus: fd.get("maritalStatus") as string,
-      phone: fd.get("phone") as string,
-      phone2: fd.get("phone2") as string,
-      emergencyContact: fd.get("emergencyContact") as string,
-      emergencyPhone: fd.get("emergencyPhone") as string,
-      emergencyRelationship: fd.get("emergencyRelationship") as string,
-      address1: fd.get("address1") as string,
-      address2: fd.get("address2") as string,
-      city: fd.get("city") as string,
-      state: fd.get("state") as string,
-      country: fd.get("country") as string,
-      zipCode: fd.get("zipCode") as string,
-    });
-  }
+  // ── Display lookups ───────────────────────────────────────────────
+  const siteName = (id: string) => sites.find((s) => s.id === id)?.name ?? "";
+  const deptName = (id: string) =>
+    departments.find((d) => d.id === id)?.name ?? (id === employee.departmentId ? employee.department.name : "");
+  const supervisorName = (id: string) =>
+    id
+      ? employees.find((e) => e.id === id)?.user.name ??
+        (id === employee.supervisorId ? employee.supervisor?.user.name ?? "" : "")
+      : "";
+  const roleName = (id: string) => customRoles.find((r) => r.id === id)?.name ?? SYSTEM_ROLE_NAME[employee.role] ?? "";
+  const shiftLabel = (id: string) => {
+    const s = shifts.find((x) => x.id === id);
+    if (s) return `${s.name} (${fmtTime(s.startTime)} to ${fmtTime(s.endTime)})`;
+    return id ? "Retired shift" : "";
+  };
+  const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === v.siteId));
+  const tone = v.status === "inactive" ? "inactive" : v.status === "on-leave" ? "leave" : "active";
+  const statusWord = v.status === "inactive" ? "Inactive" : v.status === "on-leave" ? "On leave" : "Active";
 
-  function handlePay(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const rateStr = fd.get("payRate") as string;
-    save("pay", {
-      ruleSetId: fd.get("ruleSetId") as string,
-      shiftId: (fd.get("shiftId") as string) || null,
-      holidayRuleId: (fd.get("holidayRuleId") as string) || null,
-      payCategoryId: (fd.get("payCategoryId") as string) || null,
-      payTypeId: (fd.get("payTypeId") as string) || null,
-      payType: fd.get("payType") as string,
-      payRate: rateStr ? parseFloat(rateStr) : null,
-    });
-  }
+  const payRateText = v.payRate
+    ? `$${Number(v.payRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${
+        v.payType === "SALARY" ? "per year" : "per hour"
+      }`
+    : "";
 
+  const cityLine = [v.city, [v.state, v.zipCode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  const addressText = [v.address1, v.address2, cityLine, v.country].filter(Boolean).join("\n");
+
+  const barcodeHint =
+    (employee.barcodeOverride
+      ? "Set by hand, so the Oracle sync will not overwrite it."
+      : employee.barcodeSyncedAt
+        ? `Synced from Oracle ${format(employee.barcodeSyncedAt, "MMM d, h:mm a")}.`
+        : "Not synced yet. Only needed when the badge encodes a different number than the Badge ID.") +
+    " Kiosks accept either value.";
+
+  // ── Change history ────────────────────────────────────────────────
   const allLogFieldNames = [...new Set(logs.flatMap((e) => e.fields.map((f) => f.field)))].sort();
   const logCutoff = logDays > 0 ? new Date(Date.now() - logDays * 24 * 60 * 60 * 1000) : null;
   const filteredLogs = logs
@@ -270,188 +473,137 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
     .map((e) => ({ ...e, fields: logField ? e.fields.filter((f) => f.field === logField) : e.fields }))
     .filter((e) => e.fields.length > 0);
 
-  /** The result of the last save, when it belongs to this section. */
-  const feedbackFor = (section: Section) =>
-    feedback?.section === section ? (
-      <Banner tone={feedback.tone} body={feedback.text} />
-    ) : null;
+  const text = (key: Key, extra?: Partial<React.ComponentProps<typeof Input>>) => (
+    <Input
+      id={`f-${key}`}
+      name={key}
+      value={draft[key] as string}
+      onChange={(e) => set(key, e.target.value as never)}
+      {...extra}
+    />
+  );
 
-  /**
-   * All three saves share one transition, so every button is disabled while any
-   * of them is in flight — two concurrent `updateEmployee` calls on one record
-   * is exactly the overwrite the sections exist to avoid. Only the button that
-   * was actually pressed says "Saving…", though; three buttons announcing a save
-   * nobody asked them for is how a supervisor concludes the page saved
-   * everything at once.
-   */
-  const saveLabel = (section: Section) =>
-    isPending && savingSection === section ? "Saving…" : "Save Changes";
+  const pick = (key: Key, options: ReactNode) => (
+    <Select
+      id={`f-${key}`}
+      name={key}
+      value={draft[key] as string}
+      onChange={(e) => set(key, e.target.value as never)}
+      style={{ width: "100%" }}
+    >
+      {options}
+    </Select>
+  );
+
+  const lastChange = logs[0];
 
   return (
     <>
-      <div className="flex flex-col gap-4" style={{ maxWidth: 1080 }}>
-        {/* ── Identity ─────────────────────────────────────────────────────
-            Everything here is either assigned once or derived; the editable
-            copies of the same facts live in the sections below. */}
-        <Card title="Identity" subtitle="Assigned on creation and used for seniority">
-          <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr))]">
-            <Kv label="Employee Code">{employee.employeeCode}</Kv>
-            <Kv label="Hire Date">{format(employee.hireDate, "MMM d, yyyy")}</Kv>
-            {/* The date leave tiers are actually measured from: the override
-                when one is set, the hire date otherwise. Showing only the hire
-                date is how somebody rehired in 2024 gets credited with a year
-                they did not serve. */}
-            <Kv label="Seniority Date">
-              {format(employee.adjustedHireDate ?? employee.hireDate, "MMM d, yyyy")}
-              {employee.adjustedHireDate && (
-                <span
-                  className="ml-1.5"
-                  style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}
-                >
-                  adjusted
-                </span>
-              )}
-            </Kv>
-            <Kv label="Last Change">
-              {logs.length > 0 ? (
+      <Editing.Provider value={editing}>
+      <form id="employee-record" onSubmit={save} className="flex flex-col gap-4">
+        <PinnedBar barRef={barRef}>
+          <PageHeader
+            title={v.name || employee.user.name}
+            subtitle={
+              editing
+                ? changeCount === 0
+                  ? "Editing. Nothing changed yet."
+                  : `Editing. ${changeCount === 1 ? "1 unsaved change" : `${changeCount} unsaved changes`}.`
+                : `${employee.employeeCode} · ${employee.department.name} · ${employee.site.name}`
+            }
+            actions={
+              editing ? (
                 <>
-                  {format(new Date(logs[0].createdAt), "MMM d, yyyy")}
-                  <span
-                    className="ml-1.5"
-                    style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}
-                  >
-                    by {logs[0].actorName}
-                  </span>
+                  <Button type="button" hierarchy="secondary" onClick={cancel} disabled={isPending}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={isPending || changeCount === 0}>
+                    {isPending ? "Saving…" : "Save changes"}
+                  </Button>
                 </>
               ) : (
-                <span style={{ color: "var(--text-tertiary)" }}>—</span>
-              )}
-            </Kv>
-          </div>
-        </Card>
+                <>
+                  <LinkButton
+                    href="/admin/employees"
+                    hierarchy="tertiary"
+                    leadingIcon={<ArrowLeft className="h-4 w-4" aria-hidden="true" />}
+                  >
+                    Employees
+                  </LinkButton>
+                  <LinkButton
+                    href={`/admin/accruals/${employee.id}`}
+                    hierarchy="secondary"
+                    leadingIcon={<Wallet className="h-4 w-4" aria-hidden="true" />}
+                  >
+                    View Accruals
+                  </LinkButton>
+                  <Button
+                    type="button"
+                    onClick={startEditing}
+                    leadingIcon={<Pencil className="h-4 w-4" aria-hidden="true" />}
+                  >
+                    Edit
+                  </Button>
+                </>
+              )
+            }
+          />
+        </PinnedBar>
 
-        {/* ── Profile & assignment ────────────────────────────────────────── */}
-        <form onSubmit={handleGeneral}>
-          <Card
-            title="Profile & Assignment"
-            subtitle="Site, department and supervisor decide whose queue this person's timesheets land in"
-          >
-            <div className="flex flex-col gap-4">
-              {feedbackFor("general")}
-
-              <div style={fieldGrid(3)}>
-                <Input label="Full Name" name="name" defaultValue={employee.user.name ?? ""} required />
-                <Input label="Email (Google login)" name="email" type="email" defaultValue={employee.user.email ?? ""} />
-                <Input label="Job Title" name="jobTitle" defaultValue={employee.jobTitle ?? ""} />
-
-                <SelectField
-                  label="Role"
-                  name="customRoleId"
-                  defaultValue={
-                    employee.customRoleId ??
-                    customRoles.find((r) => r.isSystem && r.name === { EMPLOYEE: "Employee", SUPERVISOR: "Supervisor", PAYROLL_ADMIN: "Payroll Admin", HR_ADMIN: "HR Admin", SYSTEM_ADMIN: "System Admin", SUPER_ADMIN: "Super Admin" }[employee.role])?.id ??
-                    customRoles[0]?.id ??
-                    ""
-                  }
-                >
-                  {customRoles.filter((r) => r.isSystem).map((r) => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                  {customRoles.some((r) => !r.isSystem) && (
-                    <optgroup label="────────────────">
-                      {customRoles.filter((r) => !r.isSystem).map((r) => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                </SelectField>
-
-                <SelectField
-                  label="Site"
-                  name="siteId"
-                  value={selectedSiteId}
-                  onChange={(e) => setSelectedSiteId(e.target.value)}
-                >
-                  {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </SelectField>
-
-                <SelectField label="Department" name="departmentId" defaultValue={employee.departmentId}>
-                  {filteredDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </SelectField>
-
-                <SelectField label="Supervisor" name="supervisorId" defaultValue={employee.supervisorId ?? ""}>
-                  <option value="">— None —</option>
-                  {employees
-                    .filter((e) => e.id !== employee.id)
-                    .map((e) => <option key={e.id} value={e.id}>{e.user.name}</option>)}
-                </SelectField>
-
-                <SelectField
-                  label="Status"
-                  name="status"
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as "active" | "on-leave" | "inactive")}
-                >
-                  <option value="active">Active</option>
-                  <option value="on-leave">On Leave</option>
-                  <option value="inactive">Inactive</option>
-                </SelectField>
-
-                {status === "inactive" && (
-                  <Input
-                    label="Termination Reason"
-                    name="terminationReason"
-                    defaultValue={employee.terminationReason ?? ""}
-                  />
-                )}
-
-                <Input
-                  label="Adjusted Hire Date"
-                  name="adjustedHireDate"
-                  type="date"
-                  defaultValue={employee.adjustedHireDate ? format(employee.adjustedHireDate, "yyyy-MM-dd") : ""}
-                  hint="Seniority override — used for leave tiers when the policy's service basis is Adjusted Hire Date."
-                />
-
-                <GroupHeading>Badges & External IDs</GroupHeading>
-
-                <Input
-                  label="Badge ID (WMS)"
-                  name="wmsId"
-                  defaultValue={employee.wmsId ?? ""}
-                  placeholder="QR code badge ID"
-                />
-
-                <Input
-                  label="Badge barcode"
-                  name="barcode"
-                  defaultValue={employee.barcode ?? ""}
-                  placeholder="10-digit code on the badge"
-                  hint={
-                    (employee.barcodeOverride
-                      ? "Set by hand — the Oracle sync will not overwrite this."
-                      : employee.barcodeSyncedAt
-                        ? `Synced from Oracle ${format(employee.barcodeSyncedAt, "MMM d, h:mm a")}.`
-                        : "Not yet synced. Only needed when the badge encodes a different number than the Badge ID.") +
-                    " Kiosks accept either value."
-                  }
-                />
-
-                <Input
-                  label="ADP Worker ID"
-                  name="adpWorkerId"
-                  defaultValue={employee.adpWorkerId ?? ""}
-                  placeholder="ADP Workforce Now ID"
-                />
+        <div className={styles.layout}>
+          {/* ── Profile rail ───────────────────────────────────────────── */}
+          <aside className={styles.rail} style={{ top: barHeight + 16 }}>
+            <div className={styles.card}>
+              <div className={styles.profile}>
+                <span className={styles.avatar} aria-hidden="true">{initialsOf(v.name || employee.user.name)}</span>
+                <div className="flex min-w-0 flex-col items-center gap-0.5 max-[1180px]:items-start">
+                  <p className={styles.profileName}>{v.name || employee.user.name}</p>
+                  <span className={styles.profileRole}>{v.jobTitle || roleName(v.customRoleId)}</span>
+                  <span className={styles.status} data-tone={tone}>
+                    <span className={styles.dot} aria-hidden="true" />
+                    {statusWord}
+                  </span>
+                </div>
               </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <Button type="submit" disabled={isPending}>
-                  {saveLabel("general")}
-                </Button>
+              {/* Assigned once or worked out from other fields, so these stay
+                  as text in edit mode too. */}
+              <dl className={styles.facts}>
+                <div className={styles.fact}>
+                  <dt>Employee code</dt>
+                  <dd className={styles.mono}>{employee.employeeCode}</dd>
+                </div>
+                <div className={styles.fact}>
+                  <dt>Hire date</dt>
+                  <dd>{format(employee.hireDate, "MMM d, yyyy")}</dd>
+                </div>
+                {/* The date leave tiers are actually measured from: the override
+                    when one is set, the hire date otherwise. */}
+                <div className={styles.fact}>
+                  <dt>Seniority date</dt>
+                  <dd>
+                    {format(employee.adjustedHireDate ?? employee.hireDate, "MMM d, yyyy")}
+                    {employee.adjustedHireDate && <span className={styles.factNote}>Adjusted</span>}
+                  </dd>
+                </div>
+                <div className={styles.fact}>
+                  <dt>Last change</dt>
+                  <dd>
+                    {lastChange ? (
+                      <>
+                        {format(new Date(lastChange.createdAt), "MMM d, yyyy")}
+                        <span className={styles.factNote}>by {lastChange.actorName}</span>
+                      </>
+                    ) : (
+                      <span style={{ color: "var(--text-tertiary)", fontWeight: "normal" }}>No changes yet</span>
+                    )}
+                  </dd>
+                </div>
+              </dl>
+              <div className={styles.railActions}>
                 <Button
                   type="button"
                   hierarchy="secondary"
+                  leadingIcon={<KeyRound className="h-4 w-4" aria-hidden="true" />}
                   onClick={() => {
                     setShowPasswordModal(true);
                     setTempStatus("idle");
@@ -463,336 +615,415 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
                 </Button>
               </div>
             </div>
-          </Card>
-        </form>
+          </aside>
 
-        {/* ── Personal & contact ──────────────────────────────────────────── */}
-        <form onSubmit={handlePersonal}>
-          <Card
-            title="Personal & Contact"
-            subtitle="Held encrypted and only read back on this screen"
-          >
-            <div className="flex flex-col gap-4">
-              {feedbackFor("personal")}
+          <div className={styles.main}>
+            {error && <Banner tone="error" body={error} />}
 
-              <div style={fieldGrid(3)}>
-                <Input label="Gender" name="gender" defaultValue={employee.gender ?? ""} />
-
-                <SelectField label="Marital Status" name="maritalStatus" defaultValue={employee.maritalStatus ?? ""}>
-                  <option value="">— Select —</option>
-                  <option value="Single">Single</option>
-                  <option value="Married">Married</option>
-                  <option value="Divorced">Divorced</option>
-                  <option value="Widowed">Widowed</option>
-                  <option value="Other">Other</option>
-                </SelectField>
-
-                <Input label="Phone 1" name="phone" type="tel" defaultValue={employee.phone ?? ""} />
-                <Input label="Phone 2" name="phone2" type="tel" defaultValue={employee.phone2 ?? ""} />
-
-                <GroupHeading>Emergency Contact</GroupHeading>
-
-                <Input label="Contact Name" name="emergencyContact" defaultValue={employee.emergencyContact ?? ""} />
-                <Input label="Contact Phone" name="emergencyPhone" type="tel" defaultValue={employee.emergencyPhone ?? ""} />
-                <Input
-                  label="Relationship"
-                  name="emergencyRelationship"
-                  defaultValue={employee.emergencyRelationship ?? ""}
-                  placeholder="e.g. Spouse"
-                />
-
-                <GroupHeading>Address</GroupHeading>
-
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <Input label="Address Line 1" name="address1" defaultValue={employee.address1 ?? ""} />
-                </div>
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <Input label="Address Line 2" name="address2" defaultValue={employee.address2 ?? ""} />
-                </div>
-
-                <Input label="City" name="city" defaultValue={employee.city ?? ""} />
-                <Input label="State / Province" name="state" defaultValue={employee.state ?? ""} />
-                <Input label="Zip Code" name="zipCode" defaultValue={employee.zipCode ?? ""} />
-                <Input label="Country" name="country" defaultValue={employee.country ?? ""} />
-              </div>
-
-              <div>
-                <Button type="submit" disabled={isPending}>
-                  {saveLabel("personal")}
-                </Button>
-              </div>
-            </div>
-          </Card>
-        </form>
-
-        {/* ── Pay & rules ─────────────────────────────────────────────────── */}
-        <form onSubmit={handlePay}>
-          <Card
-            title="Pay & Rules"
-            subtitle="The rule set computes the hours; the pay method decides whether punches drive pay at all"
-          >
-            <div className="flex flex-col gap-4">
-              {feedbackFor("pay")}
-
-              <div style={fieldGrid(3)}>
-                <SelectField label="Rule Set" name="ruleSetId" defaultValue={employee.ruleSetId}>
-                  {ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>)}
-                </SelectField>
-
-                <SelectField label="Shift" name="shiftId" defaultValue={employee.shiftId ?? ""}>
-                  <option value="">— None —</option>
-                  {shifts.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({fmtTime(s.startTime)} – {fmtTime(s.endTime)})
-                    </option>
-                  ))}
-                </SelectField>
-
-                <SelectField label="Holiday Rule" name="holidayRuleId" defaultValue={employee.holidayRuleId ?? ""}>
-                  <option value="">— None —</option>
-                  {holidayRules.map((r) => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </SelectField>
-
-                <SelectField label="Pay Category" name="payCategoryId" defaultValue={employee.payCategoryId ?? ""}>
-                  <option value="">— None —</option>
-                  {payCategories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.number}{c.description ? ` — ${c.description}` : ""}
-                    </option>
-                  ))}
-                </SelectField>
-
-                <SelectField label="Pay Type" name="payTypeId" defaultValue={employee.payTypeId ?? ""}>
-                  <option value="">— None —</option>
-                  {payTypes.map((pt) => (
-                    <option key={pt.id} value={pt.id}>
-                      {pt.number}{pt.description ? ` — ${pt.description}` : ""}
-                    </option>
-                  ))}
-                </SelectField>
-
-                <SelectField
-                  label="Pay Method"
-                  name="payType"
-                  value={payType}
-                  onChange={(e) => setPayType(e.target.value)}
-                >
-                  <option value="HOURLY">Hourly</option>
-                  <option value="SALARY">Salary</option>
-                </SelectField>
-
-                <Input
-                  label={payType === "HOURLY" ? "Pay Rate ($/hr)" : "Pay Rate ($/yr)"}
-                  name="payRate"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  defaultValue={employee.payRate != null ? Number(employee.payRate) : ""}
-                  placeholder="0.00"
-                />
-              </div>
-
-              <div>
-                <Button type="submit" disabled={isPending}>
-                  {saveLabel("pay")}
-                </Button>
-              </div>
-            </div>
-          </Card>
-        </form>
-
-        {/* ── Site access ─────────────────────────────────────────────────── */}
-        {employeeIsHrOrSysAdmin && (
-          <Card
-            title="Site Access"
-            subtitle="Which sites this HR user can see employees from"
-          >
-            <div className="flex flex-col gap-4">
-              {feedbackFor("site-access")}
-
-              <Banner
-                tone="info"
-                body={
-                  selectedSiteAccess.size === 0
-                    ? "No sites selected — this user can see employees at every site."
-                    : "Only the checked sites are visible to this user. Uncheck them all to grant every site."
-                }
-              />
-
-              <div className="grid gap-2 gap-x-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,30%)),1fr))]">
-                {sites.map((s) => (
-                  <div key={s.id} className="flex items-center py-1.5">
-                    <Checkbox
-                      id={`site-access-${s.id}`}
-                      label={s.name}
-                      disabled={!canManageSiteAccess}
-                      checked={selectedSiteAccess.has(s.id)}
-                      onChange={(next) => {
-                        const updated = new Set(selectedSiteAccess);
-                        if (next) updated.add(s.id);
-                        else updated.delete(s.id);
-                        setSelectedSiteAccess(updated);
-                        // Only this section's own result is stale now. Clearing
-                        // unconditionally would wipe the "Saved." a pay or
-                        // profile save just put on a card further up the page.
-                        setFeedback((f) => (f?.section === "site-access" ? null : f));
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {canManageSiteAccess ? (
-                <div>
-                  <Button
-                    type="button"
-                    disabled={siteAccessSaving}
-                    onClick={async () => {
-                      setSiteAccessSaving(true);
-                      setFeedback(null);
-                      const result = await updateHrSiteAccess({
-                        employeeId: employee.id,
-                        siteIds: Array.from(selectedSiteAccess),
-                      });
-                      setSiteAccessSaving(false);
-                      if (result.success) {
-                        setFeedback({ section: "site-access", tone: "success", text: "Site access saved." });
-                        router.refresh();
-                      } else {
-                        setFeedback({
-                          section: "site-access",
-                          tone: "error",
-                          text: result.error ?? "Failed to save.",
-                        });
-                      }
-                    }}
-                  >
-                    {siteAccessSaving ? "Saving…" : "Save Site Access"}
-                  </Button>
-                </div>
-              ) : (
-                <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                  Only HR Admin or System Admin users can edit site access.
-                </p>
-              )}
-            </div>
-          </Card>
-        )}
-
-        {/* ── Change history ──────────────────────────────────────────────── */}
-        <Card
-          title="Change History"
-          subtitle="Every field this record has had edited, newest first"
-          padding={0}
-        >
-          {/* The filters sit in a row of their own rather than in the card
-              header: the header does not wrap, and a select plus a three-way
-              switch next to the title is clipped the moment the sidebar is
-              open on a laptop. */}
-          {logs.length > 0 && (
-            <div
-              className="flex flex-wrap items-center gap-2.5 px-4 py-3"
-              style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+            {/* ── Employment ─────────────────────────────────────────────── */}
+            <Section
+              title="Employment"
+              subtitle="Site, department and supervisor decide whose queue this person's timesheets land in"
             >
-              <Select
-                aria-label="Field"
-                value={logField}
-                onChange={(e) => setLogField(e.target.value)}
-              >
-                <option value="">All fields</option>
-                {allLogFieldNames.map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </Select>
-              {/* Local, not a URL parameter: the whole history is already on
-                  the client and nobody links to "this record, last 7 days". */}
-              <SegmentedControl
-                ariaLabel="Date range"
-                size="sm"
-                items={[
-                  { value: "0", label: "All time" },
-                  { value: "30", label: "30 days" },
-                  { value: "7", label: "7 days" },
-                ]}
-                value={String(logDays)}
-                onChange={(v) => setLogDays(Number(v))}
-              />
-              <span
-                className="tabular ml-auto"
-                style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
-              >
-                {filteredLogs.length} {filteredLogs.length === 1 ? "change" : "changes"}
-              </span>
-            </div>
-          )}
+              <div className={styles.grid}>
+                <Field label="Full name" htmlFor="f-name" read={v.name} required>
+                  {text("name", { required: true })}
+                </Field>
+                <Field label="Email (Google login)" htmlFor="f-email" read={v.email}>
+                  {text("email", { type: "email" })}
+                </Field>
+                <Field label="Job title" htmlFor="f-jobTitle" read={v.jobTitle}>
+                  {text("jobTitle")}
+                </Field>
 
-          {filteredLogs.length === 0 ? (
-            <EmptyState
-              icon={<History className="h-8 w-8" />}
-              title={logs.length === 0 ? "No changes recorded yet" : "No changes in this range"}
-              body={
-                logs.length === 0
-                  ? "Edits made from this screen are written to the audit log and will appear here."
-                  : "Widen the date range, or switch back to all fields."
-              }
-            />
-          ) : (
-            <Table>
-              <THead>
-                <TR>
-                  <TH>When</TH>
-                  <TH>Changed By</TH>
-                  <TH>Change</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {filteredLogs.map((entry) => (
-                  <TR key={entry.id}>
-                    {/* One row per save, not per field: the fields that moved
-                        together moved for one reason, and splitting them makes
-                        a site transfer look like four unrelated edits. */}
-                    <TD
-                      numeric
-                      align="left"
-                      style={{ height: "auto", padding: "10px 14px", verticalAlign: "top", whiteSpace: "nowrap", color: "var(--text-secondary)" }}
-                    >
-                      {format(new Date(entry.createdAt), "MMM d, yyyy HH:mm")}
-                    </TD>
-                    <TD style={{ height: "auto", padding: "10px 14px", verticalAlign: "top", whiteSpace: "nowrap" }}>
-                      {entry.actorName}
-                    </TD>
-                    <TD style={{ height: "auto", padding: "10px 14px", verticalAlign: "top" }}>
-                      <span className="flex flex-col gap-1">
+                <Field label="Role" htmlFor="f-customRoleId" read={roleName(v.customRoleId)}>
+                  {pick(
+                    "customRoleId",
+                    <>
+                      {customRoles.filter((r) => r.isSystem).map((r) => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                      {customRoles.some((r) => !r.isSystem) && (
+                        <optgroup label="Custom roles">
+                          {customRoles.filter((r) => !r.isSystem).map((r) => (
+                            <option key={r.id} value={r.id}>{r.name}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </>,
+                  )}
+                </Field>
+                <Field label="Site" htmlFor="f-siteId" read={siteName(v.siteId) || employee.site.name}>
+                  {pick("siteId", sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>))}
+                </Field>
+                <Field label="Department" htmlFor="f-departmentId" read={deptName(v.departmentId)}>
+                  {pick(
+                    "departmentId",
+                    <>
+                      {filteredDepts.length === 0 && !v.departmentId && <option value="">No departments at this site</option>}
+                      {/* A record can sit in a department that is not linked to
+                          its site. It stays listed, so the field shows the real
+                          value instead of whichever option comes first. */}
+                      {v.departmentId && !filteredDepts.some((d) => d.id === v.departmentId) && (
+                        <option value={v.departmentId}>{deptName(v.departmentId)} (not linked to this site)</option>
+                      )}
+                      {filteredDepts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </>,
+                  )}
+                </Field>
+
+                <Field label="Supervisor" htmlFor="f-supervisorId" read={supervisorName(v.supervisorId) || "None"}>
+                  {pick(
+                    "supervisorId",
+                    <>
+                      <option value="">None</option>
+                      {employees
+                        .filter((e) => e.id !== employee.id)
+                        .map((e) => <option key={e.id} value={e.id}>{e.user.name}</option>)}
+                    </>,
+                  )}
+                </Field>
+                <Field
+                  label="Status"
+                  htmlFor="f-status"
+                  read={
+                    <span className={`${styles.status} ${styles.statusInline}`} data-tone={tone}>
+                      <span className={styles.dot} aria-hidden="true" />
+                      {statusWord}
+                    </span>
+                  }
+                >
+                  {pick(
+                    "status",
+                    <>
+                      <option value="active">Active</option>
+                      <option value="on-leave">On leave</option>
+                      <option value="inactive">Inactive</option>
+                    </>,
+                  )}
+                </Field>
+                {v.status === "inactive" ? (
+                  <Field label="Termination reason" htmlFor="f-terminationReason" read={v.terminationReason}>
+                    {text("terminationReason")}
+                  </Field>
+                ) : (
+                  <span aria-hidden="true" />
+                )}
+
+                <Field
+                  label="Adjusted hire date"
+                  htmlFor="f-adjustedHireDate"
+                  read={v.adjustedHireDate ? format(new Date(`${v.adjustedHireDate}T12:00:00`), "MMM d, yyyy") : ""}
+                  hint="Overrides the hire date for leave tiers, when the leave policy counts service from the adjusted hire date."
+                  readHint={v.adjustedHireDate ? undefined : "Leave tiers count from the hire date."}
+                >
+                  {text("adjustedHireDate", { type: "date" })}
+                </Field>
+              </div>
+            </Section>
+
+            {/* ── Pay & rules ────────────────────────────────────────────── */}
+            <Section
+              title="Pay & Rules"
+              subtitle="The rule set computes the hours; the pay method decides whether punches drive pay at all"
+            >
+              <div className={styles.grid}>
+                <Field label="Rule set" htmlFor="f-ruleSetId" read={ruleSets.find((r) => r.id === v.ruleSetId)?.name ?? employee.ruleSet.name}>
+                  {pick("ruleSetId", ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>))}
+                </Field>
+                <Field label="Shift" htmlFor="f-shiftId" read={shiftLabel(v.shiftId) || "None"}>
+                  {pick(
+                    "shiftId",
+                    <>
+                      <option value="">None</option>
+                      {shifts.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({fmtTime(s.startTime)} to {fmtTime(s.endTime)})
+                        </option>
+                      ))}
+                    </>,
+                  )}
+                </Field>
+                <Field label="Holiday rule" htmlFor="f-holidayRuleId" read={holidayRules.find((r) => r.id === v.holidayRuleId)?.name ?? "None"}>
+                  {pick(
+                    "holidayRuleId",
+                    <>
+                      <option value="">None</option>
+                      {holidayRules.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </>,
+                  )}
+                </Field>
+
+                <Field
+                  label="Pay category"
+                  htmlFor="f-payCategoryId"
+                  read={(() => {
+                    const c = payCategories.find((x) => x.id === v.payCategoryId);
+                    return c ? numbered(c) : "None";
+                  })()}
+                >
+                  {pick(
+                    "payCategoryId",
+                    <>
+                      <option value="">None</option>
+                      {payCategories.map((c) => <option key={c.id} value={c.id}>{numbered(c)}</option>)}
+                    </>,
+                  )}
+                </Field>
+                <Field
+                  label="Pay type"
+                  htmlFor="f-payTypeId"
+                  read={(() => {
+                    const t = payTypes.find((x) => x.id === v.payTypeId);
+                    return t ? numbered(t) : "None";
+                  })()}
+                >
+                  {pick(
+                    "payTypeId",
+                    <>
+                      <option value="">None</option>
+                      {payTypes.map((pt) => <option key={pt.id} value={pt.id}>{numbered(pt)}</option>)}
+                    </>,
+                  )}
+                </Field>
+                <Field label="Pay method" htmlFor="f-payType" read={v.payType === "SALARY" ? "Salary" : "Hourly"}>
+                  {pick(
+                    "payType",
+                    <>
+                      <option value="HOURLY">Hourly</option>
+                      <option value="SALARY">Salary</option>
+                    </>,
+                  )}
+                </Field>
+
+                <Field
+                  label={v.payType === "SALARY" ? "Pay rate (per year)" : "Pay rate (per hour)"}
+                  htmlFor="f-payRate"
+                  read={payRateText}
+                >
+                  {text("payRate", { type: "number", min: "0.01", step: "0.01", placeholder: "0.00", leadingIcon: <span style={{ color: "var(--text-tertiary)" }}>$</span> })}
+                </Field>
+              </div>
+            </Section>
+
+            {/* ── Badges & IDs ───────────────────────────────────────────── */}
+            <Section title="Badges & IDs" subtitle="What the kiosks, the WMS and ADP know this person by">
+              <div className={styles.grid}>
+                <Field label="Badge ID (WMS)" htmlFor="f-wmsId" read={v.wmsId} mono>
+                  {text("wmsId", { placeholder: "QR code badge ID" })}
+                </Field>
+                <Field
+                  label="Badge barcode"
+                  htmlFor="f-barcode"
+                  read={v.barcode}
+                  mono
+                  hint={barcodeHint}
+                  readHint={barcodeHint}
+                >
+                  {text("barcode", { placeholder: "10 digit code on the badge" })}
+                </Field>
+                <Field label="ADP Worker ID" htmlFor="f-adpWorkerId" read={v.adpWorkerId} mono>
+                  {text("adpWorkerId", { placeholder: "ADP Workforce Now ID" })}
+                </Field>
+              </div>
+            </Section>
+
+            {/* ── Personal & contact ─────────────────────────────────────── */}
+            <Section title="Personal & Contact" subtitle="Held encrypted and only read back on this screen">
+              <div className={styles.grid}>
+                <Field label="Phone 1" htmlFor="f-phone" read={v.phone}>
+                  {text("phone", { type: "tel" })}
+                </Field>
+                <Field label="Phone 2" htmlFor="f-phone2" read={v.phone2}>
+                  {text("phone2", { type: "tel" })}
+                </Field>
+                <span aria-hidden="true" />
+                <Field label="Gender" htmlFor="f-gender" read={v.gender}>
+                  {text("gender")}
+                </Field>
+                <Field label="Marital status" htmlFor="f-maritalStatus" read={v.maritalStatus}>
+                  {pick(
+                    "maritalStatus",
+                    <>
+                      <option value="">Not set</option>
+                      {MARITAL.map((m) => <option key={m} value={m}>{m}</option>)}
+                      {v.maritalStatus && !MARITAL.includes(v.maritalStatus) && (
+                        <option value={v.maritalStatus}>{v.maritalStatus}</option>
+                      )}
+                    </>,
+                  )}
+                </Field>
+              </div>
+
+              <div className={styles.group}>
+                <h3 className={styles.groupTitle}>Emergency contact</h3>
+                <div className={styles.grid}>
+                  <Field label="Name" htmlFor="f-emergencyContact" read={v.emergencyContact}>
+                    {text("emergencyContact")}
+                  </Field>
+                  <Field label="Phone" htmlFor="f-emergencyPhone" read={v.emergencyPhone}>
+                    {text("emergencyPhone", { type: "tel" })}
+                  </Field>
+                  <Field label="Relationship" htmlFor="f-emergencyRelationship" read={v.emergencyRelationship}>
+                    {text("emergencyRelationship", { placeholder: "Spouse, parent, friend" })}
+                  </Field>
+                </div>
+              </div>
+
+              <div className={styles.group}>
+                <h3 className={styles.groupTitle}>Address</h3>
+                {editing ? (
+                  <div className={`${styles.grid} ${styles.editing}`}>
+                    <Field label="Address line 1" htmlFor="f-address1" read="" className={styles.span2}>
+                      {text("address1")}
+                    </Field>
+                    <Field label="Address line 2" htmlFor="f-address2" read="">
+                      {text("address2")}
+                    </Field>
+                    <Field label="City" htmlFor="f-city" read="">
+                      {text("city")}
+                    </Field>
+                    <Field label="State or province" htmlFor="f-state" read="">
+                      {text("state")}
+                    </Field>
+                    <Field label="Zip code" htmlFor="f-zipCode" read="">
+                      {text("zipCode")}
+                    </Field>
+                    <Field label="Country" htmlFor="f-country" read="">
+                      {text("country")}
+                    </Field>
+                  </div>
+                ) : (
+                  // Read as an address, not as seven boxes.
+                  <div className={styles.grid}>
+                    <Field label="Mailing address" read={addressText} className={styles.span2}>
+                      {null}
+                    </Field>
+                  </div>
+                )}
+              </div>
+            </Section>
+
+            {/* ── Site access ────────────────────────────────────────────── */}
+            {employeeIsHrOrSysAdmin && (
+              <Section title="Site Access" subtitle="Which sites this HR user can see employees from">
+                {editing && canManageSiteAccess ? (
+                  <>
+                    <p className={styles.hint} style={{ margin: 0, font: "var(--type-body2)" }}>
+                      {draftAccess.size === 0
+                        ? "No sites checked, so this user sees employees at every site."
+                        : "Only the checked sites are visible to this user. Uncheck them all to grant every site."}
+                    </p>
+                    <div className={styles.checks}>
+                      {sites.map((s) => (
+                        <div key={s.id} className="flex items-center py-1.5">
+                          <Checkbox
+                            id={`site-access-${s.id}`}
+                            label={s.name}
+                            checked={draftAccess.has(s.id)}
+                            onChange={(next) => {
+                              const updated = new Set(draftAccess);
+                              if (next) updated.add(s.id);
+                              else updated.delete(s.id);
+                              setDraftAccess(updated);
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : access.size === 0 ? (
+                  <span className={styles.value}>Every site</span>
+                ) : (
+                  <div className={styles.chips}>
+                    {sites
+                      .filter((s) => access.has(s.id))
+                      .map((s) => <span key={s.id} className={styles.chip}>{s.name}</span>)}
+                  </div>
+                )}
+                {editing && !canManageSiteAccess && (
+                  <p className={styles.hint} style={{ margin: 0 }}>
+                    Only HR Admin or System Admin users can edit site access.
+                  </p>
+                )}
+              </Section>
+            )}
+
+            {/* ── Change history ─────────────────────────────────────────── */}
+            <section className={styles.card} aria-label="Change History">
+              <header className={styles.sectionHead}>
+                <div>
+                  <h2 className={styles.sectionTitle}>Change History</h2>
+                  <p className={styles.sectionSub}>Every field this record has had edited, newest first</p>
+                </div>
+              </header>
+              {logs.length > 0 && (
+                <div className={styles.historyBar}>
+                  <Select aria-label="Field" value={logField} onChange={(e) => setLogField(e.target.value)}>
+                    <option value="">All fields</option>
+                    {allLogFieldNames.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </Select>
+                  {/* Local, not a URL parameter: the whole history is already on
+                      the client and nobody links to "this record, last 7 days". */}
+                  <SegmentedControl
+                    ariaLabel="Date range"
+                    size="sm"
+                    items={[
+                      { value: "0", label: "All time" },
+                      { value: "30", label: "30 days" },
+                      { value: "7", label: "7 days" },
+                    ]}
+                    value={String(logDays)}
+                    onChange={(val) => setLogDays(Number(val))}
+                  />
+                  <span className="tabular ml-auto" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                    {filteredLogs.length} {filteredLogs.length === 1 ? "change" : "changes"}
+                  </span>
+                </div>
+              )}
+              {filteredLogs.length === 0 ? (
+                <EmptyState
+                  icon={<History className="h-8 w-8" />}
+                  title={logs.length === 0 ? "No changes recorded yet" : "No changes in this range"}
+                  body={
+                    logs.length === 0
+                      ? "Edits made from this screen are written to the audit log and will appear here."
+                      : "Widen the date range, or switch back to all fields."
+                  }
+                />
+              ) : (
+                <ul className={styles.historyList}>
+                  {/* One entry per save, not per field: the fields that moved
+                      together moved for one reason. */}
+                  {filteredLogs.map((entry) => (
+                    <li key={entry.id} className={styles.entry}>
+                      <div className={styles.entryWhen}>
+                        <span>{format(new Date(entry.createdAt), "MMM d, yyyy h:mm a")}</span>
+                        <span className={styles.entryWho}>{entry.actorName}</span>
+                      </div>
+                      <div className={styles.changes}>
                         {entry.fields.map((f, i) => (
-                          <span key={i} className="flex flex-wrap items-baseline gap-x-2">
-                            <span
-                              style={{
-                                font: "var(--type-body2)",
-                                fontWeight: "var(--weight-medium)",
-                                color: "var(--text-secondary)",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {f.field}
+                          <div key={i} className={styles.change}>
+                            <span className={styles.changeField}>{f.field}</span>
+                            <span className={styles.changeValues}>
+                              <span className={styles.before}>{shown(f.before)}</span>
+                              <ArrowRight className={styles.arrow} aria-label="changed to" />
+                              <span>{shown(f.after)}</span>
                             </span>
-                            <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                              <span style={{ textDecoration: "line-through" }}>{f.before}</span>
-                              {" → "}
-                              <span style={{ color: "var(--text-primary)" }}>{f.after}</span>
-                            </span>
-                          </span>
+                          </div>
                         ))}
-                      </span>
-                    </TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
-          )}
-        </Card>
-      </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+        </div>
+      </form>
+      </Editing.Provider>
+
+      <Toast message={toast.message} />
 
       {/* ── Temp password modal ───────────────────────────────────────────── */}
       {showPasswordModal && (
