@@ -2983,49 +2983,31 @@
   transform: translateX(-100%);
 }
 
+/* The hour lines are the header's ticks carried down the row: a faint line
+   at every label, one step apart. */
 .rb2 {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 2px 0;
+  padding: 6px 0;
+  background-image: linear-gradient(to right, var(--stroke-divider) 1px, transparent 1px);
+  background-size: var(--rb-step, 12.5%) 100%;
+  background-repeat: repeat-x;
 }
 
-.rbSchedRow {
-  position: relative;
-  height: 5px;
-}
-
-/* The scheduled hours: a thin bracket, open at the bottom. */
-.rbSchedLine {
+/* The scheduled shift, behind both bars, a little taller than they are. */
+.rbShift {
   position: absolute;
   top: 0;
   bottom: 0;
-  border: 1.5px solid var(--stroke-default);
-  border-bottom: 0;
-  border-radius: 3px 3px 0 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ta-track) 75%, transparent);
 }
 
 .rbLane {
   position: relative;
   height: 8px;
-}
-
-.rbBg {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  border-radius: 999px;
-  background: var(--ta-track);
-}
-
-.rbAhead {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  border: 1px dashed var(--stroke-default);
-  border-radius: 999px;
 }
 
 .rbPiece {
@@ -3043,6 +3025,23 @@
 .rbPiece[data-last="true"] {
   border-top-right-radius: 999px;
   border-bottom-right-radius: 999px;
+}
+
+/* Runs off the scale (or in from yesterday): that end fades, so it reads as
+   coming from beyond the edge rather than starting or stopping there. */
+.rbPiece[data-cut="start"] {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 24px);
+  mask-image: linear-gradient(to right, transparent, #000 24px);
+}
+
+.rbPiece[data-cut="end"] {
+  -webkit-mask-image: linear-gradient(to left, transparent, #000 24px);
+  mask-image: linear-gradient(to left, transparent, #000 24px);
+}
+
+.rbPiece[data-cut="both"] {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
 }
 
 .rbPiece[data-kind="inside"] {
@@ -3064,12 +3063,11 @@
   box-shadow: 0 0 0 1px var(--fill-hover);
 }
 
-/* Exactly the lanes' height: from the top of the first bar to the bottom
-   of the last, so the bars meet it rather than stop short of it. */
+/* The height of the shift band, less a hair, so it reads as a mark on it. */
 .rbNow2 {
   position: absolute;
   z-index: 2;
-  top: 11px;
+  top: 2px;
   bottom: 2px;
   width: 2px;
   margin-left: -1px;

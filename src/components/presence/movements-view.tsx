@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowUp, ChevronDown, ChevronRight, UserRoundX } from "lucide-react";
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { getOnSiteMovements } from "@/actions/presence.actions";
@@ -118,6 +118,10 @@ export function statusOfDay(v: PersonDayView, isToday: boolean, hasGate: boolean
 function flagChips(v: PersonDayView, isToday: boolean): { label: string; tone: "warning" | "error" | "neutral" | "info" }[] {
   const out: { label: string; tone: "warning" | "error" | "neutral" | "info" }[] = [];
   const has = (f: MovementFlag) => v.flags.includes(f);
+  // A night shift carries a few hours past midnight. Longer than a double
+  // shift since the time clock last heard from them is a clock out missed.
+  if (v.clockCarried && v.clockCarried.until - v.clockCarried.since > OPEN_CLOCK_FLAG_HOURS * HOUR)
+    out.push({ label: "On the clock since yesterday", tone: "warning" });
   // Today the status badge says it; on a finished day the chip carries how long.
   if (!isToday && has("INSIDE_OFF_CLOCK"))
     out.push({ label: `Inside, not clocked in ${fmtDuration(v.lanes.totals.insideOffClockMin)}`, tone: "warning" });
@@ -417,45 +421,82 @@ function PersonRow({
 /* ── The day ribbon ─────────────────────────────────────────────────────── */
 
 const HOUR = 60 * 60 * 1000;
+/** On the clock this long without a scan, carried in from yesterday, gets a chip. */
+const OPEN_CLOCK_FLAG_HOURS = 16;
+/** Room left before the first and after the last thing on the scale. */
+const AXIS_PAD = 30 * 60 * 1000;
 
 interface Axis {
   from: number;
   to: number;
   ticks: number[];
+  /** One step between labels, as a share of the width, for the hour lines. */
+  stepShare: string;
   pct: (t: number) => string;
   width: (a: number, b: number) => string;
 }
 
 /**
  * One clock for the whole table, so every person's day bar lines up with the
- * next and a glance down the page shows who left at noon. It spans whatever
- * part of the day anybody on the list was scheduled or seen, starts on the
- * first busy hour and ends on a labelled one, never less than eight hours.
+ * next and a glance down the page shows who left at noon. It spans the part
+ * of the day most people on the list were scheduled or seen (from the 5th
+ * percentile of their starts to the 95th of their ends), plus now, with half
+ * an hour of room each side. It starts and ends on an hour and is never
+ * less than eight hours.
+ *
+ * <p>Outliers do not stretch it. One test badge at midnight, or one person
+ * still clocked in from last night, used to pull the whole table back to
+ * 12 AM and squeeze everybody's shift into the middle. Whatever falls off the
+ * scale now fades in from the edge instead, and the times in the row and the
+ * detail below it stay exact.
  */
 function dayAxis(views: PersonDayView[], data: SiteDay, now: number): Axis {
   const dayStart = Date.parse(data.dayStart);
   const dayEnd = Date.parse(data.dayEnd);
   const isToday = data.day === data.today;
-  let lo = Infinity;
-  let hi = -Infinity;
-  const see = (t: number | null | undefined) => {
-    if (t == null || !Number.isFinite(t)) return;
-    lo = Math.min(lo, t);
-    hi = Math.max(hi, t);
-  };
+  // Each person's day as one span, from the first thing on their row to the
+  // last: a scan, a stretch at a reader (an open one runs to now), their shift.
+  const starts: number[] = [];
+  const ends: number[] = [];
   for (const v of views) {
-    for (const s of v.scans) see(Date.parse(s.at));
+    let a = Infinity;
+    let b = -Infinity;
+    const see = (t: number) => {
+      if (!Number.isFinite(t)) return;
+      a = Math.min(a, t);
+      b = Math.max(b, t);
+    };
+    // The system's own end of day scan out is not a time anybody was there.
+    for (const s of v.scans) if (!s.automatic) see(Date.parse(s.at));
+    for (const piece of [...v.lanes.gate, ...v.lanes.clock]) {
+      // A stretch carried from yesterday starts at midnight only on paper, and
+      // one never closed, or closed by the system, ends there only on paper.
+      if (piece.startScan) see(piece.start);
+      if (!piece.closedBySystem && (!piece.open || isToday)) see(piece.end);
+    }
     if (v.schedule) {
-      see(v.schedule.start);
+      see(Math.max(v.schedule.start, dayStart));
       see(Math.min(v.schedule.end, dayEnd));
     }
-    if (v.lines.some((l) => l.carried)) see(dayStart);
+    if (Number.isFinite(a)) {
+      starts.push(a);
+      ends.push(b);
+    }
   }
-  if (isToday) see(Math.min(now, dayEnd));
-  if (!Number.isFinite(lo)) {
+  let lo: number;
+  let hi: number;
+  if (starts.length === 0) {
     lo = dayStart + 6 * HOUR;
     hi = dayStart + 18 * HOUR;
+  } else {
+    // Most people's day, not everybody's: one test badge at midnight or one
+    // double shift should not squeeze the whole table into its middle.
+    lo = percentile(starts, 0.05) - AXIS_PAD;
+    hi = percentile(ends, 0.95) + AXIS_PAD;
   }
+  if (isToday && now > lo && now < dayEnd) hi = Math.max(hi, Math.min(now + AXIS_PAD, dayEnd));
+  lo = Math.max(lo, dayStart);
+  hi = Math.min(hi, dayEnd);
   if (hi - lo < 8 * HOUR) {
     hi = Math.min(lo + 8 * HOUR, dayEnd);
     lo = Math.max(hi - 8 * HOUR, dayStart);
@@ -463,18 +504,38 @@ function dayAxis(views: PersonDayView[], data: SiteDay, now: number): Axis {
   const from = Math.max(dayStart, Math.floor(lo / HOUR) * HOUR);
   const rough = hi - from;
   const step = rough <= 10 * HOUR ? 1 * HOUR : rough <= 16 * HOUR ? 2 * HOUR : 3 * HOUR;
-  const to = Math.min(dayEnd, from + Math.ceil(rough / step) * step);
-  const span = Math.max(to - from, HOUR);
+  // Ends on the hour after the last thing, not on the next label, which could
+  // leave most of a step empty. A label too close to that end to fit is left
+  // off; its hour line stays.
+  const to = Math.min(dayEnd, Math.max(from + HOUR, Math.ceil(hi / HOUR) * HOUR));
+  const span = to - from;
   const ticks: number[] = [];
-  for (let t = from; t <= to; t += step) ticks.push(t);
+  for (let t = from; t <= to; t += step) if (t === to || to - t >= step / 2) ticks.push(t);
   const clamp = (t: number) => Math.min(Math.max(t, from), to);
   return {
     from,
     to,
     ticks,
+    stepShare: `${((step / span) * 100).toFixed(3)}%`,
     pct: (t) => `${(((clamp(t) - from) / span) * 100).toFixed(3)}%`,
     width: (a, b) => `${(((clamp(b) - clamp(a)) / span) * 100).toFixed(3)}%`,
   };
+}
+
+const weekdayFmt = new Map<string, Intl.DateTimeFormat>();
+function weekdayLabel(ms: number, tz: string): string {
+  let f = weekdayFmt.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" });
+    weekdayFmt.set(tz, f);
+  }
+  return f.format(new Date(ms));
+}
+
+/** The value a share of the list sits at or below, nearest rank. */
+function percentile(values: number[], share: number): number {
+  const sorted = [...values].sort((x, y) => x - y);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(share * sorted.length) - 1))];
 }
 
 const hourFmt = new Map<string, Intl.DateTimeFormat>();
@@ -488,11 +549,14 @@ function hourLabel(ms: number, tz: string): string {
 }
 
 /**
- * A person's day at a glance, drawn the way the employee panel draws it: the
- * scheduled hours as a thin line above, the gate and the time clock as two
- * rounded bars, a meal as a notch in the clock bar, and, today, both bars
- * stopping at now with the rest of the shift as an outline. Every scan is in
- * the detail under the row.
+ * A person's day at a glance: the scheduled shift as a soft band behind
+ * everything, the gate and the time clock as two rounded bars on it, a meal
+ * as a notch in the clock bar, and, today, a line at now. The band is the
+ * same shape on every row that has a shift, so a gap in it reads as missing
+ * time at a glance and a bar outside it as time off schedule. Faint hour
+ * lines carry the header's scale down the rows. Time carried in from
+ * yesterday enters from the left edge, faded, rather than starting anywhere.
+ * Every scan is in the detail under the row.
  */
 function Ribbon({
   view: v,
@@ -510,13 +574,8 @@ function Ribbon({
   now: number;
 }) {
   const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
-  const clampNow = Math.min(Math.max(now, axis.from), axis.to);
-  const recordedTo = isToday ? clampNow : axis.to;
   const nowAt = isToday && now > axis.from && now < axis.to ? axis.pct(now) : null;
-  const ahead =
-    isToday && v.schedule && v.schedule.end > recordedTo
-      ? { start: Math.max(recordedTo, v.schedule.start), end: v.schedule.end }
-      : null;
+  const since = v.clockCarried ? `${weekdayLabel(v.clockCarried.since, tz)} ${time(v.clockCarried.since)}` : "yesterday";
   // A stretch still running is pinned to now from the right, so a meal that
   // has only just started grows back into the bar, never past the now line.
   const place = (s: { start: number; end: number; open: boolean }) =>
@@ -524,28 +583,34 @@ function Ribbon({
       ? { right: `calc(100% - ${axis.pct(s.end)})`, width: axis.width(s.start, s.end) }
       : { left: axis.pct(s.start), width: axis.width(s.start, s.end) };
   const clock = [...v.lanes.clock].sort((a, b) => a.start - b.start);
+  // Off the scale at either end, or carried in from yesterday: that end fades.
+  const cut = (s: { start: number; end: number; startScan: unknown }) => {
+    const before = !s.startScan || s.start < axis.from;
+    const after = s.end > axis.to;
+    return before && after ? "both" : before ? "start" : after ? "end" : undefined;
+  };
   const until = (s: { end: number; open: boolean }) =>
     s.open ? (isToday ? "now" : "the end of the day") : time(s.end);
 
   const lane = (key: string, children: ReactNode) => (
     <span className={styles.rbLane} key={key}>
-      <span className={styles.rbBg} style={{ width: axis.width(axis.from, recordedTo) }} />
-      {ahead && <span className={styles.rbAhead} style={{ left: axis.pct(ahead.start), width: axis.width(ahead.start, ahead.end) }} />}
       {children}
     </span>
   );
 
   return (
-    <span className={styles.rb2} data-single={hasGate ? undefined : "true"}>
-      <span className={styles.rbSchedRow}>
-        {v.schedule && (
-          <span
-            className={styles.rbSchedLine}
-            style={{ left: axis.pct(v.schedule.start), width: axis.width(v.schedule.start, v.schedule.end) }}
-            title={`Scheduled ${time(v.schedule.start)} to ${time(v.schedule.end)}`}
-          />
-        )}
-      </span>
+    <span
+      className={styles.rb2}
+      data-single={hasGate ? undefined : "true"}
+      style={{ "--rb-step": axis.stepShare } as CSSProperties}
+    >
+      {v.schedule && (
+        <span
+          className={styles.rbShift}
+          style={{ left: axis.pct(v.schedule.start), width: axis.width(v.schedule.start, v.schedule.end) }}
+          title={`Scheduled ${time(v.schedule.start)} to ${time(v.schedule.end)}`}
+        />
+      )}
       {hasGate &&
         lane(
           "gate",
@@ -554,27 +619,31 @@ function Ribbon({
               key={g.start}
               className={styles.rbPiece}
               data-kind="inside"
-              data-first="true"
-              data-last={g.open && isToday ? undefined : "true"}
+              data-first={cut(g) === "start" || cut(g) === "both" ? undefined : "true"}
+              data-cut={cut(g)}
+              data-last={(g.open && isToday) || cut(g) === "end" || cut(g) === "both" ? undefined : "true"}
               style={place(g)}
-              title={`Inside ${time(g.start)} to ${until(g)}`}
+              title={`Inside ${g.startScan ? time(g.start) : "since yesterday"} to ${until(g)}`}
             />
           )),
         )}
       {lane(
         "clock",
         clock.map((c, i) => {
-          const first = i === 0 || clock[i - 1].end !== c.start;
-          const last = i === clock.length - 1 || clock[i + 1].start !== c.end;
+          const carried = !c.startScan;
+          const edge = cut(c);
+          const first = edge !== "start" && edge !== "both" && (i === 0 || clock[i - 1].end !== c.start);
+          const last = edge !== "end" && edge !== "both" && (i === clock.length - 1 || clock[i + 1].start !== c.end);
           return (
             <span
               key={c.start}
               className={styles.rbPiece}
               data-kind={c.kind === "WORK" ? "work" : "meal"}
               data-first={first ? "true" : undefined}
+              data-cut={edge}
               data-last={last && !(c.open && isToday) ? "true" : undefined}
               style={place(c)}
-              title={`${c.kind === "WORK" ? "On the clock" : c.kind === "MEAL" ? "Meal" : "Break"} ${time(c.start)} to ${until(c)}`}
+              title={`${c.kind === "WORK" ? "On the clock" : c.kind === "MEAL" ? "Meal" : "Break"} ${carried ? `since ${since}` : time(c.start)} to ${until(c)}`}
             />
           );
         }),

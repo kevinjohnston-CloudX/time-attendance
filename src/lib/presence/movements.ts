@@ -110,6 +110,12 @@ export interface PersonDayView {
   lastOut: number | null;
   /** When anything last happened, for sorting by latest activity. */
   lastActivity: number | null;
+  /**
+   * The day opened with them already on the clock: when the time clock last
+   * heard from them before it, and when that stretch ended (now, if it has
+   * not). Null otherwise.
+   */
+  clockCarried: { since: number; until: number } | null;
 }
 
 export function buildPersonDay(
@@ -256,6 +262,10 @@ export function buildPersonDay(
   add("ON_CLOCK_NOW", isToday && nowState.clock === "WORK");
   add("SEEN", scans.some(isShownScan));
 
+  const carriedClock = lanes.clock.find((c) => !c.startScan);
+  const clockCarried =
+    carriedClock && carry.clock ? { since: Date.parse(carry.clock.at), until: carriedClock.end } : null;
+
   const shown = scans.filter(isShownScan);
   const last = shown.length ? Date.parse(shown[shown.length - 1].at) : null;
 
@@ -276,6 +286,7 @@ export function buildPersonDay(
     firstIn,
     lastOut,
     lastActivity: last,
+    clockCarried,
   };
 }
 
