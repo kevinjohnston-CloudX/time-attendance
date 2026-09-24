@@ -76,9 +76,11 @@ import {
   StickyNote,
   Check,
   RefreshCw,
+  SlidersHorizontal,
   Users,
 } from "lucide-react";
 import { RefusedScansNotice } from "@/components/payroll/refused-scans-notice";
+import grid from "./timecard.module.css";
 
 /**
  * The Timecards workspace, as the portal design lays it out.
@@ -351,19 +353,29 @@ function reasonName(rc: { label: string }): string {
  * boxes, which is the thing `.ta-cell` exists to avoid.
  */
 function gridSelectStyle(pending: boolean, width: number): React.CSSProperties {
+  // Quiet until touched (grid.ghostSelect draws the box on hover and focus):
+  // a boxed dropdown on every row is what made the grid read as a
+  // spreadsheet. A queued pick keeps its amber box, so it is never missed.
   return {
     width,
-    height: 24,
-    padding: "0 4px",
+    height: 28,
+    padding: "0 6px",
     boxSizing: "border-box",
     borderRadius: "var(--radius-s)",
-    border: `1px solid ${pending ? "var(--stroke-warning)" : "var(--stroke-secondary)"}`,
-    background: pending ? "var(--surface-warning)" : "var(--surface-card)",
-    color: "var(--text-primary)",
+    border: `1px solid ${pending ? "var(--stroke-warning)" : "transparent"}`,
+    background: pending ? "var(--surface-warning)" : "transparent",
     font: "var(--type-body2)",
     cursor: "pointer",
   };
 }
+
+/** The grid's one header row: quiet, on the card's own white, one hairline under it. */
+const GRID_HEAD: React.CSSProperties = {
+  height: 36,
+  background: "var(--surface-card)",
+  color: "var(--text-tertiary)",
+  borderBottom: "1px solid var(--stroke-divider)",
+};
 
 /**
  * The bare button a grid cell is made of: no chrome until the cursor is on it,
@@ -753,6 +765,25 @@ export function TimecardViewer({
     if (match) navigate(match.id);
     setShowCalendar(false);
   }
+
+  // The Filters panel, closed by a click anywhere outside it.
+  const [showFilters, setShowFilters] = useState(false);
+  const filtersRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showFilters) return;
+    function onDown(e: MouseEvent) {
+      if (filtersRef.current && !filtersRef.current.contains(e.target as Node)) setShowFilters(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setShowFilters(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [showFilters]);
 
   // Close calendar when clicking outside
   useEffect(() => {
@@ -1564,16 +1595,6 @@ export function TimecardViewer({
   // +1 if pay codes column exists, +1 if reason codes column exists, +1 if delete column shown
   const colCount = 9 + (payCodes.length > 0 ? 1 : 0) + (reasonCodes.length > 0 ? 1 : 0) + (timecard?.employee.ruleSet.autoDeductMeal ? 1 : 0) + (canDeleteManual ? 1 : 0);
 
-  // The column groups the grid's first header row spans: the day, what the
-  // time clock recorded, and the hours paid for it, then the day's meal
-  // waiver, codes, notes and delete. Derived from the same optional columns
-  // as colCount so the two can never drift apart.
-  const trailColSpan =
-    (timecard?.employee.ruleSet.autoDeductMeal ? 1 : 0) +
-    (payCodes.length > 0 ? 1 : 0) +
-    (reasonCodes.length > 0 ? 1 : 0) +
-    1 +
-    (canDeleteManual ? 1 : 0);
 
   const canApprove =
     timecard &&
@@ -1677,9 +1698,13 @@ export function TimecardViewer({
     return `${format(s, "MMM d")} – ${format(e, "MMM d, yyyy")}`;
   })();
 
-  // The list's filters that are on, for the one "Clear" that undoes them.
+  // The list's filters that are on, for the one "Clear all" that undoes them,
+  // and how many of the ones inside Filters are, for its button. Status set
+  // from the quick views counts too: it is the same filter.
   const listNarrowed =
     statusFilter !== "ALL" || payTypeFilter !== "ALL" || exceptionFilter !== "ALL" || !activeOnly || !!search.trim();
+  const filtersOn =
+    Number(statusFilter !== "ALL") + Number(payTypeFilter !== "ALL") + Number(exceptionFilter !== "ALL") + Number(!activeOnly);
 
   return (
     // The whole window, as a workspace: the header and the pay period control
@@ -1848,25 +1873,82 @@ export function TimecardViewer({
           className="flex min-h-0 flex-col overflow-hidden"
           style={{ background: "var(--surface-card)", borderRadius: "var(--radius-l)", boxShadow: "var(--shadow-card)" }}
         >
-          {/* The count is the filtered one, not the total. "No employees" and
-              "no employees matching Submitted at this site" look identical
-              without it. */}
-          <div className="flex shrink-0 items-baseline justify-between gap-2 px-4 pb-2.5 pt-3.5">
-            <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>Employees</span>
-            <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-              {filteredEmployees.length.toLocaleString("en-US")}
-            </span>
-          </div>
-
-          <div className="flex shrink-0 flex-col gap-2.5 px-4 pb-3" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
-            {/* Wrapped: the field sizes itself with a flex basis, which in
-                this column would become its height. */}
-            <div className="flex">
-              <SearchInput value={search} onValueChange={setSearch} placeholder="Name, ID or department" width={268} />
+          {/* A slim top, so the list gets the height: the title and count,
+              the search with one Filters button beside it, and the three
+              quick views. Status, pay type, exceptions and "active only"
+              open from Filters, which counts how many are on. The count by
+              the title is the filtered one, not the total. */}
+          <div className="flex shrink-0 flex-col gap-2 px-3 pb-2.5 pt-3" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
+            <div className="flex items-baseline justify-between gap-2 px-1">
+              <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>Employees</span>
+              <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                {filteredEmployees.length.toLocaleString("en-US")}
+              </span>
             </div>
-            {/* The three views most visits start from. The Status pill below
-                has every status, and both write the same filter, so a status
-                no view names lights none of them. */}
+            <div className="relative flex items-center gap-1.5" ref={filtersRef}>
+              <div className="flex min-w-0 flex-1">
+                <SearchInput value={search} onValueChange={setSearch} placeholder="Search name or ID" width={196} />
+              </div>
+              <Button
+                hierarchy={filtersOn > 0 ? "primary" : "secondary"}
+                size="sm"
+                onClick={() => setShowFilters((v) => !v)}
+                aria-expanded={showFilters}
+                aria-haspopup="dialog"
+                leadingIcon={<SlidersHorizontal className="h-3.5 w-3.5" />}
+                title="Filter by status, pay type or exceptions"
+              >
+                {filtersOn > 0 ? `Filters ${filtersOn}` : "Filters"}
+              </Button>
+              {showFilters && (
+                <div
+                  role="dialog"
+                  aria-label="Filter employees"
+                  className="ta-modal absolute right-0 top-full z-30 mt-1.5 flex w-64 flex-col gap-3 rounded-lg p-3.5"
+                >
+                  {[
+                    { label: "Status", value: statusFilter, set: setStatusFilter, all: "All statuses", options: STATUS_FILTER_OPTIONS },
+                    { label: "Pay type", value: payTypeFilter, set: setPayTypeFilter, all: "All pay types", options: PAY_TYPE_FILTER_OPTIONS },
+                    { label: "Exceptions", value: exceptionFilter, set: setExceptionFilter, all: "Any or none", options: EXCEPTION_FILTER_OPTIONS },
+                  ].map((f) => (
+                    <label key={f.label} className="flex flex-col gap-1">
+                      <span style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>{f.label}</span>
+                      <Select value={f.value} onChange={(e) => f.set(e.target.value)} style={{ width: "100%" }}>
+                        <option value="ALL">{f.all}</option>
+                        {f.options.map((o) => (
+                          <option key={o.id} value={o.id}>
+                            {o.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </label>
+                  ))}
+                  <Checkbox checked={activeOnly} onChange={setActiveOnly} label="Active employees only" />
+                  <div className="flex items-center justify-between gap-2 pt-1" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+                    <Button
+                      hierarchy="link"
+                      size="sm"
+                      disabled={!listNarrowed}
+                      onClick={() => {
+                        setSearch("");
+                        setStatusFilter("ALL");
+                        setPayTypeFilter("ALL");
+                        setExceptionFilter("ALL");
+                        setActiveOnly(true);
+                      }}
+                    >
+                      Clear all
+                    </Button>
+                    <Button size="sm" onClick={() => setShowFilters(false)}>
+                      Done
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+            {/* The three views most visits start from. Status in Filters has
+                every status, and both write the same filter, so a status no
+                view names lights none of them. */}
             <SegmentedControl
               size="sm"
               fullWidth
@@ -1875,47 +1957,6 @@ export function TimecardViewer({
               value={VIEW_SEGMENTS.some((v) => v.value === statusFilter) ? statusFilter : ""}
               onChange={setStatusFilter}
             />
-            <div className="flex flex-wrap items-center gap-1.5">
-              <FilterSelectChip
-                label="Status"
-                allLabel="All statuses"
-                value={statusFilter === "ALL" ? "" : statusFilter}
-                options={STATUS_FILTER_OPTIONS}
-                onChange={(v) => setStatusFilter(v || "ALL")}
-              />
-              <FilterSelectChip
-                label="Pay type"
-                allLabel="All pay types"
-                value={payTypeFilter === "ALL" ? "" : payTypeFilter}
-                options={PAY_TYPE_FILTER_OPTIONS}
-                onChange={(v) => setPayTypeFilter(v || "ALL")}
-              />
-              <FilterSelectChip
-                label="Exceptions"
-                allLabel="Any or none"
-                value={exceptionFilter === "ALL" ? "" : exceptionFilter}
-                options={EXCEPTION_FILTER_OPTIONS}
-                onChange={(v) => setExceptionFilter(v || "ALL")}
-              />
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <Checkbox checked={activeOnly} onChange={setActiveOnly} label="Active employees only" />
-              {listNarrowed && (
-                <Button
-                  hierarchy="link"
-                  size="sm"
-                  onClick={() => {
-                    setSearch("");
-                    setStatusFilter("ALL");
-                    setPayTypeFilter("ALL");
-                    setExceptionFilter("ALL");
-                    setActiveOnly(true);
-                  }}
-                >
-                  Clear
-                </Button>
-              )}
-            </div>
           </div>
 
           <div className="ta-scroll min-h-0 flex-1 overflow-y-auto pb-2">
@@ -2289,51 +2330,25 @@ export function TimecardViewer({
                       Row two sticks 24px down so both rows stay visible over a
                       fortnight of scrolling — a group label that scrolls away
                       takes the meaning of the columns with it. */}
+                  {/* One light header row: the column names say what each
+                      group is, so the old "Time clock" and "Paid hours" row,
+                      the grey band and the vertical rules between groups
+                      went, and the grid reads as a list, not a spreadsheet. */}
                   <THead>
                     <TR>
-                      <TH colSpan={2} style={{ height: 24, borderBottom: 0, padding: "6px 12px 0" }} />
-                      <TH
-                        colSpan={2}
-                        align="center"
-                        style={{
-                          height: 24,
-                          borderBottom: 0,
-                          padding: "6px 4px 0",
-                          color: "var(--text-tertiary)",
-                          borderLeft: "1px solid var(--stroke-secondary)",
-                        }}
-                      >
-                        Time clock
-                      </TH>
-                      <TH
-                        colSpan={4}
-                        align="center"
-                        style={{
-                          height: 24,
-                          borderBottom: 0,
-                          padding: "6px 12px 0",
-                          color: "var(--text-tertiary)",
-                          borderLeft: "1px solid var(--stroke-secondary)",
-                        }}
-                      >
-                        Paid hours
-                      </TH>
-                      <TH colSpan={trailColSpan} style={{ height: 24, borderBottom: 0 }} />
-                    </TR>
-                    <TR>
-                      <TH style={{ width: 28, padding: "0 0 0 8px", top: 24 }} />
-                      <TH style={{ top: 24 }}>Day</TH>
-                      <TH style={{ top: 24, borderLeft: "1px solid var(--stroke-secondary)" }}>Clock in</TH>
-                      <TH style={{ top: 24 }}>Clock out</TH>
-                      <TH numeric style={{ top: 24, borderLeft: "1px solid var(--stroke-secondary)" }}>Regular</TH>
-                      <TH numeric style={{ top: 24 }}>Overtime</TH>
-                      <TH numeric style={{ top: 24 }}>Double</TH>
-                      <TH numeric style={{ paddingRight: 32, top: 24 }}>Total</TH>
-                      {timecard?.employee.ruleSet.autoDeductMeal && <TH style={{ top: 24 }}>Meal break</TH>}
-                      {payCodes.length > 0 && <TH style={{ paddingLeft: 8, paddingRight: 8, top: 24, borderLeft: "1px solid var(--stroke-secondary)" }}>Pay code</TH>}
-                      {reasonCodes.length > 0 && <TH style={{ paddingLeft: 8, paddingRight: 8, top: 24 }}>Reason</TH>}
-                      <TH align="center" style={{ width: 28, paddingLeft: 4, paddingRight: 4, top: 24 }}>Notes</TH>
-                      {canDeleteManual && <TH style={{ width: 32, paddingLeft: 4, paddingRight: 4, top: 24 }} />}
+                      <TH style={{ ...GRID_HEAD, width: 28, padding: "0 0 0 8px" }} />
+                      <TH style={GRID_HEAD}>Day</TH>
+                      <TH style={GRID_HEAD}>Clock in</TH>
+                      <TH style={GRID_HEAD}>Clock out</TH>
+                      <TH numeric style={{ ...GRID_HEAD, paddingLeft: 24 }}>Regular</TH>
+                      <TH numeric style={GRID_HEAD}>Overtime</TH>
+                      <TH numeric style={GRID_HEAD}>Double</TH>
+                      <TH numeric style={{ ...GRID_HEAD, paddingRight: 32 }}>Total</TH>
+                      {timecard?.employee.ruleSet.autoDeductMeal && <TH style={GRID_HEAD}>Meal break</TH>}
+                      {payCodes.length > 0 && <TH style={{ ...GRID_HEAD, paddingLeft: 8, paddingRight: 8 }}>Pay code</TH>}
+                      {reasonCodes.length > 0 && <TH style={{ ...GRID_HEAD, paddingLeft: 8, paddingRight: 8 }}>Reason</TH>}
+                      <TH align="center" style={{ ...GRID_HEAD, width: 28, paddingLeft: 4, paddingRight: 4 }}>Notes</TH>
+                      {canDeleteManual && <TH style={{ ...GRID_HEAD, width: 32, paddingLeft: 4, paddingRight: 4 }} />}
                     </TR>
                   </THead>
                   <tbody>
@@ -2342,6 +2357,15 @@ export function TimecardViewer({
                       const isSalaryEmployee =
                         (timecard?.employee.payType ?? listEmpForSalary?.payType) === "SALARY";
                       const SALARY_VIRTUAL_MINS = 480;
+                      // Pay weeks, counted from the first day on screen (the
+                      // period's start, or the custom range's), the same weeks
+                      // the summary's Week view adds up. Labelled only when
+                      // there is more than one, so a weekly card has none.
+                      const periodEntryForWeeks = timecard ? timecard.payPeriod : sortedPeriods.find((p) => p.id === selectedPeriodId);
+                      const lastPeriodDay = periodEntryForWeeks ? addDays(parseUtcDate(periodEntryForWeeks.endDate), -1) : days[days.length - 1];
+                      const firstDay = days[0];
+                      const dayIndex = (d: Date) => Math.round((d.getTime() - firstDay.getTime()) / 86_400_000);
+                      const multiWeek = !!firstDay && dayIndex(lastPeriodDay) >= 7;
                       return days.map((day) => {
                       const dayKey = format(day, "yyyy-MM-dd");
                       const dayPunches = punchesForDay(day);
@@ -2349,14 +2373,9 @@ export function TimecardViewer({
                       const isWeekend = [0, 6].includes(day.getDay());
                       const isExpanded = expandedDays.has(dayKey);
                       const isTodayRow = isToday(day);
-                      // Show a week separator before each Monday (except the very first row)
-                      const isMonday = day.getDay() === 1;
-                      // Compared in the same yyyy-MM-dd form dayKey is built in.
-                      // The previous test put an ISO timestamp against a date
-                      // string, so it never matched and a period starting on a
-                      // Monday opened with a week rule above its first row.
-                      const isFirstDay = format(days[0], "yyyy-MM-dd") === dayKey;
-                      const showWeekSeparator = isMonday && !isFirstDay;
+                      const offset = dayIndex(day);
+                      const startsWeek = multiWeek && offset % 7 === 0;
+                      const weekEnd = new Date(Math.min(addDays(day, 6).getTime(), lastPeriodDay.getTime()));
 
                       const buckets: Record<string, number> = {};
                       for (const seg of daySegments) {
@@ -2424,14 +2443,19 @@ export function TimecardViewer({
 
                       return (
                         <React.Fragment key={dayKey}>
-                          {/* Week separator */}
-                          {showWeekSeparator && (
-                            <tr aria-hidden>
-                              <td
-                                colSpan={colCount}
-                                className="h-0 p-0"
-                                style={{ borderTop: "2px solid var(--stroke-default)" }}
-                              />
+                          {/* The week a day belongs to, as a quiet label over its
+                              first day rather than a heavy rule between weeks. */}
+                          {startsWeek && (
+                            <tr>
+                              <td colSpan={colCount} className="px-4 pb-1.5 pt-4" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
+                                <span style={{ font: "var(--type-caption1)", fontWeight: "var(--weight-semibold)", color: "var(--text-secondary)" }}>
+                                  Week {Math.floor(offset / 7) + 1}
+                                </span>
+                                <span className="tabular" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                                  {"  ·  "}
+                                  {format(day, "MMM d")} to {format(weekEnd, "MMM d")}
+                                </span>
+                              </td>
                             </tr>
                           )}
 
@@ -2520,7 +2544,6 @@ export function TimecardViewer({
                                 font: "var(--type-body1)",
                                 fontVariantNumeric: "tabular-nums",
                                 color: isAbsent ? "var(--text-error)" : "var(--text-secondary)",
-                                borderLeft: "1px solid var(--stroke-secondary)",
                               }}
                               onClick={(e) => e.stopPropagation()}
                             >
@@ -2660,7 +2683,6 @@ export function TimecardViewer({
                                   className="tabular px-3 py-1.5 text-right"
                                   style={{
                                     font: "var(--type-body1)",
-                                    borderLeft: "1px solid var(--stroke-secondary)",
                                     color: isAbsent
                                       ? "var(--text-error)"
                                       : hasMissingPunch
@@ -2837,7 +2859,7 @@ export function TimecardViewer({
 
                             {/* Pay code */}
                             {payCodes.length > 0 && (
-                              <td className="px-2 py-1.5" style={{ borderLeft: "1px solid var(--stroke-secondary)" }} onClick={(e) => e.stopPropagation()}>
+                              <td className="px-2 py-1.5"  onClick={(e) => e.stopPropagation()}>
                                 {(() => {
                                   const workSeg = daySegments.find(
                                     (s) => s.segmentType === "WORK" || s.segmentType === "LEAVE"
@@ -2871,7 +2893,7 @@ export function TimecardViewer({
                                           onChange={(e) =>
                                             handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)
                                           }
-                                          className="ta-field"
+                                          className={`ta-field ${grid.ghostSelect}`}
                                           style={gridSelectStyle(absentPending, 168)}
                                         >
                                           <option value="">Absent</option>
@@ -2901,7 +2923,7 @@ export function TimecardViewer({
                                         <select
                                           value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : (dayMarker?.payCode?.id ?? "")}
                                           onChange={(e) => handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)}
-                                          className="ta-field"
+                                          className={`ta-field ${grid.ghostSelect}`}
                                           style={gridSelectStyle(absentPending, 168)}
                                         >
                                           <option value="">—</option>
@@ -2941,7 +2963,7 @@ export function TimecardViewer({
                                           onChange={(e) =>
                                             handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)
                                           }
-                                          className="ta-field"
+                                          className={`ta-field ${grid.ghostSelect}`}
                                           style={gridSelectStyle(absentPending, 168)}
                                         >
                                           <option value="">—</option>
@@ -2961,7 +2983,7 @@ export function TimecardViewer({
                                     <select
                                       value={workSegPending ? (pendingPayCodes.get(workSeg.id) ?? "") : (workSeg.payCode?.id ?? "")}
                                       onChange={(e) => handlePayCodeChange(workSeg.id, e.target.value)}
-                                      className="ta-field"
+                                      className={`ta-field ${grid.ghostSelect}`}
                                       style={gridSelectStyle(workSegPending, 168)}
                                     >
                                       <option value="">—</option>
@@ -3000,7 +3022,7 @@ export function TimecardViewer({
                                       <select
                                         value={reasonPending ? (pendingReasonCodes.get(dayStr) ?? "") : (dayReason?.reasonCodeId ?? "")}
                                         onChange={(e) => handleDayReasonCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)}
-                                        className="ta-field"
+                                        className={`ta-field ${grid.ghostSelect}`}
                                         style={gridSelectStyle(reasonPending, 150)}
                                       >
                                         <option value="">—</option>
@@ -3039,7 +3061,7 @@ export function TimecardViewer({
                                     style={{
                                       border: 0,
                                       cursor: "pointer",
-                                      color: dayNoteCount > 0 ? "var(--icon-warning)" : "var(--icon-secondary)",
+                                      color: dayNoteCount > 0 ? "var(--icon-warning)" : "var(--icon-tertiary)",
                                     }}
                                   >
                                     <StickyNote className="h-4 w-4" />
@@ -3105,7 +3127,7 @@ export function TimecardViewer({
                             return (
                               <tr
                                 key={`${dayKey}-pair${pairIdx}`}
-                                style={{ borderBottom: "1px solid var(--stroke-secondary)" }}
+                                style={{ borderBottom: "1px solid var(--stroke-divider)" }}
                               >
                                 {/* Empty chevron */}
                                 <td className="w-7 pl-2 pr-0" />
@@ -3120,7 +3142,6 @@ export function TimecardViewer({
                                     font: "var(--type-body1)",
                                     fontVariantNumeric: "tabular-nums",
                                     color: "var(--text-secondary)",
-                                    borderLeft: "1px solid var(--stroke-secondary)",
                                   }}
                                   onClick={(e) => e.stopPropagation()}
                                 >
@@ -3203,7 +3224,7 @@ export function TimecardViewer({
                                     them across these rows would invent a number. */}
                                 <td
                                   className="px-3 py-1.5 text-right"
-                                  style={{ font: "var(--type-body1)", color: "var(--text-disabled)", borderLeft: "1px solid var(--stroke-secondary)" }}
+                                  style={{ font: "var(--type-body1)", color: "var(--text-disabled)" }}
                                 >
                                   —
                                 </td>
@@ -3213,12 +3234,12 @@ export function TimecardViewer({
                                 {timecard?.employee.ruleSet.autoDeductMeal && <td />}
                                 {/* Pay code DB cell */}
                                 {payCodes.length > 0 && (
-                                  <td className="px-2 py-1.5" style={{ borderLeft: "1px solid var(--stroke-secondary)" }} onClick={(e) => e.stopPropagation()}>
+                                  <td className="px-2 py-1.5"  onClick={(e) => e.stopPropagation()}>
                                     {pairWorkSeg && canEdit ? (
                                       <select
                                         value={pendingPayCodes.has(pairWorkSeg.id) ? (pendingPayCodes.get(pairWorkSeg.id) ?? "") : (pairWorkSeg.payCode?.id ?? "")}
                                         onChange={(e) => handlePayCodeChange(pairWorkSeg.id, e.target.value)}
-                                        className="ta-field"
+                                        className={`ta-field ${grid.ghostSelect}`}
                                         style={gridSelectStyle(pendingPayCodes.has(pairWorkSeg.id), 168)}
                                       >
                                         <option value="">—</option>
@@ -3240,7 +3261,7 @@ export function TimecardViewer({
                                         <select
                                           value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : (pairWorkSeg?.payCode?.id ?? dayMarker?.payCode?.id ?? "")}
                                           onChange={(e) => handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayKey, e.target.value)}
-                                          className="ta-field"
+                                          className={`ta-field ${grid.ghostSelect}`}
                                           style={gridSelectStyle(absentPending, 168)}
                                         >
                                           <option value="">—</option>
@@ -3272,7 +3293,7 @@ export function TimecardViewer({
                                         style={{
                                           border: 0,
                                           cursor: "pointer",
-                                          color: contNoteCount > 0 ? "var(--icon-warning)" : "var(--icon-secondary)",
+                                          color: contNoteCount > 0 ? "var(--icon-warning)" : "var(--icon-tertiary)",
                                         }}
                                       >
                                         <StickyNote className="h-4 w-4" />
@@ -3341,7 +3362,7 @@ export function TimecardViewer({
                               </td>
                               <td
                                 className="px-2 py-1"
-                                style={{ font: "var(--type-body1)", color: "var(--text-disabled)", borderLeft: "1px solid var(--stroke-secondary)" }}
+                                style={{ font: "var(--type-body1)", color: "var(--text-disabled)" }}
                               >
                                 —
                               </td>
@@ -3352,7 +3373,6 @@ export function TimecardViewer({
                                   font: "var(--type-body1)",
                                   fontWeight: "var(--weight-medium)",
                                   color: "var(--text-primary)",
-                                  borderLeft: "1px solid var(--stroke-secondary)",
                                 }}
                               >
                                 {minutesToHoursDecimal(seg.durationMinutes)}
@@ -3369,7 +3389,7 @@ export function TimecardViewer({
                               {payCodes.length > 0 && (() => {
                                 const leavePayCode = seg.payCode ?? seg.leaveRequest?.leaveType.payCode ?? null;
                                 return (
-                                  <td className="px-2 py-1" style={{ borderLeft: "1px solid var(--stroke-secondary)" }}>
+                                  <td className="px-2 py-1" >
                                     {leavePayCode ? (
                                       <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                                         {payCodeName(leavePayCode)}
@@ -3410,7 +3430,7 @@ export function TimecardViewer({
                             <tr
                               key={`${dayKey}-detail`}
                               style={{
-                                borderBottom: "1px solid var(--stroke-secondary)",
+                                borderBottom: "1px solid var(--stroke-divider)",
                                 background: "var(--surface-secondary)",
                               }}
                             >

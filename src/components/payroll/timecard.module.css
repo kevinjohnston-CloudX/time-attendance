@@ -1,0 +1,20 @@
+/* Timecards grid styles that inline styles cannot express. */
+
+/* A dropdown inside a grid row (pay code and reason): plain text with its
+   arrow until the cursor or the keyboard reaches it, then a field. A boxed
+   dropdown on every row is what made the grid read as a spreadsheet. Empty
+   reads quieter than a picked value. The inline style draws the resting
+   state (transparent, or amber while a pick is queued), so these win with
+   !important only on hover and focus. */
+.ghostSelect {
+  color: var(--text-primary);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.ghostSelect:has(option:checked[value=""]) {
+  color: var(--text-tertiary);
+}
+.ghostSelect:hover:not(:disabled),
+.ghostSelect:focus {
+  border-color: var(--stroke-secondary) !important;
+  background: var(--surface-card) !important;
+}
