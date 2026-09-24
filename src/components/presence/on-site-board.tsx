@@ -773,11 +773,12 @@ export function OnSiteBoard({
       {fullscreen ? (
         <Button
           hierarchy="secondary"
-          leadingIcon={<Minimize2 className="h-4 w-4" aria-hidden="true" />}
+          iconOnly
           onClick={() => setFullscreen(false)}
+          aria-label="Exit full screen"
           title="Exit full screen (Esc)"
         >
-          Exit full screen
+          <Minimize2 className="h-4 w-4" aria-hidden="true" />
         </Button>
       ) : (
         <Button
