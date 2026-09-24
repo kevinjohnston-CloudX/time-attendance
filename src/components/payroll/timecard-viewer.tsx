@@ -1987,6 +1987,8 @@ export function TimecardViewer({
 
                       const buckets: Record<string, number> = {};
                       for (const seg of daySegments) {
+                        // Meal premiums are shown in their own sub-row, not in REG/OT/DT columns
+                        if (seg.segmentType === "MEAL_PREMIUM") continue;
                         // REG/OT/DT overrides are display-only tags; use engine payBucket for column math
                         const eb = (seg.payBucketOverride && !["REG", "OT", "DT"].includes(seg.payBucketOverride))
                           ? seg.payBucketOverride
@@ -2852,7 +2854,40 @@ export function TimecardViewer({
                               <td className="pl-3 pr-8 py-1.5 text-right tabular-nums text-sm font-bold text-violet-700 dark:text-violet-300">
                                 {minutesToHoursDecimal(seg.durationMinutes)}
                               </td>
-                              {timecard?.employee.ruleSet.autoDeductMeal && <td />}
+                              {effectiveAutoDeductMeal && <td />}
+                              {canDeleteManual && <td className="w-8 px-1" />}
+                            </tr>
+                          ))}
+
+                          {/* Meal premium rows — one per MEAL_PREMIUM segment, shown only when expanded */}
+                          {isExpanded && daySegments.filter(s => s.segmentType === "MEAL_PREMIUM").map((seg) => (
+                            <tr key={`${dayKey}-premium-${seg.id}`} className="border-b border-zinc-100 bg-amber-50/40 dark:border-zinc-800 dark:bg-amber-950/10">
+                              <td className="w-7 pl-2 pr-0 py-1.5" />
+                              <td className="px-3 py-1 text-left">
+                                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                                  Meal Premium
+                                </span>
+                              </td>
+                              {payCodes.length > 0 && (
+                                <td className="px-2 py-1">
+                                  {seg.payCode ? (
+                                    <span className="text-xs text-zinc-500">{seg.payCode.code}[{seg.payCode.label}]</span>
+                                  ) : (
+                                    <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
+                                  )}
+                                </td>
+                              )}
+                              {reasonCodes.length > 0 && <td className="px-2 py-1.5" />}
+                              <td className="w-7 px-1 py-1.5" />
+                              <td className="px-2 py-1 font-mono text-sm text-zinc-300 dark:text-zinc-700">—</td>
+                              <td className="px-2 py-1 font-mono text-sm text-zinc-300 dark:text-zinc-700">—</td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-sm font-medium text-amber-700 dark:text-amber-300">—</td>
+                              <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
+                              <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
+                              <td className="pl-3 pr-8 py-1.5 text-right tabular-nums text-sm font-bold text-amber-700 dark:text-amber-300">
+                                {minutesToHoursDecimal(seg.durationMinutes)}
+                              </td>
+                              {effectiveAutoDeductMeal && <td />}
                               {canDeleteManual && <td className="w-8 px-1" />}
                             </tr>
                           ))}
