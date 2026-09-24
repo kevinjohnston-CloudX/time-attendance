@@ -87,8 +87,12 @@ export async function getSiteDay(
     }),
     // Where each person stood at midnight: their last IN or OUT of each kind
     // in the 36 hours before, leaving out time clock scans the timecard refused.
-    db.$queryRaw<CarryRow[]>`
+    // Taken at every building, not just this one: somebody whose last scan
+    // was at another building is not still inside this one, even when this
+    // building never saw them leave.
+    db.$queryRaw<(CarryRow & { here: boolean })[]>`
       SELECT DISTINCT ON (s."employeeId", s."stream")
+             ${scansHereSql(scope)}      AS here,
              s."employeeId"              AS "employeeId",
              s.id                        AS id,
              s."scanTime"                AS "scanTime",
@@ -102,7 +106,6 @@ export async function getSiteDay(
       JOIN   "employees" e ON e.id = s."employeeId"
       WHERE  s."tenantId" = ${tenantId}
         AND  e."tenantId" = ${tenantId}
-        AND  ${scansHereSql(scope)}
         AND  s."scanTime" >= ${new Date(dayStart.getTime() - LOOKBACK_MS)}
         AND  s."scanTime" < ${dayStart}
         AND  s."direction" IN ('IN', 'OUT')
@@ -151,6 +154,7 @@ export async function getSiteDay(
   const carry: SiteDay["carry"] = {};
   const carriedIn = new Set<string>();
   for (const r of carryRows) {
+    if (!r.here) continue;
     const scan = toScan(r);
     const entry = (carry[r.employeeId] ??= { gate: null, clock: null });
     if (scan.stream === "SECURITY") entry.gate = scan;

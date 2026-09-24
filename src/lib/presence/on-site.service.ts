@@ -110,8 +110,11 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
     // DISTINCT ON, not after, so an unresolvable scan never hides the real
     // state underneath it. So is a time clock scan the timecard refused: it
     // changed nothing, and the person panel's lanes read it the same way.
-    db.$queryRaw<LatestRow[]>`
+    // Taken at every building, then kept only where it happened here: a
+    // person whose newest scan is at another building is there, not here.
+    db.$queryRaw<(LatestRow & { here: boolean })[]>`
       SELECT DISTINCT ON (s."employeeId", s."stream")
+             ${here}                   AS here,
              s."employeeId"            AS "employeeId",
              s."stream"::text          AS stream,
              s."direction"::text       AS direction,
@@ -122,7 +125,6 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       JOIN   "employees" e ON e.id = s."employeeId"
       WHERE  s."tenantId" = ${tenantId}
         AND  e."tenantId" = ${tenantId}
-        AND  ${here}
         AND  s."scanTime" >= ${windowStart}
         AND  s."direction" IN ('IN', 'OUT')
         AND  NOT (s."stream" = 'TIME_CLOCK' AND s."outcome"::text IN ('PUNCH_REJECTED', 'ERROR', 'PENDING'))
@@ -185,6 +187,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
   const gateById = new Map<string, LatestRow>();
   const clockById = new Map<string, LatestRow>();
   for (const row of latest) {
+    if (!row.here) continue;
     (row.stream === "SECURITY" ? gateById : clockById).set(row.employeeId, row);
   }
   const todayById = new Map(todayRows.map((r) => [r.employeeId, r]));
