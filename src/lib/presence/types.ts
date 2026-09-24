@@ -166,6 +166,8 @@ export interface ScanLogQuery {
    * through the gate, or their first clock in. One row per person.
    */
   first?: "gate" | "clock" | null;
+  /** Only the gate scans with no partner: an entry after an entry, an exit after an exit. */
+  missed?: boolean;
   departmentId: string | null;
   shiftId: string | null;
   q: string | null;
@@ -178,9 +180,24 @@ export interface ScanLogQuery {
  * long they were out before coming back, how long a meal ran.
  */
 export interface ScanContext {
-  kind: "inside" | "out" | "firstIn" | "worked" | "working" | "meal" | "break" | "off" | "firstClock";
+  kind:
+    | "inside"
+    | "out"
+    | "firstIn"
+    | "worked"
+    | "working"
+    | "meal"
+    | "break"
+    | "off"
+    | "firstClock"
+    /** Came in again with no exit since the last entry: an exit was missed. */
+    | "reentry"
+    /** Left again with no entry since the last exit: an entry was missed. */
+    | "reexit";
   /** Null for a first of the day, which has nothing before it. */
   minutes: number | null;
+  /** For a missed scan: the unmatched scan before it, ISO. */
+  since?: string | null;
   /** Long enough to be worth a look: a meal or break over the limit. */
   long: boolean;
 }
@@ -225,6 +242,11 @@ export interface ScanLogSummary {
   peopleIn: number;
   /** Different people who clocked in at least once, each counted once. */
   peopleClockedIn: number;
+  /**
+   * Gate scans with no partner: an entry after an entry, or an exit after an
+   * exit. The reason gate ins minus outs can differ from who is inside.
+   */
+  missedGate: number;
 }
 
 export interface ScanLogPage {

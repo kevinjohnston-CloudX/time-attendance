@@ -35,14 +35,18 @@ export type LogCounter =
   | "rejected"
   | "unknown"
   | "first-in"
-  | "first-clock";
+  | "first-clock"
+  | "missed";
 
-export function counterQuery(c: LogCounter | null): Pick<ScanLogQuery, "stream" | "direction" | "rejected" | "first"> {
-  if (c === "first-in") return { stream: null, direction: null, rejected: false, first: "gate" };
-  if (c === "first-clock") return { stream: null, direction: null, rejected: false, first: "clock" };
+export function counterQuery(
+  c: LogCounter | null,
+): Pick<ScanLogQuery, "stream" | "direction" | "rejected" | "first" | "missed"> {
+  if (c === "first-in") return { stream: null, direction: null, rejected: false, first: "gate", missed: false };
+  if (c === "first-clock") return { stream: null, direction: null, rejected: false, first: "clock", missed: false };
+  if (c === "missed") return { stream: null, direction: null, rejected: false, first: null, missed: true };
   const stream: ScanStream | null = c?.startsWith("gate") ? "SECURITY" : c?.startsWith("clock") ? "TIME_CLOCK" : null;
   const direction = c?.endsWith("-in") ? "IN" : c?.endsWith("-out") ? "OUT" : null;
-  return { stream, direction, rejected: c === "rejected", first: null };
+  return { stream, direction, rejected: c === "rejected", first: null, missed: false };
 }
 
 export function parseCounter(raw: string | null | undefined): LogCounter | null {
@@ -57,6 +61,7 @@ export function parseCounter(raw: string | null | undefined): LogCounter | null 
     "unknown",
     "first-in",
     "first-clock",
+    "missed",
   ];
   return all.includes(raw as LogCounter) ? (raw as LogCounter) : null;
 }
@@ -366,6 +371,13 @@ export function ScanLogCounts({
       hint: "Taps the time clock did not accept, usually a second tap too soon, and repeat reads of the same badge. They are left out of every other list and total",
     },
     {
+      key: "missed" as const,
+      label: "Missed gate scans",
+      count: summary.missedGate,
+      tone: "warning",
+      hint: "An entry with no exit before the next entry, or an exit with no entry before the next exit. This is why gate ins minus outs can differ from who is in the building",
+    },
+    {
       key: "unknown" as const,
       label: "Not in CloudTime",
       count: unknownCount,
@@ -621,7 +633,7 @@ function LogRow({
         </span>
 
         <span className={styles.logContext} data-tone={r.context?.long ? "warning" : undefined}>
-          {contextText(r.context)}
+          {contextText(r.context, tz)}
         </span>
 
         {/* Only what is out of the ordinary gets a tag; the reader is named
@@ -649,8 +661,9 @@ function LogRow({
 }
 
 /** A scan next to the one before it, in words: "After 12 hr 4 min inside". */
-function contextText(c: ScanLogRow["context"]): string {
+function contextText(c: ScanLogRow["context"], tz: string): string {
   if (!c) return "";
+  const since = c.since ? fmtTime(c.since, tz) : "";
   const d = c.minutes === null ? "" : c.minutes < 1 ? "less than a minute" : fmtDuration(c.minutes);
   switch (c.kind) {
     case "inside":
@@ -671,6 +684,10 @@ function contextText(c: ScanLogRow["context"]): string {
       return `Back after ${d} off the clock`;
     case "firstClock":
       return "First clock in today";
+    case "reentry":
+      return `Came in again, no exit since ${since}`;
+    case "reexit":
+      return `Left again, no entry since ${since}`;
   }
 }
 

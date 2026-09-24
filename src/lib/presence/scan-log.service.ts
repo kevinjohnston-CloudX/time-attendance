@@ -136,6 +136,11 @@ export async function getScanLog(
 
   // Each person's first scan of that kind, for "first entry" and "first clock
   // in". One site and one day, so a few thousand rows at most.
+  // What every counted scan that day means next to the one before it, for
+  // the row text, and for the gate scans that have no partner.
+  const contexts = await scanContexts(counted);
+  const missedIds = [...contexts].filter(([, c]) => c.kind === "reentry" || c.kind === "reexit").map(([id]) => id);
+
   const firstIds = input.first
     ? await db.scanEvent
         .findMany({
@@ -159,7 +164,9 @@ export async function getScanLog(
   // direction always comes with its reader, because every counter has one.
   const narrow: Prisma.ScanEventWhereInput[] = [base];
   if (input.rejected) narrow.push(notCounted);
-  else if (firstIds) {
+  else if (input.missed) {
+    narrow.push({ NOT: notCounted }, { id: { in: missedIds } });
+  } else if (firstIds) {
     narrow.push({ NOT: notCounted }, { id: { in: firstIds } });
   } else {
     narrow.push({ NOT: notCounted });
@@ -236,10 +243,7 @@ export async function getScanLog(
   const more = rows.length > limit;
   const seen = new Map<string, { id: string; barcode: string | null; wmsId: string | null; employeeCode: string }>();
   for (const r of rows.slice(0, limit)) if (r.employee) seen.set(r.employee.id, r.employee);
-  const [photos, contexts] = await Promise.all([
-    photoUrls(tenantId, [...seen.values()]),
-    scanContexts(counted, [...seen.keys()]),
-  ]);
+  const photos = await photoUrls(tenantId, [...seen.values()]);
   const page: ScanLogRow[] = rows.slice(0, limit).flatMap((s) =>
     s.employee
       ? [
@@ -287,12 +291,16 @@ export async function getScanLog(
       people: people.filter((p) => p.employeeId).length,
       peopleIn: peopleIn.filter((p) => p.employeeId).length,
       peopleClockedIn: peopleClockedIn.filter((p) => p.employeeId).length,
+      missedGate: missedIds.length,
     },
     watermark: newest._max.createdAt?.toISOString() ?? null,
   };
 }
 
 /* ── What each scan means next to the one before it ──────────────────────── */
+
+/** Two reads of the same direction this close together are one pass through the gate. */
+const SAME_PASS_MS = 5 * 60 * 1000;
 
 /**
  * For every counted scan the page shows, the step it completes: leaving
@@ -301,11 +309,10 @@ export async function getScanLog(
  * counted scans the totals use, for the people on the page and this day
  * only, in one query.
  */
-async function scanContexts(counted: Prisma.ScanEventWhereInput, people: string[]): Promise<Map<string, ScanContext>> {
+async function scanContexts(counted: Prisma.ScanEventWhereInput): Promise<Map<string, ScanContext>> {
   const out = new Map<string, ScanContext>();
-  if (people.length === 0) return out;
   const all = await db.scanEvent.findMany({
-    where: { AND: [counted, { employeeId: { in: people } }] },
+    where: counted,
     orderBy: [{ scanTime: "asc" }, { id: "asc" }],
     select: { id: true, employeeId: true, scanTime: true, stream: true, direction: true, timecardPunchType: true },
   });
@@ -316,21 +323,32 @@ async function scanContexts(counted: Prisma.ScanEventWhereInput, people: string[
   for (const scans of byPerson.values()) {
     let lastIn: Date | null = null;
     let lastOut: Date | null = null;
-    let sawGateIn = false;
+    let lastGate: "IN" | "OUT" | null = null;
     let workFrom: Date | null = null;
     let offFrom: Date | null = null;
     let pause: { at: Date; kind: "meal" | "break" } | null = null;
     let sawClockIn = false;
     for (const s of scans) {
       if (s.stream === "SECURITY") {
+        // A second read within a few minutes is the same pass through the
+        // gate, not a missed scan; anything later has lost its partner.
         if (s.direction === "IN") {
-          out.set(s.id, lastOut ? { kind: "out", minutes: mins(lastOut, s.scanTime), long: false } : { kind: "firstIn", minutes: null, long: false });
-          if (!sawGateIn || lastOut) lastIn = s.scanTime;
-          sawGateIn = true;
+          if (lastGate === "IN" && lastIn && s.scanTime.getTime() - lastIn.getTime() > SAME_PASS_MS) {
+            out.set(s.id, { kind: "reentry", minutes: null, long: true, since: lastIn.toISOString() });
+          } else if (lastGate !== "IN") {
+            out.set(s.id, lastOut ? { kind: "out", minutes: mins(lastOut, s.scanTime), long: false } : { kind: "firstIn", minutes: null, long: false });
+          }
+          if (lastGate !== "IN") lastIn = s.scanTime;
           lastOut = null;
+          lastGate = "IN";
         } else if (s.direction === "OUT") {
-          if (lastIn && !lastOut) out.set(s.id, { kind: "inside", minutes: mins(lastIn, s.scanTime), long: false });
-          lastOut = s.scanTime;
+          if (lastGate === "OUT" && lastOut && s.scanTime.getTime() - lastOut.getTime() > SAME_PASS_MS) {
+            out.set(s.id, { kind: "reexit", minutes: null, long: true, since: lastOut.toISOString() });
+          } else if (lastIn && lastGate === "IN") {
+            out.set(s.id, { kind: "inside", minutes: mins(lastIn, s.scanTime), long: false });
+          }
+          if (lastGate !== "OUT") lastOut = s.scanTime;
+          lastGate = "OUT";
         }
         continue;
       }

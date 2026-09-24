@@ -1903,12 +1903,14 @@ const COUNTER_LABEL: Record<LogCounter, string> = {
   unknown: "Not in CloudTime",
   "first-in": "First entry per person",
   "first-clock": "First clock in per person",
+  missed: "Missed gate scans",
 };
 
 /** How many scans the picked counter stands for, from the same counts it shows. */
 function counterTotal(s: NonNullable<ReturnType<typeof useScanLog>["page"]>["summary"], c: LogCounter | null): number {
-  const { stream, direction, rejected, first } = counterQuery(c);
+  const { stream, direction, rejected, first, missed } = counterQuery(c);
   if (rejected) return s.rejected;
+  if (missed) return s.missedGate;
   if (first) return first === "gate" ? s.peopleIn : s.peopleClockedIn;
   if (stream === "SECURITY") return direction === "IN" ? s.gateIn : direction === "OUT" ? s.gateOut : s.gateTotal;
   if (stream === "TIME_CLOCK") return direction === "IN" ? s.clockIn : direction === "OUT" ? s.clockOut : s.clockTotal;
