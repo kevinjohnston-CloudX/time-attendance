@@ -18,10 +18,12 @@ import styles from "./on-site.module.css";
  * Update photo: a new picture for a person, from a file or the camera,
  * framed and saved over the photo the time clock tablets took.
  *
- * <p>The frame is portrait, 3 by 4, because every place a face is drawn
- * crops to portrait; a landscape tablet photo loses its sides anyway. The
- * picture is framed and shrunk here, in the browser, so the server only
- * checks and files a small JPEG and never works on pixels.
+ * <p>The frame is landscape, 4 by 3, the shape the tablets take, so an
+ * uploaded photo sits among theirs the same way: whole in the large view,
+ * cropped to the face on the tiles like every other. A landscape photo
+ * goes in uncropped; zooming is a choice, not a step. The picture is
+ * framed and shrunk here, in the browser, so the server only checks and
+ * files a small JPEG and never works on pixels.
  *
  * <p>Nothing is saved until Save photo. Closing, Escape or Cancel leave the
  * person's photo as it was. Escape is caught before the panel underneath
@@ -29,9 +31,9 @@ import styles from "./on-site.module.css";
  */
 
 /** The frame on screen, and the file it becomes. */
-const FRAME_W = 240;
-const FRAME_H = 320;
-const OUT_W = 900;
+const FRAME_W = 360;
+const FRAME_H = 270;
+const OUT_W = 1600;
 const OUT_H = 1200;
 const QUALITY = 0.86;
 const MAX_ZOOM = 3;
@@ -478,7 +480,7 @@ export function PhotoEditor({
             {mode === "camera"
               ? "Face the camera, then take the photo."
               : mode === "frame"
-                ? "Drag to position the face in the frame."
+                ? "Saved as shown. To frame the face closer, zoom in and drag."
                 : "Drag a photo here, choose one, or use the camera. You can frame it before saving."}
           </p>
 

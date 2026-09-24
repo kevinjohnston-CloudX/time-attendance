@@ -3861,9 +3861,9 @@
 .peGuide {
   position: absolute;
   left: 50%;
-  top: 44%;
-  width: 58%;
-  height: 52%;
+  top: 46%;
+  width: 34%;
+  height: 62%;
   transform: translate(-50%, -50%);
   border-radius: 50%;
   box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.7), 0 0 0 999px rgba(3, 7, 18, 0.12);
@@ -3886,7 +3886,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  width: 240px;
+  width: 360px;
   max-width: 100%;
   font: var(--type-body2);
   color: var(--text-secondary);
