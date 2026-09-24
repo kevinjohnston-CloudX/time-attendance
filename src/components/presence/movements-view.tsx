@@ -186,8 +186,10 @@ export function MovementsTable({
         <span>Employee</span>
         <span>Arrived</span>
         <span>Left</span>
-        {hasGate && <span className={styles.mvNum}>In building</span>}
-        <span className={styles.mvNum}>On the clock</span>
+        {/* Every fact column starts on its left edge, times and durations
+            alike, so the gaps between the columns are all the same. */}
+        {hasGate && <span>In building</span>}
+        <span>On the clock</span>
         <span className={styles.mvAxis}>
           {axis.ticks.map((t) => (
             <span key={t} style={{ left: axis.pct(t) }} data-edge={t === axis.from ? "start" : t === axis.to ? "end" : undefined}>
@@ -378,11 +380,11 @@ function PersonRow({
           )}
         </span>
         {hasGate && (
-          <span className={`${styles.mvFact} ${styles.mvNum}`}>
+          <span className={styles.mvFact}>
             <span className={styles.mvFactValue}>{seen ? fmtDuration(t.insideMin) : ""}</span>
           </span>
         )}
-        <span className={`${styles.mvFact} ${styles.mvNum}`}>
+        <span className={styles.mvFact}>
           {/* No clock time is normal for salaried people, who do not clock
               in, and a gap for anyone hourly; neither reads as "0 min". */}
           {seen && t.workMin === 0 ? (
