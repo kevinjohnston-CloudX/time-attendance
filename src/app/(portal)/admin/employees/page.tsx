@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { LinkButton } from "@/components/ui";
 import { userHasPermission } from "@/lib/rbac/check-permission";
@@ -6,6 +7,7 @@ import { getEmployees, getAdminRefData } from "@/actions/admin.actions";
 import { CreateEmployeeForm } from "@/components/admin/create-employee-form";
 import { CsvUploadForm } from "@/components/admin/csv-upload-form";
 import { EmployeesTable } from "@/components/admin/employees-table";
+import { LIST_COOKIE } from "@/components/admin/employees-list-cookie";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 
 /**
@@ -34,6 +36,22 @@ export default async function EmployeesPage({
   if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
 
   const sp = await searchParams;
+
+  // Opened bare, the list comes back as it was last left in this session:
+  // the search, filters and page the list itself remembered (see
+  // rememberList). Only known keys are carried over.
+  if (!sp || Object.values(sp).every((v) => !v)) {
+    const saved = (await cookies()).get(LIST_COOKIE)?.value;
+    if (saved) {
+      const from = new URLSearchParams(saved);
+      const to = new URLSearchParams();
+      for (const k of ["q", "site", "dept", "role", "page"]) {
+        const val = from.get(k);
+        if (val) to.set(k, val);
+      }
+      if (to.toString()) redirect(`/admin/employees?${to.toString()}`);
+    }
+  }
   const page = Math.max(0, Number(sp?.page ?? 0));
   const q    = sp?.q    ?? "";
   const site = sp?.site ?? "";

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Users } from "lucide-react";
 import { Face } from "@/components/presence/face";
+import { LIST_COOKIE } from "./employees-list-cookie";
 import styles from "./employees.module.css";
 
 /**
@@ -110,8 +111,23 @@ export function EmployeesTable({
   }, [currentFilters]);
 
   function navigate(overrides: Partial<typeof currentFilters & { page: number }>) {
-    router.push(buildUrl(overrides));
+    const url = buildUrl(overrides);
+    rememberList(url);
+    router.push(url);
   }
+
+  function clearAll() {
+    setSearchValue("");
+    rememberList("/admin/employees");
+    router.push("/admin/employees");
+  }
+
+  // The list as it is now is what "back to Employees" should bring back, even
+  // when it was reached by a link rather than typed here.
+  const currentUrl = buildUrl({ page });
+  useEffect(() => {
+    rememberList(currentUrl);
+  }, [currentUrl]);
 
   function onSearchChange(val: string) {
     setSearchValue(val);
@@ -144,7 +160,7 @@ export function EmployeesTable({
           <SearchInput
             value={searchValue}
             onValueChange={onSearchChange}
-            placeholder="Name, email or employee code"
+            placeholder="Name, employee ID or badge"
             width={320}
           />
           <FilterSelectChip
@@ -169,10 +185,7 @@ export function EmployeesTable({
             <Button
               hierarchy="link"
               size="sm"
-              onClick={() => {
-                setSearchValue("");
-                router.push("/admin/employees");
-              }}
+              onClick={clearAll}
             >
               Clear all
             </Button>
@@ -201,10 +214,7 @@ export function EmployeesTable({
                 <Button
                   size="sm"
                   hierarchy="secondary"
-                  onClick={() => {
-                    setSearchValue("");
-                    router.push("/admin/employees");
-                  }}
+                  onClick={clearAll}
                 >
                   Clear filters
                 </Button>
@@ -349,6 +359,23 @@ export function EmployeesTable({
       </section>
     </div>
   );
+}
+
+/**
+ * Remembers the list's search, filters and page for this browser session, in
+ * a cookie the list page reads when it is opened bare (from the record's back
+ * link, the breadcrumb or the sidebar), so coming back does not mean typing
+ * the search again. Clear all forgets it. Only this browser ever sees it.
+ */
+function rememberList(url: string) {
+  const qs = url.split("?")[1] ?? "";
+  try {
+    document.cookie = qs
+      ? `${LIST_COOKIE}=${encodeURIComponent(qs)}; path=/admin/employees; samesite=lax`
+      : `${LIST_COOKIE}=; path=/admin/employees; max-age=0; samesite=lax`;
+  } catch {
+    // Cookies blocked: the list simply opens unfiltered, as before.
+  }
 }
 
 /** Two letters for the circle beside a name: first and last word. */
