@@ -310,6 +310,36 @@ function parseTimeInput(str: string): { hours: number; minutes: number } | null 
 }
 
 /**
+ * A pay or reason code as a person reads it. Codes are the tenant's own data,
+ * often typed in capitals ("REGULAR HOURS"), and printed as "0[REGULAR
+ * HOURS]" they read as a system dump and were cut to "0[REGULA" in the grid.
+ * All capital labels are put in sentence case, keeping the abbreviations
+ * payroll uses as they are; a label with its own mixed case is left alone.
+ */
+const KEEP_UPPER = new Set(["PTO", "FMLA", "OT", "DT", "HR", "UTO", "ADP", "LOA", "STD", "LTD", "NJ", "NY", "CA", "GA", "PA", "CAN", "NL"]);
+function readableLabel(label: string): string {
+  if (label !== label.toUpperCase()) return label;
+  return label
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w, i) =>
+      KEEP_UPPER.has(w.toUpperCase()) ? w.toUpperCase() : i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w,
+    )
+    .join(" ");
+}
+/** The name on its own, for a cell. */
+function payCodeName(pc: { label: string }): string {
+  return readableLabel(pc.label);
+}
+/** The name with the code payroll exports it under, for a list to pick from. */
+function payCodeOption(pc: { code: number; label: string }): string {
+  return `${readableLabel(pc.label)} (${pc.code})`;
+}
+function reasonName(rc: { label: string }): string {
+  return readableLabel(rc.label);
+}
+
+/**
  * A pay-code or reason-code dropdown inside the grid.
  *
  * <p>Amber while the pick is queued. This grid does not write on change — Save
@@ -435,12 +465,12 @@ function RecalculateButton({ timesheetId }: { timesheetId: string }) {
         size="sm"
         onClick={handleRecalculate}
         disabled={isPending}
-        title="Recalculate segments and overtime"
+        title="Work this timecard's hours out again from its punches"
         leadingIcon={
           <RefreshCw className={`h-3.5 w-3.5 ${isPending ? "animate-spin" : ""}`} />
         }
       >
-        {isPending ? "Recalculating…" : "Recalculate"}
+        {isPending ? "Recalculating…" : "Recalculate hours"}
       </Button>
       {error && (
         <span style={{ font: "var(--type-body2)", color: "var(--text-error)" }}>{error}</span>
@@ -482,7 +512,8 @@ function SummaryRow({
   isBold?: boolean;
 }) {
   const fmt = (m: number) => minutesToHoursDecimal(m);
-  const fmtMoney = (v: number) => `$${v.toFixed(2)}`;
+  const fmtMoney = (v: number) =>
+    `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const regPay = rate ? (reg / 60) * rate : 0;
   const otPay = rate ? (ot / 60) * rate * 1.5 : 0;
   const dtPay = rate ? (dt / 60) * rate * 2 : 0;
@@ -1021,11 +1052,11 @@ export function TimecardViewer({
     // Validate against the existing paired punch captured at the time the edit was opened
     if (snap.pairedTime) {
       if (snap.punchType === "CLOCK_IN" && punchDate >= snap.pairedTime) {
-        setEditError(`In time must be before out time (${format(snap.pairedTime, "h:mm a")})`);
+        setEditError(`Clock in must be before clock out (${format(snap.pairedTime, "h:mm a")}).`);
         return;
       }
       if (snap.punchType === "CLOCK_OUT" && punchDate <= snap.pairedTime) {
-        setEditError(`Out time must be after in time (${format(snap.pairedTime, "h:mm a")})`);
+        setEditError(`Clock out must be after clock in (${format(snap.pairedTime, "h:mm a")}).`);
         return;
       }
     }
@@ -1071,8 +1102,8 @@ export function TimecardViewer({
 
     const inParsed = parseTimeInput(newInTimeStr);
     const outParsed = parseTimeInput(newOutTimeStr);
-    if (!inParsed) { setNewEntryError("Invalid in time — enter something like 8:30 or 830"); return; }
-    if (!outParsed) { setNewEntryError("Invalid out time — enter something like 5:00 or 1700"); return; }
+    if (!inParsed) { setNewEntryError("That clock in time is not valid. Enter it like 8:30."); return; }
+    if (!outParsed) { setNewEntryError("That clock out time is not valid. Enter it like 5:00."); return; }
 
     let inH = inParsed.hours;
     let outH = outParsed.hours;
@@ -1089,7 +1120,7 @@ export function TimecardViewer({
     );
 
     if (outDate <= inDate) {
-      setNewEntryError("Out time must be after in time");
+      setNewEntryError("Clock out must be after clock in.");
       return;
     }
 
@@ -1107,7 +1138,7 @@ export function TimecardViewer({
         if (inDate.getTime() < existOut && outDate.getTime() > existIn) {
           const s = format(parseISO(dayPunches[i].roundedTime), "h:mm a");
           const en = format(parseISO(nextOut.roundedTime), "h:mm a");
-          setNewEntryError(`Overlaps with existing entry ${s} – ${en}`);
+          setNewEntryError(`This overlaps the time already there, ${s} to ${en}.`);
           return;
         }
       }
@@ -1533,13 +1564,16 @@ export function TimecardViewer({
   // +1 if pay codes column exists, +1 if reason codes column exists, +1 if delete column shown
   const colCount = 9 + (payCodes.length > 0 ? 1 : 0) + (reasonCodes.length > 0 ? 1 : 0) + (timecard?.employee.ruleSet.autoDeductMeal ? 1 : 0) + (canDeleteManual ? 1 : 0);
 
-  // The three column groups the grid's first header row spans: what the day is
-  // (chevron, date, codes, notes), what was punched, and what was calculated —
-  // then whatever trails after. Derived from the same optional columns as
-  // colCount so the two can never drift apart.
-  const leadColSpan = 3 + (payCodes.length > 0 ? 1 : 0) + (reasonCodes.length > 0 ? 1 : 0);
+  // The column groups the grid's first header row spans: the day, what the
+  // time clock recorded, and the hours paid for it, then the day's meal
+  // waiver, codes, notes and delete. Derived from the same optional columns
+  // as colCount so the two can never drift apart.
   const trailColSpan =
-    (timecard?.employee.ruleSet.autoDeductMeal ? 1 : 0) + (canDeleteManual ? 1 : 0);
+    (timecard?.employee.ruleSet.autoDeductMeal ? 1 : 0) +
+    (payCodes.length > 0 ? 1 : 0) +
+    (reasonCodes.length > 0 ? 1 : 0) +
+    1 +
+    (canDeleteManual ? 1 : 0);
 
   const canApprove =
     timecard &&
@@ -1576,8 +1610,8 @@ export function TimecardViewer({
 
     const blockers = [
       timecard.exceptionCount > 0 &&
-        `${timecard.exceptionCount} exception${timecard.exceptionCount === 1 ? "" : "s"} on this timecard`,
-      hasUnauthorizedOt && "overtime on it is not authorized",
+        `${timecard.exceptionCount} ${timecard.exceptionCount === 1 ? "exception" : "exceptions"} to fix`,
+      hasUnauthorizedOt && "overtime that still needs approval",
     ].filter(Boolean) as string[];
 
     switch (timecard.status) {
@@ -1596,8 +1630,8 @@ export function TimecardViewer({
       case "REJECTED":
         return {
           tone: "error",
-          title: "Returned",
-          body: "This timecard was sent back and is open for edits again.",
+          title: "Sent back",
+          body: "This timecard was sent back to be corrected, so it can be changed again.",
         };
       case "SUP_APPROVED":
         return {
@@ -1605,8 +1639,8 @@ export function TimecardViewer({
           title: "Ready to pay",
           body:
             blockers.length > 0
-              ? `A supervisor signed this off, but ${blockers.join(" and ")}.`
-              : "A supervisor signed this off. It is waiting on payroll approval.",
+              ? `A supervisor approved it, but it has ${blockers.join(" and ")}.`
+              : "A supervisor approved it. It is waiting for payroll to approve it.",
         };
       case "SUBMITTED":
         return {
@@ -1614,15 +1648,15 @@ export function TimecardViewer({
           title: "Submitted",
           body:
             blockers.length > 0
-              ? `Waiting on a supervisor, and ${blockers.join(" and ")}.`
-              : "Waiting on a supervisor to approve it.",
+              ? `Waiting for a supervisor to approve it, and it has ${blockers.join(" and ")}.`
+              : "Waiting for a supervisor to approve it.",
         };
       default:
         if (blockers.length > 0) {
           return {
             tone: "warning",
             title: "Needs attention",
-            body: `This timecard is still open, and ${blockers.join(" and ")}.`,
+            body: `This timecard has ${blockers.join(" and ")}.`,
           };
         }
         return readOnly
@@ -2257,7 +2291,7 @@ export function TimecardViewer({
                       takes the meaning of the columns with it. */}
                   <THead>
                     <TR>
-                      <TH colSpan={leadColSpan} style={{ height: 24, borderBottom: 0, padding: "6px 12px 0" }} />
+                      <TH colSpan={2} style={{ height: 24, borderBottom: 0, padding: "6px 12px 0" }} />
                       <TH
                         colSpan={2}
                         align="center"
@@ -2269,7 +2303,7 @@ export function TimecardViewer({
                           borderLeft: "1px solid var(--stroke-secondary)",
                         }}
                       >
-                        Punches
+                        Time clock
                       </TH>
                       <TH
                         colSpan={4}
@@ -2282,25 +2316,23 @@ export function TimecardViewer({
                           borderLeft: "1px solid var(--stroke-secondary)",
                         }}
                       >
-                        Calculated Hours
+                        Paid hours
                       </TH>
-                      {trailColSpan > 0 && (
-                        <TH colSpan={trailColSpan} style={{ height: 24, borderBottom: 0 }} />
-                      )}
+                      <TH colSpan={trailColSpan} style={{ height: 24, borderBottom: 0 }} />
                     </TR>
                     <TR>
                       <TH style={{ width: 28, padding: "0 0 0 8px", top: 24 }} />
-                      <TH style={{ top: 24 }}>Date</TH>
-                      {payCodes.length > 0 && <TH style={{ paddingLeft: 8, paddingRight: 8, top: 24 }}>Code</TH>}
+                      <TH style={{ top: 24 }}>Day</TH>
+                      <TH style={{ top: 24, borderLeft: "1px solid var(--stroke-secondary)" }}>Clock in</TH>
+                      <TH style={{ top: 24 }}>Clock out</TH>
+                      <TH numeric style={{ top: 24, borderLeft: "1px solid var(--stroke-secondary)" }}>Regular</TH>
+                      <TH numeric style={{ top: 24 }}>Overtime</TH>
+                      <TH numeric style={{ top: 24 }}>Double</TH>
+                      <TH numeric style={{ paddingRight: 32, top: 24 }}>Total</TH>
+                      {timecard?.employee.ruleSet.autoDeductMeal && <TH style={{ top: 24 }}>Meal break</TH>}
+                      {payCodes.length > 0 && <TH style={{ paddingLeft: 8, paddingRight: 8, top: 24, borderLeft: "1px solid var(--stroke-secondary)" }}>Pay code</TH>}
                       {reasonCodes.length > 0 && <TH style={{ paddingLeft: 8, paddingRight: 8, top: 24 }}>Reason</TH>}
                       <TH align="center" style={{ width: 28, paddingLeft: 4, paddingRight: 4, top: 24 }}>Notes</TH>
-                      <TH style={{ top: 24, borderLeft: "1px solid var(--stroke-secondary)" }}>In</TH>
-                      <TH style={{ top: 24 }}>Out</TH>
-                      <TH numeric style={{ top: 24, borderLeft: "1px solid var(--stroke-secondary)" }}>Reg</TH>
-                      <TH numeric style={{ top: 24 }}>OT</TH>
-                      <TH numeric style={{ top: 24 }}>DT</TH>
-                      <TH numeric style={{ paddingRight: 32, top: 24 }}>Total</TH>
-                      {timecard?.employee.ruleSet.autoDeductMeal && <TH style={{ top: 24 }}>Meal</TH>}
                       {canDeleteManual && <TH style={{ width: 32, paddingLeft: 4, paddingRight: 4, top: 24 }} />}
                     </TR>
                   </THead>
@@ -2403,31 +2435,15 @@ export function TimecardViewer({
                             </tr>
                           )}
 
-                          {/* Day summary row.
-                              One tint per row, and the order is severity: absent
-                              beats an exception beats today beats the weekend.
-                              A day with no hours on it is the one that costs
-                              somebody money, so it outranks the rest. */}
+                          {/* Day summary row. What is wrong with a day is said by
+                              one small tag on its date (Absent, Missed punch,
+                              Today) rather than by tinting the whole row, which
+                              needed a colour legend to be read at all. */}
                           <tr
                             className={`transition-colors ${isMainRowPendingDelete ? "opacity-40 line-through" : ""} ${
-                              !isMainRowPendingDelete && !isAbsent && !hasException && !isTodayRow && !isWeekend
-                                ? "hover:bg-[var(--ta-row-hover)]"
-                                : ""
+                              !isMainRowPendingDelete ? "hover:bg-[var(--ta-row-hover)]" : ""
                             } ${hasActivity ? "cursor-pointer" : ""}`}
-                            style={{
-                              borderBottom: "1px solid var(--stroke-secondary)",
-                              background: isMainRowPendingDelete
-                                ? undefined
-                                : isAbsent
-                                  ? "var(--surface-error)"
-                                  : hasException
-                                    ? "var(--surface-warning)"
-                                    : isTodayRow
-                                      ? "var(--surface-info)"
-                                      : isWeekend
-                                        ? "var(--surface-tertiary)"
-                                        : undefined,
-                            }}
+                            style={{ borderBottom: "1px solid var(--stroke-divider)" }}
                             onClick={
                               hasActivity
                                 ? () => toggleDay(dayKey)
@@ -2451,250 +2467,48 @@ export function TimecardViewer({
                               ) : null}
                             </td>
 
-                            {/* Date (EEE MM/dd/yyyy) */}
-                            <td
-                              className="tabular px-3 py-1.5"
-                              style={{
-                                font: "var(--type-body1)",
-                                fontWeight: "var(--weight-medium)",
-                                color: isAbsent
-                                  ? "var(--text-error)"
-                                  : isTodayRow
-                                    ? "var(--text-accent)"
-                                    : isWeekend
-                                      ? "var(--text-tertiary)"
-                                      : "var(--text-secondary)",
-                              }}
-                            >
-                              <span className="inline-flex items-center gap-1">
-                                <span className={`${isWeekend ? "" : "font-semibold"} mr-0.5`}>
-                                  {format(day, "EEE")}
-                                </span>
-                                {format(day, "MM/dd/yyyy")}
-                              </span>
-                            </td>
-
-                            {/* Pay code */}
-                            {payCodes.length > 0 && (
-                              <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
-                                {(() => {
-                                  const workSeg = daySegments.find(
-                                    (s) => s.segmentType === "WORK" || s.segmentType === "LEAVE"
-                                  );
-                                  // 0-duration marker = absent day with a code override
-                                  const isMarker = !!workSeg && workSeg.durationMinutes === 0;
-                                  const dayStr = format(day, "yyyy-MM-dd");
-
-                                  // Missed-punch day: past day with punches but no work segments and no marker.
-                                  // Excludes today — an open clock-in (still working) is not a missed punch.
-                                  const isMissedPunchDay = !isTodayRow && dayPunches.length > 0 && daySegments.filter(s => s.segmentType === "WORK").length === 0 && !isMarker;
-
-
-                                  if (isAbsent || isMarker || isMissedPunchDay || (isSalaryVirtualDay && daySegments.length === 0)) {
-                                    if (canEdit) {
-                                      const absentKey = `absent:${dayStr}`;
-                                      const absentPending = pendingPayCodes.has(absentKey);
-                                      // Pre-populate missed-punch days with the rule set's default pay code
-                                      // so the dropdown doesn't show "Absent" before a recalculate creates the marker.
-                                      const regularId = !isMarker && isMissedPunchDay
-                                        ? (timecard?.employee.ruleSet?.defaultPayCodeId ?? payCodes.find((pc) => pc.code === 0)?.id ?? "")
-                                        : "";
-                                      const currentValue = absentPending
-                                        ? (pendingPayCodes.get(absentKey) ?? "")
-                                        : isMarker
-                                          ? (workSeg.payCode?.id ?? "")
-                                          : regularId;
-                                      return (
-                                        <select
-                                          value={currentValue}
-                                          onChange={(e) =>
-                                            handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)
-                                          }
-                                          className="ta-field"
-                                          style={gridSelectStyle(absentPending, 96)}
-                                        >
-                                          <option value="">Absent</option>
-                                          {payCodes.map((pc) => (
-                                            <option key={pc.id} value={pc.id}>
-                                              {pc.code}[{pc.label}]
-                                            </option>
-                                          ))}
-                                        </select>
-                                      );
-                                    }
-                                    // Read-only locked view
-                                    if (isMarker && workSeg.payCode) {
-                                      return <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{workSeg.payCode.code}[{workSeg.payCode.label}]</span>;
-                                    }
-                                    return <span style={{ font: "var(--type-body2)", color: "var(--text-error)" }}>Absent</span>;
-                                  }
-
-                                  // Non-working day (weekend or not scheduled): show blank dropdown like REASON.
-                                  // Skip this branch when there are actual work segments (e.g. a manually added entry).
-                                  if (isWeekend && !workSeg) {
-                                    if (canEdit) {
-                                      const absentKey = `absent:${dayStr}`;
-                                      const absentPending = pendingPayCodes.has(absentKey);
-                                      const dayMarker = daySegments.find((s) => s.segmentType === "LEAVE" && s.durationMinutes === 0);
-                                      return (
-                                        <select
-                                          value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : (dayMarker?.payCode?.id ?? "")}
-                                          onChange={(e) => handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)}
-                                          className="ta-field"
-                                          style={gridSelectStyle(absentPending, 96)}
-                                        >
-                                          <option value="">—</option>
-                                          {payCodes.map((pc) => (
-                                            <option key={pc.id} value={pc.id}>{pc.code}[{pc.label}]</option>
-                                          ))}
-                                        </select>
-                                      );
-                                    }
-                                    const dayMarker = daySegments.find((s) => s.segmentType === "LEAVE" && s.durationMinutes === 0);
-                                    return dayMarker?.payCode
-                                      ? <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{dayMarker.payCode.code}[{dayMarker.payCode.label}]</span>
-                                      : null;
-                                  }
-
-                                  // Holiday day: show the HOLIDAY segment's pay code read-only.
-                                  // The credit is engine-managed; admin cannot change it here.
-                                  if (!workSeg) {
-                                    const holidaySeg = daySegments.find((s) => s.segmentType === "HOLIDAY" && s.durationMinutes > 0);
-                                    if (holidaySeg?.payCode) {
-                                      return <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{holidaySeg.payCode.code}[{holidaySeg.payCode.label}]</span>;
-                                    }
-                                  }
-
-                                  // Working day with no segments yet (open punch today, or future day).
-                                  // Show an editable blank dropdown so the user can pre-set the code.
-                                  if (!workSeg) {
-                                    if (canEdit) {
-                                      const absentKey = `absent:${dayStr}`;
-                                      const absentPending = pendingPayCodes.has(absentKey);
-                                      const defaultId = dayPunches.length > 0
-                                        ? (timecard?.employee.ruleSet?.defaultPayCodeId ?? "")
-                                        : "";
-                                      return (
-                                        <select
-                                          value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : defaultId}
-                                          onChange={(e) =>
-                                            handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)
-                                          }
-                                          className="ta-field"
-                                          style={gridSelectStyle(absentPending, 96)}
-                                        >
-                                          <option value="">—</option>
-                                          {payCodes.map((pc) => (
-                                            <option key={pc.id} value={pc.id}>
-                                              {pc.code}[{pc.label}]
-                                            </option>
-                                          ))}
-                                        </select>
-                                      );
-                                    }
-                                    return null;
-                                  }
-
-                                  const workSegPending = pendingPayCodes.has(workSeg.id);
-                                  return canEdit ? (
-                                    <select
-                                      value={workSegPending ? (pendingPayCodes.get(workSeg.id) ?? "") : (workSeg.payCode?.id ?? "")}
-                                      onChange={(e) => handlePayCodeChange(workSeg.id, e.target.value)}
-                                      className="ta-field"
-                                      style={gridSelectStyle(workSegPending, 96)}
-                                    >
-                                      <option value="">—</option>
-                                      {payCodes.map((pc) => (
-                                        <option key={pc.id} value={pc.id}>
-                                          {pc.code}[{pc.label}]
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : workSeg.payCode ? (
-                                    <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                                      {workSeg.payCode.code}[{workSeg.payCode.label}]
-                                    </span>
-                                  ) : null;
-                                })()}
-                              </td>
-                            )}
-
-                            {/* Reason code */}
-                            {reasonCodes.length > 0 && (
-                              <td
-                                className="px-2 py-1.5"
-                                onClick={(e) => e.stopPropagation()}
-                                style={(() => {
-                                  const dr = timecard?.dayReasons.find((d) => d.segmentDate === format(day, "yyyy-MM-dd"));
-                                  const color = dr?.reasonCode.color;
-                                  return color ? { backgroundColor: color + "33" } : undefined;
-                                })()}
-                              >
-                                {(() => {
-                                  const dayStr = format(day, "yyyy-MM-dd");
-                                  const dayReason = timecard?.dayReasons.find((dr) => dr.segmentDate === dayStr);
-                                  const reasonPending = pendingReasonCodes.has(dayStr);
-                                  if (canEdit) {
-                                    return (
-                                      <select
-                                        value={reasonPending ? (pendingReasonCodes.get(dayStr) ?? "") : (dayReason?.reasonCodeId ?? "")}
-                                        onChange={(e) => handleDayReasonCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)}
-                                        className="ta-field"
-                                        style={gridSelectStyle(reasonPending, 112)}
-                                      >
-                                        <option value="">—</option>
-                                        {reasonCodes.map((rc) => (
-                                          <option key={rc.id} value={rc.id}>
-                                            {rc.code}[{rc.label}]
-                                          </option>
-                                        ))}
-                                      </select>
-                                    );
-                                  }
-                                  return dayReason ? (
-                                    <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{dayReason.reasonCode.code}[{dayReason.reasonCode.label}]</span>
-                                  ) : null;
-                                })()}
-                              </td>
-                            )}
-
-                            {/* Notes icon */}
-                            <td className="w-7 px-1 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
+                            {/* The day, as people say it, and at most one tag for
+                                what needs attention on it. */}
+                            <td className="px-3 py-2">
                               {(() => {
-                                const dayStr = format(day, "yyyy-MM-dd");
-                                // If the day has manual continuation rows, those rows own the amber
-                                // indicator — suppress it here so it doesn't double-highlight.
-                                const hasManualContinuation = pairs.slice(1).some(
-                                  (p) => p.inPunch?.source === "MANUAL" || p.outPunch?.source === "MANUAL"
-                                );
-                                const allNotes = timecard?.notes.filter((n) => n.noteDate === dayStr).length ?? 0;
-                                const dayNoteCount = hasManualContinuation ? 0 : allNotes;
+                                const tag = isAbsent
+                                  ? { text: "Absent", bg: "var(--surface-error)", fg: "var(--text-error)" }
+                                  : hasMissingPunch
+                                    ? { text: "Missed punch", bg: "var(--surface-warning)", fg: "var(--text-warning)" }
+                                    : hasException
+                                      ? {
+                                          text:
+                                            dayExceptions.length === 1
+                                              ? (EXCEPTION_FILTER_OPTIONS.find((o) => o.id === dayExceptions[0].exceptionType)?.name ?? "Exception")
+                                              : `${dayExceptions.length} exceptions`,
+                                          bg: "var(--surface-warning)",
+                                          fg: "var(--text-warning)",
+                                        }
+                                      : isTodayRow
+                                        ? { text: "Today", bg: "var(--surface-info)", fg: "var(--text-accent)" }
+                                        : null;
                                 return (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenNote(dayStr)}
-                                    title={allNotes > 0 ? `${allNotes} note${allNotes !== 1 ? "s" : ""}` : "Add note"}
-                                    className="relative rounded bg-transparent p-0.5 ta-hoverable"
-                                    style={{
-                                      border: 0,
-                                      cursor: "pointer",
-                                      color: dayNoteCount > 0 ? "var(--icon-warning)" : "var(--icon-secondary)",
-                                    }}
-                                  >
-                                    <StickyNote className="h-4 w-4" />
-                                    {dayNoteCount > 1 && (
+                                  <span className="flex items-center gap-2 whitespace-nowrap">
+                                    <span
+                                      className="tabular"
+                                      style={{
+                                        font: "var(--type-body1)",
+                                        fontWeight: isWeekend ? undefined : "var(--weight-medium)",
+                                        color: isWeekend ? "var(--text-tertiary)" : "var(--text-primary)",
+                                      }}
+                                    >
+                                      {format(day, "EEE, MMM d")}
+                                    </span>
+                                    {tag && (
                                       <span
-                                        className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full"
-                                        style={{
-                                          background: "var(--fill-warning)",
-                                          color: "var(--text-on-accent)",
-                                          font: "var(--weight-bold) 9px/1 var(--font-sans)",
-                                        }}
+                                        className="inline-flex h-5 items-center rounded-full px-2"
+                                        style={{ background: tag.bg, color: tag.fg, font: "var(--type-caption1)", fontWeight: "var(--weight-semibold)" }}
+                                        title={dayExceptions.map((e) => EXCEPTION_FILTER_OPTIONS.find((o) => o.id === e.exceptionType)?.name ?? e.exceptionType).join(", ") || undefined}
                                       >
-                                        {dayNoteCount}
+                                        {tag.text}
                                       </span>
                                     )}
-                                  </button>
+                                  </span>
                                 );
                               })()}
                             </td>
@@ -2750,11 +2564,12 @@ export function TimecardViewer({
                                     onClick={() => startAddingPunch(dayKey, 0, "CLOCK_IN", day, lastOut ? parseISO(lastOut.roundedTime) : null)}
                                     className={gridCellButtonClass}
                                     style={{ ...punchCellStyle(true, true), fontWeight: "var(--weight-medium)" }}
+                                    title="Click to add the missing punch"
                                   >
-                                    Missed
+                                    Missing
                                   </button>
                                 ) : hasMissingPunch ? (
-                                  <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>Missed</span>
+                                  <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>Missing</span>
                                 ) : canEdit ? (
                                   <button
                                     type="button"
@@ -2816,11 +2631,12 @@ export function TimecardViewer({
                                     onClick={() => startAddingPunch(dayKey, 0, "CLOCK_OUT", day, firstIn ? parseISO(firstIn.roundedTime) : null)}
                                     className={gridCellButtonClass}
                                     style={{ ...punchCellStyle(true, true), fontWeight: "var(--weight-medium)" }}
+                                    title="Click to add the missing punch"
                                   >
-                                    Missed
+                                    Missing
                                   </button>
                                 ) : hasMissingPunch ? (
-                                  <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>Missed</span>
+                                  <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>Missing</span>
                                 ) : canEdit ? (
                                   <button
                                     type="button"
@@ -3019,6 +2835,231 @@ export function TimecardViewer({
                               );
                             })()}
 
+                            {/* Pay code */}
+                            {payCodes.length > 0 && (
+                              <td className="px-2 py-1.5" style={{ borderLeft: "1px solid var(--stroke-secondary)" }} onClick={(e) => e.stopPropagation()}>
+                                {(() => {
+                                  const workSeg = daySegments.find(
+                                    (s) => s.segmentType === "WORK" || s.segmentType === "LEAVE"
+                                  );
+                                  // 0-duration marker = absent day with a code override
+                                  const isMarker = !!workSeg && workSeg.durationMinutes === 0;
+                                  const dayStr = format(day, "yyyy-MM-dd");
+
+                                  // Missed-punch day: past day with punches but no work segments and no marker.
+                                  // Excludes today — an open clock-in (still working) is not a missed punch.
+                                  const isMissedPunchDay = !isTodayRow && dayPunches.length > 0 && daySegments.filter(s => s.segmentType === "WORK").length === 0 && !isMarker;
+
+
+                                  if (isAbsent || isMarker || isMissedPunchDay || (isSalaryVirtualDay && daySegments.length === 0)) {
+                                    if (canEdit) {
+                                      const absentKey = `absent:${dayStr}`;
+                                      const absentPending = pendingPayCodes.has(absentKey);
+                                      // Pre-populate missed-punch days with the rule set's default pay code
+                                      // so the dropdown doesn't show "Absent" before a recalculate creates the marker.
+                                      const regularId = !isMarker && isMissedPunchDay
+                                        ? (timecard?.employee.ruleSet?.defaultPayCodeId ?? payCodes.find((pc) => pc.code === 0)?.id ?? "")
+                                        : "";
+                                      const currentValue = absentPending
+                                        ? (pendingPayCodes.get(absentKey) ?? "")
+                                        : isMarker
+                                          ? (workSeg.payCode?.id ?? "")
+                                          : regularId;
+                                      return (
+                                        <select
+                                          value={currentValue}
+                                          onChange={(e) =>
+                                            handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)
+                                          }
+                                          className="ta-field"
+                                          style={gridSelectStyle(absentPending, 168)}
+                                        >
+                                          <option value="">Absent</option>
+                                          {payCodes.map((pc) => (
+                                            <option key={pc.id} value={pc.id}>
+                                              {payCodeOption(pc)}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      );
+                                    }
+                                    // Read-only locked view
+                                    if (isMarker && workSeg.payCode) {
+                                      return <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{payCodeName(workSeg.payCode)}</span>;
+                                    }
+                                    return <span style={{ font: "var(--type-body2)", color: "var(--text-error)" }}>Absent</span>;
+                                  }
+
+                                  // Non-working day (weekend or not scheduled): show blank dropdown like REASON.
+                                  // Skip this branch when there are actual work segments (e.g. a manually added entry).
+                                  if (isWeekend && !workSeg) {
+                                    if (canEdit) {
+                                      const absentKey = `absent:${dayStr}`;
+                                      const absentPending = pendingPayCodes.has(absentKey);
+                                      const dayMarker = daySegments.find((s) => s.segmentType === "LEAVE" && s.durationMinutes === 0);
+                                      return (
+                                        <select
+                                          value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : (dayMarker?.payCode?.id ?? "")}
+                                          onChange={(e) => handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)}
+                                          className="ta-field"
+                                          style={gridSelectStyle(absentPending, 168)}
+                                        >
+                                          <option value="">—</option>
+                                          {payCodes.map((pc) => (
+                                            <option key={pc.id} value={pc.id}>{payCodeOption(pc)}</option>
+                                          ))}
+                                        </select>
+                                      );
+                                    }
+                                    const dayMarker = daySegments.find((s) => s.segmentType === "LEAVE" && s.durationMinutes === 0);
+                                    return dayMarker?.payCode
+                                      ? <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{payCodeName(dayMarker.payCode)}</span>
+                                      : null;
+                                  }
+
+                                  // Holiday day: show the HOLIDAY segment's pay code read-only.
+                                  // The credit is engine-managed; admin cannot change it here.
+                                  if (!workSeg) {
+                                    const holidaySeg = daySegments.find((s) => s.segmentType === "HOLIDAY" && s.durationMinutes > 0);
+                                    if (holidaySeg?.payCode) {
+                                      return <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{payCodeName(holidaySeg.payCode)}</span>;
+                                    }
+                                  }
+
+                                  // Working day with no segments yet (open punch today, or future day).
+                                  // Show an editable blank dropdown so the user can pre-set the code.
+                                  if (!workSeg) {
+                                    if (canEdit) {
+                                      const absentKey = `absent:${dayStr}`;
+                                      const absentPending = pendingPayCodes.has(absentKey);
+                                      const defaultId = dayPunches.length > 0
+                                        ? (timecard?.employee.ruleSet?.defaultPayCodeId ?? "")
+                                        : "";
+                                      return (
+                                        <select
+                                          value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : defaultId}
+                                          onChange={(e) =>
+                                            handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)
+                                          }
+                                          className="ta-field"
+                                          style={gridSelectStyle(absentPending, 168)}
+                                        >
+                                          <option value="">—</option>
+                                          {payCodes.map((pc) => (
+                                            <option key={pc.id} value={pc.id}>
+                                              {payCodeOption(pc)}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      );
+                                    }
+                                    return null;
+                                  }
+
+                                  const workSegPending = pendingPayCodes.has(workSeg.id);
+                                  return canEdit ? (
+                                    <select
+                                      value={workSegPending ? (pendingPayCodes.get(workSeg.id) ?? "") : (workSeg.payCode?.id ?? "")}
+                                      onChange={(e) => handlePayCodeChange(workSeg.id, e.target.value)}
+                                      className="ta-field"
+                                      style={gridSelectStyle(workSegPending, 168)}
+                                    >
+                                      <option value="">—</option>
+                                      {payCodes.map((pc) => (
+                                        <option key={pc.id} value={pc.id}>
+                                          {payCodeOption(pc)}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : workSeg.payCode ? (
+                                    <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                                      {payCodeName(workSeg.payCode)}
+                                    </span>
+                                  ) : null;
+                                })()}
+                              </td>
+                            )}
+
+                            {/* Reason code */}
+                            {reasonCodes.length > 0 && (
+                              <td
+                                className="px-2 py-1.5"
+                                onClick={(e) => e.stopPropagation()}
+                                style={(() => {
+                                  const dr = timecard?.dayReasons.find((d) => d.segmentDate === format(day, "yyyy-MM-dd"));
+                                  const color = dr?.reasonCode.color;
+                                  return color ? { backgroundColor: color + "33" } : undefined;
+                                })()}
+                              >
+                                {(() => {
+                                  const dayStr = format(day, "yyyy-MM-dd");
+                                  const dayReason = timecard?.dayReasons.find((dr) => dr.segmentDate === dayStr);
+                                  const reasonPending = pendingReasonCodes.has(dayStr);
+                                  if (canEdit) {
+                                    return (
+                                      <select
+                                        value={reasonPending ? (pendingReasonCodes.get(dayStr) ?? "") : (dayReason?.reasonCodeId ?? "")}
+                                        onChange={(e) => handleDayReasonCodeChange(timecard?.timesheetId ?? null, dayStr, e.target.value)}
+                                        className="ta-field"
+                                        style={gridSelectStyle(reasonPending, 150)}
+                                      >
+                                        <option value="">—</option>
+                                        {reasonCodes.map((rc) => (
+                                          <option key={rc.id} value={rc.id}>
+                                            {reasonName(rc)}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    );
+                                  }
+                                  return dayReason ? (
+                                    <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{reasonName(dayReason.reasonCode)}</span>
+                                  ) : null;
+                                })()}
+                              </td>
+                            )}
+
+                            {/* Notes icon */}
+                            <td className="w-7 px-1 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
+                              {(() => {
+                                const dayStr = format(day, "yyyy-MM-dd");
+                                // If the day has manual continuation rows, those rows own the amber
+                                // indicator — suppress it here so it doesn't double-highlight.
+                                const hasManualContinuation = pairs.slice(1).some(
+                                  (p) => p.inPunch?.source === "MANUAL" || p.outPunch?.source === "MANUAL"
+                                );
+                                const allNotes = timecard?.notes.filter((n) => n.noteDate === dayStr).length ?? 0;
+                                const dayNoteCount = hasManualContinuation ? 0 : allNotes;
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenNote(dayStr)}
+                                    title={allNotes > 0 ? `${allNotes} note${allNotes !== 1 ? "s" : ""}` : "Add note"}
+                                    className="relative rounded bg-transparent p-0.5 ta-hoverable"
+                                    style={{
+                                      border: 0,
+                                      cursor: "pointer",
+                                      color: dayNoteCount > 0 ? "var(--icon-warning)" : "var(--icon-secondary)",
+                                    }}
+                                  >
+                                    <StickyNote className="h-4 w-4" />
+                                    {dayNoteCount > 1 && (
+                                      <span
+                                        className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full"
+                                        style={{
+                                          background: "var(--fill-warning)",
+                                          color: "var(--text-on-accent)",
+                                          font: "var(--weight-bold) 9px/1 var(--font-sans)",
+                                        }}
+                                      >
+                                        {dayNoteCount}
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })()}
+                            </td>
+
                             {/* Delete manual pair — main row (first pair) */}
                             {canDeleteManual && (() => {
                               const isManualPair = firstIn?.source === "MANUAL" && lastOut?.source === "MANUAL";
@@ -3071,75 +3112,6 @@ export function TimecardViewer({
                                 {/* Continuation date indicator */}
                                 <td className="px-3 py-1">
                                   <span className="ml-4" style={{ color: "var(--text-disabled)" }}>↳</span>
-                                </td>
-                                {/* Pay code DB cell */}
-                                {payCodes.length > 0 && (
-                                  <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
-                                    {pairWorkSeg && canEdit ? (
-                                      <select
-                                        value={pendingPayCodes.has(pairWorkSeg.id) ? (pendingPayCodes.get(pairWorkSeg.id) ?? "") : (pairWorkSeg.payCode?.id ?? "")}
-                                        onChange={(e) => handlePayCodeChange(pairWorkSeg.id, e.target.value)}
-                                        className="ta-field"
-                                        style={gridSelectStyle(pendingPayCodes.has(pairWorkSeg.id), 96)}
-                                      >
-                                        <option value="">—</option>
-                                        {payCodes.map((pc) => (
-                                          <option key={pc.id} value={pc.id}>
-                                            {pc.code}[{pc.label}]
-                                          </option>
-                                        ))}
-                                      </select>
-                                    ) : pairWorkSeg?.payCode ? (
-                                      <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                                        {pairWorkSeg.payCode.code}[{pairWorkSeg.payCode.label}]
-                                      </span>
-                                    ) : canEdit ? (() => {
-                                      const absentKey = `absent:${dayKey}`;
-                                      const absentPending = pendingPayCodes.has(absentKey);
-                                      const dayMarker = daySegments.find((s) => s.segmentType === "LEAVE" && s.durationMinutes === 0);
-                                      return (
-                                        <select
-                                          value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : (pairWorkSeg?.payCode?.id ?? dayMarker?.payCode?.id ?? "")}
-                                          onChange={(e) => handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayKey, e.target.value)}
-                                          className="ta-field"
-                                          style={gridSelectStyle(absentPending, 96)}
-                                        >
-                                          <option value="">—</option>
-                                          {payCodes.map((pc) => (
-                                            <option key={pc.id} value={pc.id}>
-                                              {pc.code}[{pc.label}]
-                                            </option>
-                                          ))}
-                                        </select>
-                                      );
-                                    })() : null}
-                                  </td>
-                                )}
-                                {/* Reason code — day-level, shown only on first row; blank cell for continuations */}
-                                {reasonCodes.length > 0 && <td className="px-2 py-1.5" />}
-                                {/* Notes icon — shown only on manual continuation rows */}
-                                <td className="w-7 px-1 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
-                                  {(() => {
-                                    const isManualPair = pairIn?.source === "MANUAL" || pairOut?.source === "MANUAL";
-                                    if (!isManualPair) return null;
-                                    const contDayStr = format(day, "yyyy-MM-dd");
-                                    const contNoteCount = timecard?.notes.filter((n) => n.noteDate === contDayStr).length ?? 0;
-                                    return (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleOpenNote(contDayStr)}
-                                        title={contNoteCount > 0 ? `${contNoteCount} note${contNoteCount !== 1 ? "s" : ""}` : "Add note"}
-                                        className="relative rounded bg-transparent p-0.5 ta-hoverable"
-                                        style={{
-                                          border: 0,
-                                          cursor: "pointer",
-                                          color: contNoteCount > 0 ? "var(--icon-warning)" : "var(--icon-secondary)",
-                                        }}
-                                      >
-                                        <StickyNote className="h-4 w-4" />
-                                      </button>
-                                    );
-                                  })()}
                                 </td>
                                 {/* In cell */}
                                 <td
@@ -3239,6 +3211,75 @@ export function TimecardViewer({
                                 <td className="px-3 py-1.5 text-right" style={{ font: "var(--type-body1)", color: "var(--text-disabled)" }}>—</td>
                                 <td className="py-1.5 pl-3 pr-8 text-right" style={{ font: "var(--type-body1)", color: "var(--text-disabled)" }}>—</td>
                                 {timecard?.employee.ruleSet.autoDeductMeal && <td />}
+                                {/* Pay code DB cell */}
+                                {payCodes.length > 0 && (
+                                  <td className="px-2 py-1.5" style={{ borderLeft: "1px solid var(--stroke-secondary)" }} onClick={(e) => e.stopPropagation()}>
+                                    {pairWorkSeg && canEdit ? (
+                                      <select
+                                        value={pendingPayCodes.has(pairWorkSeg.id) ? (pendingPayCodes.get(pairWorkSeg.id) ?? "") : (pairWorkSeg.payCode?.id ?? "")}
+                                        onChange={(e) => handlePayCodeChange(pairWorkSeg.id, e.target.value)}
+                                        className="ta-field"
+                                        style={gridSelectStyle(pendingPayCodes.has(pairWorkSeg.id), 168)}
+                                      >
+                                        <option value="">—</option>
+                                        {payCodes.map((pc) => (
+                                          <option key={pc.id} value={pc.id}>
+                                            {payCodeOption(pc)}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : pairWorkSeg?.payCode ? (
+                                      <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                                        {payCodeName(pairWorkSeg.payCode)}
+                                      </span>
+                                    ) : canEdit ? (() => {
+                                      const absentKey = `absent:${dayKey}`;
+                                      const absentPending = pendingPayCodes.has(absentKey);
+                                      const dayMarker = daySegments.find((s) => s.segmentType === "LEAVE" && s.durationMinutes === 0);
+                                      return (
+                                        <select
+                                          value={absentPending ? (pendingPayCodes.get(absentKey) ?? "") : (pairWorkSeg?.payCode?.id ?? dayMarker?.payCode?.id ?? "")}
+                                          onChange={(e) => handleAbsentDayPayCodeChange(timecard?.timesheetId ?? null, dayKey, e.target.value)}
+                                          className="ta-field"
+                                          style={gridSelectStyle(absentPending, 168)}
+                                        >
+                                          <option value="">—</option>
+                                          {payCodes.map((pc) => (
+                                            <option key={pc.id} value={pc.id}>
+                                              {payCodeOption(pc)}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      );
+                                    })() : null}
+                                  </td>
+                                )}
+                                {/* Reason code — day-level, shown only on first row; blank cell for continuations */}
+                                {reasonCodes.length > 0 && <td className="px-2 py-1.5" />}
+                                {/* Notes icon — shown only on manual continuation rows */}
+                                <td className="w-7 px-1 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
+                                  {(() => {
+                                    const isManualPair = pairIn?.source === "MANUAL" || pairOut?.source === "MANUAL";
+                                    if (!isManualPair) return null;
+                                    const contDayStr = format(day, "yyyy-MM-dd");
+                                    const contNoteCount = timecard?.notes.filter((n) => n.noteDate === contDayStr).length ?? 0;
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenNote(contDayStr)}
+                                        title={contNoteCount > 0 ? `${contNoteCount} note${contNoteCount !== 1 ? "s" : ""}` : "Add note"}
+                                        className="relative rounded bg-transparent p-0.5 ta-hoverable"
+                                        style={{
+                                          border: 0,
+                                          cursor: "pointer",
+                                          color: contNoteCount > 0 ? "var(--icon-warning)" : "var(--icon-secondary)",
+                                        }}
+                                      >
+                                        <StickyNote className="h-4 w-4" />
+                                      </button>
+                                    );
+                                  })()}
+                                </td>
                                 {/* Delete manual pair — continuation row */}
                                 {canDeleteManual && (() => {
                                   const isManualPair = pairIn?.source === "MANUAL" && pairOut?.source === "MANUAL";
@@ -3298,22 +3339,6 @@ export function TimecardViewer({
                                   )}
                                 </Badge>
                               </td>
-                              {payCodes.length > 0 && (() => {
-                                const leavePayCode = seg.payCode ?? seg.leaveRequest?.leaveType.payCode ?? null;
-                                return (
-                                  <td className="px-2 py-1">
-                                    {leavePayCode ? (
-                                      <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                                        {leavePayCode.code}[{leavePayCode.label}]
-                                      </span>
-                                    ) : (
-                                      <span style={{ font: "var(--type-body2)", color: "var(--text-disabled)" }}>—</span>
-                                    )}
-                                  </td>
-                                );
-                              })()}
-                              {reasonCodes.length > 0 && <td className="px-2 py-1.5" />}
-                              <td className="w-7 px-1 py-1.5" />
                               <td
                                 className="px-2 py-1"
                                 style={{ font: "var(--type-body1)", color: "var(--text-disabled)", borderLeft: "1px solid var(--stroke-secondary)" }}
@@ -3341,6 +3366,22 @@ export function TimecardViewer({
                                 {minutesToHoursDecimal(seg.durationMinutes)}
                               </td>
                               {timecard?.employee.ruleSet.autoDeductMeal && <td />}
+                              {payCodes.length > 0 && (() => {
+                                const leavePayCode = seg.payCode ?? seg.leaveRequest?.leaveType.payCode ?? null;
+                                return (
+                                  <td className="px-2 py-1" style={{ borderLeft: "1px solid var(--stroke-secondary)" }}>
+                                    {leavePayCode ? (
+                                      <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                                        {payCodeName(leavePayCode)}
+                                      </span>
+                                    ) : (
+                                      <span style={{ font: "var(--type-body2)", color: "var(--text-disabled)" }}>—</span>
+                                    )}
+                                  </td>
+                                );
+                              })()}
+                              {reasonCodes.length > 0 && <td className="px-2 py-1.5" />}
+                              <td className="w-7 px-1 py-1.5" />
                               {canDeleteManual && <td className="w-8 px-1" />}
                             </tr>
                           ))}
@@ -3446,67 +3487,13 @@ export function TimecardViewer({
 
                   </tbody>
                 </table>
-              </div>
-              {/* ── Unsaved changes, impossible to miss ──────────────────
-                  Edits in the grid are queued, not written, so the way to
-                  write them sits where the eye ends up after making one, and
-                  says how many are waiting. */}
-              {canEdit && hasPendingChanges && (
-                <div
-                  className="flex shrink-0 flex-wrap items-center gap-3 px-5 py-3"
-                  style={{ borderTop: "1px solid var(--stroke-warning)", background: "var(--surface-warning)" }}
-                  role="status"
-                >
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
-                      {pendingChangeCount} unsaved {pendingChangeCount === 1 ? "change" : "changes"}
-                    </span>
-                    <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                      Save them to update this timecard, or discard them to put it back as it was.
-                    </span>
-                  </span>
-                  <Button hierarchy="secondary" size="sm" onClick={handleDiscardChanges} disabled={isPending}>
-                    Discard changes
-                  </Button>
-                  <Button size="sm" onClick={handleSaveChanges} disabled={isPending}>
-                    {isPending ? "Saving…" : "Save changes"}
-                  </Button>
-                </div>
-              )}
-
-              <div className="shrink-0">
-
-                {/* ── Color Legend ──────────────────────────────────── */}
-                <div
-                  className="flex flex-wrap items-center gap-4 px-4 py-2"
-                  style={{
-                    borderTop: "1px solid var(--stroke-secondary)",
-                    background: "var(--surface-tertiary)",
-                  }}
-                >
-                  <span className="wms-overline">Legend</span>
-                  {[
-                    { label: "Absent", fill: "var(--surface-error)", line: "var(--stroke-error)" },
-                    { label: "Exception", fill: "var(--surface-warning)", line: "var(--stroke-warning)" },
-                    { label: "Today", fill: "var(--surface-info)", line: "var(--stroke-accent-focus)" },
-                    { label: "Weekend", fill: "var(--surface-tertiary)", line: "var(--stroke-default)" },
-                  ].map((l) => (
-                    <span
-                      key={l.label}
-                      className="flex items-center gap-1.5"
-                      style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-                    >
-                      <span
-                        className="inline-block h-3 w-3 rounded"
-                        style={{ background: l.fill, border: `1px solid ${l.line}` }}
-                      />
-                      {l.label}
-                    </span>
-                  ))}
-                </div>
 
                 {/* ── Summary with Group By ──────────────────────────── */}
-                <div style={{ borderTop: "1px solid var(--stroke-secondary)" }}>
+                {/* Under the days, in the same scroll, so the days get the
+                    height. Pinned to the left edge at the visible width: on a
+                    narrow window the grid above scrolls sideways, and the
+                    summary should not slide away with it. */}
+                <div className="sticky left-0 w-full" style={{ borderTop: "1px solid var(--stroke-secondary)" }}>
                   {/* The summary card's header, as the timesheet template draws
                       it: title and sub on the left, "Group by" on the right.
                       Segments rather than a dropdown because there are three of
@@ -3518,7 +3505,7 @@ export function TimecardViewer({
                   >
                     <div className="flex flex-col gap-0.5">
                       <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>
-                        Timesheet Summary
+                        Summary
                       </span>
                       <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                         {summaryGroupBy === "week"
@@ -3544,7 +3531,7 @@ export function TimecardViewer({
                           { value: "total", label: "Total" },
                           { value: "week", label: "Week" },
                           ...(payCodes.length > 0
-                            ? [{ value: "paycode", label: "Pay Code" }]
+                            ? [{ value: "paycode", label: "Pay code" }]
                             : []),
                         ]}
                       />
@@ -3560,20 +3547,20 @@ export function TimecardViewer({
                             {summaryGroupBy === "week"
                               ? "Week"
                               : summaryGroupBy === "paycode"
-                                ? "Pay Code"
-                                : "Category"}
+                                ? "Pay code"
+                                : "Hours"}
                           </TH>
-                          <TH numeric>Reg Hrs</TH>
-                          <TH numeric>OT</TH>
-                          <TH numeric>DT</TH>
-                          <TH numeric>Total Hrs</TH>
+                          <TH numeric>Regular</TH>
+                          <TH numeric>Overtime</TH>
+                          <TH numeric>Double</TH>
+                          <TH numeric>Total hours</TH>
                           {rate !== null && (
                             <>
                               <TH numeric>Rate</TH>
-                              <TH numeric>Reg Pay</TH>
-                              <TH numeric>OT Pay</TH>
-                              <TH numeric>DT Pay</TH>
-                              <TH numeric>Total Pay</TH>
+                              <TH numeric>Regular pay</TH>
+                              <TH numeric>Overtime pay</TH>
+                              <TH numeric>Double pay</TH>
+                              <TH numeric>Total pay</TH>
                             </>
                           )}
                         </TR>
@@ -3734,7 +3721,7 @@ export function TimecardViewer({
                               : seg.payBucket;
                             const key =
                               seg.payCode
-                                ? `${seg.payCode.code}[${seg.payCode.label}]`
+                                ? payCodeOption(seg.payCode)
                                 : PAY_BUCKET_LABEL[eb as PayBucketValue] ?? eb;
                             byCode[key] = byCode[key] ?? { label: key, reg: 0, ot: 0, dt: 0, total: 0 };
                             byCode[key].total += seg.durationMinutes;
@@ -3781,6 +3768,33 @@ export function TimecardViewer({
                   </div>
                 </div>
               </div>
+              {/* ── Unsaved changes, impossible to miss ──────────────────
+                  Edits in the grid are queued, not written, so the way to
+                  write them sits where the eye ends up after making one, and
+                  says how many are waiting. */}
+              {canEdit && hasPendingChanges && (
+                <div
+                  className="flex shrink-0 flex-wrap items-center gap-3 px-5 py-3"
+                  style={{ borderTop: "1px solid var(--stroke-warning)", background: "var(--surface-warning)" }}
+                  role="status"
+                >
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+                      {pendingChangeCount} unsaved {pendingChangeCount === 1 ? "change" : "changes"}
+                    </span>
+                    <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                      Save them to update this timecard, or discard them to put it back as it was.
+                    </span>
+                  </span>
+                  <Button hierarchy="secondary" size="sm" onClick={handleDiscardChanges} disabled={isPending}>
+                    Discard changes
+                  </Button>
+                  <Button size="sm" onClick={handleSaveChanges} disabled={isPending}>
+                    {isPending ? "Saving…" : "Save changes"}
+                  </Button>
+                </div>
+              )}
+
             </>
           )}
         </section>
@@ -3899,7 +3913,7 @@ export function TimecardViewer({
                     onClick={handleSaveNote}
                     disabled={noteSaving || !noteText.trim()}
                   >
-                    {noteSaving ? "Saving…" : "Add Note"}
+                    {noteSaving ? "Saving…" : "Add note"}
                   </Button>
                 </div>
               </div>
@@ -3924,7 +3938,7 @@ export function TimecardViewer({
             >
               <div className="flex flex-col gap-0.5">
                 <h3 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
-                  Add Time Entry
+                  Add time
                 </h3>
                 <p
                   className="m-0"
@@ -3973,8 +3987,8 @@ export function TimecardViewer({
                       setNewEntryError(null);
                     }}
                     items={[
-                      { value: "time", label: "In / Out Times" },
-                      { value: "hours", label: "Reg Hours" },
+                      { value: "time", label: "Clock in and out" },
+                      { value: "hours", label: "Number of hours" },
                     ]}
                   />
                 </div>
@@ -3985,7 +3999,7 @@ export function TimecardViewer({
                     <div className="flex items-end gap-1.5">
                       <div className="min-w-0 flex-1">
                       <Input
-                        label="In Time"
+                        label="Clock in"
                         value={newInTimeStr}
                         onChange={(e) => setNewInTimeStr(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
@@ -4006,7 +4020,7 @@ export function TimecardViewer({
                     <div className="flex items-end gap-1.5">
                       <div className="min-w-0 flex-1">
                       <Input
-                        label="Out Time"
+                        label="Clock out"
                         value={newOutTimeStr}
                         onChange={(e) => setNewOutTimeStr(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
@@ -4028,7 +4042,7 @@ export function TimecardViewer({
                   /* Reg Hours */
                   <div className="col-span-full">
                     <Input
-                      label="Reg Hours"
+                      label="Regular hours"
                       type="number"
                       min="0.25"
                       max="24"
@@ -4037,7 +4051,7 @@ export function TimecardViewer({
                       onChange={(e) => setNewEntryHours(e.target.value)}
                       placeholder="8.00"
                       required
-                      hint="Decimal hours, between 0.25 and 24."
+                      hint="For example 8 or 7.5. Between 0.25 and 24."
                     />
                   </div>
                 )}
@@ -4046,16 +4060,16 @@ export function TimecardViewer({
                 {payCodes.length > 0 && (
                   <label className="flex flex-col gap-1.5">
                     <span style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>
-                      Pay Code
+                      Pay code
                     </span>
                     <Select
                       value={newEntryPayCodeId}
                       onChange={(e) => setNewEntryPayCodeId(e.target.value)}
                       style={{ width: "100%" }}
                     >
-                      <option value="">— Default —</option>
+                      <option value="">Their usual pay code</option>
                       {payCodes.map((pc) => (
-                        <option key={pc.id} value={pc.id}>{pc.code}[{pc.label}]</option>
+                        <option key={pc.id} value={pc.id}>{payCodeOption(pc)}</option>
                       ))}
                     </Select>
                   </label>
@@ -4073,7 +4087,7 @@ export function TimecardViewer({
                     >
                       <option value="">—</option>
                       {reasonCodes.map((rc) => (
-                        <option key={rc.id} value={rc.id}>{rc.code} — {rc.label}</option>
+                        <option key={rc.id} value={rc.id}>{reasonName(rc)}</option>
                       ))}
                     </Select>
                   </label>
@@ -4081,10 +4095,10 @@ export function TimecardViewer({
                 {/* Notes — full width, saved as timesheet note */}
                 <div className="col-span-full">
                   <Input
-                    label="Notes"
+                    label="Note"
                     value={newEntryNote}
                     onChange={(e) => setNewEntryNote(e.target.value)}
-                    placeholder="Add a note for this entry…"
+                    placeholder="Why this time is being added (optional)"
                   />
                 </div>
               </div>
@@ -4103,7 +4117,7 @@ export function TimecardViewer({
                   type="submit"
                   disabled={isPending || (newEntryMode === "time" ? (!newInTimeStr || !newOutTimeStr) : !newEntryHours)}
                 >
-                  {isPending ? "Adding…" : "Add Entry"}
+                  {isPending ? "Adding…" : "Add time"}
                 </Button>
               </div>
             </form>
