@@ -383,7 +383,13 @@ function PersonRow({
           </span>
         )}
         <span className={`${styles.mvFact} ${styles.mvNum}`}>
-          <span className={styles.mvFactValue}>{seen ? fmtDuration(t.workMin) : ""}</span>
+          {/* No clock time is normal for salaried people, who do not clock
+              in, and a gap for anyone hourly; neither reads as "0 min". */}
+          {seen && t.workMin === 0 ? (
+            <span className={styles.mvQuiet}>{v.person.salaried ? "Salary" : "Not clocked in"}</span>
+          ) : (
+            <span className={styles.mvFactValue}>{seen ? fmtDuration(t.workMin) : ""}</span>
+          )}
         </span>
         <span className={styles.mvDay}>
           <Ribbon view={v} axis={axis} isToday={isToday} hasGate={hasGate} tz={tz} now={now} />
