@@ -314,7 +314,9 @@ function PersonRow({
   ) : null;
 
   return (
-    <li>
+    // Open, the row and its detail share one surface, so the detail reads as
+    // the row unfolding rather than as a card placed under it.
+    <li className={styles.mvItem} data-open={open && hasDetail ? "true" : undefined}>
       {/* The row opens the person's panel; the face has its own click, to
           enlarge it, the name is the keyboard's way in, and the arrow at the
           end folds the detail out in place. */}

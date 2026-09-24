@@ -1419,6 +1419,12 @@
   background: var(--surface-info);
 }
 
+/* An open row and its detail: one tinted surface, edge to edge, so the two
+   read as a single thing. Hover still answers on the row itself. */
+.mvItem[data-open="true"] {
+  background: var(--surface-secondary);
+}
+
 .mvFact {
   display: flex;
   flex-direction: column;
@@ -3138,24 +3144,41 @@
 /* ── A person's day, as a story: one card under the name ───────────────── */
 
 .dsWrap {
-  padding: 0 16px 16px 76px;
+  padding: 0 16px 18px 76px;
   cursor: default;
+  animation: dsIn 180ms ease-out;
 }
 
+@keyframes dsIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsWrap {
+    animation: none;
+  }
+}
+
+/* No box of its own: it sits on the open row's surface. A hairline above
+   separates it from the row's summary without closing it off. */
 .dsCard {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 248px;
   max-width: 980px;
-  border: 1px solid var(--stroke-secondary);
-  border-radius: var(--radius-l);
-  background: var(--surface-card);
-  overflow: hidden;
+  border-top: 1px solid var(--stroke-divider);
 }
 
 .dsStory {
   list-style: none;
   margin: 0;
-  padding: 18px 20px 14px 12px;
+  padding: 16px 24px 4px 0;
   min-width: 0;
 }
 
@@ -3346,9 +3369,9 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 18px 20px;
+  margin-top: 16px;
+  padding: 0 0 0 24px;
   border-left: 1px solid var(--stroke-divider);
-  background: var(--surface-secondary);
 }
 
 .dsTotalsTitle {
@@ -3411,6 +3434,8 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .dsTotals {
+    margin-top: 12px;
+    padding: 14px 0 0;
     border-left: 0;
     border-top: 1px solid var(--stroke-divider);
   }
