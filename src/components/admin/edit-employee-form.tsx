@@ -24,6 +24,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Briefcase,
+  Camera,
   Building2,
   CircleDollarSign,
   ContactRound,
@@ -35,6 +36,7 @@ import {
 } from "lucide-react";
 import { useBreadcrumbLeaf } from "@/components/layout/breadcrumb-leaf";
 import { PhotoViewer, ZoomableFace } from "@/components/presence/face";
+import { PhotoEditor } from "@/components/presence/photo-editor";
 import styles from "./employee-record.module.css";
 
 /**
@@ -73,6 +75,8 @@ interface Props {
   employee: EmployeeWithRelations;
   /** A signed link to the time clock tablet's photo, or null for initials. */
   photo: string | null;
+  /** Whether this viewer may replace the photo (PRESENCE_PHOTO_EDIT). */
+  canEditPhoto: boolean;
   sites: Site[];
   departments: (Department & { sites: { site: Site }[] })[];
   ruleSets: RuleSet[];
@@ -255,7 +259,8 @@ function Section({
 
 export function EditEmployeeForm({
   employee,
-  photo,
+  photo: photoFromServer,
+  canEditPhoto,
   sites,
   departments,
   ruleSets,
@@ -283,6 +288,10 @@ export function EditEmployeeForm({
   const [logField, setLogField] = useState("");
   const [logDays, setLogDays] = useState(0);
   const [zoomed, setZoomed] = useState<string | null>(null);
+  const [editingPhoto, setEditingPhoto] = useState(false);
+  // The photo just saved here, until the server's own link catches up.
+  const [photoSaved, setPhotoSaved] = useState<{ url: string | null } | null>(null);
+  const photo = photoSaved ? photoSaved.url : photoFromServer;
 
   // Site access section is only shown when the employee being edited is HR_ADMIN or SYSTEM_ADMIN
   const employeeIsHrOrSysAdmin = ["HR_ADMIN", "SYSTEM_ADMIN"].includes(employee.role);
@@ -658,6 +667,24 @@ export function EditEmployeeForm({
                     onZoom={setZoomed}
                   />
                 </span>
+                {/* In edit mode, for viewers allowed to, the photo can be
+                    replaced. It is its own save, like on Live Attendance:
+                    Save photo in the editor files it at once, and Cancel on
+                    the record does not undo it. */}
+                {editing && canEditPhoto && (
+                  <div className={styles.photoEdit}>
+                    <Button
+                      type="button"
+                      hierarchy="secondary"
+                      size="sm"
+                      leadingIcon={<Camera className="h-3.5 w-3.5" aria-hidden="true" />}
+                      onClick={() => setEditingPhoto(true)}
+                    >
+                      {photo ? "Change photo" : "Add photo"}
+                    </Button>
+                    <span className={styles.photoHint}>Saved on its own, from the photo window</span>
+                  </div>
+                )}
                 <div className="flex min-w-0 flex-col items-center gap-0.5 max-[1180px]:items-start">
                   <p className={styles.profileName}>{v.name || employee.user.name}</p>
                   <span className={styles.profileRole}>{v.jobTitle || roleName(v.customRoleId)}</span>
@@ -1186,6 +1213,25 @@ export function EditEmployeeForm({
       </Editing.Provider>
 
       <Toast message={toast.message} />
+
+      {editingPhoto && (
+        <PhotoEditor
+          siteId={employee.siteId}
+          employeeId={employee.id}
+          name={employee.user.name ?? employee.employeeCode}
+          detail={[employee.employeeCode, employee.jobTitle ?? employee.department.name].filter(Boolean).join(" · ")}
+          currentSrc={photo}
+          onClose={() => setEditingPhoto(false)}
+          onSaved={(url) => {
+            setEditingPhoto(false);
+            setPhotoSaved({ url });
+            toast.flash("Photo saved");
+            // The sidebar shows the signed-in person's own photo from the
+            // layout, so a refresh keeps it in step when that is who this is.
+            router.refresh();
+          }}
+        />
+      )}
 
       {zoomed && (
         <PhotoViewer
