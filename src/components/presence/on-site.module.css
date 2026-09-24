@@ -4242,3 +4242,224 @@
     align-self: start;
   }
 }
+
+/* ── Top bar: what the page is looking at ──────────────────────────────── */
+
+/* The line under the title: building, day, live. One height, quiet
+   controls, thin rules between them rather than dots or pipes. */
+.ctx {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+  font: var(--type-body2);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+}
+
+.ctxRule {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  background: var(--stroke-divider);
+}
+
+/* The building, as a quiet control that is plainly clickable on hover. */
+.ctxSite,
+.ctxSiteStatic {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 280px;
+  height: 28px;
+  white-space: nowrap;
+  font: var(--type-body1);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.ctxSite {
+  margin-left: -8px;
+  padding: 0 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ctxSite:hover {
+  background: var(--fill-hover);
+}
+
+.ctxSite:focus-within,
+.ctxStep:focus-visible,
+.ctxDayLabel:focus-within {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 1px;
+}
+
+.ctxNow,
+.ctxLive {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  white-space: nowrap;
+}
+
+/* The day: step back, the day, step forward, as one small group. */
+.ctxDay {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 8px;
+  background: var(--surface-card);
+}
+
+.ctxStep {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--icon-secondary);
+  cursor: pointer;
+}
+
+.ctxStep:first-child {
+  border-radius: 7px 0 0 7px;
+}
+
+.ctxStep:last-child {
+  border-radius: 0 7px 7px 0;
+}
+
+.ctxStep:hover:not(:disabled) {
+  background: var(--fill-hover);
+  color: var(--text-primary);
+}
+
+.ctxStep:disabled {
+  color: var(--icon-disabled, var(--text-disabled));
+  cursor: default;
+}
+
+.ctxDayLabel {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+  height: 26px;
+  padding: 0 10px;
+  border-left: 1px solid var(--stroke-divider);
+  border-right: 1px solid var(--stroke-divider);
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ctxDayLabel:hover {
+  background: var(--fill-hover);
+}
+
+/* Between the view switch and the filters it narrows. */
+.barRule {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 2px;
+  background: var(--stroke-divider);
+}
+
+/* ── Top bar: View options ─────────────────────────────────────────────── */
+
+.voPanel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 260px;
+  padding: 8px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 10px;
+  background: var(--surface-card);
+  box-shadow: var(--shadow-menu);
+}
+
+.voGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 4px 8px;
+}
+
+.voLabel {
+  font: var(--weight-semibold) 11px/16px var(--font-sans);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.voCheck {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.voCheck:hover {
+  background: var(--fill-hover);
+}
+
+.voCheck:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 1px;
+}
+
+.voBox {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1.5px solid var(--stroke-default);
+  border-radius: 4px;
+  background: var(--surface-card);
+  color: var(--text-on-accent);
+}
+
+.voBox[data-on="true"] {
+  border-color: var(--fill-accent);
+  background: var(--fill-accent);
+}
+
+.voName {
+  font: var(--type-body2);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+}
+
+.voHint {
+  font: var(--type-body2);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-tertiary);
+}
