@@ -8,6 +8,7 @@ import { getCurrentPunchState, findOpenPayPeriod, saveRejectedPunch } from "@/li
 import { validateTransition } from "@/lib/state-machines/punch-state";
 import { timeclockScanSchema } from "@/lib/validators/punch.schema";
 import { recordScanEvent, resolveScanOutcome } from "@/lib/services/scan-event.service";
+import { toTabletVerdict } from "@/lib/services/tablet-verdict";
 import { findEmployeeByBadge } from "@/lib/utils/badge-lookup";
 import type { PunchType, PunchState } from "@prisma/client";
 
@@ -177,11 +178,16 @@ export async function POST(req: NextRequest) {
     //     produce at most one punch, and (badge, stream, scanTime) is what
     //     identifies the physical scan.
     if (recorded.duplicate && recorded.punchId) {
+      const verdict = toTabletVerdict({
+        punchType: recorded.timecardPunchType,
+        stateAfter: recorded.timecardStateAfter,
+      });
       return NextResponse.json({
         success: true,
         punchId: recorded.punchId,
-        punchType: recorded.timecardPunchType,
-        stateAfter: recorded.timecardStateAfter,
+        punchType: verdict.punchType ?? recorded.timecardPunchType,
+        stateAfter: verdict.stateAfter ?? recorded.timecardStateAfter,
+        direction: verdict.direction,
         duplicate: true,
       });
     }
@@ -437,21 +443,26 @@ export async function POST(req: NextRequest) {
     // 10. Rebuild segments
     await rebuildSegments(punch.timesheetId!, employee.ruleSet);
 
-    // 12. Report the verdict back onto the tablet's transaction record.
-    //     The scan row keeps its own independently resolved direction; what is
-    //     written here is what THIS pipeline concluded, so the two can be
-    //     compared afterwards by detect-scan-discrepancies.
+    // 12. Report the verdict back onto the tablet's transaction record, and
+    //     to the tablet — in the tablet's two words. The scan row keeps its own
+    //     independently resolved direction; what is written here is what THIS
+    //     pipeline concluded, reduced to IN or OUT so the two can be compared
+    //     afterwards by detect-scan-discrepancies. The punch itself, above,
+    //     keeps the pipeline's full answer (a MEAL_START stays a MEAL_START on
+    //     the timecard); only what the tablets see and log is reduced.
     await settle("PUNCH_RECORDED", {
       punchId: punch.id,
       punchType,
       stateAfter: transition.newState,
     });
 
+    const verdict = toTabletVerdict({ punchType, stateAfter: transition.newState });
     return NextResponse.json({
       success: true,
       punchId: punch.id,
-      punchType,
-      stateAfter: transition.newState,
+      punchType: verdict.punchType ?? punchType,
+      stateAfter: verdict.stateAfter ?? transition.newState,
+      direction: verdict.direction,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal server error";
