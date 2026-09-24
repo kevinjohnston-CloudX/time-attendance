@@ -230,18 +230,27 @@
   container-type: inline-size;
 }
 
-/* Fields as rows, label beside value, two lists side by side. Rows pair up
-   across the two columns so their dividers run as one line. */
+/* Fields as cells: label beside value, two to a row, with a rule between
+   the two columns so a row reads as two fields and never as one long line.
+   The rows pair up, so the dividers under them run straight across. */
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 40px;
+}
+
+.grid > .field:nth-child(odd) {
+  padding-right: 28px;
+}
+
+.grid > .field:nth-child(even) {
+  padding-left: 28px;
+  border-left: 1px solid var(--stroke-divider);
 }
 
 .field {
   display: grid;
-  grid-template-columns: minmax(120px, min(38%, 200px)) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(110px, min(36%, 170px)) minmax(0, 1fr);
+  gap: 12px;
   align-items: baseline;
   min-width: 0;
   padding: 14px 0;
@@ -545,5 +554,11 @@
   }
   .grid > .field:nth-child(2) {
     border-top: 1px solid var(--stroke-divider);
+  }
+  .grid > .field:nth-child(odd),
+  .grid > .field:nth-child(even) {
+    padding-left: 0;
+    padding-right: 0;
+    border-left: 0;
   }
 }
