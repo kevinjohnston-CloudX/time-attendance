@@ -7,7 +7,7 @@ import { Banner, Button, EmptyState, Input, LinkButton, PageHeader, Textarea } f
 import { DataSourcePicker } from "./data-source-picker";
 import { ColumnPicker } from "./column-picker";
 import { FilterBuilder } from "./filter-builder";
-import { DateRangePicker, currentPayPeriod } from "./date-range-picker";
+import { DateRangePicker, defaultPayPeriodRange } from "./date-range-picker";
 import { GroupSortConfig } from "./group-sort-config";
 import { ResultsTable } from "../report-results/results-table";
 import { dataSourceDescription, dataSourceIcon, dataSourceLabel } from "../data-source-label";
@@ -70,10 +70,9 @@ export function ReportBuilder({
   const [changingSource, setChangingSource] = useState(!initialSource);
   const [selectedColumns, setSelectedColumns] = useState<string[]>(() => defaultsFor(initialSource));
   const [filters, setFilters] = useState<FilterDef[]>([]);
-  const [dateRange, setDateRange] = useState<DateRange>(() => {
-    const pp = currentPayPeriod(filterOptions.payPeriods);
-    return pp ? { type: "payPeriod", payPeriodId: pp.id } : { type: "relative", relativeDays: 14 };
-  });
+  const [dateRange, setDateRange] = useState<DateRange>(
+    () => defaultPayPeriodRange(filterOptions.payPeriods) ?? { type: "relative", relativeDays: 14 }
+  );
   const [groupBy, setGroupBy] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortDef[]>([]);
   const [showMore, setShowMore] = useState(false);

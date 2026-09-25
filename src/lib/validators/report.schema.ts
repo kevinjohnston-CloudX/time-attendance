@@ -41,6 +41,10 @@ export const dateRangeSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("payPeriod"),
     payPeriodId: z.string().min(1),
+    // Every pay group with a pay period inside these dates, not just this
+    // one's group. Absent on reports saved before it existed, which keep
+    // their one pay period.
+    allGroups: z.boolean().optional(),
   }),
   z.object({
     type: z.literal("custom"),

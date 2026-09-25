@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { readable } from "../readable";
+import { dayAfter, payPeriodSpan } from "../date-scope";
 import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
@@ -55,7 +56,7 @@ export const leaveSummarySource: DataSourceDefinition = {
   fieldMap,
 
   async execute(config: ReportConfig, tenantId: string): Promise<ReportResult> {
-    const dateFilter = resolveDateFilter(config.dateRange);
+    const dateFilter = await resolveDateFilter(config.dateRange, tenantId);
     const filterWhere = buildWhereClause(config.filters, fieldMap);
 
     const where = {
@@ -112,14 +113,24 @@ export const leaveSummarySource: DataSourceDefinition = {
   },
 };
 
-function resolveDateFilter(dateRange: ReportConfig["dateRange"]): Record<string, unknown> {
+async function resolveDateFilter(
+  dateRange: ReportConfig["dateRange"],
+  tenantId: string
+): Promise<Record<string, unknown>> {
   switch (dateRange.type) {
-    case "payPeriod":
-      return {}; // Leave requests aren't tied to pay periods; show all
+    case "payPeriod": {
+      // Leave is not filed under a pay period, so a pay period means its
+      // dates: every request that touches them. It used to mean every
+      // request on file.
+      const span = await payPeriodSpan(dateRange, tenantId);
+      if (!span) return { id: "__none__" };
+      return { startDate: { lt: span.end }, endDate: { gte: span.start } };
+    }
     case "custom":
+      // Requests that touch the picked days, not only those wholly inside.
       return {
-        startDate: { gte: new Date(dateRange.startDate) },
-        endDate: { lte: new Date(dateRange.endDate) },
+        startDate: { lt: dayAfter(dateRange.endDate) },
+        endDate: { gte: new Date(dateRange.startDate) },
       };
     case "relative": {
       const now = new Date();

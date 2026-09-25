@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { readable } from "../readable";
+import { dayAfter, payPeriodsInside, timesheetPayPeriodWhere } from "../date-scope";
 import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
@@ -158,18 +159,13 @@ async function resolveDateRange(
 ): Promise<Record<string, unknown>> {
   switch (dateRange.type) {
     case "payPeriod":
-      return { payPeriodId: dateRange.payPeriodId };
+      return timesheetPayPeriodWhere(dateRange, tenantId);
 
     case "custom": {
-      const start = new Date(dateRange.startDate);
-      const end = new Date(dateRange.endDate);
-      return {
-        payPeriod: {
-          tenantId,
-          startDate: { gte: start },
-          endDate: { lte: end },
-        },
-      };
+      // Pay periods inside the picked days. A period's stored end is the day
+      // after its last day, so it is held against the day after the last
+      // picked day: "Sep 13 to Sep 26" used to leave out Sep 13 to Sep 26.
+      return { payPeriod: payPeriodsInside(tenantId, new Date(dateRange.startDate), dayAfter(dateRange.endDate)) };
     }
 
     case "relative": {

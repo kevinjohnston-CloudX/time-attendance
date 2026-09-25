@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { readable } from "../readable";
+import { dayAfter, timesheetPayPeriodWhere } from "../date-scope";
 import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
@@ -51,13 +52,17 @@ export const exceptionReportSource: DataSourceDefinition = {
   fieldMap,
 
   async execute(config: ReportConfig, tenantId: string): Promise<ReportResult> {
-    const dateFilter = resolveDateFilter(config.dateRange);
+    const dateFilter = await resolveDateFilter(config.dateRange, tenantId);
     const filterWhere = buildWhereClause(config.filters, fieldMap);
 
+    // The pay period lives on the timesheet too, so the two are merged: this
+    // key used to replace the date filter's, and a report run for one pay
+    // period returned every pay period on file.
     const where = {
       ...dateFilter,
       ...filterWhere,
       timesheet: {
+        ...((dateFilter.timesheet as Record<string, unknown>) ?? {}),
         employee: {
           tenantId,
           ...(filterWhere.timesheet as Record<string, unknown> ?? {}),
@@ -110,15 +115,20 @@ export const exceptionReportSource: DataSourceDefinition = {
   },
 };
 
-function resolveDateFilter(dateRange: ReportConfig["dateRange"]): Record<string, unknown> {
+async function resolveDateFilter(
+  dateRange: ReportConfig["dateRange"],
+  tenantId: string
+): Promise<Record<string, unknown>> {
   switch (dateRange.type) {
     case "payPeriod":
-      return { timesheet: { payPeriodId: dateRange.payPeriodId } };
+      return { timesheet: await timesheetPayPeriodWhere(dateRange, tenantId) };
     case "custom":
       return {
+        // Whole days: up to the end of the last picked day, which "lte
+        // midnight" used to leave out.
         occurredAt: {
           gte: new Date(dateRange.startDate),
-          lte: new Date(dateRange.endDate),
+          lt: dayAfter(dateRange.endDate),
         },
       };
     case "relative": {
