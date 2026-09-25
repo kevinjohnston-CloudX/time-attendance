@@ -142,16 +142,33 @@ export function parseUtcDate(d: Date | string): Date {
 }
 
 /**
- * Returns UTC midnight of the local calendar date for `utcDate` in `timezone`.
- * Used to assign a segment to the correct calendar day when the server runs UTC.
+ * Returns the UTC timestamp for midnight at the start of the local calendar day
+ * containing `utcDate` in `timezone`. Uses the same offset-inversion trick as
+ * nextMidnightInTz so the result is the true local midnight, not UTC midnight —
+ * this matters when the database session timezone is not UTC.
  *
- * Example: 2026-03-03T01:25:00Z in America/New_York (EST -5)
- *          → local date is 2026-03-02 → returns 2026-03-02T00:00:00Z
+ * Example: 2026-09-14T15:02:00Z in America/Los_Angeles (PDT, UTC-7)
+ *          → local date is 2026-09-14 → local midnight = 2026-09-14T07:00:00Z
  */
 export function startOfDayInTz(utcDate: Date, timezone: string): Date {
   const localDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(utcDate);
   const [y, m, d] = localDateStr.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d));
+  const asIfUtc = new Date(Date.UTC(y, m - 1, d));
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  }).formatToParts(asIfUtc);
+
+  const get = (type: string) =>
+    parseInt(parts.find((p) => p.type === type)?.value ?? "0", 10);
+  let hours = get("hour");
+  if (hours === 24) hours = 0;
+
+  const localEquivalentMs = Date.UTC(get("year"), get("month") - 1, get("day"), hours, get("minute"), get("second"));
+  return new Date(2 * asIfUtc.getTime() - localEquivalentMs);
 }
 
 /**
