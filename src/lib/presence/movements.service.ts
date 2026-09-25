@@ -3,6 +3,7 @@ import { snapToLocalTime } from "@/lib/utils/date";
 import { addDays, clampDay } from "./days";
 import { LOOKBACK_MS, localDateString, toScan, withCurrentPunch, type ScanRow } from "./on-site.service";
 import { photoUrls } from "./photos";
+import { expectedHours, SHIFT_HOURS_SELECT } from "./expected-hours";
 import { EFFECTIVE_TYPE_SQL, PUNCH_CHAIN, PUNCH_CHAIN_JOINS } from "./effective-punch";
 import { scansHere, scansHereSql, siteScope } from "./site-scope";
 import type { DayPerson, PresenceScan, SiteDay } from "./types";
@@ -68,7 +69,7 @@ export async function getSiteDay(
     return { unchanged: true };
   }
 
-  const [rows, carryRows, lastGate, schedules, leave, onLeaveFlags] = await Promise.all([
+  const [rows, carryRows, lastGate, schedules, leave, onLeaveFlags, siteShifts] = await Promise.all([
     // Newest first so a cap drops the oldest, then turned round below.
     db.scanEvent.findMany({
       where: atSite,
@@ -144,6 +145,12 @@ export async function getSiteDay(
     day === today
       ? db.employee.findMany({ where: { tenantId, siteId, isActive: true, onLeave: true }, select: { id: true } })
       : Promise.resolve([] as { id: string }[]),
+    // This site's people with a shift on their record, whose shift decides
+    // whether they were expected this day (see expected-hours.ts).
+    db.employee.findMany({
+      where: { tenantId, siteId, isActive: true, shiftId: { not: null } },
+      select: { id: true, shift: { select: SHIFT_HOURS_SELECT } },
+    }),
   ]);
 
   const truncated = rows.length > MAX_SCANS;
@@ -169,8 +176,14 @@ export async function getSiteDay(
   }
 
   const scheduleById = new Map(schedules.map((s) => [s.employeeId, s]));
+  const shiftById = new Map(siteShifts.map((e) => [e.id, e.shift]));
+  // Expected this day by their shift, or by WMS when the shift cannot say. A
+  // WMS day on a day their shift does not work leaves them off the list.
+  const expectedIds = [...new Set([...shiftById.keys(), ...scheduleById.keys()])].filter(
+    (id) => expectedHours(shiftById.get(id), scheduleById.get(id), day) !== null,
+  );
   const leaveIds = new Set([...leave.map((l) => l.employeeId), ...onLeaveFlags.map((e) => e.id)]);
-  const ids = new Set([...Object.keys(scans), ...carriedIn, ...scheduleById.keys(), ...leaveIds]);
+  const ids = new Set([...Object.keys(scans), ...carriedIn, ...expectedIds, ...leaveIds]);
 
   const employees = ids.size
     ? await db.employee.findMany({
@@ -196,7 +209,9 @@ export async function getSiteDay(
 
   const photos = await photoUrls(tenantId, employees);
   const people: DayPerson[] = employees.map((e) => {
-    const schedule = scheduleById.get(e.id);
+    // Only this site's own people are expected here; a visitor's shift is
+    // their home building's business.
+    const schedule = expectedHours(shiftById.get(e.id), scheduleById.get(e.id), day);
     return {
       id: e.id,
       name: e.user?.name?.trim() || `Employee ${e.employeeCode}`,
@@ -209,8 +224,8 @@ export async function getSiteDay(
       photoUrl: photos.get(e.id) ?? null,
       salaried: e.payType === "SALARY",
       inactive: !e.isActive || e.terminatedAt !== null,
-      scheduledStart: schedule?.startTime ?? null,
-      scheduledEnd: schedule?.endTime ?? null,
+      scheduledStart: schedule?.start ?? null,
+      scheduledEnd: schedule?.end ?? null,
       onLeave: leaveIds.has(e.id),
       homeSite: e.site && e.site.id !== siteId ? e.site.name : null,
     };

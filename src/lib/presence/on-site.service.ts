@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { DAYS_BACK, addDays, clampDay } from "./days";
 import { photoUrls } from "./photos";
+import { expectedHours, SHIFT_HOURS_SELECT } from "./expected-hours";
 import { EFFECTIVE_STATE_SQL, PUNCH_CHAIN, PUNCH_CHAIN_JOINS, currentPunch } from "./effective-punch";
 import { scansHere, scansHereSql, siteScope } from "./site-scope";
 import { NOT_COUNTED_OUTCOMES } from "./scan-rules";
@@ -224,7 +225,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
           jobTitle: true,
           payType: true,
           department: { select: { id: true, name: true } },
-          shift: { select: { id: true, name: true } },
+          shift: { select: { id: true, name: true, ...SHIFT_HOURS_SELECT } },
         },
       })
     : [];
@@ -236,7 +237,11 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
     const gate = gateById.get(emp.id);
     const clock = clockById.get(emp.id);
     const todayActivity = todayById.get(emp.id);
-    const schedule = scheduleById.get(emp.id);
+    // The shift on their record, or the WMS day for anybody it cannot answer
+    // for (see expected-hours.ts).
+    // Only this site's own people are expected here; a visitor's shift is
+    // their home building's business.
+    const schedule = expectedHours(rosterIds.has(emp.id) ? emp.shift : null, scheduleById.get(emp.id), today);
 
     const gateIn = gate?.direction === "IN";
     const clockState = clockStateOf(clock);
@@ -284,8 +289,8 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
 
     let lateMinutes: number | null = null;
     // Lateness is an hourly measure. Salaried people keep their own hours.
-    if (status === "NOT_ARRIVED" && schedule?.startTime && emp.payType !== "SALARY") {
-      const start = snapToLocalTime(schedule.startTime, today, timezone);
+    if (status === "NOT_ARRIVED" && schedule?.start && emp.payType !== "SALARY") {
+      const start = snapToLocalTime(schedule.start, today, timezone);
       const late = Math.floor((now.getTime() - start.getTime()) / 60000);
       lateMinutes = late > 0 ? late : null;
     }
@@ -307,8 +312,8 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       outsideOnMeal,
       since: since ? since.toISOString() : null,
       firstInToday: todayActivity?.firstIn ? todayActivity.firstIn.toISOString() : null,
-      scheduledStart: schedule?.startTime ?? null,
-      scheduledEnd: schedule?.endTime ?? null,
+      scheduledStart: schedule?.start ?? null,
+      scheduledEnd: schedule?.end ?? null,
       lateMinutes,
       inactive: !emp.isActive || emp.terminatedAt !== null,
       homeSite: emp.site && emp.site.id !== siteId ? emp.site.name : null,
@@ -403,7 +408,7 @@ export async function getPresenceDetail(
       terminatedAt: true,
       user: { select: { name: true } },
       department: { select: { name: true } },
-      shift: { select: { name: true } },
+      shift: { select: { name: true, ...SHIFT_HOURS_SELECT } },
       supervisor: { select: { user: { select: { name: true } } } },
       site: { select: { id: true, name: true } },
     },
@@ -458,6 +463,7 @@ export async function getPresenceDetail(
     carry("TIME_CLOCK"),
     photoUrls(tenantId, [{ id: emp.id, barcode: emp.barcode, wmsId: emp.wmsId, employeeCode: emp.employeeCode }]),
   ]);
+  const expected = expectedHours(emp.shift, schedule ?? undefined, theDay);
 
   return {
     id: emp.id,
@@ -471,8 +477,12 @@ export async function getPresenceDetail(
     inactive: !emp.isActive || emp.terminatedAt !== null,
     homeSite: emp.site && emp.site.id !== siteId ? emp.site.name : null,
     photoUrl: photos.get(emp.id) ?? null,
-    scheduledStart: schedule?.startTime ?? null,
-    scheduledEnd: schedule?.endTime ?? null,
+    scheduledStart: expected?.start ?? null,
+    scheduledEnd: expected?.end ?? null,
+    scheduleSource: expected?.source ?? null,
+    wmsStart: schedule?.startTime ?? null,
+    wmsEnd: schedule?.endTime ?? null,
+    wmsScheduled: !!schedule,
     timezone,
     day: theDay,
     today,
