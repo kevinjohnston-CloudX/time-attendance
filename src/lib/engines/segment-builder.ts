@@ -124,9 +124,7 @@ export function computeSegments(
     // Use the start of the punch's local calendar day as the implicit open (floored to
     // periodStart so we never credit time before this period began).
     if (!openState && punch.stateBefore !== "OUT") {
-      const dayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(punchMin);
-      const [y, m, d] = dayStr.split("-").map(Number);
-      const dayStartUtc = new Date(Date.UTC(y, m - 1, d));
+      const dayStartUtc = startOfDayInTz(punchMin, timezone);
       const floor = periodStart && periodStart > dayStartUtc ? truncToMin(periodStart) : dayStartUtc;
       openStart = floor;
       openState = punch.stateBefore as ActiveState;
@@ -689,6 +687,7 @@ function computeMealPremiums(
       sortedClockPunches[sortedClockPunches.length - 1].punchType === "CLOCK_IN";
 
     let premiumsThisDay = 0;
+    let accumulatedPremiumMins = 0; // offset so each row gets a distinct startTime
 
     for (const row of activeRows) {
       if (premiumsThisDay >= ruleSet.mealBreakPremiumMaxPerDay) break;
@@ -759,20 +758,26 @@ function computeMealPremiums(
       }
       if (premiumMins <= 0) continue;
 
-      if (premiumWaivedStarts.has(lastWorkSeg.endTime.toISOString())) continue;
-      premiums.push({
-        timesheetId,
-        segmentType: "MEAL_PREMIUM",
-        startTime: lastWorkSeg.endTime,
-        endTime: new Date(lastWorkSeg.endTime.getTime() + premiumMins * 60_000),
-        durationMinutes: premiumMins,
-        segmentDate: lastWorkSeg.segmentDate,
-        isPaid: true,
-        payBucket: "REG",
-        payCodeId: row.payCodeId,
-        isSplit: false,
-      });
+      // Each row gets a distinct startTime, offset by prior rows' payMinutes, so
+      // per-premium waivers have stable unique keys even when multiple rows fire.
+      const premStart = new Date(lastWorkSeg.endTime.getTime() + accumulatedPremiumMins * 60_000);
 
+      if (!premiumWaivedStarts.has(premStart.toISOString())) {
+        premiums.push({
+          timesheetId,
+          segmentType: "MEAL_PREMIUM",
+          startTime: premStart,
+          endTime: new Date(premStart.getTime() + premiumMins * 60_000),
+          durationMinutes: premiumMins,
+          segmentDate: lastWorkSeg.segmentDate,
+          isPaid: true,
+          payBucket: "REG",
+          payCodeId: row.payCodeId,
+          isSplit: false,
+        });
+      }
+
+      accumulatedPremiumMins += premiumMins;
       premiumsThisDay++;
     }
   }
