@@ -431,8 +431,10 @@ export function OnSiteBoard({
   // panel on the Scan log leads with.
   const clockNowTotal = scoped.filter((p) => p.clock?.state === "WORK" && !p.clock.automatic).length;
   const outsideOnMeal = scoped.filter((p) => p.outsideOnMeal).length;
-  const scheduled = scoped.filter((p) => p.scheduledStart);
-  const scheduledArrived = scheduled.filter((p) => p.status !== "NOT_ARRIVED" && p.status !== "ON_LEAVE").length;
+  // Approved time off is not somebody expected in, so it is not counted as
+  // scheduled either, or the line reads as more people missing than are.
+  const scheduled = scoped.filter((p) => p.scheduledStart && p.status !== "ON_LEAVE");
+  const scheduledArrived = scheduled.filter((p) => p.status !== "NOT_ARRIVED").length;
 
   // A search looks at everybody at the site, whichever group is open. The
   // question behind it is "is this person here", and answering "no match"
