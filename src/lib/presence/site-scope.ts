@@ -27,17 +27,56 @@ export interface SiteScope {
   code: string | null;
   /** Every warehouse number some site in the tenant owns. */
   placed: string[];
+  /** Each site's name by its warehouse number, and by its id, to say which building another scan was at. */
+  names: Record<string, string>;
+  namesById: Record<string, string>;
 }
 
 export async function siteScope(tenantId: string, siteId: string): Promise<SiteScope> {
-  const sites = await db.site.findMany({
-    where: { tenantId, wmsWarehouseId: { not: null } },
-    select: { id: true, wmsWarehouseId: true },
+  const all = await db.site.findMany({
+    where: { tenantId },
+    select: { id: true, name: true, wmsWarehouseId: true },
   });
+  const sites = all.filter((s) => s.wmsWarehouseId !== null);
   return {
     siteId,
     code: sites.find((s) => s.id === siteId)?.wmsWarehouseId?.toString() ?? null,
     placed: sites.map((s) => String(s.wmsWarehouseId)),
+    names: Object.fromEntries(sites.map((s) => [String(s.wmsWarehouseId), s.name])),
+    namesById: Object.fromEntries(all.map((s) => [s.id, s.name])),
+  };
+}
+
+/**
+ * The building a scan made somewhere else was at: the site that owns its
+ * warehouse number, or else the person's own site, which is where a scan
+ * with no number is placed (see above).
+ */
+export function siteOf(scope: SiteScope, code: string | null | undefined, homeSiteId: string | null | undefined): string {
+  return (code && scope.names[code]) || (homeSiteId && scope.namesById[homeSiteId]) || "Another building";
+}
+
+/** Whether one scan was made at this building, by the same rule as {@link scansHere}. */
+export function isHere(scope: SiteScope, code: string | null | undefined, homeSiteId: string | null | undefined): boolean {
+  if (code && scope.placed.includes(code)) return code === scope.code;
+  return homeSiteId === scope.siteId;
+}
+
+/**
+ * The scans made anywhere but this building, for a Prisma where: another
+ * site's warehouse number, or no number and somebody else's site on the
+ * person's record. Written out rather than as NOT of the rule above, which a
+ * null `site` would drop.
+ */
+export function scansElsewhere(scope: SiteScope): Prisma.ScanEventWhereInput {
+  const unplaced: Prisma.ScanEventWhereInput[] = [{ site: null }];
+  if (scope.placed.length) unplaced.push({ site: { notIn: scope.placed } });
+  else unplaced.push({ site: { not: null } });
+  return {
+    OR: [
+      { site: { in: scope.placed.filter((c) => c !== scope.code) } },
+      { OR: unplaced, employee: { siteId: { not: scope.siteId } } },
+    ],
   };
 }
 

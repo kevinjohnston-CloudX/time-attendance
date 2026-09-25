@@ -24,7 +24,15 @@
  *   <li>ON_LEAVE: approved time off today, not seen.</li>
  *   <li>NOT_ARRIVED: scheduled today, not seen.</li>
  *   <li>NOT_SCHEDULED: on this site's roster, not scheduled today, not seen.</li>
+ *   <li>ELSEWHERE: seen here today, and now on the clock inside another
+ *       building. Somebody who moves between warehouses stays on the clock
+ *       while they drive, so this is their day going on, not a problem.</li>
  * </ul>
+ *
+ * <p>The time clock follows the person, not the building: for anybody who
+ * scanned at this building that day, their time clock scans at every building
+ * count here too. The security gate stays each building's own, and another
+ * building's gate is only asked whether they were inside it.
  */
 export type PresenceStatus =
   | "WORKING"
@@ -35,7 +43,8 @@ export type PresenceStatus =
   | "LEFT"
   | "ON_LEAVE"
   | "NOT_ARRIVED"
-  | "NOT_SCHEDULED";
+  | "NOT_SCHEDULED"
+  | "ELSEWHERE";
 
 export interface PresencePerson {
   id: string;
@@ -75,6 +84,8 @@ export interface PresencePerson {
   inactive: boolean;
   /** The site on their record, when it is not this building: they scanned here from elsewhere. */
   homeSite: string | null;
+  /** The building they are in now, for ELSEWHERE. */
+  elsewhere: string | null;
   /** The security gate's latest word on them, in the last 36 hours. */
   gate: { inside: boolean; at: string; automatic: boolean } | null;
   /** The time clock's latest word on them, in the last 36 hours. */
@@ -117,6 +128,12 @@ export interface PresenceScan {
    * since changed it; `punchType` is then the corrected one.
    */
   correctedFrom?: string | null;
+  /**
+   * The building it was made at, when that is not the building on screen: a
+   * time clock scan somebody made at another warehouse on a day they also
+   * scanned here, or another building's gate. Unset for a scan made here.
+   */
+  site?: string | null;
 }
 
 export interface PresenceDetail {
@@ -157,6 +174,13 @@ export interface PresenceDetail {
   /** The last scan of each kind before the day, which sets where it starts. */
   carryGate: PresenceScan | null;
   carryClock: PresenceScan | null;
+  /**
+   * Their gate scans at other buildings that day, and the last one before it:
+   * only to tell whether they were inside another building, never drawn as
+   * this building's gate.
+   */
+  away: PresenceScan[];
+  carryAway: PresenceScan | null;
 }
 
 /* ── Scan log ──────────────────────────────────────────────────────────── */
@@ -336,7 +360,9 @@ export interface SiteDay {
   /** Each person's scans that day, oldest first, keyed by person id. */
   scans: Record<string, PresenceScan[]>;
   /** Each person's last scan of each kind before the day, which sets where it starts. */
-  carry: Record<string, { gate: PresenceScan | null; clock: PresenceScan | null }>;
+  carry: Record<string, { gate: PresenceScan | null; clock: PresenceScan | null; away?: PresenceScan | null }>;
+  /** Each person's gate scans at other buildings that day, oldest first (see PresenceDetail.away). */
+  away: Record<string, PresenceScan[]>;
   /** The day held more scans than one answer carries; the oldest were left out. */
   truncated: boolean;
 }

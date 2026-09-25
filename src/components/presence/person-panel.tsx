@@ -161,6 +161,8 @@ export function PersonPanel({
       scans: shown.scans,
       carryGate: shown.carryGate,
       carryClock: shown.carryClock,
+      away: shown.away,
+      carryAway: shown.carryAway,
       from,
       to: shown.day === shown.today ? Math.min(now, end) : end,
     });
@@ -488,6 +490,13 @@ export function PersonPanel({
                       flag
                     />
                   )}
+                  {lanes.totals.workAwayMin > 0 && (
+                    <Total
+                      label="At another building"
+                      minutes={lanes.totals.workAwayMin}
+                      hint="On the clock while inside another building"
+                    />
+                  )}
                 </dl>
               </>
             )}
@@ -573,6 +582,10 @@ function statusSentence(p: PresencePerson, tz: string, mins: number | null, nowI
       return at ? `Inside since ${at}${forHow}` : "Inside";
     case "LEFT":
       return at ? `Left at ${at}` : "Left";
+    case "ELSEWHERE": {
+      const where = p.elsewhere ?? "another building";
+      return at ? `Went into ${where} at ${at}, still on the clock` : `At ${where}, still on the clock`;
+    }
     case "NOT_ARRIVED":
       if (p.salaried) return "Not seen at any reader yet today";
       return p.lateMinutes !== null ? `${fmtDuration(p.lateMinutes)} past the scheduled start` : "Not due yet";
@@ -904,7 +917,7 @@ function Timeline({ scans, tz }: { scans: PresenceScan[]; tz: string }) {
       {scans.map((s) => {
         const { icon, kind } = iconFor(s);
         const notes = [
-          s.stream === "SECURITY" ? "Security gate" : "Time clock",
+          s.stream === "SECURITY" ? "Security gate" : s.site ? `Time clock at ${s.site}` : "Time clock",
           s.device,
           s.automatic ? "Added by the system" : null,
           s.correctedFrom ? `corrected, recorded as ${describeOriginal(s)?.toLowerCase()}` : null,

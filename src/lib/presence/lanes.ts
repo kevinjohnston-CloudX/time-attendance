@@ -9,6 +9,12 @@ import type { PresenceScan } from "./types";
  * before the day left them in, so somebody who came in at 10 PM yesterday is
  * already inside at midnight.
  *
+ * <p>The time clock lane is the person's, at every building: a day that began
+ * at one warehouse and ended at another is one shift. The gate lane is this
+ * building's alone. Another building's gate only makes the `away` lane, which
+ * is never drawn: it says they were inside somewhere else, so being on the
+ * clock and outside this building is not a missed gate scan.
+ *
  * <p>Pure, and free of the database, so the panel can redraw an open stretch
  * up to "now" between refreshes without asking the server again.
  */
@@ -34,6 +40,14 @@ export interface ClockSegment extends Segment {
 export interface DayLanes {
   gate: Segment[];
   clock: ClockSegment[];
+  /** Inside another building, from that building's gate. Only this building's gate is drawn. */
+  away: Segment[];
+  /**
+   * From leaving one building's gate to going in at another's. On the clock
+   * that is the drive between warehouses, which is paid, so it is never a
+   * missed gate scan.
+   */
+  moving: { start: number; end: number }[];
   totals: {
     insideMin: number;
     workMin: number;
@@ -41,8 +55,10 @@ export interface DayLanes {
     breakMin: number;
     /** Inside the building and not on the clock, meals and breaks aside. */
     insideOffClockMin: number;
-    /** On the clock while the gate says they were outside. */
+    /** On the clock while the gate says they were outside, and not inside another building. */
     workOutsideMin: number;
+    /** On the clock inside another building. */
+    workAwayMin: number;
   };
   firstIn: number | null;
   lastOut: number | null;
@@ -95,6 +111,8 @@ export function buildLanes({
   scans,
   carryGate,
   carryClock,
+  away = [],
+  carryAway = null,
   from,
   to,
 }: {
@@ -102,6 +120,9 @@ export function buildLanes({
   /** The last gate scan before the day, if it left them inside. */
   carryGate: PresenceScan | null;
   carryClock: PresenceScan | null;
+  /** Gate scans at other buildings, and the last one before the day. */
+  away?: PresenceScan[];
+  carryAway?: PresenceScan | null;
   /** Start of the day. */
   from: number;
   /** End of the day, or now when the day is today. */
@@ -110,32 +131,14 @@ export function buildLanes({
   const asc = [...scans].sort((a, b) => a.at.localeCompare(b.at));
 
   // ── Gate ──
-  const gate: Segment[] = [];
-  const exitsWithoutEntry: PresenceScan[] = [];
-  let inside: number | null = carryGate && carryGate.direction === "IN" && !carryGate.automatic ? from : null;
-  let insideScan: PresenceScan | null = null;
-  let lastExit: number | null = null;
-  for (const s of asc) {
-    if (s.stream !== "SECURITY" || s.direction === "UNKNOWN" || s.reread) continue;
-    const t = Date.parse(s.at);
-    if (s.direction === "IN") {
-      lastExit = null;
-      if (inside === null) {
-        inside = t;
-        insideScan = s;
-      }
-    } else if (inside !== null) {
-      gate.push({ start: inside, end: t, open: false, closedBySystem: s.automatic, startScan: insideScan, endScan: s });
-      inside = null;
-      insideScan = null;
-      lastExit = t;
-    } else if (!s.automatic && (lastExit === null || t - lastExit > REPEAT_EXIT_MS)) {
-      exitsWithoutEntry.push(s);
-      lastExit = t;
-    }
-  }
-  if (inside !== null && to > inside)
-    gate.push({ start: inside, end: to, open: true, closedBySystem: false, startScan: insideScan, endScan: null });
+  const here = asc.filter((s) => !s.site);
+  const { segments: gate, exitsWithoutEntry } = insideStretches(here, carryGate, from, to);
+  const awayLane = insideStretches(
+    [...away].sort((a, b) => a.at.localeCompare(b.at)),
+    carryAway,
+    from,
+    to,
+  ).segments;
 
   // ── Time clock ──
   // A scan the timecard refused changed nothing, so it moves no lane.
@@ -164,14 +167,20 @@ export function buildLanes({
 
   const onBreak = clock.filter((c) => c.kind !== "WORK");
   const offClockInside = subtract(subtract(gate, work), onBreak);
-  const workOutside = subtract(work, gate);
+  const workAway = subtract(subtract(work, gate), subtract(work, awayLane));
+  const moving = betweenBuildings(gate, awayLane);
+  const workOutside = subtract(subtract(subtract(work, gate), awayLane), moving);
 
-  const ins = asc.filter((s) => s.direction === "IN" && !s.automatic && !s.rejected).map((s) => Date.parse(s.at));
-  const outs = asc.filter((s) => s.direction === "OUT" && !s.automatic && !s.rejected).map((s) => Date.parse(s.at));
+  // Arriving and leaving are this building's: a clock in at another
+  // warehouse is not walking in here.
+  const ins = here.filter((s) => s.direction === "IN" && !s.automatic && !s.rejected).map((s) => Date.parse(s.at));
+  const outs = here.filter((s) => s.direction === "OUT" && !s.automatic && !s.rejected).map((s) => Date.parse(s.at));
 
   return {
     gate,
     clock,
+    away: awayLane,
+    moving,
     totals: {
       insideMin: minutes(gate),
       workMin: minutes(work),
@@ -179,6 +188,7 @@ export function buildLanes({
       breakMin: minutes(clock.filter((c) => c.kind === "BREAK")),
       insideOffClockMin: minutes(offClockInside),
       workOutsideMin: minutes(workOutside),
+      workAwayMin: minutes(workAway),
     },
     firstIn: ins.length ? ins[0] : null,
     lastOut: outs.length ? outs[outs.length - 1] : null,
@@ -231,6 +241,64 @@ export function leftBuilding(
     ...lanes.exitsWithoutEntry.map((s) => Date.parse(s.at)),
   ];
   return { onSite: false, leftAt: exits.length ? Math.max(...exits) : null, clock };
+}
+
+/**
+ * The gaps between walking out of one building and into a different one,
+ * this building and another or two others.
+ */
+function betweenBuildings(gate: Segment[], away: Segment[]): { start: number; end: number }[] {
+  const where = (g: Segment) => g.startScan?.site ?? g.endScan?.site ?? "another";
+  const stays = [
+    ...gate.map((g) => ({ g, at: "here" })),
+    ...away.map((g) => ({ g, at: where(g) })),
+  ].sort((a, b) => a.g.start - b.g.start);
+  const out: { start: number; end: number }[] = [];
+  for (let i = 1; i < stays.length; i++) {
+    const a = stays[i - 1];
+    const b = stays[i];
+    if (a.at !== b.at && !a.g.open && b.g.start > a.g.end) out.push({ start: a.g.end, end: b.g.start });
+  }
+  return out;
+}
+
+/**
+ * When somebody was inside a building, from its gate scans in order, starting
+ * from whatever the last scan before the day left them in.
+ */
+function insideStretches(
+  asc: PresenceScan[],
+  carry: PresenceScan | null,
+  from: number,
+  to: number,
+): { segments: Segment[]; exitsWithoutEntry: PresenceScan[] } {
+  const segments: Segment[] = [];
+  const exitsWithoutEntry: PresenceScan[] = [];
+  let inside: number | null = carry && carry.direction === "IN" && !carry.automatic ? from : null;
+  let insideScan: PresenceScan | null = null;
+  let lastExit: number | null = null;
+  for (const s of asc) {
+    if (s.stream !== "SECURITY" || s.direction === "UNKNOWN" || s.reread) continue;
+    const t = Date.parse(s.at);
+    if (s.direction === "IN") {
+      lastExit = null;
+      if (inside === null) {
+        inside = t;
+        insideScan = s;
+      }
+    } else if (inside !== null) {
+      segments.push({ start: inside, end: t, open: false, closedBySystem: s.automatic, startScan: insideScan, endScan: s });
+      inside = null;
+      insideScan = null;
+      lastExit = t;
+    } else if (!s.automatic && (lastExit === null || t - lastExit > REPEAT_EXIT_MS)) {
+      exitsWithoutEntry.push(s);
+      lastExit = t;
+    }
+  }
+  if (inside !== null && to > inside)
+    segments.push({ start: inside, end: to, open: true, closedBySystem: false, startScan: insideScan, endScan: null });
+  return { segments, exitsWithoutEntry };
 }
 
 /** The parts of `a` not covered by any of `b`. */

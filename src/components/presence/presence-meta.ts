@@ -68,6 +68,13 @@ export const STATUS_META: Record<PresenceStatus, StatusMeta> = {
     color: "var(--ps-left)",
     badge: "neutral",
   },
+  ELSEWHERE: {
+    label: "At another building",
+    heading: "At another building",
+    hint: "Was here today and is still on the clock, now inside another building",
+    color: "var(--ps-left)",
+    badge: "neutral",
+  },
   ON_LEAVE: {
     label: "On leave",
     heading: "On leave today",
@@ -86,7 +93,7 @@ export const STATUS_META: Record<PresenceStatus, StatusMeta> = {
 
 /** The four that make up the building total, in the order the board lists them. */
 export const INSIDE_STATUSES: PresenceStatus[] = ["WORKING", "NO_GATE_SCAN", "ON_MEAL", "OFF_CLOCK", "ON_SITE"];
-export const AWAY_STATUSES: PresenceStatus[] = ["NOT_ARRIVED", "LEFT", "ON_LEAVE", "NOT_SCHEDULED"];
+export const AWAY_STATUSES: PresenceStatus[] = ["NOT_ARRIVED", "LEFT", "ELSEWHERE", "ON_LEAVE", "NOT_SCHEDULED"];
 
 /** A meal and a break share a status; the tile still says which one it is. */
 export function statusLabel(p: PresencePerson): string {
@@ -161,6 +168,8 @@ export function sinceLine(p: PresencePerson, timeZone: string, nowIso: string): 
       return at ? `Inside since ${at}` : "Inside";
     case "LEFT":
       return at ? `Left at ${at}` : "Left";
+    case "ELSEWHERE":
+      return `At ${p.elsewhere ?? "another building"}`;
     case "NOT_ARRIVED":
       return p.scheduledStart ? `Due ${formatTimeOfDay(p.scheduledStart)}` : "Scheduled today";
     case "ON_LEAVE":

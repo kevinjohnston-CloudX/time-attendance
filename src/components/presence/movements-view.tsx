@@ -103,7 +103,8 @@ export function useSiteDay({ siteId, active, day }: { siteId: string | null; act
 /** What a person is doing at the end of the recorded day, in the board's own words. */
 export function statusOfDay(v: PersonDayView, isToday: boolean, hasGate: boolean): PresenceStatus | null {
   if (!isToday) return null;
-  const { inside, clock } = v.now;
+  const { inside, clock, away } = v.now;
+  if (clock !== "OUT" && away) return "ELSEWHERE";
   if (clock === "WORK") return hasGate && !inside ? "NO_GATE_SCAN" : "WORKING";
   if (clock === "MEAL" || clock === "BREAK") return "ON_MEAL";
   if (inside) return v.person.salaried ? "ON_SITE" : "OFF_CLOCK";
@@ -644,7 +645,7 @@ function Ribbon({
 
 /* ── A person's day, as a story ─────────────────────────────────────────── */
 
-type StoryState = "WORKING" | "MEAL" | "BREAK" | "INSIDE_OFF" | "ON_SITE" | "OUT_WORKING" | "OUT_MEAL" | "OUTSIDE";
+type StoryState = "WORKING" | "MEAL" | "BREAK" | "INSIDE_OFF" | "ON_SITE" | "OUT_WORKING" | "OUT_MEAL" | "AWAY" | "MOVING" | "OUTSIDE";
 
 const STATE_LABEL: Record<StoryState, string> = {
   WORKING: "Working",
@@ -654,6 +655,8 @@ const STATE_LABEL: Record<StoryState, string> = {
   ON_SITE: "On site",
   OUT_WORKING: "In time clock, out building",
   OUT_MEAL: "On a break, outside",
+  AWAY: "At another building",
+  MOVING: "Between buildings",
   OUTSIDE: "Out of the building",
 };
 
@@ -693,6 +696,9 @@ function stateAt(v: PersonDayView, t: number, hasGate: boolean): StoryState | nu
     if (!hasGate) return null;
     return v.person.salaried ? "ON_SITE" : "INSIDE_OFF";
   }
+  // On the clock inside another building: the shift carried on there.
+  if (clock !== "OUT" && v.lanes.away.some((g) => g.start <= t && t < g.end)) return "AWAY";
+  if (clock !== "OUT" && v.lanes.moving.some((g) => g.start <= t && t < g.end)) return "MOVING";
   if (clock === "WORK") return "OUT_WORKING";
   if (clock === "MEAL" || clock === "BREAK") return "OUT_MEAL";
   return "OUTSIDE";
@@ -731,7 +737,9 @@ function buildStory(v: PersonDayView, isToday: boolean, hasGate: boolean, now: n
       at,
       when: time(at),
       text: describeScan(s),
-      meta: [s.stream === "SECURITY" ? "Security gate" : "Time clock", s.device].filter(Boolean).join(" · "),
+      meta: [s.stream === "SECURITY" ? "Security gate" : s.site ? `Time clock at ${s.site}` : "Time clock", s.device]
+        .filter(Boolean)
+        .join(" · "),
       kind: s.automatic ? "system" : kind === "meal" ? "meal" : kind === "in" ? "in" : "out",
       note: s.automatic
         ? "Added by the system"
@@ -760,7 +768,9 @@ function buildStory(v: PersonDayView, isToday: boolean, hasGate: boolean, now: n
                   ? `Still on ${openState === "BREAK" ? "break" : "a meal"}`
                   : openState === "OUT_WORKING"
                     ? "Still in time clock, out building"
-                    : "Still inside",
+                    : openState === "AWAY"
+                      ? "Still on the clock at another building"
+                      : "Still inside",
             meta: null,
             kind: "now",
             note: null,

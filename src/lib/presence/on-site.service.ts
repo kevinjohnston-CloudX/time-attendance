@@ -4,8 +4,9 @@ import { DAYS_BACK, addDays, clampDay } from "./days";
 import { photoUrls } from "./photos";
 import { expectedHours, shiftHoursOn, SHIFT_HOURS_SELECT } from "./expected-hours";
 import { EFFECTIVE_STATE_SQL, PUNCH_CHAIN, PUNCH_CHAIN_JOINS, currentPunch } from "./effective-punch";
-import { scansHere, scansHereSql, siteScope } from "./site-scope";
+import { isHere, scansElsewhere, scansHere, scansHereSql, siteOf, siteScope } from "./site-scope";
 import { NOT_COUNTED_OUTCOMES } from "./scan-rules";
+import { clockStateAfter } from "./lanes";
 import type {
   PresenceBoard,
   PresenceDetail,
@@ -49,6 +50,8 @@ type LatestRow = {
   source: string;
   scanTime: Date;
   stateAfter: string | null;
+  siteCode: string | null;
+  homeSiteId: string | null;
 };
 
 type TodayRow = { employeeId: string; firstIn: Date | null; lastOut: Date | null };
@@ -112,8 +115,9 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
     // DISTINCT ON, not after, so an unresolvable scan never hides the real
     // state underneath it. So is a time clock scan the timecard refused: it
     // changed nothing, and the person panel's lanes read it the same way.
-    // Taken at every building, then kept only where it happened here: a
-    // person whose newest scan is at another building is there, not here.
+    // Taken at every building: a person whose newest gate scan is at another
+    // building is there, not here, and the time clock follows the person
+    // (see below).
     db.$queryRaw<(LatestRow & { here: boolean })[]>`
       SELECT DISTINCT ON (s."employeeId", s."stream")
              ${here}                   AS here,
@@ -122,7 +126,9 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
              s."direction"::text       AS direction,
              s."directionSource"::text AS source,
              s."scanTime"              AS "scanTime",
-             COALESCE(${EFFECTIVE_STATE_SQL}, s."timecardStateAfter") AS "stateAfter"
+             COALESCE(${EFFECTIVE_STATE_SQL}, s."timecardStateAfter") AS "stateAfter",
+             s."site"                  AS "siteCode",
+             e."siteId"                AS "homeSiteId"
       FROM   "scan_events" s
       JOIN   "employees" e ON e.id = s."employeeId"
       ${PUNCH_CHAIN_JOINS}
@@ -194,6 +200,23 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
     (row.stream === "SECURITY" ? gateById : clockById).set(row.employeeId, row);
   }
   const todayById = new Map(todayRows.map((r) => [r.employeeId, r]));
+  // The time clock follows the person: for anybody who scanned here today or
+  // is still here from last night, their newest time clock scan counts
+  // wherever they made it, since a shift that moves between warehouses is one
+  // shift. Another building's gate only says whether they are inside it now.
+  const appeared = new Set([
+    ...todayById.keys(),
+    ...[...gateById.values()].filter((r) => r.direction === "IN").map((r) => r.employeeId),
+    ...[...clockById.values()].filter((r) => clockStateOf(r) !== "OUT").map((r) => r.employeeId),
+  ]);
+  const awayById = new Map<string, LatestRow>();
+  for (const row of latest) {
+    if (row.here) continue;
+    const id = row.employeeId;
+    if (!appeared.has(id)) continue;
+    if (row.stream === "TIME_CLOCK") clockById.set(id, row);
+    else if (row.direction === "IN" && row.source !== "AUTO_CLOSE") awayById.set(id, row);
+  }
   const scheduleById = new Map(scheduled.map((s) => [s.employeeId, s]));
   const onLeave = new Set([...leaveRequests.map((l) => l.employeeId), ...onLeaveFlags.map((e) => e.id)]);
   const hasGateData = lastGate !== null;
@@ -245,14 +268,23 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
 
     const gateIn = gate?.direction === "IN";
     const clockState = clockStateOf(clock);
+    const awayRow = gateIn ? undefined : awayById.get(emp.id);
 
     let status: PresenceStatus | null = null;
     let inside = false;
     let outsideOnMeal = false;
     let breakKind: "MEAL" | "BREAK" | null = null;
     let since: Date | null = null;
+    let elsewhere: string | null = null;
 
-    if (clockState === "WORK") {
+    if (clockState !== "OUT" && awayRow) {
+      // On the clock and inside another building: their shift carries on
+      // there. Not counted here, and not a missed gate scan.
+      status = "ELSEWHERE";
+      breakKind = clockState === "WORK" ? null : clockState;
+      since = awayRow.scanTime;
+      elsewhere = siteOf(scope, awayRow.siteCode, awayRow.homeSiteId);
+    } else if (clockState === "WORK") {
       status = hasGateData && !gateIn ? "NO_GATE_SCAN" : "WORKING";
       // The building total follows the gate, as Movements does: somebody the
       // gate has outside is listed as clocked in and not inside, not counted.
@@ -317,6 +349,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       lateMinutes,
       inactive: !emp.isActive || emp.terminatedAt !== null,
       homeSite: emp.site && emp.site.id !== siteId ? emp.site.name : null,
+      elsewhere,
       gate: gate
         ? { inside: gateIn, at: gate.scanTime.toISOString(), automatic: gate.source === "AUTO_CLOSE" }
         : null,
@@ -366,8 +399,9 @@ function latestOf(a: Date | null, b: Date | null): Date | null {
  * the night before left them.
  *
  * <p>`day` is a site calendar day within the last week; anything else reads
- * as today. Only the scans made at this building are read, the same ones
- * the table shows. Somebody opens when this is their site or they scanned
+ * as today. The scans made at this building are read, the same ones the
+ * table shows, and on a day they scanned here, their time clock and gate
+ * scans at other buildings too (see lanes.ts). Somebody opens when this is their site or they scanned
  * here in the days the page can show; any other id finds nothing, and the
  * caller answers as if the person does not exist.
  */
@@ -432,23 +466,24 @@ export async function getPresenceDetail(
     punch: PUNCH_CHAIN,
   } as const;
 
-  // The state at midnight: the newest IN or OUT of each kind before the day.
+  // The state at midnight: the newest IN or OUT of each kind before the day,
+  // at any building, as Movements reads it: somebody whose last gate scan was
+  // at another building is not still inside this one.
   const carry = (stream: "SECURITY" | "TIME_CLOCK") =>
     db.scanEvent.findFirst({
       where: {
         employeeId,
         tenantId,
         stream,
-        AND: [here],
         direction: { in: ["IN", "OUT"] },
         scanTime: { gte: carryFrom, lt: dayStart },
         ...(stream === "TIME_CLOCK" ? { outcome: { notIn: [...NOT_COUNTED_OUTCOMES] } } : {}),
       },
       orderBy: { scanTime: "desc" },
-      select: scanSelect,
+      select: { ...scanSelect, site: true },
     });
 
-  const [schedule, scans, carryGate, carryClock, photos] = await Promise.all([
+  const [schedule, scans, lastGate, lastClock, elsewhere, photos] = await Promise.all([
     db.scheduleDay.findFirst({
       where: { employeeId, tenantId, workDate: new Date(`${theDay}T00:00:00.000Z`), isWorkday: true },
       select: { startTime: true, endTime: true },
@@ -461,8 +496,37 @@ export async function getPresenceDetail(
     }),
     carry("SECURITY"),
     carry("TIME_CLOCK"),
+    db.scanEvent.findMany({
+      where: { employeeId, tenantId, scanTime: { gte: dayStart, lt: dayEnd }, AND: [scansElsewhere(scope)] },
+      orderBy: { scanTime: "desc" },
+      take: 400,
+      select: { ...scanSelect, site: true },
+    }),
     photoUrls(tenantId, [{ id: emp.id, barcode: emp.barcode, wmsId: emp.wmsId, employeeCode: emp.employeeCode }]),
   ]);
+  const homeSiteId = emp.site?.id ?? null;
+  const gateHere = lastGate && isHere(scope, lastGate.site, homeSiteId) ? lastGate : null;
+  const clockHere = lastClock && isHere(scope, lastClock.site, homeSiteId) ? lastClock : null;
+  const carryGate = gateHere ? toScan(withCurrentPunch(gateHere)) : null;
+  const carryClockHere = clockHere ? toScan(withCurrentPunch(clockHere)) : null;
+  // Scanned here that day, or still here from last night: then the time clock
+  // is theirs from every building, and another building's gate says whether
+  // they were inside it.
+  const appeared =
+    scans.length > 0 ||
+    (!!carryGate && carryGate.direction === "IN" && !carryGate.automatic) ||
+    (!!carryClockHere && clockStateAfter(carryClockHere) !== "OUT");
+  const elsewhereScan = (r: (typeof elsewhere)[number]) => ({
+    ...toScan(withCurrentPunch(r)),
+    site: siteOf(scope, r.site, homeSiteId),
+  });
+  const carryClock = appeared && lastClock && !clockHere ? elsewhereScan(lastClock) : carryClockHere;
+  const carryAway = appeared && lastGate && !gateHere ? elsewhereScan(lastGate) : null;
+  const dayScans = [
+    ...scans.map((s) => toScan(withCurrentPunch(s))),
+    ...(appeared ? elsewhere.filter((s) => s.stream === "TIME_CLOCK").map(elsewhereScan) : []),
+  ].sort((a, b) => b.at.localeCompare(a.at));
+
   const expected = expectedHours(emp.shift, schedule ?? undefined, theDay);
   // Whose answer the hours are, even when the answer is "not this day": a
   // shift that is off today still decides, and WMS may still disagree.
@@ -492,9 +556,11 @@ export async function getPresenceDetail(
     today,
     dayStart: dayStart.toISOString(),
     dayEnd: dayEnd.toISOString(),
-    scans: scans.map((s) => toScan(withCurrentPunch(s))),
-    carryGate: carryGate ? toScan(withCurrentPunch(carryGate)) : null,
-    carryClock: carryClock ? toScan(withCurrentPunch(carryClock)) : null,
+    scans: dayScans,
+    carryGate,
+    carryClock,
+    away: appeared ? elsewhere.filter((s) => s.stream === "SECURITY").map(elsewhereScan).reverse() : [],
+    carryAway,
   };
 }
 

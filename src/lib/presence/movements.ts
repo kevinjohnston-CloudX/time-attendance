@@ -91,6 +91,8 @@ export const FLAG_ORDER: MovementFlag[] = [
 export interface NowState {
   inside: boolean;
   clock: "WORK" | "MEAL" | "BREAK" | "OUT";
+  /** Not inside this building and inside another one, by that building's gate. */
+  away: boolean;
 }
 
 export interface PersonDayView {
@@ -129,7 +131,18 @@ export function buildPersonDay(
   const to = isToday ? Math.min(now, dayEnd) : dayEnd;
   const hasGate = day.site.hasGateData;
 
-  const lanes = buildLanes({ scans, carryGate: carry.gate, carryClock: carry.clock, from, to });
+  const lanes = buildLanes({
+    scans,
+    carryGate: carry.gate,
+    carryClock: carry.clock,
+    away: day.away?.[person.id] ?? [],
+    carryAway: carry.away ?? null,
+    from,
+    to,
+  });
+  // Scans made at this building, which is what the counts and the Scan log
+  // are about. The others are the time clock at another warehouse.
+  const own = scans.filter((s) => !s.site);
 
   const lines: MovementLine[] = [];
   for (const g of lanes.gate) {
@@ -183,7 +196,11 @@ export function buildPersonDay(
   // ends with everybody outside unless nobody ever scanned them out.
   const openGate = lanes.gate.find((g) => g.open);
   const openClock = lanes.clock.find((c) => c.open);
-  const nowState: NowState = { inside: !!openGate, clock: openClock ? openClock.kind : "OUT" };
+  const nowState: NowState = {
+    inside: !!openGate,
+    clock: openClock ? openClock.kind : "OUT",
+    away: !openGate && lanes.away.some((g) => g.open),
+  };
 
   const schedule =
     person.scheduledStart && person.scheduledEnd
@@ -225,7 +242,7 @@ export function buildPersonDay(
   const exits = hasGate
     ? lanes.gate.filter((g) => !g.open && !g.closedBySystem).length + lanes.exitsWithoutEntry.length
     : lanes.clock.filter((c) => c.kind === "WORK" && c.endScan?.punchType === "CLOCK_OUT").length;
-  const rejected = scans.filter((s) => !isShownScan(s)).length;
+  const rejected = own.filter((s) => !isShownScan(s)).length;
   const breaks = lanes.clock.filter((c) => c.kind !== "WORK");
 
   const flags: MovementFlag[] = [];
@@ -241,7 +258,8 @@ export function buildPersonDay(
   );
   add(
     "NO_GATE_SCAN",
-    hasGate && (isToday ? nowState.clock === "WORK" && !nowState.inside : lanes.totals.workOutsideMin >= GAP_MIN),
+    hasGate &&
+      (isToday ? nowState.clock === "WORK" && !nowState.inside && !nowState.away : lanes.totals.workOutsideMin >= GAP_MIN),
   );
   add(
     "SCHEDULED_OUTSIDE",
@@ -250,7 +268,7 @@ export function buildPersonDay(
       !person.onLeave &&
       now >= schedule.start &&
       now < schedule.end &&
-      !(hasGate ? nowState.inside : nowState.clock !== "OUT"),
+      !(hasGate ? nowState.inside || (nowState.away && nowState.clock !== "OUT") : nowState.clock !== "OUT"),
   );
   add(
     "NOT_ARRIVED",
@@ -264,14 +282,15 @@ export function buildPersonDay(
   add("EXIT_NO_ENTRY", lanes.exitsWithoutEntry.length > 0);
   // One per reader, the way the Scan log counts them: "scanned out" is the
   // gate, "clocked out" is the time clock.
-  add("MARKED_OUT", scans.some((s) => s.automatic && s.stream === "SECURITY" && s.direction === "OUT"));
-  add("CLOCK_CLOSED", scans.some((s) => s.automatic && s.stream === "TIME_CLOCK"));
+  add("MARKED_OUT", own.some((s) => s.automatic && s.stream === "SECURITY" && s.direction === "OUT"));
+  add("CLOCK_CLOSED", own.some((s) => s.automatic && s.stream === "TIME_CLOCK"));
   add("REJECTED", rejected > 0);
   add("INACTIVE", person.inactive && scans.length > 0);
   add("ON_LEAVE", person.onLeave);
   add("HERE_NOW", isToday && (hasGate ? nowState.inside : nowState.clock !== "OUT"));
-  add("ON_CLOCK_NOW", isToday && nowState.clock === "WORK");
-  add("SEEN", scans.some(isShownScan));
+  // Counted at the building they are working in, not at every one they were at.
+  add("ON_CLOCK_NOW", isToday && nowState.clock === "WORK" && !nowState.away);
+  add("SEEN", own.some(isShownScan));
 
   const shown = scans.filter(isShownScan);
   const last = shown.length ? Date.parse(shown[shown.length - 1].at) : null;
@@ -279,7 +298,7 @@ export function buildPersonDay(
   return {
     person,
     scans: scans.filter(isShownScan),
-    notCounted: scans.filter((s) => !isShownScan(s)).length,
+    notCounted: own.filter((s) => !isShownScan(s)).length,
     lanes,
     lines,
     flags,
@@ -289,7 +308,7 @@ export function buildPersonDay(
     earlyMinutes,
     exits,
     rejected,
-    scanCount: scans.filter(isShownScan).length,
+    scanCount: own.filter(isShownScan).length,
     firstIn,
     lastOut,
     lastActivity: last,
@@ -325,7 +344,8 @@ export function scanTotals(views: PersonDayView[]): ScanTotals {
   for (const v of views) {
     t.rejected += v.notCounted;
     for (const s of v.scans) {
-      if (!isCountedScan(s)) continue;
+      // Another warehouse's time clock is in the story, not in this building's count.
+      if (s.site || !isCountedScan(s)) continue;
       t.all += 1;
       const d = scanDirection(s);
       if (s.stream === "SECURITY") {

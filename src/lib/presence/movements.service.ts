@@ -5,7 +5,7 @@ import { LOOKBACK_MS, localDateString, toScan, withCurrentPunch, type ScanRow } 
 import { photoUrls } from "./photos";
 import { expectedHours, SHIFT_HOURS_SELECT } from "./expected-hours";
 import { EFFECTIVE_TYPE_SQL, PUNCH_CHAIN, PUNCH_CHAIN_JOINS } from "./effective-punch";
-import { scansHere, scansHereSql, siteScope } from "./site-scope";
+import { scansElsewhere, scansHere, scansHereSql, siteOf, siteScope } from "./site-scope";
 import type { DayPerson, PresenceScan, SiteDay } from "./types";
 
 /**
@@ -21,6 +21,11 @@ import type { DayPerson, PresenceScan, SiteDay } from "./types";
  * somebody whose record names another site is here when they scanned here,
  * plus the people of this site who were scheduled or on leave.
  *
+ * <p>For each person who scanned here, their scans at other buildings that
+ * day come too: the time clock ones join their day, because a shift that
+ * moves between warehouses is one shift, and the gate ones only say they were
+ * inside another building (see lanes.ts).
+ *
  * <p>Read-only, and bounded: one site, one calendar day, capped at MAX_SCANS.
  * A site of 400 people makes about 2,000 scans a day. The poll first asks
  * whether anything new was recorded, and only then reads the day again.
@@ -31,7 +36,20 @@ const MAX_SCANS = 20_000;
 const MAX_UNCHANGED_MS = 5 * 60 * 1000;
 const SYSTEM_SOURCES = ["AUTO_CLOSE", "SEEDED"];
 
-type CarryRow = ScanRow & { employeeId: string };
+type CarryRow = ScanRow & { employeeId: string; siteCode: string | null; homeSiteId: string | null };
+
+const SCAN_SELECT = {
+  id: true,
+  employeeId: true,
+  scanTime: true,
+  stream: true,
+  direction: true,
+  directionSource: true,
+  timecardPunchType: true,
+  deviceName: true,
+  outcome: true,
+  punch: PUNCH_CHAIN,
+} as const;
 
 export async function getSiteDay(
   tenantId: string,
@@ -55,7 +73,12 @@ export async function getSiteDay(
   const here = scansHere(scope);
   const atSite = { tenantId, scanTime: { gte: dayStart, lt: dayEnd }, AND: [here] };
 
-  const newest = await db.scanEvent.aggregate({ where: atSite, _max: { createdAt: true } });
+  // Anything the day's people recorded, here or at another building, since a
+  // clock out at another warehouse changes their day here too.
+  const newest = await db.scanEvent.aggregate({
+    where: { tenantId, scanTime: { gte: dayStart, lt: dayEnd }, employee: { scanEvents: { some: atSite } } },
+    _max: { createdAt: true },
+  });
   const watermark = newest._max.createdAt?.toISOString() ?? null;
 
   // Nothing new since the browser's copy, and that copy is recent: say so and
@@ -75,18 +98,7 @@ export async function getSiteDay(
       where: atSite,
       orderBy: [{ scanTime: "desc" }, { id: "desc" }],
       take: MAX_SCANS + 1,
-      select: {
-        id: true,
-        employeeId: true,
-        scanTime: true,
-        stream: true,
-        direction: true,
-        directionSource: true,
-        timecardPunchType: true,
-        deviceName: true,
-        outcome: true,
-        punch: PUNCH_CHAIN,
-      },
+      select: SCAN_SELECT,
     }),
     // Where each person stood at midnight: their last IN or OUT of each kind
     // in the 36 hours before, leaving out time clock scans the timecard refused.
@@ -105,7 +117,9 @@ export async function getSiteDay(
              s."timecardPunchType"       AS "timecardPunchType",
              ${EFFECTIVE_TYPE_SQL}       AS "currentPunchType",
              s."deviceName"              AS "deviceName",
-             s."outcome"::text           AS outcome
+             s."outcome"::text           AS outcome,
+             s."site"                    AS "siteCode",
+             e."siteId"                  AS "homeSiteId"
       FROM   "scan_events" s
       JOIN   "employees" e ON e.id = s."employeeId"
       ${PUNCH_CHAIN_JOINS}
@@ -175,6 +189,44 @@ export async function getSiteDay(
     if (stillIn) carriedIn.add(r.employeeId);
   }
 
+  // Everybody who scanned here that day, or was still here from last night,
+  // brings their time clock from every building, and whether another
+  // building's gate had them inside.
+  const appeared = new Set([...Object.keys(scans), ...carriedIn]);
+  for (const r of carryRows) {
+    if (r.here || !appeared.has(r.employeeId)) continue;
+    const scan = { ...toScan(r), site: siteOf(scope, r.siteCode, r.homeSiteId) };
+    const entry = (carry[r.employeeId] ??= { gate: null, clock: null });
+    if (scan.stream === "TIME_CLOCK") entry.clock = scan;
+    else entry.away = scan;
+  }
+  const away: SiteDay["away"] = {};
+  if (appeared.size) {
+    const elsewhere = await db.scanEvent.findMany({
+      where: {
+        tenantId,
+        employeeId: { in: [...appeared] },
+        scanTime: { gte: dayStart, lt: dayEnd },
+        AND: [scansElsewhere(scope)],
+      },
+      orderBy: [{ scanTime: "asc" }, { id: "asc" }],
+      take: MAX_SCANS,
+      select: { ...SCAN_SELECT, site: true, employee: { select: { siteId: true } } },
+    });
+    const moved = new Set<string>();
+    for (const r of elsewhere) {
+      if (!r.employeeId) continue;
+      const scan = { ...toScan(withCurrentPunch(r)), site: siteOf(scope, r.site, r.employee?.siteId) };
+      if (r.stream === "TIME_CLOCK") {
+        (scans[r.employeeId] ??= []).push(scan);
+        moved.add(r.employeeId);
+      } else {
+        (away[r.employeeId] ??= []).push(scan);
+      }
+    }
+    for (const id of moved) scans[id].sort((a, b) => a.at.localeCompare(b.at));
+  }
+
   const scheduleById = new Map(schedules.map((s) => [s.employeeId, s]));
   const shiftById = new Map(siteShifts.map((e) => [e.id, e.shift]));
   // Expected this day by their shift, or by WMS when the shift cannot say. A
@@ -234,6 +286,7 @@ export async function getSiteDay(
   // Carry only matters for the people on the list.
   const kept = new Set(people.map((p) => p.id));
   for (const id of Object.keys(carry)) if (!kept.has(id)) delete carry[id];
+  for (const id of Object.keys(away)) if (!kept.has(id)) delete away[id];
 
   return {
     site: { id: site.id, name: site.name, timezone, hasGateData: lastGate !== null },
@@ -246,6 +299,7 @@ export async function getSiteDay(
     people,
     scans,
     carry,
+    away,
     truncated,
   };
 }

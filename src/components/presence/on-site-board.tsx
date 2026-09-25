@@ -2103,6 +2103,7 @@ function EmptyBoard({
     ON_SITE: ["No office staff inside", "No one from the office has come through the gate right now."],
     NOT_ARRIVED: ["Everyone scheduled has arrived", "No one scheduled for today is still missing."],
     LEFT: ["Nobody has left yet", "No one who was here today has gone home."],
+    ELSEWHERE: ["Nobody is at another building", "No one seen here today is on the clock at another building right now."],
     ON_LEAVE: ["Nobody is on leave today", "No approved time off covers today."],
     NOT_SCHEDULED: ["Everyone is scheduled today", "Everyone based at this site has a shift today or has been seen."],
   };
