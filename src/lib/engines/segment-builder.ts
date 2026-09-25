@@ -6,7 +6,24 @@ import { startOfDayInTz, nextMidnightInTz, endOfDayInTz, roundDurationMinutes } 
 import type { Punch, RuleSet, PayBucket, SegmentType, HolidayCreditMethod } from "@prisma/client";
 import type { MealConfig } from "@/actions/shift.actions";
 
-type EffectiveMealCfg = { mealBreakAfterMinutes: number; mealBreakMinutes: number };
+type MealPremiumRowCfg = {
+  applyFromMinutes: number;    // window start relative to shift start (minutes)
+  applyToMinutes: number;      // window end relative to shift start — shift must pass this for rule to trigger
+  minimumMealMinutes: number;  // minimum qualifying meal duration
+  payMinutes: number;          // premium credit minutes
+  payCodeId: string | null;
+  unlessHoursExceed: boolean;  // suppress if total worked > unlessHoursExceedMinutes
+  unlessHoursExceedMinutes: number;
+  unlessPunchedMeal: boolean;  // only real MEAL_START/MEAL_END punches suppress premium (vs. any MEAL segment)
+};
+
+type EffectiveMealCfg = {
+  mealBreakAfterMinutes: number;
+  mealBreakMinutes: number;
+  minMealMinutes: number;   // lower bound: punch gap shorter than this is not a meal
+  maxMealMinutes: number;   // upper bound: punch gap longer than this is not a meal
+  disableMinDeduction: boolean; // true = use actual gap; false = enforce mealBreakMinutes minimum
+};
 
 const SALARY_DAILY_MINUTES = 480; // 8 h
 
@@ -147,6 +164,80 @@ export function computeSegments(
 }
 
 /**
+ * Validate real MEAL segments (from actual MEAL_START/MEAL_END punches) against
+ * the shift's configured punch-gap range and minimum-deduction rules.
+ *
+ * - Gap outside [minMealMinutes, maxMealMinutes]: not a real meal → merge back into WORK
+ * - Gap within range but shorter than mealBreakMinutes and !disableMinDeduction:
+ *   inflate MEAL to mealBreakMinutes (minimum deduction enforced), shorten adjacent WORK
+ * - Gap within range and (disableMinDeduction or gap >= mealBreakMinutes): keep as-is
+ *
+ * Must run before applyAutoMealDeduction so days that lose their real MEAL segment
+ * here still get the synthetic auto-deduct applied.
+ */
+function applyMealPunchValidation(
+  segments: SegmentInput[],
+  cfg: EffectiveMealCfg
+): SegmentInput[] {
+  const { minMealMinutes, maxMealMinutes, mealBreakMinutes, disableMinDeduction } = cfg;
+  const mealSegs = segments.filter(s => s.segmentType === "MEAL");
+  if (mealSegs.length === 0) return segments;
+
+  const toRemove = new Set<SegmentInput>();
+  const toAdd: SegmentInput[] = [];
+
+  for (const meal of mealSegs) {
+    const gapMins = meal.durationMinutes;
+
+    const before = segments.find(
+      s => s.segmentType === "WORK" && s.endTime.getTime() === meal.startTime.getTime()
+    );
+    const after = segments.find(
+      s => s.segmentType === "WORK" && s.startTime.getTime() === meal.endTime.getTime()
+    );
+
+    if (gapMins < minMealMinutes || gapMins > maxMealMinutes) {
+      // Invalid gap — this isn't a meal, fold back into WORK
+      toRemove.add(meal);
+      if (before && after) {
+        toRemove.add(before);
+        toRemove.add(after);
+        toAdd.push({
+          ...before,
+          endTime: after.endTime,
+          durationMinutes: before.durationMinutes + gapMins + after.durationMinutes,
+        });
+      } else if (before) {
+        toRemove.add(before);
+        toAdd.push({ ...before, endTime: meal.endTime, durationMinutes: before.durationMinutes + gapMins });
+      } else if (after) {
+        toRemove.add(after);
+        toAdd.push({ ...after, startTime: meal.startTime, durationMinutes: after.durationMinutes + gapMins });
+      }
+    } else if (!disableMinDeduction && gapMins < mealBreakMinutes) {
+      // Valid meal but shorter than the required minimum — inflate to minimum,
+      // trimming the same amount from the after-WORK segment.
+      const extraMins = mealBreakMinutes - gapMins;
+      const newMealEnd = new Date(meal.endTime.getTime() + extraMins * 60_000);
+
+      toRemove.add(meal);
+      toAdd.push({ ...meal, endTime: newMealEnd, durationMinutes: mealBreakMinutes });
+
+      if (after) {
+        toRemove.add(after);
+        const newAfterMins = after.durationMinutes - extraMins;
+        if (newAfterMins > 0) {
+          toAdd.push({ ...after, startTime: newMealEnd, durationMinutes: newAfterMins });
+        }
+      }
+    }
+    // else: valid gap, disableMinDeduction true or gap >= minimum → keep as-is
+  }
+
+  return [...segments.filter(s => !toRemove.has(s)), ...toAdd];
+}
+
+/**
  * For NJ-style auto-deduct employees: after computing segments from punches,
  * inject a synthetic MEAL segment on any day where the employee worked more
  * than ruleSet.mealBreakAfterMinutes, unless that day is in waivedDates.
@@ -193,9 +284,9 @@ function applyAutoMealDeduction(
     );
 
     // Find the segment that contains the meal start point
-    const mealStartMs =
+    let mealStartMs =
       sorted[0].startTime.getTime() + cfg.mealBreakAfterMinutes * 60_000;
-    const mealEndMs = mealStartMs + cfg.mealBreakMinutes * 60_000;
+    let mealEndMs = mealStartMs + cfg.mealBreakMinutes * 60_000;
 
     const target = sorted.find(
       (seg) =>
@@ -203,6 +294,16 @@ function applyAutoMealDeduction(
         seg.endTime.getTime() > mealStartMs
     );
     if (!target) continue; // Meal point falls in a gap — skip deduction
+
+    // If the meal window extends past the target segment's end (employee clocked out
+    // before the meal finished), slide the meal back so it ends at clock-out.
+    // This implements a true HOURS_WORKED deduction: paid = total pair - meal minutes.
+    if (mealEndMs > target.endTime.getTime()) {
+      mealEndMs = target.endTime.getTime();
+      mealStartMs = mealEndMs - cfg.mealBreakMinutes * 60_000;
+      // If even the adjusted meal start is before the segment start, skip
+      if (mealStartMs < target.startTime.getTime()) continue;
+    }
 
     toRemove.add(target);
 
@@ -334,13 +435,11 @@ async function applyAutoPayCredits(
   periodEnd: Date,
   ruleSet: RuleSet,
   shift: { startTime: string; endTime: string; workDays: number[] } | null,
+  creditsFrom?: Date,
 ): Promise<void> {
-  const today = new Date();
-  today.setUTCHours(23, 59, 59, 999);
   const periodEndInclusive = addDays(periodEnd, -1);
-  const rangeEnd = periodEndInclusive < today ? periodEndInclusive : today;
 
-  const allDays = eachDayOfInterval({ start: periodStart, end: rangeEnd });
+  const allDays = eachDayOfInterval({ start: periodStart, end: periodEndInclusive });
 
   // Skip days already covered by real punch-derived WORK segments
   const existing = await db.workSegment.findMany({
@@ -378,6 +477,7 @@ async function applyAutoPayCredits(
     if (dailyMinutes <= 0) return;
 
     for (const d of allDays) {
+      if (creditsFrom && format(d, "yyyy-MM-dd") < format(creditsFrom, "yyyy-MM-dd")) continue;
       if (!shift.workDays.includes(d.getUTCDay())) continue;
       if (coveredDates.has(format(d, "yyyy-MM-dd"))) continue;
       const dateKey = format(d, "yyyy-MM-dd");
@@ -407,6 +507,7 @@ async function applyAutoPayCredits(
     const dayMap = new Map<number, DayRow>((schedule ?? []).map((r) => [r.day, r]));
 
     for (const d of allDays) {
+      if (creditsFrom && format(d, "yyyy-MM-dd") < format(creditsFrom, "yyyy-MM-dd")) continue;
       if (coveredDates.has(format(d, "yyyy-MM-dd"))) continue;
       const row = dayMap.get(d.getUTCDay());
       if (!row?.apply || !row.minutes) continue;
@@ -452,14 +553,12 @@ async function ensureSalarySegments(
   timesheetId: string,
   periodStart: Date,
   periodEnd: Date,
-  defaultPayCodeId?: string | null
+  defaultPayCodeId?: string | null,
+  creditsFrom?: Date,
 ): Promise<void> {
-  const today = new Date();
-  today.setUTCHours(23, 59, 59, 999);
   const periodEndInclusive = addDays(periodEnd, -1);
-  const rangeEnd = periodEndInclusive < today ? periodEndInclusive : today;
 
-  const workDays = eachDayOfInterval({ start: periodStart, end: rangeEnd }).filter(
+  const workDays = eachDayOfInterval({ start: periodStart, end: periodEndInclusive }).filter(
     (d) => !isWeekend(d)
   );
   if (workDays.length === 0) return;
@@ -487,6 +586,7 @@ async function ensureSalarySegments(
   const toCreate: SegmentInput[] = [];
   for (const d of workDays) {
     const dateKey = format(d, "yyyy-MM-dd");
+    if (creditsFrom && dateKey < format(creditsFrom, "yyyy-MM-dd")) continue;
     if (coveredDates.has(dateKey)) continue;
     const leaveMinutes = leaveMinutesByDate.get(dateKey) ?? 0;
     const creditMinutes = SALARY_DAILY_MINUTES - leaveMinutes;
@@ -510,6 +610,138 @@ async function ensureSalarySegments(
   if (toCreate.length > 0) {
     await db.workSegment.createMany({ data: toCreate });
   }
+}
+
+/**
+ * Compute meal break premium segments for days where a qualifying meal was not taken.
+ *
+ * For each active MealPremiumRow, the rule triggers when:
+ *  - The shift span (clock-in to clock-out) exceeds row.applyToMinutes
+ *  - No qualifying meal occurred within [shiftStart + applyFromMinutes, shiftStart + applyToMinutes]
+ *  - Optional suppressions (unlessHoursExceed, unlessPunchedMeal) do not apply
+ *
+ * Returns MEAL_PREMIUM SegmentInputs appended after the shift, one per triggered row per day.
+ */
+function computeMealPremiums(
+  timesheetId: string,
+  segments: SegmentInput[],
+  punches: Punch[],
+  ruleSet: RuleSet,
+  timezone: string,
+): SegmentInput[] {
+  if (!ruleSet.mealBreakPremiumEnabled) return [];
+
+  const rows = (ruleSet.mealPremiumRows as MealPremiumRowCfg[] | null) ?? [];
+  const activeRows = rows.filter(r => r.payMinutes > 0 && r.payCodeId);
+  if (activeRows.length === 0) return [];
+
+  const premiums: SegmentInput[] = [];
+
+  // Group work + meal segments by local calendar day
+  const dayKeys = new Set(
+    segments.filter(s => s.segmentType === "WORK").map(s => format(s.segmentDate, "yyyy-MM-dd"))
+  );
+
+  for (const dayKey of dayKeys) {
+    const daySegs = segments.filter(s => format(s.segmentDate, "yyyy-MM-dd") === dayKey);
+    const workSegs = daySegs.filter(s => s.segmentType === "WORK");
+    const mealSegs = daySegs.filter(s => s.segmentType === "MEAL");
+
+    if (workSegs.length === 0) continue;
+
+    // Punches for this local calendar day (keyed by actual punchTime in site tz)
+    const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: timezone });
+    const dayPunches = punches.filter(p => fmt.format(p.punchTime) === dayKey);
+
+    // Shift span and start — use actual punch times when configured, else rounded segment times
+    let shiftStartMs: number;
+    let shiftSpanMins: number;
+    if (ruleSet.mealPremiumUseActualForWindow) {
+      const clockIns = dayPunches.filter(p => p.punchType === "CLOCK_IN");
+      const clockOuts = dayPunches.filter(p => p.punchType === "CLOCK_OUT");
+      if (clockIns.length === 0 || clockOuts.length === 0) continue;
+      shiftStartMs = clockIns[0].punchTime.getTime();
+      const shiftEndMs = clockOuts[clockOuts.length - 1].punchTime.getTime();
+      shiftSpanMins = (shiftEndMs - shiftStartMs) / 60_000;
+    } else {
+      const sorted = [...workSegs].sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+      shiftStartMs = sorted[0].startTime.getTime();
+      const lastWork = sorted[sorted.length - 1];
+      shiftSpanMins = (lastWork.endTime.getTime() - shiftStartMs) / 60_000
+        + mealSegs.reduce((s, m) => s + m.durationMinutes, 0);
+    }
+
+    const totalWorkedMins = workSegs.reduce((s, w) => s + w.durationMinutes, 0);
+    const realMealStarts = dayPunches.filter(p => p.punchType === "MEAL_START");
+    const lastWorkSeg = workSegs.reduce((a, b) => a.endTime > b.endTime ? a : b);
+
+    let premiumsThisDay = 0;
+
+    for (const row of activeRows) {
+      if (premiumsThisDay >= ruleSet.mealBreakPremiumMaxPerDay) break;
+
+      // Trigger: shift must extend past the end of the required meal window
+      if (shiftSpanMins < row.applyToMinutes) continue;
+
+      // unlessHoursExceed: suppress when total worked exceeds threshold
+      if (row.unlessHoursExceed && totalWorkedMins > row.unlessHoursExceedMinutes) continue;
+
+      // Window within which a qualifying meal must have occurred
+      const windowStartMs = shiftStartMs + row.applyFromMinutes * 60_000;
+      const windowEndMs = shiftStartMs + row.applyToMinutes * 60_000;
+
+      let hasQualifyingMeal = false;
+
+      if (row.unlessPunchedMeal) {
+        // Only real MEAL_START/MEAL_END punch pairs count
+        for (const ms of realMealStarts) {
+          const msPunchMs = ruleSet.mealPremiumUseActualForWindow
+            ? ms.punchTime.getTime()
+            : ms.roundedTime.getTime();
+          if (msPunchMs < windowStartMs || msPunchMs >= windowEndMs) continue;
+          const me = dayPunches.find(p => p.punchType === "MEAL_END" && p.punchTime > ms.punchTime);
+          if (!me) continue;
+          const gapMins = ruleSet.mealPremiumUseActualForMinimum
+            ? (me.punchTime.getTime() - ms.punchTime.getTime()) / 60_000
+            : (mealSegs.find(s => Math.abs(s.startTime.getTime() - ms.roundedTime.getTime()) < 2 * 60_000)?.durationMinutes ?? 0);
+          if (gapMins >= row.minimumMealMinutes) { hasQualifyingMeal = true; break; }
+        }
+      } else {
+        // Any MEAL segment whose start falls within the window qualifies
+        for (const mealSeg of mealSegs) {
+          if (mealSeg.startTime.getTime() < windowStartMs || mealSeg.startTime.getTime() >= windowEndMs) continue;
+          if (mealSeg.durationMinutes >= row.minimumMealMinutes) { hasQualifyingMeal = true; break; }
+        }
+      }
+
+      if (hasQualifyingMeal) continue;
+
+      // Premium is owed
+      let premiumMins = row.payMinutes;
+      if (ruleSet.mealPremiumLimitToPayMinutes) {
+        const totalMealMins = mealSegs.reduce((s, m) => s + m.durationMinutes, 0);
+        premiumMins = Math.min(premiumMins, totalWorkedMins - totalMealMins);
+      }
+      if (premiumMins <= 0) continue;
+
+      premiums.push({
+        timesheetId,
+        segmentType: "MEAL_PREMIUM",
+        startTime: lastWorkSeg.endTime,
+        endTime: new Date(lastWorkSeg.endTime.getTime() + premiumMins * 60_000),
+        durationMinutes: premiumMins,
+        segmentDate: lastWorkSeg.segmentDate,
+        isPaid: true,
+        payBucket: "REG",
+        payCodeId: row.payCodeId,
+        isSplit: false,
+      });
+
+      premiumsThisDay++;
+    }
+  }
+
+  return premiums;
 }
 
 export async function rebuildSegments(
@@ -596,6 +828,22 @@ export async function rebuildSegments(
   const tenantId = timesheet.employee.tenantId;
   const isSalary = timesheet.employee.payType === "SALARY";
 
+  // When this rule set became active mid-period (employee promotion/transfer),
+  // autopay credits should only apply from that date forward; days before it
+  // were punch-based and already have real segments.
+  const midPeriodEntry = await db.employeeRuleSetHistory.findFirst({
+    where: {
+      employeeId: timesheet.employee.id,
+      ruleSetId: ruleSet.id,
+      effectiveDate: {
+        gt: timesheet.payPeriod.startDate,
+        lte: timesheet.payPeriod.endDate,
+      },
+    },
+    orderBy: { effectiveDate: "desc" },
+  });
+  const autoPayCreditsFrom = midPeriodEntry?.effectiveDate ?? undefined;
+
   const punches = await db.punch.findMany({
     where: { timesheetId, isApproved: true, correctedById: null },
     orderBy: { roundedTime: "asc" },
@@ -630,15 +878,22 @@ export async function rebuildSegments(
     mealBreakMinutes: shiftMeal?.autoDeduct && shiftFirstMeal
       ? shiftFirstMeal.deductMinutes
       : ruleSet.mealBreakMinutes,
+    minMealMinutes: shiftMeal?.minMealMinutes ?? 0,
+    maxMealMinutes: shiftMeal?.maxMealMinutes ?? Infinity,
+    disableMinDeduction: shiftMeal?.disableMinDeduction ?? false,
   };
 
-  let segments = rawSegments;
+  // Validate real MEAL punch gaps against shift rules (only meaningful when a shift
+  // with configured bounds is assigned). Runs before auto-deduct so invalid gaps
+  // become WORK and still trigger the synthetic deduction on that day.
+  let segments = shiftMeal ? applyMealPunchValidation(rawSegments, effectiveMealCfg) : rawSegments;
+
   if (effectiveAutoDeductMeal) {
     const waivers = await db.mealWaiver.findMany({ where: { timesheetId } });
     const waivedDates = new Set(
       waivers.map((w) => format(w.segmentDate, "yyyy-MM-dd"))
     );
-    segments = applyAutoMealDeduction(rawSegments, effectiveMealCfg, waivedDates);
+    segments = applyAutoMealDeduction(segments, effectiveMealCfg, waivedDates);
   }
 
   // Pair rounding runs after meal deduction so the rounded total already excludes unpaid breaks
@@ -646,13 +901,20 @@ export async function rebuildSegments(
     segments = applyPairRounding(segments, ruleSet);
   }
 
+  // Meal break premiums: detect days where no qualifying meal was taken and credit
+  // the configured penalty pay code. Runs after all deduction logic is settled.
+  if (ruleSet.mealBreakPremiumEnabled) {
+    const premiumSegs = computeMealPremiums(timesheetId, segments, punches, ruleSet, timezone);
+    segments = [...segments, ...premiumSegs];
+  }
+
   // Apply pay code to all punch-derived WORK segments.
-  // Salary employees with autoPayEnabled use the salary pay code for punch days too,
-  // so the segment pay code matches what auto-pay assigns for non-punch days.
-  const workPayCodeId =
-    isSalary && ruleSet.autoPayEnabled && ruleSet.autoPayPayCodeId
-      ? ruleSet.autoPayPayCodeId
-      : ruleSet.defaultPayCodeId;
+  // When the rule set has autopay enabled, use autoPayPayCodeId (falling back to
+  // defaultPayCodeId) so punch days and autopay-credit days carry the same pay code.
+  // Without autopay, use defaultPayCodeId.
+  const workPayCodeId = ruleSet.autoPayEnabled
+    ? (ruleSet.autoPayPayCodeId ?? ruleSet.defaultPayCodeId)
+    : ruleSet.defaultPayCodeId;
 
   if (workPayCodeId) {
     segments = segments.map((seg) =>
@@ -797,13 +1059,15 @@ export async function rebuildSegments(
       timesheet.payPeriod.endDate,
       ruleSet,
       timesheet.employee.shift ?? null,
+      autoPayCreditsFrom,
     );
   } else if (isSalary) {
     await ensureSalarySegments(
       timesheetId,
       timesheet.payPeriod.startDate,
       timesheet.payPeriod.endDate,
-      ruleSet.defaultPayCodeId
+      ruleSet.defaultPayCodeId,
+      autoPayCreditsFrom,
     );
   }
 

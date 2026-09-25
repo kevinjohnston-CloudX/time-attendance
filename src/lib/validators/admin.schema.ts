@@ -86,6 +86,8 @@ export const updateEmployeeSchema = z.object({
   ]).optional().transform((v) => (v === undefined ? undefined : v || null)),
   // Work info
   jobTitle: nullableStr,
+  jobTitleId: nullableStr,
+  agencyId: nullableStr,
   terminationReason: nullableStr,
   // Pay
   payType: z.enum(["HOURLY", "SALARY"]).nullable().optional(),

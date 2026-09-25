@@ -51,17 +51,14 @@ function parseLocalDateTime(naiveDateStr: string, timezone: string): Date {
 }
 
 /**
- * Auto-determine punch type from the current state and the employee's rule set.
+ * Auto-determine punch type from the current state.
  *
- * NJ-style (autoDeductMeal = true):  CLOCK_IN / CLOCK_OUT  (2 punches/day)
- * CA-style (autoDeductMeal = false): CLOCK_IN / MEAL_START / MEAL_END / CLOCK_OUT  (4 punches/day)
+ * The kiosk is a 2-state device: every scan is either a clock-in or a clock-out.
+ * Meal deduction is handled entirely by the segment builder using the shift's
+ * mealConfig (authoritative) or ruleSet.autoDeductMeal (fallback when no shift).
+ * Punch classification at the kiosk must never depend on meal settings.
  */
-async function detectPunchType(
-  employeeId: string,
-  timesheetId: string,
-  currentState: PunchState,
-  autoDeductMeal: boolean
-): Promise<PunchType> {
+function detectPunchType(currentState: PunchState): PunchType {
   switch (currentState) {
     case "OUT":
       return "CLOCK_IN";
@@ -69,21 +66,8 @@ async function detectPunchType(
       return "MEAL_END";
     case "BREAK":
       return "BREAK_END";
-    case "WORK": {
-      if (!autoDeductMeal) {
-        const mealToday = await db.punch.findFirst({
-          where: {
-            employeeId,
-            timesheetId,
-            punchType: "MEAL_START",
-            isApproved: true,
-            correctedById: null,
-          },
-        });
-        if (!mealToday) return "MEAL_START";
-      }
+    case "WORK":
       return "CLOCK_OUT";
-    }
   }
 }
 
@@ -383,12 +367,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 7. Auto-detect punch type and validate transition
-  const punchType = await detectPunchType(
-    employee.id,
-    activeTimesheetId,
-    stateBefore,
-    employee.ruleSet.autoDeductMeal
-  );
+  const punchType = detectPunchType(stateBefore);
 
   // 8. Validate state transition
   const transition = validateTransition(stateBefore, punchType);
