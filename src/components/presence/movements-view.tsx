@@ -140,7 +140,7 @@ function flagChips(v: PersonDayView, isToday: boolean): Chip[] {
   if (has("MARKED_OUT")) out.push({ label: "Never scanned out", tone: "neutral", rank: 2 });
   if (has("CLOCK_CLOSED")) out.push({ label: "Never clocked out", tone: "neutral", rank: 2 });
   if (has("REJECTED"))
-    out.push({ label: `${v.rejected} ${v.rejected === 1 ? "tap" : "taps"} not counted`, tone: "neutral", rank: 2 });
+    out.push({ label: `${v.rejected} ${v.rejected === 1 ? "scan" : "scans"} not counted`, tone: "neutral", rank: 2 });
   return out.sort((a, b) => a.rank - b.rank);
 }
 
@@ -871,7 +871,7 @@ function DayStory({
           <span className={styles.dsFoot}>
             {v.scanCount.toLocaleString()} {v.scanCount === 1 ? "scan" : "scans"}
             {v.notCounted > 0 &&
-              `. ${v.notCounted.toLocaleString()} more ${v.notCounted === 1 ? "tap was" : "taps were"} not counted, usually a second tap too soon.`}
+              `. ${v.notCounted.toLocaleString()} more ${v.notCounted === 1 ? "scan was" : "scans were"} not counted, usually the same badge read twice.`}
           </span>
         </aside>
       </div>
@@ -1022,8 +1022,8 @@ export const FLAG_META: Record<MovementFlag, { label: string; hint: string; tone
     tone: "neutral",
   },
   REJECTED: {
-    label: "Taps not counted",
-    hint: "Had scans the timecard refused, usually a second tap too soon. They are left out of the lists and totals",
+    label: "Scans not counted",
+    hint: "Had scans that were not counted: the same badge read twice at either reader, or a time clock scan that was refused. They are left out of the lists and totals",
     tone: "neutral",
   },
   INACTIVE: { label: "Inactive employee", hint: "Scanning on a record that is inactive or terminated", tone: "error" },

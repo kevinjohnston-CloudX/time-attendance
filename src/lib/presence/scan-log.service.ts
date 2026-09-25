@@ -152,7 +152,8 @@ export async function getScanLog(
   // What the rows cover: that, narrowed by whichever counter is picked. A
   // direction always comes with its reader, because every counter has one.
   const narrow: Prisma.ScanEventWhereInput[] = [base];
-  if (input.rejected) narrow.push(notCounted);
+  // Each reader has its own "not counted", so the picked one keeps to its reader.
+  if (input.rejected) narrow.push(notCounted, ...(input.stream ? [{ stream: input.stream }] : []));
   else if (input.missed) {
     narrow.push({ NOT: notCounted }, { id: { in: missedIds } });
   } else if (firstIds) {
@@ -183,7 +184,7 @@ export async function getScanLog(
       ? { AND: [filtered, { OR: [{ scanTime: { lt: before.at } }, { scanTime: before.at, id: { lt: before.id } }] }] }
       : filtered;
 
-  const [rows, gateGroups, rejected, autoClosed, people, newest, peopleIn, clockAutoClosed] = await Promise.all([
+  const [rows, gateGroups, rejected, autoClosed, people, newest, peopleIn, clockAutoClosed, rejectedGate] = await Promise.all([
     db.scanEvent.findMany({
       where: rowWhere,
       orderBy: [{ scanTime: "desc" }, { id: "desc" }],
@@ -224,6 +225,7 @@ export async function getScanLog(
     db.scanEvent.aggregate({ where: base, _max: { createdAt: true } }),
     db.scanEvent.groupBy({ by: ["employeeId"], where: { AND: [counted, gateIn] } }),
     db.scanEvent.count({ where: { ...base, stream: "TIME_CLOCK", directionSource: "AUTO_CLOSE" } }),
+    db.scanEvent.count({ where: { AND: [base, notCounted, { stream: "SECURITY" }] } }),
   ]);
 
   const gateCount = (direction?: string) =>
@@ -277,6 +279,8 @@ export async function getScanLog(
       clockOut: clockScans.filter((d) => clockDir(d) === "OUT").length,
       clockTotal: clockScans.length,
       rejected,
+      rejectedGate,
+      rejectedClock: rejected - rejectedGate,
       gateAutoClosed: autoClosed,
       clockAutoClosed,
       people: people.filter((p) => p.employeeId).length,

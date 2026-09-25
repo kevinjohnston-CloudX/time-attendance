@@ -2167,7 +2167,8 @@ const COUNTER_LABEL: Record<LogCounter, string> = {
   clock: "Time clock scans",
   "clock-in": "Time clock in",
   "clock-out": "Time clock out",
-  rejected: "Taps not counted",
+  "gate-rejected": "Security gate scans not counted",
+  "clock-rejected": "Time clock scans not counted",
   unknown: "Not in CloudTime",
   "first-in": "First entry per person",
   "first-clock": "First clock in per person",
@@ -2177,7 +2178,7 @@ const COUNTER_LABEL: Record<LogCounter, string> = {
 /** How many scans the picked counter stands for, from the same counts it shows. */
 function counterTotal(s: NonNullable<ReturnType<typeof useScanLog>["page"]>["summary"], c: LogCounter | null): number {
   const { stream, direction, rejected, first, missed } = counterQuery(c);
-  if (rejected) return s.rejected;
+  if (rejected) return stream === "SECURITY" ? s.rejectedGate : stream === "TIME_CLOCK" ? s.rejectedClock : s.rejected;
   if (missed) return s.missedGate;
   if (first) return first === "gate" ? s.peopleIn : s.peopleClockedIn;
   if (stream === "SECURITY") return direction === "IN" ? s.gateIn : direction === "OUT" ? s.gateOut : s.gateTotal;

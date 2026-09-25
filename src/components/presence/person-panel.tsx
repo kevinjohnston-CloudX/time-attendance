@@ -493,8 +493,8 @@ export function PersonPanel({
             )}
             {shown && hiddenScans > 0 && (
               <p className={styles.ppFootnote}>
-                {hiddenScans.toLocaleString()} more {hiddenScans === 1 ? "tap was" : "taps were"} not counted, usually a
-                second tap too soon. The Scan log lists them under Taps not counted.
+                {hiddenScans.toLocaleString()} more {hiddenScans === 1 ? "scan was" : "scans were"} not counted, usually the
+                same badge read twice. The Scan log lists them under Scans not counted, for each reader.
               </p>
             )}
           </section>

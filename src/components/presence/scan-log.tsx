@@ -32,7 +32,8 @@ export type LogCounter =
   | "clock"
   | "clock-in"
   | "clock-out"
-  | "rejected"
+  | "gate-rejected"
+  | "clock-rejected"
   | "unknown"
   | "first-in"
   | "first-clock"
@@ -46,10 +47,13 @@ export function counterQuery(
   if (c === "missed") return { stream: null, direction: null, rejected: false, first: null, missed: true };
   const stream: ScanStream | null = c?.startsWith("gate") ? "SECURITY" : c?.startsWith("clock") ? "TIME_CLOCK" : null;
   const direction = c?.endsWith("-in") ? "IN" : c?.endsWith("-out") ? "OUT" : null;
-  return { stream, direction, rejected: c === "rejected", first: null, missed: false };
+  return { stream, direction, rejected: !!c?.endsWith("-rejected"), first: null, missed: false };
 }
 
 export function parseCounter(raw: string | null | undefined): LogCounter | null {
+  // Before each reader had its own, one "rejected" counter sat under the
+  // time clock; an old link opens the time clock's.
+  if (raw === "rejected") return "clock-rejected";
   const all: LogCounter[] = [
     "gate",
     "gate-in",
@@ -57,7 +61,8 @@ export function parseCounter(raw: string | null | undefined): LogCounter | null 
     "clock",
     "clock-in",
     "clock-out",
-    "rejected",
+    "gate-rejected",
+    "clock-rejected",
     "unknown",
     "first-in",
     "first-clock",
@@ -329,6 +334,13 @@ export function ScanLogCounts({
     ],
     exceptions: [
       {
+        key: "gate-rejected",
+        label: "Scans not counted",
+        count: summary.rejectedGate,
+        tone: "error",
+        hint: "Repeat reads of the same badge at the security gate. They are left out of every other list and total",
+      },
+      {
         key: "missed",
         label: "Missed gate scans",
         count: summary.missedGate,
@@ -355,11 +367,11 @@ export function ScanLogCounts({
     ],
     exceptions: [
       {
-        key: "rejected",
-        label: "Taps not counted",
-        count: summary.rejected,
+        key: "clock-rejected",
+        label: "Scans not counted",
+        count: summary.rejectedClock,
         tone: "error",
-        hint: "Taps the time clock did not accept, usually a second tap too soon, and repeat reads of the same badge. They are left out of every other list and total",
+        hint: "Scans the time clock did not accept, usually a second scan too soon, and repeat reads of the same badge at the time clock. They are left out of every other list and total",
       },
       {
         key: "unknown",
@@ -370,7 +382,7 @@ export function ScanLogCounts({
       },
     ],
     note: null,
-    quiet: "Every tap was counted",
+    quiet: "Every scan was counted",
   };
 
   return (
@@ -660,7 +672,7 @@ function LogRow({
               {context}
             </span>
             {r.correctedFrom && (
-              <span className={styles.logCorrected} title={`Recorded at the tap as "${describeOriginal(r)}", corrected in the timecard`}>
+              <span className={styles.logCorrected} title={`Recorded at the scan as "${describeOriginal(r)}", corrected in the timecard`}>
                 Corrected, was {describeOriginal(r)?.toLowerCase()}
               </span>
             )}

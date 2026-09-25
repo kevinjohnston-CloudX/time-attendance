@@ -244,6 +244,10 @@ export interface ScanLogSummary {
   clockTotal: number;
   /** Scans that never counted: refused by the timecard, or a reader's repeat read. */
   rejected: number;
+  /** Of those, the security gate's: its repeat reads. */
+  rejectedGate: number;
+  /** Of those, the time clock's: refused scans and its repeat reads. */
+  rejectedClock: number;
   /** Gate exits the system wrote overnight for people who never scanned out. */
   gateAutoClosed: number;
   /** Time clock outs the system wrote overnight for people who never clocked out. */
