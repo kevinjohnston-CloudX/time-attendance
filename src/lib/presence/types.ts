@@ -134,17 +134,8 @@ export interface PresenceDetail {
   homeSite: string | null;
   /** A signed link to the tablet photo, or null. */
   photoUrl: string | null;
-  /** The day's hours: from the shift on their record, or from WMS when the shift cannot say. */
   scheduledStart: string | null;
   scheduledEnd: string | null;
-  scheduleSource: "SHIFT" | "WMS" | null;
-  /**
-   * The day in WMS, which is what the security gate checks. Drawn beside the
-   * shift's hours when the two disagree.
-   */
-  wmsStart: string | null;
-  wmsEnd: string | null;
-  wmsScheduled: boolean;
   timezone: string;
   /** The site calendar day shown, and today's, YYYY-MM-DD. */
   day: string;
