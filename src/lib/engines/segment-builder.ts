@@ -631,6 +631,7 @@ function computeMealPremiums(
   punches: Punch[],
   ruleSet: RuleSet,
   timezone: string,
+  premiumWaivedDates: Set<string> = new Set(),
 ): SegmentInput[] {
   if (!ruleSet.mealBreakPremiumEnabled) return [];
 
@@ -646,6 +647,8 @@ function computeMealPremiums(
   );
 
   for (const dayKey of dayKeys) {
+    // Skip days where the premium has been explicitly waived
+    if (premiumWaivedDates.has(dayKey)) continue;
     const daySegs = segments.filter(s => format(s.segmentDate, "yyyy-MM-dd") === dayKey);
     const workSegs = daySegs.filter(s => s.segmentType === "WORK");
     const mealSegs = daySegs.filter(s => s.segmentType === "MEAL");
@@ -938,7 +941,9 @@ export async function rebuildSegments(
   // Meal break premiums: detect days where no qualifying meal was taken and credit
   // the configured penalty pay code. Runs after all deduction logic is settled.
   if (ruleSet.mealBreakPremiumEnabled) {
-    const premiumSegs = computeMealPremiums(timesheetId, segments, punches, ruleSet, timezone);
+    const premiumWaivers = await db.mealPremiumWaiver.findMany({ where: { timesheetId } });
+    const premiumWaivedDates = new Set(premiumWaivers.map((w) => format(w.segmentDate, "yyyy-MM-dd")));
+    const premiumSegs = computeMealPremiums(timesheetId, segments, punches, ruleSet, timezone, premiumWaivedDates);
     segments = [...segments, ...premiumSegs];
   }
 
