@@ -1159,8 +1159,18 @@ export function TimecardViewer({
     });
   }
 
-  function handlePayCodeChange(segmentId: string, payCodeId: string) {
-    setPendingPayCodes((prev) => { const n = new Map(prev); n.set(segmentId, payCodeId); return n; });
+  function handlePayCodeChange(segmentId: string, payCodeId: string, dayKey?: string) {
+    setPendingPayCodes((prev) => {
+      const n = new Map(prev);
+      n.set(segmentId, payCodeId);
+      // Cascade to all other WORK segments on the same day so every pair gets the code
+      if (dayKey) {
+        timecard?.segments
+          .filter((s) => format(parseUtcDate(s.segmentDate), "yyyy-MM-dd") === dayKey && s.segmentType === "WORK" && s.id !== segmentId)
+          .forEach((s) => n.set(s.id, payCodeId));
+      }
+      return n;
+    });
   }
 
   function handleAbsentDayPayCodeChange(_timesheetId: string | null, segmentDate: string, payCodeId: string) {
@@ -1987,14 +1997,12 @@ export function TimecardViewer({
 
                       const buckets: Record<string, number> = {};
                       for (const seg of daySegments) {
-                        // Meal premiums are shown in their own sub-row, not in REG/OT/DT columns
-                        if (seg.segmentType === "MEAL_PREMIUM") continue;
                         // REG/OT/DT overrides are display-only tags; use engine payBucket for column math
                         const eb = (seg.payBucketOverride && !["REG", "OT", "DT"].includes(seg.payBucketOverride))
                           ? seg.payBucketOverride
                           : seg.payBucket;
-                        // Holiday and leave credits display under the REG column
-                        const displayBucket = (seg.segmentType === "HOLIDAY" || seg.segmentType === "LEAVE") ? "REG" : eb;
+                        // Holiday, leave, and meal premiums all credit under the REG column
+                        const displayBucket = (seg.segmentType === "HOLIDAY" || seg.segmentType === "LEAVE" || seg.segmentType === "MEAL_PREMIUM") ? "REG" : eb;
                         buckets[displayBucket] = (buckets[displayBucket] ?? 0) + seg.durationMinutes;
                       }
 
@@ -2238,7 +2246,7 @@ export function TimecardViewer({
                                   return canEdit ? (
                                     <select
                                       value={workSegPending ? (pendingPayCodes.get(workSeg.id) ?? "") : (workSeg.payCode?.id ?? "")}
-                                      onChange={(e) => handlePayCodeChange(workSeg.id, e.target.value)}
+                                      onChange={(e) => handlePayCodeChange(workSeg.id, e.target.value, dayKey)}
                                       className={`w-24 rounded border px-1 py-0.5 text-xs focus:outline-none ${workSegPending ? "border-amber-400 bg-amber-50/50 text-zinc-700 dark:border-amber-600 dark:bg-amber-950/10 dark:text-zinc-300" : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"}`}
                                     >
                                       <option value="">—</option>
@@ -2645,7 +2653,7 @@ export function TimecardViewer({
                                     {pairWorkSeg && canEdit ? (
                                       <select
                                         value={pendingPayCodes.has(pairWorkSeg.id) ? (pendingPayCodes.get(pairWorkSeg.id) ?? "") : (pairWorkSeg.payCode?.id ?? "")}
-                                        onChange={(e) => handlePayCodeChange(pairWorkSeg.id, e.target.value)}
+                                        onChange={(e) => handlePayCodeChange(pairWorkSeg.id, e.target.value, dayKey)}
                                         className={`w-24 rounded border px-1 py-0.5 text-xs focus:outline-none ${pendingPayCodes.has(pairWorkSeg.id) ? "border-amber-400 bg-amber-50/50 text-zinc-700 dark:border-amber-600 dark:bg-amber-950/10 dark:text-zinc-300" : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"}`}
                                       >
                                         <option value="">—</option>
@@ -2770,6 +2778,13 @@ export function TimecardViewer({
                                         <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === pairIdx && p.punchType === "CLOCK_OUT")))} className="rounded p-0.5 text-zinc-400 hover:text-red-500" title="Remove pending"><X className="h-2.5 w-2.5" /></button>
                                       </div>
                                     );
+                                    if (hasMissingPunch) {
+                                      return canEdit ? (
+                                        <button type="button" onClick={() => startAddingPunch(dayKey, pairIdx, "CLOCK_OUT", day, pairIn ? parseISO(pairIn.roundedTime) : null)} className="rounded px-1 py-0.5 font-medium text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/30">Missed</button>
+                                      ) : (
+                                        <span className="font-medium text-amber-600 dark:text-amber-400">Missed</span>
+                                      );
+                                    }
                                     return canEdit ? (
                                       <button type="button" onClick={() => startAddingPunch(dayKey, pairIdx, "CLOCK_OUT", day)} className="rounded px-1 py-0.5 text-zinc-300 hover:bg-blue-50 hover:text-blue-500 dark:text-zinc-700 dark:hover:bg-blue-950/30 dark:hover:text-blue-400">—</button>
                                     ) : null;
@@ -2859,8 +2874,8 @@ export function TimecardViewer({
                             </tr>
                           ))}
 
-                          {/* Meal premium rows — one per MEAL_PREMIUM segment, shown only when expanded */}
-                          {isExpanded && daySegments.filter(s => s.segmentType === "MEAL_PREMIUM").map((seg) => (
+                          {/* Meal premium rows — one per MEAL_PREMIUM segment, always visible as a standalone row */}
+                          {daySegments.filter(s => s.segmentType === "MEAL_PREMIUM").map((seg) => (
                             <tr key={`${dayKey}-premium-${seg.id}`} className="border-b border-zinc-100 bg-amber-50/40 dark:border-zinc-800 dark:bg-amber-950/10">
                               <td className="w-7 pl-2 pr-0 py-1.5" />
                               <td className="px-3 py-1 text-left">
@@ -2881,7 +2896,9 @@ export function TimecardViewer({
                               <td className="w-7 px-1 py-1.5" />
                               <td className="px-2 py-1 font-mono text-sm text-zinc-300 dark:text-zinc-700">—</td>
                               <td className="px-2 py-1 font-mono text-sm text-zinc-300 dark:text-zinc-700">—</td>
-                              <td className="px-3 py-1.5 text-right tabular-nums text-sm font-medium text-amber-700 dark:text-amber-300">—</td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-sm font-medium text-amber-700 dark:text-amber-300">
+                                {minutesToHoursDecimal(seg.durationMinutes)}
+                              </td>
                               <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
                               <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
                               <td className="pl-3 pr-8 py-1.5 text-right tabular-nums text-sm font-bold text-amber-700 dark:text-amber-300">

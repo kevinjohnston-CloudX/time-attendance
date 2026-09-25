@@ -93,12 +93,15 @@ export default async function TimecardsPage({
     periods = periodsResult.data.periods;
     payFrequency = periodsResult.data.payFrequency;
 
-    if (!selectedPeriodId && periods.length > 0) {
-      const now = new Date();
+    const now = new Date();
+    const periodIds = new Set(periods.map((p) => p.id));
+
+    if (!selectedPeriodId || !periodIds.has(selectedPeriodId)) {
+      // URL period doesn't belong to this employee's rule set — find their current period
       const current = periods.find(
         (p) => new Date(p.startDate) <= now && new Date(p.endDate) > now
       );
-      selectedPeriodId = current?.id ?? periods[periods.length - 1].id;
+      selectedPeriodId = current?.id ?? periods[periods.length - 1]?.id ?? null;
     }
   }
 

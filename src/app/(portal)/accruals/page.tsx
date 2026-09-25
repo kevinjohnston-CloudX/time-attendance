@@ -22,7 +22,12 @@ export default async function AccrualsPage() {
 
   const employeeWhere = canViewAny
     ? {}
-    : { supervisorId: session.user.employeeId ?? undefined };
+    : {
+        OR: [
+          { supervisorId: session.user.employeeId ?? undefined },
+          ...(session.user.employeeId ? [{ id: session.user.employeeId }] : []),
+        ],
+      };
 
   const [employees, sites] = await Promise.all([
     db.employee.findMany({

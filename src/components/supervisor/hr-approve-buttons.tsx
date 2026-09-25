@@ -17,7 +17,7 @@ export function HrApproveButtons({ leaveRequestId }: Props) {
     setError(null);
     startTransition(async () => {
       const result = await hrApproveLeaveRequest({ leaveRequestId });
-      if (!result.success) setError("Failed to approve.");
+      if (!result.success) setError(result.error ?? "Failed to approve.");
     });
   }
 
