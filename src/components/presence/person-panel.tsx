@@ -428,7 +428,7 @@ export function PersonPanel({
                 {shown.scheduleSource === "SHIFT" &&
                   (shown.wmsScheduled
                     ? shown.wmsStart !== shown.scheduledStart || shown.wmsEnd !== shown.scheduledEnd
-                    : !offerShift) && (
+                    : !!shown.scheduledStart && !offerShift) && (
                     <p className={styles.ppFootnote}>
                       {shown.wmsScheduled
                         ? shown.wmsStart && shown.wmsEnd

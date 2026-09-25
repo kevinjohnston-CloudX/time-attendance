@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { DAYS_BACK, addDays, clampDay } from "./days";
 import { photoUrls } from "./photos";
-import { expectedHours, SHIFT_HOURS_SELECT } from "./expected-hours";
+import { expectedHours, shiftHoursOn, SHIFT_HOURS_SELECT } from "./expected-hours";
 import { EFFECTIVE_STATE_SQL, PUNCH_CHAIN, PUNCH_CHAIN_JOINS, currentPunch } from "./effective-punch";
 import { scansHere, scansHereSql, siteScope } from "./site-scope";
 import { NOT_COUNTED_OUTCOMES } from "./scan-rules";
@@ -464,6 +464,10 @@ export async function getPresenceDetail(
     photoUrls(tenantId, [{ id: emp.id, barcode: emp.barcode, wmsId: emp.wmsId, employeeCode: emp.employeeCode }]),
   ]);
   const expected = expectedHours(emp.shift, schedule ?? undefined, theDay);
+  // Whose answer the hours are, even when the answer is "not this day": a
+  // shift that is off today still decides, and WMS may still disagree.
+  const scheduleSource =
+    shiftHoursOn(emp.shift, theDay) !== undefined ? ("SHIFT" as const) : schedule ? ("WMS" as const) : null;
 
   return {
     id: emp.id,
@@ -479,7 +483,7 @@ export async function getPresenceDetail(
     photoUrl: photos.get(emp.id) ?? null,
     scheduledStart: expected?.start ?? null,
     scheduledEnd: expected?.end ?? null,
-    scheduleSource: expected?.source ?? null,
+    scheduleSource,
     wmsStart: schedule?.startTime ?? null,
     wmsEnd: schedule?.endTime ?? null,
     wmsScheduled: !!schedule,
