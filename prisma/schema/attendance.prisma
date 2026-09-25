@@ -43,8 +43,9 @@ model Timesheet {
   segments        WorkSegment[]
   exceptions      Exception[]
   overtimeBuckets OvertimeBucket[]
-  mealWaivers     MealWaiver[]
-  notes           TimesheetNote[]
+  mealWaivers          MealWaiver[]
+  mealPremiumWaivers   MealPremiumWaiver[]
+  notes                TimesheetNote[]
   dayReasons      TimesheetDayReason[]
 
   @@unique([employeeId, payPeriodId])
@@ -256,6 +257,20 @@ model MealWaiver {
 
   @@unique([timesheetId, segmentDate])
   @@map("meal_waivers")
+}
+
+model MealPremiumWaiver {
+  id          String   @id @default(cuid())
+  timesheetId String
+  segmentDate DateTime @db.Date
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  timesheet Timesheet @relation(fields: [timesheetId], references: [id])
+  createdBy Employee? @relation(fields: [createdById], references: [id])
+
+  @@unique([timesheetId, segmentDate])
+  @@map("meal_premium_waivers")
 }
 
 model Exception {

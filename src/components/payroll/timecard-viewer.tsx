@@ -30,6 +30,7 @@ import {
   payrollApproveTimesheet,
   rejectTimesheet,
   toggleMealWaiver,
+  toggleMealPremiumWaiver,
   authorizeTimecardOt,
   recalculateSegmentsAdmin,
 } from "@/actions/timesheet.actions";
@@ -179,6 +180,7 @@ type TimecardDetail = {
   segments: TimecardSegment[];
   overtimeBuckets: TimecardBucket[];
   mealWaivers: { id: string; segmentDate: string; reason: string | null }[];
+  mealPremiumWaivers: { id: string; segmentDate: string }[];
   notes: TimesheetNoteItem[];
   dayReasons: { segmentDate: string; reasonCodeId: string; reasonCode: { id: string; code: string; label: string; color?: string | null } }[];
 };
@@ -511,6 +513,7 @@ export function TimecardViewer({
   const [pendingPunchEdits, setPendingPunchEdits] = useState<Map<string, Date>>(new Map());
   const [pendingNewPunches, setPendingNewPunches] = useState<Array<{ dayKey: string; pairIndex: number; punchType: "CLOCK_IN" | "CLOCK_OUT"; punchDate: Date }>>([]);
   const [pendingWaiverToggles, setPendingWaiverToggles] = useState<Set<string>>(new Set());
+  const [pendingPremiumWaiverToggles, setPendingPremiumWaiverToggles] = useState<Set<string>>(new Set());
   const [pendingDeletions, setPendingDeletions] = useState<Array<{ punchIds: string[]; dayKey: string; inTime: string | null; outTime: string | null }>>([]);
   const [pendingHoursEntries, setPendingHoursEntries] = useState<Array<{ dayKey: string; hours: number; payCodeId?: string }>>([]);
 
@@ -1159,6 +1162,14 @@ export function TimecardViewer({
     });
   }
 
+  function handleTogglePremiumWaiver(segmentDate: string) {
+    setPendingPremiumWaiverToggles((prev) => {
+      const n = new Set(prev);
+      if (n.has(segmentDate)) n.delete(segmentDate); else n.add(segmentDate);
+      return n;
+    });
+  }
+
   function handlePayCodeChange(segmentId: string, payCodeId: string, dayKey?: string) {
     setPendingPayCodes((prev) => {
       const n = new Map(prev);
@@ -1195,7 +1206,7 @@ export function TimecardViewer({
     });
   }
 
-  const hasPendingChanges = pendingPayCodes.size > 0 || pendingReasonCodes.size > 0 || pendingPunchEdits.size > 0 || pendingNewPunches.length > 0 || pendingWaiverToggles.size > 0 || pendingDeletions.length > 0 || pendingHoursEntries.length > 0;
+  const hasPendingChanges = pendingPayCodes.size > 0 || pendingReasonCodes.size > 0 || pendingPunchEdits.size > 0 || pendingNewPunches.length > 0 || pendingWaiverToggles.size > 0 || pendingPremiumWaiverToggles.size > 0 || pendingDeletions.length > 0 || pendingHoursEntries.length > 0;
 
   function handleDiscardChanges() {
     setPendingPayCodes(new Map());
@@ -1203,6 +1214,7 @@ export function TimecardViewer({
     setPendingPunchEdits(new Map());
     setPendingNewPunches([]);
     setPendingWaiverToggles(new Set());
+    setPendingPremiumWaiverToggles(new Set());
     setPendingDeletions([]);
     setPendingHoursEntries([]);
   }
@@ -1311,6 +1323,9 @@ export function TimecardViewer({
         for (const segmentDate of pendingWaiverToggles) {
           ops.push(toggleMealWaiver({ timesheetId, segmentDate }));
         }
+        for (const segmentDate of pendingPremiumWaiverToggles) {
+          ops.push(toggleMealPremiumWaiver({ timesheetId, segmentDate }));
+        }
         for (const { punchIds } of pendingDeletions) {
           ops.push(deleteManualPunchPair({ punchIds }));
         }
@@ -1337,6 +1352,7 @@ export function TimecardViewer({
         setPendingPunchEdits(new Map());
         setPendingNewPunches([]);
         setPendingWaiverToggles(new Set());
+        setPendingPremiumWaiverToggles(new Set());
         setPendingDeletions([]);
         setPendingHoursEntries([]);
         router.refresh();
@@ -2875,13 +2891,30 @@ export function TimecardViewer({
                           ))}
 
                           {/* Meal premium rows — one per MEAL_PREMIUM segment, always visible as a standalone row */}
-                          {daySegments.filter(s => s.segmentType === "MEAL_PREMIUM").map((seg) => (
+                          {daySegments.filter(s => s.segmentType === "MEAL_PREMIUM").map((seg) => {
+                            const premiumDbWaived = timecard?.mealPremiumWaivers.some(w => w.segmentDate === dayKey) ?? false;
+                            const premiumToggled = pendingPremiumWaiverToggles.has(dayKey);
+                            const premiumEffectiveWaived = premiumToggled ? !premiumDbWaived : premiumDbWaived;
+                            return (
                             <tr key={`${dayKey}-premium-${seg.id}`} className="border-b border-zinc-100 bg-amber-50/40 dark:border-zinc-800 dark:bg-amber-950/10">
                               <td className="w-7 pl-2 pr-0 py-1.5" />
                               <td className="px-3 py-1 text-left">
-                                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                                  Meal Premium
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                                    Meal Premium
+                                  </span>
+                                  {canEdit && (premiumEffectiveWaived ? (
+                                    <button type="button" onClick={() => handleTogglePremiumWaiver(dayKey)} title="Click to remove waiver"
+                                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${premiumToggled ? "bg-amber-200 text-amber-800 hover:bg-red-100 hover:text-red-600 dark:bg-amber-800/40 dark:text-amber-300 dark:hover:bg-red-900/30 dark:hover:text-red-400" : "bg-amber-100 text-amber-700 hover:bg-red-100 hover:text-red-600 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"}`}>
+                                      {premiumToggled ? "Waived*" : "Waived"}
+                                    </button>
+                                  ) : (
+                                    <button type="button" onClick={() => handleTogglePremiumWaiver(dayKey)}
+                                      className={`rounded px-2 py-0.5 text-xs ${premiumToggled ? "bg-amber-100 text-amber-700 hover:bg-zinc-100 hover:text-zinc-600 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" : "bg-zinc-100 text-zinc-600 hover:bg-amber-50 hover:text-amber-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-amber-900/20 dark:hover:text-amber-300"}`}>
+                                      {premiumToggled ? "Waive*" : "Waive"}
+                                    </button>
+                                  ))}
+                                </div>
                               </td>
                               {payCodes.length > 0 && (
                                 <td className="px-2 py-1">
@@ -2907,7 +2940,8 @@ export function TimecardViewer({
                               {effectiveAutoDeductMeal && <td />}
                               {canDeleteManual && <td className="w-8 px-1" />}
                             </tr>
-                          ))}
+                            );
+                          })}
 
                           {/* Add entry form row */}
                           {addEntryDay === format(day, "yyyy-MM-dd") && (

@@ -191,6 +191,7 @@ export default async function TimecardsPage({
           totalMinutes: b.totalMinutes,
         })),
         mealWaivers: timecard.mealWaivers,
+        mealPremiumWaivers: timecard.mealPremiumWaivers,
         notes: timecard.notes,
         dayReasons: timecard.dayReasons.map((dr) => ({
           segmentDate: dr.segmentDate.toISOString().slice(0, 10),
