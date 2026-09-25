@@ -1000,7 +1000,7 @@ export const FLAG_META: Record<MovementFlag, { label: string; hint: string; tone
     tone: "warning",
   },
   SCHEDULED_OUTSIDE: {
-    label: "Scheduled, not here",
+    label: "Scheduled, out building",
     hint: "Inside their scheduled hours right now and not in the building",
     tone: "warning",
   },
