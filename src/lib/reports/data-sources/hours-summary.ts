@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { readable } from "../readable";
 import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
@@ -21,23 +22,23 @@ export const hoursSummarySource: DataSourceDefinition = {
   icon: "Clock",
   columns: [
     { id: "employeeName",  label: "Employee",   type: "string",  defaultVisible: true },
-    { id: "employeeCode",  label: "Emp Code",   type: "string",  defaultVisible: false },
+    { id: "employeeCode",  label: "Employee code",   type: "string",  defaultVisible: false },
     { id: "department",    label: "Department",  type: "string",  defaultVisible: true },
     { id: "site",          label: "Site",        type: "string",  defaultVisible: true },
-    { id: "regMinutes",    label: "REG",         type: "number",  defaultVisible: true },
-    { id: "otMinutes",     label: "OT",          type: "number",  defaultVisible: true },
-    { id: "dtMinutes",     label: "DT",          type: "number",  defaultVisible: true },
+    { id: "regMinutes",    label: "Regular",         type: "number",  defaultVisible: true },
+    { id: "otMinutes",     label: "Overtime",          type: "number",  defaultVisible: true },
+    { id: "dtMinutes",     label: "Double time",          type: "number",  defaultVisible: true },
     { id: "ptoMinutes",    label: "PTO",         type: "number",  defaultVisible: true },
     { id: "sickMinutes",   label: "Sick",        type: "number",  defaultVisible: false },
     { id: "holidayMinutes",label: "Holiday",     type: "number",  defaultVisible: false },
     { id: "totalMinutes",  label: "Total",       type: "number",  defaultVisible: true },
-    { id: "status",        label: "Status",      type: "string",  defaultVisible: true },
+    { id: "status",        label: "Timesheet status",      type: "string",  defaultVisible: true },
   ],
   filters: [
-    { id: "employeeName", label: "Employee Name", type: "string", operators: ["contains", "eq"] },
+    { id: "employeeName", label: "Employee name", type: "string", operators: ["contains", "eq"] },
     { id: "departmentId", label: "Department", type: "string", operators: ["eq", "in"] },
     { id: "siteId", label: "Site", type: "string", operators: ["eq", "in"] },
-    { id: "status", label: "Timesheet Status", type: "string", operators: ["eq", "in"],
+    { id: "status", label: "Timesheet status", type: "string", operators: ["eq", "in"],
       options: [
         { value: "OPEN", label: "Open" },
         { value: "SUBMITTED", label: "Submitted" },
@@ -125,7 +126,7 @@ export const hoursSummarySource: DataSourceDefinition = {
         sickMinutes: sick,
         holidayMinutes: holiday,
         totalMinutes: reg + ot + dt,
-        status: ts.status,
+        status: readable("timesheetStatus", ts.status),
       };
     });
 

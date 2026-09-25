@@ -30,14 +30,14 @@ export default async function NewReportPage({
   if (!dsResult.success || !filterResult.success) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader pinned title="New Report" subtitle="Pick a data source, shape the columns, schedule delivery" />
+        <PageHeader pinned title="New report" subtitle="Choose what it covers, check the preview, then save it to run again" />
         <Banner
           tone="error"
-          title="The builder could not be loaded"
-          body="The data sources and filter options this form is built from did not load. Nothing has been saved."
+          title="This page could not be loaded"
+          body="The report types and the lists of sites and departments did not load. Nothing was saved. Reload the page to try again."
           actions={
             <LinkButton href="/reports" size="sm">
-              Back to Reports
+              Back to reports
             </LinkButton>
           }
         />

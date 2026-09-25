@@ -557,9 +557,19 @@ export const getFilterOptions = withRBAC(
         select: { id: true, name: true },
         orderBy: { name: "asc" },
       }),
+      // With the pay group and how many timesheets it holds: a pay period
+      // covers one pay group, and the same dates repeat for every group, so
+      // without both the list is a column of identical lines.
       db.payPeriod.findMany({
         where: { tenantId },
-        select: { id: true, startDate: true, endDate: true, status: true },
+        select: {
+          id: true,
+          startDate: true,
+          endDate: true,
+          status: true,
+          ruleSet: { select: { name: true } },
+          _count: { select: { timesheets: true } },
+        },
         orderBy: { startDate: "desc" },
       }),
       db.leaveType.findMany({
@@ -569,7 +579,16 @@ export const getFilterOptions = withRBAC(
       }),
     ]);
 
-    return { sites, departments, payPeriods, leaveTypes };
+    return {
+      sites,
+      departments,
+      payPeriods: payPeriods.map(({ ruleSet, _count, ...pp }) => ({
+        ...pp,
+        groupName: ruleSet?.name ?? null,
+        people: _count.timesheets,
+      })),
+      leaveTypes,
+    };
   }
 );
 

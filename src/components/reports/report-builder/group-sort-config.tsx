@@ -62,7 +62,12 @@ export function GroupSortConfig({
     <div className="flex flex-col gap-5">
       {groupableOptions.length > 0 && (
         <div className="flex flex-col gap-2">
-          <span className="wms-overline">Group By</span>
+          <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+            Group by
+          </span>
+          <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+            Rows are grouped in the order you tick these.
+          </span>
           <div className="grid gap-x-4 gap-y-1 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,30%)),1fr))]">
             {groupableOptions.map((col) => {
               const position = groupBy.indexOf(col.id);
@@ -96,11 +101,13 @@ export function GroupSortConfig({
       )}
 
       <div className="flex flex-col gap-2">
-        <span className="wms-overline">Sort By</span>
+        <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+          Sort by
+        </span>
 
         {sortBy.length === 0 && (
           <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-tertiary)" }}>
-            Unsorted — rows come back in the data source&rsquo;s own order.
+            Rows come out in the report&rsquo;s usual order.
           </p>
         )}
 
@@ -124,10 +131,10 @@ export function GroupSortConfig({
                 updateSort(index, { direction: e.target.value as "asc" | "desc" })
               }
               aria-label="Sort direction"
-              style={{ flex: "0 1 140px" }}
+              style={{ flex: "0 1 190px" }}
             >
-              <option value="asc">Ascending</option>
-              <option value="desc">Descending</option>
+              <option value="asc">A to Z, low to high</option>
+              <option value="desc">Z to A, high to low</option>
             </Select>
             <Button
               hierarchy="tertiary"
@@ -149,7 +156,7 @@ export function GroupSortConfig({
             leadingIcon={<Plus className="h-4 w-4" />}
             disabled={columns.length === 0}
           >
-            Add sort
+            Add a sort
           </Button>
         </div>
       </div>

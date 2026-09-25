@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { readable } from "../readable";
 import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
@@ -22,27 +23,27 @@ export const exceptionReportSource: DataSourceDefinition = {
   icon: "AlertCircle",
   columns: [
     { id: "employeeName",  label: "Employee",       type: "string",  defaultVisible: true },
-    { id: "employeeCode",  label: "Emp Code",       type: "string",  defaultVisible: false },
+    { id: "employeeCode",  label: "Employee code",       type: "string",  defaultVisible: false },
     { id: "department",    label: "Department",      type: "string",  defaultVisible: true },
-    { id: "exceptionType", label: "Exception Type",  type: "string",  defaultVisible: true },
+    { id: "exceptionType", label: "Exception",  type: "string",  defaultVisible: true },
     { id: "description",   label: "Description",     type: "string",  defaultVisible: true },
-    { id: "occurredAt",    label: "Occurred At",     type: "date",    defaultVisible: true },
-    { id: "resolved",      label: "Resolved",        type: "boolean", defaultVisible: true },
-    { id: "resolvedAt",    label: "Resolved At",     type: "date",    defaultVisible: false },
+    { id: "occurredAt",    label: "When",     type: "date",    defaultVisible: true },
+    { id: "resolved",      label: "Fixed",        type: "boolean", defaultVisible: true },
+    { id: "resolvedAt",    label: "Fixed on",     type: "date",    defaultVisible: false },
     { id: "resolution",    label: "Resolution",      type: "string",  defaultVisible: false },
   ],
   filters: [
-    { id: "employeeName", label: "Employee Name", type: "string", operators: ["contains", "eq"] },
+    { id: "employeeName", label: "Employee name", type: "string", operators: ["contains", "eq"] },
     { id: "departmentId", label: "Department", type: "string", operators: ["eq", "in"] },
     { id: "siteId", label: "Site", type: "string", operators: ["eq", "in"] },
-    { id: "exceptionType", label: "Exception Type", type: "string", operators: ["eq", "in"],
+    { id: "exceptionType", label: "Exception", type: "string", operators: ["eq", "in"],
       options: [
-        { value: "MISSING_PUNCH", label: "Missing Punch" },
-        { value: "LONG_SHIFT", label: "Long Shift" },
-        { value: "SHORT_BREAK", label: "Short Break" },
-        { value: "MISSED_MEAL", label: "Missed Meal" },
-        { value: "UNSCHEDULED_OT", label: "Unscheduled OT" },
-        { value: "CONSECUTIVE_DAYS", label: "Consecutive Days" },
+        { value: "MISSING_PUNCH", label: "Missing punch" },
+        { value: "LONG_SHIFT", label: "Long shift" },
+        { value: "SHORT_BREAK", label: "Short break" },
+        { value: "MISSED_MEAL", label: "Missed meal" },
+        { value: "UNSCHEDULED_OT", label: "Unscheduled overtime" },
+        { value: "CONSECUTIVE_DAYS", label: "Consecutive days" },
         { value: "ABSENT", label: "Absent" },
       ] },
   ],
@@ -86,7 +87,7 @@ export const exceptionReportSource: DataSourceDefinition = {
       employeeName: e.timesheet.employee.user?.name ?? e.timesheet.employee.employeeCode,
       employeeCode: e.timesheet.employee.employeeCode,
       department: e.timesheet.employee.department.name,
-      exceptionType: e.exceptionType,
+      exceptionType: readable("exceptionType", e.exceptionType),
       description: e.description,
       occurredAt: format(e.occurredAt, "yyyy-MM-dd h:mm a"),
       resolved: !!e.resolvedAt,

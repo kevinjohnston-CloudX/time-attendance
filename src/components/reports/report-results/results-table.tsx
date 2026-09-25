@@ -13,12 +13,16 @@ function formatMinutesDecimal(mins: number): string {
   return (mins / 60).toFixed(2);
 }
 
-function formatCell(value: unknown, type: string): string {
-  if (value === null || value === undefined) return "—";
+/**
+ * One cell as a person reads it. Durations are stored in minutes and every
+ * one of them is named for it (regMinutes, durationMinutes), so only those
+ * turn into hours: a Year of 2026 used to come out as 33.77.
+ */
+function formatCell(value: unknown, type: string, id: string): string {
+  if (value === null || value === undefined || value === "") return "—";
   if (type === "boolean") return value ? "Yes" : "No";
   if (type === "number" && typeof value === "number") {
-    // If it looks like minutes, show decimal hours
-    if (value > 0 && value % 1 === 0) return formatMinutesDecimal(value);
+    if (id.endsWith("Minutes")) return formatMinutesDecimal(value);
     return String(value);
   }
   return String(value);
@@ -44,7 +48,7 @@ export function ResultsTable({
 }) {
   if (isLoading) {
     return (
-      <EmptyState icon={<Loader2 className="h-8 w-8 animate-spin" />} title="Running report…" />
+      <EmptyState icon={<Loader2 className="h-8 w-8 animate-spin" />} title="Running the report" />
     );
   }
 
@@ -52,8 +56,8 @@ export function ResultsTable({
     return (
       <EmptyState
         icon={<SearchX className="h-8 w-8" />}
-        title="No results"
-        body="Nothing matched this report's filters and date range."
+        title="Nothing to show"
+        body="No one matches these dates and filters. Try a wider date range, or remove a filter."
       />
     );
   }
@@ -78,7 +82,7 @@ export function ResultsTable({
                 // of hours is read down, and the decimal points have to line
                 // up for that to be possible.
                 <TD key={col.id} numeric={col.type === "number"} style={{ whiteSpace: "nowrap" }}>
-                  {formatCell(row[col.id], col.type)}
+                  {formatCell(row[col.id], col.type, col.id)}
                 </TD>
               ))}
             </TR>

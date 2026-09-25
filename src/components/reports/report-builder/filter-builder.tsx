@@ -15,27 +15,41 @@ interface FilterFieldDef {
 interface FilterOption {
   sites: { id: string; name: string }[];
   departments: { id: string; name: string }[];
+  leaveTypes?: { id: string; name: string }[];
 }
 
+/**
+ * Operators as a sentence reads them: "Department is Packing". With one value
+ * to pick, "is one of" and "is" do the same thing, so the list offers "is"
+ * and drops the other, unless a saved report already uses it.
+ */
 const OPERATOR_LABELS: Record<string, string> = {
-  eq: "equals",
-  neq: "not equal",
-  in: "in",
-  notIn: "not in",
-  gt: ">",
-  gte: ">=",
-  lt: "<",
-  lte: "<=",
-  between: "between",
+  eq: "is",
+  neq: "is not",
+  in: "is",
+  notIn: "is not",
+  gt: "is more than",
+  gte: "is at least",
+  lt: "is less than",
+  lte: "is at most",
+  between: "is between",
   contains: "contains",
 };
 
+function offeredOperators(operators: string[], current: string): string[] {
+  return operators.filter(
+    (op) =>
+      op === current ||
+      !((op === "in" && operators.includes("eq")) || (op === "notIn" && operators.includes("neq")))
+  );
+}
+
 /**
- * The rows that narrow a report: field, operator, value.
+ * The conditions that narrow a report: field, operator, value.
  *
- * <p>Every row is one clause and they are combined with AND — the query
- * builder has no OR — so the rows read as a list of conditions rather than an
- * expression, which is why they are a stack and not a nested builder.
+ * <p>Every row is one condition and they all have to be true together (the
+ * query builder has no OR), so they read as a plain list rather than an
+ * expression.
  */
 export function FilterBuilder({
   filterFields,
@@ -88,6 +102,10 @@ export function FilterBuilder({
     if (fieldId === "departmentId" && filterOptions?.departments) {
       return filterOptions.departments.map((d) => ({ value: d.id, label: d.name }));
     }
+    // Time off types were a free text box asking for an internal id.
+    if (fieldId === "leaveTypeId" && filterOptions?.leaveTypes) {
+      return filterOptions.leaveTypes.map((t) => ({ value: t.id, label: t.name }));
+    }
 
     return null;
   }
@@ -96,7 +114,7 @@ export function FilterBuilder({
     <div className="flex flex-col gap-2.5">
       {filters.length === 0 && (
         <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-tertiary)" }}>
-          No filters — the report covers everyone in the date range.
+          Everyone in these dates is included.
         </p>
       )}
 
@@ -124,10 +142,10 @@ export function FilterBuilder({
               onChange={(e) =>
                 updateFilter(index, { operator: e.target.value as FilterDef["operator"] })
               }
-              aria-label="Operator"
+              aria-label="Condition"
               style={{ flex: "0 1 140px" }}
             >
-              {(fieldDef?.operators ?? ["eq"]).map((op) => (
+              {offeredOperators(fieldDef?.operators ?? ["eq"], filter.operator).map((op) => (
                 <option key={op} value={op}>
                   {OPERATOR_LABELS[op] ?? op}
                 </option>
@@ -141,7 +159,7 @@ export function FilterBuilder({
                 aria-label="Value"
                 style={{ flex: "1 1 180px", maxWidth: 240 }}
               >
-                <option value="">Select…</option>
+                <option value="">Choose one</option>
                 {valueOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
@@ -156,7 +174,7 @@ export function FilterBuilder({
                   }
                   value={String(filter.value)}
                   onChange={(e) => updateFilter(index, { value: e.target.value })}
-                  placeholder="Value"
+                  placeholder="Type a value"
                   aria-label="Value"
                 />
               </div>
@@ -168,10 +186,17 @@ export function FilterBuilder({
                   type={fieldDef?.type === "number" ? "number" : "date"}
                   value={String(filter.value2 ?? "")}
                   onChange={(e) => updateFilter(index, { value2: e.target.value })}
-                  placeholder="To"
+                  placeholder="and"
                   aria-label="Upper bound"
                 />
               </div>
+            )}
+
+            {(String(filter.value ?? "").trim() === "" ||
+              (filter.operator === "between" && String(filter.value2 ?? "").trim() === "")) && (
+              <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                Skipped until you pick a value
+              </span>
             )}
 
             <Button
@@ -195,7 +220,7 @@ export function FilterBuilder({
           leadingIcon={<Plus className="h-4 w-4" />}
           disabled={filterFields.length === 0}
         >
-          Add filter
+          Add a filter
         </Button>
       </div>
     </div>

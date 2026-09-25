@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { readable } from "../readable";
 import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
@@ -23,23 +24,23 @@ export const leaveSummarySource: DataSourceDefinition = {
   icon: "CalendarDays",
   columns: [
     { id: "employeeName",    label: "Employee",       type: "string",  defaultVisible: true },
-    { id: "employeeCode",    label: "Emp Code",       type: "string",  defaultVisible: false },
+    { id: "employeeCode",    label: "Employee code",       type: "string",  defaultVisible: false },
     { id: "department",      label: "Department",      type: "string",  defaultVisible: true },
-    { id: "leaveType",       label: "Leave Type",      type: "string",  defaultVisible: true },
+    { id: "leaveType",       label: "Time off type",      type: "string",  defaultVisible: true },
     { id: "status",          label: "Status",          type: "string",  defaultVisible: true },
-    { id: "startDate",       label: "Start Date",      type: "date",    defaultVisible: true },
-    { id: "endDate",         label: "End Date",        type: "date",    defaultVisible: true },
-    { id: "durationMinutes", label: "Duration (min)",  type: "number",  defaultVisible: true },
+    { id: "startDate",       label: "Start date",      type: "date",    defaultVisible: true },
+    { id: "endDate",         label: "End date",        type: "date",    defaultVisible: true },
+    { id: "durationMinutes", label: "Hours",  type: "number",  defaultVisible: true },
     { id: "note",            label: "Note",            type: "string",  defaultVisible: false },
-    { id: "reviewNote",      label: "Review Note",     type: "string",  defaultVisible: false },
+    { id: "reviewNote",      label: "Reviewer note",     type: "string",  defaultVisible: false },
     { id: "submittedAt",     label: "Submitted",       type: "date",    defaultVisible: false },
     { id: "reviewedAt",      label: "Reviewed",        type: "date",    defaultVisible: false },
   ],
   filters: [
-    { id: "employeeName", label: "Employee Name", type: "string", operators: ["contains", "eq"] },
+    { id: "employeeName", label: "Employee name", type: "string", operators: ["contains", "eq"] },
     { id: "departmentId", label: "Department", type: "string", operators: ["eq", "in"] },
     { id: "siteId", label: "Site", type: "string", operators: ["eq", "in"] },
-    { id: "leaveTypeId", label: "Leave Type", type: "string", operators: ["eq", "in"] },
+    { id: "leaveTypeId", label: "Time off type", type: "string", operators: ["eq", "in"] },
     { id: "status", label: "Status", type: "string", operators: ["eq", "in"],
       options: [
         { value: "DRAFT", label: "Draft" },
@@ -86,14 +87,14 @@ export const leaveSummarySource: DataSourceDefinition = {
       employeeCode: r.employee.employeeCode,
       department: r.employee.department.name,
       leaveType: r.leaveType.name,
-      status: r.status,
+      status: readable("leaveStatus", r.status),
       startDate: format(r.startDate, "yyyy-MM-dd"),
       endDate: format(r.endDate, "yyyy-MM-dd"),
       durationMinutes: r.durationMinutes,
       note: r.note,
       reviewNote: r.reviewNote,
-      submittedAt: r.submittedAt ? format(r.submittedAt, "yyyy-MM-dd HH:mm") : null,
-      reviewedAt: r.reviewedAt ? format(r.reviewedAt, "yyyy-MM-dd HH:mm") : null,
+      submittedAt: r.submittedAt ? format(r.submittedAt, "yyyy-MM-dd h:mm a") : null,
+      reviewedAt: r.reviewedAt ? format(r.reviewedAt, "yyyy-MM-dd h:mm a") : null,
     }));
 
     // In-memory sort for computed columns (endDate, durationMinutes, etc.)

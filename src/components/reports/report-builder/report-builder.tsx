@@ -1,46 +1,32 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { createElement, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
-import { ArrowLeft, Play, Save, Table2 } from "lucide-react";
-import {
-  Banner,
-  Button,
-  Card,
-  EmptyState,
-  Input,
-  LinkButton,
-  PageHeader,
-  SegmentedControl,
-  Textarea,
-} from "@/components/ui";
+import { ArrowLeft, ChevronDown, Play, RefreshCw, Save, Table2 } from "lucide-react";
+import { Banner, Button, EmptyState, Input, LinkButton, PageHeader, Textarea } from "@/components/ui";
 import { DataSourcePicker } from "./data-source-picker";
 import { ColumnPicker } from "./column-picker";
 import { FilterBuilder } from "./filter-builder";
-import { DateRangePicker } from "./date-range-picker";
+import { DateRangePicker, currentPayPeriod } from "./date-range-picker";
 import { GroupSortConfig } from "./group-sort-config";
 import { ResultsTable } from "../report-results/results-table";
+import { dataSourceDescription, dataSourceIcon, dataSourceLabel } from "../data-source-label";
 import { runReport, createReport } from "@/actions/report.actions";
-import type {
-  DataSourceId,
-  FilterDef,
-  SortDef,
-  DateRange,
-} from "@/lib/validators/report.schema";
+import type { DataSourceId, FilterDef, SortDef, DateRange } from "@/lib/validators/report.schema";
 import type { ReportResult } from "@/lib/reports/data-sources";
 
 /**
- * The report builder, as the portal design's doc screen: a stack of labelled
- * cards down a narrow column, with the page's own actions in the header.
+ * The report builder: one page that reads top to bottom, in the order a
+ * person thinks about a report. Which report, which dates, who to include,
+ * which columns, then a preview and a name to save it under.
  *
- * <p>The header carries them — not a button bar at the bottom of the last tab
- * — because Save applies to the whole form and used to live inside the Preview
- * tab, where it could only be reached by running a preview first. Its two
- * prerequisites, a name and a data source, are the two things the first card
- * asks for, so the button is never disabled for a reason that is off screen.
+ * <p>It replaces six tabs, where Save sat above everything and the preview
+ * was a tab of its own, so nobody could see the settings and the rows at the
+ * same time. Group and sort are folded away, since most reports never need
+ * them.
  *
- * <p>This component owns the PageHeader rather than the route, since Preview
- * and Save both act on state that only exists here.
+ * <p>Until a report is picked only the first section shows: everything
+ * below it depends on which report it is.
  */
 
 interface DataSourceMeta {
@@ -60,11 +46,8 @@ interface FilterOptions {
   leaveTypes: { id: string; name: string }[];
 }
 
-const TABS = ["Source", "Columns", "Filters", "Date Range", "Group & Sort", "Preview"] as const;
-type Tab = (typeof TABS)[number];
-
-/** The design's doc width for this screen. */
-const DOC_WIDTH = 900;
+/** The page's width: a form reads best narrow. The preview table scrolls inside it. */
+const DOC_WIDTH = 960;
 
 export function ReportBuilder({
   dataSources,
@@ -78,69 +61,66 @@ export function ReportBuilder({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const previewRef = useRef<HTMLElement | null>(null);
 
-  // Builder state
-  const [activeTab, setActiveTab] = useState<Tab>(initialSource ? "Date Range" : "Source");
+  const defaultsFor = (id: DataSourceId | null) =>
+    dataSources.find((ds) => ds.id === id)?.columns.filter((c) => c.defaultVisible).map((c) => c.id) ?? [];
+
   const [dataSource, setDataSource] = useState<DataSourceId | null>(initialSource);
-  const [selectedColumns, setSelectedColumns] = useState<string[]>(
-    () => dataSources.find((ds) => ds.id === initialSource)?.columns.filter((c) => c.defaultVisible).map((c) => c.id) ?? []
-  );
+  const [changingSource, setChangingSource] = useState(!initialSource);
+  const [selectedColumns, setSelectedColumns] = useState<string[]>(() => defaultsFor(initialSource));
   const [filters, setFilters] = useState<FilterDef[]>([]);
   const [dateRange, setDateRange] = useState<DateRange>(() => {
-    const pp = filterOptions.payPeriods[0];
-    return pp
-      ? { type: "payPeriod" as const, payPeriodId: pp.id }
-      : { type: "relative" as const, relativeDays: 30 };
+    const pp = currentPayPeriod(filterOptions.payPeriods);
+    return pp ? { type: "payPeriod", payPeriodId: pp.id } : { type: "relative", relativeDays: 14 };
   });
   const [groupBy, setGroupBy] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortDef[]>([]);
+  const [showMore, setShowMore] = useState(false);
 
-  // Preview state
   const [previewResult, setPreviewResult] = useState<ReportResult | null>(null);
+  const [previewedWith, setPreviewedWith] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
 
-  // Save state
-  const [reportName, setReportName] = useState(() => dataSources.find((ds) => ds.id === initialSource)?.label ?? "");
+  // A name is filled in from the report picked, and follows it when the
+  // report changes, until somebody types their own.
+  const [reportName, setReportName] = useState(() => (initialSource ? dataSourceLabel(initialSource) : ""));
+  const [nameTouched, setNameTouched] = useState(false);
   const [reportDesc, setReportDesc] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const currentSource = dataSources.find((ds) => ds.id === dataSource);
 
-  // When data source changes, set default columns
   function handleDataSourceChange(id: DataSourceId) {
     setDataSource(id);
-    const source = dataSources.find((ds) => ds.id === id);
-    if (source) {
-      setSelectedColumns(
-        source.columns.filter((c) => c.defaultVisible).map((c) => c.id)
-      );
-    }
+    setChangingSource(false);
+    setSelectedColumns(defaultsFor(id));
     setFilters([]);
     setGroupBy([]);
     setSortBy([]);
     setPreviewResult(null);
+    setPreviewedWith(null);
+    if (!nameTouched) setReportName(dataSourceLabel(id));
   }
+
+  // A filter with no value picked yet is left out rather than sent: it
+  // matched nothing and crashed the preview with a database error.
+  const readyFilters = filters.filter(isFilterReady);
+  const config = { columns: selectedColumns, filters: readyFilters, dateRange, groupBy, sortBy };
+  const configKey = JSON.stringify([dataSource, config]);
+  const stale = previewResult !== null && previewedWith !== configKey;
 
   async function handleRunPreview() {
     if (!dataSource || selectedColumns.length === 0) return;
     setIsRunning(true);
     setPreviewError(null);
+    previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
-    const result = await runReport({
-      dataSource,
-      config: {
-        columns: selectedColumns,
-        filters,
-        dateRange,
-        groupBy,
-        sortBy,
-        limit: 100,
-      },
-    });
-
+    const result = await runReport({ dataSource, config: { ...config, limit: 100 } });
     if (result.success) {
       setPreviewResult(result.data);
+      setPreviewedWith(configKey);
     } else {
       setPreviewError(result.error);
     }
@@ -156,14 +136,7 @@ export function ReportBuilder({
         name: reportName.trim(),
         description: reportDesc.trim() || undefined,
         dataSource,
-        config: {
-          columns: selectedColumns,
-          filters,
-          dateRange,
-          groupBy,
-          sortBy,
-          limit: 5000,
-        },
+        config: { ...config, limit: 5000 },
         visibility: "PRIVATE",
       });
 
@@ -177,38 +150,34 @@ export function ReportBuilder({
 
   const canPreview = !!dataSource && selectedColumns.length > 0;
   const canSave = canPreview && reportName.trim().length > 0;
+  const saveHint = !dataSource
+    ? "Pick a report first."
+    : selectedColumns.length === 0
+      ? "Pick at least one column to save it."
+      : !reportName.trim()
+        ? "Give it a name to save it."
+        : "Only you can see it until you share it.";
 
-  /** What the first card says it still needs before Save will do anything. */
-  const missing = [
-    !reportName.trim() && "a name",
-    !dataSource && "a data source",
-    dataSource && selectedColumns.length === 0 && "at least one column",
-  ].filter(Boolean) as string[];
+  const moreCount = groupBy.length + sortBy.length;
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader pinned
-        title="New Report"
-        subtitle="Pick a data source, shape the columns, schedule delivery"
+      <PageHeader
+        pinned
+        title="New report"
+        subtitle="Choose what it covers, check the preview, then save it to run again"
         actions={
           <>
-            <LinkButton
-              href="/reports"
-              hierarchy="tertiary"
-              leadingIcon={<ArrowLeft className="h-4 w-4" />}
-            >
+            <LinkButton href="/reports" hierarchy="tertiary" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
               Reports
             </LinkButton>
             <Button
               hierarchy="secondary"
               disabled={!canPreview || isRunning}
-              onClick={() => {
-                setActiveTab("Preview");
-                void handleRunPreview();
-              }}
+              onClick={() => void handleRunPreview()}
               leadingIcon={<Play className="h-4 w-4" />}
             >
-              {isRunning ? "Running…" : "Preview"}
+              {isRunning ? "Running" : "Preview"}
             </Button>
             <Button
               hierarchy="primary"
@@ -216,172 +185,212 @@ export function ReportBuilder({
               onClick={handleSave}
               leadingIcon={<Save className="h-4 w-4" />}
             >
-              {isPending ? "Saving…" : "Save Report"}
+              {isPending ? "Saving" : "Save report"}
             </Button>
           </>
         }
       />
 
-      {saveError && <Banner tone="error" title="The report was not saved" body={saveError} />}
+      <div className="flex w-full flex-col gap-4" style={{ maxWidth: DOC_WIDTH }}>
+        {saveError && <Banner tone="error" title="The report was not saved" body={saveError} />}
 
-      <div
-        className="flex flex-col gap-4"
-        // The design fixes this screen at 900px, which is right for a form and
-        // wrong for a hundred-row preview, so the results tab takes the width
-        // it needs rather than scrolling a table inside a narrow column.
-        style={{ maxWidth: activeTab === "Preview" ? undefined : DOC_WIDTH }}
-      >
-        <Card
+        {/* ── 1. Report ─────────────────────────────────────────────── */}
+        <Section
+          step={1}
           title="Report"
           subtitle={
-            missing.length > 0
-              ? `Still needs ${missing.join(" and ")} before it can be saved.`
-              : "Ready to save — Preview first if you want to see the rows."
+            changingSource && dataSource
+              ? "Picking a different report starts the columns and filters over."
+              : changingSource
+                ? "Each one covers different information. Pick the one that answers your question."
+                : undefined
+          }
+          action={
+            dataSource && !changingSource ? (
+              <Button size="sm" hierarchy="secondary" onClick={() => setChangingSource(true)}>
+                Change
+              </Button>
+            ) : dataSource ? (
+              <Button size="sm" hierarchy="tertiary" onClick={() => setChangingSource(false)}>
+                Keep {dataSourceLabel(dataSource)}
+              </Button>
+            ) : undefined
           }
         >
-          <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,46%)),1fr))]">
-            <Input
-              label="Report Name"
-              required
-              value={reportName}
-              onChange={(e) => setReportName(e.target.value)}
-              placeholder="Overtime by Department"
-            />
-            <Textarea
-              label="Description"
-              rows={2}
-              value={reportDesc}
-              onChange={(e) => setReportDesc(e.target.value)}
-              placeholder="What this report answers, and for whom"
-            />
-          </div>
-        </Card>
+          {changingSource || !dataSource ? (
+            <DataSourcePicker sources={dataSources} selected={dataSource} onSelect={handleDataSourceChange} />
+          ) : (
+            (
+              <div className="flex items-start gap-3">
+                <span
+                  className="flex h-9 w-9 flex-none items-center justify-center rounded-lg"
+                  style={{ background: "var(--surface-info)", color: "var(--icon-accent)" }}
+                  aria-hidden="true"
+                >
+                  {createElement(dataSourceIcon(dataSource), { className: "h-[18px] w-[18px]" })}
+                </span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+                    {dataSourceLabel(dataSource)}
+                  </span>
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                    {dataSourceDescription(dataSource)}
+                  </span>
+                </span>
+              </div>
+            )
+          )}
+        </Section>
 
-        <div className="overflow-x-auto">
-          <SegmentedControl
-            items={TABS.map((tab) => ({ value: tab, label: tab }))}
-            value={activeTab}
-            onChange={(v) => setActiveTab(v as Tab)}
-            ariaLabel="Builder step"
-          />
-        </div>
+        {currentSource && (
+          <>
+            {/* ── 2. Dates ──────────────────────────────────────────── */}
+            <Section step={2} title="Dates" subtitle="The days it covers. You can pick other dates each time you run it.">
+              <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={filterOptions.payPeriods} />
+            </Section>
 
-        {activeTab === "Source" && (
-          <Card
-            title="Data Source"
-            subtitle="Decides which columns, filters and groupings the rest of this form can offer"
-          >
-            <DataSourcePicker
-              sources={dataSources}
-              selected={dataSource}
-              onSelect={handleDataSourceChange}
-            />
-          </Card>
-        )}
-
-        {activeTab === "Columns" && (
-          <Card title="Columns" subtitle="Pick what appears, in order.">
-            {currentSource ? (
-              <ColumnPicker
-                columns={currentSource.columns}
-                selected={selectedColumns}
-                onChange={setSelectedColumns}
-              />
-            ) : (
-              <NeedsSource onGo={() => setActiveTab("Source")} />
-            )}
-          </Card>
-        )}
-
-        {activeTab === "Filters" && (
-          <Card
-            title="Filters"
-            subtitle="Every row narrows the report further — they are combined with AND"
-          >
-            {currentSource ? (
+            {/* ── 3. Who to include ─────────────────────────────────── */}
+            <Section step={3} title="Who to include" subtitle="Leave this empty to include everyone. Add a filter to narrow it down.">
               <FilterBuilder
                 filterFields={currentSource.filters}
                 filters={filters}
                 onChange={setFilters}
                 filterOptions={filterOptions}
               />
-            ) : (
-              <NeedsSource onGo={() => setActiveTab("Source")} />
-            )}
-          </Card>
-        )}
+            </Section>
 
-        {activeTab === "Date Range" && (
-          <Card
-            title="Date Range"
-            subtitle="The window the report covers. A saved report can be re-run over any other window."
-          >
-            <DateRangePicker
-              value={dateRange}
-              onChange={setDateRange}
-              payPeriods={filterOptions.payPeriods}
-            />
-          </Card>
-        )}
+            {/* ── 4. Columns ────────────────────────────────────────── */}
+            <Section step={4} title="Columns" subtitle="What shows in the report, in this order.">
+              <ColumnPicker columns={currentSource.columns} selected={selectedColumns} onChange={setSelectedColumns} />
+            </Section>
 
-        {activeTab === "Group & Sort" && (
-          <Card title="Group & Sort" subtitle="How the rows are rolled up, and what order they come out in">
-            {currentSource ? (
-              <GroupSortConfig
-                columns={currentSource.columns}
-                groupableFields={currentSource.groupableFields}
-                groupBy={groupBy}
-                onGroupByChange={setGroupBy}
-                sortBy={sortBy}
-                onSortByChange={setSortBy}
-              />
-            ) : (
-              <NeedsSource onGo={() => setActiveTab("Source")} />
-            )}
-          </Card>
-        )}
-
-        {activeTab === "Preview" && (
-          <>
-            {previewError && (
-              <Banner tone="error" title="The preview did not run" body={previewError} />
-            )}
-
-            <Card
-              title="Preview"
-              subtitle="Capped at 100 rows — a saved report runs up to 5,000"
-              padding={0}
-              actions={
-                <Button
-                  size="sm"
-                  hierarchy="secondary"
-                  disabled={!canPreview || isRunning}
-                  onClick={handleRunPreview}
-                  leadingIcon={<Play className="h-3.5 w-3.5" />}
-                >
-                  {isRunning ? "Running…" : "Run Preview"}
-                </Button>
-              }
-            >
-              {previewResult ? (
-                <ResultsTable
-                  columns={previewResult.columns}
-                  rows={previewResult.rows}
-                  totalRows={previewResult.totalRows}
-                  isLoading={isRunning}
+            {/* ── Group and sort, folded away ───────────────────────── */}
+            <section style={card}>
+              <button
+                type="button"
+                className="ta-hoverable flex w-full items-start gap-3 px-5 py-4 text-left"
+                style={{ border: 0, background: "transparent", cursor: "pointer", borderRadius: "var(--radius-l)" }}
+                aria-expanded={showMore}
+                onClick={() => setShowMore((v) => !v)}
+              >
+                <StepNumber step={5} />
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>Group and sort</span>
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                    {moreCount > 0
+                      ? [groupBy.length && `Grouped by ${groupBy.length}`, sortBy.length && `sorted by ${sortBy.length}`]
+                          .filter(Boolean)
+                          .join(", ")
+                      : "Optional. Group rows by department or site, or change their order."}
+                  </span>
+                </span>
+                <ChevronDown
+                  className="mt-1 h-4 w-4 flex-none transition-transform"
+                  style={{ color: "var(--icon-tertiary)", transform: showMore ? "rotate(180deg)" : undefined }}
+                  aria-hidden="true"
                 />
-              ) : (
-                <EmptyState
-                  icon={<Table2 className="h-8 w-8" />}
-                  title={canPreview ? "Not previewed yet" : "Pick a data source and columns first"}
-                  body={
-                    canPreview
-                      ? "Run the preview to see the first hundred rows this report would return."
-                      : "A preview needs a data source and at least one column."
-                  }
-                />
+              </button>
+              {showMore && (
+                <div className="px-5 pb-5 pl-[3.75rem]" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+                  <div className="pt-4">
+                    <GroupSortConfig
+                      columns={currentSource.columns}
+                      groupableFields={currentSource.groupableFields}
+                      groupBy={groupBy}
+                      onGroupByChange={setGroupBy}
+                      sortBy={sortBy}
+                      onSortByChange={setSortBy}
+                    />
+                  </div>
+                </div>
               )}
-            </Card>
+            </section>
+
+            {/* ── 5. Preview ────────────────────────────────────────── */}
+            <section ref={previewRef} style={{ ...card, scrollMarginTop: 120 }} className="flex flex-col overflow-hidden">
+              <SectionHead
+                step={6}
+                title="Preview"
+                subtitle={
+                  stale
+                    ? "You changed something since this preview. Run it again to see the new rows."
+                    : "The first 100 rows. A saved report can return up to 5,000."
+                }
+                subtitleTone={stale ? "warning" : undefined}
+                action={
+                  <Button
+                    size="sm"
+                    hierarchy={previewResult && !stale ? "secondary" : "primary"}
+                    disabled={!canPreview || isRunning}
+                    onClick={() => void handleRunPreview()}
+                    leadingIcon={previewResult ? <RefreshCw className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+                  >
+                    {isRunning ? "Running" : previewResult ? "Run again" : "Run preview"}
+                  </Button>
+                }
+              />
+              {previewError && (
+                <div className="px-5 pb-4">
+                  <Banner tone="error" title="The preview did not run" body={previewError} />
+                </div>
+              )}
+              <div style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+                {previewResult || isRunning ? (
+                  <ResultsTable
+                    columns={previewResult?.columns ?? []}
+                    rows={previewResult?.rows ?? []}
+                    totalRows={previewResult?.totalRows ?? 0}
+                    isLoading={isRunning}
+                  />
+                ) : (
+                  <EmptyState
+                    icon={<Table2 className="h-8 w-8" />}
+                    title={canPreview ? "See it before you save it" : "Pick at least one column"}
+                    body={
+                      canPreview
+                        ? "Run the preview to see the first rows this report returns."
+                        : "The preview needs at least one column to show."
+                    }
+                  />
+                )}
+              </div>
+            </section>
+
+            {/* ── 6. Save ───────────────────────────────────────────── */}
+            <Section step={7} title="Save" subtitle="Saved reports are listed on Reports, where you can run, share or schedule them.">
+              <div className="flex flex-col gap-3">
+                <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(220px,46%)),1fr))]">
+                  <Input
+                    label="Name"
+                    required
+                    value={reportName}
+                    onChange={(e) => {
+                      setReportName(e.target.value);
+                      setNameTouched(true);
+                    }}
+                    placeholder="Overtime by department"
+                  />
+                  <Textarea
+                    label="Description"
+                    rows={2}
+                    value={reportDesc}
+                    onChange={(e) => setReportDesc(e.target.value)}
+                    placeholder="Optional. What it is for, so others know"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    hierarchy="primary"
+                    disabled={!canSave || isPending}
+                    onClick={handleSave}
+                    leadingIcon={<Save className="h-4 w-4" />}
+                  >
+                    {isPending ? "Saving" : "Save report"}
+                  </Button>
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>{saveHint}</span>
+                </div>
+              </div>
+            </Section>
           </>
         )}
       </div>
@@ -389,22 +398,87 @@ export function ReportBuilder({
   );
 }
 
-/**
- * What a tab shows before a data source has been chosen.
- *
- * <p>Says which step is missing and takes you there, rather than the previous
- * grey line of text that named a prerequisite and left you to find it.
- */
-function NeedsSource({ onGo }: { onGo: () => void }) {
+/** A filter that has everything it needs to narrow the report. */
+export function isFilterReady(f: FilterDef): boolean {
+  const blank = (v: unknown) => v === undefined || v === null || String(v).trim() === "";
+  return !blank(f.value) && (f.operator !== "between" || !blank(f.value2));
+}
+
+const card = {
+  background: "var(--surface-card)",
+  borderRadius: "var(--radius-l)",
+  boxShadow: "var(--shadow-card)",
+} as const;
+
+/** A numbered section of the builder: the step, its name, one quiet line, then its controls. */
+function Section({
+  step,
+  title,
+  subtitle,
+  action,
+  children,
+}: {
+  step: number;
+  title: string;
+  subtitle?: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <EmptyState
-      title="No data source yet"
-      body="The columns, filters and groupings on offer depend on which table the report reads."
-      action={
-        <Button size="sm" hierarchy="secondary" onClick={onGo}>
-          Choose a data source
-        </Button>
-      }
-    />
+    <section style={card} className="flex flex-col">
+      <SectionHead step={step} title={title} subtitle={subtitle} action={action} />
+      <div className="px-5 pb-5 pl-[3.75rem]">{children}</div>
+    </section>
+  );
+}
+
+function SectionHead({
+  step,
+  title,
+  subtitle,
+  subtitleTone,
+  action,
+}: {
+  step: number;
+  title: string;
+  subtitle?: string;
+  subtitleTone?: "warning";
+  action?: ReactNode;
+}) {
+  return (
+    <header className="flex items-start gap-3 px-5 pb-3 pt-4">
+      <StepNumber step={step} />
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <h2 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>{title}</h2>
+        {subtitle && (
+          <span
+            style={{
+              font: "var(--type-body2)",
+              color: subtitleTone === "warning" ? "var(--text-warning)" : "var(--text-tertiary)",
+            }}
+          >
+            {subtitle}
+          </span>
+        )}
+      </span>
+      {action && <span className="flex-none">{action}</span>}
+    </header>
+  );
+}
+
+function StepNumber({ step }: { step: number }) {
+  return (
+    <span
+      className="tabular mt-px flex h-6 w-6 flex-none items-center justify-center rounded-full"
+      style={{
+        background: "var(--surface-secondary)",
+        color: "var(--text-secondary)",
+        font: "var(--type-caption1)",
+        fontWeight: "var(--weight-semibold)",
+      }}
+      aria-hidden="true"
+    >
+      {step}
+    </span>
   );
 }

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { readable } from "../readable";
 import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
@@ -23,29 +24,29 @@ export const attendanceDetailSource: DataSourceDefinition = {
   icon: "CalendarDays",
   columns: [
     { id: "employeeName",    label: "Employee",      type: "string",  defaultVisible: true },
-    { id: "employeeCode",    label: "Emp Code",      type: "string",  defaultVisible: false },
+    { id: "employeeCode",    label: "Employee code",      type: "string",  defaultVisible: false },
     { id: "department",      label: "Department",     type: "string",  defaultVisible: true },
     { id: "site",            label: "Site",           type: "string",  defaultVisible: false },
     { id: "date",            label: "Date",           type: "date",    defaultVisible: true },
-    { id: "segmentType",     label: "Segment Type",   type: "string",  defaultVisible: true },
-    { id: "startTime",       label: "Start Time",     type: "string",  defaultVisible: true },
-    { id: "endTime",         label: "End Time",       type: "string",  defaultVisible: true },
-    { id: "durationMinutes", label: "Duration (min)", type: "number",  defaultVisible: true },
-    { id: "payBucket",       label: "Pay Bucket",     type: "string",  defaultVisible: true },
+    { id: "segmentType",     label: "Type",   type: "string",  defaultVisible: true },
+    { id: "startTime",       label: "Start",     type: "string",  defaultVisible: true },
+    { id: "endTime",         label: "End",       type: "string",  defaultVisible: true },
+    { id: "durationMinutes", label: "Hours", type: "number",  defaultVisible: true },
+    { id: "payBucket",       label: "Hours type",     type: "string",  defaultVisible: true },
     { id: "isPaid",          label: "Paid",           type: "boolean", defaultVisible: false },
   ],
   filters: [
-    { id: "employeeName", label: "Employee Name", type: "string", operators: ["contains", "eq"] },
+    { id: "employeeName", label: "Employee name", type: "string", operators: ["contains", "eq"] },
     { id: "departmentId", label: "Department", type: "string", operators: ["eq", "in"] },
     { id: "siteId", label: "Site", type: "string", operators: ["eq", "in"] },
-    { id: "segmentType", label: "Segment Type", type: "string", operators: ["eq", "in"],
+    { id: "segmentType", label: "Type", type: "string", operators: ["eq", "in"],
       options: [
         { value: "WORK", label: "Work" },
         { value: "MEAL", label: "Meal" },
         { value: "BREAK", label: "Break" },
         { value: "LEAVE", label: "Leave" },
       ] },
-    { id: "payBucket", label: "Pay Bucket", type: "string", operators: ["eq", "in"] },
+    { id: "payBucket", label: "Hours type", type: "string", operators: ["eq", "in"] },
   ],
   groupableFields: ["department", "site", "segmentType"],
   fieldMap,
@@ -89,11 +90,11 @@ export const attendanceDetailSource: DataSourceDefinition = {
       department: seg.timesheet.employee.department.name,
       site: seg.timesheet.employee.site.name,
       date: format(seg.segmentDate, "yyyy-MM-dd"),
-      segmentType: seg.segmentType,
+      segmentType: readable("segmentType", seg.segmentType),
       startTime: format(seg.startTime, "h:mm a"),
       endTime: format(seg.endTime, "h:mm a"),
       durationMinutes: seg.durationMinutes,
-      payBucket: seg.payBucket,
+      payBucket: readable("payBucket", seg.payBucket),
       isPaid: seg.isPaid,
     }));
 
