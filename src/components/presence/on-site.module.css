@@ -1371,11 +1371,10 @@
    columns, so a wide screen has even spacing rather than one gap. */
 .mvHead,
 .mvRow {
-  --mv-cols: minmax(240px, 480px) minmax(104px, 1fr) minmax(104px, 1fr) minmax(96px, 1fr) minmax(104px, 1fr)
-    minmax(200px, 560px) 36px;
+  --mv-cols: minmax(200px, 440px) repeat(5, minmax(92px, 1fr)) minmax(200px, 520px) 36px;
   display: grid;
   grid-template-columns: var(--mv-cols);
-  gap: 0 16px;
+  gap: 0 12px;
   align-items: center;
   padding: 0 16px;
 }
@@ -1759,7 +1758,7 @@
 @media (max-width: 1180px) {
   .mvHead,
   .mvRow {
-    --mv-cols: minmax(220px, 1fr) 96px 96px 92px 100px 36px;
+    --mv-cols: minmax(220px, 1fr) repeat(5, 92px) 36px;
   }
   .mvHead[data-gate="false"],
   .mvRow[data-gate="false"] {
@@ -2702,6 +2701,16 @@
   border-left: 1px solid var(--stroke-divider);
 }
 
+/* Building on top, time clock below: the second row starts afresh on the
+   left and takes a rule across its top. */
+.ppGlance[data-rows="2"] .ppGlanceCell:nth-child(3n + 1) {
+  border-left: 0;
+}
+
+.ppGlance[data-rows="2"] .ppGlanceCell:nth-child(n + 4) {
+  border-top: 1px solid var(--stroke-divider);
+}
+
 .ppGlanceValue {
   font: var(--weight-semibold) 18px/26px var(--font-sans);
   letter-spacing: -0.01em;
@@ -2710,6 +2719,10 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.ppGlanceValue[data-tone="warning"] {
+  color: var(--text-warning);
 }
 
 .ppGlanceValue[data-empty="true"] {

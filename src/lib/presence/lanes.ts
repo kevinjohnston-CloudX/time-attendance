@@ -46,6 +46,15 @@ export interface DayLanes {
   };
   firstIn: number | null;
   lastOut: number | null;
+  /**
+   * The time clock's own first clock in and last clock out that day, apart
+   * from the gate: the schedule's start and end are measured against these,
+   * because the schedule says when to clock in, not when to walk in. A shift
+   * carried over from yesterday has no clock in today; one still open has no
+   * clock out yet.
+   */
+  clockIn: number | null;
+  clockOut: number | null;
   /** Gate exits with no entry before them: out through the gate, never seen coming in. */
   exitsWithoutEntry: PresenceScan[];
   /** The stretches behind the two gap totals, in order, so a day can list them. */
@@ -173,6 +182,11 @@ export function buildLanes({
     },
     firstIn: ins.length ? ins[0] : null,
     lastOut: outs.length ? outs[outs.length - 1] : null,
+    // A clock in is a stretch that starts from being clocked out: a scan
+    // began it and nothing ran right up to it. A meal ending is not one.
+    clockIn:
+      clock.find((c, i) => c.startScan !== null && (i === 0 || clock[i - 1].end < c.start))?.start ?? null,
+    clockOut: clock.length && !clock[clock.length - 1].open ? clock[clock.length - 1].end : null,
     exitsWithoutEntry,
     gaps: {
       insideOffClock: offClockInside.sort((a, b) => a.start - b.start),

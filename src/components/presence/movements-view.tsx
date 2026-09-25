@@ -196,11 +196,15 @@ export function MovementsTable({
       <div className={styles.mvHeadWrap} style={{ top: stickyTop }}>
       <div className={styles.mvHead} data-gate={hasGate ? undefined : "false"} aria-hidden="true">
         <span>Employee</span>
+        {/* Every fact column starts on its left edge, times and durations
+            alike, so the gaps between the columns are all the same. With a
+            gate, Arrived and Left are the building's and Clock in and Clock
+            out the time clock's, and the schedule sits under the clock,
+            which is what it sets. Without one, the clock is both. */}
         <span>Arrived</span>
         <span>Left</span>
-        {/* Every fact column starts on its left edge, times and durations
-            alike, so the gaps between the columns are all the same. */}
-        {hasGate && <span>In building</span>}
+        {hasGate && <span>Clock in</span>}
+        {hasGate && <span>Clock out</span>}
         <span>On the clock</span>
         <span className={styles.mvAxis}>
           {axis.ticks.map((t) => (
@@ -311,7 +315,7 @@ function PersonRow({
 
   const arrived =
     v.firstIn !== null ? (
-      <span data-tone={late ? "warning" : undefined}>{time(v.firstIn)}</span>
+      <span data-tone={late && !hasGate ? "warning" : undefined}>{time(v.firstIn)}</span>
     ) : carried ? (
       <span className={styles.mvQuiet}>Since yesterday</span>
     ) : p.onLeave ? (
@@ -320,10 +324,32 @@ function PersonRow({
       <span className={styles.mvQuiet}>{isToday && now < v.schedule.start ? "Not in yet" : "Not in"}</span>
     ) : null;
 
+  // The time clock's side, beside the gate's. Late and early are measured
+  // on these, so the tone sits here and not on Arrived and Left.
+  const lanes = v.lanes;
+  const clockedIn =
+    lanes.clockIn !== null ? (
+      <span data-tone={late ? "warning" : undefined}>{time(lanes.clockIn)}</span>
+    ) : lanes.clock.length > 0 ? (
+      <span className={styles.mvQuiet}>Since yesterday</span>
+    ) : seen && !p.salaried ? (
+      <span className={styles.mvQuiet}>Not clocked in</span>
+    ) : null;
+  const clockedOut =
+    where.clock !== "OUT" ? (
+      isToday ? (
+        <span className={styles.mvHere}>{{ MEAL: "On meal", BREAK: "On break", WORK: "On the clock" }[where.clock]}</span>
+      ) : (
+        <span className={styles.mvWarn}>Never clocked out</span>
+      )
+    ) : lanes.clockOut !== null ? (
+      <span data-tone={early ? "warning" : undefined}>{time(lanes.clockOut)}</span>
+    ) : null;
+
   const left = present ? (
     <span className={styles.mvHere}>On site</span>
   ) : where.leftAt !== null ? (
-    <span data-tone={early ? "warning" : undefined}>{time(where.leftAt)}</span>
+    <span data-tone={early && !hasGate ? "warning" : undefined}>{time(where.leftAt)}</span>
   ) : unclosed ? (
     <span className={styles.mvWarn}>Never scanned out</span>
   ) : null;
@@ -406,28 +432,42 @@ function PersonRow({
 
         <span className={styles.mvFact}>
           <span className={styles.mvFactValue}>{arrived}</span>
-          {v.schedule && <span className={styles.mvFactSub}>Due {time(v.schedule.start)}</span>}
+          {!hasGate && v.schedule && <span className={styles.mvFactSub}>Due {time(v.schedule.start)}</span>}
         </span>
         <span className={styles.mvFact}>
           <span className={styles.mvFactValue}>{left}</span>
-          {stillOn ? (
-            <span className={styles.mvFactSub}>{stillOn}</span>
-          ) : (
-            v.schedule && <span className={styles.mvFactSub}>Ends {time(v.schedule.end)}</span>
-          )}
+          {!hasGate &&
+            (stillOn ? (
+              <span className={styles.mvFactSub}>{stillOn}</span>
+            ) : (
+              v.schedule && <span className={styles.mvFactSub}>Ends {time(v.schedule.end)}</span>
+            ))}
         </span>
         {hasGate && (
           <span className={styles.mvFact}>
-            <span className={styles.mvFactValue}>{seen ? fmtDuration(t.insideMin) : ""}</span>
+            <span className={styles.mvFactValue}>{clockedIn}</span>
+            {/* Office staff do not clock in, so a time to clock in by would
+                read as one they missed. */}
+            {v.schedule && !p.salaried && <span className={styles.mvFactSub}>Due {time(v.schedule.start)}</span>}
+          </span>
+        )}
+        {hasGate && (
+          <span className={styles.mvFact}>
+            <span className={styles.mvFactValue}>{clockedOut}</span>
+            {v.schedule && !p.salaried && <span className={styles.mvFactSub}>Ends {time(v.schedule.end)}</span>}
           </span>
         )}
         <span className={styles.mvFact}>
           {/* No clock time is normal for salaried people, who do not clock
-              in, and a gap for anyone hourly; neither reads as "0 min". */}
+              in, and a gap for anyone hourly; neither reads as "0 min".
+              With a gate, the time inside sits under it. */}
           {seen && t.workMin === 0 ? (
-            <span className={styles.mvQuiet}>{v.person.salaried ? "Office" : "Not clocked in"}</span>
+            <span className={styles.mvQuiet}>{v.person.salaried ? "Office" : hasGate ? "None" : "Not clocked in"}</span>
           ) : (
             <span className={styles.mvFactValue}>{seen ? fmtDuration(t.workMin) : ""}</span>
+          )}
+          {hasGate && seen && t.insideMin > 0 && (
+            <span className={styles.mvFactSub}>Inside {fmtDuration(t.insideMin)}</span>
           )}
         </span>
         <span className={styles.mvDay}>
@@ -966,8 +1006,8 @@ export const FLAG_META: Record<MovementFlag, { label: string; hint: string; tone
   },
   ON_BREAK: { label: "On a break", hint: "Clocked out for a meal or a rest break right now", tone: "warning" },
   NOT_ARRIVED: { label: "Not arrived", hint: "Scheduled and not seen at either reader", tone: "neutral" },
-  LATE: { label: "Late", hint: "First scan more than 5 minutes after the scheduled start", tone: "warning" },
-  LEFT_EARLY: { label: "Left early", hint: "Last scan out more than 5 minutes before the scheduled end", tone: "warning" },
+  LATE: { label: "Late", hint: "Clocked in more than 5 minutes after the scheduled start", tone: "warning" },
+  LEFT_EARLY: { label: "Left early", hint: "Clocked out more than 5 minutes before the scheduled end", tone: "warning" },
   MULTIPLE_EXITS: { label: "Left more than once", hint: "Left through the security gate two or more times", tone: "warning" },
   LONG_BREAK: { label: "Long break", hint: `A meal or break that ran past ${LONG_BREAK_MIN} minutes`, tone: "warning" },
   EXIT_NO_ENTRY: { label: "Left, never scanned in", hint: "Left through the security gate without being seen coming in", tone: "error" },

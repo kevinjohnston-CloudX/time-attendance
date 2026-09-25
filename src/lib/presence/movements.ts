@@ -200,14 +200,24 @@ export function buildPersonDay(
   const present = nowState.inside || nowState.clock !== "OUT";
   const grace = LATE_GRACE_MIN * 60000;
 
+  // Late and early are the time clock's to say: the schedule is when to
+  // clock in and out, not when to walk through the gate. Somebody who came
+  // in at 6:50 and clocked in at 7:20 is late; somebody who walked in at 7:20
+  // and never clocked in shows as inside, not clocked in, rather than late.
   // Lateness is an hourly measure. Salaried people keep their own hours.
+  const { clockIn, clockOut } = lanes;
   const lateMinutes =
-    !person.salaried && schedule && firstIn && firstIn > schedule.start + grace
-      ? Math.floor((firstIn - schedule.start) / 60000)
+    !person.salaried && schedule && clockIn && clockIn > schedule.start + grace
+      ? Math.floor((clockIn - schedule.start) / 60000)
       : null;
   const earlyMinutes =
-    schedule && lastOut && !present && lastOut < schedule.end - grace && lastOut > schedule.start
-      ? Math.floor((schedule.end - lastOut) / 60000)
+    !person.salaried &&
+    schedule &&
+    clockOut &&
+    nowState.clock === "OUT" &&
+    clockOut < schedule.end - grace &&
+    clockOut > schedule.start
+      ? Math.floor((schedule.end - clockOut) / 60000)
       : null;
 
   // Trips out, not raw exit reads: a stretch inside that a scan closed, plus

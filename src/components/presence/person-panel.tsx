@@ -7,6 +7,7 @@ import { Badge, Button } from "@/components/ui";
 import { getOnSitePerson } from "@/actions/presence.actions";
 import { addDays, dayLabel, DAYS_BACK } from "@/lib/presence/days";
 import { buildLanes, leftBuilding, type DayLanes } from "@/lib/presence/lanes";
+import { LATE_GRACE_MIN } from "@/lib/presence/movements";
 import { isShownScan } from "@/lib/presence/scan-rules";
 import type { PresenceDetail, PresencePerson, PresenceScan } from "@/lib/presence/types";
 import { formatTimeOfDay, snapToLocalTime } from "@/lib/utils/date";
@@ -184,6 +185,21 @@ export function PersonPanel({
   // Out of the building with the time clock still open: a meal or a break
   // taken outside, or a day the clock never saw end. Said under the exit time
   // so it never reads as a shift that ended normally.
+  // Late and early, measured on the time clock as Movements measures them.
+  const shiftStart = shown?.scheduledStart ? snapToLocalTime(shown.scheduledStart, day, tz).getTime() : null;
+  const shiftEndRaw = shown?.scheduledEnd ? snapToLocalTime(shown.scheduledEnd, day, tz).getTime() : null;
+  const shiftEnd =
+    shiftStart !== null && shiftEndRaw !== null && shiftEndRaw <= shiftStart ? shiftEndRaw + 24 * 60 * 60 * 1000 : shiftEndRaw;
+  const lateOnClock =
+    !salaried && !!lanes?.clockIn && shiftStart !== null && lanes.clockIn > shiftStart + LATE_GRACE_MIN * 60000;
+  const earlyOnClock =
+    !salaried &&
+    !!lanes?.clockOut &&
+    where?.clock === "OUT" &&
+    shiftStart !== null &&
+    shiftEnd !== null &&
+    lanes.clockOut < shiftEnd - LATE_GRACE_MIN * 60000 &&
+    lanes.clockOut > shiftStart;
   const stillOn =
     where && where.leftAt !== null && where.clock !== "OUT"
       ? { MEAL: "On meal", BREAK: "On break", WORK: "Still clocked in" }[where.clock]
@@ -313,37 +329,96 @@ export function PersonPanel({
               <LanesSkeleton />
             ) : (
               <>
-                <div className={styles.ppGlance}>
-                  <Glance
-                    label="Arrived"
-                    value={lanes.firstIn ? time(lanes.firstIn) : null}
-                    empty={isToday ? "Not in yet" : "Not seen"}
-                    sub={shown.scheduledStart ? `Due ${formatTimeOfDay(shown.scheduledStart)}` : "Not scheduled"}
-                  />
-                  <Glance
-                    label="Left"
-                    value={where?.leftAt ? time(where.leftAt) : null}
-                    empty={stillHere ? "On site" : neverOut ? "Never scanned out" : lanes.firstIn ? "Not yet" : "Not seen"}
-                    emptyTone={stillHere ? "accent" : neverOut ? "warning" : undefined}
-                    sub={
-                      stillOn && isToday
-                        ? stillOn
-                        : stillOn
-                          ? "Never clocked out"
-                          : shown.scheduledEnd
-                            ? `Ends ${formatTimeOfDay(shown.scheduledEnd)}`
-                            : schedule
-                              ? ""
-                              : "Not scheduled"
-                    }
-                  />
-                  <Glance
-                    label="On the clock"
-                    value={lanes.totals.workMin ? fmtDuration(lanes.totals.workMin) : null}
-                    empty="None"
-                    sub={hasGateData ? `Inside ${lanes.totals.insideMin ? fmtDuration(lanes.totals.insideMin) : "none"}` : ""}
-                  />
-                </div>
+                {hasGateData ? (
+                  // Two rows that read like the chart under them: the
+                  // building on top, the time clock below. The schedule sits
+                  // with the clock, since it says when to clock in and out,
+                  // not when to walk through the gate.
+                  <div className={styles.ppGlance} data-rows="2">
+                    <Glance
+                      label="Arrived"
+                      value={lanes.firstIn ? time(lanes.firstIn) : null}
+                      empty={isToday ? "Not in yet" : "Not seen"}
+                      sub="Security gate"
+                    />
+                    <Glance
+                      label="Left"
+                      value={where?.leftAt ? time(where.leftAt) : null}
+                      empty={stillHere ? "On site" : neverOut ? "Never scanned out" : lanes.firstIn ? "Not yet" : "Not seen"}
+                      emptyTone={stillHere ? "accent" : neverOut ? "warning" : undefined}
+                      sub="Security gate"
+                    />
+                    <Glance
+                      label="Inside"
+                      value={lanes.totals.insideMin ? fmtDuration(lanes.totals.insideMin) : null}
+                      empty="None"
+                      sub="In the building"
+                    />
+                    <Glance
+                      label="Clock in"
+                      value={lanes.clockIn ? time(lanes.clockIn) : null}
+                      valueTone={lateOnClock ? "warning" : undefined}
+                      empty={lanes.clock.length ? "Since yesterday" : salaried ? "Office staff" : "Not clocked in"}
+                      sub={salaried ? "Not expected to clock in" : shown.scheduledStart ? `Due ${formatTimeOfDay(shown.scheduledStart)}` : "Not scheduled"}
+                    />
+                    <Glance
+                      label="Clock out"
+                      value={lanes.clockOut && where?.clock === "OUT" ? time(lanes.clockOut) : null}
+                      valueTone={earlyOnClock ? "warning" : undefined}
+                      empty={
+                        where && where.clock !== "OUT"
+                          ? isToday
+                            ? { MEAL: "On meal", BREAK: "On break", WORK: "On the clock" }[where.clock]
+                            : "Never clocked out"
+                          : lanes.clockIn || lanes.clock.length
+                            ? "Not yet"
+                            : "None"
+                      }
+                      emptyTone={where && where.clock !== "OUT" ? (isToday ? "accent" : "warning") : undefined}
+                      sub={salaried ? "" : shown.scheduledEnd ? `Ends ${formatTimeOfDay(shown.scheduledEnd)}` : schedule ? "" : "Not scheduled"}
+                    />
+                    <Glance
+                      label="On the clock"
+                      value={lanes.totals.workMin ? fmtDuration(lanes.totals.workMin) : null}
+                      empty="None"
+                      sub="Time clock"
+                    />
+                  </div>
+                ) : (
+                  <div className={styles.ppGlance}>
+                    <Glance
+                      label="Arrived"
+                      value={lanes.firstIn ? time(lanes.firstIn) : null}
+                      valueTone={lateOnClock ? "warning" : undefined}
+                      empty={isToday ? "Not in yet" : "Not seen"}
+                      sub={shown.scheduledStart ? `Due ${formatTimeOfDay(shown.scheduledStart)}` : "Not scheduled"}
+                    />
+                    <Glance
+                      label="Left"
+                      value={where?.leftAt ? time(where.leftAt) : null}
+                      valueTone={earlyOnClock ? "warning" : undefined}
+                      empty={stillHere ? "On site" : neverOut ? "Never scanned out" : lanes.firstIn ? "Not yet" : "Not seen"}
+                      emptyTone={stillHere ? "accent" : neverOut ? "warning" : undefined}
+                      sub={
+                        stillOn && isToday
+                          ? stillOn
+                          : stillOn
+                            ? "Never clocked out"
+                            : shown.scheduledEnd
+                              ? `Ends ${formatTimeOfDay(shown.scheduledEnd)}`
+                              : schedule
+                                ? ""
+                                : "Not scheduled"
+                      }
+                    />
+                    <Glance
+                      label="On the clock"
+                      value={lanes.totals.workMin ? fmtDuration(lanes.totals.workMin) : null}
+                      empty="None"
+                      sub=""
+                    />
+                  </div>
+                )}
 
                 {/* Somebody with no shift today, for a viewer who may give
                     them one. Greyed out while the gates still check WMS,
@@ -508,19 +583,24 @@ function Glance({
   value,
   empty,
   emptyTone,
+  valueTone,
   sub,
 }: {
   label: string;
   value: string | null;
   empty: string;
   emptyTone?: "accent" | "warning";
+  /** Amber for a time past the schedule: a late clock in, an early clock out. */
+  valueTone?: "warning";
   sub: string;
 }) {
   return (
     <div className={styles.ppGlanceCell}>
       <span className={styles.ppGlanceLabel}>{label}</span>
       {value ? (
-        <span className={styles.ppGlanceValue}>{value}</span>
+        <span className={styles.ppGlanceValue} data-tone={valueTone}>
+          {value}
+        </span>
       ) : (
         <span className={styles.ppGlanceValue} data-empty={emptyTone ?? "true"}>
           {empty}
