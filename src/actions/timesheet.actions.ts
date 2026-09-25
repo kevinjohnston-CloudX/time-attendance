@@ -287,15 +287,22 @@ export const toggleMealWaiver = withRBAC(
 
 // ─── toggleMealPremiumWaiver ──────────────────────────────────────────────────
 
+const mealPremiumWaiverSchema = z.object({
+  timesheetId: z.string().cuid(),
+  segmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be yyyy-MM-dd"),
+  segmentStart: z.string().datetime(),
+});
+
 export const toggleMealPremiumWaiver = withRBAC(
   "PAY_PERIOD_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: unknown): Promise<{ success: boolean; waived: boolean }> => {
-    const { timesheetId, segmentDate } = mealWaiverSchema.parse(input);
+    const { timesheetId, segmentDate, segmentStart } = mealPremiumWaiverSchema.parse(input);
 
     const dateObj = new Date(segmentDate + "T00:00:00.000Z");
+    const startObj = new Date(segmentStart);
 
     const existing = await db.mealPremiumWaiver.findUnique({
-      where: { timesheetId_segmentDate: { timesheetId, segmentDate: dateObj } },
+      where: { timesheetId_segmentStart: { timesheetId, segmentStart: startObj } },
     });
 
     if (existing) {
@@ -307,13 +314,13 @@ export const toggleMealPremiumWaiver = withRBAC(
           action: "MEAL_PREMIUM_WAIVER_REMOVED",
           entityType: "TIMESHEET",
           entityId: timesheetId,
-          changes: { before: { segmentDate, createdById: existing.createdById }, after: null },
+          changes: { before: { segmentDate, segmentStart, createdById: existing.createdById }, after: null },
         });
       });
     } else {
       await db.$transaction(async (tx) => {
         await tx.mealPremiumWaiver.create({
-          data: { timesheetId, segmentDate: dateObj, createdById: actorId },
+          data: { timesheetId, segmentDate: dateObj, segmentStart: startObj, createdById: actorId },
         });
         await writeAuditLog({
           tenantId,
@@ -321,7 +328,7 @@ export const toggleMealPremiumWaiver = withRBAC(
           action: "MEAL_PREMIUM_WAIVER_ADDED",
           entityType: "TIMESHEET",
           entityId: timesheetId,
-          changes: { before: null, after: { segmentDate, createdById: actorId } },
+          changes: { before: null, after: { segmentDate, segmentStart, createdById: actorId } },
         });
       });
     }
