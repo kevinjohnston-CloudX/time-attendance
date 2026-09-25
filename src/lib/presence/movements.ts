@@ -19,6 +19,11 @@ import type { DayPerson, PresenceScan, SiteDay } from "./types";
 
 /** Minutes past a scheduled start or before a scheduled end before it counts. */
 export const LATE_GRACE_MIN = 5;
+/**
+ * How far off the shift a full day must run before late and early stop
+ * flagging it: past this, the shift on file is the wrong hours, not the person.
+ */
+export const SHIFTED_DAY_MIN = 60;
 /** A meal or break longer than this is flagged. */
 export const LONG_BREAK_MIN = 60;
 /** A gap between the readers on a finished day, long enough to flag. */
@@ -223,8 +228,24 @@ export function buildPersonDay(
   // and never clocked in shows as inside, not clocked in, rather than late.
   // Lateness is an hourly measure. Salaried people keep their own hours.
   const { clockIn, clockOut } = lanes;
+  // A full shift's length on the clock, more than an hour off the shift's
+  // own times, is a day that ran at different hours, not somebody late or
+  // leaving early. The shift on file is often not the hours a person keeps
+  // (checked 2026-09-25 at 5903: 35 of 50 flagged as leaving early had worked
+  // a full day, most two hours off an 11 AM shift). Anything within the hour
+  // is still flagged, so ten minutes late stays late whenever they leave.
+  // Measured from the first clock in to the last clock out, or to now while
+  // they are still on the clock, so a meal taken or not taken counts the same.
+  const clockedEnd = isToday && nowState.clock !== "OUT" ? to : clockOut;
+  const fullDay =
+    !!schedule && !!clockIn && !!clockedEnd && clockedEnd - clockIn >= schedule.end - schedule.start - grace;
+  const shifted = SHIFTED_DAY_MIN * 60000;
   const lateMinutes =
-    !person.salaried && schedule && clockIn && clockIn > schedule.start + grace
+    !person.salaried &&
+    schedule &&
+    clockIn &&
+    clockIn > schedule.start + grace &&
+    !(fullDay && clockIn - schedule.start > shifted)
       ? Math.floor((clockIn - schedule.start) / 60000)
       : null;
   const earlyMinutes =
@@ -233,7 +254,8 @@ export function buildPersonDay(
     clockOut &&
     nowState.clock === "OUT" &&
     clockOut < schedule.end - grace &&
-    clockOut > schedule.start
+    clockOut > schedule.start &&
+    !(fullDay && schedule.end - clockOut > shifted)
       ? Math.floor((schedule.end - clockOut) / 60000)
       : null;
 
