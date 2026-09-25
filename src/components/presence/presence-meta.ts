@@ -27,8 +27,8 @@ export const STATUS_META: Record<PresenceStatus, StatusMeta> = {
     badge: "success",
   },
   NO_GATE_SCAN: {
-    label: "Clocked in, not inside",
-    heading: "Clocked in, not inside",
+    label: "In time clock, out building",
+    heading: "In time clock, out building",
     hint: "On the clock, but the security gate did not see them come in",
     color: "var(--ps-working)",
     badge: "warning",
@@ -41,8 +41,8 @@ export const STATUS_META: Record<PresenceStatus, StatusMeta> = {
     badge: "warning",
   },
   OFF_CLOCK: {
-    label: "Inside, not clocked in",
-    heading: "Inside, not clocked in",
+    label: "In building, out time clock",
+    heading: "In building, out time clock",
     hint: "Came through the security gate and is not clocked in",
     color: "var(--ps-offclock)",
     badge: "purple",

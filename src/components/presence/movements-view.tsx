@@ -129,9 +129,9 @@ function flagChips(v: PersonDayView, isToday: boolean): Chip[] {
   if (has("INACTIVE")) out.push({ label: "Inactive employee", tone: "error", rank: 0 });
   // Today the status badge says it; on a finished day the chip carries how long.
   if (!isToday && has("INSIDE_OFF_CLOCK"))
-    out.push({ label: `Inside, not clocked in ${fmtDuration(v.lanes.totals.insideOffClockMin)}`, tone: "warning", rank: 1 });
+    out.push({ label: `In building, out time clock ${fmtDuration(v.lanes.totals.insideOffClockMin)}`, tone: "warning", rank: 1 });
   if (!isToday && has("NO_GATE_SCAN"))
-    out.push({ label: `Clocked in, not inside ${fmtDuration(v.lanes.totals.workOutsideMin)}`, tone: "warning", rank: 1 });
+    out.push({ label: `In time clock, out building ${fmtDuration(v.lanes.totals.workOutsideMin)}`, tone: "warning", rank: 1 });
   if (has("LATE") && v.lateMinutes !== null) out.push({ label: `${fmtDuration(v.lateMinutes)} late`, tone: "warning", rank: 1 });
   if (has("LEFT_EARLY") && v.earlyMinutes !== null)
     out.push({ label: `Left ${fmtDuration(v.earlyMinutes)} early`, tone: "warning", rank: 1 });
@@ -650,9 +650,9 @@ const STATE_LABEL: Record<StoryState, string> = {
   WORKING: "Working",
   MEAL: "On meal",
   BREAK: "On break",
-  INSIDE_OFF: "Inside, not clocked in",
+  INSIDE_OFF: "In building, out time clock",
   ON_SITE: "On site",
-  OUT_WORKING: "Clocked in, not inside",
+  OUT_WORKING: "In time clock, out building",
   OUT_MEAL: "On a break, outside",
   OUTSIDE: "Out of the building",
 };
@@ -759,7 +759,7 @@ function buildStory(v: PersonDayView, isToday: boolean, hasGate: boolean, now: n
                 : openState === "MEAL" || openState === "BREAK" || openState === "OUT_MEAL"
                   ? `Still on ${openState === "BREAK" ? "break" : "a meal"}`
                   : openState === "OUT_WORKING"
-                    ? "Still clocked in, not inside"
+                    ? "Still in time clock, out building"
                     : "Still inside",
             meta: null,
             kind: "now",
@@ -811,9 +811,9 @@ function DayStory({
     ...(hasGate ? [{ label: "Inside the building", minutes: t.insideMin }] : []),
     { label: "Meals and breaks", minutes: t.mealMin + t.breakMin },
     ...(hasGate && !v.person.salaried
-      ? [{ label: "Inside, not clocked in", minutes: t.insideOffClockMin, worth: t.insideOffClockMin >= GAP_MIN }]
+      ? [{ label: "In building, out time clock", minutes: t.insideOffClockMin, worth: t.insideOffClockMin >= GAP_MIN }]
       : []),
-    ...(hasGate ? [{ label: "Clocked in, not inside", minutes: t.workOutsideMin, worth: t.workOutsideMin >= GAP_MIN }] : []),
+    ...(hasGate ? [{ label: "In time clock, out building", minutes: t.workOutsideMin, worth: t.workOutsideMin >= GAP_MIN }] : []),
   ];
 
   return (
@@ -990,12 +990,12 @@ type Tone = "warning" | "error" | "neutral" | "info" | "purple";
 /** Names for each filter, standard and short, with the one line that explains it. */
 export const FLAG_META: Record<MovementFlag, { label: string; hint: string; tone: Tone }> = {
   INSIDE_OFF_CLOCK: {
-    label: "Inside, not clocked in",
+    label: "In building, out time clock",
     hint: "Through the security gate and not on the clock. On a past day, 15 minutes or more of it",
     tone: "purple",
   },
   NO_GATE_SCAN: {
-    label: "Clocked in, not inside",
+    label: "In time clock, out building",
     hint: "On the clock while the security gate has them outside. On a past day, 15 minutes or more of it",
     tone: "warning",
   },

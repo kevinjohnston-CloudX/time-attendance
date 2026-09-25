@@ -453,7 +453,7 @@ export function PersonPanel({
                   <Total label="Meals and breaks" minutes={lanes.totals.mealMin + lanes.totals.breakMin} />
                   {hasGateData && !salaried && (
                     <Total
-                      label="Inside, not clocked in"
+                      label="In building, out time clock"
                       minutes={lanes.totals.insideOffClockMin}
                       hint="In the building, not clocked in, and not on a meal or break"
                       flag
@@ -461,7 +461,7 @@ export function PersonPanel({
                   )}
                   {hasGateData && (
                     <Total
-                      label="Clocked in, not inside"
+                      label="In time clock, out building"
                       minutes={lanes.totals.workOutsideMin}
                       hint="Clocked in while the security gate had them outside the building"
                       flag
@@ -543,11 +543,11 @@ function statusSentence(p: PresencePerson, tz: string, mins: number | null, nowI
     case "WORKING":
       return at ? `On the clock since ${at}${forHow}` : "On the clock";
     case "NO_GATE_SCAN":
-      return at ? `Clocked in since ${at}${forHow}, not seen coming in at the gate` : "Clocked in, not seen coming in at the gate";
+      return at ? `In time clock since ${at}${forHow}, out building` : "In time clock, out building";
     case "ON_MEAL":
       return at ? `Started ${p.breakKind === "BREAK" ? "a break" : "a meal"} at ${at}${forHow}` : statusLabel(p);
     case "OFF_CLOCK":
-      return at ? `Inside since ${at}${forHow}, not clocked in` : "Inside, not clocked in";
+      return at ? `In building since ${at}${forHow}, out time clock` : "In building, out time clock";
     case "ON_SITE":
       return at ? `Inside since ${at}${forHow}` : "Inside";
     case "LEFT":
