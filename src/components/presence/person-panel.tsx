@@ -176,6 +176,8 @@ export function PersonPanel({
   const mins = person ? minutesSince(person.since, now) : null;
   const schedule = shown ? fmtShift(shown.scheduledStart, shown.scheduledEnd) : undefined;
   const label = dayLabel(day, today);
+  const offerShift =
+    !!scheduling && isToday && !!shown && !shown.wmsScheduled && !(person?.inactive || shown.inactive);
   const oldest = addDays(today, -DAYS_BACK);
 
   const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
@@ -420,13 +422,32 @@ export function PersonPanel({
                   </div>
                 )}
 
-                {/* Somebody with no shift today, for a viewer who may give
-                    them one. Greyed out while the gates still check WMS,
+                {/* The hours above come from the shift on their record. The
+                    gate goes by WMS, so when WMS says something else it is
+                    said here, once, quietly. */}
+                {shown.scheduleSource === "SHIFT" &&
+                  (shown.wmsScheduled
+                    ? shown.wmsStart !== shown.scheduledStart || shown.wmsEnd !== shown.scheduledEnd
+                    : !offerShift) && (
+                    <p className={styles.ppFootnote}>
+                      {shown.wmsScheduled
+                        ? shown.wmsStart && shown.wmsEnd
+                          ? `WMS schedule ${formatTimeOfDay(shown.wmsStart)} to ${formatTimeOfDay(shown.wmsEnd)}. The security gate goes by this one.`
+                          : "WMS has them working with no set hours. The security gate goes by WMS."
+                        : isToday
+                          ? "Not on the WMS schedule today, so the security gate may turn them away."
+                          : "Not on the WMS schedule that day."}
+                    </p>
+                  )}
+
+                {/* Somebody the WMS schedule, which the gate checks, has no
+                    shift for today, for a viewer who may give them one.
+                    Greyed out while the gates still check WMS itself,
                     because until then a shift here opens no door. */}
-                {scheduling && isToday && !shown.scheduledStart && !(person?.inactive || shown.inactive) && (
+                {offerShift && (
                   <div className={styles.ppSchedule}>
                     <div className={styles.ppScheduleText}>
-                      <span className={styles.ppScheduleTitle}>Not on today&apos;s schedule</span>
+                      <span className={styles.ppScheduleTitle}>Not on today&apos;s WMS schedule</span>
                       <span className={styles.ppScheduleSub}>
                         {scheduling.live
                           ? "Add a shift for today so the gate lets them in."
