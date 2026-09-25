@@ -260,16 +260,17 @@ model MealWaiver {
 }
 
 model MealPremiumWaiver {
-  id          String   @id @default(cuid())
-  timesheetId String
-  segmentDate DateTime @db.Date
-  createdById String?
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  timesheetId  String
+  segmentDate  DateTime @db.Date
+  segmentStart DateTime // UTC start time of the specific MEAL_PREMIUM segment
+  createdById  String?
+  createdAt    DateTime @default(now())
 
   timesheet Timesheet @relation(fields: [timesheetId], references: [id])
   createdBy Employee? @relation(fields: [createdById], references: [id])
 
-  @@unique([timesheetId, segmentDate])
+  @@unique([timesheetId, segmentStart])
   @@map("meal_premium_waivers")
 }
 

@@ -180,7 +180,7 @@ type TimecardDetail = {
   segments: TimecardSegment[];
   overtimeBuckets: TimecardBucket[];
   mealWaivers: { id: string; segmentDate: string; reason: string | null }[];
-  mealPremiumWaivers: { id: string; segmentDate: string }[];
+  mealPremiumWaivers: { id: string; segmentDate: string; segmentStart: string }[];
   notes: TimesheetNoteItem[];
   dayReasons: { segmentDate: string; reasonCodeId: string; reasonCode: { id: string; code: string; label: string; color?: string | null } }[];
 };
@@ -513,7 +513,8 @@ export function TimecardViewer({
   const [pendingPunchEdits, setPendingPunchEdits] = useState<Map<string, Date>>(new Map());
   const [pendingNewPunches, setPendingNewPunches] = useState<Array<{ dayKey: string; pairIndex: number; punchType: "CLOCK_IN" | "CLOCK_OUT"; punchDate: Date }>>([]);
   const [pendingWaiverToggles, setPendingWaiverToggles] = useState<Set<string>>(new Set());
-  const [pendingPremiumWaiverToggles, setPendingPremiumWaiverToggles] = useState<Set<string>>(new Set());
+  // Map<segmentStart (ISO), segmentDate (yyyy-MM-dd)>
+  const [pendingPremiumWaiverToggles, setPendingPremiumWaiverToggles] = useState<Map<string, string>>(new Map());
   const [pendingDeletions, setPendingDeletions] = useState<Array<{ punchIds: string[]; dayKey: string; inTime: string | null; outTime: string | null }>>([]);
   const [pendingHoursEntries, setPendingHoursEntries] = useState<Array<{ dayKey: string; hours: number; payCodeId?: string }>>([]);
 
@@ -1162,10 +1163,10 @@ export function TimecardViewer({
     });
   }
 
-  function handleTogglePremiumWaiver(segmentDate: string) {
+  function handleTogglePremiumWaiver(segmentStart: string, segmentDate: string) {
     setPendingPremiumWaiverToggles((prev) => {
-      const n = new Set(prev);
-      if (n.has(segmentDate)) n.delete(segmentDate); else n.add(segmentDate);
+      const n = new Map(prev);
+      if (n.has(segmentStart)) n.delete(segmentStart); else n.set(segmentStart, segmentDate);
       return n;
     });
   }
@@ -1214,7 +1215,7 @@ export function TimecardViewer({
     setPendingPunchEdits(new Map());
     setPendingNewPunches([]);
     setPendingWaiverToggles(new Set());
-    setPendingPremiumWaiverToggles(new Set());
+    setPendingPremiumWaiverToggles(new Map());
     setPendingDeletions([]);
     setPendingHoursEntries([]);
   }
@@ -1323,8 +1324,8 @@ export function TimecardViewer({
         for (const segmentDate of pendingWaiverToggles) {
           ops.push(toggleMealWaiver({ timesheetId, segmentDate }));
         }
-        for (const segmentDate of pendingPremiumWaiverToggles) {
-          ops.push(toggleMealPremiumWaiver({ timesheetId, segmentDate }));
+        for (const [segmentStart, segmentDate] of pendingPremiumWaiverToggles) {
+          ops.push(toggleMealPremiumWaiver({ timesheetId, segmentDate, segmentStart }));
         }
         for (const { punchIds } of pendingDeletions) {
           ops.push(deleteManualPunchPair({ punchIds }));
@@ -1352,7 +1353,7 @@ export function TimecardViewer({
         setPendingPunchEdits(new Map());
         setPendingNewPunches([]);
         setPendingWaiverToggles(new Set());
-        setPendingPremiumWaiverToggles(new Set());
+        setPendingPremiumWaiverToggles(new Map());
         setPendingDeletions([]);
         setPendingHoursEntries([]);
         router.refresh();
@@ -1416,11 +1417,13 @@ export function TimecardViewer({
   const effectiveMealBreakAfterMinutes = shiftMeal?.autoDeduct && shiftFirstMeal
     ? Math.round(shiftFirstMeal.workAtLeastHours * 60)
     : (timecard?.employee.ruleSet.mealBreakAfterMinutes ?? 0);
+  const hasMealPremiums = timecard?.segments.some(s => s.segmentType === "MEAL_PREMIUM") ?? false;
+  const showMealColumn = effectiveAutoDeductMeal || hasMealPremiums;
 
   // Column count for colSpan on expanded rows
   // Base: chevron + date + notes-icon + in + out + reg + ot + dt + total = 9
   // +1 if pay codes column exists, +1 if reason codes column exists, +1 if delete column shown
-  const colCount = 9 + (payCodes.length > 0 ? 1 : 0) + (reasonCodes.length > 0 ? 1 : 0) + (effectiveAutoDeductMeal ? 1 : 0) + (canDeleteManual ? 1 : 0);
+  const colCount = 9 + (payCodes.length > 0 ? 1 : 0) + (reasonCodes.length > 0 ? 1 : 0) + (showMealColumn ? 1 : 0) + (canDeleteManual ? 1 : 0);
 
   const canApprove =
     timecard &&
@@ -1987,7 +1990,7 @@ export function TimecardViewer({
                       <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">OT</th>
                       <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">DT</th>
                       <th className="pl-3 pr-8 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Total</th>
-                      {effectiveAutoDeductMeal && (
+                      {showMealColumn && (
                         <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Meal</th>
                       )}
                       {canDeleteManual && <th className="w-8 px-1 py-1.5" />}
@@ -2567,52 +2570,56 @@ export function TimecardViewer({
                               {isAbsent ? "0.00" : hasMissingPunch ? "—" : (dailyTotal > 0 || isSalaryVirtualDay) ? minutesToHoursDecimal(dailyTotal || SALARY_VIRTUAL_MINS) : "—"}
                             </td>
 
-                            {/* Meal waiver cell */}
-                            {effectiveAutoDeductMeal && (() => {
-                              const rawWorkMins = daySegments.filter((s) => s.segmentType === "WORK").reduce((a, s) => a + s.durationMinutes, 0);
-                              const mealSeg = daySegments.find((s) => s.segmentType === "MEAL");
-                              const totalWorkForThreshold = rawWorkMins + (mealSeg?.durationMinutes ?? 0);
-                              const dbWaiver = timecard?.mealWaivers.find((w) => w.segmentDate === dayStr);
-                              const waiverToggled = pendingWaiverToggles.has(dayStr);
-                              const effectiveHasWaiver = waiverToggled ? !dbWaiver : !!dbWaiver;
-                              return (
-                                <td className="px-3 py-1 text-left" onClick={(e) => e.stopPropagation()}>
-                                  {totalWorkForThreshold <= effectiveMealBreakAfterMinutes ? (
-                                    <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
-                                  ) : effectiveHasWaiver ? (
-                                    <div className="flex items-center gap-1.5">
-                                      {canEdit ? (
+                            {/* Meal waiver cell — auto-deduct waiver OR meal premium waiver */}
+                            {showMealColumn && (() => {
+                              if (effectiveAutoDeductMeal) {
+                                const rawWorkMins = daySegments.filter((s) => s.segmentType === "WORK").reduce((a, s) => a + s.durationMinutes, 0);
+                                const mealSeg = daySegments.find((s) => s.segmentType === "MEAL");
+                                const totalWorkForThreshold = rawWorkMins + (mealSeg?.durationMinutes ?? 0);
+                                const dbWaiver = timecard?.mealWaivers.find((w) => w.segmentDate === dayStr);
+                                const waiverToggled = pendingWaiverToggles.has(dayStr);
+                                const effectiveHasWaiver = waiverToggled ? !dbWaiver : !!dbWaiver;
+                                return (
+                                  <td className="px-3 py-1 text-left" onClick={(e) => e.stopPropagation()}>
+                                    {totalWorkForThreshold <= effectiveMealBreakAfterMinutes ? (
+                                      <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
+                                    ) : effectiveHasWaiver ? (
+                                      <div className="flex items-center gap-1.5">
+                                        {canEdit ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleToggleWaiver(dayStr)}
+                                            title="Click to remove waiver"
+                                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${waiverToggled ? "bg-amber-200 text-amber-800 hover:bg-red-100 hover:text-red-600 dark:bg-amber-800/40 dark:text-amber-300 dark:hover:bg-red-900/30 dark:hover:text-red-400" : "bg-amber-100 text-amber-700 hover:bg-red-100 hover:text-red-600 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"}`}
+                                          >
+                                            {waiverToggled ? "Waived*" : "Waived"}
+                                          </button>
+                                        ) : (
+                                          <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                                            Waived
+                                          </span>
+                                        )}
+                                        {waiverError && <span className="text-xs text-red-500">{waiverError}</span>}
+                                      </div>
+                                    ) : canEdit ? (
+                                      <div className="flex items-center gap-1.5">
                                         <button
                                           type="button"
                                           onClick={() => handleToggleWaiver(dayStr)}
-                                          title="Click to remove waiver"
-                                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${waiverToggled ? "bg-amber-200 text-amber-800 hover:bg-red-100 hover:text-red-600 dark:bg-amber-800/40 dark:text-amber-300 dark:hover:bg-red-900/30 dark:hover:text-red-400" : "bg-amber-100 text-amber-700 hover:bg-red-100 hover:text-red-600 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"}`}
+                                          className={`rounded px-2 py-0.5 text-xs ${waiverToggled ? "bg-amber-100 text-amber-700 hover:bg-zinc-100 hover:text-zinc-600 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" : "bg-zinc-100 text-zinc-600 hover:bg-amber-50 hover:text-amber-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-amber-900/20 dark:hover:text-amber-300"}`}
                                         >
-                                          {waiverToggled ? "Waived*" : "Waived"}
+                                          {waiverToggled ? "Waive*" : "Waive"}
                                         </button>
-                                      ) : (
-                                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                                          Waived
-                                        </span>
-                                      )}
-                                      {waiverError && <span className="text-xs text-red-500">{waiverError}</span>}
-                                    </div>
-                                  ) : canEdit ? (
-                                    <div className="flex items-center gap-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleToggleWaiver(dayStr)}
-                                        className={`rounded px-2 py-0.5 text-xs ${waiverToggled ? "bg-amber-100 text-amber-700 hover:bg-zinc-100 hover:text-zinc-600 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" : "bg-zinc-100 text-zinc-600 hover:bg-amber-50 hover:text-amber-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-amber-900/20 dark:hover:text-amber-300"}`}
-                                      >
-                                        {waiverToggled ? "Waive*" : "Waive"}
-                                      </button>
-                                      {waiverError && <span className="text-xs text-red-500">{waiverError}</span>}
-                                    </div>
-                                  ) : (
-                                    <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
-                                  )}
-                                </td>
-                              );
+                                        {waiverError && <span className="text-xs text-red-500">{waiverError}</span>}
+                                      </div>
+                                    ) : (
+                                      <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
+                                    )}
+                                  </td>
+                                );
+                              }
+                              // Meal premium waiver — individual buttons are on each MEAL_PREMIUM row
+                              return <td className="px-3 py-1 text-left"><span className="text-xs text-zinc-300 dark:text-zinc-700">—</span></td>;
                             })()}
 
                             {/* Delete manual pair — main row (first pair) */}
@@ -2811,7 +2818,7 @@ export function TimecardViewer({
                                 <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
                                 <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
                                 <td className="pl-3 pr-8 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
-                                {effectiveAutoDeductMeal && <td />}
+                                {showMealColumn && <td />}
                                 {/* Delete manual pair — continuation row */}
                                 {canDeleteManual && (() => {
                                   const isManualPair = pairIn?.source === "MANUAL" && pairOut?.source === "MANUAL";
@@ -2885,36 +2892,19 @@ export function TimecardViewer({
                               <td className="pl-3 pr-8 py-1.5 text-right tabular-nums text-sm font-bold text-violet-700 dark:text-violet-300">
                                 {minutesToHoursDecimal(seg.durationMinutes)}
                               </td>
-                              {effectiveAutoDeductMeal && <td />}
+                              {showMealColumn && <td />}
                               {canDeleteManual && <td className="w-8 px-1" />}
                             </tr>
                           ))}
 
                           {/* Meal premium rows — one per MEAL_PREMIUM segment, always visible as a standalone row */}
-                          {daySegments.filter(s => s.segmentType === "MEAL_PREMIUM").map((seg) => {
-                            const premiumDbWaived = timecard?.mealPremiumWaivers.some(w => w.segmentDate === dayKey) ?? false;
-                            const premiumToggled = pendingPremiumWaiverToggles.has(dayKey);
-                            const premiumEffectiveWaived = premiumToggled ? !premiumDbWaived : premiumDbWaived;
-                            return (
+                          {daySegments.filter(s => s.segmentType === "MEAL_PREMIUM").map((seg) => (
                             <tr key={`${dayKey}-premium-${seg.id}`} className="border-b border-zinc-100 bg-amber-50/40 dark:border-zinc-800 dark:bg-amber-950/10">
                               <td className="w-7 pl-2 pr-0 py-1.5" />
                               <td className="px-3 py-1 text-left">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                                    Meal Premium
-                                  </span>
-                                  {canEdit && (premiumEffectiveWaived ? (
-                                    <button type="button" onClick={() => handleTogglePremiumWaiver(dayKey)} title="Click to remove waiver"
-                                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${premiumToggled ? "bg-amber-200 text-amber-800 hover:bg-red-100 hover:text-red-600 dark:bg-amber-800/40 dark:text-amber-300 dark:hover:bg-red-900/30 dark:hover:text-red-400" : "bg-amber-100 text-amber-700 hover:bg-red-100 hover:text-red-600 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"}`}>
-                                      {premiumToggled ? "Waived*" : "Waived"}
-                                    </button>
-                                  ) : (
-                                    <button type="button" onClick={() => handleTogglePremiumWaiver(dayKey)}
-                                      className={`rounded px-2 py-0.5 text-xs ${premiumToggled ? "bg-amber-100 text-amber-700 hover:bg-zinc-100 hover:text-zinc-600 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" : "bg-zinc-100 text-zinc-600 hover:bg-amber-50 hover:text-amber-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-amber-900/20 dark:hover:text-amber-300"}`}>
-                                      {premiumToggled ? "Waive*" : "Waive"}
-                                    </button>
-                                  ))}
-                                </div>
+                                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                                  Meal Premium
+                                </span>
                               </td>
                               {payCodes.length > 0 && (
                                 <td className="px-2 py-1">
@@ -2937,11 +2927,37 @@ export function TimecardViewer({
                               <td className="pl-3 pr-8 py-1.5 text-right tabular-nums text-sm font-bold text-amber-700 dark:text-amber-300">
                                 {minutesToHoursDecimal(seg.durationMinutes)}
                               </td>
-                              {effectiveAutoDeductMeal && <td />}
+                              {showMealColumn && (() => {
+                                const segStart = seg.startTime;
+                                const premiumDbWaived = timecard?.mealPremiumWaivers.some(w => w.segmentStart === segStart) ?? false;
+                                const premiumToggled = pendingPremiumWaiverToggles.has(segStart);
+                                const premiumEffectiveWaived = premiumToggled ? !premiumDbWaived : premiumDbWaived;
+                                if (effectiveAutoDeductMeal) return <td />;
+                                return (
+                                  <td className="px-3 py-1 text-left" onClick={(e) => e.stopPropagation()}>
+                                    {premiumEffectiveWaived ? (
+                                      canEdit ? (
+                                        <button type="button" onClick={() => handleTogglePremiumWaiver(segStart, dayKey)} title="Click to remove waiver"
+                                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${premiumToggled ? "bg-amber-200 text-amber-800 hover:bg-red-100 hover:text-red-600 dark:bg-amber-800/40 dark:text-amber-300 dark:hover:bg-red-900/30 dark:hover:text-red-400" : "bg-amber-100 text-amber-700 hover:bg-red-100 hover:text-red-600 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"}`}>
+                                          {premiumToggled ? "Waived*" : "Waived"}
+                                        </button>
+                                      ) : (
+                                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Waived</span>
+                                      )
+                                    ) : canEdit ? (
+                                      <button type="button" onClick={() => handleTogglePremiumWaiver(segStart, dayKey)}
+                                        className={`rounded px-2 py-0.5 text-xs ${premiumToggled ? "bg-amber-100 text-amber-700 hover:bg-zinc-100 hover:text-zinc-600 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" : "bg-zinc-100 text-zinc-600 hover:bg-amber-50 hover:text-amber-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-amber-900/20 dark:hover:text-amber-300"}`}>
+                                        {premiumToggled ? "Waive*" : "Waive"}
+                                      </button>
+                                    ) : (
+                                      <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
+                                    )}
+                                  </td>
+                                );
+                              })()}
                               {canDeleteManual && <td className="w-8 px-1" />}
                             </tr>
-                            );
-                          })}
+                          ))}
 
                           {/* Add entry form row */}
                           {addEntryDay === format(day, "yyyy-MM-dd") && (
