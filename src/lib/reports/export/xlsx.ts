@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import type { ReportResult } from "../data-sources";
+import { cellValue, isHoursColumn } from "../cell";
 
 export async function generateXlsx(
   result: ReportResult,
@@ -12,10 +13,12 @@ export async function generateXlsx(
   const sheet = workbook.addWorksheet(title.slice(0, 31)); // Excel max 31 chars
 
   // Header row
+  // Hours as real numbers with two decimals, so a column can be summed.
   sheet.columns = result.columns.map((col) => ({
     header: col.label,
     key: col.id,
     width: col.type === "number" ? 12 : 20,
+    ...(isHoursColumn(col) ? { style: { numFmt: "0.00" } } : {}),
   }));
 
   // Style header row
@@ -31,7 +34,7 @@ export async function generateXlsx(
   for (const row of result.rows) {
     const values: Record<string, unknown> = {};
     for (const col of result.columns) {
-      values[col.id] = row[col.id] ?? "";
+      values[col.id] = cellValue(row[col.id], col) ?? "";
     }
     sheet.addRow(values);
   }

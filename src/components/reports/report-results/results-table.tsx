@@ -2,6 +2,7 @@
 
 import { EmptyState, Table, TableFooter, TBody, TD, TH, THead, TR } from "@/components/ui";
 import { Loader2, SearchX } from "lucide-react";
+import { cellText } from "@/lib/reports/cell";
 
 interface Column {
   id: string;
@@ -9,23 +10,9 @@ interface Column {
   type: string;
 }
 
-function formatMinutesDecimal(mins: number): string {
-  return (mins / 60).toFixed(2);
-}
-
-/**
- * One cell as a person reads it. Durations are stored in minutes and every
- * one of them is named for it (regMinutes, durationMinutes), so only those
- * turn into hours: a Year of 2026 used to come out as 33.77.
- */
+/** A cell on screen: the shared formatting, with a dash for nothing. */
 function formatCell(value: unknown, type: string, id: string): string {
-  if (value === null || value === undefined || value === "") return "—";
-  if (type === "boolean") return value ? "Yes" : "No";
-  if (type === "number" && typeof value === "number") {
-    if (id.endsWith("Minutes")) return formatMinutesDecimal(value);
-    return String(value);
-  }
-  return String(value);
+  return cellText(value, { id, type }) || "—";
 }
 
 /**

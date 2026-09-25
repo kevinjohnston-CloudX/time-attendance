@@ -1,12 +1,11 @@
 import type { ReportResult } from "../data-sources";
+import { cellText } from "../cell";
 
 export function generateCsv(result: ReportResult): string {
   const headers = result.columns.map((c) => escapeCsvField(c.label));
   const rows = result.rows.map((row) =>
     result.columns.map((col) => {
-      const val = row[col.id];
-      if (val === null || val === undefined) return "";
-      return escapeCsvField(String(val));
+      return escapeCsvField(cellText(row[col.id], col));
     })
   );
 
@@ -14,7 +13,7 @@ export function generateCsv(result: ReportResult): string {
 }
 
 function escapeCsvField(value: string): string {
-  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+  if (/[",\n\r]/.test(value)) {
     return `"${value.replace(/"/g, '""')}"`;
   }
   return value;

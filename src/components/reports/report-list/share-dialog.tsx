@@ -45,7 +45,7 @@ const VISIBILITY_ITEMS = [
 const VISIBILITY_HINT: Record<string, string> = {
   PRIVATE: "Only you can open it. People named below keep their access.",
   SHARED: "Only the people named below can open it.",
-  TENANT: "Everyone in your organisation with Reports access can open it.",
+  TENANT: "Everyone in your company who can use Reports can open it.",
 };
 
 export function ShareDialog({
@@ -77,48 +77,52 @@ export function ShareDialog({
     );
   }, [search, tenantUsers, sharedUserIds]);
 
+  // Every change waits for the server's answer before the list moves: the
+  // actions answer with a result rather than throwing, and the list used to
+  // show a person as added when the server had refused.
+  const [error, setError] = useState<string | null>(null);
+  const refused = () => setError("That change was not saved. You may not have permission to share this report.");
+
   function handleVisibilityChange(value: string) {
+    const before = visibility;
     setVisibility(value);
+    setError(null);
     startTransition(async () => {
-      await updateReport({ id: reportId, data: { visibility: value } });
+      const res = await updateReport({ id: reportId, data: { visibility: value } });
+      if (!res.success) {
+        setVisibility(before);
+        refused();
+      }
     });
   }
 
   function handleShare(userId: string) {
     const user = tenantUsers.find((u) => u.id === userId);
     if (!user) return;
+    setError(null);
 
     startTransition(async () => {
-      const result = await shareReport({
-        reportId,
-        data: { userId, canEdit: false },
-      });
-      if (result) {
-        setShares((prev) => [
-          ...prev,
-          {
-            id: typeof result === "object" && "id" in result ? (result as { id: string }).id : userId,
-            user,
-            canEdit: false,
-          },
-        ]);
-      }
+      const res = await shareReport({ reportId, data: { userId, canEdit: false } });
+      if (!res.success) return refused();
+      setShares((prev) => [...prev, { id: res.data.id, user, canEdit: false }]);
     });
     setSearch("");
   }
 
   function handleToggleEdit(userId: string, canEdit: boolean) {
+    setError(null);
     startTransition(async () => {
-      await shareReport({ reportId, data: { userId, canEdit } });
-      setShares((prev) =>
-        prev.map((s) => (s.user.id === userId ? { ...s, canEdit } : s)),
-      );
+      const res = await shareReport({ reportId, data: { userId, canEdit } });
+      if (!res.success) return refused();
+      setShares((prev) => prev.map((s) => (s.user.id === userId ? { ...s, canEdit } : s)));
     });
   }
 
   function handleUnshare(userId: string) {
+    setError(null);
     startTransition(async () => {
-      await unshareReport({ reportId, userId });
+      const res = await unshareReport({ reportId, userId });
+      if (!res.success) return refused();
       setShares((prev) => prev.filter((s) => s.user.id !== userId));
     });
   }
@@ -160,7 +164,12 @@ export function ShareDialog({
 
         <div className="flex flex-col gap-5 px-5 py-4">
           <div className="flex flex-col gap-1.5">
-            <span className="wms-overline">Visibility</span>
+            {error && (
+              <p role="alert" style={{ margin: "0 0 4px", font: "var(--type-body2)", color: "var(--text-error)" }}>
+                {error}
+              </p>
+            )}
+            <span className="wms-overline">Who can open it</span>
             <SegmentedControl
               items={VISIBILITY_ITEMS}
               value={visibility}
@@ -178,7 +187,7 @@ export function ShareDialog({
               label="Share with"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name or email…"
+              placeholder="Name or email"
               leadingIcon={<UserPlus className="h-4 w-4" />}
             />
             {filteredUsers.length > 0 && (

@@ -60,9 +60,9 @@ const TIMEZONES = [
 ] as const;
 
 const FORMATS = [
+  { value: "xlsx", label: "Excel" },
   { value: "csv", label: "CSV" },
   { value: "pdf", label: "PDF" },
-  { value: "xlsx", label: "XLSX" },
 ] as const;
 
 /* ------------------------------------------------------------------ */
@@ -172,6 +172,7 @@ export function ScheduleForm({
 
   const [preset, setPreset] = useState<PresetType>(parsed?.preset ?? "daily");
   const [hour, setHour] = useState(parsed?.hour ?? "8");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [minute, setMinute] = useState(parsed?.minute ?? "0");
   const [dayOfWeek, setDayOfWeek] = useState(parsed?.dayOfWeek ?? "1");
   const [dayOfMonth, setDayOfMonth] = useState(parsed?.dayOfMonth ?? "1");
@@ -180,7 +181,7 @@ export function ScheduleForm({
   const [timezone, setTimezone] = useState(
     existingSchedule?.timezone ?? "America/New_York",
   );
-  const [format, setFormat] = useState(existingSchedule?.format ?? "csv");
+  const [format, setFormat] = useState(existingSchedule?.format ?? "xlsx");
   const [recipients, setRecipients] = useState<string[]>(
     existingSchedule?.recipients ?? [],
   );
@@ -203,11 +204,11 @@ export function ScheduleForm({
     const email = emailInput.trim().toLowerCase();
     if (!email) return;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setEmailError("Invalid email address");
+      setEmailError("That does not look like an email address.");
       return;
     }
     if (recipients.includes(email)) {
-      setEmailError("Email already added");
+      setEmailError("That address is already on the list.");
       return;
     }
     setRecipients((prev) => [...prev, email]);
@@ -225,7 +226,7 @@ export function ScheduleForm({
     setError(null);
 
     if (recipients.length === 0) {
-      setError("At least one recipient is required.");
+      setError("Add at least one email address.");
       return;
     }
 
@@ -233,8 +234,10 @@ export function ScheduleForm({
 
     startTransition(async () => {
       try {
-        if (existingSchedule) {
-          await updateSchedule({
+        // The actions answer with a result rather than throwing, so a
+        // refused save used to close this window as if it had worked.
+        const res = existingSchedule
+          ? await updateSchedule({
             id: existingSchedule.id,
             data: {
               reportId,
@@ -243,20 +246,22 @@ export function ScheduleForm({
               format,
               recipients,
             },
-          });
-        } else {
-          await createSchedule({
+          })
+          : await createSchedule({
             reportId,
             cronExpr,
             timezone,
             format,
             recipients,
           });
+        if (!res.success) {
+          setError(friendlyError(res.error, "The schedule could not be saved. Try again."));
+          return;
         }
         onSaved();
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Failed to save schedule.",
+          err instanceof Error ? err.message : "The schedule could not be saved. Try again.",
         );
       }
     });
@@ -264,15 +269,24 @@ export function ScheduleForm({
 
   function handleDelete() {
     if (!existingSchedule) return;
-    if (!confirm("Remove this schedule? This cannot be undone.")) return;
+    // Asked in the footer, in place, rather than in a browser pop up.
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
 
     startTransition(async () => {
       try {
-        await deleteSchedule({ id: existingSchedule.id });
+        const res = await deleteSchedule({ id: existingSchedule.id });
+        if (!res.success) {
+          setError(friendlyError(res.error, "The schedule could not be deleted. Try again."));
+          setConfirmingDelete(false);
+          return;
+        }
         onSaved();
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Failed to delete schedule.",
+          err instanceof Error ? err.message : "The schedule could not be deleted. Try again.",
         );
       }
     });
@@ -280,7 +294,13 @@ export function ScheduleForm({
 
   /* ---- Time options ---- */
 
-  const hourOptions = Array.from({ length: 24 }, (_, i) => i);
+  // On a 12 hour clock with its own AM or PM, as every time here is; the
+  // schedule itself still stores the 24 hour value.
+  const hour24 = parseInt(hour, 10) || 0;
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  const isPm = hour24 >= 12;
+  const setHour12 = (h12: number, pm: boolean) => setHour(String((h12 % 12) + (pm ? 12 : 0)));
+  const hourOptions = Array.from({ length: 12 }, (_, i) => i + 1);
   const minuteOptions = [0, 15, 30, 45];
   const dayOfMonthOptions = Array.from({ length: 28 }, (_, i) => i + 1);
 
@@ -297,7 +317,7 @@ export function ScheduleForm({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={existingSchedule ? "Edit schedule" : "Schedule report"}
+        aria-label={existingSchedule ? "Email schedule" : "Email this report"}
         className="ta-modal flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden"
         style={{ borderRadius: "var(--radius-l)" }}
       >
@@ -307,10 +327,10 @@ export function ScheduleForm({
         >
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <h2 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
-              {existingSchedule ? "Edit Schedule" : "Schedule Report"}
+              {existingSchedule ? "Email schedule" : "Email this report"}
             </h2>
             <p style={{ margin: 0, font: "var(--type-subtitle)", color: "var(--text-secondary)" }}>
-              Emailed automatically, to the addresses below
+              Sent automatically to the people below, with the file attached
             </p>
           </div>
           {existingSchedule && (
@@ -330,8 +350,8 @@ export function ScheduleForm({
           {emailConfigured === false && (
             <Banner
               tone="warning"
-              title="Email delivery is not configured"
-              body="The schedule will be saved, but nothing is sent until SENDGRID_API_KEY and SENDGRID_FROM_EMAIL are set on the server."
+              title="Email is not turned on yet"
+              body="You can save the schedule now, but no emails go out until an administrator turns email on."
             />
           )}
 
@@ -346,15 +366,17 @@ export function ScheduleForm({
             >
               <option value="daily">Daily</option>
               <option value="weekly">Weekly</option>
-              <option value="biweekly">Biweekly (1st &amp; 15th)</option>
+              <option value="biweekly">Twice a month (1st and 15th)</option>
               <option value="monthly">Monthly</option>
-              <option value="custom">Custom cron</option>
+              <option value="custom">Custom (advanced)</option>
             </Select>
           </Field>
 
           {preset !== "custom" && (
             <div className="flex flex-wrap items-end gap-3">
-              {(preset === "weekly" || preset === "biweekly") && (
+              {/* Twice a month runs on the 1st and 15th, whatever the day
+                  of the week, so it asks for no day. */}
+              {preset === "weekly" && (
                 <div className="min-w-[160px] flex-1">
                   <Field label="Day" htmlFor="sched-dow">
                     <Select
@@ -392,34 +414,43 @@ export function ScheduleForm({
                 </div>
               )}
 
-              <Field label="Hour" htmlFor="sched-hour">
-                <Select
-                  id="sched-hour"
-                  value={hour}
-                  onChange={(e) => setHour(e.target.value)}
-                  style={{ width: 76 }}
-                >
-                  {hourOptions.map((h) => (
-                    <option key={h} value={String(h)}>
-                      {String(h).padStart(2, "0")}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-
-              <Field label="Min" htmlFor="sched-min">
-                <Select
-                  id="sched-min"
-                  value={minute}
-                  onChange={(e) => setMinute(e.target.value)}
-                  style={{ width: 76 }}
-                >
-                  {minuteOptions.map((m) => (
-                    <option key={m} value={String(m)}>
-                      {String(m).padStart(2, "0")}
-                    </option>
-                  ))}
-                </Select>
+              <Field label="Time" htmlFor="sched-hour">
+                <span className="flex items-center gap-1.5">
+                  <Select
+                    id="sched-hour"
+                    value={String(hour12)}
+                    onChange={(e) => setHour12(Number(e.target.value), isPm)}
+                    aria-label="Hour"
+                    style={{ width: 72 }}
+                  >
+                    {hourOptions.map((h) => (
+                      <option key={h} value={String(h)}>
+                        {h}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select
+                    value={minute}
+                    onChange={(e) => setMinute(e.target.value)}
+                    aria-label="Minutes"
+                    style={{ width: 72 }}
+                  >
+                    {minuteOptions.map((m) => (
+                      <option key={m} value={String(m)}>
+                        {String(m).padStart(2, "0")}
+                      </option>
+                    ))}
+                  </Select>
+                  <SegmentedControl
+                    items={[
+                      { value: "AM", label: "AM" },
+                      { value: "PM", label: "PM" },
+                    ]}
+                    value={isPm ? "PM" : "AM"}
+                    onChange={(v) => setHour12(hour12, v === "PM")}
+                    ariaLabel="AM or PM"
+                  />
+                </span>
               </Field>
             </div>
           )}
@@ -430,11 +461,11 @@ export function ScheduleForm({
               value={customCron}
               onChange={(e) => setCustomCron(e.target.value)}
               placeholder="0 8 * * *"
-              hint="minute hour day-of-month month day-of-week"
+              hint="Five values: minute, hour (0 to 23), day of the month, month, day of the week"
             />
           )}
 
-          <Field label="Timezone" htmlFor="sched-tz">
+          <Field label="Time zone" htmlFor="sched-tz">
             <Select
               id="sched-tz"
               value={timezone}
@@ -449,7 +480,7 @@ export function ScheduleForm({
             </Select>
           </Field>
 
-          <Field label="Format">
+          <Field label="Send as">
             <SegmentedControl
               items={FORMATS.map((f) => ({ value: f.value, label: f.label }))}
               value={format}
@@ -463,7 +494,7 @@ export function ScheduleForm({
             <div className="flex items-end gap-2">
               <div className="min-w-0 flex-1">
                 <Input
-                  label="Recipients"
+                  label="Send to"
                   type="email"
                   value={emailInput}
                   onChange={(e) => {
@@ -476,7 +507,7 @@ export function ScheduleForm({
                       addRecipient();
                     }
                   }}
-                  placeholder="email@example.com"
+                  placeholder="name@company.com"
                   leadingIcon={<Mail className="h-4 w-4" />}
                 />
               </div>
@@ -504,7 +535,7 @@ export function ScheduleForm({
                 here rather than at the bottom of the form. */}
             {recipients.length === 0 ? (
               <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                No recipients yet. At least one is needed before this can be saved.
+                Add at least one email address to save the schedule.
               </p>
             ) : (
               <ul
@@ -551,22 +582,28 @@ export function ScheduleForm({
           className="flex flex-none flex-wrap items-center gap-2 px-5 py-3"
           style={{ borderTop: "1px solid var(--stroke-divider)" }}
         >
-          {existingSchedule && (
-            <Button
-              hierarchy="link"
-              tone="error"
-              disabled={isPending}
-              onClick={handleDelete}
-            >
+          {existingSchedule && !confirmingDelete && (
+            <Button hierarchy="link" tone="error" disabled={isPending} onClick={handleDelete}>
               Delete schedule
             </Button>
+          )}
+          {existingSchedule && confirmingDelete && (
+            <span className="flex flex-wrap items-center gap-2">
+              <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>Stop emailing this report?</span>
+              <Button size="sm" hierarchy="primary" tone="error" disabled={isPending} onClick={handleDelete}>
+                Yes, delete schedule
+              </Button>
+              <Button size="sm" hierarchy="tertiary" disabled={isPending} onClick={() => setConfirmingDelete(false)}>
+                Keep it
+              </Button>
+            </span>
           )}
           <div className="flex-1" />
           <Button hierarchy="secondary" disabled={isPending} onClick={onClose}>
             Cancel
           </Button>
           <Button hierarchy="primary" disabled={isPending} onClick={handleSave}>
-            {isPending ? "Saving…" : existingSchedule ? "Update" : "Save"}
+            {isPending ? "Saving" : existingSchedule ? "Save changes" : "Save schedule"}
           </Button>
         </footer>
       </div>
@@ -606,4 +643,13 @@ function Field({
       {children}
     </div>
   );
+}
+
+/** A server refusal in words, rather than FORBIDDEN or a database message. */
+function friendlyError(code: string, fallback: string): string {
+  if (code === "FORBIDDEN") return "You do not have permission to schedule reports.";
+  if (code === "UNAUTHENTICATED") return "Your session ended. Sign in again, then try once more.";
+  if (/No .* found|Record to update not found/i.test(code)) return "This report is no longer available to you.";
+  if (/cron/i.test(code)) return "That custom schedule could not be read. Check the five values.";
+  return fallback;
 }

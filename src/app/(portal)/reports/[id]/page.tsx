@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
-import { getReport, getFilterOptions, getTenantUsers } from "@/actions/report.actions";
+import { getDataSourceDefinitions, getReport, getFilterOptions, getTenantUsers } from "@/actions/report.actions";
 import { ReportViewer } from "@/components/reports/report-viewer";
 import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { FileSearch } from "lucide-react";
@@ -16,10 +16,11 @@ export default async function ReportDetailPage({
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "REPORT_MANAGE")) redirect("/dashboard");
 
-  const [reportResult, filterResult, usersResult] = await Promise.all([
+  const [reportResult, filterResult, usersResult, sourcesResult] = await Promise.all([
     getReport({ id }),
     getFilterOptions(undefined as never),
     getTenantUsers(undefined as never),
+    getDataSourceDefinitions(undefined as never),
   ]);
 
   if (!reportResult.success) {
@@ -29,15 +30,15 @@ export default async function ReportDetailPage({
     // they cannot open exists.
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader pinned title="Report" subtitle="Saved and scheduled payroll reports" />
+        <PageHeader pinned title="Report" />
         <Card padding={0}>
           <EmptyState
             icon={<FileSearch className="h-8 w-8" />}
             title="This report is not available"
-            body="It has been deleted, or it belongs to someone who has not shared it with you."
+            body="It was deleted, or it belongs to someone who has not shared it with you."
             action={
               <LinkButton href="/reports" hierarchy="primary" size="sm">
-                Back to Reports
+                Back to reports
               </LinkButton>
             }
           />
@@ -51,6 +52,7 @@ export default async function ReportDetailPage({
       report={reportResult.data}
       filterOptions={filterResult.success ? filterResult.data : null}
       tenantUsers={usersResult.success ? usersResult.data : []}
+      source={sourcesResult.success ? sourcesResult.data.find((ds) => ds.id === reportResult.data.dataSource) ?? null : null}
     />
   );
 }

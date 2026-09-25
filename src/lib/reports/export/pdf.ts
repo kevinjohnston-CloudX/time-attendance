@@ -1,3 +1,4 @@
+import { cellText } from "../cell";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const PdfPrinter = require("pdfmake");
 import type { TDocumentDefinitions, TFontDictionary } from "pdfmake/interfaces";
@@ -27,9 +28,8 @@ export async function generatePdf(
 
   const body = result.rows.map((row) =>
     result.columns.map((col) => {
-      const val = row[col.id];
       return {
-        text: val === null || val === undefined ? "" : String(val),
+        text: cellText(row[col.id], col),
         fontSize: 7,
         alignment: (col.type === "number" ? "right" : "left") as "right" | "left",
       };
@@ -44,7 +44,7 @@ export async function generatePdf(
     content: [
       { text: title, fontSize: 14, bold: true, margin: [0, 0, 0, 8] },
       {
-        text: `${result.totalRows} rows · Generated ${new Date().toLocaleString()}`,
+        text: `${result.totalRows.toLocaleString("en-US")} ${result.totalRows === 1 ? "row" : "rows"} · Made ${new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}`,
         fontSize: 8,
         color: "#71717a",
         margin: [0, 0, 0, 12],

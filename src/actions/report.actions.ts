@@ -79,9 +79,10 @@ export const updateReport = withRBAC(
   async ({ tenantId }, input: { id: string; data: unknown }) => {
     if (!tenantId) throw new Error("Tenant context required");
     const parsed = updateReportSchema.parse(input.data);
+    const session = await getSessionUserId();
 
     const existing = await db.reportDefinition.findFirstOrThrow({
-      where: { id: input.id, tenantId },
+      where: { id: input.id, ...editableWhere(tenantId, session) },
     });
 
     if (parsed.config) {
@@ -109,8 +110,10 @@ export const deleteReport = withRBAC(
   async ({ tenantId }, input: { id: string }) => {
     if (!tenantId) throw new Error("Tenant context required");
 
+    const session = await getSessionUserId();
+    // Only the owner deletes: a report shared for editing is still theirs.
     const report = await db.reportDefinition.findFirstOrThrow({
-      where: { id: input.id, tenantId, isTemplate: false },
+      where: { id: input.id, tenantId, ownerId: session, isTemplate: false },
     });
 
     await db.reportDefinition.delete({ where: { id: report.id } });
@@ -134,7 +137,7 @@ export const duplicateReport = withRBAC(
     const session = await getSessionUserId();
 
     const source = await db.reportDefinition.findFirstOrThrow({
-      where: { id: input.id, tenantId },
+      where: { id: input.id, ...viewableWhere(tenantId, session) },
     });
 
     const copy = await db.reportDefinition.create({
@@ -194,9 +197,10 @@ export const getReport = withRBAC(
   "REPORT_MANAGE",
   async ({ tenantId }, input: { id: string }) => {
     if (!tenantId) throw new Error("Tenant context required");
+    const session = await getSessionUserId();
 
     const report = await db.reportDefinition.findFirstOrThrow({
-      where: { id: input.id, tenantId },
+      where: { id: input.id, ...viewableWhere(tenantId, session) },
       include: {
         folder: true,
         owner: { select: { id: true, name: true } },
@@ -206,7 +210,10 @@ export const getReport = withRBAC(
       },
     });
 
-    return report;
+    // What the page may offer this person. The actions check it again.
+    const isOwner = report.ownerId === session;
+    const canEdit = isOwner || report.shares.some((s) => s.user.id === session && s.canEdit);
+    return { ...report, access: { isOwner, canEdit } };
   }
 );
 
@@ -224,7 +231,7 @@ export const runReport = withRBAC(
     if (input.reportId) {
       // Run a saved report
       const report = await db.reportDefinition.findFirstOrThrow({
-        where: { id: input.reportId, tenantId },
+        where: { id: input.reportId, ...viewableWhere(tenantId, session) },
       });
       dataSourceId = report.dataSource as DataSourceId;
       config = reportConfigSchema.parse(report.config);
@@ -285,6 +292,37 @@ export const runReport = withRBAC(
       }
       throw err;
     }
+  }
+);
+
+// ─── Export ─────────────────────────────────────────────────────────────────
+
+/**
+ * A saved report's rows for a download, under the same rule as opening it:
+ * yours, shared with you, or published to everyone in your company.
+ *
+ * <p>The download route used to look the report up by id alone, with no
+ * company and no owner check, so anyone with Reports access who had a link
+ * could download any company's report. It also always used the saved dates;
+ * it now takes the dates on screen, so the file matches what was shown.
+ * A download is not a run and is not recorded as one.
+ */
+export const getReportForExport = withRBAC(
+  "REPORT_MANAGE",
+  async ({ tenantId }, input: { id: string; dateRange?: unknown }): Promise<{ name: string; result: ReportResult }> => {
+    if (!tenantId) throw new Error("Tenant context required");
+    const session = await getSessionUserId();
+
+    const report = await db.reportDefinition.findFirstOrThrow({
+      where: { id: input.id, ...viewableWhere(tenantId, session) },
+    });
+    let config = reportConfigSchema.parse(report.config);
+    if (input.dateRange) {
+      const { dateRangeSchema } = await import("@/lib/validators/report.schema");
+      config = { ...config, dateRange: dateRangeSchema.parse(input.dateRange) };
+    }
+    const result = await getDataSource(report.dataSource as DataSourceId).execute(config, tenantId);
+    return { name: report.name, result };
   }
 );
 
@@ -361,8 +399,9 @@ export const moveReport = withRBAC(
   async ({ tenantId }, input: { reportId: string; folderId: string | null }) => {
     if (!tenantId) throw new Error("Tenant context required");
 
+    const session = await getSessionUserId();
     await db.reportDefinition.findFirstOrThrow({
-      where: { id: input.reportId, tenantId },
+      where: { id: input.reportId, ...editableWhere(tenantId, session) },
     });
 
     return db.reportDefinition.update({
@@ -379,9 +418,10 @@ export const shareReport = withRBAC(
   async ({ tenantId }, input: { reportId: string; data: unknown }) => {
     if (!tenantId) throw new Error("Tenant context required");
     const parsed = shareReportSchema.parse(input.data);
+    const session = await getSessionUserId();
 
     await db.reportDefinition.findFirstOrThrow({
-      where: { id: input.reportId, tenantId },
+      where: { id: input.reportId, ...editableWhere(tenantId, session) },
     });
 
     return db.reportShare.upsert({
@@ -406,11 +446,12 @@ export const unshareReport = withRBAC(
   async ({ tenantId }, input: { reportId: string; userId: string }) => {
     if (!tenantId) throw new Error("Tenant context required");
 
+    const session = await getSessionUserId();
     await db.reportShare.deleteMany({
       where: {
         reportId: input.reportId,
         sharedWith: input.userId,
-        report: { tenantId },
+        report: editableWhere(tenantId, session),
       },
     });
 
@@ -437,9 +478,10 @@ export const createSchedule = withRBAC(
     if (!tenantId) throw new Error("Tenant context required");
     const parsed = reportScheduleSchema.parse(input);
 
-    // Verify report belongs to tenant
+    // Only someone who may change the report may schedule it.
+    const session = await getSessionUserId();
     await db.reportDefinition.findFirstOrThrow({
-      where: { id: parsed.reportId, tenantId },
+      where: { id: parsed.reportId, ...editableWhere(tenantId, session) },
     });
 
     // Calculate first nextRunAt
@@ -467,11 +509,10 @@ export const updateSchedule = withRBAC(
     const parsed = reportScheduleSchema.parse(input.data);
 
     // Verify schedule's report belongs to tenant
-    const existing = await db.reportSchedule.findFirstOrThrow({
-      where: { id: input.id },
-      include: { report: { select: { tenantId: true } } },
+    const session = await getSessionUserId();
+    await db.reportSchedule.findFirstOrThrow({
+      where: { id: input.id, report: editableWhere(tenantId, session) },
     });
-    if (existing.report.tenantId !== tenantId) throw new Error("Access denied");
 
     const nextRunAt = calculateNextRun(parsed.cronExpr);
 
@@ -493,11 +534,10 @@ export const deleteSchedule = withRBAC(
   async ({ tenantId }, input: { id: string }) => {
     if (!tenantId) throw new Error("Tenant context required");
 
-    const existing = await db.reportSchedule.findFirstOrThrow({
-      where: { id: input.id },
-      include: { report: { select: { tenantId: true } } },
+    const session = await getSessionUserId();
+    await db.reportSchedule.findFirstOrThrow({
+      where: { id: input.id, report: editableWhere(tenantId, session) },
     });
-    if (existing.report.tenantId !== tenantId) throw new Error("Access denied");
 
     await db.reportSchedule.delete({ where: { id: input.id } });
     return { deleted: true };
@@ -509,11 +549,10 @@ export const toggleSchedule = withRBAC(
   async ({ tenantId }, input: { id: string; isActive: boolean }) => {
     if (!tenantId) throw new Error("Tenant context required");
 
-    const existing = await db.reportSchedule.findFirstOrThrow({
-      where: { id: input.id },
-      include: { report: { select: { tenantId: true } } },
+    const session = await getSessionUserId();
+    await db.reportSchedule.findFirstOrThrow({
+      where: { id: input.id, report: editableWhere(tenantId, session) },
     });
-    if (existing.report.tenantId !== tenantId) throw new Error("Access denied");
 
     return db.reportSchedule.update({
       where: { id: input.id },
@@ -595,6 +634,27 @@ export const getFilterOptions = withRBAC(
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 import { auth } from "@/lib/auth";
+
+/**
+ * Who may open a saved report: its owner, anyone it is shared with, and
+ * everyone in the company once it is published to them. Scoped in the query,
+ * never checked after fetching, so a report you cannot open reads exactly
+ * like one that does not exist.
+ */
+function viewableWhere(tenantId: string, userId: string): Prisma.ReportDefinitionWhereInput {
+  return {
+    tenantId,
+    OR: [{ ownerId: userId }, { visibility: "TENANT" }, { shares: { some: { sharedWith: userId } } }],
+  };
+}
+
+/** Who may change one: its owner, and people it is shared with who were given edit rights. */
+function editableWhere(tenantId: string, userId: string): Prisma.ReportDefinitionWhereInput {
+  return {
+    tenantId,
+    OR: [{ ownerId: userId }, { shares: { some: { sharedWith: userId, canEdit: true } } }],
+  };
+}
 
 async function getSessionUserId(): Promise<string> {
   const session = await auth();

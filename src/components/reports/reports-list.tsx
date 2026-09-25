@@ -45,7 +45,7 @@ const ACCESS_LABEL = {
 
 type Access = keyof typeof ACCESS_LABEL;
 
-const COLUMNS = "minmax(240px, 2fr) minmax(140px, 1fr) minmax(120px, 0.9fr) minmax(110px, 0.8fr) 64px 104px 20px";
+const COLUMNS = "minmax(200px, 2fr) minmax(130px, 1fr) minmax(90px, 0.8fr) minmax(96px, 0.8fr) 44px 96px 16px";
 
 export function ReportsList({
   reports,
@@ -216,7 +216,7 @@ export function ReportsList({
               )}
               {yearOptions.length > 1 && (
                 <FilterSelectChip
-                  label="Last changed"
+                  label="Updated"
                   allLabel="Any year"
                   value={year}
                   options={yearOptions}
@@ -264,9 +264,9 @@ export function ReportsList({
             />
           ) : (
             <div className="overflow-x-auto">
-              <div className="min-w-[860px]">
+              <div className="min-w-[720px]">
                 <div
-                  className="grid items-center gap-x-4 px-5 py-2.5"
+                  className="grid items-center gap-x-3 px-5 py-2.5"
                   style={{ gridTemplateColumns: COLUMNS, borderBottom: "1px solid var(--stroke-divider)" }}
                   role="presentation"
                 >
@@ -275,7 +275,7 @@ export function ReportsList({
                   <span className="wms-overline">Owner</span>
                   <span className="wms-overline">Access</span>
                   <span className="wms-overline text-right">Runs</span>
-                  <span className="wms-overline">Last changed</span>
+                  <span className="wms-overline whitespace-nowrap">Updated</span>
                   <span />
                 </div>
                 <ul className="m-0 list-none p-0">
@@ -288,7 +288,7 @@ export function ReportsList({
                         <li key={`${access}-${report.id}`}>
                           <Link
                             href={`/reports/${report.id}`}
-                            className="ta-hoverable grid min-h-[56px] items-center gap-x-4 px-5 py-2.5"
+                            className="ta-hoverable grid min-h-[56px] items-center gap-x-3 px-5 py-2.5"
                             style={{
                               gridTemplateColumns: COLUMNS,
                               borderBottom: "1px solid var(--stroke-divider)",

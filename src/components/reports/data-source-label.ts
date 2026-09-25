@@ -33,7 +33,7 @@ const LABELS: Record<string, string> = {
 
 /** One plain line on what each report shows, for the Standard reports cards. */
 const DESCRIPTIONS: Record<string, string> = {
-  HOURS_SUMMARY:     "Regular, overtime, double time and paid leave hours for each employee.",
+  HOURS_SUMMARY:     "Regular, overtime and double time hours for each employee, with their PTO balance.",
   ATTENDANCE_DETAIL: "Each day's clock in and clock out times, meals and hours worked.",
   EXCEPTION_REPORT:  "Missed punches, absences and other rule breaks, and whether they were fixed.",
   PUNCH_AUDIT:       "Every punch, where it came from, and any corrections or approvals.",

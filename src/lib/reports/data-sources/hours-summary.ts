@@ -19,7 +19,7 @@ const fieldMap: FieldMap = {
 export const hoursSummarySource: DataSourceDefinition = {
   id: "HOURS_SUMMARY",
   label: "Hours summary",
-  description: "Regular, overtime, double time and paid leave hours for each employee.",
+  description: "Regular, overtime and double time hours for each employee, with their PTO balance.",
   icon: "Clock",
   columns: [
     { id: "employeeName",  label: "Employee",   type: "string",  defaultVisible: true },
@@ -29,7 +29,7 @@ export const hoursSummarySource: DataSourceDefinition = {
     { id: "regMinutes",    label: "Regular",         type: "number",  defaultVisible: true },
     { id: "otMinutes",     label: "Overtime",          type: "number",  defaultVisible: true },
     { id: "dtMinutes",     label: "Double time",          type: "number",  defaultVisible: true },
-    { id: "ptoMinutes",    label: "PTO",         type: "number",  defaultVisible: true },
+    { id: "ptoMinutes",    label: "PTO balance",         type: "number",  defaultVisible: true },
     { id: "sickMinutes",   label: "Sick",        type: "number",  defaultVisible: false },
     { id: "holidayMinutes",label: "Holiday",     type: "number",  defaultVisible: false },
     { id: "totalMinutes",  label: "Total",       type: "number",  defaultVisible: true },
@@ -80,7 +80,8 @@ export const hoursSummarySource: DataSourceDefinition = {
       take: config.limit,
     });
 
-    // Get PTO balances for the relevant employees
+    // Get PTO balances for the relevant employees. This is what each person
+    // has left this year, not PTO taken in the period, hence "PTO balance".
     const employeeIds = timesheets.map((ts) => ts.employeeId);
     const year = new Date().getFullYear();
 

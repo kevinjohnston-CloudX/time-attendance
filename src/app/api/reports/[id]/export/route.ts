@@ -1,74 +1,70 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
-import { db } from "@/lib/db";
-import { getDataSource } from "@/lib/reports/data-sources";
-import { reportConfigSchema, type DataSourceId } from "@/lib/validators/report.schema";
+import { getReportForExport } from "@/actions/report.actions";
 import { generateCsv } from "@/lib/reports/export/csv";
 import { generatePdf } from "@/lib/reports/export/pdf";
 import { generateXlsx } from "@/lib/reports/export/xlsx";
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+/**
+ * A saved report as a file: CSV, Excel or PDF.
+ *
+ * <p>Built on a server action that carries the permission check and the
+ * report scope, as the other report downloads are: only a report you could
+ * open on screen can be downloaded, and one you cannot answers 404, the same
+ * as one that does not exist.
+ *
+ * <p>`range` is the date range on screen, as JSON. Without it the report's
+ * saved dates are used, which is what a bookmarked link gets.
+ */
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = await auth();
-  if (!session?.user) {
-    return new NextResponse("Unauthorized", { status: 401 });
-  }
-  if (!hasPermission(session.user.role, "REPORT_MANAGE")) {
-    return new NextResponse("Forbidden", { status: 403 });
-  }
-
   const format = req.nextUrl.searchParams.get("format") ?? "csv";
+  if (!["csv", "pdf", "xlsx"].includes(format)) {
+    return new NextResponse("Use csv, pdf or xlsx.", { status: 400 });
+  }
 
-  const report = await db.reportDefinition.findFirst({
-    where: { id },
-  });
-  if (!report) {
+  let dateRange: unknown;
+  const range = req.nextUrl.searchParams.get("range");
+  if (range) {
+    try {
+      dateRange = JSON.parse(range);
+    } catch {
+      return new NextResponse("The date range could not be read.", { status: 400 });
+    }
+  }
+
+  const res = await getReportForExport({ id, dateRange });
+  if (!res.success) {
+    if (res.error === "UNAUTHENTICATED") return new NextResponse("Sign in to download this report.", { status: 401 });
+    // Forbidden and not yours both read as not found, so a link does not
+    // confirm that a report exists.
     return new NextResponse("Report not found", { status: 404 });
   }
 
-  const config = reportConfigSchema.parse(report.config);
-  const source = getDataSource(report.dataSource as DataSourceId);
-  const tenantId = report.tenantId;
+  const { name, result } = res.data;
+  const safeName = name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "report";
 
-  const result = await source.execute(config, tenantId);
-
-  const safeName = report.name.replace(/[^a-z0-9]/gi, "-");
-
-  switch (format) {
-    case "csv": {
-      const csv = generateCsv(result);
-      return new NextResponse(csv, {
-        headers: {
-          "Content-Type": "text/csv",
-          "Content-Disposition": `attachment; filename="${safeName}.csv"`,
-        },
-      });
-    }
-    case "pdf": {
-      const pdf = await generatePdf(result, report.name);
-      return new NextResponse(new Uint8Array(pdf), {
-        headers: {
-          "Content-Type": "application/pdf",
-          "Content-Disposition": `attachment; filename="${safeName}.pdf"`,
-        },
-      });
-    }
-    case "xlsx": {
-      const xlsx = await generateXlsx(result, report.name);
-      return new NextResponse(new Uint8Array(xlsx), {
-        headers: {
-          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "Content-Disposition": `attachment; filename="${safeName}.xlsx"`,
-        },
-      });
-    }
-    default:
-      return new NextResponse("Invalid format. Use csv, pdf, or xlsx.", {
-        status: 400,
-      });
+  if (format === "csv") {
+    return new NextResponse(generateCsv(result), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${safeName}.csv"`,
+      },
+    });
   }
+  if (format === "pdf") {
+    const pdf = await generatePdf(result, name);
+    return new NextResponse(new Uint8Array(pdf), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${safeName}.pdf"`,
+      },
+    });
+  }
+  const xlsx = await generateXlsx(result, name);
+  return new NextResponse(new Uint8Array(xlsx), {
+    headers: {
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="${safeName}.xlsx"`,
+    },
+  });
 }
