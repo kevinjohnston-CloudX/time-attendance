@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { CalendarPlus, Camera, ChevronLeft, ChevronRight, Clock, Coffee, DoorClosed, DoorOpen, X } from "lucide-react";
+import Link from "next/link";
+import { CalendarPlus, Camera, ChevronLeft, ChevronRight, Clock, Coffee, DoorClosed, DoorOpen, UserCircle, X } from "lucide-react";
 import { Badge, Button } from "@/components/ui";
 import { getOnSitePerson } from "@/actions/presence.actions";
 import { addDays, dayLabel, DAYS_BACK } from "@/lib/presence/days";
@@ -60,6 +61,7 @@ export function PersonPanel({
   onPhotoSaved,
   scheduling = null,
   onScheduled,
+  canViewProfile = false,
 }: {
   siteId: string;
   employeeId: string;
@@ -88,6 +90,12 @@ export function PersonPanel({
    */
   scheduling?: { live: boolean } | null;
   onScheduled?: () => void;
+  /**
+   * Whether to link to the person's employee profile. The profile page
+   * checks the same permission itself; this only avoids a link that would
+   * send someone without it straight back out.
+   */
+  canViewProfile?: boolean;
 }) {
   const [day, setDay] = useState(initialDay ?? today);
   const [editingPhoto, setEditingPhoto] = useState(false);
@@ -243,6 +251,12 @@ export function PersonPanel({
               <span className={styles.ppRole}>
                 {person?.jobTitle ?? detail?.jobTitle ?? person?.department ?? detail?.department ?? ""}
               </span>
+              {canViewProfile && (
+                <Link href={`/admin/employees/${employeeId}`} className={styles.ppProfileLink}>
+                  <UserCircle className="h-4 w-4 flex-none" aria-hidden="true" />
+                  View profile
+                </Link>
+              )}
               {tags.length > 0 && <span className={styles.ppTags}>{tags}</span>}
             </div>
           </div>

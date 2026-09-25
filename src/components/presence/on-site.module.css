@@ -2502,6 +2502,31 @@
   overflow: hidden;
 }
 
+/* The way to the full employee record, the same quiet accent link the
+   Timecards header uses. */
+.ppProfileLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin-top: 2px;
+  font: var(--type-body2);
+  font-weight: var(--weight-medium);
+  color: var(--text-accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ppProfileLink:hover {
+  text-decoration: underline;
+}
+
+.ppProfileLink:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: 4px;
+}
+
 .ppTags {
   display: flex;
   flex-wrap: wrap;
