@@ -13,7 +13,11 @@ import { ReportBuilder } from "@/components/reports/report-builder/report-builde
  * client component. A header rendered here would either duplicate that one or
  * carry buttons it cannot wire up.
  */
-export default async function NewReportPage() {
+export default async function NewReportPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ source?: string }>;
+}) {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "REPORT_MANAGE")) redirect("/dashboard");
@@ -41,5 +45,10 @@ export default async function NewReportPage() {
     );
   }
 
-  return <ReportBuilder dataSources={dsResult.data} filterOptions={filterResult.data} />;
+  // A Standard reports card opens the builder on its own report. Anything that
+  // is not one of the sources on offer is ignored rather than trusted.
+  const { source } = (await searchParams) ?? {};
+  const initialSource = dsResult.data.find((ds) => ds.id === source)?.id ?? null;
+
+  return <ReportBuilder dataSources={dsResult.data} filterOptions={filterResult.data} initialSource={initialSource} />;
 }

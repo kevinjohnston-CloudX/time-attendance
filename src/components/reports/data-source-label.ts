@@ -1,10 +1,11 @@
 import {
-  AlertCircle,
-  CalendarDays,
+  CalendarClock,
+  CalendarRange,
   Clock,
-  FileSearch,
   FileText,
-  Wallet,
+  History,
+  Hourglass,
+  TriangleAlert,
 } from "lucide-react";
 import type { ElementType } from "react";
 
@@ -15,27 +16,54 @@ import type { ElementType } from "react";
  * every source there carries an `execute` that reaches for Prisma, so a client
  * component importing that registry would drag the database client into the
  * browser bundle. This is the presentation half of it and nothing else, shared
- * by the list, the viewer and the builder — those three had three copies of
- * the same label map, and they had already drifted apart on "Leave Balances".
+ * by the list, the viewer and the builder. The names match the registry's.
+ *
+ * <p>Named for what the report answers, in the words HR uses, rather than
+ * for the table it reads: "Time off requests", not "Leave Summary".
  */
 
 const LABELS: Record<string, string> = {
-  HOURS_SUMMARY:     "Hours Summary",
-  ATTENDANCE_DETAIL: "Attendance Detail",
-  LEAVE_SUMMARY:     "Leave Summary",
-  LEAVE_BALANCE:     "Leave Balances",
-  PUNCH_AUDIT:       "Punch Audit",
-  EXCEPTION_REPORT:  "Exception Report",
+  HOURS_SUMMARY:     "Hours summary",
+  ATTENDANCE_DETAIL: "Daily attendance",
+  EXCEPTION_REPORT:  "Exceptions",
+  PUNCH_AUDIT:       "Punch audit",
+  LEAVE_SUMMARY:     "Time off requests",
+  LEAVE_BALANCE:     "Time off balances",
+};
+
+/** One plain line on what each report shows, for the Standard reports cards. */
+const DESCRIPTIONS: Record<string, string> = {
+  HOURS_SUMMARY:     "Regular, overtime, double time and paid leave hours for each employee.",
+  ATTENDANCE_DETAIL: "Each day's clock in and clock out times, meals and hours worked.",
+  EXCEPTION_REPORT:  "Missed punches, absences and other rule breaks, and whether they were fixed.",
+  PUNCH_AUDIT:       "Every punch, where it came from, and any corrections or approvals.",
+  LEAVE_SUMMARY:     "Time off requests with their type, dates, length and status.",
+  LEAVE_BALANCE:     "How much time off each employee has earned, used and has left.",
 };
 
 const ICONS: Record<string, ElementType> = {
   HOURS_SUMMARY:     Clock,
-  ATTENDANCE_DETAIL: CalendarDays,
-  LEAVE_SUMMARY:     CalendarDays,
-  LEAVE_BALANCE:     Wallet,
-  PUNCH_AUDIT:       FileSearch,
-  EXCEPTION_REPORT:  AlertCircle,
+  ATTENDANCE_DETAIL: CalendarClock,
+  EXCEPTION_REPORT:  TriangleAlert,
+  PUNCH_AUDIT:       History,
+  LEAVE_SUMMARY:     CalendarRange,
+  LEAVE_BALANCE:     Hourglass,
 };
+
+/** The order the Standard reports cards are laid out in: hours first, time off last. */
+export const STANDARD_REPORTS = [
+  "HOURS_SUMMARY",
+  "ATTENDANCE_DETAIL",
+  "EXCEPTION_REPORT",
+  "PUNCH_AUDIT",
+  "LEAVE_SUMMARY",
+  "LEAVE_BALANCE",
+] as const;
+
+/** The one line under a report's name. */
+export function dataSourceDescription(id: string): string {
+  return DESCRIPTIONS[id] ?? "";
+}
 
 /**
  * The human name of a data source.

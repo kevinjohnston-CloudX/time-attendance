@@ -3,20 +3,19 @@ import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getMyReports, getMyFolders } from "@/actions/report.actions";
 import { Plus } from "lucide-react";
-import { ReportsList } from "@/components/reports/reports-list";
-import { LinkButton, PageHeader } from "@/components/ui";
+import { ReportsList, type ReportRow } from "@/components/reports/reports-list";
+import { Banner, LinkButton, PageHeader } from "@/components/ui";
 
 /**
- * Reports, as the portal design's list screen.
+ * Reports: the six standard reports to start from, then the saved ones.
  *
  * <p>What you can see is still decided entirely by `getMyReports`, which is
- * permission-scoped and returns your own reports, the ones shared with you and
- * the ones published to the tenant. The search, type, year and folder below
- * narrow those rows. They never widen them, and no tab re-queries.
+ * permission scoped and returns your own reports, the ones shared with you and
+ * the ones published to everyone. The search, type, year and folder narrow
+ * those rows in the list below. They never widen them.
  *
- * <p>All four live in the query string rather than in React state: a narrowed
- * list of reports is something one person sends another, and the previous
- * folder filter was lost on every reload.
+ * <p>Rows go to the list trimmed to what it draws, so a report's saved
+ * configuration never travels to the browser just to print its name.
  */
 export default async function ReportsPage({
   searchParams,
@@ -32,11 +31,42 @@ export default async function ReportsPage({
     getMyFolders(undefined as never),
   ]);
 
+  type Row = {
+    id: string;
+    name: string;
+    description: string | null;
+    dataSource: string;
+    updatedAt: Date;
+    folderId: string | null;
+    owner: { name: string | null } | null;
+    _count: { runs: number };
+  };
+  const trim = (r: Row): ReportRow => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    dataSource: r.dataSource,
+    updatedAt: r.updatedAt.toISOString(),
+    folderId: r.folderId,
+    ownerName: r.owner?.name ?? null,
+    runs: r._count.runs,
+  });
+
   const reports = reportsResult.success
-    ? reportsResult.data
+    ? {
+        owned: reportsResult.data.owned.map(trim),
+        shared: reportsResult.data.shared.map(trim),
+        tenantWide: reportsResult.data.tenantWide.map(trim),
+      }
     : { owned: [], shared: [], tenantWide: [] };
 
-  const folders = foldersResult.success ? foldersResult.data : [];
+  const folders = (foldersResult.success ? foldersResult.data : []).map((f) => ({
+    id: f.id,
+    name: f.name,
+    parentId: f.parentId,
+    reportCount: f._count.reports,
+    children: f.children.map((c) => ({ id: c.id, name: c.name })),
+  }));
 
   const sp = (await searchParams) ?? {};
 
@@ -44,13 +74,21 @@ export default async function ReportsPage({
     <div className="flex flex-col gap-4">
       <PageHeader pinned
         title="Reports"
-        subtitle="Saved and scheduled payroll reports"
+        subtitle="Hours, attendance, exceptions and time off, ready to run or saved your way"
         actions={
           <LinkButton href="/reports/new" hierarchy="primary" leadingIcon={<Plus className="h-4 w-4" />}>
-            New Report
+            New report
           </LinkButton>
         }
       />
+
+      {!reportsResult.success && (
+        <Banner
+          tone="error"
+          title="Saved reports could not be loaded"
+          body="The standard reports still work. Reload the page to try the saved ones again."
+        />
+      )}
 
       <ReportsList
         reports={reports}

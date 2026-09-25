@@ -16,8 +16,8 @@ const fieldMap: FieldMap = {
 
 export const leaveBalanceSource: DataSourceDefinition = {
   id: "LEAVE_BALANCE",
-  label: "Leave Balances",
-  description: "Current leave balances by employee and leave type.",
+  label: "Time off balances",
+  description: "How much time off each employee has earned, used and has left.",
   icon: "Wallet",
   columns: [
     { id: "employeeName",   label: "Employee",       type: "string",  defaultVisible: true },

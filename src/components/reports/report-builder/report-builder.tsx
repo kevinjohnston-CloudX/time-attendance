@@ -69,17 +69,22 @@ const DOC_WIDTH = 900;
 export function ReportBuilder({
   dataSources,
   filterOptions,
+  initialSource = null,
 }: {
   dataSources: DataSourceMeta[];
   filterOptions: FilterOptions;
+  /** The report a Standard reports card was opened on, already picked. */
+  initialSource?: DataSourceId | null;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   // Builder state
-  const [activeTab, setActiveTab] = useState<Tab>("Source");
-  const [dataSource, setDataSource] = useState<DataSourceId | null>(null);
-  const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<Tab>(initialSource ? "Date Range" : "Source");
+  const [dataSource, setDataSource] = useState<DataSourceId | null>(initialSource);
+  const [selectedColumns, setSelectedColumns] = useState<string[]>(
+    () => dataSources.find((ds) => ds.id === initialSource)?.columns.filter((c) => c.defaultVisible).map((c) => c.id) ?? []
+  );
   const [filters, setFilters] = useState<FilterDef[]>([]);
   const [dateRange, setDateRange] = useState<DateRange>(() => {
     const pp = filterOptions.payPeriods[0];
@@ -96,7 +101,7 @@ export function ReportBuilder({
   const [isRunning, setIsRunning] = useState(false);
 
   // Save state
-  const [reportName, setReportName] = useState("");
+  const [reportName, setReportName] = useState(() => dataSources.find((ds) => ds.id === initialSource)?.label ?? "");
   const [reportDesc, setReportDesc] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
 

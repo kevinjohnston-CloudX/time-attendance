@@ -18,8 +18,8 @@ const fieldMap: FieldMap = {
 
 export const punchAuditSource: DataSourceDefinition = {
   id: "PUNCH_AUDIT",
-  label: "Punch Audit",
-  description: "Raw punch log with times, corrections, sources, and approval status.",
+  label: "Punch audit",
+  description: "Every punch, where it came from, and any corrections or approvals.",
   icon: "FileSearch",
   columns: [
     { id: "employeeName",  label: "Employee",       type: "string",  defaultVisible: true },

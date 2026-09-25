@@ -1,60 +1,51 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { format } from "date-fns";
-import { FileText } from "lucide-react";
-import {
-  Card,
-  EmptyState,
-  FilterBar,
-  FilterChip,
-  LinkButton,
-  Table,
-  TableFooter,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
-  Toolbar,
-} from "@/components/ui";
-import { dataSourceIcon, dataSourceLabel } from "./data-source-label";
+import { ChevronRight, FileText } from "lucide-react";
+import { useRouter } from "@/components/layout/navigation-progress";
+import { Button, EmptyState, FilterSelectChip, SearchInput } from "@/components/ui";
+import { STANDARD_REPORTS, dataSourceDescription, dataSourceIcon, dataSourceLabel } from "./data-source-label";
 import { FolderTree, type FolderNode } from "./report-list/folder-tree";
-import { ReportsFilters } from "./report-list/reports-filters";
 
 /**
- * The saved reports list, as the portal design's list screen.
+ * The Reports page below its header: the standard reports anyone can start
+ * from, then the reports people have saved.
  *
- * <p>Three sources in one table — the reports you own, the ones shared with
- * you and the ones the tenant publishes — because they are the same kind of
- * record and the old three-grids-of-cards layout made the same report look
- * like three different things depending on which heading it fell under. Which
- * of the three a row came from is a column, so nothing is lost.
+ * <p>The standard reports come first because they are how most people will
+ * use this page. Each is one of the six data sources the builder reads,
+ * named for what it answers and opened with that source already picked, so
+ * nobody has to know what a data source is to get their hours out.
  *
- * <p>The design's Schedule, Last Run and Recipients columns are not here. The
- * list query loads each report with its folder, its owner and a count of its
- * runs, and nothing else; schedules and run times are loaded one report at a
- * time by the viewer. Adding them would mean changing what this screen asks
- * the database for, which is not a presentation change.
+ * <p>What saved reports you can see is still decided entirely by
+ * `getMyReports`: your own, the ones shared with you and the ones published
+ * to everyone. The search, type, year and folder only narrow those rows, and
+ * all four live in the link, so a narrowed list can be sent to somebody.
  */
 
-/** Everything this list needs from a report row. Prisma's own rows satisfy it. */
+/** Everything this list needs from a saved report. */
 export interface ReportRow {
   id: string;
   name: string;
-  description?: string | null;
+  description: string | null;
   dataSource: string;
-  updatedAt: Date | string;
-  folderId?: string | null;
-  owner?: { name: string | null } | null;
-  _count?: { runs: number };
+  updatedAt: string;
+  folderId: string | null;
+  ownerName: string | null;
+  runs: number;
 }
 
-/** Where a row came from — the three lists `getMyReports` returns. */
+/** Where a row came from: the three lists `getMyReports` returns. */
 const ACCESS_LABEL = {
-  owned: "Mine",
-  shared: "Shared with me",
-  tenantWide: "Organization",
+  owned: "Yours",
+  shared: "Shared with you",
+  tenantWide: "Everyone",
 } as const;
 
 type Access = keyof typeof ACCESS_LABEL;
+
+const COLUMNS = "minmax(240px, 2fr) minmax(140px, 1fr) minmax(120px, 0.9fr) minmax(110px, 0.8fr) 64px 104px 20px";
 
 export function ReportsList({
   reports,
@@ -65,32 +56,51 @@ export function ReportsList({
   folder,
 }: {
   reports: { owned: ReportRow[]; shared: ReportRow[]; tenantWide: ReportRow[] };
-  folders: { id: string; name: string; parentId: string | null; _count: { reports: number }; children: { id: string; name: string }[] }[];
+  folders: { id: string; name: string; parentId: string | null; reportCount: number; children: { id: string; name: string }[] }[];
   q: string;
   type: string;
   year: string;
   folder: string;
 }) {
+  const router = useRouter();
+  const [query, setQuery] = useState(q);
+
+  const listHref = (over: Partial<Record<"q" | "type" | "year" | "folder", string>>) => {
+    const sp = new URLSearchParams();
+    for (const [k, v] of Object.entries({ q: query.trim(), type, year, folder, ...over })) if (v) sp.set(k, v);
+    const qs = sp.toString();
+    return qs ? `/reports?${qs}` : "/reports";
+  };
+
+  // The search narrows as you type; the link follows a moment later, so a
+  // reload or a copied link keeps it without a page load on every key.
+  useEffect(() => {
+    if (query.trim() === q.trim()) return;
+    const t = setTimeout(() => router.replace(listHref({}), { scroll: false }), 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
   const rows = [
     ...reports.owned.map((r) => ({ report: r, access: "owned" as Access })),
     ...reports.shared.map((r) => ({ report: r, access: "shared" as Access })),
     ...reports.tenantWide.map((r) => ({ report: r, access: "tenantWide" as Access })),
   ];
 
-  // Derived rather than hard-coded, so neither dropdown can offer a value that
-  // returns nothing.
+  // Derived from the rows rather than fixed, so neither pill can offer a
+  // value that returns nothing.
   const typeOptions = [...new Set(rows.map((r) => r.report.dataSource))]
-    .map((value) => ({ value, label: dataSourceLabel(value) }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-  const yearOptions = [...new Set(rows.map((r) => new Date(r.report.updatedAt).getFullYear()))].sort(
-    (a, b) => b - a
-  );
+    .map((id) => ({ id, name: dataSourceLabel(id) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const yearOptions = [...new Set(rows.map((r) => new Date(r.report.updatedAt).getFullYear()))]
+    .sort((a, b) => b - a)
+    .map((y) => ({ id: String(y), name: String(y) }));
 
-  const needle = q.trim().toLowerCase();
+  const needle = query.trim().toLowerCase();
   const filtered = rows.filter(({ report }) => {
-    // Owner is part of the haystack because it is a column: "Dana" has to find
-    // the reports the Owner column says are Dana's.
-    const hay = `${report.name} ${report.description ?? ""} ${report.owner?.name ?? ""}`.toLowerCase();
+    // The owner is searchable because it is on the row: "Dana" has to find
+    // the reports that say they are Dana's.
+    const hay = `${report.name} ${report.description ?? ""} ${report.ownerName ?? ""}`.toLowerCase();
     if (needle && !hay.includes(needle)) return false;
     if (type && report.dataSource !== type) return false;
     if (year && String(new Date(report.updatedAt).getFullYear()) !== year) return false;
@@ -98,186 +108,240 @@ export function ReportsList({
     return true;
   });
 
-  const listHref = (over: Partial<Record<"q" | "type" | "year" | "folder", string>>) => {
-    const sp = new URLSearchParams();
-    for (const [k, v] of Object.entries({ q, type, year, folder, ...over })) if (v) sp.set(k, v);
-    const qs = sp.toString();
-    return qs ? `/reports?${qs}` : "/reports";
-  };
-
   const folderNodes: FolderNode[] = folders.map((f) => ({
     id: f.id,
     name: f.name,
     parentId: f.parentId,
     href: listHref({ folder: f.id }),
-    reportCount: f._count.reports,
+    reportCount: f.reportCount,
     children: f.children,
   }));
 
-  const filtersApplied = Boolean(needle || type || year || folder);
-  const folderName = folders.find((f) => f.id === folder)?.name ?? folder;
-
-  // The rail is worth its width only when there is something in it, or
-  // something of your own that could go in it.
+  const narrowed = Boolean(needle || type || year || folder);
+  // The rail is worth its width only when there is something in it, or a
+  // report of your own that could go in it.
   const showRail = folders.length > 0 || reports.owned.length > 0;
 
   return (
-    <div className="flex flex-wrap items-start gap-4">
-      {showRail && (
-        <div className="w-full flex-none sm:w-[212px]">
-          <FolderTree
-            folders={folderNodes}
-            selectedFolderId={folder || null}
-            allHref={listHref({ folder: "" })}
-            totalReports={rows.length}
-          />
+    <div className="flex flex-col gap-4">
+      {/* ── Standard reports ─────────────────────────────────────────── */}
+      <section
+        className="flex flex-col"
+        style={{ background: "var(--surface-card)", borderRadius: "var(--radius-l)", boxShadow: "var(--shadow-card)" }}
+        aria-labelledby="standard-reports"
+      >
+        <header className="flex flex-col gap-0.5 px-5 pb-3 pt-4">
+          <h2 id="standard-reports" style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
+            Standard reports
+          </h2>
+          <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+            Pick one, choose the dates, and see the results. You can save it to run again later.
+          </p>
+        </header>
+        <div className="grid gap-3 px-5 pb-5 sm:grid-cols-2 xl:grid-cols-3">
+          {STANDARD_REPORTS.map((id) => {
+            const Icon = dataSourceIcon(id);
+            return (
+              <Link
+                key={id}
+                href={`/reports/new?source=${id}`}
+                className="ta-hoverable group flex items-start gap-3 rounded-xl p-4"
+                style={{ border: "1px solid var(--stroke-secondary)", textDecoration: "none" }}
+              >
+                <span
+                  className="flex h-9 w-9 flex-none items-center justify-center rounded-lg"
+                  style={{ background: "var(--surface-info)", color: "var(--icon-accent)" }}
+                  aria-hidden="true"
+                >
+                  <Icon className="h-[18px] w-[18px]" />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+                    {dataSourceLabel(id)}
+                  </span>
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{dataSourceDescription(id)}</span>
+                </span>
+                <ChevronRight
+                  className="mt-2.5 h-4 w-4 flex-none transition-transform group-hover:translate-x-0.5"
+                  style={{ color: "var(--icon-tertiary)" }}
+                  aria-hidden="true"
+                />
+              </Link>
+            );
+          })}
         </div>
-      )}
+      </section>
 
-      <div className="flex min-w-[320px] flex-1 flex-col gap-2.5">
-        <Toolbar count={filtered.length} countLabel="report">
-          <ReportsFilters
-            q={q}
-            type={type}
-            year={year}
-            folder={folder}
-            typeOptions={typeOptions}
-            yearOptions={yearOptions}
-          />
-        </Toolbar>
-
-        {/* Folder gets a chip as well as the rail. "Clear all" drops it either
-            way, and a chip row that silently leaves one filter out makes that
-            link look like it cleared more than it did. */}
-        <FilterBar clearHref={filtersApplied ? "/reports" : undefined}>
-          {type ? (
-            <FilterChip
-              key="type"
-              label="Type"
-              value={dataSourceLabel(type)}
-              clearHref={listHref({ type: "" })}
+      {/* ── Saved reports ────────────────────────────────────────────── */}
+      <div className="flex flex-col items-start gap-4 lg:flex-row">
+        {showRail && (
+          <div className="w-full flex-none lg:w-[228px]">
+            <FolderTree
+              folders={folderNodes}
+              selectedFolderId={folder || null}
+              allHref={listHref({ folder: "" })}
+              totalReports={rows.length}
             />
-          ) : null}
-          {year ? (
-            <FilterChip key="year" label="Year" value={year} clearHref={listHref({ year: "" })} />
-          ) : null}
-          {folder ? (
-            <FilterChip
-              key="folder"
-              label="Folder"
-              value={folderName}
-              clearHref={listHref({ folder: "" })}
-            />
-          ) : null}
-        </FilterBar>
+          </div>
+        )}
 
-        <Card padding={0}>
-          {filtered.length === 0 ? (
-            // Which of the two emptinesses this is decides whether somebody
-            // goes looking for a report that exists or builds a second copy of
-            // one they already have.
+        <section
+          className="flex w-full min-w-0 flex-1 flex-col overflow-hidden"
+          style={{ background: "var(--surface-card)", borderRadius: "var(--radius-l)", boxShadow: "var(--shadow-card)" }}
+          aria-labelledby="saved-reports"
+        >
+          <header className="flex flex-wrap items-baseline gap-x-2 px-5 pb-3 pt-4">
+            <h2 id="saved-reports" style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
+              Saved reports
+            </h2>
+            <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+              {narrowed ? `${filtered.length} of ${rows.length}` : rows.length}
+            </span>
+          </header>
+
+          {rows.length > 0 && (
+            <div
+              className="flex flex-wrap items-center gap-2 px-5 pb-3"
+              style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+            >
+              <SearchInput value={query} onValueChange={setQuery} placeholder="Report name or owner" width={260} />
+              {typeOptions.length > 1 && (
+                <FilterSelectChip
+                  label="Type"
+                  allLabel="Every type"
+                  value={type}
+                  options={typeOptions}
+                  onChange={(v) => router.replace(listHref({ type: v }), { scroll: false })}
+                />
+              )}
+              {yearOptions.length > 1 && (
+                <FilterSelectChip
+                  label="Last changed"
+                  allLabel="Any year"
+                  value={year}
+                  options={yearOptions}
+                  onChange={(v) => router.replace(listHref({ year: v }), { scroll: false })}
+                />
+              )}
+              {narrowed && (
+                <Button
+                  hierarchy="link"
+                  size="sm"
+                  onClick={() => {
+                    setQuery("");
+                    router.replace("/reports", { scroll: false });
+                  }}
+                >
+                  Clear all
+                </Button>
+              )}
+            </div>
+          )}
+
+          {rows.length === 0 ? (
             <EmptyState
               icon={<FileText className="h-8 w-8" />}
-              title={filtersApplied ? "No reports match these filters" : "No reports yet"}
-              body={
-                filtersApplied
-                  ? "Nothing here is filed under that search, type, year or folder. Widen the filters to see the rest."
-                  : "Build one from a data source — hours, punches, exceptions or leave — and it can be run on demand or emailed on a schedule."
-              }
+              title="No saved reports yet"
+              body="Open a standard report above, set it up the way you need, and save it. It will be here to run again, share or email on a schedule."
+            />
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon={<FileText className="h-8 w-8" />}
+              title="No saved reports match"
+              body="Nothing matches that search, type, year or folder."
               action={
-                filtersApplied ? (
-                  <LinkButton href="/reports" size="sm">
-                    Clear filters
-                  </LinkButton>
-                ) : (
-                  <LinkButton href="/reports/new" hierarchy="primary" size="sm">
-                    New Report
-                  </LinkButton>
-                )
+                <Button
+                  size="sm"
+                  hierarchy="secondary"
+                  onClick={() => {
+                    setQuery("");
+                    router.replace("/reports", { scroll: false });
+                  }}
+                >
+                  Clear all
+                </Button>
               }
             />
           ) : (
-            <>
-              <Table>
-                <THead>
-                  <TR>
-                    <TH>Report</TH>
-                    <TH>Type</TH>
-                    <TH>Access</TH>
-                    <TH>Owner</TH>
-                    <TH numeric>Runs</TH>
-                    <TH>Updated</TH>
-                    <TH align="right">
-                      <span className="sr-only">Open</span>
-                    </TH>
-                  </TR>
-                </THead>
-                <TBody>
+            <div className="overflow-x-auto">
+              <div className="min-w-[860px]">
+                <div
+                  className="grid items-center gap-x-4 px-5 py-2.5"
+                  style={{ gridTemplateColumns: COLUMNS, borderBottom: "1px solid var(--stroke-divider)" }}
+                  role="presentation"
+                >
+                  <span className="wms-overline">Report</span>
+                  <span className="wms-overline">Type</span>
+                  <span className="wms-overline">Owner</span>
+                  <span className="wms-overline">Access</span>
+                  <span className="wms-overline text-right">Runs</span>
+                  <span className="wms-overline">Last changed</span>
+                  <span />
+                </div>
+                <ul className="m-0 list-none p-0">
                   {filtered.map(({ report, access }) => {
                     const Icon = dataSourceIcon(report.dataSource);
                     return (
                       // A report can be both shared with you and published to
-                      // the tenant, so it can appear under two access labels.
-                      // The id alone is not unique down this table.
-                      <TR key={`${access}-${report.id}`}>
-                        <TD>
-                          <div className="flex min-w-0 flex-col">
-                            <span style={{ fontWeight: "var(--weight-medium)" }}>{report.name}</span>
-                            {report.description && (
+                      // everyone, so it can be listed twice. The id alone is
+                      // not unique down this list.
+                        <li key={`${access}-${report.id}`}>
+                          <Link
+                            href={`/reports/${report.id}`}
+                            className="ta-hoverable grid min-h-[56px] items-center gap-x-4 px-5 py-2.5"
+                            style={{
+                              gridTemplateColumns: COLUMNS,
+                              borderBottom: "1px solid var(--stroke-divider)",
+                              textDecoration: "none",
+                            }}
+                          >
+                            <span className="flex min-w-0 flex-col">
                               <span
                                 className="truncate"
-                                style={{
-                                  font: "var(--type-body2)",
-                                  color: "var(--text-tertiary)",
-                                  maxWidth: 360,
-                                }}
+                                title={report.name}
+                                style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-primary)" }}
                               >
-                                {report.description}
+                                {report.name}
                               </span>
-                            )}
-                          </div>
-                        </TD>
-                        <TD style={{ color: "var(--text-secondary)" }}>
-                          <span className="inline-flex items-center gap-2">
-                            <Icon
-                              className="h-4 w-4 flex-none"
-                              style={{ color: "var(--icon-tertiary)" }}
-                              aria-hidden="true"
-                            />
-                            {dataSourceLabel(report.dataSource)}
-                          </span>
-                        </TD>
-                        <TD style={{ color: "var(--text-secondary)" }}>{ACCESS_LABEL[access]}</TD>
-                        <TD style={{ color: "var(--text-secondary)" }}>
-                          {report.owner?.name ?? "—"}
-                        </TD>
-                        <TD numeric style={{ color: "var(--text-secondary)" }}>
-                          {report._count?.runs ?? 0}
-                        </TD>
-                        {/* Tabular figures: this column is read down, to find
-                            the one that was touched last. */}
-                        <TD numeric align="left" style={{ color: "var(--text-secondary)" }}>
-                          {format(new Date(report.updatedAt), "MMM d, yyyy")}
-                        </TD>
-                        <TD align="right">
-                          <LinkButton href={`/reports/${report.id}`} size="sm">
-                            Open
-                          </LinkButton>
-                        </TD>
-                      </TR>
+                              {report.description && (
+                                <span
+                                  className="truncate"
+                                  title={report.description}
+                                  style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+                                >
+                                  {report.description}
+                                </span>
+                              )}
+                            </span>
+                            <span
+                              className="flex min-w-0 items-center gap-2"
+                              style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                            >
+                              <Icon className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+                              <span className="truncate">{dataSourceLabel(report.dataSource)}</span>
+                            </span>
+                            <span className="truncate" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                              {access === "owned" ? "You" : report.ownerName ?? "Unknown"}
+                            </span>
+                            <span className="truncate" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                              {ACCESS_LABEL[access]}
+                            </span>
+                            <span className="tabular text-right" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                              {report.runs}
+                            </span>
+                            <span className="tabular whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                              {format(new Date(report.updatedAt), "MMM d, yyyy")}
+                            </span>
+                            <ChevronRight className="h-4 w-4" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+                          </Link>
+                        </li>
                     );
                   })}
-                </TBody>
-              </Table>
-
-              <TableFooter
-                shown={filtered.length}
-                total={rows.length}
-                label={rows.length === 1 ? "report" : "reports"}
-              />
-            </>
+                </ul>
+              </div>
+            </div>
           )}
-        </Card>
+        </section>
       </div>
     </div>
   );

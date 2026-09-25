@@ -18,8 +18,8 @@ const fieldMap: FieldMap = {
 
 export const leaveSummarySource: DataSourceDefinition = {
   id: "LEAVE_SUMMARY",
-  label: "Leave Summary",
-  description: "Leave requests with status, type, duration, and date range.",
+  label: "Time off requests",
+  description: "Time off requests with their type, dates, length and status.",
   icon: "CalendarDays",
   columns: [
     { id: "employeeName",    label: "Employee",       type: "string",  defaultVisible: true },

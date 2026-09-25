@@ -16,8 +16,8 @@ const fieldMap: FieldMap = {
 
 export const hoursSummarySource: DataSourceDefinition = {
   id: "HOURS_SUMMARY",
-  label: "Hours Summary",
-  description: "Hours by employee for a pay period or date range — REG, OT, DT, and leave buckets.",
+  label: "Hours summary",
+  description: "Regular, overtime, double time and paid leave hours for each employee.",
   icon: "Clock",
   columns: [
     { id: "employeeName",  label: "Employee",   type: "string",  defaultVisible: true },

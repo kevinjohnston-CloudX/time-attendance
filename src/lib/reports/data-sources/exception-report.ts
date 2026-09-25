@@ -17,8 +17,8 @@ const fieldMap: FieldMap = {
 
 export const exceptionReportSource: DataSourceDefinition = {
   id: "EXCEPTION_REPORT",
-  label: "Exception Report",
-  description: "Attendance exceptions by type, date, and resolution status.",
+  label: "Exceptions",
+  description: "Missed punches, absences and other rule breaks, and whether they were fixed.",
   icon: "AlertCircle",
   columns: [
     { id: "employeeName",  label: "Employee",       type: "string",  defaultVisible: true },

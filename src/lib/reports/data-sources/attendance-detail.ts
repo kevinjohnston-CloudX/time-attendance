@@ -18,8 +18,8 @@ const fieldMap: FieldMap = {
 
 export const attendanceDetailSource: DataSourceDefinition = {
   id: "ATTENDANCE_DETAIL",
-  label: "Attendance Detail",
-  description: "Daily attendance records with clock in/out times, segment breakdown, and hours worked.",
+  label: "Daily attendance",
+  description: "Each day's clock in and clock out times, meals and hours worked.",
   icon: "CalendarDays",
   columns: [
     { id: "employeeName",    label: "Employee",      type: "string",  defaultVisible: true },
