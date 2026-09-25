@@ -2655,7 +2655,9 @@ export function TimecardViewer({
                             const pairWorkSeg = daySegments.find((s) => {
                               if (s.segmentType !== "WORK") return false;
                               const sStart = new Date(s.startTime).getTime();
-                              const inMs = pairIn ? new Date(pairIn.roundedTime).getTime() : 0;
+                              // truncate to minute — computeSegments uses truncToMin on roundedTime,
+                              // so sStart may be up to 59s earlier than the raw roundedTime
+                              const inMs = pairIn ? Math.floor(new Date(pairIn.roundedTime).getTime() / 60_000) * 60_000 : 0;
                               const outMs = pairOut ? new Date(pairOut.roundedTime).getTime() : Infinity;
                               return sStart >= inMs && sStart < outMs;
                             }) ?? null;
