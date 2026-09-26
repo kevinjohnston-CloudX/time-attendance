@@ -1045,6 +1045,20 @@ export const getRuleSets = withRBAC(
   }
 );
 
+/** One rule set, for its editor page. Only the caller's company's. */
+export const getRuleSet = withRBAC(
+  "RULES_MANAGE",
+  async ({ tenantId }, input: { ruleSetId: string }) => {
+    if (!tenantId) throw new Error("NOT_FOUND");
+    const rs = await db.ruleSet.findFirst({
+      where: { id: input.ruleSetId, tenantId },
+      include: { _count: { select: { employees: true } } },
+    });
+    if (!rs) throw new Error("NOT_FOUND");
+    return rs;
+  }
+);
+
 /** Every pay code a rule set points at has to be this company's. */
 async function assertRuleSetPayCodes(
   tenantId: string,
