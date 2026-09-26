@@ -12,6 +12,7 @@ export const getReasonCodes = withRBAC(
     return db.reasonCode.findMany({
       where: { tenantId },
       orderBy: { code: "asc" },
+      include: { _count: { select: { dayReasons: true } } },
     });
   }
 );
@@ -26,7 +27,8 @@ export const createReasonCode = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (ctx, input: unknown) => {
     const { code, label, color } = createReasonCodeSchema.parse(input);
-    const tenantId = ctx.tenantId!;
+    const tenantId = ctx.tenantId;
+    if (!tenantId) throw new Error("No tenant");
 
     const existing = await db.reasonCode.findUnique({
       where: { tenantId_code: { tenantId, code } },
@@ -50,15 +52,20 @@ export const updateReasonCode = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (ctx, input: unknown) => {
     const { reasonCodeId, code, label, color, isActive } = updateReasonCodeSchema.parse(input);
-    const tenantId = ctx.tenantId!;
+    const tenantId = ctx.tenantId;
+    if (!tenantId) throw new Error("No tenant");
+
+    // Found inside the caller's company first; it used to update by id alone.
+    const own = await db.reasonCode.findFirst({ where: { id: reasonCodeId, tenantId }, select: { id: true } });
+    if (!own) throw new Error("NOT_FOUND");
 
     const conflict = await db.reasonCode.findFirst({
-      where: { tenantId, code, NOT: { id: reasonCodeId } },
+      where: { tenantId, code, NOT: { id: own.id } },
     });
     if (conflict) throw new Error("Another reason code with that code already exists.");
 
     await db.reasonCode.update({
-      where: { id: reasonCodeId },
+      where: { id: own.id },
       data: { code, label, color: color ?? null, isActive },
     });
     return { success: true };
@@ -67,9 +74,24 @@ export const updateReasonCode = withRBAC(
 
 export const deleteReasonCode = withRBAC(
   "PAY_PERIOD_MANAGE",
-  async (_ctx, input: unknown) => {
+  async (ctx, input: unknown) => {
     const { reasonCodeId } = z.object({ reasonCodeId: z.string().min(1) }).parse(input);
-    await db.reasonCode.delete({ where: { id: reasonCodeId } });
+    const tenantId = ctx.tenantId;
+    if (!tenantId) throw new Error("No tenant");
+    // It deleted by id alone, from any company. A code already on a timecard
+    // day cannot go (the database refuses), so that is said in words instead.
+    const own = await db.reasonCode.findFirst({
+      where: { id: reasonCodeId, tenantId },
+      select: { id: true, _count: { select: { dayReasons: true } } },
+    });
+    if (!own) throw new Error("NOT_FOUND");
+    const used = own._count.dayReasons;
+    if (used > 0) {
+      throw new Error(
+        `This code is on ${used.toLocaleString()} timecard ${used === 1 ? "day" : "days"}, so it cannot be deleted. Set it to inactive instead.`,
+      );
+    }
+    await db.reasonCode.deleteMany({ where: { id: own.id, tenantId } });
     return { success: true };
   }
 );

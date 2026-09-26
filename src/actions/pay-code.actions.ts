@@ -50,7 +50,8 @@ export const createPayCode = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (ctx, input: unknown) => {
     const { code, label, expressCode, payBucket, countsTowardOt, sortOrder } = createPayCodeSchema.parse(input);
-    const tenantId = ctx.tenantId!;
+    const tenantId = ctx.tenantId;
+    if (!tenantId) throw new Error("No tenant");
 
     const existing = await db.payCode.findUnique({
       where: { tenantId_code: { tenantId, code } },
@@ -117,17 +118,22 @@ export const updatePayCode = withRBAC(
   async (ctx, input: unknown) => {
     const { payCodeId, code, label, expressCode, payBucket, countsTowardOt, sortOrder, isActive } =
       updatePayCodeSchema.parse(input);
-    const tenantId = ctx.tenantId!;
+    const tenantId = ctx.tenantId;
+    if (!tenantId) throw new Error("No tenant");
+
+    // Found inside the caller's company first; it used to update by id alone.
+    const own = await db.payCode.findFirst({ where: { id: payCodeId, tenantId }, select: { id: true } });
+    if (!own) throw new Error("NOT_FOUND");
 
     const conflict = await db.payCode.findFirst({
-      where: { tenantId, code, NOT: { id: payCodeId } },
+      where: { tenantId, code, NOT: { id: own.id } },
     });
     if (conflict) {
       throw new Error(`Another pay code already uses numeric code ${code}.`);
     }
 
     await db.payCode.update({
-      where: { id: payCodeId },
+      where: { id: own.id },
       data: {
         code,
         label,
@@ -149,7 +155,7 @@ export const updatePayCode = withRBAC(
           payBucket: "REG",
           payCodeId: null,
         },
-        data: { payCodeId },
+        data: { payCodeId: own.id },
       });
     }
 
@@ -163,9 +169,12 @@ export const reorderPayCodes = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (ctx, input: unknown) => {
     const { orderedIds } = z.object({ orderedIds: z.array(z.string()) }).parse(input);
-    const tenantId = ctx.tenantId!;
+    // Without a company the where below would match every company's codes.
+    const tenantId = ctx.tenantId;
+    if (!tenantId) throw new Error("No tenant");
 
-    await Promise.all(
+    // One transaction, so a failure leaves the old order rather than half of each.
+    await db.$transaction(
       orderedIds.map((id, index) =>
         db.payCode.updateMany({
           where: { id, tenantId },
