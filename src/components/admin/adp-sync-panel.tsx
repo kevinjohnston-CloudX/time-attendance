@@ -41,11 +41,12 @@ interface Site {
 interface Department {
   id: string;
   name: string;
-  sites: { site: { name: string } }[];
+  siteIds: string[];
 }
 interface RuleSet {
   id: string;
   name: string;
+  isDefault: boolean;
 }
 
 interface SyncStatus {
@@ -174,7 +175,7 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
   // Default selections
   const [siteId, setSiteId] = useState(sites[0]?.id ?? "");
   const [deptId, setDeptId] = useState(departments[0]?.id ?? "");
-  const [ruleSetId, setRuleSetId] = useState(ruleSets[0]?.id ?? "");
+  const [ruleSetId, setRuleSetId] = useState((ruleSets.find((r) => r.isDefault) ?? ruleSets[0])?.id ?? "");
 
   function handleTestConnection() {
     setError(null);
@@ -359,8 +360,8 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
                   {departments.map((d) => (
                     <option key={d.id} value={d.id}>
                       {d.name}
-                      {d.sites.length > 0
-                        ? ` (${d.sites.map((ds) => ds.site.name).join(", ")})`
+                      {d.siteIds.length > 0
+                        ? ` (${d.siteIds.map((id) => sites.find((s) => s.id === id)?.name).filter(Boolean).join(", ")})`
                         : ""}
                     </option>
                   ))}

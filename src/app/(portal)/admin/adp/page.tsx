@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
-import { getAdpSyncStatus } from "@/actions/adp.actions";
-import { getAdminRefData } from "@/actions/admin.actions";
+import { getAdpSyncOptions, getAdpSyncStatus } from "@/actions/adp.actions";
 import { AdpSyncPanel } from "@/components/admin/adp-sync-panel";
 
 /**
@@ -21,7 +20,7 @@ export default async function AdpSyncPage() {
 
   const [statusResult, refResult] = await Promise.all([
     getAdpSyncStatus(undefined as never),
-    getAdminRefData(),
+    getAdpSyncOptions(undefined as never),
   ]);
 
   if (!statusResult.success || !refResult.success) redirect("/admin");

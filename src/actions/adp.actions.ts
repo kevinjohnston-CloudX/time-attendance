@@ -15,30 +15,93 @@ import {
 
 // ─── Config Status ────────────────────────────────────────────────────────────
 
-/** Check whether ADP env vars are configured and return last sync info. */
+/**
+ * Whether ADP is configured, and what the company last exchanged with it in
+ * each direction: the newest employee sync, and the newest pay period whose
+ * hours were pushed.
+ *
+ * <p>Both reads are held to the caller's company. The employee sync is read by
+ * its own action: the payroll push writes under the same entity type, so the
+ * newest ADP_SYNC row alone could be a push, and "Last sync" would show its
+ * date.
+ */
 export const getAdpSyncStatus = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ tenantId }) => {
+    if (!tenantId) throw new Error("NOT_FOUND");
     const config = getAdpConfig();
-    const t = tenantId ?? undefined;
 
-    // Find most recent ADP sync audit log
-    const lastSync = await db.auditLog.findFirst({
-      where: { entityType: "ADP_SYNC", tenantId: t },
-      orderBy: { createdAt: "desc" },
-      select: { createdAt: true, changes: true },
-    });
-
-    // Count ADP-linked employees
-    const adpEmployeeCount = await db.employee.count({
-      where: { adpWorkerId: { not: null }, tenantId: t },
-    });
+    const [lastSync, adpEmployeeCount, lastPush] = await Promise.all([
+      db.auditLog.findFirst({
+        where: { entityType: "ADP_SYNC", action: "ADP_SYNC_COMPLETED", tenantId },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true, changes: true },
+      }),
+      db.employee.count({ where: { adpWorkerId: { not: null }, tenantId } }),
+      db.payrollRun.findFirst({
+        where: { exportedAt: { not: null }, payPeriod: { tenantId } },
+        orderBy: { exportedAt: "desc" },
+        select: {
+          exportedAt: true,
+          pushedCount: true,
+          skippedCount: true,
+          errorCount: true,
+          payPeriod: { select: { id: true, startDate: true, endDate: true } },
+        },
+      }),
+    ]);
 
     return {
       isConfigured: config !== null,
       lastSyncAt: lastSync?.createdAt ?? null,
       lastSyncResult: lastSync?.changes ?? null,
       adpEmployeeCount,
+      lastPush: lastPush?.exportedAt
+        ? {
+            at: lastPush.exportedAt,
+            pushed: lastPush.pushedCount,
+            skipped: lastPush.skippedCount,
+            errorCount: lastPush.errorCount,
+            payPeriodId: lastPush.payPeriod.id,
+            startDate: lastPush.payPeriod.startDate,
+            endDate: lastPush.payPeriod.endDate,
+          }
+        : null,
+    };
+  }
+);
+
+/**
+ * The three lists a sync's defaults are picked from, and nothing else. The
+ * page used to borrow the admin reference data, which also carries every
+ * active employee in the company for a Supervisor dropdown this page does not
+ * have.
+ */
+export const getAdpSyncOptions = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async ({ tenantId }) => {
+    if (!tenantId) throw new Error("NOT_FOUND");
+    const [sites, departments, ruleSets] = await Promise.all([
+      db.site.findMany({
+        where: { isActive: true, tenantId },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
+      db.department.findMany({
+        where: { isActive: true, tenantId },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, sites: { select: { siteId: true } } },
+      }),
+      db.ruleSet.findMany({
+        where: { tenantId },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, isDefault: true },
+      }),
+    ]);
+    return {
+      sites,
+      departments: departments.map((d) => ({ id: d.id, name: d.name, siteIds: d.sites.map((x) => x.siteId) })),
+      ruleSets,
     };
   }
 );
@@ -89,6 +152,15 @@ export const syncAdpEmployees = withRBAC(
     if (!tenantId) throw new Error("Tenant context required");
     const config = getAdpConfig();
     if (!config) throw new Error("ADP is not configured. Set ADP environment variables.");
+
+    // Every new hire is written with these three, so each has to be the
+    // company's own and still in use, checked before ADP is even called.
+    const [site, dept, ruleSet] = await Promise.all([
+      db.site.count({ where: { id: input.defaultSiteId, tenantId, isActive: true } }),
+      db.department.count({ where: { id: input.defaultDeptId, tenantId, isActive: true } }),
+      db.ruleSet.count({ where: { id: input.defaultRuleSetId, tenantId } }),
+    ]);
+    if (!site || !dept || !ruleSet) throw new Error("NOT_FOUND");
 
     const client = new AdpClient(config);
     const adpWorkers = await client.getAllWorkers();
@@ -252,13 +324,16 @@ interface PayrollPushResult {
 export const pushPayrollToAdp = withRBAC(
   "PAY_PERIOD_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: { payPeriodId: string }) => {
+    if (!tenantId) throw new Error("NOT_FOUND");
     const config = getAdpConfig();
     if (!config) throw new Error("ADP is not configured. Set ADP environment variables.");
 
-    // Validate pay period is LOCKED
-    const payPeriod = await db.payPeriod.findUniqueOrThrow({
-      where: { id: input.payPeriodId },
+    // Validate pay period is LOCKED. Found inside the caller's company, so a
+    // pay period id from another company is simply not found.
+    const payPeriod = await db.payPeriod.findFirst({
+      where: { id: input.payPeriodId, tenantId },
     });
+    if (!payPeriod) throw new Error("NOT_FOUND");
     if (payPeriod.status !== "LOCKED") {
       throw new Error("Pay period must be locked before pushing to ADP.");
     }
@@ -275,7 +350,7 @@ export const pushPayrollToAdp = withRBAC(
 
     // Fetch all locked timesheets with hours and employee ADP IDs
     const timesheets = await db.timesheet.findMany({
-      where: { payPeriodId: input.payPeriodId, status: "LOCKED" },
+      where: { payPeriodId: payPeriod.id, status: "LOCKED" },
       include: {
         employee: { select: { adpWorkerId: true, employeeCode: true, user: { select: { name: true } } } },
         overtimeBuckets: true,
