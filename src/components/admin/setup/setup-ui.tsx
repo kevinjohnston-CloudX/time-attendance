@@ -1,0 +1,340 @@
+"use client";
+
+import { useEffect, useRef, useState, type FormEvent, type ReactNode, type SelectHTMLAttributes } from "react";
+import { X } from "lucide-react";
+import { Badge, Banner, Button, SearchInput, SegmentedControl, Select, statusTone } from "@/components/ui";
+
+/**
+ * The parts every Company Setup area is built from, so the eight of them read
+ * as one screen: the area's panel (its name, one quiet line, the one action,
+ * then search and the Active / Inactive / All filter over the rows), the edit
+ * window every row opens, and the small pieces inside both.
+ *
+ * <p>Each area used to carry its own copy of the modal, the labelled select
+ * and the form buttons, and they had drifted apart: three kinds of delete
+ * confirmation, two error styles, one area with no errors at all.
+ */
+
+/* ── The area panel ───────────────────────────────────────────────────── */
+
+export type StatusView = "active" | "inactive" | "all";
+
+/** The status filter's state and the rows it keeps, with a count for each view. */
+export function useStatusView<T extends { isActive: boolean }>(rows: T[], initial: StatusView = "active") {
+  const [view, setView] = useState<StatusView>(initial);
+  const counts = {
+    active: rows.filter((r) => r.isActive).length,
+    inactive: rows.filter((r) => !r.isActive).length,
+    all: rows.length,
+  };
+  const kept = view === "all" ? rows : rows.filter((r) => (view === "active" ? r.isActive : !r.isActive));
+  return { view, setView, counts, kept };
+}
+
+export function AreaPanel({
+  title,
+  hint,
+  action,
+  search,
+  status,
+  filters,
+  count,
+  children,
+}: {
+  title: string;
+  /** One quiet line: what this area is for. */
+  hint: string;
+  /** The area's one primary action, usually Add. */
+  action?: ReactNode;
+  search?: { value: string; onChange: (v: string) => void; placeholder: string };
+  status?: { view: StatusView; onChange: (v: StatusView) => void; counts: Record<StatusView, number> };
+  /** Anything else the area filters by, after the status. */
+  filters?: ReactNode;
+  /** "12 sites", or "3 of 12 sites" when narrowed. */
+  count?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      aria-label={title}
+      className="ta-card flex min-w-0 flex-col"
+      style={{ borderRadius: "var(--radius-l)", overflow: "clip" }}
+    >
+      <header className="flex flex-wrap items-start gap-3 px-5 pb-3 pt-4">
+        <span className="flex min-w-[220px] flex-1 flex-col gap-0.5">
+          <h2 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>{title}</h2>
+          <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" }}>
+            {hint}
+          </p>
+        </span>
+        {action && <span className="flex flex-none items-center gap-2">{action}</span>}
+      </header>
+
+      {(search || status || filters || count) && (
+        <div className="flex flex-wrap items-center gap-2.5 px-5 pb-3.5">
+          {status && (
+            <SegmentedControl
+              ariaLabel="Status"
+              value={status.view}
+              onChange={(v) => status.onChange(v as StatusView)}
+              items={[
+                { value: "active", label: "Active", count: status.counts.active },
+                { value: "inactive", label: "Inactive", count: status.counts.inactive },
+                { value: "all", label: "All", count: status.counts.all },
+              ]}
+            />
+          )}
+          {search && (
+            <SearchInput value={search.value} onValueChange={search.onChange} placeholder={search.placeholder} width={240} />
+          )}
+          {filters}
+          {count && (
+            <span
+              className="tabular ml-auto whitespace-nowrap"
+              style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+            >
+              {count}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div style={{ borderTop: "1px solid var(--stroke-divider)" }}>{children}</div>
+    </section>
+  );
+}
+
+/** "12 sites", or "3 of 12 sites" once a search or filter has narrowed them. */
+export function countLine(shown: number, total: number, one: string, many: string): string {
+  const word = total === 1 ? one : many;
+  return shown === total ? `${total.toLocaleString()} ${word}` : `${shown.toLocaleString()} of ${total.toLocaleString()} ${word}`;
+}
+
+/** Case-insensitive match of a search against any of the given texts. */
+export function matches(q: string, ...texts: (string | number | null | undefined)[]): boolean {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return true;
+  return texts.some((t) => t != null && String(t).toLowerCase().includes(needle));
+}
+
+export function StatusBadge({ active }: { active: boolean }) {
+  // Neutral for inactive: statusTone answers amber for a value it does not
+  // know, and amber reads as something to go and fix.
+  return active ? (
+    <Badge tone={statusTone("ACTIVE")} size="sm" dot>
+      Active
+    </Badge>
+  ) : (
+    <Badge size="sm">Inactive</Badge>
+  );
+}
+
+/** Nothing recorded, drawn quietly so it never reads as a value. */
+export function Muted({ children = "None" }: { children?: ReactNode }) {
+  return <span style={{ color: "var(--text-tertiary)" }}>{children}</span>;
+}
+
+/* ── The edit window ──────────────────────────────────────────────────── */
+
+/** Two fields a row where there is room, one where there is not. */
+export const FIELD_GRID = "grid gap-x-4 gap-y-3.5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,46%)),1fr))]";
+
+/**
+ * Add or edit one record: its name, the fields, then Cancel and Save at the
+ * foot, with Delete on the left when the area allows it. Escape, the X and the
+ * scrim close it; nothing is saved until Save.
+ */
+export function SetupDialog({
+  title,
+  subtitle,
+  submitLabel,
+  pending,
+  error,
+  onSubmit,
+  onClose,
+  danger,
+  width = 560,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  submitLabel: string;
+  pending: boolean;
+  error: string | null;
+  onSubmit: (form: FormData) => void;
+  onClose: () => void;
+  /** Delete, drawn at the foot's left. See DeleteAction. */
+  danger?: ReactNode;
+  width?: number;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    ref.current?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea")?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      closeRef.current();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      opener?.focus?.();
+    };
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(3, 7, 18, 0.5)" }}
+      onClick={(e) => e.target === e.currentTarget && !pending && onClose()}
+    >
+      <div
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="setup-dialog-title"
+        className="ta-modal flex max-h-[calc(100dvh-2rem)] w-full flex-col"
+        style={{ maxWidth: width, borderRadius: "var(--radius-l)" }}
+      >
+        <header className="flex flex-none items-start gap-3 px-5 pb-3.5 pt-4" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <h2 id="setup-dialog-title" className="truncate" style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
+              {title}
+            </h2>
+            {subtitle && <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>{subtitle}</span>}
+          </span>
+          <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} disabled={pending} aria-label="Close">
+            <X className="h-4 w-4" />
+          </Button>
+        </header>
+        <form
+          className="flex min-h-0 flex-1 flex-col"
+          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            if (!pending) onSubmit(new FormData(e.currentTarget));
+          }}
+        >
+          <div className="ta-scroll flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
+            {error && <Banner tone="error" title="Not saved" body={error} />}
+            {children}
+          </div>
+          <footer className="flex flex-none items-center gap-2 px-5 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+            <span className="flex min-w-0 flex-1 items-center">{danger}</span>
+            <Button type="button" hierarchy="secondary" onClick={onClose} disabled={pending}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={pending}>
+              {pending ? "Saving…" : submitLabel}
+            </Button>
+          </footer>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Delete, asked twice in place: the first click turns the link into the
+ * question and a red button, so a slip of the mouse deletes nothing.
+ */
+export function DeleteAction({
+  label,
+  question,
+  pending,
+  onDelete,
+}: {
+  label: string;
+  question: string;
+  pending: boolean;
+  onDelete: () => void;
+}) {
+  const [asking, setAsking] = useState(false);
+  if (!asking) {
+    return (
+      <Button type="button" hierarchy="link" tone="error" size="sm" onClick={() => setAsking(true)} disabled={pending}>
+        {label}
+      </Button>
+    );
+  }
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <span className="truncate" style={{ font: "var(--type-body2)", color: "var(--text-error)" }}>
+        {question}
+      </span>
+      <Button type="button" size="sm" tone="error" onClick={onDelete} disabled={pending}>
+        {pending ? "Deleting…" : "Delete"}
+      </Button>
+      <Button type="button" size="sm" hierarchy="tertiary" onClick={() => setAsking(false)} disabled={pending}>
+        Keep
+      </Button>
+    </span>
+  );
+}
+
+/** A select with the same label over it as the kit's Input. */
+export function SelectField({
+  label,
+  hint,
+  children,
+  ...rest
+}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <label className="flex w-full min-w-0 flex-col gap-1.5">
+      <span className="wms-label">{label}</span>
+      <Select {...rest} style={{ width: "100%" }}>
+        {children}
+      </Select>
+      {hint && <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{hint}</span>}
+    </label>
+  );
+}
+
+/** Active or inactive, as a pair of choices rather than a select, since it is one of two. */
+export function StatusField({ defaultActive, name = "isActive", hint }: { defaultActive: boolean; name?: string; hint?: string }) {
+  const [active, setActive] = useState(defaultActive);
+  return (
+    <div className="flex flex-col items-start gap-1.5">
+      <span className="wms-label">Status</span>
+      <SegmentedControl
+        ariaLabel="Status"
+        value={active ? "true" : "false"}
+        onChange={(v) => setActive(v === "true")}
+        items={[
+          { value: "true", label: "Active" },
+          { value: "false", label: "Inactive" },
+        ]}
+      />
+      <input type="hidden" name={name} value={active ? "true" : "false"} />
+      {hint && <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{hint}</span>}
+    </div>
+  );
+}
+
+/** Words for the codes withRBAC answers with, so nobody reads FORBIDDEN in a banner. */
+export function saveError(error: string): string {
+  if (error === "FORBIDDEN") return "You do not have permission to change this.";
+  if (error === "UNAUTHENTICATED") return "Your session has ended. Sign in again to save.";
+  if (error === "NOT_FOUND") return "This record no longer exists. Reload the page.";
+  // A failed schema check arrives as its raw JSON list of issues.
+  if (error.trim().startsWith("[")) return "Some fields are missing or not valid. Check them and try again.";
+  return error;
+}
+
+/** Leave categories in words; the enum values are not for people to read. */
+export const LEAVE_CATEGORY_LABEL: Record<string, string> = {
+  PTO: "Paid time off",
+  SICK: "Sick",
+  HOLIDAY: "Holiday",
+  FMLA: "FMLA",
+  BEREAVEMENT: "Bereavement",
+  JURY_DUTY: "Jury duty",
+  MILITARY: "Military",
+  UNPAID: "Unpaid",
+};

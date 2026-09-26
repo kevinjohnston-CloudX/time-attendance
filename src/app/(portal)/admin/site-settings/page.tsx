@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { LinkButton, PageHeader } from "@/components/ui";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getSites, getDepartments, getLeaveTypesAdmin } from "@/actions/admin.actions";
 import { getHolidays } from "@/actions/holiday.actions";
@@ -52,34 +51,23 @@ export default async function SiteSettingsPage({
     return JSON.parse(JSON.stringify(v));
   }
 
+  // The header is drawn by the client, which pins it over the areas rail.
   return (
-    <div className="flex flex-col gap-4">
-      <PageHeader pinned
-        title="Company Setup"
-        subtitle="Sites, departments, holidays and the codes they use"
-        actions={
-          <LinkButton href="/admin" hierarchy="tertiary">
-            ← Administration
-          </LinkButton>
-        }
-      />
-
-      <SiteSettingsClient
-        sites={serialize(sitesResult.success ? sitesResult.data : [])}
-        departments={serialize(deptsResult.success ? deptsResult.data : [])}
-        holidays={serialize(holidaysResult.success ? holidaysResult.data : [])}
-        leaveTypes={serialize(leaveTypesResult.success ? leaveTypesResult.data : [])}
-        payCodes={serialize(payCodesResult.success ? payCodesResult.data : [])}
-        reasonCodes={serialize(reasonCodesResult.success ? reasonCodesResult.data : [])}
-        ptoPolicies={serialize(ptoPoliciesResult.success ? ptoPoliciesResult.data : [])}
-        holidayRules={serialize(holidayRulesResult.success ? holidayRulesResult.data : [])}
-        payCategories={serialize(payCategoriesResult.success ? payCategoriesResult.data : [])}
-        payTypes={serialize(payTypesResult.success ? payTypesResult.data : [])}
-        hasSiteManage={hasSiteManage}
-        hasRulesManage={hasRulesManage}
-        hasPayPeriodManage={hasPayPeriodManage}
-        initialTab={tab}
-      />
-    </div>
+    <SiteSettingsClient
+      sites={serialize(sitesResult.success ? sitesResult.data : [])}
+      departments={serialize(deptsResult.success ? deptsResult.data : [])}
+      holidays={serialize(holidaysResult.success ? holidaysResult.data : [])}
+      leaveTypes={serialize(leaveTypesResult.success ? leaveTypesResult.data : [])}
+      payCodes={serialize(payCodesResult.success ? payCodesResult.data : [])}
+      reasonCodes={serialize(reasonCodesResult.success ? reasonCodesResult.data : [])}
+      ptoPolicies={serialize(ptoPoliciesResult.success ? ptoPoliciesResult.data : [])}
+      holidayRules={serialize(holidayRulesResult.success ? holidayRulesResult.data : [])}
+      payCategories={serialize(payCategoriesResult.success ? payCategoriesResult.data : [])}
+      payTypes={serialize(payTypesResult.success ? payTypesResult.data : [])}
+      hasSiteManage={hasSiteManage}
+      hasRulesManage={hasRulesManage}
+      hasPayPeriodManage={hasPayPeriodManage}
+      initialTab={tab}
+    />
   );
 }
