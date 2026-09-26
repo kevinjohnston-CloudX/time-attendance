@@ -1,267 +1,203 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
+import { Plus, Tag } from "lucide-react";
 import { createPayType, updatePayType, deletePayType } from "@/actions/pay-type.actions";
+import { Button, EmptyState, Input, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
 import {
-  fieldCls as inputCls,
-  primaryBtnCls as saveBtnCls,
-  secondaryBtnCls as cancelBtnCls,
-  dangerBtnCls,
-} from "@/components/ui/form-classes";
+  AreaPanel,
+  ChoiceField,
+  DeleteAction,
+  Muted,
+  SetupDialog,
+  StatusBadge,
+  StatusField,
+  countLine,
+  matches,
+  saveError,
+  useStatusView,
+} from "./setup/setup-ui";
 
-type PayType = {
+/**
+ * Pay types: how somebody is paid, such as Non Exempt or Exempt, by number.
+ *
+ * <p>It was the last area on the old card list, and it never showed an
+ * error: the actions answer failure as a result, not a throw, and the form
+ * only caught throws, so a duplicate number or a refused delete closed the
+ * form as if it had worked. It reads the result now, like every other area.
+ * A pay type anyone still has cannot be deleted.
+ */
+
+interface PayType {
   id: string;
   number: number;
   description: string | null;
   includeInEmployeeSetup: boolean;
   isActive: boolean;
-};
-
-interface Props {
-  payTypes: PayType[];
+  _count?: { employees: number };
 }
 
-function PayTypeFields({ payType }: { payType?: PayType }) {
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
-          <label className="mb-1 block text-xs text-zinc-500">Type Number</label>
-          <input
-            name="number"
-            type="number"
-            min="1"
-            max="9999"
-            required
-            defaultValue={payType?.number ?? ""}
-            placeholder="e.g. 3"
-            className={inputCls}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs text-zinc-500">Description</label>
-          <input
-            name="description"
-            maxLength={255}
-            defaultValue={payType?.description ?? ""}
-            placeholder="e.g. Non-Exempt"
-            className={inputCls}
-          />
-        </div>
-      </div>
-      <div>
-        <label className="mb-1 block text-xs text-zinc-500">Include in Employee Setup</label>
-        <div className="flex gap-4">
-          <label className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)]">
-            <input
-              type="radio"
-              name="includeInEmployeeSetup"
-              value="true"
-              defaultChecked={payType ? payType.includeInEmployeeSetup : true}
-            />
-            Include
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)]">
-            <input
-              type="radio"
-              name="includeInEmployeeSetup"
-              value="false"
-              defaultChecked={payType ? !payType.includeInEmployeeSetup : false}
-            />
-            Exclude
-          </label>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function PayTypesManager({ payTypes }: Props) {
+export function PayTypesManager({ payTypes }: { payTypes: PayType[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState<PayType | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [showInactive, setShowInactive] = useState(false);
+  const [editing, setEditing] = useState<PayType | "new" | null>(null);
+  const [query, setQuery] = useState("");
+  const { view, setView, counts, kept } = useStatusView(payTypes);
+  const shown = kept.filter((p) => matches(query, p.number, p.description));
 
-  const searchLower = search.trim().toLowerCase();
-  const visible = (showInactive ? payTypes : payTypes.filter((pt) => pt.isActive))
-    .filter((pt) => !searchLower ||
-      String(pt.number).includes(searchLower) ||
-      (pt.description ?? "").toLowerCase().includes(searchLower)
-    );
+  function open(p: PayType | "new") {
+    setEditing(p);
+    setError(null);
+  }
+  function close() {
+    setEditing(null);
+    setError(null);
+  }
 
-  function act(fn: () => Promise<{ success: true } | { success: true; data: unknown }>) {
+  function save(form: FormData) {
+    const fields = {
+      number: String(form.get("number") ?? ""),
+      description: String(form.get("description") ?? "").trim() || undefined,
+      includeInEmployeeSetup: form.get("includeInEmployeeSetup") === "true",
+    };
     setError(null);
     startTransition(async () => {
-      try {
-        await fn();
-        setEditing(null);
-        setShowCreate(false);
-        setConfirmDeleteId(null);
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Something went wrong");
-      }
+      const result =
+        editing === "new"
+          ? await createPayType(fields)
+          : await updatePayType({ ...fields, id: (editing as PayType).id, isActive: form.get("isActive") === "true" });
+      if (!result.success) return setError(saveError(result.error));
+      close();
+      router.refresh();
     });
   }
 
-  function handleCreate(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    act(() => createPayType({
-      number: fd.get("number"),
-      description: fd.get("description") as string,
-      includeInEmployeeSetup: fd.get("includeInEmployeeSetup") !== "false",
-    }) as Promise<{ success: true; data: unknown }>);
+  function remove(id: string) {
+    setError(null);
+    startTransition(async () => {
+      const result = await deletePayType({ id });
+      if (!result.success) return setError(saveError(result.error));
+      close();
+      router.refresh();
+    });
   }
 
-  function handleUpdate(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!editing) return;
-    const fd = new FormData(e.currentTarget);
-    act(() => updatePayType({
-      id: editing.id,
-      number: fd.get("number"),
-      description: fd.get("description") as string,
-      includeInEmployeeSetup: fd.get("includeInEmployeeSetup") !== "false",
-      isActive: fd.get("isActive") === "true",
-    }) as Promise<{ success: true }>);
-  }
-
-  function handleDelete() {
-    if (!editing) return;
-    act(() => deletePayType({ id: editing.id }) as Promise<{ success: true }>);
-  }
+  const addButton = (
+    <Button onClick={() => open("new")} leadingIcon={<Plus className="h-4 w-4" />}>
+      Add pay type
+    </Button>
+  );
 
   return (
-    <div className="mt-6">
-      {error && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-          {error}
-        </p>
-      )}
-
-      {/* Toolbar */}
-      <div className="mb-3 flex items-center gap-3">
-        <div className="relative max-w-xs flex-1">
-          <svg className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search pay types…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm text-zinc-700 placeholder-zinc-400 focus:border-[var(--stroke-accent)] focus:shadow-[var(--focus-ring-tight)] focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:placeholder-zinc-500"
-          />
-        </div>
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-500">
-          <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="rounded" />
-          Show inactive
-        </label>
-        <button
-          onClick={() => { setShowCreate(true); setEditing(null); setError(null); }}
-          className="ml-auto rounded-lg bg-[var(--fill-accent)] px-4 py-2 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--fill-accent-hover)]"
-        >
-          + Add Pay Type
-        </button>
-      </div>
-
-      {/* List */}
-      <div className="flex flex-col gap-2">
-        {visible.length === 0 && (
-          <p className="text-sm text-zinc-400">
-            {searchLower ? `No pay types match "${search}".` : "No pay types yet."}
-          </p>
+    <>
+      <AreaPanel
+        title="Pay types"
+        hint="How people are paid, such as Non Exempt or Exempt, each with the number payroll knows it by."
+        action={addButton}
+        status={{ view, onChange: setView, counts }}
+        search={payTypes.length ? { value: query, onChange: setQuery, placeholder: "Number or name" } : undefined}
+        count={countLine(shown.length, payTypes.length, "pay type", "pay types")}
+      >
+        {payTypes.length === 0 ? (
+          <EmptyState icon={<Tag className="h-8 w-8" />} title="No pay types yet" body="Add the first one, such as Non Exempt." action={addButton} />
+        ) : shown.length === 0 ? (
+          <EmptyState icon={<Tag className="h-8 w-8" />} title="No pay types match" body="Nothing matches that search or status." />
+        ) : (
+          <Table>
+            <THead>
+              <TR>
+                <TH numeric>No.</TH>
+                <TH>Pay type</TH>
+                <TH>Employee record</TH>
+                <TH numeric>Employees</TH>
+                <TH>Status</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {shown.map((p) => {
+                const people = p._count?.employees ?? 0;
+                return (
+                  <TR key={p.id} onClick={() => open(p)}>
+                    <TD numeric style={{ fontWeight: "var(--weight-semibold)" }}>
+                      {p.number}
+                    </TD>
+                    <TD style={{ fontWeight: "var(--weight-medium)" }}>{p.description || <Muted>No name</Muted>}</TD>
+                    <TD style={{ color: "var(--text-secondary)" }}>{p.includeInEmployeeSetup ? "Offered" : <Muted>Not offered</Muted>}</TD>
+                    <TD numeric style={{ color: people ? "var(--text-primary)" : "var(--text-tertiary)" }}>
+                      {people.toLocaleString()}
+                    </TD>
+                    <TD>
+                      <StatusBadge active={p.isActive} />
+                    </TD>
+                  </TR>
+                );
+              })}
+            </TBody>
+          </Table>
         )}
-        {visible.map((pt) => (
-          <button
-            key={pt.id}
-            type="button"
-            onClick={() => { setEditing(pt); setShowCreate(false); setConfirmDeleteId(null); setError(null); }}
-            className="w-full rounded-xl ta-card ta-card-hover px-4 py-3 text-left"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <span className="font-mono text-sm text-zinc-400">{pt.number}</span>
-                <span className={`font-medium ${pt.isActive ? "text-[var(--text-primary)]" : "text-[var(--text-tertiary)]"}`}>
-                  {pt.description ?? "—"}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`rounded-full px-2 py-0.5 text-xs ${pt.isActive ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800"}`}>
-                  {pt.isActive ? "Active" : "Inactive"}
-                </span>
-                <span className="text-xs text-zinc-400">Click to edit →</span>
-              </div>
-            </div>
-          </button>
-        ))}
+      </AreaPanel>
+
+      {editing && (
+        <PayTypeDialog payType={editing === "new" ? null : editing} pending={isPending} error={error} onSubmit={save} onDelete={remove} onClose={close} />
+      )}
+    </>
+  );
+}
+
+function PayTypeDialog({
+  payType: p,
+  pending,
+  error,
+  onSubmit,
+  onDelete,
+  onClose,
+}: {
+  payType: PayType | null;
+  pending: boolean;
+  error: string | null;
+  onSubmit: (form: FormData) => void;
+  onDelete: (id: string) => void;
+  onClose: () => void;
+}) {
+  const people = p?._count?.employees ?? 0;
+  return (
+    <SetupDialog
+      title={p ? `${p.number} ${p.description ?? ""}`.trim() : "Add pay type"}
+      subtitle={p ? `${people.toLocaleString()} ${people === 1 ? "employee has" : "employees have"} this pay type` : undefined}
+      submitLabel={p ? "Save changes" : "Add pay type"}
+      pending={pending}
+      error={error}
+      onSubmit={onSubmit}
+      onClose={onClose}
+      danger={
+        p ? (
+          people > 0 ? (
+            <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+              In use, so it cannot be deleted. Set it to inactive instead.
+            </span>
+          ) : (
+            <DeleteAction label="Delete pay type" question="Delete this pay type for good?" pending={pending} onDelete={() => onDelete(p.id)} />
+          )
+        ) : undefined
+      }
+    >
+      <div className="grid gap-x-4 gap-y-3.5 [grid-template-columns:120px_minmax(0,1fr)]">
+        <Input label="Number" name="number" type="number" min={1} max={9999} required defaultValue={p ? String(p.number) : ""} placeholder="3" />
+        <Input label="Name" name="description" maxLength={255} defaultValue={p?.description ?? ""} placeholder="Non Exempt" />
       </div>
-
-      {/* Create form */}
-      {showCreate && (
-        <div className="mt-4 rounded-xl ta-card p-5">
-          <h3 className="mb-4 text-sm font-semibold text-[var(--text-primary)]">New Pay Type</h3>
-          <form onSubmit={handleCreate} className="flex flex-col gap-4">
-            <PayTypeFields />
-            <div className="flex gap-2">
-              <button type="submit" disabled={isPending} className={saveBtnCls}>
-                {isPending ? "Saving…" : "Create"}
-              </button>
-              <button type="button" onClick={() => { setShowCreate(false); setError(null); }} className={cancelBtnCls}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Edit form */}
-      {editing && !showCreate && (
-        <div className="mt-4 rounded-xl ta-card p-5">
-          <h3 className="mb-4 text-sm font-semibold text-[var(--text-primary)]">Edit Pay Type</h3>
-          <form onSubmit={handleUpdate} className="flex flex-col gap-4">
-            <PayTypeFields payType={editing} />
-
-            <div>
-              <label className="mb-1 block text-xs text-zinc-500">Status</label>
-              <select name="isActive" defaultValue={editing.isActive ? "true" : "false"} className={inputCls}>
-                <option value="true">Active</option>
-                <option value="false">Inactive</option>
-              </select>
-            </div>
-
-            {confirmDeleteId === editing.id ? (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-red-600">Delete this pay type?</span>
-                <button type="button" onClick={handleDelete} disabled={isPending} className={dangerBtnCls}>
-                  {isPending ? "Deleting…" : "Yes, delete"}
-                </button>
-                <button type="button" onClick={() => setConfirmDeleteId(null)} className={cancelBtnCls}>
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <button type="submit" disabled={isPending} className={saveBtnCls}>
-                  {isPending ? "Saving…" : "Save Changes"}
-                </button>
-                <button type="button" onClick={() => setConfirmDeleteId(editing.id)} className={dangerBtnCls}>
-                  Delete
-                </button>
-                <button type="button" onClick={() => { setEditing(null); setError(null); }} className={cancelBtnCls}>
-                  Cancel
-                </button>
-              </div>
-            )}
-          </form>
-        </div>
-      )}
-    </div>
+      <ChoiceField
+        label="On the employee record"
+        name="includeInEmployeeSetup"
+        defaultValue={p?.includeInEmployeeSetup === false ? "false" : "true"}
+        options={[
+          { value: "true", label: "Offered" },
+          { value: "false", label: "Not offered" },
+        ]}
+        hint="Whether this pay type can be picked when setting up an employee."
+      />
+      {p && <StatusField defaultActive={p.isActive} />}
+    </SetupDialog>
   );
 }

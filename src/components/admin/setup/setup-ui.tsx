@@ -448,3 +448,45 @@ export function PickList({
     </div>
   );
 }
+
+/** One of a few plain choices, drawn as segments, with the value in a hidden field under `name`. */
+export function ChoiceField({
+  label,
+  name,
+  options,
+  defaultValue,
+  hint,
+  onChange,
+}: {
+  label: string;
+  name: string;
+  options: { value: string; label: string }[];
+  defaultValue: string;
+  hint?: string;
+  onChange?: (value: string) => void;
+}) {
+  const [value, setValue] = useState(defaultValue);
+  return (
+    <div className="flex min-w-0 flex-col items-start gap-1.5">
+      <span className="wms-label">{label}</span>
+      <SegmentedControl
+        ariaLabel={label}
+        value={value}
+        onChange={(v) => {
+          setValue(v);
+          onChange?.(v);
+        }}
+        items={options}
+      />
+      <input type="hidden" name={name} value={value} />
+      {hint && <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)", textWrap: "pretty" }}>{hint}</span>}
+    </div>
+  );
+}
+
+/** "80 h", "7 h 30 min", "45 min". */
+export function hoursText(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return [h ? `${h.toLocaleString()} h` : "", m ? `${m} min` : ""].filter(Boolean).join(" ") || "0 h";
+}

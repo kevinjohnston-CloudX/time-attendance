@@ -56,8 +56,8 @@ const GROUPS: { title: string; areas: AreaDef[] }[] = [
   {
     title: "Payroll",
     areas: [
-      { id: "pay-categories", label: "Pay categories", icon: Layers, requires: "rules", hint: "Classify employees for payroll, with the leave policies each one carries." },
-      { id: "pay-types", label: "Pay types", icon: Tag, requires: "rules", hint: "How an employee is paid, such as Non Exempt or Exempt." },
+      { id: "pay-categories", label: "Pay categories", icon: Layers, requires: "rules" },
+      { id: "pay-types", label: "Pay types", icon: Tag, requires: "rules" },
       { id: "pay-codes", label: "Pay codes", icon: Receipt, requires: "payroll", hint: "The payroll lines hours are posted to and exported under." },
       { id: "reason-codes", label: "Reason codes", icon: MessageSquare, requires: "payroll", hint: "What a supervisor picks when a punch is added or changed." },
     ],
@@ -65,7 +65,7 @@ const GROUPS: { title: string; areas: AreaDef[] }[] = [
 ];
 
 /** Areas already built on the shared panel, which draw their own heading. */
-const ON_PANEL = new Set<Tab>(["sites", "departments", "holidays"]);
+const ON_PANEL = new Set<Tab>(["sites", "departments", "holidays", "leave-types", "pay-categories", "pay-types"]);
 
 interface Props {
   /* eslint-disable @typescript-eslint/no-explicit-any */
