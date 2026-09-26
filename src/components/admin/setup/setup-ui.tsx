@@ -598,3 +598,93 @@ export function NotCalculated() {
     </span>
   );
 }
+
+/** "HH:mm" as a person reads it: "8:00 AM". Empty for no time. */
+export function clock12(v: string | null | undefined): string {
+  const m = /^(\d{1,2}):(\d{2})/.exec(v ?? "");
+  if (!m) return "";
+  const h = Number(m[1]);
+  return `${h % 12 || 12}:${m[2]} ${h >= 12 ? "PM" : "AM"}`;
+}
+
+/**
+ * ClockField for a time held in state rather than submitted by name: the
+ * week schedule keeps all seven days in one value. It reports "HH:mm", or
+ * null once cleared; a time it cannot read (or an empty required one) marks
+ * itself invalid and reports nothing, so the last good value stands.
+ */
+export function ClockInput({
+  value,
+  onChange,
+  label,
+  required = false,
+}: {
+  value: string | null;
+  onChange: (v: string | null) => void;
+  label: string;
+  required?: boolean;
+}) {
+  const [text, setText] = useState(() => splitClock(value).text);
+  const [half, setHalf] = useState<"AM" | "PM">(() => splitClock(value).half);
+  // Follow a value set from outside, such as "Set every workday".
+  const [seen, setSeen] = useState(value);
+  if (value !== seen) {
+    setSeen(value);
+    const next = splitClock(value);
+    setText(next.text);
+    setHalf(next.half);
+  }
+  const parsed = text.trim() ? joinClock(text, half) : null;
+  const invalid = text.trim() ? parsed === null : required;
+
+  function commit(nextText: string, nextHalf: "AM" | "PM") {
+    const v = nextText.trim() ? joinClock(nextText, nextHalf) : null;
+    if (nextText.trim() && v === null) return;
+    if (!nextText.trim() && required) return;
+    setSeen(v);
+    onChange(v);
+  }
+
+  return (
+    <span className="inline-flex flex-col gap-1">
+      <span className="inline-flex items-center gap-1.5">
+        <input
+          aria-label={label}
+          aria-invalid={invalid || undefined}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            commit(e.target.value, half);
+          }}
+          placeholder="8:00"
+          inputMode="numeric"
+          autoComplete="off"
+          className="ta-field tabular h-8 w-[72px] rounded-md px-2.5"
+          style={{
+            border: `1px solid ${invalid ? "var(--stroke-error)" : "var(--stroke-default)"}`,
+            background: "var(--surface-card)",
+            color: "var(--text-primary)",
+            font: "var(--type-body1)",
+          }}
+        />
+        <SegmentedControl
+          ariaLabel={`${label}, AM or PM`}
+          value={half}
+          onChange={(v) => {
+            setHalf(v as "AM" | "PM");
+            commit(text, v as "AM" | "PM");
+          }}
+          items={[
+            { value: "AM", label: "AM" },
+            { value: "PM", label: "PM" },
+          ]}
+        />
+      </span>
+      {invalid && (
+        <span style={{ font: "var(--type-caption1)", color: "var(--text-error)" }}>
+          {text.trim() ? "Use a time like 8:30" : "Enter a time"}
+        </span>
+      )}
+    </span>
+  );
+}
