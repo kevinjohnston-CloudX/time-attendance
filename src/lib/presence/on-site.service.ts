@@ -15,6 +15,16 @@ import type {
   PresenceStatus,
 } from "./types";
 
+/** A built in role's name, for somebody with no custom role picked. The same words as the employee record. */
+const SYSTEM_ROLE_NAME: Record<string, string> = {
+  EMPLOYEE: "Employee",
+  SUPERVISOR: "Supervisor",
+  PAYROLL_ADMIN: "Payroll Admin",
+  HR_ADMIN: "HR Admin",
+  SYSTEM_ADMIN: "System Admin",
+  SUPER_ADMIN: "Super Admin",
+};
+
 /**
  * Who is in the building at one site, right now.
  *
@@ -445,6 +455,9 @@ export async function getPresenceDetail(
       shift: { select: { name: true, ...SHIFT_HOURS_SELECT } },
       supervisor: { select: { user: { select: { name: true } } } },
       site: { select: { id: true, name: true } },
+      hireDate: true,
+      role: true,
+      customRole: { select: { name: true } },
     },
   });
   if (!emp) return null;
@@ -544,6 +557,11 @@ export async function getPresenceDetail(
     salaried: emp.payType === "SALARY",
     inactive: !emp.isActive || emp.terminatedAt !== null,
     homeSite: emp.site && emp.site.id !== siteId ? emp.site.name : null,
+    site: emp.site?.name ?? null,
+    role: emp.customRole?.name ?? SYSTEM_ROLE_NAME[emp.role] ?? null,
+    hireDate: emp.hireDate ? emp.hireDate.toISOString().slice(0, 10) : null,
+    shiftStart: emp.shift?.startTime || null,
+    shiftEnd: emp.shift?.endTime || null,
     photoUrl: photos.get(emp.id) ?? null,
     scheduledStart: expected?.start ?? null,
     scheduledEnd: expected?.end ?? null,

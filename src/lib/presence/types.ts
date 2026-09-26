@@ -149,6 +149,15 @@ export interface PresenceDetail {
   inactive: boolean;
   /** The site on their record, when it is not this building. */
   homeSite: string | null;
+  /** The site on their record, whichever building this is. */
+  site: string | null;
+  /** Their permission role's name, as the employee record shows it. */
+  role: string | null;
+  /** YYYY-MM-DD. */
+  hireDate: string | null;
+  /** The shift's usual hours, HH:mm, whatever day is shown. */
+  shiftStart: string | null;
+  shiftEnd: string | null;
   /** A signed link to the tablet photo, or null. */
   photoUrl: string | null;
   /** The day's hours: from the shift on their record, or from WMS when the shift cannot say. */

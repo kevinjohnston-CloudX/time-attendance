@@ -2501,9 +2501,13 @@
   overflow: hidden;
 }
 
-/* The way to the full employee record, the same quiet accent link the
-   Timecards header uses. */
+/* Opens the profile card: the same quiet accent link the Timecards header
+   uses, drawn on a button because it opens a window, not a page. */
 .ppProfileLink {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 6px;
