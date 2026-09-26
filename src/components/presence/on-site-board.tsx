@@ -137,7 +137,6 @@ export function OnSiteBoard({
   initialFilters,
   canEditPhotos = false,
   scheduling = null,
-  canViewProfiles = false,
 }: {
   sites: { id: string; name: string }[];
   initialSiteId: string | null;
@@ -166,8 +165,6 @@ export function OnSiteBoard({
    * greyed out. The save checks both again on the server.
    */
   scheduling?: { live: boolean } | null;
-  /** Whether the viewer may open an employee's profile (manage employees). */
-  canViewProfiles?: boolean;
 }) {
   const [siteId, setSiteId] = useState(initialSiteId);
   // Photos saved here, drawn at once on every face until the server's own
@@ -1395,7 +1392,6 @@ export function OnSiteBoard({
             toast.flash("Photo updated");
           }}
           scheduling={scheduling}
-          canViewProfile={canViewProfiles}
           onScheduled={() => {
             if (siteId) void refresh(siteId);
             toast.flash("Added to today's schedule");

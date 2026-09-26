@@ -66,7 +66,6 @@ export default async function OnSitePage({
       initialBoard={boardResult?.success ? boardResult.data : null}
       canEditPhotos={canEditPhotos}
       scheduling={canSchedule ? { live: gateReadsCloudTimeSchedule() } : null}
-      canViewProfiles={canSchedule}
       initialFilters={{
         status: params.status ?? null,
         dept: params.dept ?? null,

@@ -62,7 +62,6 @@ export function PersonPanel({
   onPhotoSaved,
   scheduling = null,
   onScheduled,
-  canViewProfile = false,
 }: {
   siteId: string;
   employeeId: string;
@@ -91,12 +90,6 @@ export function PersonPanel({
    */
   scheduling?: { live: boolean } | null;
   onScheduled?: () => void;
-  /**
-   * Whether the profile card links on to the full employee record. The
-   * record checks the same permission itself; this only avoids a link that
-   * would send someone without it straight back out.
-   */
-  canViewProfile?: boolean;
 }) {
   const [day, setDay] = useState(initialDay ?? today);
   const [editingPhoto, setEditingPhoto] = useState(false);
@@ -272,9 +265,8 @@ export function PersonPanel({
               <span className={styles.ppRole}>
                 {person?.jobTitle ?? detail?.jobTitle ?? person?.department ?? detail?.department ?? ""}
               </span>
-              {/* A card of who they are, for everyone who can see this page;
-                  the full record, with pay, only through the card and only
-                  for those who may manage employees. */}
+              {/* A card of who they are, for everyone who can see this page.
+                  Never a way into the employee record, which carries pay. */}
               <button
                 type="button"
                 className={styles.ppProfileLink}
@@ -545,7 +537,6 @@ export function PersonPanel({
           name={name}
           jobTitle={person?.jobTitle ?? detail?.jobTitle ?? null}
           photoUrl={currentPhoto}
-          fullProfile={canViewProfile}
           onClose={() => setShowingProfile(false)}
         />
       )}

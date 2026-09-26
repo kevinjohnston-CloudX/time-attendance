@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
-import Link from "next/link";
-import { ArrowUpRight, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui";
 import type { PresenceDetail } from "@/lib/presence/types";
 import { formatTimeOfDay } from "@/lib/utils/date";
@@ -20,8 +19,8 @@ import { initialsOf } from "./presence-meta";
  *
  * <p>Every value comes from the person detail the panel already loaded,
  * which is gated on PRESENCE_VIEW_ANY and scoped to the site. Nothing here
- * reads the employee record. Somebody who may manage employees also gets a
- * link through to the full record, which checks that permission itself.
+ * reads the employee record, and the card deliberately does not link to it,
+ * for anyone: Live Attendance is not a way into pay or personal details.
  */
 export function ProfileCard({
   detail,
@@ -29,7 +28,6 @@ export function ProfileCard({
   name,
   jobTitle,
   photoUrl,
-  fullProfile,
   onClose,
 }: {
   /** Null while the person is still loading. */
@@ -38,8 +36,6 @@ export function ProfileCard({
   name: string;
   jobTitle: string | null;
   photoUrl: string | null | undefined;
-  /** Show the link to the employee record. */
-  fullProfile: boolean;
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -151,16 +147,6 @@ export function ProfileCard({
           className="flex items-center justify-end gap-2 px-6 py-3"
           style={{ borderTop: "1px solid var(--stroke-divider)" }}
         >
-          {fullProfile && (
-            <Link
-              href={`/admin/employees/${employeeId}`}
-              className="mr-auto inline-flex items-center gap-1 whitespace-nowrap hover:underline"
-              style={{ font: "var(--type-body2)", fontWeight: "var(--weight-medium)", color: "var(--text-accent)" }}
-            >
-              Open employee record
-              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
-            </Link>
-          )}
           <Button hierarchy="secondary" onClick={onClose} data-autofocus>
             Close
           </Button>
