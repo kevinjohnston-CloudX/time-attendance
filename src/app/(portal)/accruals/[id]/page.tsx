@@ -552,7 +552,7 @@ export default async function EmployeeAccrualsPage({
     return canManageEmployee && policyId ? (
       <Link
         key={name}
-        href={`/admin/rules-setup?tab=leave-policies&policy=${policyId}`}
+        href={`/admin/rules-setup/leave-policies/${policyId}`}
         className={`ta-hub-card ${frame}`}
         style={framing}
       >

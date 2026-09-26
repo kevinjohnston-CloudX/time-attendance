@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
-import { getRuleSets, getLeaveTypesAdmin } from "@/actions/admin.actions";
+import { getRuleSets } from "@/actions/admin.actions";
 import { getAllPayCodes } from "@/actions/pay-code.actions";
 import { getPtoPolicies } from "@/actions/pto-policy.actions";
 import { getShifts } from "@/actions/shift.actions";
@@ -13,8 +13,8 @@ import { RulesSetupClient } from "./rules-setup-client";
  *
  * <p>Everything the four editors need is fetched here in one round, so the
  * area rail below can switch without another server trip. The query string
- * carries where to start: `tab` picks the area, `policy` opens one accrual
- * policy, `view` preselects the rule-set status filter.
+ * carries where to start: `tab` picks the area, `view` preselects the rule
+ * set status filter, and an old `policy` link goes to that policy's page.
  */
 export default async function RulesSetupPage({
   searchParams,
@@ -28,20 +28,20 @@ export default async function RulesSetupPage({
   if (!hasRulesManage) redirect("/dashboard");
 
   const { tab, policy, view } = (await searchParams) ?? {};
+  // An old link to one policy opens it on its own page now.
+  if (policy) redirect(`/admin/rules-setup/leave-policies/${encodeURIComponent(policy)}`);
 
   const [
     ruleSetsResult,
     shiftsResult,
     holidayRulesResult,
     ptoPoliciesResult,
-    leaveTypesResult,
     payCodesResult,
   ] = await Promise.all([
     getRuleSets(),
     getShifts(),
     getHolidayRules(),
     getPtoPolicies(),
-    getLeaveTypesAdmin(),
     getAllPayCodes(),
   ]);
 
@@ -61,12 +61,8 @@ export default async function RulesSetupPage({
       ptoPolicies={serialize(
         ptoPoliciesResult.success ? ptoPoliciesResult.data : [],
       )}
-      leaveTypes={serialize(
-        leaveTypesResult.success ? leaveTypesResult.data : [],
-      )}
       payCodes={serialize(payCodesResult.success ? payCodesResult.data : [])}
       initialTab={tab}
-      initialPolicyId={policy}
       initialRuleSetView={view}
     />
   );

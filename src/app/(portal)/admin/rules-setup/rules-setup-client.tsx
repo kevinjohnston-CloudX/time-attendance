@@ -18,11 +18,6 @@ import { PtoPoliciesManager } from "@/components/admin/pto-policies-manager";
 
 type Tab = "rule-sets" | "shifts" | "holiday-rules" | "leave-policies";
 
-/** Areas not yet on the shared panel still draw their own heading. */
-const HINT: Partial<Record<Tab, string>> = {
-  "leave-policies": "How time off builds up with tenure, by leave type. Assigned to sites or to individual employees.",
-};
-
 const LABEL: Record<Tab, string> = {
   "rule-sets": "Rule sets",
   shifts: "Shifts",
@@ -36,17 +31,14 @@ interface Props {
   shifts: any[];
   holidayRules: any[];
   ptoPolicies: any[];
-  leaveTypes: any[];
   payCodes: any[];
   /* eslint-enable @typescript-eslint/no-explicit-any */
   initialTab?: string;
-  initialPolicyId?: string;
   initialRuleSetView?: string;
 }
 
 export function RulesSetupClient(props: Props) {
-  const { ruleSets, shifts, holidayRules, ptoPolicies, leaveTypes, payCodes, initialTab, initialPolicyId, initialRuleSetView } =
-    props;
+  const { ruleSets, shifts, holidayRules, ptoPolicies, payCodes, initialTab, initialRuleSetView } = props;
   const active = (rows: { isActive: boolean }[]) => rows.filter((r) => r.isActive).length;
 
   const groups: { title: string; areas: { id: Tab; label: string; icon: typeof Clock; count: number }[] }[] = [
@@ -67,7 +59,6 @@ export function RulesSetupClient(props: Props) {
   ];
 
   const [tab, setTab] = useState<Tab>(() => (initialTab && initialTab in LABEL ? (initialTab as Tab) : "rule-sets"));
-  const hint = HINT[tab];
 
   return (
     <SetupShell
@@ -78,17 +69,11 @@ export function RulesSetupClient(props: Props) {
       active={tab}
       onPick={setTab}
     >
-      {hint && (
-        <div className="flex flex-col gap-0.5">
-          <h2 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>{LABEL[tab]}</h2>
-          <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)", textWrap: "pretty" }}>{hint}</p>
-        </div>
-      )}
       {tab === "rule-sets" && <RuleSetsManager ruleSets={ruleSets} initialView={initialRuleSetView} />}
       {tab === "shifts" && <ShiftsManager shifts={shifts} />}
       {tab === "holiday-rules" && <HolidayRulesManager rules={holidayRules} payCodes={payCodes} />}
       {tab === "leave-policies" && (
-        <PtoPoliciesManager policies={ptoPolicies} leaveTypes={leaveTypes} payCodes={payCodes} initialPolicyId={initialPolicyId} />
+        <PtoPoliciesManager policies={ptoPolicies} />
       )}
     </SetupShell>
   );
