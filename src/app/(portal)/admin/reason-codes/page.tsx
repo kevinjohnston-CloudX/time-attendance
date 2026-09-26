@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function ReasonCodesPage() {
-  redirect("/admin/site-settings");
+  redirect("/admin/site-settings?tab=reason-codes");
 }

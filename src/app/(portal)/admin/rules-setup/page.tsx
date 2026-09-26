@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { LinkButton, PageHeader } from "@/components/ui";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getRuleSets, getLeaveTypesAdmin } from "@/actions/admin.actions";
 import { getAllPayCodes } from "@/actions/pay-code.actions";
@@ -10,7 +9,7 @@ import { getHolidayRules } from "@/actions/holiday-rule.actions";
 import { RulesSetupClient } from "./rules-setup-client";
 
 /**
- * Rules Setup — the pay rules screen from the portal design.
+ * Rules Setup: the pay rules screen.
  *
  * <p>Everything the four editors need is fetched here in one round, so the
  * area rail below can switch without another server trip. The query string
@@ -30,43 +29,45 @@ export default async function RulesSetupPage({
 
   const { tab, policy, view } = (await searchParams) ?? {};
 
-  const [ruleSetsResult, shiftsResult, holidayRulesResult, ptoPoliciesResult, leaveTypesResult, payCodesResult] =
-    await Promise.all([
-      getRuleSets(),
-      getShifts(),
-      getHolidayRules(),
-      getPtoPolicies(),
-      getLeaveTypesAdmin(),
-      getAllPayCodes(),
-    ]);
+  const [
+    ruleSetsResult,
+    shiftsResult,
+    holidayRulesResult,
+    ptoPoliciesResult,
+    leaveTypesResult,
+    payCodesResult,
+  ] = await Promise.all([
+    getRuleSets(),
+    getShifts(),
+    getHolidayRules(),
+    getPtoPolicies(),
+    getLeaveTypesAdmin(),
+    getAllPayCodes(),
+  ]);
 
   // Serialize Prisma Decimal/Date objects so they cross the server→client boundary as plain values
   function serialize<T>(v: T): T {
     return JSON.parse(JSON.stringify(v));
   }
 
+  // The header is drawn by the client, which pins it over the areas rail.
   return (
-    <div className="flex flex-col gap-4">
-      <PageHeader pinned
-        title="Rules Setup"
-        subtitle="Overtime, rounding, meal and holiday rules by rule set"
-        actions={
-          <LinkButton href="/admin" hierarchy="tertiary">
-            ← Administration
-          </LinkButton>
-        }
-      />
-      <RulesSetupClient
-        ruleSets={serialize(ruleSetsResult.success ? ruleSetsResult.data : [])}
-        shifts={serialize(shiftsResult.success ? shiftsResult.data : [])}
-        holidayRules={serialize(holidayRulesResult.success ? holidayRulesResult.data : [])}
-        ptoPolicies={serialize(ptoPoliciesResult.success ? ptoPoliciesResult.data : [])}
-        leaveTypes={serialize(leaveTypesResult.success ? leaveTypesResult.data : [])}
-        payCodes={serialize(payCodesResult.success ? payCodesResult.data : [])}
-        initialTab={tab}
-        initialPolicyId={policy}
-        initialRuleSetView={view}
-      />
-    </div>
+    <RulesSetupClient
+      ruleSets={serialize(ruleSetsResult.success ? ruleSetsResult.data : [])}
+      shifts={serialize(shiftsResult.success ? shiftsResult.data : [])}
+      holidayRules={serialize(
+        holidayRulesResult.success ? holidayRulesResult.data : [],
+      )}
+      ptoPolicies={serialize(
+        ptoPoliciesResult.success ? ptoPoliciesResult.data : [],
+      )}
+      leaveTypes={serialize(
+        leaveTypesResult.success ? leaveTypesResult.data : [],
+      )}
+      payCodes={serialize(payCodesResult.success ? payCodesResult.data : [])}
+      initialTab={tab}
+      initialPolicyId={policy}
+      initialRuleSetView={view}
+    />
   );
 }

@@ -1,15 +1,15 @@
 "use client";
 
 import { Fragment, useState, useTransition, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import { createRuleSet, updateRuleSet, deleteRuleSet } from "@/actions/admin.actions";
 import type { AutoPayMode, OtCycle, RuleSet } from "@prisma/client";
 
 const PAY_FREQUENCIES = [
-  { value: "WEEKLY", label: "Weekly (every 7 days)" },
-  { value: "BIWEEKLY", label: "Bi-weekly (every 14 days)" },
-  { value: "SEMIMONTHLY", label: "Semi-monthly (1st–15th and 16th–end)" },
-  { value: "MONTHLY", label: "Monthly (1st–end of month)" },
+  { value: "WEEKLY", label: "Weekly" },
+  { value: "BIWEEKLY", label: "Every 2 weeks" },
+  { value: "SEMIMONTHLY", label: "Twice a month (1st to 15th, 16th to end)" },
+  { value: "MONTHLY", label: "Monthly (1st to end of month)" },
 ] as const;
 
 interface Props {
@@ -27,37 +27,24 @@ import {
   fieldCls as inputCls,
   smFieldCls as smInputCls,
 } from "@/components/ui/form-classes";
-import {
-  Badge,
-  Banner,
-  Button,
-  Card,
-  EmptyState,
-  SearchInput,
-  SegmentedControl,
-  Table,
-  TableFooter,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
-  Toolbar,
-  statusTone,
-} from "@/components/ui";
+import { Badge, Banner, Button, EmptyState, SegmentedControl, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
 import { Plus, SlidersHorizontal, X } from "lucide-react";
+import {
+  AreaPanel,
+  DeleteAction,
+  Muted,
+  StatusBadge,
+  countLine,
+  hoursText,
+  matches,
+  saveError,
+  useStatusView,
+  type StatusView,
+} from "./setup/setup-ui";
 
-/** The status views the design gives this screen. */
-const RULE_SET_VIEWS = [
-  { value: "all", label: "All" },
-  { value: "active", label: "Active" },
-  { value: "inactive", label: "Inactive" },
-] as const;
-
-type RuleSetView = (typeof RULE_SET_VIEWS)[number]["value"];
-
-function asView(raw: string | undefined): RuleSetView {
-  return RULE_SET_VIEWS.some((v) => v.value === raw) ? (raw as RuleSetView) : "all";
+/** `?view=` on arrival, which the hub's "1 inactive" link uses; Active otherwise. */
+function asView(raw: string | undefined): StatusView {
+  return raw === "all" || raw === "inactive" ? raw : "active";
 }
 
 type AutoPayDaySchedule = { day: number; apply: boolean; minutes: number }[];
@@ -103,42 +90,60 @@ const FEDERAL_STATES = [
   "District of Columbia",
 ];
 
-function fmtMins(mins: number): string {
-  if (mins >= 1440) return "disabled";
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+/** Stored "off" values: a day or a week longer than any shift can reach. */
+const DAY_OFF = 1440;
+const WEEK_OFF = 86400;
+
+const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th"}`;
+
+/**
+ * The three columns that say what a rule set does.
+ *
+ * <p>These read the same fields the editor writes, so a row and the form
+ * behind it can never disagree. Thresholds are minutes, with a full day
+ * (daily) or 60 days (weekly) standing for "off". The old summary treated
+ * anything past 24 hours as off, so every weekly threshold, 40 hours
+ * included, read "OT after disabled/week".
+ */
+function payCycle(rs: RuleSet): { main: string; note?: string } {
+  if (!rs.payFrequency) return { main: "Company default" };
+  const label = PAY_FREQUENCIES.find((f) => f.value === rs.payFrequency)?.label ?? rs.payFrequency;
+  const [main, note] = label.split(" (");
+  return { main, note: note?.replace(/\)$/, "") };
 }
 
 /**
- * The three columns that say what a rule set actually does.
- *
- * <p>These read the same fields the editor writes, so a row and the form
- * behind it can never disagree. The thresholds are stored as minutes with
- * sentinel values for "off" — 1440 daily, 86400 weekly — which is why every
- * one of them is asked whether it is enabled before it is printed.
+ * The window weekly overtime is counted in, as the overtime engine picks it:
+ * the calendar week unless a longer cycle has an anchor date to count from.
  */
-function payCycleLabel(rs: RuleSet): string {
-  if (!rs.payFrequency) return "Tenant default";
-  return PAY_FREQUENCIES.find((f) => f.value === rs.payFrequency)?.label ?? rs.payFrequency;
+function otWindow(rs: RuleSet): { days: number; words: string } {
+  const cycle = rs.otCycle && rs.otCycle !== "WEEKLY" && rs.otCycleAnchorDate ? rs.otCycle : "WEEKLY";
+  const days = cycle === "WEEKLY" ? 7 : cycle === "BIWEEKLY" ? 14 : (rs.otCycleDays ?? 14);
+  return { days, words: days === 7 ? "a week" : days === 14 ? "per 2 weeks" : `per ${days} days` };
 }
 
-function overtimeSummary(rs: RuleSet): string {
-  const parts: string[] = [];
-  if (rs.dailyOtMinutes < 1440) parts.push(`OT after ${fmtMins(rs.dailyOtMinutes)}/day`);
-  if (rs.dailyDtMinutes < 1440) parts.push(`DT after ${fmtMins(rs.dailyDtMinutes)}/day`);
-  if (rs.weeklyOtEnabled) parts.push(`OT after ${fmtMins(rs.weeklyOtMinutes)}/week`);
-  if (rs.consecutiveDayOtEnabled) parts.push(`Day ${rs.consecutiveDayOtDay} premium`);
-  return parts.length > 0 ? parts.join(" · ") : "No overtime rules";
+function overtime(rs: RuleSet): { main: string; note?: string } {
+  const win = otWindow(rs);
+  // More hours than the window holds can never be reached, so it reads as off.
+  const reachable = (mins: number) => mins < win.days * 1440;
+  const ot: string[] = [];
+  if (rs.dailyOtMinutes < DAY_OFF) ot.push(`${hoursText(rs.dailyOtMinutes)} a day`);
+  if (rs.weeklyOtEnabled && reachable(rs.weeklyOtMinutes)) ot.push(`${hoursText(rs.weeklyOtMinutes)} ${win.words}`);
+  const dt: string[] = [];
+  if (rs.dailyDtMinutes < DAY_OFF) dt.push(`${hoursText(rs.dailyDtMinutes)} a day`);
+  if (rs.weeklyOtEnabled && rs.weeklyDtMinutes < WEEK_OFF && reachable(rs.weeklyDtMinutes)) dt.push(`${hoursText(rs.weeklyDtMinutes)} ${win.words}`);
+  const notes = [dt.length ? `Double time after ${dt.join(" or ")}` : "", rs.consecutiveDayOtEnabled ? `${ordinal(rs.consecutiveDayOtDay)} day in a row` : ""].filter(Boolean);
+  if (!ot.length && !notes.length) return { main: "No overtime" };
+  return { main: ot.length ? `After ${ot.join(" or ")}` : "Premium days only", note: notes.join(" · ") || undefined };
 }
 
-function mealSummary(rs: RuleSet): string {
-  // Auto-deduct takes the meal off the clock whether or not it was punched, so
-  // it is the half of this setting someone reading the list needs to see.
-  const trigger = `after ${fmtMins(rs.mealBreakAfterMinutes)}`;
-  return rs.autoDeductMeal
-    ? `Auto-deduct ${rs.mealBreakMinutes}m ${trigger}`
-    : `${rs.mealBreakMinutes}m punched, ${trigger}`;
+function meal(rs: RuleSet): { main: string; note: string } {
+  // Auto deduct takes the meal off the clock whether or not it was punched,
+  // so it is the half of this setting someone reading the list needs.
+  return {
+    main: `${rs.mealBreakMinutes} min after ${hoursText(rs.mealBreakAfterMinutes)}`,
+    note: rs.autoDeductMeal ? "Deducted automatically" : "Punched",
+  };
 }
 
 function parseForm(fd: FormData): RSFields {
@@ -1643,60 +1648,59 @@ function Modal({
 
 // ─── Main manager ─────────────────────────────────────────────────────────────
 
+/** One cell line with an optional quiet line under it. */
+function TwoLine({ main, note, width }: { main: string; note?: string; width?: number }) {
+  // A width lets a long note wrap; the kit's table otherwise sizes every
+  // column to its longest line and the panel scrolls sideways.
+  return (
+    <span className="flex flex-col" style={width ? { maxWidth: width, whiteSpace: "normal" } : undefined}>
+      <span style={{ color: "var(--text-primary)" }}>{main}</span>
+      {note && <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{note}</span>}
+    </span>
+  );
+}
+
+type RuleSetRow = RuleSet & { _count?: { employees: number } };
+
 /**
- * The rule sets list, as the portal design's list template lays it out: the
- * status views and the search box in one toolbar with the record count, then
- * one card holding the table.
- *
- * <p>The count is not decoration. "No rule sets" and "no rule sets matching
- * these filters" look identical without it, and on this screen the difference
- * is whether the tenant has no overtime configuration at all.
- *
- * <p>The view is local state seeded from `?view=`, the same compromise the
- * area rail above makes with `?tab=`. A link can still open this list already
- * filtered — which is what the hub's "1 inactive" note wants — but clicking
- * between the three views does not re-run the six server actions this page
- * loads to hide rows the browser is already holding.
+ * The rule sets list on the shared panel. The default rule set is the one
+ * every pay period without its own falls back to, so it is marked and
+ * cannot be deleted; one anybody is still on cannot be deleted either.
  */
-export function RuleSetsManager({ ruleSets, payCodes, initialView }: Props) {
+export function RuleSetsManager({ ruleSets, payCodes, initialView }: Props & { ruleSets: RuleSetRow[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [editingRs, setEditingRs] = useState<RuleSet | null>(null);
+  const [editingRs, setEditingRs] = useState<RuleSetRow | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [view, setView] = useState<RuleSetView>(asView(initialView));
+  const [query, setQuery] = useState("");
+  const { view, setView, counts, kept } = useStatusView(ruleSets, asView(initialView));
+  const shown = kept.filter((rs) => matches(query, rs.name, rs.number));
 
-  const searchLower = search.trim().toLowerCase();
-  const inView =
-    view === "all" ? ruleSets : ruleSets.filter((rs) => rs.isActive === (view === "active"));
-  const visible = searchLower
-    ? inView.filter((rs) => rs.name.toLowerCase().includes(searchLower))
-    : inView;
-
-  const activeCount = ruleSets.filter((rs) => rs.isActive).length;
-  const viewCounts: Record<RuleSetView, number> = {
-    all: ruleSets.length,
-    active: activeCount,
-    inactive: ruleSets.length - activeCount,
-  };
-
-  function openEdit(rs: RuleSet) {
+  function openEdit(rs: RuleSetRow) {
     setEditingRs(rs);
-    setConfirmDeleteId(null);
+    setError(null);
+  }
+  function closeEdit() {
+    setEditingRs(null);
+    setError(null);
+  }
+  function openCreate() {
+    setShowCreate(true);
+    setError(null);
+  }
+  function closeCreate() {
+    setShowCreate(false);
     setError(null);
   }
 
-  function openCreate() { setShowCreate(true); setError(null); }
-  function closeCreate() { setShowCreate(false); setError(null); }
-
   function handleCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const fields = parseForm(new FormData(e.currentTarget));
     setError(null);
     startTransition(async () => {
-      const result = await createRuleSet(parseForm(new FormData(e.currentTarget)));
-      if (!result.success) { setError(result.error); return; }
+      const result = await createRuleSet(fields);
+      if (!result.success) return setError(saveError(result.error));
       closeCreate();
       router.refresh();
     });
@@ -1706,210 +1710,162 @@ export function RuleSetsManager({ ruleSets, payCodes, initialView }: Props) {
     setError(null);
     startTransition(async () => {
       const result = await deleteRuleSet({ ruleSetId });
-      if (!result.success) { setError(result.error); setConfirmDeleteId(null); return; }
-      setConfirmDeleteId(null);
-      setEditingRs(null);
+      if (!result.success) return setError(saveError(result.error));
+      closeEdit();
       router.refresh();
     });
   }
 
   function handleUpdate(ruleSetId: string, e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const fields = parseForm(new FormData(e.currentTarget));
     setError(null);
     startTransition(async () => {
-      const result = await updateRuleSet({ ruleSetId, ...parseForm(new FormData(e.currentTarget)) });
-      if (!result.success) { setError(result.error); return; }
-      setEditingRs(null);
+      const result = await updateRuleSet({ ruleSetId, ...fields });
+      if (!result.success) return setError(saveError(result.error));
+      closeEdit();
       router.refresh();
     });
   }
 
+  const addButton = (
+    <Button onClick={openCreate} leadingIcon={<Plus className="h-4 w-4" />}>
+      Add rule set
+    </Button>
+  );
+
   return (
-    <div className="mt-6 flex flex-col gap-4">
-      {error && <Banner tone="error" body={error} />}
-
-      <Toolbar count={visible.length} countLabel="rule set">
-        <SegmentedControl
-          ariaLabel="Rule set status"
-          value={view}
-          onChange={(next) => setView(next as RuleSetView)}
-          items={RULE_SET_VIEWS.map((v) => ({ ...v, count: viewCounts[v.value] }))}
-        />
-        <SearchInput value={search} onValueChange={setSearch} placeholder="Rule set name" />
-        <Button onClick={openCreate} leadingIcon={<Plus className="h-4 w-4" />}>
-          New Rule Set
-        </Button>
-      </Toolbar>
-
-      <Card padding={0}>
-        {visible.length === 0 ? (
-          /* Three different nothings, and they mean different things: the
-             tenant has no rules at all, this status has none, or the search
-             matched none. Only the first is a reason to create one. */
+    <>
+      <AreaPanel
+        title="Rule sets"
+        hint="The overtime, rounding and meal rules a pay period is calculated with. Each employee is on one."
+        action={addButton}
+        status={{ view, onChange: setView, counts }}
+        search={ruleSets.length ? { value: query, onChange: setQuery, placeholder: "Rule set name or number" } : undefined}
+        count={countLine(shown.length, ruleSets.length, "rule set", "rule sets")}
+      >
+        {ruleSets.length === 0 ? (
           <EmptyState
             icon={<SlidersHorizontal className="h-8 w-8" />}
-            title={
-              ruleSets.length === 0
-                ? "No rule sets yet"
-                : searchLower
-                  ? "No rule sets match that search"
-                  : `No ${view} rule sets`
-            }
-            body={
-              ruleSets.length === 0
-                ? "A rule set holds the overtime thresholds, rounding and meal rules a pay period is calculated with. Nothing is calculated until one exists."
-                : searchLower
-                  ? `Nothing in this view matches "${search}".`
-                  : `All ${ruleSets.length} rule sets are ${view === "active" ? "inactive" : "active"}.`
-            }
-            action={
-              ruleSets.length === 0 ? (
-                <Button size="sm" onClick={openCreate} leadingIcon={<Plus className="h-3.5 w-3.5" />}>
-                  New Rule Set
-                </Button>
-              ) : (
-                <Button
-                  hierarchy="secondary"
-                  size="sm"
-                  onClick={() => { setSearch(""); setView("all"); }}
-                >
-                  Show all rule sets
-                </Button>
-              )
-            }
+            title="No rule sets yet"
+            body="Nothing is calculated until one exists. Add the first one to set overtime, rounding and meals."
+            action={addButton}
+          />
+        ) : shown.length === 0 ? (
+          <EmptyState
+            icon={<SlidersHorizontal className="h-8 w-8" />}
+            title="No rule sets match"
+            body="Nothing matches that search or status."
           />
         ) : (
-          <>
-            <Table>
-              <THead>
-                <TR>
-                  <TH numeric>#</TH>
-                  <TH>Rule Set</TH>
-                  <TH>Pay Cycle</TH>
-                  <TH>Overtime</TH>
-                  <TH>Meal</TH>
-                  <TH align="center">Status</TH>
-                  <TH align="right">Actions</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {visible.map((rs) => (
+          <Table>
+            <THead>
+              <TR>
+                <TH numeric style={{ width: 48 }}>
+                  No.
+                </TH>
+                <TH>Rule set</TH>
+                <TH>Pay cycle</TH>
+                <TH>Overtime</TH>
+                <TH>Meal</TH>
+                <TH>Status</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {shown.map((rs) => {
+                const people = rs._count?.employees ?? 0;
+                return (
                   <TR key={rs.id} onClick={() => openEdit(rs)}>
-                    <TD numeric style={{ color: "var(--text-tertiary)" }}>{rs.number ?? "—"}</TD>
+                    <TD numeric style={{ fontWeight: "var(--weight-semibold)" }}>
+                      {rs.number ?? ""}
+                    </TD>
                     <TD>
-                      <span className="flex items-center gap-2">
-                        <span style={{ fontWeight: "var(--weight-medium)" }}>{rs.name}</span>
-                        {rs.isDefault && (
-                          <Badge tone="info" size="sm">
-                            Default
-                          </Badge>
-                        )}
+                      <span className="flex flex-col" style={{ maxWidth: 220, whiteSpace: "normal" }}>
+                        <span className="flex items-baseline gap-2">
+                          <span style={{ fontWeight: "var(--weight-medium)" }}>{rs.name}</span>
+                          {rs.isDefault && (
+                            <Badge tone="info" size="sm">
+                              Default
+                            </Badge>
+                          )}
+                        </span>
+                        <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                          {people ? `${people.toLocaleString()} ${people === 1 ? "employee" : "employees"}` : "No employees"}
+                        </span>
                       </span>
                     </TD>
-                    <TD style={{ color: "var(--text-secondary)" }}>{payCycleLabel(rs)}</TD>
-                    <TD style={{ color: "var(--text-secondary)" }}>{overtimeSummary(rs)}</TD>
-                    <TD style={{ color: "var(--text-secondary)" }}>{mealSummary(rs)}</TD>
-                    <TD align="center">
-                      <Badge tone={statusTone(rs.isActive ? "ACTIVE" : "INACTIVE")} size="sm">
-                        {rs.isActive ? "Active" : "Inactive"}
-                      </Badge>
+                    <TD>
+                      <TwoLine {...payCycle(rs)} />
                     </TD>
-                    <TD align="right">
-                      <Button
-                        hierarchy="secondary"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); openEdit(rs); }}
-                      >
-                        Edit
-                      </Button>
+                    <TD>
+                      <TwoLine {...overtime(rs)} width={208} />
+                    </TD>
+                    <TD>
+                      <TwoLine {...meal(rs)} />
+                    </TD>
+                    <TD>
+                      <StatusBadge active={rs.isActive} />
                     </TD>
                   </TR>
-                ))}
-              </TBody>
-            </Table>
-            <TableFooter shown={visible.length} total={ruleSets.length} label="rule sets" />
-          </>
+                );
+              })}
+            </TBody>
+          </Table>
         )}
-      </Card>
+      </AreaPanel>
 
-      {/* Create modal */}
       {showCreate && (
-        <Modal title="New Rule Set" onClose={closeCreate}>
-          {error && !editingRs && <Banner tone="error" body={error} />}
+        <Modal title="Add rule set" onClose={closeCreate}>
+          {error && <Banner tone="error" title="Not saved" body={error} />}
           <form onSubmit={handleCreate}>
             <RuleSetFields payCodes={payCodes} />
-            <div
-              className="mt-6 flex gap-2 pt-4"
-              style={{ borderTop: "1px solid var(--stroke-divider)" }}
-            >
-              <Button type="submit" disabled={isPending}>
-                {isPending ? "Creating…" : "Create"}
-              </Button>
+            <div className="mt-6 flex justify-end gap-2 pt-4" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
               <Button type="button" hierarchy="secondary" onClick={closeCreate}>
                 Cancel
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                {isPending ? "Saving…" : "Add rule set"}
               </Button>
             </div>
           </form>
         </Modal>
       )}
 
-      {/* Edit modal */}
       {editingRs && (
-        <Modal title={`Edit: ${editingRs.name}`} onClose={() => { setEditingRs(null); setConfirmDeleteId(null); setError(null); }}>
-          {error && <Banner tone="error" body={error} />}
+        <Modal title={editingRs.name} onClose={closeEdit}>
+          {error && <Banner tone="error" title="Not saved" body={error} />}
           <form onSubmit={(e) => handleUpdate(editingRs.id, e)}>
             <RuleSetFields rs={editingRs} payCodes={payCodes} />
             <div
               className="mt-6 flex flex-wrap items-center justify-between gap-2 pt-4"
               style={{ borderTop: "1px solid var(--stroke-divider)" }}
             >
-              <div className="flex gap-2">
+              <span>
+                {editingRs.isDefault ? (
+                  <Muted>The default rule set cannot be deleted.</Muted>
+                ) : (editingRs._count?.employees ?? 0) > 0 ? (
+                  <Muted>In use, so it cannot be deleted. Set it to inactive instead.</Muted>
+                ) : (
+                  <DeleteAction
+                    label="Delete rule set"
+                    question="Delete this rule set for good?"
+                    pending={isPending}
+                    onDelete={() => handleDelete(editingRs.id)}
+                  />
+                )}
+              </span>
+              <span className="flex gap-2">
+                <Button type="button" hierarchy="secondary" onClick={closeEdit}>
+                  Cancel
+                </Button>
                 <Button type="submit" disabled={isPending}>
                   {isPending ? "Saving…" : "Save changes"}
                 </Button>
-                <Button
-                  type="button"
-                  hierarchy="secondary"
-                  onClick={() => { setEditingRs(null); setConfirmDeleteId(null); }}
-                >
-                  Cancel
-                </Button>
-              </div>
-              {/* The default rule set has no delete: every pay period without an
-                  explicit rule set falls back to it. */}
-              {!editingRs.isDefault && (
-                confirmDeleteId === editingRs.id ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                      Are you sure?
-                    </span>
-                    <Button
-                      type="button"
-                      tone="error"
-                      onClick={() => handleDelete(editingRs.id)}
-                      disabled={isPending}
-                    >
-                      {isPending ? "Deleting…" : "Yes, delete"}
-                    </Button>
-                    <Button type="button" hierarchy="secondary" onClick={() => setConfirmDeleteId(null)}>
-                      Cancel
-                    </Button>
-                  </div>
-                ) : (
-                  <Button
-                    type="button"
-                    hierarchy="link"
-                    tone="error"
-                    onClick={() => setConfirmDeleteId(editingRs.id)}
-                  >
-                    Delete rule set
-                  </Button>
-                )
-              )}
+              </span>
             </div>
           </form>
         </Modal>
       )}
-    </div>
+    </>
   );
 }

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function HolidaysPage() {
-  redirect("/admin/site-settings");
+  redirect("/admin/site-settings?tab=holidays");
 }

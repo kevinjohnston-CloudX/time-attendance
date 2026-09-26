@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function PtoPoliciesPage() {
-  redirect("/admin/site-settings");
+  redirect("/admin/rules-setup?tab=leave-policies");
 }
