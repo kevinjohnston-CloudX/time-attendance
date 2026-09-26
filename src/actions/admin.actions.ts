@@ -837,7 +837,9 @@ export const createSite = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: SiteInput) => {
     if (!tenantId) throw new Error("Tenant context required");
     const parsed = siteSchema.parse(input);
-    const site = await db.site.create({ data: { ...parsed, tenantId } });
+    const site = await db.site.create({
+      data: { ...parsed, address: parsed.address?.trim() || null, tenantId },
+    });
     await writeAuditLog({
       tenantId,
       actorId,
@@ -854,10 +856,21 @@ export const createSite = withRBAC(
 export const updateSite = withRBAC(
   "SITE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateSiteInput) => {
-    const { siteId, isActive, ...rest } = updateSiteSchema.parse(input);
+    if (!tenantId) throw new Error("Tenant context required");
+    const { siteId, isActive, address, ...rest } = updateSiteSchema.parse(input);
+    // Found inside this company first: an id from another one answers the
+    // same "not found" as an id that does not exist.
+    const own = await db.site.findFirst({ where: { id: siteId, tenantId }, select: { id: true } });
+    if (!own) throw new Error("NOT_FOUND");
     const updated = await db.site.update({
-      where: { id: siteId },
-      data: { ...rest, ...(isActive !== undefined && { isActive }) },
+      where: { id: own.id },
+      data: {
+        ...rest,
+        // An emptied address clears it. It used to be sent as undefined,
+        // which Prisma skips, so the old address could never be removed.
+        ...(address !== undefined && { address: address.trim() || null }),
+        ...(isActive !== undefined && { isActive }),
+      },
     });
     await writeAuditLog({
       tenantId,

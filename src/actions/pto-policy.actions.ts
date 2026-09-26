@@ -252,11 +252,12 @@ export const deletePtoPolicy = withRBAC(
 
 export const getSitePtoPolicies = withRBAC(
   "SITE_MANAGE",
-  async (_ctx, input: { siteId: string }) => {
+  async ({ tenantId }, input: { siteId: string }) => {
+    if (!tenantId) throw new Error("Tenant context required");
     const { siteId } = input;
 
     return db.sitePtoPolicy.findMany({
-      where: { siteId },
+      where: { siteId, site: { tenantId } },
       include: {
         leaveType: { select: { id: true, name: true, category: true } },
         ptoPolicy: { select: { id: true, name: true } },
@@ -270,7 +271,18 @@ export const getSitePtoPolicies = withRBAC(
 export const assignSitePtoPolicy = withRBAC(
   "SITE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: unknown) => {
+    if (!tenantId) throw new Error("Tenant context required");
     const { siteId, leaveTypeId, ptoPolicyId } = assignSitePtoPolicySchema.parse(input);
+
+    // The site, the leave type and the policy all have to be this company's.
+    const [site, leaveType, policy] = await Promise.all([
+      db.site.findFirst({ where: { id: siteId, tenantId }, select: { id: true } }),
+      db.leaveType.findFirst({ where: { id: leaveTypeId, tenantId }, select: { id: true } }),
+      ptoPolicyId
+        ? db.ptoPolicy.findFirst({ where: { id: ptoPolicyId, tenantId, isActive: true }, select: { id: true } })
+        : Promise.resolve({ id: null }),
+    ]);
+    if (!site || !leaveType || !policy) throw new Error("NOT_FOUND");
 
     await db.$transaction(async (tx) => {
       if (ptoPolicyId) {
@@ -297,3 +309,38 @@ export const assignSitePtoPolicy = withRBAC(
   }
 );
 
+// ─── One site's leave policy page ────────────────────────────────────────────
+
+/**
+ * Everything the site page draws, inside this company: the site, its active
+ * leave types, the active policies that can be picked and the ones already
+ * picked. Gated like the assignments themselves, on SITE_MANAGE, so somebody
+ * who may assign a policy can also see the names on offer. It used to read
+ * those through getPtoPolicies, which needs RULES_MANAGE, and showed such a
+ * person an empty list with no word why. Only the names come back.
+ */
+export const getSitePolicySetup = withRBAC(
+  "SITE_MANAGE",
+  async ({ tenantId }, input: { siteId: string }) => {
+    if (!tenantId) throw new Error("Tenant context required");
+    const site = await db.site.findFirst({ where: { id: input.siteId, tenantId } });
+    if (!site) throw new Error("NOT_FOUND");
+    const [leaveTypes, policies, assignments] = await Promise.all([
+      db.leaveType.findMany({
+        where: { tenantId, isActive: true },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, category: true },
+      }),
+      db.ptoPolicy.findMany({
+        where: { tenantId, isActive: true },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
+      db.sitePtoPolicy.findMany({
+        where: { siteId: site.id },
+        select: { leaveTypeId: true, ptoPolicyId: true },
+      }),
+    ]);
+    return { site, leaveTypes, policies, assignments };
+  }
+);
