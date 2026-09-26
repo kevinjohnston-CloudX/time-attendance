@@ -285,6 +285,58 @@ export const toggleMealWaiver = withRBAC(
   }
 );
 
+// ─── toggleMealPremiumWaiver ──────────────────────────────────────────────────
+
+export const toggleMealPremiumWaiver = withRBAC(
+  "PAY_PERIOD_MANAGE",
+  async ({ employeeId: actorId, tenantId }, input: unknown): Promise<{ success: boolean; waived: boolean }> => {
+    const { timesheetId, segmentDate } = mealWaiverSchema.parse(input);
+
+    const dateObj = new Date(segmentDate + "T00:00:00.000Z");
+
+    const existing = await db.mealPremiumWaiver.findUnique({
+      where: { timesheetId_segmentDate: { timesheetId, segmentDate: dateObj } },
+    });
+
+    if (existing) {
+      await db.$transaction(async (tx) => {
+        await tx.mealPremiumWaiver.delete({ where: { id: existing.id } });
+        await writeAuditLog({
+          tenantId,
+          actorId,
+          action: "MEAL_PREMIUM_WAIVER_REMOVED",
+          entityType: "TIMESHEET",
+          entityId: timesheetId,
+          changes: { before: { segmentDate, createdById: existing.createdById }, after: null },
+        });
+      });
+    } else {
+      await db.$transaction(async (tx) => {
+        await tx.mealPremiumWaiver.create({
+          data: { timesheetId, segmentDate: dateObj, createdById: actorId },
+        });
+        await writeAuditLog({
+          tenantId,
+          actorId,
+          action: "MEAL_PREMIUM_WAIVER_ADDED",
+          entityType: "TIMESHEET",
+          entityId: timesheetId,
+          changes: { before: null, after: { segmentDate, createdById: actorId } },
+        });
+      });
+    }
+
+    const timesheet = await db.timesheet.findUniqueOrThrow({
+      where: { id: timesheetId },
+      include: { employee: { include: { ruleSet: true } } },
+    });
+    await rebuildSegments(timesheetId, timesheet.employee.ruleSet);
+    revalidatePath("/payroll/timecards");
+
+    return { success: true, waived: !existing };
+  }
+);
+
 // ─── authorizeTimecardOt ──────────────────────────────────────────────────────
 
 export const authorizeTimecardOt = withRBAC(
