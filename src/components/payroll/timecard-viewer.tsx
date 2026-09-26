@@ -784,7 +784,7 @@ export function TimecardViewer({
         const e = parseUtcDate(pp.endDate);
         return s <= monthEnd && e >= monthStart;
       });
-    if (match) navigate(match.id);
+    if (match) navigate(selectedEmployeeId, match.id);
     setShowCalendar(false);
   }
 
