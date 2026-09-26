@@ -9,8 +9,8 @@ interface Column {
 }
 
 /**
- * Which columns the report carries, as a wrapped grid of checkboxes, three
- * across when there is room. The report lists them in this same order.
+ * Which columns the report carries, as checkboxes two across in the
+ * builder's side rail. The report lists them in this same order.
  */
 export function ColumnPicker({
   columns,
@@ -29,9 +29,9 @@ export function ColumnPicker({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid gap-x-4 gap-y-1 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(180px,30%)),1fr))]">
+      <div className="grid gap-x-4 gap-y-1 [grid-template-columns:repeat(auto-fill,minmax(140px,1fr))]">
         {columns.map((col) => (
-          <div key={col.id} className="flex items-center py-1.5">
+          <div key={col.id} className="flex min-w-0 items-center py-1">
             <Checkbox checked={selected.includes(col.id)} onChange={() => toggle(col.id)} label={col.label} />
           </div>
         ))}

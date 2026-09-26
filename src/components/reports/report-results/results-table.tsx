@@ -27,11 +27,15 @@ export function ResultsTable({
   rows,
   totalRows,
   isLoading,
+  fill = false,
 }: {
   columns: Column[];
   rows: Record<string, unknown>[];
   totalRows: number;
   isLoading?: boolean;
+  /** Fill a panel of fixed height: the rows scroll inside it under a pinned
+   *  header, and the count stays at the bottom. */
+  fill?: boolean;
 }) {
   if (isLoading) {
     return (
@@ -50,8 +54,8 @@ export function ResultsTable({
   }
 
   return (
-    <>
-      <Table>
+    <div className={fill ? "flex min-h-0 flex-1 flex-col" : "contents"}>
+      <Table style={fill ? { flex: 1, minHeight: 0 } : undefined}>
         <THead>
           <TR>
             {columns.map((col) => (
@@ -85,6 +89,6 @@ export function ResultsTable({
         total={totalRows}
         label={totalRows === 1 ? "row" : "rows"}
       />
-    </>
+    </div>
   );
 }

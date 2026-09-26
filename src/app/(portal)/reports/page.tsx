@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
-import { getMyReports, getMyFolders } from "@/actions/report.actions";
+import { getDataSourceDefinitions, getMyReports, getMyFolders } from "@/actions/report.actions";
 import { ReportsList, type ReportRow } from "@/components/reports/reports-list";
 
 /**
- * Reports: the reports people have saved. New report starts one; the six
- * report types are only offered here while nothing is saved yet.
+ * Reports: the reports people have saved. New report opens a window of the
+ * report types; the page only offers them itself while nothing is saved yet.
  *
  * <p>What you can see is still decided entirely by `getMyReports`, which is
  * permission scoped and returns your own reports, the ones shared with you and
@@ -19,16 +19,29 @@ import { ReportsList, type ReportRow } from "@/components/reports/reports-list";
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; view?: string; type?: string; year?: string; folder?: string }>;
+  searchParams: Promise<{ q?: string; view?: string; type?: string; year?: string; folder?: string; new?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "REPORT_MANAGE")) redirect("/dashboard");
 
-  const [reportsResult, foldersResult] = await Promise.all([
+  const [reportsResult, foldersResult, sourcesResult] = await Promise.all([
     getMyReports(undefined as never),
     getMyFolders(undefined as never),
+    getDataSourceDefinitions(undefined as never),
   ]);
+
+  // What the New report window needs from each type, and no more: its
+  // filters and groupings belong to the builder.
+  const sources = sourcesResult.success
+    ? sourcesResult.data.map((ds) => ({
+        id: ds.id,
+        label: ds.label,
+        description: ds.description,
+        icon: ds.icon,
+        columns: ds.columns.map((c) => ({ id: c.id, label: c.label, defaultVisible: c.defaultVisible })),
+      }))
+    : [];
 
   type Row = {
     id: string;
@@ -78,6 +91,8 @@ export default async function ReportsPage({
     <ReportsList
       reports={reports}
       folders={folders}
+      sources={sources}
+      openNew={sp.new === "1"}
       loadFailed={!reportsResult.success}
       q={sp.q ?? ""}
       view={sp.view ?? ""}

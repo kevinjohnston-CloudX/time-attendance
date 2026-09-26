@@ -7,6 +7,14 @@ import type { SortDef } from "@/lib/validators/report.schema";
 interface Column {
   id: string;
   label: string;
+  type?: string;
+}
+
+/** The two directions in the words that fit the column: names, numbers or dates. */
+function directionWords(type: string | undefined): [string, string] {
+  if (type === "number") return ["Low to high", "High to low"];
+  if (type === "date") return ["Oldest first", "Newest first"];
+  return ["A to Z", "Z to A"];
 }
 
 /**
@@ -62,17 +70,17 @@ export function GroupSortConfig({
     <div className="flex flex-col gap-5">
       {groupableOptions.length > 0 && (
         <div className="flex flex-col gap-2">
-          <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+          <span style={{ font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
             Group by
           </span>
           <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
             Rows are grouped in the order you tick these.
           </span>
-          <div className="grid gap-x-4 gap-y-1 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,30%)),1fr))]">
+          <div className="grid gap-x-4 gap-y-1 [grid-template-columns:repeat(auto-fill,minmax(140px,1fr))]">
             {groupableOptions.map((col) => {
               const position = groupBy.indexOf(col.id);
               return (
-                <div key={col.id} className="flex items-center gap-2.5 py-1.5">
+                <div key={col.id} className="flex min-w-0 items-center gap-2.5 py-1">
                   <Checkbox
                     checked={position >= 0}
                     onChange={() => toggleGroup(col.id)}
@@ -101,53 +109,56 @@ export function GroupSortConfig({
       )}
 
       <div className="flex flex-col gap-2">
-        <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+        <span style={{ font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
           Sort by
         </span>
 
         {sortBy.length === 0 && (
-          <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-tertiary)" }}>
+          <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
             Rows come out in the report&rsquo;s usual order.
           </p>
         )}
 
-        {sortBy.map((sort, index) => (
-          <div key={index} className="flex flex-wrap items-center gap-2">
-            <Select
-              value={sort.field}
-              onChange={(e) => updateSort(index, { field: e.target.value })}
-              aria-label="Sort field"
-              style={{ flex: "1 1 200px", maxWidth: 240 }}
-            >
-              {columns.map((col) => (
-                <option key={col.id} value={col.id}>
-                  {col.label}
-                </option>
-              ))}
-            </Select>
-            <Select
-              value={sort.direction}
-              onChange={(e) =>
-                updateSort(index, { direction: e.target.value as "asc" | "desc" })
-              }
-              aria-label="Sort direction"
-              style={{ flex: "0 1 190px" }}
-            >
-              <option value="asc">A to Z, low to high</option>
-              <option value="desc">Z to A, high to low</option>
-            </Select>
-            <Button
-              hierarchy="tertiary"
-              tone="error"
-              iconOnly
-              title="Remove this sort"
-              aria-label="Remove this sort"
-              onClick={() => removeSort(index)}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        ))}
+        {sortBy.map((sort, index) => {
+          const [up, down] = directionWords(columns.find((c) => c.id === sort.field)?.type);
+          return (
+            <div key={index} className="flex items-center gap-1.5">
+              <Select
+                value={sort.field}
+                onChange={(e) => updateSort(index, { field: e.target.value })}
+                aria-label="Sort field"
+                style={{ flex: 1, minWidth: 0 }}
+              >
+                {columns.map((col) => (
+                  <option key={col.id} value={col.id}>
+                    {col.label}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                value={sort.direction}
+                onChange={(e) =>
+                  updateSort(index, { direction: e.target.value as "asc" | "desc" })
+                }
+                aria-label="Sort direction"
+                style={{ flex: "0 0 132px" }}
+              >
+                <option value="asc">{up}</option>
+                <option value="desc">{down}</option>
+              </Select>
+              <Button
+                hierarchy="tertiary"
+                tone="error"
+                iconOnly
+                title="Remove this sort"
+                aria-label="Remove this sort"
+                onClick={() => removeSort(index)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          );
+        })}
 
         <div>
           <Button

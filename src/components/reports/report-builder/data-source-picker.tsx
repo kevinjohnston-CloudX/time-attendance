@@ -14,7 +14,7 @@ interface DataSourceMeta {
 }
 
 /**
- * The first decision in the builder: which report it is.
+ * The first decision, in the New report window: which report it is.
  *
  * <p>Tiles rather than a dropdown, because the choice fixes every field,
  * filter and grouping that follows and cannot be changed later without

@@ -11,7 +11,6 @@ import {
   Button,
   EmptyState,
   FilterSelectChip,
-  LinkButton,
   PageHeader,
   PinnedBar,
   SearchInput,
@@ -20,12 +19,15 @@ import {
 import { STANDARD_REPORTS, dataSourceDescription, dataSourceLabel } from "./data-source-label";
 import { FolderTree, type FolderNode } from "./report-list/folder-tree";
 import { ReportTypeIcon } from "./report-type-icon";
+import { ReportTypeDialog, type ReportTypeOption } from "./report-type-dialog";
 
 /**
  * The Reports page: the reports people have saved, and nothing else.
  *
- * <p>Starting a report is New report's job, which opens the builder on the
- * six report types. The page only offers those types itself while there is
+ * <p>Starting a report is New report's job, a window of the six report
+ * types that opens the builder on the one picked (`?new=1` opens it too, which
+ * is where a bare /reports/new lands). The page only offers those types itself
+ * while there is
  * nothing saved yet, as its empty state, so an empty page still says where to
  * begin without the same six choices sitting above every full one.
  *
@@ -88,6 +90,8 @@ const WIDE = "max-[1180px]:hidden";
 export function ReportsList({
   reports,
   folders,
+  sources,
+  openNew = false,
   loadFailed,
   q,
   view,
@@ -97,6 +101,10 @@ export function ReportsList({
 }: {
   reports: { owned: ReportRow[]; shared: ReportRow[]; tenantWide: ReportRow[] };
   folders: { id: string; name: string; parentId: string | null; reportCount: number; children: { id: string; name: string }[] }[];
+  /** The report types New report offers. Empty when they did not load. */
+  sources: ReportTypeOption[];
+  /** Open on the New report window. */
+  openNew?: boolean;
   loadFailed: boolean;
   q: string;
   view: string;
@@ -106,6 +114,7 @@ export function ReportsList({
 }) {
   const router = useRouter();
   const [query, setQuery] = useState(q);
+  const [picking, setPicking] = useState(openNew && sources.length > 0);
   const { barRef, markerRef, condensed, barHeight } = useCondensingBar();
   const activeView = VIEWS.find((v) => v.value === view) ?? VIEWS[0];
 
@@ -197,9 +206,15 @@ export function ReportsList({
           subtitle={status}
           condensed={condensed}
           actions={
-            <LinkButton href="/reports/new" hierarchy="primary" leadingIcon={<Plus className="h-4 w-4" />}>
+            <Button
+              hierarchy="primary"
+              leadingIcon={<Plus className="h-4 w-4" />}
+              disabled={sources.length === 0}
+              title={sources.length === 0 ? "The report types did not load. Reload the page to try again." : undefined}
+              onClick={() => setPicking(true)}
+            >
               New report
-            </LinkButton>
+            </Button>
           }
         />
         {rows.length > 0 && (
@@ -329,6 +344,17 @@ export function ReportsList({
           )}
         </section>
       </div>
+
+      {picking && (
+        <ReportTypeDialog
+          sources={sources}
+          onPick={(id) => router.push(`/reports/new?source=${id}`)}
+          onClose={() => {
+            setPicking(false);
+            if (openNew) router.replace(listHref({}), { scroll: false });
+          }}
+        />
+      )}
     </div>
   );
 }

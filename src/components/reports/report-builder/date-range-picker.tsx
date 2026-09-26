@@ -150,6 +150,21 @@ function optionText(p: { startDate: string | Date; endDate: string | Date; statu
   return `${day(p.startDate, false)} to ${day(last, true)} · ${tag}${who}`;
 }
 
+/** The dates in words: "Sep 13 to Sep 26, 2026 · All pay groups". */
+export function describeRange(range: DateRange | undefined, payPeriods: PayPeriodOption[]): string {
+  if (!range) return "Not set";
+  if (range.type === "relative") return `The last ${range.relativeDays} days`;
+  if (range.type === "custom") {
+    if (!range.startDate || !range.endDate) return "Dates not picked yet";
+    return `${day(range.startDate, false)} to ${day(range.endDate, true)}`;
+  }
+  const pp = payPeriods.find((p) => p.id === range.payPeriodId);
+  if (!pp) return "A pay period that is no longer on file";
+  const last = new Date(new Date(pp.endDate).getTime() - 86400000);
+  const who = range.allGroups ? "All pay groups" : pp.groupName ?? "One pay group";
+  return `${day(pp.startDate, false)} to ${day(last, true)} · ${who}`;
+}
+
 /** The range to open on: every pay group, over the current pay period's dates. */
 export function defaultPayPeriodRange(payPeriods: PayPeriodOption[]): DateRange | null {
   const pp = currentPayPeriod(payPeriods);
@@ -160,10 +175,13 @@ export function DateRangePicker({
   value,
   onChange,
   payPeriods,
+  stacked = false,
 }: {
   value: DateRange;
   onChange: (range: DateRange) => void;
   payPeriods: PayPeriodOption[];
+  /** Every control the full width of a narrow column, as in the builder's side rail. */
+  stacked?: boolean;
 }) {
   const current = currentPayPeriod(payPeriods);
 
@@ -184,14 +202,21 @@ export function DateRangePicker({
         value={value.type}
         onChange={pickKind}
         ariaLabel="How to pick the dates"
+        fullWidth={stacked}
       />
 
       {value.type === "payPeriod" && (
-        <PayPeriodFields value={value} onChange={onChange} payPeriods={payPeriods} />
+        <PayPeriodFields value={value} onChange={onChange} payPeriods={payPeriods} stacked={stacked} />
       )}
 
       {value.type === "custom" && (
-        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,46%)),1fr))] sm:max-w-[420px]">
+        <div
+          className={
+            stacked
+              ? "grid grid-cols-2 gap-2"
+              : "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,46%)),1fr))] sm:max-w-[420px]"
+          }
+        >
           <Input
             type="date"
             label="From"
@@ -207,7 +232,22 @@ export function DateRangePicker({
         </div>
       )}
 
-      {value.type === "relative" && (
+      {/* Five choices do not fit a narrow column side by side. */}
+      {value.type === "relative" && stacked && (
+        <Select
+          value={String(value.relativeDays)}
+          onChange={(e) => onChange({ type: "relative", relativeDays: Number(e.target.value) })}
+          aria-label="How many days back"
+        >
+          {RELATIVE_DAYS.map((d) => (
+            <option key={d} value={d}>
+              The last {d} days
+            </option>
+          ))}
+        </Select>
+      )}
+
+      {value.type === "relative" && !stacked && (
         <SegmentedControl
           items={RELATIVE_DAYS.map((d) => ({ value: String(d), label: `${d} days` }))}
           value={String(value.relativeDays)}
@@ -229,10 +269,12 @@ function PayPeriodFields({
   value,
   onChange,
   payPeriods,
+  stacked,
 }: {
   value: Extract<DateRange, { type: "payPeriod" }>;
   onChange: (range: DateRange) => void;
   payPeriods: PayPeriodOption[];
+  stacked: boolean;
 }) {
   const selected = payPeriods.find((p) => p.id === value.payPeriodId);
   const group = value.allGroups ? "" : selected?.groupName ?? NO_GROUP;
@@ -255,8 +297,8 @@ function PayPeriodFields({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <Select value={group} onChange={(e) => pickGroup(e.target.value)} aria-label="Pay group" style={{ flex: "0 1 260px" }}>
+      <div className={stacked ? "flex flex-col gap-2" : "flex flex-wrap items-center gap-2"}>
+        <Select value={group} onChange={(e) => pickGroup(e.target.value)} aria-label="Pay group" style={stacked ? undefined : { flex: "0 1 260px" }}>
           <option value="">All pay groups</option>
           {groupNames(payPeriods).map((g) => (
             <option key={g} value={g}>
@@ -268,7 +310,7 @@ function PayPeriodFields({
           value={group ? value.payPeriodId : all.find((x) => x.key === selectedSpan)?.rep.id ?? value.payPeriodId}
           onChange={(e) => onChange({ type: "payPeriod", payPeriodId: e.target.value, allGroups: !group })}
           aria-label="Pay period"
-          style={{ flex: "1 1 320px", maxWidth: 400 }}
+          style={stacked ? undefined : { flex: "1 1 320px", maxWidth: 400 }}
         >
           {group
             ? inGroup.map((pp) => (

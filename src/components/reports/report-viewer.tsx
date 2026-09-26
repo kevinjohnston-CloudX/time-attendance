@@ -6,7 +6,7 @@ import { format } from "date-fns";
 import { ArrowLeft, Copy, Download, Mail, Pause, Play, Share2, Trash2, X } from "lucide-react";
 import { Badge, Banner, Button, EmptyState, Input, LinkButton, PageHeader } from "@/components/ui";
 import { ResultsTable } from "./report-results/results-table";
-import { DateRangePicker, defaultPayPeriodRange, type PayPeriodOption } from "./report-builder/date-range-picker";
+import { DateRangePicker, defaultPayPeriodRange, describeRange, type PayPeriodOption } from "./report-builder/date-range-picker";
 import { ShareDialog } from "./report-list/share-dialog";
 import { ScheduleForm } from "./schedule-form";
 import { dataSourceIcon, dataSourceLabel } from "./data-source-label";
@@ -131,24 +131,6 @@ function timezoneAbbr(timezone: string): string {
   } catch {
     return "";
   }
-}
-
-const utcDay = (d: string | Date, withYear = true) =>
-  new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", ...(withYear ? { year: "numeric" } : {}), timeZone: "UTC" });
-
-/** The dates in words: "Sep 13 to Sep 26, 2026 · All pay groups". */
-function describeRange(range: DateRange | undefined, payPeriods: PayPeriodOption[]): string {
-  if (!range) return "Not set";
-  if (range.type === "relative") return `The last ${range.relativeDays} days`;
-  if (range.type === "custom") {
-    if (!range.startDate || !range.endDate) return "Dates not picked yet";
-    return `${utcDay(range.startDate, false)} to ${utcDay(range.endDate)}`;
-  }
-  const pp = payPeriods.find((p) => p.id === range.payPeriodId);
-  if (!pp) return "A pay period that is no longer on file";
-  const last = new Date(new Date(pp.endDate).getTime() - 86400000);
-  const who = range.allGroups ? "All pay groups" : pp.groupName ?? "One pay group";
-  return `${utcDay(pp.startDate, false)} to ${utcDay(last)} · ${who}`;
 }
 
 export function ReportViewer({

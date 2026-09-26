@@ -111,9 +111,9 @@ export function FilterBuilder({
   }
 
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-2">
       {filters.length === 0 && (
-        <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-tertiary)" }}>
+        <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
           Everyone in these dates is included.
         </p>
       )}
@@ -121,94 +121,112 @@ export function FilterBuilder({
       {filters.map((filter, index) => {
         const fieldDef = filterFields.find((f) => f.id === filter.field);
         const valueOptions = getValueOptions(filter.field);
+        const skipped =
+          String(filter.value ?? "").trim() === "" ||
+          (filter.operator === "between" && String(filter.value2 ?? "").trim() === "");
 
         return (
-          <div key={index} className="flex flex-wrap items-center gap-2">
-            <Select
-              value={filter.field}
-              onChange={(e) => updateFilter(index, { field: e.target.value })}
-              aria-label="Field"
-              style={{ flex: "1 1 180px", maxWidth: 220 }}
-            >
-              {filterFields.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label}
-                </option>
-              ))}
-            </Select>
-
-            <Select
-              value={filter.operator}
-              onChange={(e) =>
-                updateFilter(index, { operator: e.target.value as FilterDef["operator"] })
-              }
-              aria-label="Condition"
-              style={{ flex: "0 1 140px" }}
-            >
-              {offeredOperators(fieldDef?.operators ?? ["eq"], filter.operator).map((op) => (
-                <option key={op} value={op}>
-                  {OPERATOR_LABELS[op] ?? op}
-                </option>
-              ))}
-            </Select>
-
-            {valueOptions ? (
+          // One condition as one small block: what, how, then the value, so
+          // it reads as a sentence down the rail ("Department / is / Packing").
+          <div
+            key={index}
+            className="flex flex-col gap-2 rounded-lg p-2.5"
+            style={{ border: "1px solid var(--stroke-secondary)", background: "var(--surface-secondary)" }}
+          >
+            <div className="flex items-center gap-1.5">
               <Select
-                value={String(filter.value)}
-                onChange={(e) => updateFilter(index, { value: e.target.value })}
-                aria-label="Value"
-                style={{ flex: "1 1 180px", maxWidth: 240 }}
+                value={filter.field}
+                onChange={(e) => updateFilter(index, { field: e.target.value })}
+                aria-label="Field"
+                style={{ flex: 1, minWidth: 0 }}
               >
-                <option value="">Choose one</option>
-                {valueOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
+                {filterFields.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.label}
                   </option>
                 ))}
               </Select>
-            ) : (
-              <div style={{ flex: "1 1 180px", maxWidth: 240 }}>
-                <Input
-                  type={
-                    fieldDef?.type === "number" ? "number" : fieldDef?.type === "date" ? "date" : "text"
-                  }
+              <Button
+                hierarchy="tertiary"
+                tone="error"
+                iconOnly
+                title="Remove this filter"
+                aria-label="Remove this filter"
+                onClick={() => removeFilter(index)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Select
+                value={filter.operator}
+                onChange={(e) =>
+                  updateFilter(index, { operator: e.target.value as FilterDef["operator"] })
+                }
+                aria-label="Condition"
+                style={{ flex: "0 0 128px" }}
+              >
+                {offeredOperators(fieldDef?.operators ?? ["eq"], filter.operator).map((op) => (
+                  <option key={op} value={op}>
+                    {OPERATOR_LABELS[op] ?? op}
+                  </option>
+                ))}
+              </Select>
+
+              {valueOptions ? (
+                <Select
                   value={String(filter.value)}
                   onChange={(e) => updateFilter(index, { value: e.target.value })}
-                  placeholder="Type a value"
                   aria-label="Value"
-                />
-              </div>
-            )}
+                  style={{ flex: 1, minWidth: 0 }}
+                >
+                  <option value="">Choose one</option>
+                  {valueOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </Select>
+              ) : (
+                <div className="min-w-0 flex-1">
+                  <Input
+                    type={
+                      fieldDef?.type === "number" ? "number" : fieldDef?.type === "date" ? "date" : "text"
+                    }
+                    value={String(filter.value)}
+                    onChange={(e) => updateFilter(index, { value: e.target.value })}
+                    placeholder="Type a value"
+                    aria-label="Value"
+                  />
+                </div>
+              )}
+            </div>
 
             {filter.operator === "between" && (
-              <div style={{ flex: "0 1 180px" }}>
-                <Input
-                  type={fieldDef?.type === "number" ? "number" : "date"}
-                  value={String(filter.value2 ?? "")}
-                  onChange={(e) => updateFilter(index, { value2: e.target.value })}
-                  placeholder="and"
-                  aria-label="Upper bound"
-                />
+              <div className="flex items-center gap-2">
+                <span
+                  className="flex-none text-right"
+                  style={{ width: 128, font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                >
+                  and
+                </span>
+                <div className="min-w-0 flex-1">
+                  <Input
+                    type={fieldDef?.type === "number" ? "number" : "date"}
+                    value={String(filter.value2 ?? "")}
+                    onChange={(e) => updateFilter(index, { value2: e.target.value })}
+                    aria-label="Upper bound"
+                  />
+                </div>
               </div>
             )}
 
-            {(String(filter.value ?? "").trim() === "" ||
-              (filter.operator === "between" && String(filter.value2 ?? "").trim() === "")) && (
-              <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+            {skipped && (
+              <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
                 Skipped until you pick a value
               </span>
             )}
-
-            <Button
-              hierarchy="tertiary"
-              tone="error"
-              iconOnly
-              title="Remove this filter"
-              aria-label="Remove this filter"
-              onClick={() => removeFilter(index)}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
           </div>
         );
       })}

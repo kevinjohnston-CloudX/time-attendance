@@ -30,7 +30,7 @@ export default async function NewReportPage({
   if (!dsResult.success || !filterResult.success) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader pinned title="New report" subtitle="Choose what it covers, check the preview, then save it to run again" />
+        <PageHeader pinned title="New report" />
         <Banner
           tone="error"
           title="This page could not be loaded"
@@ -45,10 +45,12 @@ export default async function NewReportPage({
     );
   }
 
-  // A Standard reports card opens the builder on its own report. Anything that
-  // is not one of the sources on offer is ignored rather than trusted.
+  // The type is picked in the New report window before this page opens. With
+  // no type, or one that is not on offer, that window is where it goes back
+  // to, rather than a builder with nothing to build.
   const { source } = (await searchParams) ?? {};
-  const initialSource = dsResult.data.find((ds) => ds.id === source)?.id ?? null;
+  const initialSource = dsResult.data.find((ds) => ds.id === source)?.id;
+  if (!initialSource) redirect("/reports?new=1");
 
   return <ReportBuilder dataSources={dsResult.data} filterOptions={filterResult.data} initialSource={initialSource} />;
 }

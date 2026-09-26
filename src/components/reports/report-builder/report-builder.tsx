@@ -1,14 +1,14 @@
 "use client";
 
-import { useRef, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
-import { ArrowLeft, ChevronDown, Play, RefreshCw, Save, Table2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, Play, RefreshCw, Save, Table2, X } from "lucide-react";
 import { Banner, Button, EmptyState, Input, LinkButton, PageHeader, Textarea } from "@/components/ui";
-import { DataSourcePicker } from "./data-source-picker";
 import { ReportTypeIcon } from "../report-type-icon";
+import { ReportTypeDialog } from "../report-type-dialog";
 import { ColumnPicker } from "./column-picker";
 import { FilterBuilder } from "./filter-builder";
-import { DateRangePicker, defaultPayPeriodRange } from "./date-range-picker";
+import { DateRangePicker, defaultPayPeriodRange, describeRange } from "./date-range-picker";
 import { GroupSortConfig } from "./group-sort-config";
 import { ResultsTable } from "../report-results/results-table";
 import { dataSourceDescription, dataSourceLabel } from "../data-source-label";
@@ -17,17 +17,18 @@ import type { DataSourceId, FilterDef, SortDef, DateRange } from "@/lib/validato
 import type { ReportResult } from "@/lib/reports/data-sources";
 
 /**
- * The report builder: one page that reads top to bottom, in the order a
- * person thinks about a report. Which report, which dates, who to include,
- * which columns, then a preview and a name to save it under.
+ * The report builder: the settings down a rail on the left, the rows they
+ * produce filling the rest of the window, both reaching its bottom edge.
  *
- * <p>It replaces six tabs, where Save sat above everything and the preview
- * was a tab of its own, so nobody could see the settings and the rows at the
- * same time. Group and sort are folded away, since most reports never need
- * them.
+ * <p>The type is picked in the New report window before this page opens, so
+ * the page always has a report to show. It runs a preview straight away and
+ * again whenever the type changes; any other change marks the preview out of
+ * date rather than running it on every tick of a checkbox, since each run is
+ * a query over everyone in the dates.
  *
- * <p>Until a report is picked only the first section shows: everything
- * below it depends on which report it is.
+ * <p>Save asks for a name in a small window, filled in from the type, and
+ * opens the saved report. Group and sort are folded away, since most reports
+ * never need them.
  */
 
 interface DataSourceMeta {
@@ -47,28 +48,33 @@ interface FilterOptions {
   leaveTypes: { id: string; name: string }[];
 }
 
-/** The page's width: a form reads best narrow. The preview table scrolls inside it. */
-const DOC_WIDTH = 960;
+/** A preview stops here; the report only counts the rows it returned, so a
+ *  full preview cannot say how many more there are. */
+const PREVIEW_ROWS = 100;
+
+/** Where the rail and the preview sit side by side, the same test the pinned bar uses. */
+const SIDE_BY_SIDE = "(min-width: 1024px) and (min-height: 600px)";
 
 export function ReportBuilder({
   dataSources,
   filterOptions,
-  initialSource = null,
+  initialSource,
 }: {
   dataSources: DataSourceMeta[];
   filterOptions: FilterOptions;
-  /** The report a Standard reports card was opened on, already picked. */
-  initialSource?: DataSourceId | null;
+  /** The type picked in the New report window. */
+  initialSource: DataSourceId;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const previewRef = useRef<HTMLElement | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
 
-  const defaultsFor = (id: DataSourceId | null) =>
+  const defaultsFor = (id: DataSourceId) =>
     dataSources.find((ds) => ds.id === id)?.columns.filter((c) => c.defaultVisible).map((c) => c.id) ?? [];
 
-  const [dataSource, setDataSource] = useState<DataSourceId | null>(initialSource);
-  const [changingSource, setChangingSource] = useState(!initialSource);
+  const [dataSource, setDataSource] = useState<DataSourceId>(initialSource);
+  const [changingSource, setChangingSource] = useState(false);
   const [selectedColumns, setSelectedColumns] = useState<string[]>(() => defaultsFor(initialSource));
   const [filters, setFilters] = useState<FilterDef[]>([]);
   const [dateRange, setDateRange] = useState<DateRange>(
@@ -85,7 +91,8 @@ export function ReportBuilder({
 
   // A name is filled in from the report picked, and follows it when the
   // report changes, until somebody types their own.
-  const [reportName, setReportName] = useState(() => (initialSource ? dataSourceLabel(initialSource) : ""));
+  const [saving, setSaving] = useState(false);
+  const [reportName, setReportName] = useState(() => dataSourceLabel(initialSource));
   const [nameTouched, setNameTouched] = useState(false);
   const [reportDesc, setReportDesc] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -93,8 +100,12 @@ export function ReportBuilder({
   const currentSource = dataSources.find((ds) => ds.id === dataSource);
 
   function handleDataSourceChange(id: DataSourceId) {
-    setDataSource(id);
     setChangingSource(false);
+    if (id === dataSource) return;
+    setDataSource(id);
+    // The link follows, so a reload opens on the type now showing. Without a
+    // navigation: nothing on the server needs to answer for it.
+    window.history.replaceState(window.history.state, "", `/reports/new?source=${id}`);
     setSelectedColumns(defaultsFor(id));
     setFilters([]);
     setGroupBy([]);
@@ -110,14 +121,18 @@ export function ReportBuilder({
   const config = { columns: selectedColumns, filters: readyFilters, dateRange, groupBy, sortBy };
   const configKey = JSON.stringify([dataSource, config]);
   const stale = previewResult !== null && previewedWith !== configKey;
+  const canPreview = selectedColumns.length > 0 && isRangeReady(dateRange);
 
-  async function handleRunPreview() {
-    if (!dataSource || selectedColumns.length === 0) return;
+  async function handleRunPreview(fromButton: boolean) {
+    if (!canPreview) return;
     setIsRunning(true);
     setPreviewError(null);
-    previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Stacked on a narrow window, the preview is under the settings.
+    if (fromButton && !window.matchMedia(SIDE_BY_SIDE).matches) {
+      previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
 
-    const result = await runReport({ dataSource, config: { ...config, limit: 100 } });
+    const result = await runReport({ dataSource, config: { ...config, limit: PREVIEW_ROWS } });
     if (result.success) {
       setPreviewResult(result.data);
       setPreviewedWith(configKey);
@@ -127,8 +142,61 @@ export function ReportBuilder({
     setIsRunning(false);
   }
 
+  // The first preview runs by itself, on open and on a new type, so the page
+  // never opens on an empty table. The settings it uses are this render's.
+  useEffect(() => {
+    void handleRunPreview(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataSource]);
+
+  /**
+   * Both panes end at the bottom of the window, measured rather than
+   * computed, because the space under the pinned header depends on how its
+   * actions wrap. Stacked on a narrow window they take their own height.
+   */
+  const [paneHeight, setPaneHeight] = useState<number | null>(null);
+  useEffect(() => {
+    let frame = 0;
+    const read = () => {
+      frame = 0;
+      const el = bodyRef.current;
+      if (!el || !window.matchMedia(SIDE_BY_SIDE).matches) {
+        setPaneHeight(null);
+        return;
+      }
+      // Down to the bottom of whatever scrolls the page, less the padding the
+      // layout keeps under the page, measured as if it were scrolled to the
+      // top so the page itself never has to scroll.
+      let scroller: HTMLElement | null = el.parentElement;
+      let padding = 0;
+      while (scroller) {
+        const style = getComputedStyle(scroller);
+        padding += parseFloat(style.paddingBottom) || 0;
+        if (/(auto|scroll)/.test(style.overflowY)) break;
+        scroller = scroller.parentElement;
+      }
+      const bottom = scroller
+        ? scroller.getBoundingClientRect().top + scroller.clientHeight - padding
+        : window.innerHeight - 16;
+      const top = el.getBoundingClientRect().top + (scroller?.scrollTop ?? window.scrollY);
+      const h = Math.max(480, Math.floor(bottom - top));
+      setPaneHeight((prev) => (prev === h ? prev : h));
+    };
+    const onChange = () => {
+      if (!frame) frame = requestAnimationFrame(read);
+    };
+    read();
+    document.addEventListener("scroll", onChange, { capture: true, passive: true });
+    window.addEventListener("resize", onChange, { passive: true });
+    return () => {
+      document.removeEventListener("scroll", onChange, { capture: true });
+      window.removeEventListener("resize", onChange);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
+
   function handleSave() {
-    if (!dataSource || !reportName.trim()) return;
+    if (!reportName.trim()) return;
     setSaveError(null);
 
     startTransition(async () => {
@@ -148,145 +216,135 @@ export function ReportBuilder({
     });
   }
 
-  const canPreview = !!dataSource && selectedColumns.length > 0;
-  const canSave = canPreview && reportName.trim().length > 0;
-  const saveHint = !dataSource
-    ? "Pick a report first."
-    : selectedColumns.length === 0
-      ? "Pick at least one column to save it."
-      : !reportName.trim()
-        ? "Give it a name to save it."
-        : "Only you can see it until you share it.";
-
   const moreCount = groupBy.length + sortBy.length;
+  const summary = [
+    dataSourceLabel(dataSource),
+    describeRange(dateRange, filterOptions.payPeriods),
+    readyFilters.length === 0
+      ? "Everyone"
+      : `${readyFilters.length} ${readyFilters.length === 1 ? "filter" : "filters"}`,
+    `${selectedColumns.length} ${selectedColumns.length === 1 ? "column" : "columns"}`,
+  ].join(" · ");
+
+  const previewNote = !canPreview
+    ? selectedColumns.length === 0
+      ? "Pick at least one column to see rows."
+      : "Pick both dates to see rows."
+    : stale
+      ? "The settings changed since this preview."
+      : previewResult
+        ? previewResult.rows.length >= PREVIEW_ROWS
+          ? `The first ${PREVIEW_ROWS} rows. The saved report returns up to 5,000.`
+          : "Every row these settings return."
+        : `The first ${PREVIEW_ROWS} rows these settings return.`;
 
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
         pinned
         title="New report"
-        subtitle="Choose what it covers, check the preview, then save it to run again"
+        subtitle={summary}
         actions={
           <>
             <LinkButton href="/reports" hierarchy="tertiary" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
               Reports
             </LinkButton>
             <Button
-              hierarchy="secondary"
-              disabled={!canPreview || isRunning}
-              onClick={() => void handleRunPreview()}
-              leadingIcon={<Play className="h-4 w-4" />}
-            >
-              {isRunning ? "Running" : "Preview"}
-            </Button>
-            <Button
               hierarchy="primary"
-              disabled={!canSave || isPending}
-              onClick={handleSave}
+              disabled={selectedColumns.length === 0}
+              title={selectedColumns.length === 0 ? "Pick at least one column to save it" : undefined}
+              onClick={() => setSaving(true)}
               leadingIcon={<Save className="h-4 w-4" />}
             >
-              {isPending ? "Saving" : "Save report"}
+              Save report
             </Button>
           </>
         }
       />
 
-      <div className="flex w-full flex-col gap-4" style={{ maxWidth: DOC_WIDTH }}>
-        {saveError && <Banner tone="error" title="The report was not saved" body={saveError} />}
-
-        {/* ── 1. Report ─────────────────────────────────────────────── */}
-        <Section
-          step={1}
-          title="Report"
-          subtitle={
-            changingSource && dataSource
-              ? "Picking a different report starts the columns and filters over."
-              : changingSource
-                ? "Each one covers different information. Pick the one that answers your question."
-                : undefined
-          }
-          action={
-            dataSource && !changingSource ? (
-              <Button size="sm" hierarchy="secondary" onClick={() => setChangingSource(true)}>
-                Change
-              </Button>
-            ) : dataSource ? (
-              <Button size="sm" hierarchy="tertiary" onClick={() => setChangingSource(false)}>
-                Keep {dataSourceLabel(dataSource)}
-              </Button>
-            ) : undefined
-          }
+      <div
+        ref={bodyRef}
+        className="grid items-start gap-4 lg:[grid-template-columns:clamp(320px,32%,384px)_minmax(0,1fr)]"
+      >
+        {/* ── Settings ─────────────────────────────────────────────── */}
+        <aside
+          aria-label="Report settings"
+          className="ta-card flex min-w-0 flex-col overflow-hidden"
+          style={{ height: paneHeight ?? undefined, borderRadius: "var(--radius-l)" }}
         >
-          {changingSource || !dataSource ? (
-            <DataSourcePicker sources={dataSources} selected={dataSource} onSelect={handleDataSourceChange} />
-          ) : (
-            (
-              <div className="flex items-start gap-3">
-                <ReportTypeIcon id={dataSource} />
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
-                    {dataSourceLabel(dataSource)}
-                  </span>
-                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                    {dataSourceDescription(dataSource)}
-                  </span>
-                </span>
-              </div>
-            )
-          )}
-        </Section>
-
-        {currentSource && (
-          <>
-            {/* ── 2. Dates ──────────────────────────────────────────── */}
-            <Section step={2} title="Dates" subtitle="The days it covers. You can pick other dates each time you run it.">
-              <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={filterOptions.payPeriods} />
-            </Section>
-
-            {/* ── 3. Who to include ─────────────────────────────────── */}
-            <Section step={3} title="Who to include" subtitle="Leave this empty to include everyone. Add a filter to narrow it down.">
-              <FilterBuilder
-                filterFields={currentSource.filters}
-                filters={filters}
-                onChange={setFilters}
-                filterOptions={filterOptions}
-              />
-            </Section>
-
-            {/* ── 4. Columns ────────────────────────────────────────── */}
-            <Section step={4} title="Columns" subtitle="What shows in the report, in this order.">
-              <ColumnPicker columns={currentSource.columns} selected={selectedColumns} onChange={setSelectedColumns} />
-            </Section>
-
-            {/* ── Group and sort, folded away ───────────────────────── */}
-            <section style={card}>
-              <button
-                type="button"
-                className="ta-hoverable flex w-full items-start gap-3 px-5 py-4 text-left"
-                style={{ border: 0, background: "transparent", cursor: "pointer", borderRadius: "var(--radius-l)" }}
-                aria-expanded={showMore}
-                onClick={() => setShowMore((v) => !v)}
+          <div className="flex items-start gap-3 px-5 py-4">
+            <ReportTypeIcon id={dataSource} size={40} />
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span
+                className="truncate"
+                style={{ font: "var(--weight-semibold) 15px/22px var(--font-sans)", color: "var(--text-primary)" }}
               >
-                <StepNumber step={5} />
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}>Group and sort</span>
-                  <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                    {moreCount > 0
-                      ? [groupBy.length && `Grouped by ${groupBy.length}`, sortBy.length && `sorted by ${sortBy.length}`]
-                          .filter(Boolean)
-                          .join(", ")
-                      : "Optional. Group rows by department or site, or change their order."}
-                  </span>
-                </span>
-                <ChevronDown
-                  className="mt-1 h-4 w-4 flex-none transition-transform"
-                  style={{ color: "var(--icon-tertiary)", transform: showMore ? "rotate(180deg)" : undefined }}
-                  aria-hidden="true"
+                {dataSourceLabel(dataSource)}
+              </span>
+              <span
+                className="line-clamp-2"
+                style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                title={dataSourceDescription(dataSource)}
+              >
+                {dataSourceDescription(dataSource)}
+              </span>
+            </span>
+            <Button size="sm" hierarchy="secondary" onClick={() => setChangingSource(true)}>
+              Change
+            </Button>
+          </div>
+
+          {currentSource && (
+            <div className="ta-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
+              <RailSection title="Dates" hint="You can pick other dates each time you run it.">
+                <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={filterOptions.payPeriods} stacked />
+              </RailSection>
+
+              <RailSection
+                title="Filters"
+                meta={readyFilters.length ? `${readyFilters.length} on` : undefined}
+              >
+                <FilterBuilder
+                  filterFields={currentSource.filters}
+                  filters={filters}
+                  onChange={setFilters}
+                  filterOptions={filterOptions}
                 />
-              </button>
-              {showMore && (
-                <div className="px-5 pb-5 pl-[3.75rem]" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
-                  <div className="pt-4">
+              </RailSection>
+
+              <RailSection title="Columns" hint="What shows in the report, in this order.">
+                <ColumnPicker columns={currentSource.columns} selected={selectedColumns} onChange={setSelectedColumns} />
+              </RailSection>
+
+              <div style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+                <button
+                  type="button"
+                  className="ta-hoverable flex w-full items-start gap-3 px-5 py-4 text-left"
+                  style={{ border: 0, background: "transparent", cursor: "pointer" }}
+                  aria-expanded={showMore}
+                  onClick={() => setShowMore((v) => !v)}
+                >
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="wms-overline">Group and sort</span>
+                    <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                      {moreCount > 0
+                        ? [
+                            groupBy.length && `Grouped by ${groupBy.length}`,
+                            sortBy.length && `sorted by ${sortBy.length}`,
+                          ]
+                            .filter(Boolean)
+                            .join(", ")
+                        : "Optional. Group rows by department or site, or change their order."}
+                    </span>
+                  </span>
+                  <ChevronDown
+                    className="mt-0.5 h-4 w-4 flex-none transition-transform"
+                    style={{ color: "var(--icon-tertiary)", transform: showMore ? "rotate(180deg)" : undefined }}
+                    aria-hidden="true"
+                  />
+                </button>
+                {showMore && (
+                  <div className="px-5 pb-5">
                     <GroupSortConfig
                       columns={currentSource.columns}
                       groupableFields={currentSource.groupableFields}
@@ -296,98 +354,115 @@ export function ReportBuilder({
                       onSortByChange={setSortBy}
                     />
                   </div>
-                </div>
-              )}
-            </section>
-
-            {/* ── 5. Preview ────────────────────────────────────────── */}
-            <section ref={previewRef} style={{ ...card, scrollMarginTop: 120 }} className="flex flex-col overflow-hidden">
-              <SectionHead
-                step={6}
-                title="Preview"
-                subtitle={
-                  stale
-                    ? "You changed something since this preview. Run it again to see the new rows."
-                    : "The first 100 rows. A saved report can return up to 5,000."
-                }
-                subtitleTone={stale ? "warning" : undefined}
-                action={
-                  <Button
-                    size="sm"
-                    hierarchy={previewResult && !stale ? "secondary" : "primary"}
-                    disabled={!canPreview || isRunning}
-                    onClick={() => void handleRunPreview()}
-                    leadingIcon={previewResult ? <RefreshCw className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-                  >
-                    {isRunning ? "Running" : previewResult ? "Run again" : "Run preview"}
-                  </Button>
-                }
-              />
-              {previewError && (
-                <div className="px-5 pb-4">
-                  <Banner tone="error" title="The preview did not run" body={previewError} />
-                </div>
-              )}
-              <div style={{ borderTop: "1px solid var(--stroke-divider)" }}>
-                {previewResult || isRunning ? (
-                  <ResultsTable
-                    columns={previewResult?.columns ?? []}
-                    rows={previewResult?.rows ?? []}
-                    totalRows={previewResult?.totalRows ?? 0}
-                    isLoading={isRunning}
-                  />
-                ) : (
-                  <EmptyState
-                    icon={<Table2 className="h-8 w-8" />}
-                    title={canPreview ? "See it before you save it" : "Pick at least one column"}
-                    body={
-                      canPreview
-                        ? "Run the preview to see the first rows this report returns."
-                        : "The preview needs at least one column to show."
-                    }
-                  />
                 )}
               </div>
-            </section>
+            </div>
+          )}
+        </aside>
 
-            {/* ── 6. Save ───────────────────────────────────────────── */}
-            <Section step={7} title="Save" subtitle="Saved reports are listed on Reports, where you can run, share or schedule them.">
-              <div className="flex flex-col gap-3">
-                <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(220px,46%)),1fr))]">
-                  <Input
-                    label="Name"
-                    required
-                    value={reportName}
-                    onChange={(e) => {
-                      setReportName(e.target.value);
-                      setNameTouched(true);
-                    }}
-                    placeholder="Overtime by department"
-                  />
-                  <Textarea
-                    label="Description"
-                    rows={2}
-                    value={reportDesc}
-                    onChange={(e) => setReportDesc(e.target.value)}
-                    placeholder="Optional. What it is for, so others know"
-                  />
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button
-                    hierarchy="primary"
-                    disabled={!canSave || isPending}
-                    onClick={handleSave}
-                    leadingIcon={<Save className="h-4 w-4" />}
-                  >
-                    {isPending ? "Saving" : "Save report"}
-                  </Button>
-                  <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>{saveHint}</span>
-                </div>
+        {/* ── Preview ──────────────────────────────────────────────── */}
+        <section
+          ref={previewRef}
+          aria-label="Preview"
+          className="ta-card flex min-w-0 flex-col overflow-hidden"
+          style={{
+            height: paneHeight ?? undefined,
+            minHeight: paneHeight ? undefined : 420,
+            borderRadius: "var(--radius-l)",
+            scrollMarginTop: 96,
+          }}
+        >
+          <header className="flex items-center gap-3 px-5 py-3.5">
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <h2 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>Preview</h2>
+              <span
+                className="truncate"
+                title={previewNote}
+                style={{ font: "var(--type-body2)", color: stale ? "var(--text-warning)" : "var(--text-tertiary)" }}
+              >
+                {previewNote}
+              </span>
+            </span>
+            <Button
+              size="sm"
+              hierarchy={stale || (!previewResult && !isRunning) ? "primary" : "secondary"}
+              disabled={!canPreview || isRunning}
+              onClick={() => void handleRunPreview(true)}
+              leadingIcon={previewResult ? <RefreshCw className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+            >
+              {isRunning ? "Running" : stale ? "Update preview" : previewResult ? "Run again" : "Run preview"}
+            </Button>
+          </header>
+
+          {previewError && (
+            <div className="px-5 pb-4">
+              <Banner tone="error" title="The preview did not run" body={previewError} />
+            </div>
+          )}
+
+          <div
+            className="flex min-h-0 flex-1 flex-col"
+            style={{
+              borderTop: "1px solid var(--stroke-divider)",
+              opacity: stale && !isRunning ? 0.55 : 1,
+              transition: "opacity 140ms ease",
+            }}
+          >
+            {previewResult || isRunning ? (
+              <ResultsTable
+                columns={previewResult?.columns ?? []}
+                rows={previewResult?.rows ?? []}
+                totalRows={previewResult?.totalRows ?? 0}
+                isLoading={isRunning}
+                fill
+              />
+            ) : (
+              <div className="flex flex-1 items-center justify-center">
+                <EmptyState
+                  icon={<Table2 className="h-8 w-8" />}
+                  title={canPreview ? "No preview yet" : selectedColumns.length === 0 ? "No columns picked" : "Dates not picked yet"}
+                  body={
+                    canPreview
+                      ? "Run the preview to see the first rows this report returns."
+                      : selectedColumns.length === 0
+                        ? "Tick at least one column on the left to see rows."
+                        : "Pick a start and an end date on the left to see rows."
+                  }
+                />
               </div>
-            </Section>
-          </>
-        )}
+            )}
+          </div>
+        </section>
       </div>
+
+      {changingSource && (
+        <ReportTypeDialog
+          sources={dataSources}
+          selected={dataSource}
+          changing
+          onPick={handleDataSourceChange}
+          onClose={() => setChangingSource(false)}
+        />
+      )}
+
+      {saving && (
+        <SaveDialog
+          name={reportName}
+          description={reportDesc}
+          error={saveError}
+          pending={isPending}
+          onName={(v) => {
+            setReportName(v);
+            setNameTouched(true);
+          }}
+          onDescription={setReportDesc}
+          onSave={handleSave}
+          onClose={() => {
+            setSaving(false);
+            setSaveError(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -398,81 +473,141 @@ export function isFilterReady(f: FilterDef): boolean {
   return !blank(f.value) && (f.operator !== "between" || !blank(f.value2));
 }
 
-const card = {
-  background: "var(--surface-card)",
-  borderRadius: "var(--radius-l)",
-  boxShadow: "var(--shadow-card)",
-} as const;
+/** Dates the report can run on: two picked dates, or a pay period or a count of days. */
+function isRangeReady(r: DateRange): boolean {
+  return r.type !== "custom" || (!!r.startDate && !!r.endDate);
+}
 
-/** A numbered section of the builder: the step, its name, one quiet line, then its controls. */
-function Section({
-  step,
+/** One group of settings in the rail: its name, what is set, then the controls. */
+function RailSection({
   title,
-  subtitle,
-  action,
+  meta,
+  hint,
   children,
 }: {
-  step: number;
   title: string;
-  subtitle?: string;
-  action?: ReactNode;
+  meta?: string;
+  hint?: string;
   children: ReactNode;
 }) {
   return (
-    <section style={card} className="flex flex-col">
-      <SectionHead step={step} title={title} subtitle={subtitle} action={action} />
-      <div className="px-5 pb-5 pl-[3.75rem]">{children}</div>
+    <section className="flex flex-col gap-3 px-5 py-4" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+      <header className="flex flex-col gap-0.5">
+        <span className="flex items-center gap-2">
+          <h3 className="wms-overline min-w-0 flex-1" style={{ margin: 0 }}>
+            {title}
+          </h3>
+          {meta && (
+            <span className="tabular" style={{ font: "var(--type-caption1)", color: "var(--text-accent)" }}>
+              {meta}
+            </span>
+          )}
+        </span>
+        {hint && <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{hint}</span>}
+      </header>
+      {children}
     </section>
   );
 }
 
-function SectionHead({
-  step,
-  title,
-  subtitle,
-  subtitleTone,
-  action,
+/**
+ * Save: a name and an optional description, then the saved report opens.
+ * Escape, Cancel and the scrim close it and keep everything on the page.
+ */
+function SaveDialog({
+  name,
+  description,
+  error,
+  pending,
+  onName,
+  onDescription,
+  onSave,
+  onClose,
 }: {
-  step: number;
-  title: string;
-  subtitle?: string;
-  subtitleTone?: "warning";
-  action?: ReactNode;
+  name: string;
+  description: string;
+  error: string | null;
+  pending: boolean;
+  onName: (v: string) => void;
+  onDescription: (v: string) => void;
+  onSave: () => void;
+  onClose: () => void;
 }) {
-  return (
-    <header className="flex items-start gap-3 px-5 pb-3 pt-4">
-      <StepNumber step={step} />
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <h2 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>{title}</h2>
-        {subtitle && (
-          <span
-            style={{
-              font: "var(--type-body2)",
-              color: subtitleTone === "warning" ? "var(--text-warning)" : "var(--text-tertiary)",
-            }}
-          >
-            {subtitle}
-          </span>
-        )}
-      </span>
-      {action && <span className="flex-none">{action}</span>}
-    </header>
-  );
-}
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
 
-function StepNumber({ step }: { step: number }) {
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const input = dialogRef.current?.querySelector<HTMLInputElement>("input");
+    input?.focus();
+    input?.select();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      closeRef.current();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      opener?.focus?.();
+    };
+  }, []);
+
   return (
-    <span
-      className="tabular mt-px flex h-6 w-6 flex-none items-center justify-center rounded-full"
-      style={{
-        background: "var(--surface-secondary)",
-        color: "var(--text-secondary)",
-        font: "var(--type-caption1)",
-        fontWeight: "var(--weight-semibold)",
-      }}
-      aria-hidden="true"
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.5)" }}
+      onClick={(e) => e.target === e.currentTarget && !pending && onClose()}
     >
-      {step}
-    </span>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="save-report-title"
+        className="ta-modal flex w-full max-w-md flex-col"
+        style={{ borderRadius: "var(--radius-l)" }}
+      >
+        <header className="flex items-center gap-3 px-5 py-3.5" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
+          <h2 id="save-report-title" className="min-w-0 flex-1" style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
+            Save report
+          </h2>
+          <Button hierarchy="tertiary" iconOnly onClick={onClose} disabled={pending} aria-label="Close" title="Close">
+            <X className="h-4 w-4" />
+          </Button>
+        </header>
+        <form
+          className="flex flex-col gap-3 px-5 py-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (name.trim() && !pending) onSave();
+          }}
+        >
+          <Input label="Name" required value={name} onChange={(e) => onName(e.target.value)} placeholder="Overtime by department" />
+          <Textarea
+            label="Description"
+            rows={2}
+            value={description}
+            onChange={(e) => onDescription(e.target.value)}
+            placeholder="Optional. What it is for, so others know"
+          />
+          {error && <Banner tone="error" title="The report was not saved" body={error} />}
+          <button type="submit" hidden />
+        </form>
+        <footer className="flex items-center gap-2 px-5 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+          <span className="min-w-0 flex-1" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+            Only you can see it until you share it.
+          </span>
+          <Button hierarchy="secondary" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button hierarchy="primary" onClick={onSave} disabled={!name.trim() || pending} leadingIcon={<Save className="h-4 w-4" />}>
+            {pending ? "Saving" : "Save report"}
+          </Button>
+        </footer>
+      </div>
+    </div>
   );
 }
