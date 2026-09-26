@@ -981,6 +981,7 @@ export function TimecardViewer({
     sid: string | null = selectedSiteId,
     did: string | null = selectedDepartmentId,
   ) {
+    if (holdForUnsaved(() => navigate(employeeId, periodId, sid, did))) return;
     const params = new URLSearchParams();
     const eid = employeeId ?? selectedEmployeeId;
     if (eid) params.set("employeeId", eid);
@@ -991,6 +992,7 @@ export function TimecardViewer({
   }
 
   function navigateCustomRange(start: Date, end: Date) {
+    if (holdForUnsaved(() => navigateCustomRange(start, end))) return;
     const params = new URLSearchParams();
     params.set("customStart", format(start, "yyyy-MM-dd"));
     params.set("customEnd", format(end, "yyyy-MM-dd"));
@@ -1457,6 +1459,62 @@ export function TimecardViewer({
     setPendingDeletions([]);
     setPendingHoursEntries([]);
   }
+
+  /**
+   * Unsaved edits are only in this page, so leaving it loses them. Moving to
+   * another person, another pay period or another page first asks, and so
+   * does closing or reloading the tab. The browser's own Back button is the
+   * one way out this cannot stop.
+   */
+  const dirty = !!canEdit && hasPendingChanges;
+  const [leaveTo, setLeaveTo] = useState<(() => void) | null>(null);
+  const dirtyRef = useRef(dirty);
+  const leavingRef = useRef(false);
+  useEffect(() => {
+    dirtyRef.current = dirty;
+  }, [dirty]);
+
+  /** True when the move was held for a yes; `go` runs if they discard. */
+  function holdForUnsaved(go: () => void): boolean {
+    if (!dirtyRef.current || leavingRef.current) return false;
+    setLeaveTo(() => go);
+    return true;
+  }
+
+  function discardAndLeave() {
+    const go = leaveTo;
+    setLeaveTo(null);
+    handleDiscardChanges();
+    // The edits are still counted until the next render, so the move this
+    // runs must not be held a second time.
+    leavingRef.current = true;
+    go?.();
+    leavingRef.current = false;
+  }
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    // Links anywhere on the page, the sidebar included. Caught on the window
+    // before anything else sees the click, so the page does not start to go.
+    const onClick = (e: MouseEvent) => {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as Element | null)?.closest?.("a");
+      if (!a || !a.href || a.hasAttribute("download") || (a.target && a.target !== "_self")) return;
+      const url = new URL(a.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLeaveTo(() => () => router.push(url.pathname + url.search + url.hash));
+    };
+    window.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", warn);
+      window.removeEventListener("click", onClick, true);
+    };
+  }, [dirty, router]);
 
   function handleSaveChanges() {
     setActionError(null);
@@ -2193,6 +2251,13 @@ export function TimecardViewer({
                     ) : (
                       <Badge>No punches yet</Badge>
                     )}
+                    {/* Said beside the status rather than in a line over the
+                        grid: it is a fact about this timecard, like its status. */}
+                    {!canEdit && (
+                      <span title="These hours cannot be changed from here.">
+                        <Badge>Read only</Badge>
+                      </span>
+                    )}
                   </div>
                   <p className="m-0 flex flex-wrap items-center gap-x-1.5" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                     <span>{displayCode}</span>
@@ -2392,18 +2457,6 @@ export function TimecardViewer({
                 canEdit={!!canEdit}
                 onAdded={() => router.refresh()}
               />
-
-              {/* What the grid will and will not do, said once. Edits are
-                  queued rather than written on the spot, and a screen that
-                  looks like a spreadsheet but is not one is how somebody leaves
-                  believing a correction was saved. */}
-              <div className="shrink-0 px-5 py-2" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
-                <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                  {canEdit
-                    ? "To change a time, hours or a code, click it. Nothing is saved until you press Save changes."
-                    : "Read only. These hours cannot be changed from here."}
-                </span>
-              </div>
 
               {/* ── Scrollable timecard table + summary ──────────────── */}
               <div className="flex-1 overflow-y-auto">
@@ -3883,6 +3936,44 @@ export function TimecardViewer({
           )}
         </section>
       </div>
+
+      {leaveTo && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.5)" }}
+          onClick={(e) => e.target === e.currentTarget && setLeaveTo(null)}
+          onKeyDown={(e) => e.key === "Escape" && setLeaveTo(null)}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="unsaved-title"
+            aria-describedby="unsaved-body"
+            className="ta-modal flex w-full max-w-md flex-col"
+            style={{ borderRadius: "var(--radius-l)" }}
+          >
+            <div className="flex flex-col gap-1.5 px-5 pb-4 pt-5">
+              <h3 id="unsaved-title" style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
+                Discard unsaved changes?
+              </h3>
+              <p id="unsaved-body" className="m-0" style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>
+                {pendingChangeCount === 1 ? "1 change" : `${pendingChangeCount} changes`} to{" "}
+                {timecard?.employee.user?.name ? `${timecard.employee.user.name}\u2019s timecard` : "this timecard"}{" "}
+                {pendingChangeCount === 1 ? "has" : "have"} not been saved. Leaving now loses{" "}
+                {pendingChangeCount === 1 ? "it" : "them"}.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+              <Button hierarchy="secondary" onClick={() => setLeaveTo(null)} autoFocus>
+                Keep editing
+              </Button>
+              <Button tone="error" onClick={discardAndLeave}>
+                Discard changes
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Notes Modal */}
       {noteDay && timecard && (
