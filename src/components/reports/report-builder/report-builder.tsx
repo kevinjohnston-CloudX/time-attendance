@@ -1,16 +1,17 @@
 "use client";
 
-import { createElement, useRef, useState, useTransition, type ReactNode } from "react";
+import { useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { ArrowLeft, ChevronDown, Play, RefreshCw, Save, Table2 } from "lucide-react";
 import { Banner, Button, EmptyState, Input, LinkButton, PageHeader, Textarea } from "@/components/ui";
 import { DataSourcePicker } from "./data-source-picker";
+import { ReportTypeIcon } from "../report-type-icon";
 import { ColumnPicker } from "./column-picker";
 import { FilterBuilder } from "./filter-builder";
 import { DateRangePicker, defaultPayPeriodRange } from "./date-range-picker";
 import { GroupSortConfig } from "./group-sort-config";
 import { ResultsTable } from "../report-results/results-table";
-import { dataSourceDescription, dataSourceIcon, dataSourceLabel } from "../data-source-label";
+import { dataSourceDescription, dataSourceLabel } from "../data-source-label";
 import { runReport, createReport } from "@/actions/report.actions";
 import type { DataSourceId, FilterDef, SortDef, DateRange } from "@/lib/validators/report.schema";
 import type { ReportResult } from "@/lib/reports/data-sources";
@@ -221,13 +222,7 @@ export function ReportBuilder({
           ) : (
             (
               <div className="flex items-start gap-3">
-                <span
-                  className="flex h-9 w-9 flex-none items-center justify-center rounded-lg"
-                  style={{ background: "var(--surface-info)", color: "var(--icon-accent)" }}
-                  aria-hidden="true"
-                >
-                  {createElement(dataSourceIcon(dataSource), { className: "h-[18px] w-[18px]" })}
-                </span>
+                <ReportTypeIcon id={dataSource} />
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
                     {dataSourceLabel(dataSource)}
