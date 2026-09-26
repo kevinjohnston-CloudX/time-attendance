@@ -1,11 +1,11 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState, useTransition, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
+import { Fragment, useState, useTransition } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import type { AutoPayMode, OtCycle, RuleSet } from "@prisma/client";
 import { createRuleSet, updateRuleSet, deleteRuleSet } from "@/actions/admin.actions";
-import { Badge, Banner, Button, Checkbox, Input, Select, Switch, Textarea } from "@/components/ui";
-import { SetupShell } from "./setup/setup-shell";
+import { Badge, Checkbox, Input, Select, Switch, Textarea } from "@/components/ui";
+import { DeleteSection, EditorPage, Num, Row, Section, Tick, jumpToSection, words, type EditorGroup } from "./setup/editor-page";
 import { ChoiceField, ClockField, DeleteAction, NotCalculated, StatusBadge, StatusField, saveError } from "./setup/setup-ui";
 
 /**
@@ -191,103 +191,8 @@ const INCREMENTS = [
   { value: 30, label: "30 min (a half hour)" },
 ];
 const caption = { font: "var(--type-caption1)", color: "var(--text-tertiary)", textWrap: "pretty" } as const;
-const words = { font: "var(--type-body1)", color: "var(--text-secondary)" } as const;
 /** Stored minutes as hours, to 2 places: close enough that saving gives back the same minute. */
 const hrs = (mins: number | null | undefined, fallback: number) => (mins == null ? fallback : Math.round((mins / 60) * 100) / 100);
-
-/** A section of the editor: one panel with a heading, one quiet line, and rows. */
-function Section({
-  id,
-  title,
-  hint,
-  on,
-  onToggle,
-  offText,
-  unused,
-  children,
-}: {
-  id: string;
-  title: string;
-  hint: string;
-  /** Sections that can be switched off carry the switch in their header. */
-  on?: boolean;
-  onToggle?: (on: boolean) => void;
-  offText?: string;
-  unused?: boolean;
-  children: ReactNode;
-}) {
-  const off = onToggle && !on;
-  return (
-    <section
-      id={`rs-${id}`}
-      data-rs-section={id}
-      aria-label={title}
-      className="ta-card flex flex-col"
-      style={{ borderRadius: "var(--radius-l)", scrollMarginTop: "var(--shell-top)" }}
-    >
-      <header className="flex items-start gap-3 px-5 pb-3.5 pt-4">
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="flex flex-wrap items-center gap-2">
-            <h2 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>{title}</h2>
-            {unused && <NotCalculated />}
-          </span>
-          <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" }}>{hint}</p>
-        </span>
-        {onToggle && (
-          <span className="flex flex-none items-center pt-0.5">
-            <Switch checked={!!on} onChange={onToggle} label={on ? "On" : "Off"} />
-          </span>
-        )}
-      </header>
-      {off && offText && (
-        <p className="px-5 pb-4" style={{ margin: 0, ...caption }}>
-          {offText}
-        </p>
-      )}
-      {/* Kept mounted while off: the form reads every field on save. */}
-      <div hidden={off} className="flex flex-col">
-        {children}
-      </div>
-    </section>
-  );
-}
-
-/** One setting: its name and a quiet line on the left, the control on the right. */
-function Row({ label, hint, unused, children }: { label: string; hint?: string; unused?: boolean; children: ReactNode }) {
-  return (
-    <div
-      className="grid gap-x-6 gap-y-2 px-5 py-3.5 md:[grid-template-columns:240px_minmax(0,1fr)]"
-      style={{ borderTop: "1px solid var(--stroke-divider)" }}
-    >
-      <span className="flex min-w-0 flex-col gap-0.5 pt-1.5">
-        <span className="flex flex-wrap items-center gap-2">
-          <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-primary)" }}>
-            {label}
-          </span>
-          {unused && <NotCalculated />}
-        </span>
-        {hint && <span style={caption}>{hint}</span>}
-      </span>
-      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-2">{children}</span>
-    </div>
-  );
-}
-
-/** A number box with its unit after it. Named, it submits itself. */
-function Num({
-  unit,
-  width = 88,
-  ...rest
-}: Omit<InputHTMLAttributes<HTMLInputElement>, "size"> & { unit?: string; width?: number }) {
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span style={{ width }}>
-        <Input type="number" className="tabular" style={{ width }} {...rest} />
-      </span>
-      {unit && <span style={words}>{unit}</span>}
-    </span>
-  );
-}
 
 /** A pay code picker: active codes, plus the one already chosen if it has been retired. */
 function PayCodeSelect({
@@ -319,113 +224,8 @@ function PayCodeSelect({
   );
 }
 
-/** A checkbox whose value the form reads from a hidden input beside it. */
-function Tick({ name, checked, onChange, label }: { name?: string; checked: boolean; onChange: (v: boolean) => void; label: ReactNode }) {
-  return (
-    <>
-      <Checkbox checked={checked} onChange={onChange} label={label} />
-      {name && <input type="hidden" name={name} value={checked ? "true" : "false"} />}
-    </>
-  );
-}
-
-/* ── Leaving with unsaved changes ─────────────────────────────────────── */
-
-function useLeaveGuard(dirty: boolean) {
-  const router = useRouter();
-  const [pending, setPending] = useState<string | null>(null);
-  const dirtyRef = useRef(dirty);
-  useEffect(() => {
-    dirtyRef.current = dirty;
-  }, [dirty]);
-
-  useEffect(() => {
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!dirtyRef.current) return;
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    // Any link on the page, the sidebar included, asks first.
-    const onClick = (e: MouseEvent) => {
-      if (!dirtyRef.current || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
-      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
-      if (!a || a.target === "_blank" || a.origin !== window.location.origin) return;
-      e.preventDefault();
-      e.stopPropagation();
-      setPending(a.pathname + a.search);
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    window.addEventListener("click", onClick, true);
-    return () => {
-      window.removeEventListener("beforeunload", onBeforeUnload);
-      window.removeEventListener("click", onClick, true);
-    };
-  }, []);
-
-  const dialog = pending ? (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(3, 7, 18, 0.5)" }}
-      onClick={(e) => e.target === e.currentTarget && setPending(null)}
-    >
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="rs-leave-title"
-        className="ta-modal flex w-full max-w-[420px] flex-col gap-2 p-5"
-        style={{ borderRadius: "var(--radius-l)" }}
-      >
-        <h2 id="rs-leave-title" style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>
-          Discard unsaved changes?
-        </h2>
-        <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
-          The changes on this rule set have not been saved. Leaving now loses them.
-        </p>
-        <div className="mt-3 flex justify-end gap-2">
-          <Button hierarchy="secondary" onClick={() => setPending(null)}>
-            Keep editing
-          </Button>
-          <Button
-            tone="error"
-            onClick={() => {
-              const to = pending;
-              dirtyRef.current = false;
-              setPending(null);
-              router.push(to);
-            }}
-          >
-            Discard changes
-          </Button>
-        </div>
-      </div>
-    </div>
-  ) : null;
-
-  return dialog;
-}
-
 /* ── The editor ───────────────────────────────────────────────────────── */
 
-type SectionId =
-  | "general"
-  | "pay-period"
-  | "ot-week"
-  | "daily"
-  | "weekly"
-  | "consecutive"
-  | "approval"
-  | "rates"
-  | "meals"
-  | "shift-rounding"
-  | "punch-rounding"
-  | "pair-rounding"
-  | "guaranteed"
-  | "workday"
-  | "premiums"
-  | "flsa"
-  | "delete";
-
-const FORM_ID = "rule-set-form";
 
 /**
  * The rule set editor, on a page of its own.
@@ -442,26 +242,10 @@ const FORM_ID = "rule-set-form";
  */
 export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow | null; payCodes: PayCodeOption[] }) {
   const router = useRouter();
-  const formRef = useRef<HTMLFormElement>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [savedCount, setSavedCount] = useState(0);
   const people = rs?._count?.employees ?? 0;
-
-  // Changed or not, judged by comparing what the form would send now with
-  // what it sent when it opened (or was last saved).
-  const [baseline, setBaseline] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
-  const snapshot = () => (formRef.current ? JSON.stringify([...new FormData(formRef.current).entries()]) : "");
-  const check = () => {
-    if (baseline === null) return;
-    setDirty(snapshot() !== baseline);
-  };
-  useEffect(() => {
-    if (baseline === null) setBaseline(snapshot());
-    else check();
-  });
-  const leaveDialog = useLeaveGuard(dirty);
 
   /* Switched on or off, lifted here so the rail can say so. */
   const [dailyOn, setDailyOn] = useState((rs?.dailyOtMinutes ?? FEDERAL.dailyOtMinutes) < 1440);
@@ -507,7 +291,7 @@ export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow |
   const windowWords =
     otCycle === "WEEKLY" || !otAnchor ? "a week" : otCycle === "BIWEEKLY" ? "per 2 weeks" : "per overtime window";
 
-  const sections: { title: string; areas: { id: SectionId; label: string; count?: string }[] }[] = [
+  const sections: EditorGroup[] = [
     {
       title: "Basics",
       areas: [
@@ -547,57 +331,14 @@ export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow |
   ];
   if (rs) sections.push({ title: "Other", areas: [{ id: "delete", label: "Delete rule set" }] });
 
-  /* The rail follows the scroll. */
-  const [active, setActive] = useState<SectionId>("general");
-  const jumping = useRef(0);
-  useEffect(() => {
-    let frame = 0;
-    const read = () => {
-      frame = 0;
-      if (Date.now() < jumping.current) return;
-      const top = parseFloat(getComputedStyle(formRef.current ?? document.body).getPropertyValue("--shell-top")) || 96;
-      const els = [...document.querySelectorAll<HTMLElement>("[data-rs-section]")];
-      let current = els[0]?.dataset.rsSection;
-      for (const el of els) if (el.getBoundingClientRect().top - top <= 48) current = el.dataset.rsSection;
-      const last = els[els.length - 1];
-      if (last && last.getBoundingClientRect().bottom <= window.innerHeight - 8) current = last.dataset.rsSection;
-      if (current) setActive(current as SectionId);
-    };
-    const onScroll = () => {
-      if (!frame) frame = requestAnimationFrame(read);
-    };
-    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
-    return () => {
-      document.removeEventListener("scroll", onScroll, { capture: true });
-      if (frame) cancelAnimationFrame(frame);
-    };
-  }, []);
-  function jump(id: SectionId) {
-    setActive(id);
-    jumping.current = Date.now() + 700;
-    // Only the page's own scroller moves. scrollIntoView also nudges every
-    // scrollable parent, the app frame included, and slid the top bar away.
-    const el = document.getElementById(`rs-${id}`);
-    if (!el) return;
-    let scroller: HTMLElement | null = el.parentElement;
-    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
-    const top = parseFloat(getComputedStyle(el).scrollMarginTop) || 0;
-    if (!scroller) return window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - top, behavior: "smooth" });
-    const y = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - top;
-    scroller.scrollTo({ top: y, behavior: "smooth" });
-  }
-
-  function onSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const form = e.currentTarget;
-    if (form.querySelector('[aria-invalid="true"]')) return setError("One of the times cannot be read. Use a time like 8:30.");
+  function onSubmit(form: HTMLFormElement) {
     const fields = parseForm(new FormData(form));
     if (!fields.name?.trim()) {
-      jump("general");
+      jumpToSection("general");
       return setError("Give the rule set a name.");
     }
     if (fields.payFrequency && !fields.payPeriodAnchorDate) {
-      jump("pay-period");
+      jumpToSection("pay-period");
       return setError("Pick a day a pay period starts on, or set the pay frequency back to the company default.");
     }
     setError(null);
@@ -605,16 +346,13 @@ export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow |
       if (!rs) {
         const result = await createRuleSet(fields);
         if (!result.success) return setError(saveError(result.error));
-        setBaseline(snapshot());
-        setDirty(false);
+        setSavedCount((n) => n + 1);
         router.replace(`/admin/rules-setup/rule-sets/${result.data.id}`);
         return;
       }
       const result = await updateRuleSet({ ruleSetId: rs.id, ...fields });
       if (!result.success) return setError(saveError(result.error));
-      setBaseline(snapshot());
-      setDirty(false);
-      setSavedAt(Date.now());
+      setSavedCount((n) => n + 1);
       router.refresh();
     });
   }
@@ -625,15 +363,14 @@ export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow |
     startTransition(async () => {
       const result = await deleteRuleSet({ ruleSetId: rs.id });
       if (!result.success) return setError(saveError(result.error));
-      setDirty(false);
+      setSavedCount((n) => n + 1);
       router.push("/admin/rules-setup?tab=rule-sets");
     });
   }
 
-  const status = isPending ? null : dirty ? "Unsaved changes" : savedAt ? "Saved" : null;
-
   return (
-    <SetupShell
+    <EditorPage
+      noun="rule set"
       title={rs ? rs.name : "New rule set"}
       subtitle={
         rs ? (
@@ -655,38 +392,14 @@ export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow |
         )
       }
       back={{ href: "/admin/rules-setup?tab=rule-sets", label: "Rule sets" }}
-      actions={
-        <>
-          {status && (
-            <span
-              className="whitespace-nowrap"
-              style={{ font: "var(--type-body2)", color: dirty ? "var(--text-warning)" : "var(--text-tertiary)" }}
-              aria-live="polite"
-            >
-              {status}
-            </span>
-          )}
-          <Button type="submit" form={FORM_ID} disabled={isPending || (!!rs && !dirty)}>
-            {isPending ? "Saving…" : rs ? "Save changes" : "Add rule set"}
-          </Button>
-        </>
-      }
-      railLabel="Rule set sections"
       groups={sections}
-      active={active}
-      onPick={jump}
+      isNew={!rs}
+      submitLabel={rs ? "Save changes" : "Add rule set"}
+      pending={isPending}
+      error={error}
+      savedCount={savedCount}
+      onSubmit={onSubmit}
     >
-      <form
-        id={FORM_ID}
-        ref={formRef}
-        onSubmit={onSubmit}
-        onInput={check}
-        onChange={check}
-        noValidate
-        className="flex flex-col gap-4 pb-[40vh]"
-      >
-        {error && <Banner tone="error" title="Not saved" body={error} />}
-
         {/* ── General ── */}
         <Section id="general" title="General" hint="What the rule set is called and the pay code its hours go to.">
           <Row label="Name">
@@ -934,32 +647,23 @@ export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow |
         <MealPremiums rs={rs} payCodes={payCodes} on={premiumOn} onToggle={setPremiumOn} />
         <Flsa rs={rs} payCodes={payCodes} on={flsaOn} onToggle={setFlsaOn} />
 
-        {rs && (
-          <section
-            id="rs-delete"
-            data-rs-section="delete"
-            aria-label="Delete rule set"
-            className="ta-card flex flex-wrap items-center gap-3 px-5 py-4"
-            style={{ borderRadius: "var(--radius-l)", scrollMarginTop: "var(--shell-top)" }}
-          >
-            <span className="flex min-w-[240px] flex-1 flex-col gap-0.5">
-              <h2 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>Delete rule set</h2>
-              <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                {rs.isDefault
-                  ? "The default rule set cannot be deleted."
-                  : people > 0
-                    ? `${people.toLocaleString()} ${people === 1 ? "employee is" : "employees are"} on it, so it cannot be deleted. Set it to inactive instead.`
-                    : "Nobody is on this rule set. Deleting it cannot be undone."}
-              </p>
-            </span>
-            {!rs.isDefault && people === 0 && (
-              <DeleteAction label="Delete rule set" question="Delete this rule set for good?" pending={isPending} onDelete={remove} />
-            )}
-          </section>
-        )}
-      </form>
-      {leaveDialog}
-    </SetupShell>
+      {rs && (
+        <DeleteSection
+          title="Delete rule set"
+          reason={
+            rs.isDefault
+              ? "The default rule set cannot be deleted."
+              : people > 0
+                ? `${people.toLocaleString()} ${people === 1 ? "employee is" : "employees are"} on it, so it cannot be deleted. Set it to inactive instead.`
+                : "Nobody is on this rule set. Deleting it cannot be undone."
+          }
+        >
+          {!rs.isDefault && people === 0 && (
+            <DeleteAction label="Delete rule set" question="Delete this rule set for good?" pending={isPending} onDelete={remove} />
+          )}
+        </DeleteSection>
+      )}
+    </EditorPage>
   );
 }
 
