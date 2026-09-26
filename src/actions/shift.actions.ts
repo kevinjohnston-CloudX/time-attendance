@@ -16,7 +16,23 @@ export const getShifts = withRBAC(
     return db.shift.findMany({
       where: { tenantId },
       orderBy: [{ number: "asc" }, { startTime: "asc" }, { name: "asc" }],
+      include: { _count: { select: { employees: true, scheduleDays: true } } },
     });
+  }
+);
+
+// ─── One shift, for its editor page ──────────────────────────────────────────
+
+export const getShift = withRBAC(
+  "RULES_MANAGE",
+  async (ctx, input: { shiftId: string }) => {
+    if (!ctx.tenantId) throw new Error("NOT_FOUND");
+    const shift = await db.shift.findFirst({
+      where: { id: input.shiftId, tenantId: ctx.tenantId },
+      include: { _count: { select: { employees: true, scheduleDays: true } } },
+    });
+    if (!shift) throw new Error("NOT_FOUND");
+    return shift;
   }
 );
 
@@ -87,6 +103,17 @@ const dayScheduleRowSchema = z.object({
   mealMinutes: z.number().int().min(0),
 });
 
+/** JSON with its keys in order, so two copies of one schedule compare equal. */
+function stable(v: unknown): string {
+  const sort = (x: unknown): unknown =>
+    Array.isArray(x)
+      ? x.map(sort)
+      : x && typeof x === "object"
+        ? Object.fromEntries(Object.keys(x as object).sort().map((k) => [k, sort((x as Record<string, unknown>)[k])]))
+        : x;
+  return JSON.stringify(sort(v ?? null));
+}
+
 /** Derive the shift-level startTime/endTime from the day schedule for engine use. */
 function deriveShiftTimes(daySchedule: DayScheduleRow[]): { startTime: string; endTime: string } {
   const firstWorkday = daySchedule.find((d) => d.isWorkday && d.startTime && d.endTime);
@@ -135,7 +162,8 @@ export const createShift = withRBAC(
   "RULES_MANAGE",
   async (ctx, input: unknown) => {
     const parsed = shiftPropertiesSchema.parse(input);
-    const tenantId = ctx.tenantId!;
+    const tenantId = ctx.tenantId;
+    if (!tenantId) throw new Error("No tenant");
 
     const existing = await db.shift.findUnique({
       where: { tenantId_name: { tenantId, name: parsed.name } },
@@ -151,7 +179,7 @@ export const createShift = withRBAC(
       ? parsed.daySchedule.filter((d) => d.isWorkday).map((d) => d.day)
       : parsed.workDays;
 
-    await db.shift.create({
+    const created = await db.shift.create({
       data: {
         tenantId,
         name: parsed.name,
@@ -175,7 +203,7 @@ export const createShift = withRBAC(
       },
     });
 
-    return { success: true };
+    return { id: created.id };
   }
 );
 
@@ -190,23 +218,34 @@ export const updateShift = withRBAC(
   "RULES_MANAGE",
   async (ctx, input: unknown) => {
     const parsed = updateShiftSchema.parse(input);
-    const tenantId = ctx.tenantId!;
+    const tenantId = ctx.tenantId;
+    if (!tenantId) throw new Error("No tenant");
+
+    // Found inside the caller's company first; it used to update by id alone.
+    const own = await db.shift.findFirst({
+      where: { id: parsed.shiftId, tenantId },
+      select: { id: true, daySchedule: true, startTime: true, endTime: true, workDays: true },
+    });
+    if (!own) throw new Error("NOT_FOUND");
 
     const conflict = await db.shift.findFirst({
-      where: { tenantId, name: parsed.name, NOT: { id: parsed.shiftId } },
+      where: { tenantId, name: parsed.name, NOT: { id: own.id } },
     });
     if (conflict) throw new Error(`Another shift named "${parsed.name}" already exists.`);
 
-    const { startTime, endTime } = parsed.daySchedule
-      ? deriveShiftTimes(parsed.daySchedule)
-      : { startTime: "08:00", endTime: "17:00" };
-
-    const workDays = parsed.daySchedule
-      ? parsed.daySchedule.filter((d) => d.isWorkday).map((d) => d.day)
-      : parsed.workDays;
+    // The start, end and workdays are only worked out again when the week
+    // schedule itself changed. Every save used to redo them from the first
+    // workday, which moved the end of a shift whose Sunday differs from its
+    // weekdays, and fell back to 8:00 to 17:00 with no workdays when no
+    // schedule was sent.
+    const scheduleChanged = parsed.daySchedule !== undefined && stable(parsed.daySchedule) !== stable(own.daySchedule);
+    const { startTime, endTime } =
+      scheduleChanged && parsed.daySchedule ? deriveShiftTimes(parsed.daySchedule) : { startTime: own.startTime, endTime: own.endTime };
+    const workDays =
+      scheduleChanged && parsed.daySchedule ? parsed.daySchedule.filter((d) => d.isWorkday).map((d) => d.day) : own.workDays;
 
     await db.shift.update({
-      where: { id: parsed.shiftId },
+      where: { id: own.id },
       data: {
         name: parsed.name,
         number: parsed.number ?? null,
@@ -240,10 +279,30 @@ export const deleteShift = withRBAC(
   "RULES_MANAGE",
   async (ctx, input: unknown) => {
     const { shiftId } = z.object({ shiftId: z.string().min(1) }).parse(input);
-    const tenantId = ctx.tenantId!;
+    const tenantId = ctx.tenantId;
+    if (!tenantId) throw new Error("No tenant");
+
+    // Deleting a shift quietly took it off every employee and schedule day
+    // that had it, so it is refused while anything still does.
+    const own = await db.shift.findFirst({
+      where: { id: shiftId, tenantId },
+      select: { id: true, _count: { select: { employees: true, scheduleDays: true } } },
+    });
+    if (!own) throw new Error("NOT_FOUND");
+    const { employees, scheduleDays } = own._count;
+    if (employees > 0) {
+      throw new Error(
+        `${employees.toLocaleString()} ${employees === 1 ? "employee is" : "employees are"} on this shift. Move them to another one first, or set it to inactive.`,
+      );
+    }
+    if (scheduleDays > 0) {
+      throw new Error(
+        `This shift is on ${scheduleDays.toLocaleString()} scheduled ${scheduleDays === 1 ? "day" : "days"}, so it cannot be deleted. Set it to inactive instead.`,
+      );
+    }
 
     await db.shift.deleteMany({
-      where: { id: shiftId, tenantId },
+      where: { id: own.id, tenantId },
     });
 
     return { success: true };
