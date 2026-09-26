@@ -14,6 +14,7 @@ export const getPayTypes = withRBAC(
     return db.payType.findMany({
       where: { tenantId },
       orderBy: { number: "asc" },
+      include: { _count: { select: { employees: true } } },
     });
   }
 );
@@ -89,6 +90,14 @@ export const deletePayType = withRBAC(
     const tenantId = ctx.tenantId;
     if (!tenantId) throw new Error("No tenant");
     const { id } = z.object({ id: z.string() }).parse(input);
+    // Deleting a pay type in use clears it from every employee on it, so it
+    // is refused while anyone has it.
+    const inUse = await db.employee.count({ where: { tenantId, payTypeId: id } });
+    if (inUse > 0) {
+      throw new Error(
+        `${inUse.toLocaleString()} ${inUse === 1 ? "employee has" : "employees have"} this pay type. Move them to another one first, or set it to inactive.`,
+      );
+    }
     await db.payType.delete({ where: { id, tenantId } });
     revalidatePath("/admin/site-settings");
     return { success: true as const };

@@ -34,6 +34,7 @@ export const getPayCategories = withRBAC(
         availableLeaveTypes: {
           select: { leaveTypeId: true },
         },
+        _count: { select: { employees: true } },
       },
     });
   }
@@ -47,10 +48,21 @@ const categorySchema = z.object({
   availableLeaveTypeIds:   z.array(z.string()).optional(),
 });
 
-async function checkOverlap(ptoPolicyIds: string[]): Promise<string | null> {
+/** Every policy and leave type id has to be this company's. */
+async function assertOwn(tenantId: string, ptoPolicyIds: string[] = [], leaveTypeIds: string[] = []) {
+  const policies = [...new Set(ptoPolicyIds)];
+  const types = [...new Set(leaveTypeIds)];
+  const [p, t] = await Promise.all([
+    policies.length ? db.ptoPolicy.count({ where: { tenantId, id: { in: policies } } }) : 0,
+    types.length ? db.leaveType.count({ where: { tenantId, id: { in: types } } }) : 0,
+  ]);
+  if (p !== policies.length || t !== types.length) throw new Error("NOT_FOUND");
+}
+
+async function checkOverlap(tenantId: string, ptoPolicyIds: string[]): Promise<string | null> {
   if (ptoPolicyIds.length < 2) return null;
   const policies = await db.ptoPolicy.findMany({
-    where: { id: { in: ptoPolicyIds } },
+    where: { tenantId, id: { in: ptoPolicyIds } },
     select: {
       id: true, name: true,
       rules: { select: { leaveTypeId: true, leaveType: { select: { name: true } } } },
@@ -66,7 +78,7 @@ async function checkOverlap(ptoPolicyIds: string[]): Promise<string | null> {
     // Check for conflicts with other policies already processed
     for (const [ltId, ltName] of thisPolicy) {
       if (seen.has(ltId)) {
-        return `"${ltName}" is covered by both "${seen.get(ltId)}" and "${p.name}"`;
+        return `${ltName} is covered by both ${seen.get(ltId)} and ${p.name}. Keep only one of them.`;
       }
     }
     for (const [ltId] of thisPolicy) {
@@ -82,8 +94,9 @@ export const createPayCategory = withRBAC(
     const tenantId = ctx.tenantId;
     if (!tenantId) throw new Error("No tenant");
     const data = categorySchema.parse(input);
+    await assertOwn(tenantId, data.ptoPolicyIds, data.availableLeaveTypeIds);
 
-    const overlapErr = await checkOverlap(data.ptoPolicyIds ?? []);
+    const overlapErr = await checkOverlap(tenantId, data.ptoPolicyIds ?? []);
     if (overlapErr) throw new Error(overlapErr);
 
     try {
@@ -128,38 +141,46 @@ export const updatePayCategory = withRBAC(
       limitLeaveTypes:       z.boolean().optional(),
       availableLeaveTypeIds: z.array(z.string()).optional(),
     }).parse(input);
+    await assertOwn(tenantId, data.ptoPolicyIds, data.availableLeaveTypeIds);
 
-    const overlapErr = await checkOverlap(data.ptoPolicyIds ?? []);
+    const overlapErr = await checkOverlap(tenantId, data.ptoPolicyIds ?? []);
     if (overlapErr) throw new Error(overlapErr);
 
-    await db.$transaction(async (tx) => {
-      await tx.payCategory.update({
-        where: { id: data.id, tenantId },
-        data: {
-          number:          data.number,
-          description:     data.description ?? null,
-          ...(data.isActive       !== undefined && { isActive: data.isActive }),
-          ...(data.limitLeaveTypes !== undefined && { limitLeaveTypes: data.limitLeaveTypes }),
-        },
+    try {
+      await db.$transaction(async (tx) => {
+        await tx.payCategory.update({
+          where: { id: data.id, tenantId },
+          data: {
+            number:          data.number,
+            description:     data.description ?? null,
+            ...(data.isActive       !== undefined && { isActive: data.isActive }),
+            ...(data.limitLeaveTypes !== undefined && { limitLeaveTypes: data.limitLeaveTypes }),
+          },
+        });
+        if (data.ptoPolicyIds !== undefined) {
+          await tx.payCategoryPtoPolicy.deleteMany({ where: { payCategoryId: data.id } });
+          if (data.ptoPolicyIds.length) {
+            await tx.payCategoryPtoPolicy.createMany({
+              data: data.ptoPolicyIds.map((ptoPolicyId) => ({ payCategoryId: data.id, ptoPolicyId })),
+            });
+          }
+        }
+        // Always reconcile junction rows when limitLeaveTypes is part of the update
+        if (data.limitLeaveTypes !== undefined) {
+          await tx.payCategoryLeaveType.deleteMany({ where: { payCategoryId: data.id } });
+          if (data.limitLeaveTypes && data.availableLeaveTypeIds?.length) {
+            await tx.payCategoryLeaveType.createMany({
+              data: data.availableLeaveTypeIds.map((leaveTypeId) => ({ payCategoryId: data.id, leaveTypeId })),
+            });
+          }
+        }
       });
-      if (data.ptoPolicyIds !== undefined) {
-        await tx.payCategoryPtoPolicy.deleteMany({ where: { payCategoryId: data.id } });
-        if (data.ptoPolicyIds.length) {
-          await tx.payCategoryPtoPolicy.createMany({
-            data: data.ptoPolicyIds.map((ptoPolicyId) => ({ payCategoryId: data.id, ptoPolicyId })),
-          });
-        }
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new Error(`Category number ${data.number} already exists.`);
       }
-      // Always reconcile junction rows when limitLeaveTypes is part of the update
-      if (data.limitLeaveTypes !== undefined) {
-        await tx.payCategoryLeaveType.deleteMany({ where: { payCategoryId: data.id } });
-        if (data.limitLeaveTypes && data.availableLeaveTypeIds?.length) {
-          await tx.payCategoryLeaveType.createMany({
-            data: data.availableLeaveTypeIds.map((leaveTypeId) => ({ payCategoryId: data.id, leaveTypeId })),
-          });
-        }
-      }
-    });
+      throw err;
+    }
 
     revalidatePath("/admin/site-settings");
     return { success: true as const };
@@ -172,6 +193,14 @@ export const deletePayCategory = withRBAC(
     const tenantId = ctx.tenantId;
     if (!tenantId) throw new Error("No tenant");
     const { id } = z.object({ id: z.string() }).parse(input);
+    // Deleting a category in use clears it from every employee on it, with
+    // nothing to say it happened, so it is refused while anyone is on it.
+    const inUse = await db.employee.count({ where: { tenantId, payCategoryId: id } });
+    if (inUse > 0) {
+      throw new Error(
+        `${inUse.toLocaleString()} ${inUse === 1 ? "employee is" : "employees are"} in this pay category. Move them to another one first, or set it to inactive.`,
+      );
+    }
     await db.payCategory.delete({ where: { id, tenantId } });
     revalidatePath("/admin/site-settings");
     return { success: true as const };

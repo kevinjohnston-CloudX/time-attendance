@@ -962,10 +962,18 @@ export const updateDepartment = withRBAC(
 
 // ─── Leave Types ──────────────────────────────────────────────────────────────
 
+/** A pay code picked for a leave type has to be this company's. */
+async function assertOwnPayCode(tenantId: string, payCodeId: string | null | undefined) {
+  if (!payCodeId) return;
+  const found = await db.payCode.findFirst({ where: { id: payCodeId, tenantId }, select: { id: true } });
+  if (!found) throw new Error("NOT_FOUND");
+}
+
 export const getLeaveTypesAdmin = withRBAC(
   "RULES_MANAGE",
   async ({ tenantId }, _input: void) => {
-    return db.leaveType.findMany({ where: { tenantId: tenantId ?? undefined }, orderBy: { name: "asc" } });
+    if (!tenantId) return [];
+    return db.leaveType.findMany({ where: { tenantId }, orderBy: { name: "asc" } });
   }
 );
 
@@ -974,6 +982,7 @@ export const createLeaveType = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: LeaveTypeInput) => {
     if (!tenantId) throw new Error("Tenant context required");
     const parsed = leaveTypeSchema.parse(input);
+    await assertOwnPayCode(tenantId, parsed.payCodeId);
     let { externalCode } = parsed;
     if (externalCode == null) {
       const max = await db.leaveType.findFirst({
@@ -1000,9 +1009,13 @@ export const createLeaveType = withRBAC(
 export const updateLeaveType = withRBAC(
   "RULES_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateLeaveTypeInput) => {
+    if (!tenantId) throw new Error("Tenant context required");
     const { leaveTypeId, isActive, ...rest } = updateLeaveTypeSchema.parse(input);
+    const own = await db.leaveType.findFirst({ where: { id: leaveTypeId, tenantId }, select: { id: true } });
+    if (!own) throw new Error("NOT_FOUND");
+    await assertOwnPayCode(tenantId, rest.payCodeId);
     const updated = await db.leaveType.update({
-      where: { id: leaveTypeId },
+      where: { id: own.id },
       data: { ...rest, ...(isActive !== undefined && { isActive }) },
     });
     await writeAuditLog({
