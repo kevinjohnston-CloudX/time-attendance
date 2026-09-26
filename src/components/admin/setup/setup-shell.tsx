@@ -17,23 +17,31 @@ import { LinkButton, PageHeader, PinnedBar } from "@/components/ui";
 export interface ShellArea<T extends string> {
   id: T;
   label: string;
-  icon: ElementType;
-  count: number;
+  icon?: ElementType;
+  /** How many active records it holds, or a word such as "Off". */
+  count?: number | string;
 }
 
 export function SetupShell<T extends string>({
   title,
   subtitle,
   path,
+  back = { href: "/admin", label: "Administration" },
+  actions,
+  railLabel,
   groups,
   active,
   onPick,
   children,
 }: {
-  title: string;
-  subtitle: string;
-  /** This page's address, for the `?tab=` mirror. */
-  path: string;
+  title: ReactNode;
+  subtitle: ReactNode;
+  /** This page's address, for the `?tab=` mirror. Left out, nothing is mirrored. */
+  path?: string;
+  back?: { href: string; label: string };
+  /** Anything after the back link, such as Save. */
+  actions?: ReactNode;
+  railLabel?: string;
   groups: { title: string; areas: ShellArea<T>[] }[];
   active: T;
   onPick: (id: T) => void;
@@ -41,7 +49,7 @@ export function SetupShell<T extends string>({
 }) {
   function pick(id: T) {
     onPick(id);
-    window.history.replaceState(window.history.state, "", `${path}?tab=${id}`);
+    if (path) window.history.replaceState(window.history.state, "", `${path}?tab=${id}`);
   }
 
   // The rail pins just under the header and reaches the bottom of the window.
@@ -79,15 +87,20 @@ export function SetupShell<T extends string>({
   }, []);
 
   return (
-    <div className="flex flex-col gap-4">
+    // --shell-top is where the pinned bar ends, for anything that scrolls a
+    // section into view to stop under it rather than behind it.
+    <div className="flex flex-col gap-4" style={{ ["--shell-top" as string]: `${rail?.top ?? 96}px` }}>
       <PinnedBar barRef={barRef}>
         <PageHeader
           title={title}
           subtitle={subtitle}
           actions={
-            <LinkButton href="/admin" hierarchy="tertiary" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
-              Administration
-            </LinkButton>
+            <>
+              <LinkButton href={back.href} hierarchy="tertiary" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
+                {back.label}
+              </LinkButton>
+              {actions}
+            </>
           }
         />
       </PinnedBar>
@@ -95,7 +108,7 @@ export function SetupShell<T extends string>({
       <div className="flex flex-col items-start gap-4 lg:flex-row">
         <nav
           ref={railRef}
-          aria-label={`${title} areas`}
+          aria-label={railLabel ?? (typeof title === "string" ? `${title} areas` : "Areas")}
           className="ta-card ta-scroll w-full flex-none overflow-y-auto lg:sticky lg:w-[248px]"
           style={{ top: rail?.top, maxHeight: rail?.height, borderRadius: "var(--radius-l)" }}
         >
@@ -129,11 +142,13 @@ function AreaLink<T extends string>({ area, selected, onPick }: { area: ShellAre
       className={`flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left ${selected ? "" : "ta-hoverable"}`}
       style={{ border: 0, cursor: "pointer", background: selected ? "var(--surface-info)" : "transparent" }}
     >
-      <Icon
-        className="h-4 w-4 flex-none"
-        style={{ color: selected ? "var(--icon-accent)" : "var(--icon-tertiary)" }}
-        aria-hidden="true"
-      />
+      {Icon && (
+        <Icon
+          className="h-4 w-4 flex-none"
+          style={{ color: selected ? "var(--icon-accent)" : "var(--icon-tertiary)" }}
+          aria-hidden="true"
+        />
+      )}
       <span
         className="min-w-0 flex-1 truncate"
         style={{
@@ -146,7 +161,7 @@ function AreaLink<T extends string>({ area, selected, onPick }: { area: ShellAre
       </span>
       <span
         className="tabular flex-none"
-        title={`${area.count} active`}
+        title={typeof area.count === "number" ? `${area.count} active` : undefined}
         style={{ font: "var(--type-caption1)", color: selected ? "var(--text-accent)" : "var(--text-tertiary)" }}
       >
         {area.count}

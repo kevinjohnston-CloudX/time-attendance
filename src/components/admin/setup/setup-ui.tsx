@@ -297,11 +297,22 @@ export function SelectField({
 }
 
 /** Active or inactive, as a pair of choices rather than a select, since it is one of two. */
-export function StatusField({ defaultActive, name = "isActive", hint }: { defaultActive: boolean; name?: string; hint?: string }) {
+export function StatusField({
+  defaultActive,
+  name = "isActive",
+  hint,
+  bare = false,
+}: {
+  defaultActive: boolean;
+  name?: string;
+  hint?: string;
+  /** Leave out the label, where the row beside it already names the field. */
+  bare?: boolean;
+}) {
   const [active, setActive] = useState(defaultActive);
   return (
     <div className="flex flex-col items-start gap-1.5">
-      <span className="wms-label">Status</span>
+      {!bare && <span className="wms-label">Status</span>}
       <SegmentedControl
         ariaLabel="Status"
         value={active ? "true" : "false"}
@@ -468,9 +479,9 @@ export function ChoiceField({
   const [value, setValue] = useState(defaultValue);
   return (
     <div className="flex min-w-0 flex-col items-start gap-1.5">
-      <span className="wms-label">{label}</span>
+      {label && <span className="wms-label">{label}</span>}
       <SegmentedControl
-        ariaLabel={label}
+        ariaLabel={label || name}
         value={value}
         onChange={(v) => {
           setValue(v);
@@ -489,4 +500,101 @@ export function hoursText(minutes: number): string {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return [h ? `${h.toLocaleString()} h` : "", m ? `${m} min` : ""].filter(Boolean).join(" ") || "0 h";
+}
+
+/* ── Times and honesty notes ──────────────────────────────────────────── */
+
+/** "HH:mm" (24 hour, as stored) to what a person types: 8:30 and PM. */
+function splitClock(v: string | null | undefined): { text: string; half: "AM" | "PM" } {
+  const m = /^(\d{1,2}):(\d{2})/.exec(v ?? "");
+  if (!m) return { text: "", half: "AM" };
+  const h = Number(m[1]);
+  return { text: `${h % 12 || 12}:${m[2]}`, half: h >= 12 ? "PM" : "AM" };
+}
+
+/** What was typed back to "HH:mm", or null when it is not a time. */
+function joinClock(text: string, half: "AM" | "PM"): string | null {
+  const t = text.trim().replace(/\s+/g, "");
+  const m = /^(\d{1,2})(?::?(\d{2}))?$/.exec(t);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2] ?? 0);
+  if (h < 1 || h > 12 || min > 59) return null;
+  const h24 = (h % 12) + (half === "PM" ? 12 : 0);
+  return `${String(h24).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+/**
+ * A time of day on a 12 hour clock, with AM or PM as a control of its own
+ * rather than guessed. Submits "HH:mm" under `name`, or "" when empty. A
+ * time it cannot read marks itself invalid, so a form can refuse to save.
+ */
+export function ClockField({
+  name,
+  defaultValue,
+  label,
+  onChange,
+}: {
+  name: string;
+  defaultValue?: string | null;
+  /** Read out to screen readers; the visible label sits beside it. */
+  label: string;
+  onChange?: () => void;
+}) {
+  const start = splitClock(defaultValue);
+  const [text, setText] = useState(start.text);
+  const [half, setHalf] = useState<"AM" | "PM">(start.half);
+  const value = text.trim() ? joinClock(text, half) : "";
+  const invalid = value === null;
+  return (
+    <span className="inline-flex flex-col gap-1">
+      <span className="inline-flex items-center gap-1.5">
+        <input
+          aria-label={label}
+          aria-invalid={invalid || undefined}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            onChange?.();
+          }}
+          placeholder="8:00"
+          inputMode="numeric"
+          autoComplete="off"
+          className="ta-field tabular h-8 w-[72px] rounded-md px-2.5"
+          style={{
+            border: `1px solid ${invalid ? "var(--stroke-error)" : "var(--stroke-default)"}`,
+            background: "var(--surface-card)",
+            color: "var(--text-primary)",
+            font: "var(--type-body1)",
+          }}
+        />
+        <SegmentedControl
+          ariaLabel={`${label}, AM or PM`}
+          value={half}
+          onChange={(v) => {
+            setHalf(v as "AM" | "PM");
+            onChange?.();
+          }}
+          items={[
+            { value: "AM", label: "AM" },
+            { value: "PM", label: "PM" },
+          ]}
+        />
+      </span>
+      {invalid && <span style={{ font: "var(--type-caption1)", color: "var(--text-error)" }}>Use a time like 8:30</span>}
+      <input type="hidden" name={name} value={value ?? ""} />
+    </span>
+  );
+}
+
+/**
+ * Marks a setting that is saved but that no calculation reads yet, so the
+ * screen does not promise behaviour the system does not have.
+ */
+export function NotCalculated() {
+  return (
+    <span title="CloudTime saves this setting, but pay calculations do not use it yet.">
+      <Badge size="sm">Not used in pay yet</Badge>
+    </span>
+  );
 }

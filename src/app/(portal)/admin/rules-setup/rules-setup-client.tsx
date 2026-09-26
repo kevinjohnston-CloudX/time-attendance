@@ -86,7 +86,7 @@ export function RulesSetupClient(props: Props) {
           <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)", textWrap: "pretty" }}>{hint}</p>
         </div>
       )}
-      {tab === "rule-sets" && <RuleSetsManager ruleSets={ruleSets} payCodes={payCodes} initialView={initialRuleSetView} />}
+      {tab === "rule-sets" && <RuleSetsManager ruleSets={ruleSets} initialView={initialRuleSetView} />}
       {tab === "shifts" && <ShiftsManager shifts={shifts} />}
       {tab === "holiday-rules" && <HolidayRulesManager rules={holidayRules} payCodes={payCodes} />}
       {tab === "leave-policies" && (
