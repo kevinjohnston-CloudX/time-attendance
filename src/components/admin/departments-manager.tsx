@@ -1,312 +1,223 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { FolderOpen, X } from "lucide-react";
-import type { ReactNode, SelectHTMLAttributes } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "@/components/layout/navigation-progress";
+import { FolderOpen, Plus } from "lucide-react";
+import type { Department, Site } from "@prisma/client";
 import { createDepartment, updateDepartment } from "@/actions/admin.actions";
-import type { Site, Department } from "@prisma/client";
+import { Badge, Button, EmptyState, FilterSelectChip, Input, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
 import {
-  Badge,
-  Banner,
-  Button,
-  Card,
-  Checkbox,
-  EmptyState,
-  Input,
-  Select,
-  Table,
-  TBody,
-  THead,
-  TR,
-  TH,
-  TD,
-  TableFooter,
-  Toolbar,
-  statusTone,
-} from "@/components/ui";
+  AreaPanel,
+  PickList,
+  SetupDialog,
+  StatusBadge,
+  StatusField,
+  countLine,
+  matches,
+  saveError,
+  useStatusView,
+} from "./setup/setup-ui";
 
 /**
- * Departments, on the design's list template.
+ * Departments: the groups people work in, and the sites each one exists at.
  *
- * <p>The design's Departments list carries Cost Centre, Manager, Default Shift
- * and a head count. A Department in this schema is a name, a set of sites and
- * an active flag — nothing else — so those four columns are left out rather
- * than filled in with placeholders.
- *
- * <p>A department with no site is the one row that matters here: employees are
+ * <p>A department with no site is the row that matters here: employees are
  * scoped by site, so an unsited department is invisible to every supervisor.
- * It gets the tertiary "No sites" instead of an empty cell.
+ * It says No sites in the row rather than leaving the cell empty. New and
+ * edited departments need at least one site, here and on the server.
  */
 
 type DepartmentWithSites = Department & { sites: { site: Site }[] };
 
-interface Props {
-  departments: DepartmentWithSites[];
-  sites: Site[];
-}
+/** Up to this many sites are named in a row; more read as a count, named on hover. */
+const SITES_SHOWN = 3;
 
-/** Field grid from the design's doc template, at two columns. */
-const FIELD_GRID = "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,48%)),1fr))]";
-
-function SelectField({
-  label,
-  children,
-  ...rest
-}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; children: ReactNode }) {
-  return (
-    <label className="flex w-full flex-col gap-1.5">
-      <span className="wms-label">{label}</span>
-      <Select {...rest}>{children}</Select>
-    </label>
-  );
-}
-
-/**
- * Which sites a department exists at.
- *
- * <p>The kit's Checkbox is itself a label, so these are laid out as a plain
- * row rather than wrapped in bordered pills — a label inside a label toggles
- * twice on one click.
- */
-function SiteCheckboxes({
-  sites,
-  selected,
-  onChange,
-}: {
-  sites: Site[];
-  selected: string[];
-  onChange: (ids: string[]) => void;
-}) {
-  function toggle(id: string) {
-    onChange(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id]);
-  }
-  return (
-    <div className="flex w-full flex-col gap-1.5">
-      <span className="wms-label">Sites</span>
-      <div className="flex flex-wrap gap-x-5 gap-y-2">
-        {sites.map((s) => (
-          <Checkbox
-            key={s.id}
-            checked={selected.includes(s.id)}
-            onChange={() => toggle(s.id)}
-            label={s.name}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.4)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="ta-modal max-h-[90vh] w-full max-w-lg overflow-y-auto"
-        style={{ borderRadius: "var(--radius-l)" }}
-      >
-        <header
-          className="flex items-center justify-between gap-3 px-5 py-3.5"
-          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-        >
-          <h3 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>{title}</h3>
-          <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
-            <X className="h-4 w-4" />
-          </Button>
-        </header>
-        <div className="px-5 py-4">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function FormActions({
-  submitLabel,
-  pending,
-  onCancel,
-}: {
-  submitLabel: string;
-  pending: boolean;
-  onCancel: () => void;
-}) {
-  return (
-    <div className="mt-5 flex gap-2 pt-4" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
-      <Button type="submit" disabled={pending}>{pending ? "Saving…" : submitLabel}</Button>
-      <Button type="button" hierarchy="secondary" onClick={onCancel}>Cancel</Button>
-    </div>
-  );
-}
-
-export function DepartmentsManager({ departments, sites }: Props) {
+export function DepartmentsManager({ departments, sites }: { departments: DepartmentWithSites[]; sites: Site[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<DepartmentWithSites | "new" | null>(null);
+  const [query, setQuery] = useState("");
+  const [siteId, setSiteId] = useState("");
+  const { view, setView, counts, kept } = useStatusView(departments);
+  const shown = kept.filter(
+    (d) =>
+      (!siteId || d.sites.some((s) => s.site.id === siteId)) &&
+      matches(query, d.name, ...d.sites.map((s) => s.site.name)),
+  );
 
-  const [editingDept, setEditingDept] = useState<DepartmentWithSites | null>(null);
-  const [editSiteIds, setEditSiteIds] = useState<string[]>([]);
-
-  const [showCreate, setShowCreate] = useState(false);
-  const [createSiteIds, setCreateSiteIds] = useState<string[]>([]);
-
-  function openEdit(dept: DepartmentWithSites) {
-    setEditingDept(dept);
-    setEditSiteIds(dept.sites.map((ds) => ds.site.id));
+  function open(d: DepartmentWithSites | "new") {
+    setEditing(d);
+    setError(null);
+  }
+  function close() {
+    setEditing(null);
     setError(null);
   }
 
-  function closeEdit() {
-    setEditingDept(null);
-    setEditSiteIds([]);
-    setError(null);
-  }
-
-  function openCreate() {
-    setShowCreate(true);
-    setCreateSiteIds([]);
-    setError(null);
-  }
-
-  function closeCreate() {
-    setShowCreate(false);
-    setCreateSiteIds([]);
-    setError(null);
-  }
-
-  function handleCreate(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    if (createSiteIds.length === 0) { setError("Select at least one site."); return; }
+  function save(form: FormData, siteIds: string[]) {
+    const name = String(form.get("name") ?? "").trim();
     setError(null);
     startTransition(async () => {
-      const result = await createDepartment({ name: fd.get("name") as string, siteIds: createSiteIds });
-      if (!result.success) { setError(result.error); return; }
-      closeCreate();
+      const result =
+        editing === "new"
+          ? await createDepartment({ name, siteIds })
+          : await updateDepartment({
+              departmentId: (editing as DepartmentWithSites).id,
+              name,
+              siteIds,
+              isActive: form.get("isActive") === "true",
+            });
+      if (!result.success) return setError(saveError(result.error));
+      close();
       router.refresh();
     });
   }
 
-  function handleUpdate(dept: DepartmentWithSites, e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    if (editSiteIds.length === 0) { setError("Select at least one site."); return; }
-    setError(null);
-    startTransition(async () => {
-      const result = await updateDepartment({
-        departmentId: dept.id,
-        name: fd.get("name") as string,
-        siteIds: editSiteIds,
-        isActive: fd.get("isActive") === "true",
-      });
-      if (!result.success) { setError(result.error); return; }
-      closeEdit();
-      router.refresh();
-    });
-  }
+  const addButton = (
+    <Button onClick={() => open("new")} leadingIcon={<Plus className="h-4 w-4" />}>
+      Add department
+    </Button>
+  );
 
   return (
-    <div className="mt-4 flex flex-col gap-2.5">
-      <Toolbar count={departments.length} countLabel="department">
-        <Button onClick={openCreate}>New Department</Button>
-      </Toolbar>
-
-      <Card padding={0}>
+    <>
+      <AreaPanel
+        title="Departments"
+        hint="The groups people work in, and the sites each one exists at. Supervisors see people by department."
+        action={addButton}
+        status={{ view, onChange: setView, counts }}
+        search={departments.length ? { value: query, onChange: setQuery, placeholder: "Department or site" } : undefined}
+        filters={
+          sites.length > 1 && departments.length ? (
+            <FilterSelectChip
+              label="Site"
+              allLabel="Every site"
+              value={siteId}
+              options={sites.map((s) => ({ id: s.id, name: s.name }))}
+              onChange={setSiteId}
+            />
+          ) : undefined
+        }
+        count={countLine(shown.length, departments.length, "department", "departments")}
+      >
         {departments.length === 0 ? (
           <EmptyState
             icon={<FolderOpen className="h-8 w-8" />}
-            title="No departments"
-            body="Departments group employees inside a site and decide who a supervisor sees."
-            action={<Button size="sm" onClick={openCreate}>New Department</Button>}
+            title="No departments yet"
+            body="Add the first one and pick the sites it exists at."
+            action={addButton}
+          />
+        ) : shown.length === 0 ? (
+          <EmptyState
+            icon={<FolderOpen className="h-8 w-8" />}
+            title="No departments match"
+            body="Nothing matches that search, site or status."
           />
         ) : (
-          <>
-            <Table>
-              <THead>
-                <TR>
-                  <TH>Department</TH>
-                  <TH>Sites</TH>
-                  <TH>Status</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {departments.map((dept) => (
-                  <TR key={dept.id} onClick={() => openEdit(dept)}>
-                    <TD style={{ fontWeight: "var(--weight-medium)" }}>{dept.name}</TD>
-                    <TD style={{ color: "var(--text-secondary)" }}>
-                      {dept.sites.length === 0 ? (
-                        <span style={{ color: "var(--text-tertiary)" }}>No sites</span>
+          <Table>
+            <THead>
+              <TR>
+                <TH>Department</TH>
+                <TH>Sites</TH>
+                <TH>Status</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {shown.map((d) => {
+                const names = d.sites.map((s) => s.site.name).sort((a, b) => a.localeCompare(b));
+                return (
+                  <TR key={d.id} onClick={() => open(d)}>
+                    <TD style={{ fontWeight: "var(--weight-medium)" }}>{d.name}</TD>
+                    <TD>
+                      {names.length === 0 ? (
+                        <Badge tone="warning" size="sm">
+                          No sites
+                        </Badge>
+                      ) : names.length >= sites.length && sites.length > 1 ? (
+                        <span style={{ color: "var(--text-secondary)" }}>Every site</span>
+                      ) : names.length <= SITES_SHOWN ? (
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          {names.map((n) => (
+                            <Badge key={n} size="sm">
+                              {n}
+                            </Badge>
+                          ))}
+                        </span>
                       ) : (
-                        dept.sites.map((ds) => ds.site.name).join(", ")
+                        <span title={names.join(", ")} style={{ color: "var(--text-secondary)" }}>
+                          {names.length} sites
+                        </span>
                       )}
                     </TD>
                     <TD>
-                      {dept.isActive ? (
-                        <Badge tone={statusTone("ACTIVE")} size="sm" dot>Active</Badge>
-                      ) : (
-                        // statusTone would answer "warning" here; an amber pill
-                        // on a department nobody is in reads as something to
-                        // action. Neutral is Badge's own default.
-                        <Badge size="sm">Inactive</Badge>
-                      )}
+                      <StatusBadge active={d.isActive} />
                     </TD>
                   </TR>
-                ))}
-              </TBody>
-            </Table>
-            <TableFooter
-              shown={departments.length}
-              total={departments.length}
-              label={departments.length === 1 ? "department" : "departments"}
-            />
-          </>
+                );
+              })}
+            </TBody>
+          </Table>
         )}
-      </Card>
+      </AreaPanel>
 
-      {showCreate && (
-        <Modal title="New Department" onClose={closeCreate}>
-          {error && <div className="mb-4"><Banner tone="error" body={error} /></div>}
-          <form onSubmit={handleCreate}>
-            <div className="flex flex-col gap-3">
-              <div className={FIELD_GRID}>
-                <Input label="Name" name="name" required placeholder="e.g. Operations" />
-              </div>
-              <SiteCheckboxes sites={sites} selected={createSiteIds} onChange={setCreateSiteIds} />
-            </div>
-            <FormActions submitLabel="Create" pending={isPending} onCancel={closeCreate} />
-          </form>
-        </Modal>
+      {editing && (
+        <DepartmentDialog
+          department={editing === "new" ? null : editing}
+          sites={sites}
+          pending={isPending}
+          error={error}
+          onSubmit={save}
+          onClose={close}
+        />
       )}
+    </>
+  );
+}
 
-      {editingDept && (
-        <Modal title={`Edit: ${editingDept.name}`} onClose={closeEdit}>
-          {error && <div className="mb-4"><Banner tone="error" body={error} /></div>}
-          <form onSubmit={(e) => handleUpdate(editingDept, e)}>
-            <div className="flex flex-col gap-3">
-              <div className={FIELD_GRID}>
-                <Input label="Name" name="name" defaultValue={editingDept.name} required />
-                <SelectField label="Status" name="isActive" defaultValue={editingDept.isActive ? "true" : "false"}>
-                  <option value="true">Active</option>
-                  <option value="false">Inactive</option>
-                </SelectField>
-              </div>
-              <SiteCheckboxes sites={sites} selected={editSiteIds} onChange={setEditSiteIds} />
-            </div>
-            <FormActions submitLabel="Save changes" pending={isPending} onCancel={closeEdit} />
-          </form>
-        </Modal>
-      )}
-    </div>
+function DepartmentDialog({
+  department,
+  sites,
+  pending,
+  error,
+  onSubmit,
+  onClose,
+}: {
+  department: DepartmentWithSites | null;
+  sites: Site[];
+  pending: boolean;
+  error: string | null;
+  onSubmit: (form: FormData, siteIds: string[]) => void;
+  onClose: () => void;
+}) {
+  const [siteIds, setSiteIds] = useState<string[]>(() => department?.sites.map((s) => s.site.id) ?? []);
+  const [tried, setTried] = useState(false);
+  const missing = siteIds.length === 0;
+
+  return (
+    <SetupDialog
+      title={department ? department.name : "Add department"}
+      subtitle={department ? "Edit department" : undefined}
+      submitLabel={department ? "Save changes" : "Add department"}
+      pending={pending}
+      error={error}
+      onSubmit={(form) => {
+        setTried(true);
+        if (!missing) onSubmit(form, siteIds);
+      }}
+      onClose={onClose}
+    >
+      <Input label="Name" name="name" required defaultValue={department?.name ?? ""} placeholder="Operations" />
+      <PickList
+        label="Sites"
+        items={sites.map((s) => ({ id: s.id, label: s.name, note: s.isActive ? undefined : "Inactive" }))}
+        selected={siteIds}
+        onChange={setSiteIds}
+        searchPlaceholder="Find a site"
+        invalid={tried && missing}
+        hint={tried && missing ? "Pick at least one site." : "The sites this department exists at."}
+      />
+      {department && <StatusField defaultActive={department.isActive} />}
+    </SetupDialog>
   );
 }

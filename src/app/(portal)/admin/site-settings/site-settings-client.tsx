@@ -49,7 +49,7 @@ const GROUPS: { title: string; areas: AreaDef[] }[] = [
   {
     title: "Time off",
     areas: [
-      { id: "holidays", label: "Holidays", icon: CalendarDays, requires: "rules", hint: "Company holidays, and the holiday rules that pay them." },
+      { id: "holidays", label: "Holidays", icon: CalendarDays, requires: "rules" },
       { id: "leave-types", label: "Leave types", icon: Palmtree, requires: "rules" },
     ],
   },
@@ -65,7 +65,7 @@ const GROUPS: { title: string; areas: AreaDef[] }[] = [
 ];
 
 /** Areas already built on the shared panel, which draw their own heading. */
-const ON_PANEL = new Set<Tab>(["sites"]);
+const ON_PANEL = new Set<Tab>(["sites", "departments", "holidays"]);
 
 interface Props {
   /* eslint-disable @typescript-eslint/no-explicit-any */

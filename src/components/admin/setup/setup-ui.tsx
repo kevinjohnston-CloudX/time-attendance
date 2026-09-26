@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent, type ReactNode, type SelectHTMLAttributes } from "react";
 import { X } from "lucide-react";
-import { Badge, Banner, Button, SearchInput, SegmentedControl, Select, statusTone } from "@/components/ui";
+import { Badge, Banner, Button, Checkbox, SearchInput, SegmentedControl, Select, statusTone } from "@/components/ui";
 
 /**
  * The parts every Company Setup area is built from, so the eight of them read
@@ -338,3 +338,113 @@ export const LEAVE_CATEGORY_LABEL: Record<string, string> = {
   MILITARY: "Military",
   UNPAID: "Unpaid",
 };
+
+/**
+ * Pick several from a list: a department's sites, a holiday's rules. Ticks
+ * rather than a two box shuttle, with Select all and Clear, a search once the
+ * list is long, and how many are picked. The picked ids also go in a hidden
+ * field under `name`, comma separated, for forms that read FormData.
+ */
+export function PickList({
+  label,
+  hint,
+  items,
+  selected,
+  onChange,
+  name,
+  searchPlaceholder = "Search",
+  invalid = false,
+}: {
+  label: string;
+  hint?: string;
+  items: { id: string; label: string; note?: string }[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+  name?: string;
+  searchPlaceholder?: string;
+  /** Drawn in the error colour, for a list that needs at least one. */
+  invalid?: boolean;
+}) {
+  const [q, setQ] = useState("");
+  const picked = new Set(selected);
+  const shown = items.filter((i) => matches(q, i.label, i.note));
+  const allShownPicked = shown.length > 0 && shown.every((i) => picked.has(i.id));
+
+  function toggle(id: string) {
+    onChange(picked.has(id) ? selected.filter((s) => s !== id) : [...selected, id]);
+  }
+  function setShown(on: boolean) {
+    const ids = new Set(shown.map((i) => i.id));
+    onChange(on ? [...new Set([...selected, ...ids])] : selected.filter((s) => !ids.has(s)));
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="flex items-center gap-2">
+        <span className="wms-label min-w-0 flex-1">{label}</span>
+        <span className="tabular" style={{ font: "var(--type-caption1)", color: invalid ? "var(--text-error)" : "var(--text-tertiary)" }}>
+          {selected.length} of {items.length} picked
+        </span>
+      </span>
+      <div
+        className="flex flex-col overflow-hidden"
+        style={{
+          border: `1px solid ${invalid ? "var(--stroke-error)" : "var(--stroke-default)"}`,
+          borderRadius: "var(--radius-m)",
+        }}
+      >
+        <div
+          className="flex items-center gap-2 px-2.5 py-2"
+          style={{ borderBottom: "1px solid var(--stroke-divider)", background: "var(--surface-secondary)" }}
+        >
+          {items.length > 8 ? (
+            <input
+              type="search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
+              className="ta-field h-7 min-w-0 flex-1 rounded-md px-2"
+              style={{ border: "1px solid var(--stroke-default)", background: "var(--surface-card)", font: "var(--type-body2)", color: "var(--text-primary)" }}
+            />
+          ) : (
+            <span className="flex-1" />
+          )}
+          <Button type="button" size="sm" hierarchy="link" onClick={() => setShown(!allShownPicked)} disabled={shown.length === 0}>
+            {allShownPicked ? "Clear" : q ? "Select these" : "Select all"}
+          </Button>
+        </div>
+        <div className="ta-scroll grid max-h-[232px] gap-x-4 overflow-y-auto px-3 py-2 [grid-template-columns:repeat(auto-fill,minmax(200px,1fr))]">
+          {shown.length === 0 ? (
+            <span className="py-2" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+              {items.length ? "Nothing matches that search." : "There is nothing to pick yet."}
+            </span>
+          ) : (
+            shown.map((i) => (
+              <span key={i.id} className="flex min-w-0 items-center py-1">
+                <Checkbox
+                  checked={picked.has(i.id)}
+                  onChange={() => toggle(i.id)}
+                  label={
+                    <span className="inline-flex min-w-0 items-baseline gap-1.5">
+                      <span className="truncate">{i.label}</span>
+                      {i.note && (
+                        <span className="whitespace-nowrap" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                          {i.note}
+                        </span>
+                      )}
+                    </span>
+                  }
+                />
+              </span>
+            ))
+          )}
+        </div>
+      </div>
+      {hint && (
+        <span style={{ font: "var(--type-caption1)", color: invalid ? "var(--text-error)" : "var(--text-tertiary)" }}>{hint}</span>
+      )}
+      {name && <input type="hidden" name={name} value={selected.join(",")} />}
+    </div>
+  );
+}
