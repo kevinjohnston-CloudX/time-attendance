@@ -15,8 +15,10 @@ import {
 export const getPtoPolicies = withRBAC(
   "RULES_MANAGE",
   async ({ tenantId }, _input: void) => {
+    // With no company, tenantId! dropped the filter and listed every company's.
+    if (!tenantId) return [];
     const policies = await db.ptoPolicy.findMany({
-      where: { tenantId: tenantId! },
+      where: { tenantId },
       orderBy: { name: "asc" },
       include: {
         leaveType: { select: { id: true, name: true, category: true } },
@@ -24,12 +26,52 @@ export const getPtoPolicies = withRBAC(
           orderBy: { leaveTypeId: "asc" },
           include: { leaveType: { select: { id: true, name: true, category: true } } },
         },
-        _count: { select: { siteLinks: true } },
+        _count: { select: { siteLinks: true, categoryLinks: true } },
       },
     });
     return policies;
   }
 );
+
+// ─── One policy, for its editor page ─────────────────────────────────────────
+
+export const getPtoPolicy = withRBAC(
+  "RULES_MANAGE",
+  async ({ tenantId }, input: { ptoPolicyId: string }) => {
+    if (!tenantId) throw new Error("NOT_FOUND");
+    const policy = await db.ptoPolicy.findFirst({
+      where: { id: input.ptoPolicyId, tenantId },
+      include: {
+        leaveType: { select: { id: true, name: true, category: true } },
+        rules: { orderBy: { minTenureMonths: "asc" } },
+        _count: { select: { siteLinks: true, categoryLinks: true } },
+      },
+    });
+    if (!policy) throw new Error("NOT_FOUND");
+    return policy;
+  }
+);
+
+/** Every leave type and pay code a policy points at has to be this company's. */
+async function assertOwnRefs(
+  tenantId: string,
+  leaveTypeId: string | null | undefined,
+  rules: { leaveTypeId: string; carryOverToLeaveTypeId?: string | null; payCodeId?: string | null }[] | undefined,
+) {
+  const lt = [...new Set([leaveTypeId, ...(rules ?? []).flatMap((r) => [r.leaveTypeId, r.carryOverToLeaveTypeId])].filter((x): x is string => !!x))];
+  const pc = [...new Set((rules ?? []).map((r) => r.payCodeId).filter((x): x is string => !!x))];
+  const [ltFound, pcFound] = await Promise.all([
+    lt.length ? db.leaveType.count({ where: { id: { in: lt }, tenantId } }) : 0,
+    pc.length ? db.payCode.count({ where: { id: { in: pc }, tenantId } }) : 0,
+  ]);
+  if (ltFound !== lt.length || pcFound !== pc.length) throw new Error("NOT_FOUND");
+}
+
+/** A taken name answered with a raw database error; it is said in words. */
+function nameTaken(e: unknown): never {
+  if ((e as { code?: string })?.code === "P2002") throw new Error("Another leave policy already uses that name.");
+  throw e;
+}
 
 // ─── Create PTO policy ────────────────────────────────────────────────────────
 
@@ -45,18 +87,20 @@ export const createPtoPolicy = withRBAC(
       posting2ServiceMonthBasis, posting2AnchorDate, posting2StartsOnYear, posting2BasedOnMonths,
       balanceReset, resetMonth, resetDay,
     } = createPtoPolicySchema.parse(input);
+    if (!tenantId) throw new Error("Tenant context required");
+    await assertOwnRefs(tenantId, leaveTypeId, rules);
 
     const policy = await db.$transaction(async (tx) => {
       if (isDefault) {
         await tx.ptoPolicy.updateMany({
-          where: { tenantId: tenantId!, isDefault: true },
+          where: { tenantId, isDefault: true },
           data: { isDefault: false },
         });
       }
 
       const p = await tx.ptoPolicy.create({
         data: {
-          tenantId: tenantId!,
+          tenantId,
           name,
           description,
           isDefault,
@@ -95,6 +139,9 @@ export const createPtoPolicy = withRBAC(
               annualHours:        r.annualHours,
               earnedHoursPerYear: r.earnedHoursPerYear,
               carryOverHours:     r.carryOverHours   ?? null,
+              // Left out of create before, so a new policy lost where its
+              // unused time carries over to.
+              carryOverToLeaveTypeId: r.carryOverToLeaveTypeId ?? null,
               maxAnnualHours:     r.maxAnnualHours   ?? null,
               maxBalanceHours:    r.maxBalanceHours  ?? null,
               payCodeId:          r.payCodeId        ?? null,
@@ -104,7 +151,7 @@ export const createPtoPolicy = withRBAC(
       });
 
       await writeAuditLog({
-        tenantId: tenantId!,
+        tenantId,
         actorId,
         action: "PTO_POLICY_CREATED",
         entityType: "PTO_POLICY",
@@ -113,10 +160,10 @@ export const createPtoPolicy = withRBAC(
       });
 
       return p;
-    });
+    }).catch(nameTaken);
 
-    revalidatePath("/admin/pto-policies");
-    return policy;
+    revalidatePath("/admin/rules-setup");
+    return { id: policy.id };
   }
 );
 
@@ -136,17 +183,22 @@ export const updatePtoPolicy = withRBAC(
       forecastEnabled, forecastMode, forecastMonths, forecastApplyToAvailable,
       ...fields
     } = updatePtoPolicySchema.parse(input);
+    if (!tenantId) throw new Error("Tenant context required");
+    // Found inside the caller's company first; it used to update by id alone.
+    const own = await db.ptoPolicy.findFirst({ where: { id: ptoPolicyId, tenantId }, select: { id: true } });
+    if (!own) throw new Error("NOT_FOUND");
+    await assertOwnRefs(tenantId, leaveTypeId, rules);
 
     await db.$transaction(async (tx) => {
       if (fields.isDefault) {
         await tx.ptoPolicy.updateMany({
-          where: { tenantId: tenantId!, isDefault: true, id: { not: ptoPolicyId } },
+          where: { tenantId, isDefault: true, id: { not: own.id } },
           data: { isDefault: false },
         });
       }
 
       await tx.ptoPolicy.update({
-        where: { id: ptoPolicyId },
+        where: { id: own.id },
         data: {
           ...fields,
           ...(rateMode              !== undefined && { rateMode }),
@@ -180,11 +232,11 @@ export const updatePtoPolicy = withRBAC(
       });
 
       if (rules !== undefined) {
-        await tx.ptoPolicyRule.deleteMany({ where: { ptoPolicyId } });
+        await tx.ptoPolicyRule.deleteMany({ where: { ptoPolicyId: own.id } });
         if (rules.length > 0) {
           await tx.ptoPolicyRule.createMany({
             data: rules.map((r) => ({
-              ptoPolicyId,
+              ptoPolicyId: own.id,
               leaveTypeId:        r.leaveTypeId,
               minTenureMonths:    r.minTenureMonths,
               maxTenureMonths:    r.maxTenureMonths ?? null,
@@ -201,16 +253,16 @@ export const updatePtoPolicy = withRBAC(
       }
 
       await writeAuditLog({
-        tenantId: tenantId!,
+        tenantId,
         actorId,
         action: "PTO_POLICY_UPDATED",
         entityType: "PTO_POLICY",
         entityId: ptoPolicyId,
         changes: { after: { ...fields, rules } },
       });
-    });
+    }).catch(nameTaken);
 
-    revalidatePath("/admin/pto-policies");
+    revalidatePath("/admin/rules-setup");
   }
 );
 
@@ -220,21 +272,32 @@ export const deletePtoPolicy = withRBAC(
   "RULES_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: unknown) => {
     const { ptoPolicyId } = input as { ptoPolicyId: string };
+    if (!tenantId) throw new Error("Tenant context required");
 
-    const policy = await db.ptoPolicy.findUniqueOrThrow({
-      where: { id: ptoPolicyId },
-      include: { _count: { select: { siteLinks: true } } },
+    // Found inside the caller's company; it used to delete by id alone.
+    const policy = await db.ptoPolicy.findFirst({
+      where: { id: ptoPolicyId, tenantId },
+      include: { _count: { select: { siteLinks: true, categoryLinks: true } } },
     });
+    if (!policy) throw new Error("NOT_FOUND");
 
-    if (policy._count.siteLinks > 0) {
-      return { success: false as const, error: "This policy is still assigned to sites. Remove those assignments first." };
+    // The refusal used to come back as a successful result, so the screen
+    // closed as if it had worked. And a policy on pay categories was
+    // deleted with them, quietly changing what their people accrue.
+    const { siteLinks, categoryLinks } = policy._count;
+    if (siteLinks > 0 || categoryLinks > 0) {
+      const on = [
+        siteLinks ? `${siteLinks} ${siteLinks === 1 ? "site" : "sites"}` : "",
+        categoryLinks ? `${categoryLinks} pay ${categoryLinks === 1 ? "category" : "categories"}` : "",
+      ].filter(Boolean).join(" and ");
+      throw new Error(`This policy is on ${on}. Take it off those first, or set it to inactive.`);
     }
 
     await db.$transaction(async (tx) => {
-      await tx.ptoPolicy.delete({ where: { id: ptoPolicyId } });
+      await tx.ptoPolicy.deleteMany({ where: { id: policy.id, tenantId } });
 
       await writeAuditLog({
-        tenantId: tenantId!,
+        tenantId,
         actorId,
         action: "PTO_POLICY_DELETED",
         entityType: "PTO_POLICY",
@@ -243,7 +306,7 @@ export const deletePtoPolicy = withRBAC(
       });
     });
 
-    revalidatePath("/admin/pto-policies");
+    revalidatePath("/admin/rules-setup");
     return { success: true as const };
   }
 );
