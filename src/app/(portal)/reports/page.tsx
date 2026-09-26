@@ -31,8 +31,8 @@ export default async function ReportsPage({
     getDataSourceDefinitions(undefined as never),
   ]);
 
-  // What the New report window needs from each type, and no more: its
-  // filters and groupings belong to the builder.
+  // What the New report window needs from each type to describe it: names
+  // only, not the filter options, which belong to the builder.
   const sources = sourcesResult.success
     ? sourcesResult.data.map((ds) => ({
         id: ds.id,
@@ -40,6 +40,8 @@ export default async function ReportsPage({
         description: ds.description,
         icon: ds.icon,
         columns: ds.columns.map((c) => ({ id: c.id, label: c.label, defaultVisible: c.defaultVisible })),
+        filters: ds.filters.map((f) => ({ id: f.id, label: f.label })),
+        groupableFields: ds.groupableFields,
       }))
     : [];
 
