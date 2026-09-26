@@ -1035,15 +1035,48 @@ export const updateLeaveType = withRBAC(
 export const getRuleSets = withRBAC(
   "RULES_MANAGE",
   async ({ tenantId }, _input: void) => {
-    return db.ruleSet.findMany({ where: { tenantId: tenantId ?? undefined }, orderBy: { name: "asc" } });
+    // With no company it used to drop the filter and return every company's.
+    if (!tenantId) return [];
+    return db.ruleSet.findMany({
+      where: { tenantId },
+      orderBy: { name: "asc" },
+      include: { _count: { select: { employees: true } } },
+    });
   }
 );
+
+/** Every pay code a rule set points at has to be this company's. */
+async function assertRuleSetPayCodes(
+  tenantId: string,
+  rs: {
+    defaultPayCodeId?: string | null;
+    autoPayPayCodeId?: string | null;
+    autoPayOverflowPayCodeId?: string | null;
+    flsaAdjustmentPayCodeId?: string | null;
+    flsaAltPayCodeId?: string | null;
+    mealPremiumRows?: { payCodeId?: string | null }[] | null;
+  },
+) {
+  const ids = [
+    rs.defaultPayCodeId,
+    rs.autoPayPayCodeId,
+    rs.autoPayOverflowPayCodeId,
+    rs.flsaAdjustmentPayCodeId,
+    rs.flsaAltPayCodeId,
+    ...(rs.mealPremiumRows ?? []).map((r) => r.payCodeId),
+  ].filter((id): id is string => !!id);
+  const unique = [...new Set(ids)];
+  if (!unique.length) return;
+  const found = await db.payCode.count({ where: { id: { in: unique }, tenantId } });
+  if (found !== unique.length) throw new Error("NOT_FOUND");
+}
 
 export const createRuleSet = withRBAC(
   "RULES_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: RuleSetInput) => {
     if (!tenantId) throw new Error("Tenant context required");
     const { payPeriodAnchorDate: anchorStr, otCycleAnchorDate: otAnchorStr, ...parsed } = ruleSetSchema.parse(input);
+    await assertRuleSetPayCodes(tenantId, parsed);
     const payPeriodAnchorDate = anchorStr ? new Date(anchorStr + "T12:00:00") : null;
     const otCycleAnchorDate = otAnchorStr ? new Date(otAnchorStr + "T12:00:00") : null;
     const rs = await db.ruleSet.create({ data: { ...parsed, payPeriodAnchorDate, otCycleAnchorDate, tenantId } });
@@ -1055,7 +1088,7 @@ export const createRuleSet = withRBAC(
       action: "RULE_SET_CREATED",
       changes: { after: { name: rs.name } },
     });
-    revalidatePath("/admin/rules");
+    revalidatePath("/admin/rules-setup");
     return rs;
   }
 );
@@ -1063,15 +1096,20 @@ export const createRuleSet = withRBAC(
 export const updateRuleSet = withRBAC(
   "RULES_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateRuleSetInput) => {
+    if (!tenantId) throw new Error("Tenant context required");
     const { ruleSetId, payPeriodAnchorDate: anchorStr, otCycleAnchorDate: otAnchorStr, ...rest } = updateRuleSetSchema.parse(input);
+    // Found inside the caller's company first; it used to update by id alone.
+    const own = await db.ruleSet.findFirst({ where: { id: ruleSetId, tenantId }, select: { id: true } });
+    if (!own) throw new Error("NOT_FOUND");
+    await assertRuleSetPayCodes(tenantId, rest);
     const payPeriodAnchorDate = anchorStr ? new Date(anchorStr + "T12:00:00") : null;
     const otCycleAnchorDate = otAnchorStr ? new Date(otAnchorStr + "T12:00:00") : null;
-    const updated = await db.ruleSet.update({ where: { id: ruleSetId }, data: { ...rest, payPeriodAnchorDate, otCycleAnchorDate } });
+    const updated = await db.ruleSet.update({ where: { id: own.id }, data: { ...rest, payPeriodAnchorDate, otCycleAnchorDate } });
 
     // If this save configured (or changed) the pay schedule, immediately generate
     // current + future periods so findOpenPayPeriod never falls back to the
     // tenant-level period and creates an orphaned timesheet.
-    if (updated.payFrequency && updated.payPeriodAnchorDate && tenantId) {
+    if (updated.payFrequency && updated.payPeriodAnchorDate) {
       await generatePeriodsForRuleSet(ruleSetId, tenantId, 2);
     }
 
@@ -1082,7 +1120,7 @@ export const updateRuleSet = withRBAC(
       entityId: ruleSetId,
       action: "RULE_SET_UPDATED",
     });
-    revalidatePath("/admin/rules");
+    revalidatePath("/admin/rules-setup");
     return updated;
   }
 );
@@ -1090,16 +1128,20 @@ export const updateRuleSet = withRBAC(
 export const deleteRuleSet = withRBAC(
   "RULES_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: { ruleSetId: string }) => {
-    const rs = await db.ruleSet.findUniqueOrThrow({
-      where: { id: input.ruleSetId },
+    if (!tenantId) throw new Error("Tenant context required");
+    // Found inside the caller's company; it used to delete by id alone.
+    const rs = await db.ruleSet.findFirst({
+      where: { id: input.ruleSetId, tenantId },
       include: { _count: { select: { employees: true } } },
     });
-    if (rs.isDefault) throw new Error("Cannot delete the default rule set.");
-    if (rs._count.employees > 0)
+    if (!rs) throw new Error("NOT_FOUND");
+    if (rs.isDefault) throw new Error("The default rule set cannot be deleted.");
+    const people = rs._count.employees;
+    if (people > 0)
       throw new Error(
-        `Cannot delete — ${rs._count.employees} employee(s) are assigned to this rule set. Reassign them first.`
+        `${people.toLocaleString()} ${people === 1 ? "employee is" : "employees are"} on this rule set. Move them to another one first, or set it to inactive.`
       );
-    await db.ruleSet.delete({ where: { id: input.ruleSetId } });
+    await db.ruleSet.deleteMany({ where: { id: rs.id, tenantId } });
     await writeAuditLog({
       tenantId,
       actorId,
@@ -1108,7 +1150,7 @@ export const deleteRuleSet = withRBAC(
       action: "RULE_SET_DELETED",
       changes: { before: { name: rs.name } },
     });
-    revalidatePath("/admin/rules");
+    revalidatePath("/admin/rules-setup");
   }
 );
 
