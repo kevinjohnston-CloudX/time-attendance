@@ -21,6 +21,14 @@ export const getHolidays = withRBAC(
   }
 );
 
+/** Every rule id has to be one of this company's holiday rules. */
+async function assertOwnRules(tenantId: string, ruleIds: string[]) {
+  const unique = [...new Set(ruleIds)];
+  if (!unique.length) return;
+  const found = await db.holidayRule.count({ where: { tenantId, id: { in: unique } } });
+  if (found !== unique.length) throw new Error("NOT_FOUND");
+}
+
 const createHolidaySchema = z.object({
   name: z.string().min(1).max(100),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
@@ -43,7 +51,9 @@ export const createHoliday = withRBAC(
   "RULES_MANAGE",
   async (ctx, input: unknown) => {
     const { name, date, observedDate, bypassAfterEligibility, ruleIds } = createHolidaySchema.parse(input);
-    const tenantId = ctx.tenantId!;
+    const tenantId = ctx.tenantId;
+    if (!tenantId) throw new Error("Tenant context required");
+    await assertOwnRules(tenantId, ruleIds);
 
     const dateObj = new Date(date + "T00:00:00.000Z");
     const observedDateObj = observedDate ? new Date(observedDate + "T00:00:00.000Z") : null;
@@ -98,7 +108,12 @@ export const updateHoliday = withRBAC(
   "RULES_MANAGE",
   async (ctx, input: unknown) => {
     const { holidayId, name, date, observedDate, isActive, bypassAfterEligibility, ruleIds } = updateHolidaySchema.parse(input);
-    const tenantId = ctx.tenantId!;
+    const tenantId = ctx.tenantId;
+    if (!tenantId) throw new Error("Tenant context required");
+    // Found inside this company first; another company's id is "not found".
+    const own = await db.holiday.findFirst({ where: { id: holidayId, tenantId }, select: { id: true } });
+    if (!own) throw new Error("NOT_FOUND");
+    await assertOwnRules(tenantId, ruleIds);
 
     const dateObj = new Date(date + "T00:00:00.000Z");
     const observedDateObj = observedDate ? new Date(observedDate + "T00:00:00.000Z") : null;
@@ -108,19 +123,21 @@ export const updateHoliday = withRBAC(
     });
     if (conflict) throw new Error("Another holiday already exists on that date.");
 
-    await db.holiday.update({
-      where: { id: holidayId },
-      data: { name, date: dateObj, observedDate: observedDateObj, isActive, bypassAfterEligibility },
-    });
-
-    // Sync rule assignments: delete all then re-create
-    await db.holidayRuleHoliday.deleteMany({ where: { holidayId } });
-    if (ruleIds.length > 0) {
-      await db.holidayRuleHoliday.createMany({
-        data: ruleIds.map((holidayRuleId) => ({ holidayRuleId, holidayId })),
-        skipDuplicates: true,
+    // One transaction, so a failure part way never leaves the holiday with
+    // its old rules removed and the new ones not yet added.
+    await db.$transaction(async (tx) => {
+      await tx.holiday.update({
+        where: { id: own.id },
+        data: { name, date: dateObj, observedDate: observedDateObj, isActive, bypassAfterEligibility },
       });
-    }
+      await tx.holidayRuleHoliday.deleteMany({ where: { holidayId: own.id } });
+      if (ruleIds.length > 0) {
+        await tx.holidayRuleHoliday.createMany({
+          data: ruleIds.map((holidayRuleId) => ({ holidayRuleId, holidayId: own.id })),
+          skipDuplicates: true,
+        });
+      }
+    });
 
     return { success: true };
   }
@@ -128,9 +145,11 @@ export const updateHoliday = withRBAC(
 
 export const deleteHoliday = withRBAC(
   "RULES_MANAGE",
-  async (_ctx, input: unknown) => {
+  async (ctx, input: unknown) => {
     const { holidayId } = z.object({ holidayId: z.string().min(1) }).parse(input);
-    await db.holiday.delete({ where: { id: holidayId } });
+    if (!ctx.tenantId) throw new Error("Tenant context required");
+    const { count } = await db.holiday.deleteMany({ where: { id: holidayId, tenantId: ctx.tenantId } });
+    if (count === 0) throw new Error("NOT_FOUND");
     return { success: true };
   }
 );

@@ -886,6 +886,13 @@ export const updateSite = withRBAC(
 
 // ─── Departments ──────────────────────────────────────────────────────────────
 
+/** Every site id has to be one of this company's sites. */
+async function assertOwnSites(tenantId: string, siteIds: string[]) {
+  const unique = [...new Set(siteIds)];
+  const found = await db.site.count({ where: { tenantId, id: { in: unique } } });
+  if (found !== unique.length) throw new Error("NOT_FOUND");
+}
+
 export const getDepartments = withRBAC(
   "SITE_MANAGE",
   async ({ tenantId }, _input: void) => {
@@ -902,6 +909,7 @@ export const createDepartment = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: DepartmentInput) => {
     if (!tenantId) throw new Error("Tenant context required");
     const { name, siteIds } = departmentSchema.parse(input);
+    await assertOwnSites(tenantId, siteIds);
     const dept = await db.department.create({
       data: {
         name,
@@ -925,10 +933,14 @@ export const createDepartment = withRBAC(
 export const updateDepartment = withRBAC(
   "SITE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateDepartmentInput) => {
+    if (!tenantId) throw new Error("Tenant context required");
     const { departmentId, isActive, siteIds, name } = updateDepartmentSchema.parse(input);
+    const own = await db.department.findFirst({ where: { id: departmentId, tenantId }, select: { id: true } });
+    if (!own) throw new Error("NOT_FOUND");
+    await assertOwnSites(tenantId, siteIds);
     await db.$transaction(async (tx) => {
       await tx.department.update({
-        where: { id: departmentId },
+        where: { id: own.id },
         data: { name, ...(isActive !== undefined && { isActive }) },
       });
       await tx.departmentSite.deleteMany({ where: { departmentId } });
