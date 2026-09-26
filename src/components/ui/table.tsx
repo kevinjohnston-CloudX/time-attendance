@@ -11,7 +11,8 @@ import type { CSSProperties, ReactNode, ThHTMLAttributes, TdHTMLAttributes } fro
  * and td for TD is a change a reviewer can read.
  *
  * <p>Measurements from the design system's Table: 32px headers at 11px
- * uppercase on gray-75, 40px rows, hairline dividers, no zebra striping, hover
+ * uppercase on gray-75 (through --fill-hover, the semantic alias that is
+ * gray-75 in light and follows dark mode), 40px rows, hairline dividers, no zebra striping, hover
  * on the row. Numeric columns are right-aligned with tabular figures, because
  * a column of hours is read down, not across.
  */
@@ -44,7 +45,7 @@ export function TFoot({ children }: { children: ReactNode }) {
   return (
     <tfoot
       style={{
-        background: "var(--wms-color-gray-75)",
+        background: "var(--fill-hover)",
         borderTop: "1px solid var(--stroke-secondary)",
       }}
     >
@@ -103,7 +104,7 @@ export function TH({
         letterSpacing: ".04em",
         textTransform: "uppercase",
         color: "var(--text-secondary)",
-        background: "var(--wms-color-gray-75)",
+        background: "var(--fill-hover)",
         borderBottom: "1px solid var(--stroke-secondary)",
         position: "sticky",
         top: 0,
