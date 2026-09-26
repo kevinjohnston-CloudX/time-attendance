@@ -20,10 +20,38 @@ export const getHolidayRules = withRBAC(
           include: { holiday: true },
           orderBy: { holiday: { date: "asc" } },
         },
+        _count: { select: { employees: true } },
       },
     });
   }
 );
+
+// ─── One rule, for its editor page ───────────────────────────────────────────
+
+export const getHolidayRule = withRBAC(
+  "RULES_MANAGE",
+  async (ctx, input: { ruleId: string }) => {
+    if (!ctx.tenantId) throw new Error("NOT_FOUND");
+    const rule = await db.holidayRule.findFirst({
+      where: { id: input.ruleId, tenantId: ctx.tenantId },
+      include: {
+        assignedHolidays: { include: { holiday: true }, orderBy: { holiday: { date: "asc" } } },
+        _count: { select: { employees: true } },
+      },
+    });
+    if (!rule) throw new Error("NOT_FOUND");
+    return rule;
+  }
+);
+
+/** A pay code a rule, or one of its overrides, points at has to be this company's. */
+async function assertOwnPayCodes(tenantId: string, data: { payCodeId?: string | null; holidayOverrides?: unknown }) {
+  const rows = Array.isArray(data.holidayOverrides) ? (data.holidayOverrides as { payCodeId?: string }[]) : [];
+  const ids = [...new Set([data.payCodeId, ...rows.map((r) => r?.payCodeId)].filter((id): id is string => !!id))];
+  if (!ids.length) return;
+  const found = await db.payCode.count({ where: { id: { in: ids }, tenantId } });
+  if (found !== ids.length) throw new Error("NOT_FOUND");
+}
 
 // ─── Shared schema helpers ────────────────────────────────────────────────────
 
@@ -150,15 +178,17 @@ export const createHolidayRule = withRBAC(
   "RULES_MANAGE",
   async (ctx, input: unknown) => {
     const data = ruleSchema.parse(input);
-    const tenantId = ctx.tenantId!;
+    const tenantId = ctx.tenantId;
+    if (!tenantId) throw new Error("No tenant");
+    await assertOwnPayCodes(tenantId, data);
     const existing = await db.holidayRule.findUnique({
       where: { tenantId_name: { tenantId, name: data.name } },
     });
     if (existing) throw new Error(`A holiday rule named "${data.name}" already exists.`);
-    await db.holidayRule.create({
+    const created = await db.holidayRule.create({
       data: { tenantId, name: data.name, ...toDbFields(data) },
     });
-    return { success: true };
+    return { id: created.id };
   }
 );
 
@@ -173,13 +203,18 @@ export const updateHolidayRule = withRBAC(
   "RULES_MANAGE",
   async (ctx, input: unknown) => {
     const { ruleId, isActive, ...data } = updateSchema.parse(input);
-    const tenantId = ctx.tenantId!;
+    const tenantId = ctx.tenantId;
+    if (!tenantId) throw new Error("No tenant");
+    // Found inside the caller's company first; it used to update by id alone.
+    const own = await db.holidayRule.findFirst({ where: { id: ruleId, tenantId }, select: { id: true } });
+    if (!own) throw new Error("NOT_FOUND");
+    await assertOwnPayCodes(tenantId, data);
     const conflict = await db.holidayRule.findFirst({
-      where: { tenantId, name: data.name, NOT: { id: ruleId } },
+      where: { tenantId, name: data.name, NOT: { id: own.id } },
     });
     if (conflict) throw new Error(`Another holiday rule named "${data.name}" already exists.`);
     await db.holidayRule.update({
-      where: { id: ruleId },
+      where: { id: own.id },
       data: { name: data.name, isActive, ...toDbFields(data) },
     });
     return { success: true };
@@ -192,8 +227,22 @@ export const deleteHolidayRule = withRBAC(
   "RULES_MANAGE",
   async (ctx, input: unknown) => {
     const { ruleId } = z.object({ ruleId: z.string().min(1) }).parse(input);
-    const tenantId = ctx.tenantId!;
-    await db.holidayRule.deleteMany({ where: { id: ruleId, tenantId } });
+    const tenantId = ctx.tenantId;
+    if (!tenantId) throw new Error("No tenant");
+    // Deleting a rule took it off every employee on it without a word, so it
+    // is refused while anyone still has it.
+    const own = await db.holidayRule.findFirst({
+      where: { id: ruleId, tenantId },
+      select: { id: true, _count: { select: { employees: true } } },
+    });
+    if (!own) throw new Error("NOT_FOUND");
+    const people = own._count.employees;
+    if (people > 0) {
+      throw new Error(
+        `${people.toLocaleString()} ${people === 1 ? "employee is" : "employees are"} on this holiday rule. Move them to another one first, or set it to inactive.`,
+      );
+    }
+    await db.holidayRule.deleteMany({ where: { id: own.id, tenantId } });
     return { success: true };
   }
 );
