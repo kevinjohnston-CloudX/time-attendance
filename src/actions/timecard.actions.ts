@@ -271,6 +271,7 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
       mealPremiumWaivers: ts.mealPremiumWaivers.map((w) => ({
         id: w.id,
         segmentDate: w.segmentDate.toISOString().slice(0, 10),
+        segmentStart: w.segmentStart.toISOString(),
       })),
       notes: ts.notes.map((n) => ({
         id: n.id,
@@ -444,6 +445,7 @@ export const getTimecardDetail = withRBAC(
       mealPremiumWaivers: ts.mealPremiumWaivers.map((w) => ({
         id: w.id,
         segmentDate: w.segmentDate.toISOString().slice(0, 10),
+        segmentStart: w.segmentStart.toISOString(),
       })),
       notes: ts.notes.map((n) => ({
         id: n.id,
