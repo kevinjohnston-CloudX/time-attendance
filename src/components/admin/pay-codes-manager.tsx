@@ -1,350 +1,306 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { GripVertical, Receipt, X } from "lucide-react";
-import type { ReactNode, SelectHTMLAttributes } from "react";
-import { createPayCode, updatePayCode, reorderPayCodes } from "@/actions/pay-code.actions";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "@/components/layout/navigation-progress";
+import { GripVertical, Plus, Receipt } from "lucide-react";
 import type { PayCode } from "@prisma/client";
+import { createPayCode, updatePayCode, reorderPayCodes } from "@/actions/pay-code.actions";
+import { Banner, Button, EmptyState, Input, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
 import {
-  Badge,
-  Banner,
-  Button,
-  Card,
-  EmptyState,
-  Input,
-  Select,
-  SegmentedControl,
-  Table,
-  TBody,
-  THead,
-  TR,
-  TH,
-  TD,
-  TableFooter,
-  Toolbar,
-  statusTone,
-} from "@/components/ui";
+  AreaPanel,
+  ChoiceField,
+  FIELD_GRID,
+  Muted,
+  SelectField,
+  SetupDialog,
+  StatusBadge,
+  StatusField,
+  countLine,
+  matches,
+  saveError,
+  useStatusView,
+} from "./setup/setup-ui";
 
 /**
- * Pay codes, on the design's list template.
+ * Pay codes: the payroll lines hours are posted to.
  *
- * <p>The design's Pay Codes list carries a Rate column; there is no multiplier
- * on a PayCode here — the rate comes from the rule set that posts the hours —
- * so it is left out rather than shown as 1.00 for everything.
+ * <p>Order is data here: timecards offer the codes in this order, so the
+ * rows stay draggable. A new order is saved in one go; if it fails the list
+ * goes back to the order that is actually stored and says so, where it
+ * used to keep showing the new order as if it had saved.
  *
- * <p>Order is data on this screen: the sort order decides which code a
- * timecard row offers first, so the rows stay draggable and the grip stays in
- * the first column where it can be found without hovering the whole row.
+ * <p>There is no delete, as before: a pay code sits on punches and
+ * timecard lines, so one that is no longer used is set to inactive.
  */
 
-interface Props { payCodes: PayCode[] }
+const PAY_BUCKET_LABEL: Record<string, string> = {
+  REG: "Regular",
+  OT: "Overtime",
+  DT: "Double time",
+  PTO: "Paid time off",
+  SICK: "Sick",
+  HOLIDAY: "Holiday",
+  FMLA: "FMLA",
+  BEREAVEMENT: "Bereavement",
+  JURY_DUTY: "Jury duty",
+  MILITARY: "Military",
+  UNPAID: "Unpaid",
+};
 
-const PAY_BUCKETS = ["REG","OT","DT","PTO","SICK","HOLIDAY","FMLA","BEREAVEMENT","JURY_DUTY","MILITARY","UNPAID"] as const;
+const byOrder = (list: PayCode[]) => [...list].sort((a, b) => a.sortOrder - b.sortOrder);
 
-type View = "all" | "active" | "inactive";
-
-const VIEWS = [
-  { value: "all", label: "All" },
-  { value: "active", label: "Active" },
-  { value: "inactive", label: "Inactive" },
-];
-
-/** Field grid from the design's doc template, at two columns. */
-const FIELD_GRID = "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,48%)),1fr))]";
-
-function SelectField({
-  label,
-  hint,
-  children,
-  ...rest
-}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <label className="flex w-full flex-col gap-1.5">
-      <span className="wms-label">{label}</span>
-      <Select {...rest}>{children}</Select>
-      {hint && <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{hint}</span>}
-    </label>
-  );
-}
-
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.4)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="ta-modal max-h-[90vh] w-full max-w-lg overflow-y-auto"
-        style={{ borderRadius: "var(--radius-l)" }}
-      >
-        <header
-          className="flex items-center justify-between gap-3 px-5 py-3.5"
-          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-        >
-          <h3 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>{title}</h3>
-          <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
-            <X className="h-4 w-4" />
-          </Button>
-        </header>
-        <div className="px-5 py-4">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function PayCodeFields({ pc }: { pc?: PayCode }) {
-  return (
-    <div className={FIELD_GRID}>
-      <Input label="Numeric Code" name="code" type="number" min={0} required defaultValue={pc?.code ?? ""} placeholder="e.g. 5" />
-      <Input label="Label" name="label" required defaultValue={pc?.label ?? ""} placeholder="e.g. PTO" />
-      <Input
-        label="Express Code"
-        name="expressCode"
-        maxLength={4}
-        defaultValue={pc?.expressCode ?? ""}
-        placeholder="e.g. WKHR"
-        style={{ textTransform: "uppercase" }}
-      />
-      <SelectField label="Pay Bucket" name="payBucket" defaultValue={pc?.payBucket ?? ""}>
-        <option value="">— None —</option>
-        {PAY_BUCKETS.map((b) => <option key={b} value={b}>{b}</option>)}
-      </SelectField>
-      {/* The two options are sentences, not words — they need the full row or
-          the one that decides whether hours reach an OT threshold truncates. */}
-      <div style={{ gridColumn: "1 / -1" }}>
-        <SelectField
-          label="Overtime Calculation"
-          name="countsTowardOt"
-          defaultValue={pc ? (pc.countsTowardOt ? "true" : "false") : "true"}
-        >
-          <option value="true">Counts toward OT — hours apply to daily and weekly OT thresholds</option>
-          <option value="false">Excluded from OT — hours stay REG regardless of daily or weekly totals</option>
-        </SelectField>
-      </div>
-    </div>
-  );
-}
-
-export function PayCodesManager({ payCodes }: Props) {
+export function PayCodesManager({ payCodes }: { payCodes: PayCode[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [editingPc, setEditingPc] = useState<PayCode | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [view, setView] = useState<View>("active");
-  const [items, setItems] = useState<PayCode[]>(() => [...payCodes].sort((a, b) => a.sortOrder - b.sortOrder));
+  const [editing, setEditing] = useState<PayCode | "new" | null>(null);
+  const [query, setQuery] = useState("");
+
+  const [items, setItems] = useState<PayCode[]>(() => byOrder(payCodes));
+  useEffect(() => setItems(byOrder(payCodes)), [payCodes]);
   const [dragId, setDragId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  const [ordering, startOrdering] = useTransition();
+  const [orderError, setOrderError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setItems([...payCodes].sort((a, b) => a.sortOrder - b.sortOrder));
-  }, [payCodes]);
+  const { view, setView, counts, kept } = useStatusView(items);
+  const shown = kept.filter((p) => matches(query, p.code, p.label, p.expressCode, p.payBucket && PAY_BUCKET_LABEL[p.payBucket]));
 
-  const visible = items.filter((p) =>
-    view === "all" ? true : view === "active" ? p.isActive : !p.isActive,
+  function open(p: PayCode | "new") {
+    setEditing(p);
+    setError(null);
+  }
+  function close() {
+    setEditing(null);
+    setError(null);
+  }
+
+  function endDrag() {
+    setDragId(null);
+    setOverId(null);
+  }
+
+  function drop(targetId: string) {
+    if (!dragId || dragId === targetId) return endDrag();
+    const before = items;
+    const next = [...items];
+    const [moved] = next.splice(next.findIndex((p) => p.id === dragId), 1);
+    next.splice(next.findIndex((p) => p.id === targetId), 0, moved);
+    setItems(next);
+    setOrderError(null);
+    endDrag();
+    startOrdering(async () => {
+      const result = await reorderPayCodes({ orderedIds: next.map((p) => p.id) });
+      if (!result.success) {
+        setItems(before);
+        setOrderError(saveError(result.error));
+        return;
+      }
+      router.refresh();
+    });
+  }
+
+  function save(form: FormData) {
+    const fields = {
+      code: Number(form.get("code")),
+      label: String(form.get("label") ?? "").trim(),
+      expressCode: String(form.get("expressCode") ?? "").trim() || null,
+      payBucket: String(form.get("payBucket") ?? "") || null,
+      countsTowardOt: form.get("countsTowardOt") !== "false",
+    };
+    setError(null);
+    startTransition(async () => {
+      const result =
+        editing === "new"
+          ? await createPayCode(fields)
+          : await updatePayCode({
+              ...fields,
+              payCodeId: (editing as PayCode).id,
+              sortOrder: Math.max(0, items.findIndex((p) => p.id === (editing as PayCode).id)),
+              isActive: form.get("isActive") === "true",
+            });
+      if (!result.success) return setError(saveError(result.error));
+      close();
+      router.refresh();
+    });
+  }
+
+  const addButton = (
+    <Button onClick={() => open("new")} leadingIcon={<Plus className="h-4 w-4" />}>
+      Add pay code
+    </Button>
   );
 
-  function openEdit(pc: PayCode) { setEditingPc(pc); setError(null); }
-  function closeEdit() { setEditingPc(null); setError(null); }
-  function openCreate() { setShowCreate(true); setError(null); }
-  function closeCreate() { setShowCreate(false); setError(null); }
-
-  function handleDragStart(id: string) { setDragId(id); }
-  function handleDragOver(e: React.DragEvent, id: string) { e.preventDefault(); if (id !== dragId) setDragOverId(id); }
-  function handleDragEnd() { setDragId(null); setDragOverId(null); }
-
-  function handleDrop(e: React.DragEvent, targetId: string) {
-    e.preventDefault();
-    if (!dragId || dragId === targetId) { setDragId(null); setDragOverId(null); return; }
-    const arr = [...items];
-    const srcIdx = arr.findIndex((p) => p.id === dragId);
-    const tgtIdx = arr.findIndex((p) => p.id === targetId);
-    const [item] = arr.splice(srcIdx, 1);
-    arr.splice(tgtIdx, 0, item);
-    setItems(arr);
-    setDragId(null);
-    setDragOverId(null);
-    startTransition(async () => { await reorderPayCodes({ orderedIds: arr.map((p) => p.id) }); router.refresh(); });
-  }
-
-  function handleCreate(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    setError(null);
-    startTransition(async () => {
-      const result = await createPayCode({
-        code: Number(fd.get("code")),
-        label: fd.get("label") as string,
-        expressCode: (fd.get("expressCode") as string) || null,
-        payBucket: (fd.get("payBucket") as string) || null,
-        countsTowardOt: fd.get("countsTowardOt") !== "false",
-      });
-      if (!result.success) { setError(result.error); return; }
-      closeCreate();
-      router.refresh();
-    });
-  }
-
-  function handleUpdate(pc: PayCode, e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const sortOrder = items.findIndex((p) => p.id === pc.id);
-    setError(null);
-    startTransition(async () => {
-      const result = await updatePayCode({
-        payCodeId: pc.id,
-        code: Number(fd.get("code")),
-        label: fd.get("label") as string,
-        expressCode: (fd.get("expressCode") as string) || null,
-        payBucket: (fd.get("payBucket") as string) || null,
-        countsTowardOt: fd.get("countsTowardOt") !== "false",
-        sortOrder,
-        isActive: fd.get("isActive") === "true",
-      });
-      if (!result.success) { setError(result.error); return; }
-      closeEdit();
-      router.refresh();
-    });
-  }
-
   return (
-    <div className="mt-4 flex flex-col gap-2.5">
-      <Toolbar count={visible.length} countLabel="pay code">
-        <SegmentedControl
-          items={VIEWS}
-          value={view}
-          onChange={(v) => setView(v as View)}
-          size="sm"
-          ariaLabel="Which pay codes to show"
-        />
-        <Button onClick={openCreate}>New Pay Code</Button>
-      </Toolbar>
-
-      <Card padding={0}>
-        {visible.length === 0 ? (
+    <>
+      <AreaPanel
+        title="Pay codes"
+        hint="The payroll lines hours are posted to. Timecards list them in this order. Drag a row to move it."
+        action={addButton}
+        status={{ view, onChange: setView, counts }}
+        search={items.length ? { value: query, onChange: setQuery, placeholder: "Code, name or bucket" } : undefined}
+        count={ordering ? "Saving the new order…" : countLine(shown.length, items.length, "pay code", "pay codes")}
+      >
+        {orderError && (
+          <div className="px-5 pt-3.5">
+            <Banner tone="error" title="The new order was not saved" body={orderError} />
+          </div>
+        )}
+        {items.length === 0 ? (
           <EmptyState
             icon={<Receipt className="h-8 w-8" />}
-            title={view === "active" ? "No active pay codes" : view === "inactive" ? "No retired pay codes" : "No pay codes"}
-            body="A pay code is the payroll line an hour is posted to. Drag the rows to set the order they are offered in."
-            action={<Button size="sm" onClick={openCreate}>New Pay Code</Button>}
+            title="No pay codes yet"
+            body="Add the first one. Code 0 is regular worked time."
+            action={addButton}
           />
+        ) : shown.length === 0 ? (
+          <EmptyState icon={<Receipt className="h-8 w-8" />} title="No pay codes match" body="Nothing matches that search or status." />
         ) : (
-          <>
-            <Table>
-              <THead>
-                <TR>
-                  <TH style={{ width: 36 }} aria-label="Reorder" />
-                  <TH numeric style={{ width: 72 }}>Code</TH>
-                  <TH>Label</TH>
-                  <TH>Express</TH>
-                  <TH>Pay Bucket</TH>
-                  <TH align="center">Counts to OT</TH>
-                  <TH>Status</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {visible.map((pc) => (
-                  // A plain <tr>: the kit's TR takes a click and a selected
-                  // flag, and the drag props have nowhere to go on it.
-                  // components/ui is shared, so the row is spelled out here
-                  // and the cells still come from the kit.
-                  <tr
-                    key={pc.id}
-                    className="ta-row"
-                    draggable
-                    onDragStart={() => handleDragStart(pc.id)}
-                    onDragOver={(e) => handleDragOver(e, pc.id)}
-                    onDrop={(e) => handleDrop(e, pc.id)}
-                    onDragEnd={handleDragEnd}
-                    onClick={() => openEdit(pc)}
-                    style={{
-                      cursor: "pointer",
-                      opacity: dragId === pc.id ? 0.4 : 1,
-                      background: dragOverId === pc.id ? "var(--surface-info)" : undefined,
-                    }}
-                  >
-                    <TD>
-                      <GripVertical
-                        className="h-4 w-4 cursor-grab active:cursor-grabbing"
-                        style={{ color: "var(--icon-tertiary)" }}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </TD>
-                    <TD numeric style={{ fontWeight: "var(--weight-medium)" }}>{pc.code}</TD>
-                    <TD style={{ fontWeight: "var(--weight-medium)" }}>{pc.label}</TD>
-                    <TD style={{ font: "var(--type-body2)", fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>
-                      {pc.expressCode || <span style={{ color: "var(--text-tertiary)" }}>—</span>}
-                    </TD>
-                    <TD style={{ color: "var(--text-secondary)" }}>
-                      {pc.payBucket || <span style={{ color: "var(--text-tertiary)" }}>—</span>}
-                    </TD>
-                    <TD align="center" style={{ color: pc.countsTowardOt ? "var(--text-secondary)" : "var(--text-warning)" }}>
-                      {pc.countsTowardOt ? "Yes" : "No"}
-                    </TD>
-                    <TD>
-                      {pc.isActive ? (
-                        <Badge tone={statusTone("ACTIVE")} size="sm" dot>Active</Badge>
-                      ) : (
-                        // statusTone would answer "warning"; a retired pay code
-                        // is not a warning, it is simply no longer offered.
-                        <Badge size="sm">Inactive</Badge>
-                      )}
-                    </TD>
-                  </tr>
-                ))}
-              </TBody>
-            </Table>
-            <TableFooter
-              shown={visible.length}
-              total={items.length}
-              label={items.length === 1 ? "pay code" : "pay codes"}
-            />
-          </>
+          <Table>
+            <THead>
+              <TR>
+                <TH style={{ width: 40 }} aria-label="Order" />
+                <TH numeric style={{ width: 72 }}>
+                  Code
+                </TH>
+                <TH>Pay code</TH>
+                <TH>Express code</TH>
+                <TH>Pay bucket</TH>
+                <TH>Overtime</TH>
+                <TH>Status</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {shown.map((p) => (
+                // A plain row: the kit's TR has nowhere to put the drag handlers.
+                <tr
+                  key={p.id}
+                  className="ta-row"
+                  draggable={!ordering}
+                  onDragStart={(e) => {
+                    e.dataTransfer.effectAllowed = "move";
+                    setDragId(p.id);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (p.id !== dragId) setOverId(p.id);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    drop(p.id);
+                  }}
+                  onDragEnd={endDrag}
+                  onClick={() => open(p)}
+                  style={{
+                    cursor: "pointer",
+                    opacity: dragId === p.id ? 0.45 : 1,
+                    background: overId === p.id ? "var(--surface-info)" : undefined,
+                  }}
+                >
+                  <TD>
+                    <span
+                      className="flex cursor-grab items-center active:cursor-grabbing"
+                      title="Drag to move"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <GripVertical className="h-4 w-4" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+                    </span>
+                  </TD>
+                  <TD numeric style={{ fontWeight: "var(--weight-semibold)" }}>
+                    {p.code}
+                  </TD>
+                  <TD style={{ fontWeight: "var(--weight-medium)" }}>{p.label}</TD>
+                  <TD style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>{p.expressCode || <Muted />}</TD>
+                  <TD style={{ color: "var(--text-secondary)" }}>
+                    {p.payBucket ? (PAY_BUCKET_LABEL[p.payBucket] ?? p.payBucket) : <Muted />}
+                  </TD>
+                  <TD style={{ color: "var(--text-secondary)" }}>{p.countsTowardOt ? "Counts" : <Muted>Excluded</Muted>}</TD>
+                  <TD>
+                    <StatusBadge active={p.isActive} />
+                  </TD>
+                </tr>
+              ))}
+            </TBody>
+          </Table>
         )}
-      </Card>
+      </AreaPanel>
 
-      {showCreate && (
-        <Modal title="New Pay Code" onClose={closeCreate}>
-          {error && <div className="mb-4"><Banner tone="error" body={error} /></div>}
-          <form onSubmit={handleCreate}>
-            <PayCodeFields />
-            <div className="mt-5 flex gap-2 pt-4" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
-              <Button type="submit" disabled={isPending}>{isPending ? "Creating…" : "Create"}</Button>
-              <Button type="button" hierarchy="secondary" onClick={closeCreate}>Cancel</Button>
-            </div>
-          </form>
-        </Modal>
+      {editing && (
+        <PayCodeDialog payCode={editing === "new" ? null : editing} pending={isPending} error={error} onSubmit={save} onClose={close} />
       )}
+    </>
+  );
+}
 
-      {editingPc && (
-        <Modal title={`Edit: ${editingPc.label}`} onClose={closeEdit}>
-          {error && <div className="mb-4"><Banner tone="error" body={error} /></div>}
-          <form onSubmit={(e) => handleUpdate(editingPc, e)}>
-            <PayCodeFields pc={editingPc} />
-            <div className={`mt-3 ${FIELD_GRID}`}>
-              <SelectField label="Status" name="isActive" defaultValue={editingPc.isActive ? "true" : "false"}>
-                <option value="true">Active</option>
-                <option value="false">Inactive</option>
-              </SelectField>
-            </div>
-            <div className="mt-5 flex gap-2 pt-4" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
-              <Button type="submit" disabled={isPending}>{isPending ? "Saving…" : "Save changes"}</Button>
-              <Button type="button" hierarchy="secondary" onClick={closeEdit}>Cancel</Button>
-            </div>
-          </form>
-        </Modal>
-      )}
-    </div>
+function PayCodeDialog({
+  payCode: p,
+  pending,
+  error,
+  onSubmit,
+  onClose,
+}: {
+  payCode: PayCode | null;
+  pending: boolean;
+  error: string | null;
+  onSubmit: (form: FormData) => void;
+  onClose: () => void;
+}) {
+  const [counts, setCounts] = useState(p?.countsTowardOt ?? true);
+  return (
+    <SetupDialog
+      title={p ? `${p.code} ${p.label}` : "Add pay code"}
+      subtitle={p ? "Edit pay code" : undefined}
+      submitLabel={p ? "Save changes" : "Add pay code"}
+      pending={pending}
+      error={error}
+      onSubmit={onSubmit}
+      onClose={onClose}
+    >
+      <div className="grid gap-x-4 gap-y-3.5 [grid-template-columns:120px_minmax(0,1fr)]">
+        <Input label="Code" name="code" type="number" min={0} step={1} required defaultValue={p ? String(p.code) : ""} placeholder="5" />
+        <Input label="Name" name="label" required maxLength={100} defaultValue={p?.label ?? ""} placeholder="Paid time off" />
+      </div>
+      <span style={{ marginTop: -6, font: "var(--type-caption1)", color: "var(--text-tertiary)", textWrap: "pretty" }}>
+        Code 0 is regular worked time. Saving it active puts worked hours that have no pay code on it.
+      </span>
+
+      <div className={FIELD_GRID}>
+        <Input
+          label="Express code"
+          name="expressCode"
+          maxLength={4}
+          defaultValue={p?.expressCode ?? ""}
+          placeholder="WKHR"
+          hint="Optional. Up to 4 letters."
+          style={{ textTransform: "uppercase" }}
+        />
+        <SelectField label="Pay bucket" name="payBucket" defaultValue={p?.payBucket ?? ""}>
+          <option value="">None</option>
+          {Object.entries(PAY_BUCKET_LABEL).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </SelectField>
+      </div>
+
+      <ChoiceField
+        label="Overtime"
+        name="countsTowardOt"
+        defaultValue={counts ? "true" : "false"}
+        onChange={(v) => setCounts(v === "true")}
+        options={[
+          { value: "true", label: "Counts toward overtime" },
+          { value: "false", label: "Excluded" },
+        ]}
+        hint={
+          counts
+            ? "These hours add up toward the daily and weekly overtime thresholds."
+            : "These hours stay regular, whatever the daily or weekly totals."
+        }
+      />
+
+      {p && <StatusField defaultActive={p.isActive} />}
+    </SetupDialog>
   );
 }

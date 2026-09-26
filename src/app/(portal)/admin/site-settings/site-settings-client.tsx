@@ -34,8 +34,6 @@ interface AreaDef {
   label: string;
   icon: ElementType;
   requires: "site" | "rules" | "payroll";
-  /** Areas not yet on the new panel still draw their own heading. */
-  hint?: string;
 }
 
 const GROUPS: { title: string; areas: AreaDef[] }[] = [
@@ -58,14 +56,11 @@ const GROUPS: { title: string; areas: AreaDef[] }[] = [
     areas: [
       { id: "pay-categories", label: "Pay categories", icon: Layers, requires: "rules" },
       { id: "pay-types", label: "Pay types", icon: Tag, requires: "rules" },
-      { id: "pay-codes", label: "Pay codes", icon: Receipt, requires: "payroll", hint: "The payroll lines hours are posted to and exported under." },
-      { id: "reason-codes", label: "Reason codes", icon: MessageSquare, requires: "payroll", hint: "What a supervisor picks when a punch is added or changed." },
+      { id: "pay-codes", label: "Pay codes", icon: Receipt, requires: "payroll" },
+      { id: "reason-codes", label: "Reason codes", icon: MessageSquare, requires: "payroll" },
     ],
   },
 ];
-
-/** Areas already built on the shared panel, which draw their own heading. */
-const ON_PANEL = new Set<Tab>(["sites", "departments", "holidays", "leave-types", "pay-categories", "pay-types"]);
 
 interface Props {
   /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -96,7 +91,6 @@ export function SiteSettingsClient(props: Props) {
   const [active, setActive] = useState<Tab>(() =>
     areas.some((a) => a.id === initialTab) ? (initialTab as Tab) : (areas[0]?.id ?? "sites"),
   );
-  const current = areas.find((a) => a.id === active);
 
   function pick(id: Tab) {
     setActive(id);
@@ -188,14 +182,6 @@ export function SiteSettingsClient(props: Props) {
         </nav>
 
         <div className="flex w-full min-w-0 flex-1 flex-col gap-3">
-          {current && !ON_PANEL.has(current.id) && (
-            <div className="flex flex-col gap-0.5">
-              <h2 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>{current.label}</h2>
-              {current.hint && (
-                <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>{current.hint}</p>
-              )}
-            </div>
-          )}
           <AreaBody tab={active} {...props} />
         </div>
       </div>
