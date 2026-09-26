@@ -94,3 +94,27 @@ export function dataSourceOptions(): { value: string; label: string }[] {
     .map(([value, label]) => ({ value, label }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
+
+/**
+ * The colour a report type's icon sits in, by what it is about: hours and
+ * attendance in blue, rule breaks in amber, the punch trail in grey, time off
+ * in green. Semantic tokens only, so both themes follow.
+ */
+const TONES: Record<string, { bg: string; fg: string }> = {
+  HOURS_SUMMARY:     { bg: "var(--surface-info)", fg: "var(--icon-accent)" },
+  ATTENDANCE_DETAIL: { bg: "var(--surface-info)", fg: "var(--icon-accent)" },
+  EXCEPTION_REPORT:  { bg: "var(--surface-warning)", fg: "var(--icon-warning)" },
+  PUNCH_AUDIT:       { bg: "var(--surface-tertiary)", fg: "var(--icon-secondary)" },
+  LEAVE_SUMMARY:     { bg: "var(--surface-success)", fg: "var(--icon-success)" },
+  LEAVE_BALANCE:     { bg: "var(--surface-success)", fg: "var(--icon-success)" },
+};
+
+export function dataSourceTone(id: string): { bg: string; fg: string } {
+  return TONES[id] ?? { bg: "var(--surface-tertiary)", fg: "var(--icon-secondary)" };
+}
+
+/** The standard reports in the two groups the picker draws them under. */
+export const REPORT_GROUPS: { title: string; ids: readonly string[] }[] = [
+  { title: "Hours and attendance", ids: ["HOURS_SUMMARY", "ATTENDANCE_DETAIL", "EXCEPTION_REPORT", "PUNCH_AUDIT"] },
+  { title: "Time off", ids: ["LEAVE_SUMMARY", "LEAVE_BALANCE"] },
+];

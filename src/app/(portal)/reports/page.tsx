@@ -2,12 +2,11 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getMyReports, getMyFolders } from "@/actions/report.actions";
-import { Plus } from "lucide-react";
 import { ReportsList, type ReportRow } from "@/components/reports/reports-list";
-import { Banner, LinkButton, PageHeader } from "@/components/ui";
 
 /**
- * Reports: the six standard reports to start from, then the saved ones.
+ * Reports: the reports people have saved. New report starts one; the six
+ * report types are only offered here while nothing is saved yet.
  *
  * <p>What you can see is still decided entirely by `getMyReports`, which is
  * permission scoped and returns your own reports, the ones shared with you and
@@ -20,7 +19,7 @@ import { Banner, LinkButton, PageHeader } from "@/components/ui";
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; type?: string; year?: string; folder?: string }>;
+  searchParams: Promise<{ q?: string; view?: string; type?: string; year?: string; folder?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -40,6 +39,8 @@ export default async function ReportsPage({
     folderId: string | null;
     owner: { name: string | null } | null;
     _count: { runs: number };
+    runs: { startedAt: Date }[];
+    schedules: { nextRunAt: Date | null }[];
   };
   const trim = (r: Row): ReportRow => ({
     id: r.id,
@@ -50,6 +51,9 @@ export default async function ReportsPage({
     folderId: r.folderId,
     ownerName: r.owner?.name ?? null,
     runs: r._count.runs,
+    lastRunAt: r.runs[0]?.startedAt.toISOString() ?? null,
+    nextEmailAt: r.schedules[0]?.nextRunAt?.toISOString() ?? null,
+    scheduled: r.schedules.length > 0,
   });
 
   const reports = reportsResult.success
@@ -71,33 +75,15 @@ export default async function ReportsPage({
   const sp = (await searchParams) ?? {};
 
   return (
-    <div className="flex flex-col gap-4">
-      <PageHeader pinned
-        title="Reports"
-        subtitle="Hours, attendance, exceptions and time off, ready to run or saved your way"
-        actions={
-          <LinkButton href="/reports/new" hierarchy="primary" leadingIcon={<Plus className="h-4 w-4" />}>
-            New report
-          </LinkButton>
-        }
-      />
-
-      {!reportsResult.success && (
-        <Banner
-          tone="error"
-          title="Saved reports could not be loaded"
-          body="The standard reports still work. Reload the page to try the saved ones again."
-        />
-      )}
-
-      <ReportsList
-        reports={reports}
-        folders={folders}
-        q={sp.q ?? ""}
-        type={sp.type ?? ""}
-        year={sp.year ?? ""}
-        folder={sp.folder ?? ""}
-      />
-    </div>
+    <ReportsList
+      reports={reports}
+      folders={folders}
+      loadFailed={!reportsResult.success}
+      q={sp.q ?? ""}
+      view={sp.view ?? ""}
+      type={sp.type ?? ""}
+      year={sp.year ?? ""}
+      folder={sp.folder ?? ""}
+    />
   );
 }

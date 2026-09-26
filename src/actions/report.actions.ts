@@ -158,6 +158,24 @@ export const duplicateReport = withRBAC(
 
 // ─── Get reports ────────────────────────────────────────────────────────────
 
+/**
+ * What the Reports list draws for each report: its folder and owner, how
+ * often it has run, when it last ran, and its next scheduled email. One row
+ * each at most, so the list costs the same however long a report's history.
+ */
+const LIST_INCLUDE = {
+  folder: true,
+  owner: { select: { name: true } },
+  _count: { select: { runs: true } },
+  runs: { orderBy: { startedAt: "desc" as const }, take: 1, select: { startedAt: true } },
+  schedules: {
+    where: { isActive: true },
+    orderBy: { nextRunAt: "asc" as const },
+    take: 1,
+    select: { nextRunAt: true },
+  },
+};
+
 export const getMyReports = withRBAC(
   "REPORT_MANAGE",
   async ({ tenantId }) => {
@@ -167,20 +185,20 @@ export const getMyReports = withRBAC(
     const [owned, shared, tenantWide] = await Promise.all([
       db.reportDefinition.findMany({
         where: { tenantId, ownerId: session },
-        include: { folder: true, owner: { select: { name: true } }, _count: { select: { runs: true } } },
+        include: LIST_INCLUDE,
         orderBy: { updatedAt: "desc" },
       }),
       db.reportShare.findMany({
         where: { sharedWith: session, report: { tenantId } },
         include: {
           report: {
-            include: { folder: true, owner: { select: { name: true } }, _count: { select: { runs: true } } },
+            include: LIST_INCLUDE,
           },
         },
       }),
       db.reportDefinition.findMany({
         where: { tenantId, visibility: "TENANT", ownerId: { not: session } },
-        include: { folder: true, owner: { select: { name: true } }, _count: { select: { runs: true } } },
+        include: LIST_INCLUDE,
         orderBy: { updatedAt: "desc" },
       }),
     ]);
