@@ -265,7 +265,9 @@ export function EditorPage({
 
   // The baseline is what the form sent when it opened, or when it was last
   // saved. Switches and checkboxes change hidden inputs, which fire no
-  // event, so the comparison also runs after every render, a frame later.
+  // event, so the comparison also runs just after every render. A timer
+  // rather than a frame callback: a browser pauses those in a hidden tab,
+  // and the check then lagged one change behind.
   const baseline = useRef<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const snapshot = () => (formRef.current ? JSON.stringify([...new FormData(formRef.current).entries()]) : "");
@@ -274,19 +276,19 @@ export function EditorPage({
     else setDirty(snapshot() !== baseline.current);
   };
   useEffect(() => {
-    const frame = requestAnimationFrame(check);
-    return () => cancelAnimationFrame(frame);
+    const t = setTimeout(check, 0);
+    return () => clearTimeout(t);
   });
   // A save makes what is on screen the new starting point.
   const seen = useRef(savedCount);
   useEffect(() => {
     if (seen.current === savedCount) return;
     seen.current = savedCount;
-    const frame = requestAnimationFrame(() => {
+    const t = setTimeout(() => {
       baseline.current = snapshot();
       setDirty(false);
-    });
-    return () => cancelAnimationFrame(frame);
+    }, 0);
+    return () => clearTimeout(t);
   }, [savedCount]);
   const leaveDialog = useLeaveGuard(dirty, noun);
 
