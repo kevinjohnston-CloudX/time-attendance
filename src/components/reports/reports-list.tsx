@@ -275,7 +275,11 @@ export function ReportsList({
 
       <div className="flex flex-col items-start gap-4 lg:flex-row">
         {showRail && rows.length > 0 && (
-          <div className="w-full flex-none lg:sticky lg:w-[228px]" style={{ top: barHeight + 16 }}>
+          // Pinned exactly where it already sits: the bar's 12px of bottom
+          // padding comes back as a -12px margin, then the 16px gap, so 4px
+          // under the bar. Any more and it slid down by the difference
+          // whenever the list beside it was tall enough to let it.
+          <div className="w-full flex-none lg:sticky lg:w-[228px]" style={{ top: barHeight + 4 }}>
             <FolderTree
               folders={folderNodes}
               selectedFolderId={folder || null}
