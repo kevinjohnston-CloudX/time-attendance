@@ -31,13 +31,17 @@ export const getAdpSyncStatus = withRBAC(
     if (!tenantId) throw new Error("NOT_FOUND");
     const config = getAdpConfig();
 
-    const [lastSync, adpEmployeeCount, lastPush] = await Promise.all([
+    const [lastSync, adpEmployeeCount, activeCount, activeLinkedCount, lastPush] = await Promise.all([
       db.auditLog.findFirst({
         where: { entityType: "ADP_SYNC", action: "ADP_SYNC_COMPLETED", tenantId },
         orderBy: { createdAt: "desc" },
         select: { createdAt: true, changes: true },
       }),
       db.employee.count({ where: { adpWorkerId: { not: null }, tenantId } }),
+      // Active people with no ADP worker ID are the ones a sync cannot match,
+      // and would add a second time.
+      db.employee.count({ where: { isActive: true, tenantId } }),
+      db.employee.count({ where: { isActive: true, adpWorkerId: { not: null }, tenantId } }),
       db.payrollRun.findFirst({
         where: { exportedAt: { not: null }, payPeriod: { tenantId } },
         orderBy: { exportedAt: "desc" },
@@ -56,6 +60,8 @@ export const getAdpSyncStatus = withRBAC(
       lastSyncAt: lastSync?.createdAt ?? null,
       lastSyncResult: lastSync?.changes ?? null,
       adpEmployeeCount,
+      activeCount,
+      activeUnlinkedCount: activeCount - activeLinkedCount,
       lastPush: lastPush?.exportedAt
         ? {
             at: lastPush.exportedAt,

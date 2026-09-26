@@ -1,37 +1,26 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
-import { format } from "date-fns";
+import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
+import { addDays, format } from "date-fns";
+import { ArrowLeft, RefreshCw } from "lucide-react";
 import { testAdpConnection, syncAdpEmployees } from "@/actions/adp.actions";
-import {
-  Banner,
-  Button,
-  Card,
-  EmptyState,
-  LinkButton,
-  PageHeader,
-  Select,
-  Table,
-  THead,
-  TBody,
-  TR,
-  TH,
-  TD,
-} from "@/components/ui";
+import { parseUtcDate } from "@/lib/utils/date";
+import { Banner, Button, LinkButton, PageHeader, PinnedBar, Select, Table, THead, TBody, TR, TH, TD } from "@/components/ui";
+import { AreaPanel } from "./setup/setup-ui";
 
 /**
- * ADP Sync, on the portal design's doc template: a connection banner, the
- * connection figures, the defaults a new hire inherits, and what the last run
- * actually did.
+ * ADP Sync: both directions of the ADP link on one page. Employees come in
+ * from ADP when somebody presses Sync employees; hours go out from a locked
+ * pay period with Push to ADP on the pay period itself. The two panels side by
+ * side say when each last happened and what it did.
  *
- * <p>The page header lives here rather than in the server page because "Sync
- * Now" is a page action that runs with the three mapping defaults below it.
+ * <p>Nothing here runs on a schedule. `syncAdpEmployees` is called from this
+ * component and nowhere else, so every figure is as old as the last run.
  *
- * <p>Nothing on this screen happens on a schedule. There is no ADP cron —
- * `syncAdpEmployees` is called from this component and nowhere else — so the
- * figures are as old as the last time somebody pressed the button, and the
- * banner says so. A page that implied a nightly sync would be the difference
- * between "ADP is behind" and "ADP is broken".
+ * <p>A sync matches people by ADP worker ID only. Anyone in ADP with no match
+ * is added as a new employee with the defaults below, which is why the page
+ * says how many active employees have no worker ID, and why the sync asks
+ * before it runs.
  */
 
 interface Site {
@@ -54,6 +43,17 @@ interface SyncStatus {
   lastSyncAt: Date | null;
   lastSyncResult: unknown;
   adpEmployeeCount: number;
+  activeCount: number;
+  activeUnlinkedCount: number;
+  lastPush: {
+    at: Date;
+    pushed: number;
+    skipped: number;
+    errorCount: number;
+    payPeriodId: string;
+    startDate: Date;
+    endDate: Date;
+  } | null;
 }
 
 interface Props {
@@ -63,51 +63,36 @@ interface Props {
   ruleSets: RuleSet[];
 }
 
+interface SyncResult {
+  created: number;
+  updated: number;
+  deactivated: number;
+  errors: string[];
+  newCredentials: Array<{ name: string; username: string; tempPassword: string }>;
+}
+
 /** The four counts a finished run reports, wherever they were read from. */
 interface RunCounts {
   created: number;
   updated: number;
   deactivated: number;
   errorCount: number;
-  /** Only the audit entry records how many workers ADP returned. */
+  /** Only the stored record says how many workers ADP returned. */
   totalFetched: number | null;
-  when: string;
 }
 
 /**
  * The last run's counts, read back out of the audit entry the sync wrote.
- *
- * <p>`lastSyncResult` is the audit row's whole `changes` blob — `{ after: … }` —
- * and it arrives typed `unknown` because until now nothing rendered it. Without
- * this the result card stays empty until somebody runs a sync in this very
- * browser tab, which is the one moment it is not needed: the question this page
- * gets opened for is what happened last time.
- *
- * <p>The blob is not necessarily an employee sync. `getAdpSyncStatus` takes the
- * newest audit row of entityType ADP_SYNC, and the payroll push writes under
- * that same entity type with an entirely different payload —
- * `{ pushed, skipped, errorCount, totalEntries }`. Defaulting the missing keys
- * to zero would draw a payroll push as an employee sync that created, updated
- * and deactivated nobody, three figures nothing ever measured, while carrying
- * the push's `errorCount` into the Errors row as if workers had been refused.
- * So the three counts only this sync writes have to actually be there; when
- * they are not, this is somebody else's audit entry and the card says nothing
- * rather than something wrong.
+ * The three counts only an employee sync writes must be there; anything else
+ * is not an employee sync, and the panel says nothing rather than something
+ * wrong.
  */
-function readPersistedRun(raw: unknown): Omit<RunCounts, "when"> | null {
+function readPersistedRun(raw: unknown): RunCounts | null {
   if (!raw || typeof raw !== "object") return null;
   const after = (raw as { after?: unknown }).after;
   if (!after || typeof after !== "object") return null;
-
   const a = after as Record<string, unknown>;
-  if (
-    typeof a.created !== "number" ||
-    typeof a.updated !== "number" ||
-    typeof a.deactivated !== "number"
-  ) {
-    return null;
-  }
-
+  if (typeof a.created !== "number" || typeof a.updated !== "number" || typeof a.deactivated !== "number") return null;
   return {
     created: a.created,
     updated: a.updated,
@@ -117,27 +102,31 @@ function readPersistedRun(raw: unknown): Omit<RunCounts, "when"> | null {
   };
 }
 
-/** A labelled field in the doc template's field grid. */
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="flex w-full flex-col gap-1.5">
-      <span className="wms-label">{label}</span>
-      {children}
-    </label>
-  );
-}
+const when = (d: Date | string) => format(new Date(d), "MMM d, yyyy 'at' h:mm a");
 
-/** One figure in the doc template's key-value row. */
-function Kv({ label, value }: { label: string; value: ReactNode }) {
+/** Pay periods end the day after their last day, as everywhere else. */
+const periodText = (start: Date, end: Date) =>
+  `${format(parseUtcDate(start), "MMM d")} to ${format(addDays(parseUtcDate(end), -1), "MMM d, yyyy")}`;
+
+const SYNC_ERRORS: Record<string, string> = {
+  NOT_FOUND: "The default site, department or rule set is no longer available. Pick them again and sync.",
+  FORBIDDEN: "You do not have permission to sync employees.",
+};
+
+/** One line in a panel: what it is, a quiet note, and its value on the right. */
+function Row({ label, note, value, dim }: { label: string; note?: string; value: ReactNode; dim?: boolean }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="wms-overline">{label}</span>
+    <div className="flex items-center justify-between gap-4 px-5" style={{ minHeight: 52, paddingBlock: 8 }}>
+      <span className="flex min-w-0 flex-col">
+        <span style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}>{label}</span>
+        {note && <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{note}</span>}
+      </span>
       <span
-        className="tabular"
+        className="tabular flex-none text-right"
         style={{
-          font: "var(--weight-semibold) 16px/22px var(--font-sans)",
-          color: "var(--text-primary)",
-          overflowWrap: "anywhere",
+          font: "var(--type-body1)",
+          fontWeight: "var(--weight-semibold)",
+          color: dim ? "var(--text-tertiary)" : "var(--text-primary)",
         }}
       >
         {value}
@@ -146,36 +135,51 @@ function Kv({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-/** The design's doc field grid at three columns. */
-const FIELD_GRID =
-  "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,32%)),1fr))]";
+function Rows({ children }: { children: ReactNode }) {
+  return <div className="flex flex-col divide-y divide-[var(--stroke-divider)]">{children}</div>;
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="flex min-w-0 flex-col gap-1.5">
+      <span className="wms-label">{label}</span>
+      {children}
+    </label>
+  );
+}
 
 export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
   const [isPending, startTransition] = useTransition();
-  /**
-   * Which of the two actions is running. One transition drives both buttons, so
-   * without this a sync makes "Test Connection" say "Testing…" as well. Always
-   * read together with `isPending`, so a request that never resolves cannot
-   * leave a button stuck on its busy label.
-   */
+  /** Which action is running; one transition drives both buttons. */
   const [busy, setBusy] = useState<"test" | "sync" | null>(null);
-  const [testResult, setTestResult] = useState<{
-    success: boolean;
-    message: string;
-  } | null>(null);
-  const [syncResult, setSyncResult] = useState<{
-    created: number;
-    updated: number;
-    deactivated: number;
-    errors: string[];
-    newCredentials: Array<{ name: string; username: string; tempPassword: string }>;
-  } | null>(null);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [syncedAt, setSyncedAt] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
-  // Default selections
   const [siteId, setSiteId] = useState(sites[0]?.id ?? "");
-  const [deptId, setDeptId] = useState(departments[0]?.id ?? "");
   const [ruleSetId, setRuleSetId] = useState((ruleSets.find((r) => r.isDefault) ?? ruleSets[0])?.id ?? "");
+
+  // A department linked to no site is offered everywhere; one linked to sites
+  // only where it works, so a new hire is never put in a department their
+  // building does not have.
+  const siteDepartments = useMemo(
+    () => departments.filter((d) => d.siteIds.length === 0 || d.siteIds.includes(siteId)),
+    [departments, siteId],
+  );
+  const [deptPick, setDeptPick] = useState(siteDepartments[0]?.id ?? "");
+  const deptId = siteDepartments.some((d) => d.id === deptPick) ? deptPick : (siteDepartments[0]?.id ?? "");
+
+  const credentials = syncResult?.newCredentials ?? [];
+
+  // The temporary passwords exist only on this screen, so leaving it asks.
+  useEffect(() => {
+    if (!credentials.length) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [credentials.length]);
 
   function handleTestConnection() {
     setError(null);
@@ -185,300 +189,245 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
       const result = await testAdpConnection(undefined as never);
       if (!result.success) {
         setTestResult({ success: false, message: result.error });
-        setBusy(null);
-        return;
+      } else {
+        const sample = result.data.sampleNames.slice(0, 3).join(", ");
+        setTestResult({
+          success: true,
+          message: `ADP answered with ${result.data.workerCount.toLocaleString()} workers${sample ? `, including ${sample}` : ""}.`,
+        });
       }
-      setTestResult({
-        success: true,
-        message: `Connected! Found ${result.data.workerCount} workers. Sample: ${result.data.sampleNames.join(", ")}`,
-      });
       setBusy(null);
     });
   }
 
   function handleSync() {
-    if (!siteId || !deptId || !ruleSetId) {
-      setError("Please select a default site, department, and rule set.");
-      return;
-    }
+    setConfirming(false);
     setError(null);
     setSyncResult(null);
     setBusy("sync");
     startTransition(async () => {
-      const result = await syncAdpEmployees({
-        defaultSiteId: siteId,
-        defaultDeptId: deptId,
-        defaultRuleSetId: ruleSetId,
-      });
+      const result = await syncAdpEmployees({ defaultSiteId: siteId, defaultDeptId: deptId, defaultRuleSetId: ruleSetId });
       if (!result.success) {
-        setError(result.error);
-        setBusy(null);
-        return;
+        setError(SYNC_ERRORS[result.error] ?? result.error);
+      } else {
+        setSyncResult(result.data);
+        setSyncedAt(new Date());
       }
-      setSyncResult(result.data);
       setBusy(null);
     });
   }
 
   const persisted = readPersistedRun(status.lastSyncResult);
-
-  // A run completed in this tab wins over the audit entry: the page is not
-  // re-fetched after a sync, so the stored figures are the previous run's.
+  // A run finished in this tab wins: the page is not fetched again after it.
   const lastRun: RunCounts | null = syncResult
-    ? {
-        created: syncResult.created,
-        updated: syncResult.updated,
-        deactivated: syncResult.deactivated,
-        errorCount: syncResult.errors.length,
-        totalFetched: null,
-        when: "just now",
-      }
-    : persisted && status.lastSyncAt
-      ? { ...persisted, when: format(new Date(status.lastSyncAt), "d MMM yyyy · HH:mm") }
-      : null;
+    ? { ...syncResult, errorCount: syncResult.errors.length, totalFetched: null }
+    : persisted;
+  const lastRunAt = syncedAt ?? (persisted ? status.lastSyncAt : null);
 
-  const outcomeRows = lastRun
-    ? [
-        // Details stay on one line: the Table sizes itself to max-content, so a
-        // wrapping cell would widen the whole card rather than growing taller.
-        {
-          outcome: "Created",
-          count: lastRun.created,
-          detail: "New workers, given the mapping defaults",
-        },
-        {
-          outcome: "Updated",
-          count: lastRun.updated,
-          detail: "Name, email or active flag changed in ADP",
-        },
-        {
-          outcome: "Deactivated",
-          count: lastRun.deactivated,
-          detail: "Terminated in ADP; their timesheets stay",
-        },
-        {
-          outcome: "Errors",
-          count: lastRun.errorCount,
-          detail: "Refused rows — each is skipped whole",
-        },
-      ]
-    : [];
+  const canSync = status.isConfigured && !!siteId && !!deptId && !!ruleSetId;
+  const siteName = sites.find((s) => s.id === siteId)?.name;
+  const deptName = departments.find((d) => d.id === deptId)?.name;
+  const ruleSetName = ruleSets.find((r) => r.id === ruleSetId)?.name;
+  const push = status.lastPush;
 
   return (
-    <>
-      <PageHeader pinned
-        title="ADP Sync"
-        subtitle="Sync employee data from ADP Workforce Now"
-        actions={
-          <>
-            <LinkButton href="/admin" hierarchy="tertiary">
-              ← Administration
-            </LinkButton>
-            {status.isConfigured && (
-              <Button hierarchy="primary" onClick={handleSync} disabled={isPending}>
-                {isPending && busy === "sync" ? "Syncing…" : "Sync Now"}
-              </Button>
-            )}
-          </>
-        }
-      />
-
-      <div className="flex flex-col gap-4" style={{ maxWidth: 760 }}>
-        {status.isConfigured ? (
-          // Info, not success: configured means the environment variables are
-          // present, which is not the same as ADP answering. Test Connection is
-          // what turns this page green, and it says so underneath.
-          <Banner
-            tone="info"
-            title="ADP credentials are configured"
-            body="Nothing runs on a schedule — a sync only happens when somebody presses Sync Now, so everything below is as old as the last run."
-            actions={
-              <Button hierarchy="secondary" onClick={handleTestConnection} disabled={isPending}>
-                {isPending && busy === "test" ? "Testing…" : "Test Connection"}
-              </Button>
-            }
-          />
-        ) : (
-          <Banner
-            tone="warning"
-            title="ADP is not configured"
-            body="Set ADP_CLIENT_ID, ADP_CLIENT_SECRET, ADP_CERT_BASE64 and ADP_KEY_BASE64 in the environment. Until they are set there is nothing for a sync to call."
-          />
-        )}
-
-        {testResult && (
-          <Banner
-            tone={testResult.success ? "success" : "error"}
-            title={testResult.success ? "Connection test passed" : "Connection test failed"}
-            body={testResult.message}
-          />
-        )}
-
-        {error && <Banner tone="error" title="Sync failed" body={error} />}
-
-        <Card title="Connection" subtitle="What this tenant currently has from ADP">
-          <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr))]">
-            <Kv label="Credentials" value={status.isConfigured ? "Configured" : "Missing"} />
-            <Kv
-              label="Last sync"
-              value={
-                status.lastSyncAt
-                  ? format(new Date(status.lastSyncAt), "d MMM yyyy · HH:mm")
-                  : "Never"
-              }
-            />
-            <Kv label="ADP-linked employees" value={status.adpEmployeeCount} />
-          </div>
-        </Card>
-
-        {status.isConfigured && (
-          <Card
-            title="Mapping Defaults"
-            subtitle="Applied to new hires arriving from ADP with no match. Existing employees keep what they have."
-          >
-            <div className={FIELD_GRID}>
-              <Field label="Default Site">
-                <Select
-                  value={siteId}
-                  onChange={(e) => setSiteId(e.target.value)}
-                  style={{ width: "100%" }}
-                >
-                  {sites.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-
-              <Field label="Default Department">
-                <Select
-                  value={deptId}
-                  onChange={(e) => setDeptId(e.target.value)}
-                  style={{ width: "100%" }}
-                >
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                      {d.siteIds.length > 0
-                        ? ` (${d.siteIds.map((id) => sites.find((s) => s.id === id)?.name).filter(Boolean).join(", ")})`
-                        : ""}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-
-              <Field label="Default Rule Set">
-                <Select
-                  value={ruleSetId}
-                  onChange={(e) => setRuleSetId(e.target.value)}
-                  style={{ width: "100%" }}
-                >
-                  {ruleSets.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            </div>
-          </Card>
-        )}
-
-        <Card
-          title="Last Sync Result"
-          subtitle={
-            lastRun
-              ? [
-                  `Run ${lastRun.when}`,
-                  lastRun.totalFetched !== null && `${lastRun.totalFetched} workers fetched`,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")
-              : "No sync recorded yet"
+    <div className="flex flex-col gap-4">
+      <PinnedBar>
+        <PageHeader
+          title="ADP Sync"
+          subtitle="Employees come in from ADP Workforce Now. Hours go back to it from locked pay periods."
+          actions={
+            <>
+              <LinkButton href="/admin" hierarchy="tertiary" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
+                Administration
+              </LinkButton>
+              {status.isConfigured && (
+                <>
+                  <Button hierarchy="secondary" onClick={handleTestConnection} disabled={isPending}>
+                    {isPending && busy === "test" ? "Testing…" : "Test connection"}
+                  </Button>
+                  <Button
+                    hierarchy="primary"
+                    leadingIcon={<RefreshCw className="h-4 w-4" />}
+                    onClick={() => setConfirming(true)}
+                    disabled={isPending || !canSync}
+                  >
+                    {isPending && busy === "sync" ? "Syncing…" : "Sync employees"}
+                  </Button>
+                </>
+              )}
+            </>
           }
-          padding={0}
-        >
-          {lastRun ? (
-            <Table>
-              <THead>
-                <TR>
-                  <TH>Outcome</TH>
-                  <TH numeric>Records</TH>
-                  <TH>Detail</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {outcomeRows.map((r) => (
-                  <TR key={r.outcome}>
-                    <TD style={{ fontWeight: "var(--weight-medium)" }}>{r.outcome}</TD>
-                    <TD numeric>{r.count}</TD>
-                    <TD style={{ color: "var(--text-secondary)" }}>{r.detail}</TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
-          ) : (
-            <EmptyState
-              title="No sync result recorded"
-              body="Once a sync finishes, what it created, updated and refused is recorded here and survives a reload."
+        />
+      </PinnedBar>
+
+      {!status.isConfigured && (
+        <Banner
+          tone="warning"
+          title="ADP is not connected"
+          body="Employees cannot be brought in from ADP, and hours cannot be sent to it, until your system administrator adds the ADP connection details."
+          meta="For the administrator: ADP_CLIENT_ID, ADP_CLIENT_SECRET, ADP_CERT_BASE64 and ADP_KEY_BASE64 in the server settings."
+        />
+      )}
+
+      {testResult && (
+        <Banner
+          tone={testResult.success ? "success" : "error"}
+          title={testResult.success ? "Connected to ADP" : "Could not reach ADP"}
+          body={testResult.message}
+        />
+      )}
+
+      {error && <Banner tone="error" title="The sync did not run" body={error} />}
+
+      <div className="grid items-stretch gap-4 lg:grid-cols-2">
+        <AreaPanel title="Employees from ADP" hint="New hires, name and email changes, and people who have left.">
+          <Rows>
+            <Row label="Last sync" value={lastRunAt ? when(lastRunAt) : "Never"} dim={!lastRunAt} />
+            <Row
+              label="Linked to ADP"
+              note={status.activeUnlinkedCount ? `${status.activeUnlinkedCount.toLocaleString()} active employees have no ADP worker ID` : "Every active employee has an ADP worker ID"}
+              value={`${status.adpEmployeeCount.toLocaleString()} employees`}
             />
-          )}
-        </Card>
+            <Row label="Added" note="New in ADP, given the sync defaults" value={lastRun ? lastRun.created.toLocaleString() : "None yet"} dim={!lastRun} />
+            <Row label="Updated" note="Name, email or status changed in ADP" value={lastRun ? lastRun.updated.toLocaleString() : "None yet"} dim={!lastRun} />
+            <Row label="Deactivated" note="Left the company in ADP. Their timesheets stay." value={lastRun ? lastRun.deactivated.toLocaleString() : "None yet"} dim={!lastRun} />
+            <Row
+              label="Not added"
+              note={lastRun?.totalFetched != null ? `Out of ${lastRun.totalFetched.toLocaleString()} workers read from ADP` : "Skipped because of a problem with the record"}
+              value={lastRun ? lastRun.errorCount.toLocaleString() : "None yet"}
+              dim={!lastRun}
+            />
+          </Rows>
+        </AreaPanel>
 
-        {/* Temporary passwords, shown once and never stored in the clear. */}
-        {syncResult && syncResult.newCredentials.length > 0 && (
-          <Card
-            title="New Employee Credentials"
-            subtitle="Shown once. Leaving this page loses them — the passwords are only stored hashed."
-            padding={0}
-          >
-            <Table>
-              <THead>
-                <TR>
-                  <TH>Name</TH>
-                  <TH>Username</TH>
-                  <TH>Temp Password</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {syncResult.newCredentials.map((cred) => (
-                  <TR key={cred.username}>
-                    <TD>{cred.name}</TD>
-                    {/* Monospace: these get read aloud and typed in by hand, so
-                        the characters have to be distinguishable from each
-                        other. */}
-                    <TD style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>
-                      {cred.username}
-                    </TD>
-                    <TD style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>
-                      {cred.tempPassword}
-                    </TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
-          </Card>
-        )}
-
-        {syncResult && syncResult.errors.length > 0 && (
-          <Card
-            title={`Errors (${syncResult.errors.length})`}
-            subtitle="Workers this run could not apply. Everything else in the run still landed."
-          >
-            <ul className="flex list-none flex-col gap-1.5 p-0" style={{ margin: 0 }}>
-              {syncResult.errors.map((err, i) => (
-                <li
-                  key={i}
-                  style={{ font: "var(--type-body2)", color: "var(--text-error)", textWrap: "pretty" }}
-                >
-                  {err}
-                </li>
-              ))}
-            </ul>
-          </Card>
-        )}
+        <AreaPanel
+          title="Hours sent to ADP"
+          hint="Sent from a locked pay period with Push to ADP."
+          action={
+            <LinkButton href={push ? `/payroll/pay-periods?id=${push.payPeriodId}` : "/payroll/pay-periods"} hierarchy="secondary">
+              {push ? "Open pay period" : "Open pay periods"}
+            </LinkButton>
+          }
+        >
+          <Rows>
+            <Row label="Last sent" value={push ? when(push.at) : "Never"} dim={!push} />
+            <Row label="Pay period" value={push ? periodText(push.startDate, push.endDate) : "None yet"} dim={!push} />
+            <Row label="Employees sent" note="Hours from their locked timesheets" value={push ? push.pushed.toLocaleString() : "None yet"} dim={!push} />
+            <Row label="Skipped" note="No ADP worker ID on the employee" value={push ? push.skipped.toLocaleString() : "None yet"} dim={!push} />
+            <Row label="Not sent" note="Hours with no ADP earning code" value={push ? push.errorCount.toLocaleString() : "None yet"} dim={!push} />
+          </Rows>
+        </AreaPanel>
       </div>
-    </>
+
+      <AreaPanel
+        title="Sync defaults"
+        hint="Given to anyone a sync adds. Employees already linked to ADP keep their own site, department and rule set."
+      >
+        <div className="flex flex-col gap-4 px-5 py-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Field label="Site">
+              <Select value={siteId} onChange={(e) => setSiteId(e.target.value)} style={{ width: "100%" }} disabled={!sites.length}>
+                {sites.length ? sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>) : <option value="">No active sites</option>}
+              </Select>
+            </Field>
+            <Field label="Department">
+              <Select value={deptId} onChange={(e) => setDeptPick(e.target.value)} style={{ width: "100%" }} disabled={!siteDepartments.length}>
+                {siteDepartments.length
+                  ? siteDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)
+                  : <option value="">No departments at this site</option>}
+              </Select>
+            </Field>
+            <Field label="Rule set">
+              <Select value={ruleSetId} onChange={(e) => setRuleSetId(e.target.value)} style={{ width: "100%" }} disabled={!ruleSets.length}>
+                {ruleSets.length
+                  ? ruleSets.map((r) => <option key={r.id} value={r.id}>{r.isDefault ? `${r.name} (default)` : r.name}</option>)
+                  : <option value="">No rule sets</option>}
+              </Select>
+            </Field>
+          </div>
+          {status.activeUnlinkedCount > 0 && (
+            <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-warning)", textWrap: "pretty" }}>
+              A sync matches people by ADP worker ID only. Anyone in ADP without a match here is added as a new employee, so add the ADP worker ID to existing employee records before the first sync.
+            </p>
+          )}
+        </div>
+      </AreaPanel>
+
+      {credentials.length > 0 && (
+        <AreaPanel
+          title="New employee sign ins"
+          hint="Shown once. Passwords are stored scrambled, so copy these before leaving this page."
+          count={`${credentials.length.toLocaleString()} ${credentials.length === 1 ? "employee" : "employees"}`}
+        >
+          <Table>
+            <THead>
+              <TR>
+                <TH>Employee</TH>
+                <TH>Username</TH>
+                <TH>Temporary password</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {credentials.map((c) => (
+                <TR key={c.username}>
+                  <TD>{c.name}</TD>
+                  {/* Monospace: read aloud and typed by hand, so every character must be told apart. */}
+                  <TD style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>{c.username}</TD>
+                  <TD style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>{c.tempPassword}</TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        </AreaPanel>
+      )}
+
+      {syncResult && syncResult.errors.length > 0 && (
+        <AreaPanel
+          title="Employees not added"
+          hint="Each of these was skipped whole. Everything else in the sync went through."
+          count={`${syncResult.errors.length.toLocaleString()} ${syncResult.errors.length === 1 ? "record" : "records"}`}
+        >
+          <ul className="flex list-none flex-col gap-1.5 px-5 py-4" style={{ margin: 0 }}>
+            {syncResult.errors.map((err, i) => (
+              <li key={i} style={{ font: "var(--type-body2)", color: "var(--text-error)", textWrap: "pretty" }}>
+                {err}
+              </li>
+            ))}
+          </ul>
+        </AreaPanel>
+      )}
+
+      {confirming && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "var(--wms-overlay-modal)" }}
+          onClick={(e) => e.target === e.currentTarget && setConfirming(false)}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="adp-sync-title"
+            className="ta-modal flex w-full max-w-[460px] flex-col gap-2 p-5"
+            style={{ borderRadius: "var(--radius-l)" }}
+          >
+            <h2 id="adp-sync-title" style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>
+              Sync employees from ADP?
+            </h2>
+            <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)", textWrap: "pretty" }}>
+              Employees linked to ADP are updated to match it, and anyone who has left is deactivated. Anyone in ADP not linked here yet is added as a new employee at {siteName}, in {deptName}, on {ruleSetName}.
+            </p>
+            <div className="mt-3 flex justify-end gap-2">
+              <Button hierarchy="secondary" onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+              <Button hierarchy="primary" onClick={handleSync}>
+                Sync employees
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
