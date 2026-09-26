@@ -31,10 +31,96 @@ export function useStatusView<T extends { isActive: boolean }>(rows: T[], initia
   return { view, setView, counts, kept };
 }
 
+/* ── Summary tiles ────────────────────────────────────────────────────── */
+
+/**
+ * One figure over an area's list, the Dashboard's Team Presence tile. A fact
+ * with `match` is also a filter: pressing its tile narrows the list to the
+ * rows it counts, pressing it again shows them all. A fact with `value` only
+ * reports, and is drawn flat so it does not read as a button.
+ */
+export type Fact<T> = {
+  key: string;
+  label: string;
+  note: string;
+  match?: (row: T) => boolean;
+  value?: number;
+};
+
+/** The tiles' counts, which one is pressed, and the rows it keeps. */
+export function useFacts<T>(rows: T[], facts: Fact<T>[]) {
+  const [focus, setFocus] = useState<string | null>(null);
+  const picked = facts.find((f) => f.key === focus && f.match);
+  const tiles = facts.map((f) => ({
+    key: f.key,
+    label: f.label,
+    note: f.note,
+    count: f.value ?? (f.match ? rows.filter(f.match).length : 0),
+    filters: !!f.match,
+    pressed: !!picked && f.key === picked.key,
+  }));
+  return {
+    tiles,
+    kept: picked ? rows.filter(picked.match!) : rows,
+    toggle: (key: string) => setFocus((k) => (k === key ? null : key)),
+    clear: () => setFocus(null),
+    focused: !!picked,
+  };
+}
+
+type TileData = ReturnType<typeof useFacts>["tiles"][number];
+
+export function FactTiles({ tiles, onToggle }: { tiles: TileData[]; onToggle: (key: string) => void }) {
+  return (
+    <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(120px,1fr))]">
+      {tiles.map((t) => {
+        const body = (
+          <>
+            <span className="wms-overline truncate">{t.label}</span>
+            <span
+              className="tabular"
+              style={{ font: "var(--weight-semibold) 22px/28px var(--font-sans)", color: t.pressed ? "var(--text-accent)" : "var(--text-primary)" }}
+            >
+              {t.count.toLocaleString()}
+            </span>
+            <span className="truncate" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }} title={t.note}>
+              {t.note}
+            </span>
+          </>
+        );
+        return t.filters ? (
+          <button
+            key={t.key}
+            type="button"
+            aria-pressed={t.pressed}
+            title={t.pressed ? "Show all" : `Show only these: ${t.label.toLowerCase()}`}
+            onClick={() => onToggle(t.key)}
+            className={`flex min-w-0 cursor-pointer flex-col gap-0.5 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+              t.pressed
+                ? "border-[var(--stroke-accent)] bg-[var(--surface-info)]"
+                : "border-[var(--stroke-divider)] bg-[var(--surface-card)] hover:border-[var(--stroke-hover)]"
+            }`}
+          >
+            {body}
+          </button>
+        ) : (
+          <div
+            key={t.key}
+            className="flex min-w-0 flex-col gap-0.5 rounded-lg border border-[var(--stroke-divider)] bg-[var(--surface-secondary)] px-3 py-2.5"
+          >
+            {body}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function AreaPanel({
   title,
   hint,
   action,
+  summary,
   search,
   status,
   filters,
@@ -46,6 +132,8 @@ export function AreaPanel({
   hint: string;
   /** The area's one primary action, usually Add. */
   action?: ReactNode;
+  /** Figures over the list, usually FactTiles. */
+  summary?: ReactNode;
   search?: { value: string; onChange: (v: string) => void; placeholder: string };
   status?: { view: StatusView; onChange: (v: StatusView) => void; counts: Record<StatusView, number> };
   /** Anything else the area filters by, after the status. */
@@ -69,6 +157,8 @@ export function AreaPanel({
         </span>
         {action && <span className="flex flex-none items-center gap-2">{action}</span>}
       </header>
+
+      {summary && <div className="px-5 pb-3.5">{summary}</div>}
 
       {(search || status || filters || count) && (
         <div className="flex flex-wrap items-center gap-2.5 px-5 pb-3.5">

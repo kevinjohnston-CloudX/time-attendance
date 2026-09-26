@@ -4,8 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { CalendarCheck, Plus } from "lucide-react";
-import { EmptyState, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
-import { AreaPanel, StatusBadge, countLine, hoursText, matches, useStatusView } from "./setup/setup-ui";
+import { Button, EmptyState, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
+import { AreaPanel, FactTiles, StatusBadge, countLine, hoursText, matches, useFacts, useStatusView } from "./setup/setup-ui";
 import type { HolidayRuleRow } from "./holiday-rule-editor";
 
 /**
@@ -42,7 +42,14 @@ export function HolidayRulesManager({ rules, payCodes = [] }: { rules: HolidayRu
   const router = useRouter();
   const [query, setQuery] = useState("");
   const { view, setView, counts, kept } = useStatusView(rules);
-  const shown = kept.filter((r) => matches(query, r.name, r.number));
+  const facts = useFacts(kept, [
+    { key: "people", label: "Employees", note: "On these rules", value: kept.reduce((n, r) => n + (r._count?.employees ?? 0), 0) },
+    { key: "holidays", label: "Holidays linked", note: "Paid by these rules", value: kept.reduce((n, r) => n + (r.assignedHolidays?.length ?? 0), 0) },
+    { key: "premium", label: "Extra pay if worked", note: "More than 1× pay", match: (r) => r.workingPremium > 100 },
+    { key: "conditions", label: "Work conditions", note: "Must work around the holiday", match: (r) => mustWork(r) !== "No condition" },
+    { key: "unlinked", label: "No holidays", note: "Not linked to any holiday", match: (r) => !(r.assignedHolidays?.length ?? 0) },
+  ]);
+  const shown = facts.kept.filter((r) => matches(query, r.name, r.number));
   const payCode = new Map(payCodes.map((p) => [p.id, p]));
 
   const addButton = (
@@ -56,6 +63,7 @@ export function HolidayRulesManager({ rules, payCodes = [] }: { rules: HolidayRu
       title="Holiday rules"
       hint="How holiday pay is worked out and who qualifies. Each holiday is paid by the rules it is linked to."
       action={addButton}
+      summary={rules.length ? <FactTiles tiles={facts.tiles} onToggle={facts.toggle} /> : undefined}
       status={{ view, onChange: setView, counts }}
       search={rules.length ? { value: query, onChange: setQuery, placeholder: "Rule name or number" } : undefined}
       count={countLine(shown.length, rules.length, "holiday rule", "holiday rules")}
@@ -68,7 +76,18 @@ export function HolidayRulesManager({ rules, payCodes = [] }: { rules: HolidayRu
           action={addButton}
         />
       ) : shown.length === 0 ? (
-        <EmptyState icon={<CalendarCheck className="h-8 w-8" />} title="No holiday rules match" body="Nothing matches that search or status." />
+        <EmptyState
+          icon={<CalendarCheck className="h-8 w-8" />}
+          title="No holiday rules match"
+          body="Nothing matches the search, status or figure picked above."
+          action={
+            facts.focused || query ? (
+              <Button hierarchy="secondary" size="sm" onClick={() => { facts.clear(); setQuery(""); }}>
+                Clear filters
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
         <Table>
           <THead>

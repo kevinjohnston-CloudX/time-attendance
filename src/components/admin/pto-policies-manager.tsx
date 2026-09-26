@@ -4,8 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { CalendarClock, Plus } from "lucide-react";
-import { Badge, EmptyState, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
-import { AreaPanel, StatusBadge, countLine, matches, useStatusView } from "./setup/setup-ui";
+import { Badge, Button, EmptyState, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
+import { AreaPanel, FactTiles, StatusBadge, countLine, matches, useFacts, useStatusView } from "./setup/setup-ui";
 import { FREQ_LABEL, MONTHS, type PolicyRow } from "./leave-policy-editor";
 
 /**
@@ -29,7 +29,14 @@ export function PtoPoliciesManager({ policies }: { policies: PolicyRow[] }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const { view, setView, counts, kept } = useStatusView(policies);
-  const shown = kept
+  const facts = useFacts(kept, [
+    { key: "types", label: "Leave types", note: "Covered by these policies", value: new Set(kept.map((p) => p.leaveTypeId).filter(Boolean)).size },
+    { key: "tiers", label: "Tiered", note: "More time with longer service", match: (p) => p.rules.length > 1 },
+    { key: "sites", label: "Used by sites", note: "Picked on at least one site", match: (p) => (p._count?.siteLinks ?? 0) > 0 },
+    { key: "cats", label: "Used by pay categories", note: "Picked on a pay category", match: (p) => (p._count?.categoryLinks ?? 0) > 0 },
+    { key: "unused", label: "Not used", note: "No site or pay category", match: (p) => !(p._count?.siteLinks ?? 0) && !(p._count?.categoryLinks ?? 0) },
+  ]);
+  const shown = facts.kept
     .filter((p) => matches(query, p.name, p.leaveType?.name, p.description))
     // By leave type, then name, so policies for one leave type read together.
     .sort((a, b) => {
@@ -49,6 +56,7 @@ export function PtoPoliciesManager({ policies }: { policies: PolicyRow[] }) {
       title="Leave policies"
       hint="Time off earned by tenure, per leave type. Sites and pay categories pick which one applies."
       action={addButton}
+      summary={policies.length ? <FactTiles tiles={facts.tiles} onToggle={facts.toggle} /> : undefined}
       status={{ view, onChange: setView, counts }}
       search={policies.length ? { value: query, onChange: setQuery, placeholder: "Policy or leave type" } : undefined}
       count={countLine(shown.length, policies.length, "leave policy", "leave policies")}
@@ -61,7 +69,18 @@ export function PtoPoliciesManager({ policies }: { policies: PolicyRow[] }) {
           action={addButton}
         />
       ) : shown.length === 0 ? (
-        <EmptyState icon={<CalendarClock className="h-8 w-8" />} title="No leave policies match" body="Nothing matches that search or status." />
+        <EmptyState
+          icon={<CalendarClock className="h-8 w-8" />}
+          title="No leave policies match"
+          body="Nothing matches the search, status or figure picked above."
+          action={
+            facts.focused || query ? (
+              <Button hierarchy="secondary" size="sm" onClick={() => { facts.clear(); setQuery(""); }}>
+                Clear filters
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
         <Table>
           <THead>

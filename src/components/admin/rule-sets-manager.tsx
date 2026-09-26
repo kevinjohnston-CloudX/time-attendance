@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { Plus, SlidersHorizontal } from "lucide-react";
 import type { RuleSet } from "@prisma/client";
-import { Badge, EmptyState, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
-import { AreaPanel, StatusBadge, countLine, hoursText, matches, useStatusView, type StatusView } from "./setup/setup-ui";
+import { Badge, Button, EmptyState, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
+import { AreaPanel, FactTiles, StatusBadge, countLine, hoursText, matches, useFacts, useStatusView, type StatusView } from "./setup/setup-ui";
 import { PAY_FREQUENCIES, type RuleSetRow } from "./rule-set-editor";
 
 /** `?view=` on arrival, which the hub's "1 inactive" link uses; Active otherwise. */
@@ -90,7 +90,14 @@ export function RuleSetsManager({ ruleSets, initialView }: { ruleSets: RuleSetRo
   const router = useRouter();
   const [query, setQuery] = useState("");
   const { view, setView, counts, kept } = useStatusView(ruleSets, asView(initialView));
-  const shown = kept.filter((rs) => matches(query, rs.name, rs.number));
+  const facts = useFacts(kept, [
+    { key: "people", label: "Employees", note: "On these rule sets", value: kept.reduce((n, r) => n + (r._count?.employees ?? 0), 0) },
+    { key: "daily", label: "Daily overtime", note: "Overtime after hours in a day", match: (rs) => rs.dailyOtMinutes < DAY_OFF },
+    { key: "none", label: "No overtime", note: "Straight time only", match: (rs) => overtime(rs).main === "No overtime" },
+    { key: "meal", label: "Meals deducted", note: "Taken off the clock automatically", match: (rs) => rs.autoDeductMeal },
+    { key: "unused", label: "No employees", note: "Not used by anyone", match: (rs) => !(rs._count?.employees ?? 0) },
+  ]);
+  const shown = facts.kept.filter((rs) => matches(query, rs.name, rs.number));
 
   const addButton = (
     <LinkButton href="/admin/rules-setup/rule-sets/new" hierarchy="primary" leadingIcon={<Plus className="h-4 w-4" />}>
@@ -103,6 +110,7 @@ export function RuleSetsManager({ ruleSets, initialView }: { ruleSets: RuleSetRo
       title="Rule sets"
       hint="The overtime, rounding and meal rules a pay period is calculated with. Each employee is on one."
       action={addButton}
+      summary={ruleSets.length ? <FactTiles tiles={facts.tiles} onToggle={facts.toggle} /> : undefined}
       status={{ view, onChange: setView, counts }}
       search={ruleSets.length ? { value: query, onChange: setQuery, placeholder: "Rule set name or number" } : undefined}
       count={countLine(shown.length, ruleSets.length, "rule set", "rule sets")}
@@ -115,7 +123,18 @@ export function RuleSetsManager({ ruleSets, initialView }: { ruleSets: RuleSetRo
           action={addButton}
         />
       ) : shown.length === 0 ? (
-        <EmptyState icon={<SlidersHorizontal className="h-8 w-8" />} title="No rule sets match" body="Nothing matches that search or status." />
+        <EmptyState
+          icon={<SlidersHorizontal className="h-8 w-8" />}
+          title="No rule sets match"
+          body="Nothing matches the search, status or figure picked above."
+          action={
+            facts.focused || query ? (
+              <Button hierarchy="secondary" size="sm" onClick={() => { facts.clear(); setQuery(""); }}>
+                Clear filters
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
         <Table>
           <THead>

@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { CalendarClock, Plus } from "lucide-react";
 import type { DayScheduleRow } from "@/actions/shift.actions";
-import { EmptyState, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
-import { AreaPanel, StatusBadge, clock12, countLine, matches, useStatusView } from "./setup/setup-ui";
+import { Button, EmptyState, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
+import { AreaPanel, FactTiles, StatusBadge, clock12, countLine, matches, useFacts, useStatusView } from "./setup/setup-ui";
 import { defaultDaySchedule, type ShiftRow } from "./shift-editor";
 
 /**
@@ -41,7 +41,19 @@ export function ShiftsManager({ shifts }: { shifts: ShiftRow[] }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const { view, setView, counts, kept } = useStatusView(shifts);
-  const shown = kept.filter((s) => matches(query, s.name, s.number));
+  const facts = useFacts(kept, [
+    { key: "people", label: "Employees", note: "On these shifts", value: kept.reduce((n, r) => n + (r._count?.employees ?? 0), 0) },
+    {
+      key: "night",
+      label: "Overnight",
+      note: "Ends the next day",
+      match: (s) => defaultDaySchedule(s).some((d) => d.isWorkday && !!d.startTime && !!d.endTime && d.endTime <= d.startTime),
+    },
+    { key: "varies", label: "Varies by day", note: "Different hours on some days", match: (s) => !!hours(defaultDaySchedule(s)).note },
+    { key: "flex", label: "Flexible or dynamic", note: "Not fixed hours", match: (s) => s.shiftType !== "FIXED" },
+    { key: "unused", label: "No employees", note: "Not used by anyone", match: (s) => !(s._count?.employees ?? 0) },
+  ]);
+  const shown = facts.kept.filter((s) => matches(query, s.name, s.number));
 
   const addButton = (
     <LinkButton href="/admin/rules-setup/shifts/new" hierarchy="primary" leadingIcon={<Plus className="h-4 w-4" />}>
@@ -54,6 +66,7 @@ export function ShiftsManager({ shifts }: { shifts: ShiftRow[] }) {
       title="Shifts"
       hint="The days and hours each group of employees is scheduled for, and how their meals are taken."
       action={addButton}
+      summary={shifts.length ? <FactTiles tiles={facts.tiles} onToggle={facts.toggle} /> : undefined}
       status={{ view, onChange: setView, counts }}
       search={shifts.length ? { value: query, onChange: setQuery, placeholder: "Shift name or number" } : undefined}
       count={countLine(shown.length, shifts.length, "shift", "shifts")}
@@ -66,7 +79,18 @@ export function ShiftsManager({ shifts }: { shifts: ShiftRow[] }) {
           action={addButton}
         />
       ) : shown.length === 0 ? (
-        <EmptyState icon={<CalendarClock className="h-8 w-8" />} title="No shifts match" body="Nothing matches that search or status." />
+        <EmptyState
+          icon={<CalendarClock className="h-8 w-8" />}
+          title="No shifts match"
+          body="Nothing matches the search, status or figure picked above."
+          action={
+            facts.focused || query ? (
+              <Button hierarchy="secondary" size="sm" onClick={() => { facts.clear(); setQuery(""); }}>
+                Clear filters
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
         <Table>
           <THead>
