@@ -20,7 +20,6 @@ type Tab = "rule-sets" | "shifts" | "holiday-rules" | "leave-policies";
 
 /** Areas not yet on the shared panel still draw their own heading. */
 const HINT: Partial<Record<Tab, string>> = {
-  "holiday-rules": "How holiday pay is worked out, and who qualifies for it.",
   "leave-policies": "How time off builds up with tenure, by leave type. Assigned to sites or to individual employees.",
 };
 
