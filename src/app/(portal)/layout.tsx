@@ -7,6 +7,7 @@ import { TopBar } from "@/components/layout/top-bar";
 import { CommandPalette, type Destination } from "@/components/layout/command-palette";
 import { SECTIONS, ADMIN_GROUPS, INACTIVE_ALLOWED_HREFS } from "@/components/layout/nav-model";
 import { InactiveRouteGuard } from "@/components/layout/inactive-route-guard";
+import { INACTIVE_PATHS } from "@/lib/rbac/identity";
 import { EmployeesListForget } from "@/components/admin/employees-list-forget";
 import { exitTenant } from "@/actions/super-admin.actions";
 import { LIVE_ATTENDANCE_HREF, REQUEST_PATH_HEADER, SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
@@ -65,6 +66,14 @@ export default async function PortalLayout({
    * the limit on reaches people already signed in within the resolver's
    * cache window.
    */
+  // An inactive employee keeps three pages. The menu shows only those and
+  // the browser guard below sends them back, but a typed address used to get
+  // through: the server decides here.
+  if (!isEmployeeActive) {
+    const path = (await headers()).get(REQUEST_PATH_HEADER) ?? "";
+    if (!INACTIVE_PATHS.some((p) => path === p || path.startsWith(`${p}/`))) redirect("/time/timesheet");
+  }
+
   const liveAttendanceOnly = !isPrivileged && (await isLiveAttendanceOnly(customRoleId));
   if (liveAttendanceOnly) {
     const path = (await headers()).get(REQUEST_PATH_HEADER) ?? "";

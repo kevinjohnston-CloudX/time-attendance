@@ -5,6 +5,7 @@ import { hasPermission, type Permission } from "./permissions";
 import { hasPermissionByLegacy } from "./permission-resolver";
 import { getEffectiveRole } from "./check-permission";
 import type { Role } from "./roles";
+import { INACTIVE_PERMISSIONS } from "./identity";
 
 type ActionResult<T> =
   | { success: true; data: T }
@@ -29,13 +30,25 @@ export function withRBAC<TInput, TOutput>(
       return { success: false, error: "UNAUTHENTICATED" };
     }
 
+    // Somebody who must replace a temporary password can do nothing else
+    // until they have. The page layout sends them to the form; this is the
+    // same rule for a direct call.
+    if (session.user.mustChangePassword) return { success: false, error: "FORBIDDEN" };
+
+    // An inactive employee keeps only their own documents, balances and
+    // last timesheet, whatever their role was. The menu already shows only
+    // those; this is what makes it true for a direct call.
+    const perms = Array.isArray(permission) ? permission : [permission];
+    if (session.user.isActive === false && !perms.some((p) => (INACTIVE_PERMISSIONS as readonly string[]).includes(p))) {
+      return { success: false, error: "FORBIDDEN" };
+    }
+
     const realRole = session.user.role ?? "EMPLOYEE";
     const effectiveRole = await getEffectiveRole(session.user);
     const isPrivilegedAdmin = ["SUPER_ADMIN", "SYSTEM_ADMIN"].includes(realRole);
 
     if (!isPrivilegedAdmin) {
       const customRoleId = (session.user as { customRoleId?: string | null }).customRoleId ?? null;
-      const perms = Array.isArray(permission) ? permission : [permission];
       const allowed = customRoleId
         ? await Promise.all(perms.map((p) => hasPermissionByLegacy(customRoleId, p))).then((r) => r.some(Boolean))
         : perms.some((p) => hasPermission(effectiveRole, p));

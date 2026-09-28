@@ -11,6 +11,8 @@ declare module "next-auth" {
       mustChangePassword?: boolean;
       /** A fresh value each time someone signs in; the same until they sign out. */
       signInId?: string;
+      /** The employee record is active, read fresh on every request. */
+      isActive?: boolean;
     } & DefaultSession["user"];
   }
 
@@ -21,6 +23,7 @@ declare module "next-auth" {
     customRoleId?: string;
     canViewAs?: boolean;
     mustChangePassword?: boolean;
+    isActive?: boolean;
   }
 }
 
@@ -33,5 +36,6 @@ declare module "next-auth/jwt" {
     customRoleId?: string;
     canViewAs?: boolean;
     mustChangePassword?: boolean;
+    isActive?: boolean;
   }
 }

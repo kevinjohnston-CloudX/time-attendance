@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { authConfig } from "@/lib/auth.config";
+import { liveIdentity } from "@/lib/rbac/identity";
 
 const credentialsSchema = z.object({
   username: z.string().min(1),
@@ -20,7 +21,9 @@ const allowedDomains = (process.env.GOOGLE_ALLOWED_DOMAINS ?? "")
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   adapter: PrismaAdapter(db),
-  session: { strategy: "jwt" },
+  // A working day, not the 30 day default: a sign-in left open on a shared
+  // warehouse computer should not outlive the shift.
+  session: { strategy: "jwt", maxAge: 12 * 60 * 60, updateAge: 60 * 60 },
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -149,6 +152,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.mustChangePassword = (user as { mustChangePassword?: boolean }).mustChangePassword ?? false;
         }
       }
+      // Every request, not only at sign in: the role, company and status in
+      // the token are replaced with what the database says now, so a person
+      // demoted, moved or deactivated is treated that way on their next
+      // click rather than when their session runs out. A person whose login
+      // no longer exists is signed out.
+      if (token.sub) {
+        const live = await liveIdentity(token.sub);
+        if (!live) return null;
+        token.role = live.role;
+        token.employeeId = live.employeeId ?? undefined;
+        token.tenantId = live.tenantId;
+        token.customRoleId = live.customRoleId ?? undefined;
+        token.canViewAs = live.canViewAs;
+        token.isActive = live.isActive;
+        token.mustChangePassword = live.mustChangePassword;
+      }
       return token;
     },
 
@@ -162,6 +181,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.canViewAs = token.canViewAs as boolean | undefined ?? false;
         session.user.mustChangePassword = token.mustChangePassword as boolean | undefined ?? false;
         session.user.signInId = token.signInId as string | undefined;
+        session.user.isActive = token.isActive as boolean | undefined ?? true;
       }
       return session;
     },
