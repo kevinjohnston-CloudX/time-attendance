@@ -124,9 +124,7 @@ export function computeSegments(
     // Use the start of the punch's local calendar day as the implicit open (floored to
     // periodStart so we never credit time before this period began).
     if (!openState && punch.stateBefore !== "OUT") {
-      const dayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(punchMin);
-      const [y, m, d] = dayStr.split("-").map(Number);
-      const dayStartUtc = new Date(Date.UTC(y, m - 1, d));
+      const dayStartUtc = startOfDayInTz(punchMin, timezone);
       const floor = periodStart && periodStart > dayStartUtc ? truncToMin(periodStart) : dayStartUtc;
       openStart = floor;
       openState = punch.stateBefore as ActiveState;
@@ -137,10 +135,13 @@ export function computeSegments(
       const openDay = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(openStart);
       const punchDay = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(punchMin);
 
-      if (openDay !== punchDay && punch.stateBefore === "OUT") {
-        // Missing clock-out: the previous day had no approved CLOCK_OUT.
-        // Discard the incomplete segment entirely so phantom hours don't
-        // inflate REG/OT totals. The MISSING_PUNCH exception still flags the day.
+      const dayDiff = (new Date(punchDay + "T00:00:00Z").getTime() - new Date(openDay + "T00:00:00Z").getTime()) / (24 * 60 * 60_000);
+      if (openDay !== punchDay && (punch.stateBefore === "OUT" || dayDiff > 1)) {
+        // Discard when the open segment crosses into a later day via a missing clock-out.
+        // Two cases: (1) stateBefore="OUT" means the end-of-day SYSTEM reset fired, indicating
+        // a missed clock-out on the previous day; (2) dayDiff > 1 means the CLOCK_IN was left
+        // open across multiple days (e.g. employee left for the weekend), which produces phantom
+        // 24-hour blocks. In both cases the MISSING_PUNCH exception still flags the day.
       } else {
         segments.push(
           ...buildSegmentSpan(timesheetId, openStart, punchMin, openState, false, timezone)
@@ -628,6 +629,7 @@ function computeMealPremiums(
   punches: Punch[],
   ruleSet: RuleSet,
   timezone: string,
+  premiumWaivedStarts: Set<string> = new Set(),
 ): SegmentInput[] {
   if (!ruleSet.mealBreakPremiumEnabled) return [];
 
@@ -675,13 +677,25 @@ function computeMealPremiums(
     const realMealStarts = dayPunches.filter(p => p.punchType === "MEAL_START");
     const lastWorkSeg = workSegs.reduce((a, b) => a.endTime > b.endTime ? a : b);
 
+    // Detect missing clock-out: last clock punch of the day is a CLOCK_IN with no CLOCK_OUT.
+    // In this case we don't know the true shift end, so assume the shift extended past the
+    // premium window and calculate a premium until the discrepancy is corrected.
+    const sortedClockPunches = dayPunches
+      .filter(p => p.punchType === "CLOCK_IN" || p.punchType === "CLOCK_OUT")
+      .sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime());
+    const hasMissingClockOut = sortedClockPunches.length > 0 &&
+      sortedClockPunches[sortedClockPunches.length - 1].punchType === "CLOCK_IN";
+
     let premiumsThisDay = 0;
+    let accumulatedPremiumMins = 0; // offset so each row gets a distinct startTime
 
     for (const row of activeRows) {
       if (premiumsThisDay >= ruleSet.mealBreakPremiumMaxPerDay) break;
 
-      // Trigger: shift must extend past the end of the required meal window
-      if (shiftSpanMins < row.applyToMinutes) continue;
+      // Trigger: shift must extend past the end of the required meal window.
+      // If the employee has a missing clock-out, the true shift end is unknown —
+      // skip this check and award the premium until the discrepancy is corrected.
+      if (!hasMissingClockOut && shiftSpanMins < row.applyToMinutes) continue;
 
       // unlessHoursExceed: suppress when total worked exceeds threshold
       if (row.unlessHoursExceed && totalWorkedMins > row.unlessHoursExceedMinutes) continue;
@@ -712,6 +726,26 @@ function computeMealPremiums(
           if (mealSeg.startTime.getTime() < windowStartMs || mealSeg.startTime.getTime() >= windowEndMs) continue;
           if (mealSeg.durationMinutes >= row.minimumMealMinutes) { hasQualifyingMeal = true; break; }
         }
+
+        // Also treat gaps between consecutive CLOCK_IN/CLOCK_OUT pairs as a qualifying meal.
+        // When no MEAL segments exist (e.g. autoDeductMeal:false with no MEAL_START punches),
+        // the gap between two work sessions is the employee's actual clocked-out break.
+        if (!hasQualifyingMeal) {
+          const sortedOuts = dayPunches
+            .filter(p => p.punchType === "CLOCK_OUT")
+            .sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime());
+          for (const co of sortedOuts) {
+            const gapStartMs = ruleSet.mealPremiumUseActualForWindow ? co.punchTime.getTime() : co.roundedTime.getTime();
+            if (gapStartMs < windowStartMs || gapStartMs >= windowEndMs) continue;
+            const nextCi = dayPunches
+              .filter(p => p.punchType === "CLOCK_IN" && p.punchTime > co.punchTime)
+              .sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime())[0];
+            if (!nextCi) continue;
+            const gapEndMs = ruleSet.mealPremiumUseActualForWindow ? nextCi.punchTime.getTime() : nextCi.roundedTime.getTime();
+            const gapMins = (gapEndMs - gapStartMs) / 60_000;
+            if (gapMins >= row.minimumMealMinutes) { hasQualifyingMeal = true; break; }
+          }
+        }
       }
 
       if (hasQualifyingMeal) continue;
@@ -724,19 +758,26 @@ function computeMealPremiums(
       }
       if (premiumMins <= 0) continue;
 
-      premiums.push({
-        timesheetId,
-        segmentType: "MEAL_PREMIUM",
-        startTime: lastWorkSeg.endTime,
-        endTime: new Date(lastWorkSeg.endTime.getTime() + premiumMins * 60_000),
-        durationMinutes: premiumMins,
-        segmentDate: lastWorkSeg.segmentDate,
-        isPaid: true,
-        payBucket: "REG",
-        payCodeId: row.payCodeId,
-        isSplit: false,
-      });
+      // Each row gets a distinct startTime, offset by prior rows' payMinutes, so
+      // per-premium waivers have stable unique keys even when multiple rows fire.
+      const premStart = new Date(lastWorkSeg.endTime.getTime() + accumulatedPremiumMins * 60_000);
 
+      if (!premiumWaivedStarts.has(premStart.toISOString())) {
+        premiums.push({
+          timesheetId,
+          segmentType: "MEAL_PREMIUM",
+          startTime: premStart,
+          endTime: new Date(premStart.getTime() + premiumMins * 60_000),
+          durationMinutes: premiumMins,
+          segmentDate: lastWorkSeg.segmentDate,
+          isPaid: true,
+          payBucket: "REG",
+          payCodeId: row.payCodeId,
+          isSplit: false,
+        });
+      }
+
+      accumulatedPremiumMins += premiumMins;
       premiumsThisDay++;
     }
   }
@@ -904,7 +945,9 @@ export async function rebuildSegments(
   // Meal break premiums: detect days where no qualifying meal was taken and credit
   // the configured penalty pay code. Runs after all deduction logic is settled.
   if (ruleSet.mealBreakPremiumEnabled) {
-    const premiumSegs = computeMealPremiums(timesheetId, segments, punches, ruleSet, timezone);
+    const premiumWaivers = await db.mealPremiumWaiver.findMany({ where: { timesheetId } });
+    const premiumWaivedStarts = new Set(premiumWaivers.map((w) => w.segmentStart.toISOString()));
+    const premiumSegs = computeMealPremiums(timesheetId, segments, punches, ruleSet, timezone, premiumWaivedStarts);
     segments = [...segments, ...premiumSegs];
   }
 
@@ -985,7 +1028,7 @@ export async function rebuildSegments(
   // the WORK segment takes precedence in the timecard view.
   await db.$transaction([
     db.workSegment.deleteMany({
-      where: { timesheetId, segmentType: { in: ["WORK", "MEAL", "BREAK", "HOLIDAY"] } },
+      where: { timesheetId, segmentType: { in: ["WORK", "MEAL", "BREAK", "HOLIDAY", "MEAL_PREMIUM"] } },
     }),
     ...(newSegmentDates.size > 0
       ? [

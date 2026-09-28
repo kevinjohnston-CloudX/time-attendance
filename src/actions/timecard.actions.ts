@@ -251,6 +251,7 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
           select: { id: true, exceptionType: true, occurredAt: true, description: true },
         },
         mealWaivers: true,
+        mealPremiumWaivers: true,
         notes: { orderBy: { createdAt: "desc" } },
         dayReasons: {
           include: { reasonCode: { select: { id: true, code: true, label: true, color: true } } },
@@ -266,6 +267,11 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
         id: w.id,
         segmentDate: w.segmentDate.toISOString().slice(0, 10),
         reason: w.reason,
+      })),
+      mealPremiumWaivers: ts.mealPremiumWaivers.map((w) => ({
+        id: w.id,
+        segmentDate: w.segmentDate.toISOString().slice(0, 10),
+        segmentStart: w.segmentStart.toISOString(),
       })),
       notes: ts.notes.map((n) => ({
         id: n.id,
@@ -419,6 +425,7 @@ export const getTimecardDetail = withRBAC(
           select: { id: true, exceptionType: true, occurredAt: true, description: true },
         },
         mealWaivers: true,
+        mealPremiumWaivers: true,
         notes: {
           orderBy: { createdAt: "desc" },
         },
@@ -434,6 +441,11 @@ export const getTimecardDetail = withRBAC(
         id: w.id,
         segmentDate: w.segmentDate.toISOString().slice(0, 10),
         reason: w.reason,
+      })),
+      mealPremiumWaivers: ts.mealPremiumWaivers.map((w) => ({
+        id: w.id,
+        segmentDate: w.segmentDate.toISOString().slice(0, 10),
+        segmentStart: w.segmentStart.toISOString(),
       })),
       notes: ts.notes.map((n) => ({
         id: n.id,
