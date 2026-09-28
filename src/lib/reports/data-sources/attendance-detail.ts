@@ -32,7 +32,13 @@ export const attendanceDetailSource: DataSourceDefinition = {
     { id: "endTime",         label: "End Time",       type: "string",  defaultVisible: true },
     { id: "durationMinutes", label: "Duration (min)", type: "number",  defaultVisible: true },
     { id: "payBucket",       label: "Pay Bucket",     type: "string",  defaultVisible: true },
-    { id: "isPaid",          label: "Paid",           type: "boolean", defaultVisible: false },
+    { id: "payCode",           label: "Pay Code",        type: "string",  defaultVisible: true },
+    { id: "payCodeLabel",      label: "Pay Code Label",  type: "string",  defaultVisible: false },
+    { id: "reasonCode",        label: "Reason Code",     type: "string",  defaultVisible: false },
+    { id: "regularMinutes",    label: "REG (min)",       type: "number",  defaultVisible: false },
+    { id: "overtimeMinutes",   label: "OT (min)",        type: "number",  defaultVisible: false },
+    { id: "doubletimeMinutes", label: "DT (min)",        type: "number",  defaultVisible: false },
+    { id: "isPaid",            label: "Paid",            type: "boolean", defaultVisible: false },
   ],
   filters: [
     { id: "employeeName", label: "Employee Name", type: "string", operators: ["contains", "eq"] },
@@ -73,9 +79,11 @@ export const attendanceDetailSource: DataSourceDefinition = {
     const segments = await db.workSegment.findMany({
       where,
       include: {
+        payCode: { select: { code: true, label: true } },
         timesheet: {
           include: {
             employee: { include: { user: true, department: true, site: true } },
+            dayReasons: { include: { reasonCode: { select: { code: true, label: true } } } },
           },
         },
       },
@@ -83,19 +91,31 @@ export const attendanceDetailSource: DataSourceDefinition = {
       take: config.limit,
     });
 
-    const rows = segments.map((seg) => ({
-      employeeName: seg.timesheet.employee.user?.name ?? seg.timesheet.employee.employeeCode,
-      employeeCode: seg.timesheet.employee.employeeCode,
-      department: seg.timesheet.employee.department.name,
-      site: seg.timesheet.employee.site.name,
-      date: format(seg.segmentDate, "yyyy-MM-dd"),
-      segmentType: seg.segmentType,
-      startTime: format(seg.startTime, "h:mm a"),
-      endTime: format(seg.endTime, "h:mm a"),
-      durationMinutes: seg.durationMinutes,
-      payBucket: seg.payBucket,
-      isPaid: seg.isPaid,
-    }));
+    const rows = segments.map((seg) => {
+      const dayStr = seg.segmentDate.toISOString().slice(0, 10);
+      const dayReason = seg.timesheet.dayReasons.find(
+        (dr) => dr.segmentDate.toISOString().slice(0, 10) === dayStr
+      );
+      return {
+        employeeName: seg.timesheet.employee.user?.name ?? seg.timesheet.employee.employeeCode,
+        employeeCode: seg.timesheet.employee.employeeCode,
+        department: seg.timesheet.employee.department.name,
+        site: seg.timesheet.employee.site.name,
+        date: format(seg.segmentDate, "yyyy-MM-dd"),
+        segmentType: seg.segmentType,
+        startTime: format(seg.startTime, "h:mm a"),
+        endTime: format(seg.endTime, "h:mm a"),
+        durationMinutes: seg.durationMinutes,
+        payBucket: seg.payBucket,
+        payCode: seg.payCode?.code ?? null,
+        payCodeLabel: seg.payCode?.label ?? null,
+        reasonCode: dayReason ? `${dayReason.reasonCode.code} – ${dayReason.reasonCode.label}` : null,
+        regularMinutes: seg.payBucket === "REG" ? seg.durationMinutes : null,
+        overtimeMinutes: seg.payBucket === "OT" ? seg.durationMinutes : null,
+        doubletimeMinutes: seg.payBucket === "DT" ? seg.durationMinutes : null,
+        isPaid: seg.isPaid,
+      };
+    });
 
     // In-memory sort for computed columns (date, startTime, endTime, etc.)
     const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
