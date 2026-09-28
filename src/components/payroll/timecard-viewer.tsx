@@ -533,8 +533,8 @@ export function TimecardViewer({
   today.setHours(0, 0, 0, 0);
   const currentPeriod = sortedPeriods.find((pp) => {
     const start = parseUtcDate(pp.startDate);
-    const end = parseUtcDate(pp.endDate);
-    return today >= start && today <= end;
+    const end = parseUtcDate(pp.endDate); // exclusive — stored as day after the last day
+    return today >= start && today < end;
   });
 
   // Month/year picker
@@ -765,13 +765,13 @@ export function TimecardViewer({
 
     if (timecard) {
       periodStart = customStartDate ?? parseUtcDate(timecard.payPeriod.startDate);
-      periodEnd = customEndDate ?? parseUtcDate(timecard.payPeriod.endDate);
+      periodEnd = customEndDate ?? addDays(parseUtcDate(timecard.payPeriod.endDate), -1);
     } else if (selectedPeriodId && selectedEmployeeId) {
       // No timesheet yet — still build the day grid so absent days render
       const period = sortedPeriods.find((p) => p.id === selectedPeriodId);
       if (!period) return null;
       periodStart = parseUtcDate(period.startDate);
-      periodEnd = parseUtcDate(period.endDate);
+      periodEnd = addDays(parseUtcDate(period.endDate), -1);
     } else {
       return null;
     }
