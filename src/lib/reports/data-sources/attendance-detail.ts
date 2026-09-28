@@ -60,13 +60,24 @@ export const attendanceDetailSource: DataSourceDefinition = {
     const dateFilter = resolveDateFilter(config.dateRange);
     const filterWhere = buildWhereClause(config.filters, fieldMap);
 
+    // dateFilter puts payPeriodId inside timesheet; custom/relative put segmentDate at root.
+    const dateTimesheetFilter = (dateFilter.timesheet as Record<string, unknown>) ?? {};
+    // filterWhere nests all employee-level conditions under timesheet.employee.*
+    const employeeFilter =
+      ((filterWhere.timesheet as Record<string, unknown>)?.employee as Record<string, unknown>) ?? {};
+
+    // Spread root-level scalar filters (segmentType, payBucket, segmentDate from filterWhere)
+    // but exclude the timesheet key — we merge that manually below.
+    const { timesheet: _ft, ...rootFilterWhere } = filterWhere as Record<string, unknown>;
+
     const where = {
-      ...dateFilter,
-      ...filterWhere,
+      ...(dateFilter.segmentDate !== undefined ? { segmentDate: dateFilter.segmentDate } : {}),
+      ...rootFilterWhere,
       timesheet: {
+        ...dateTimesheetFilter,
         employee: {
           tenantId,
-          ...(filterWhere.timesheet as Record<string, unknown> ?? {}),
+          ...employeeFilter,
         },
       },
     };
