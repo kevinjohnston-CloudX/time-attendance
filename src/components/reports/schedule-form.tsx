@@ -50,9 +50,9 @@ const TIMEZONES = [
 ] as const;
 
 const FORMATS = [
-  { value: "csv", label: "CSV" },
-  { value: "pdf", label: "PDF" },
-  { value: "xlsx", label: "XLSX" },
+  { value: "CSV", label: "CSV" },
+  { value: "PDF", label: "PDF" },
+  { value: "XLSX", label: "XLSX" },
 ] as const;
 
 /* ------------------------------------------------------------------ */
@@ -174,7 +174,7 @@ export function ScheduleForm({
   const [timezone, setTimezone] = useState(
     existingSchedule?.timezone ?? "America/New_York",
   );
-  const [format, setFormat] = useState(existingSchedule?.format ?? "csv");
+  const [format, setFormat] = useState(existingSchedule?.format?.toUpperCase() ?? "CSV");
   const [recipients, setRecipients] = useState<string[]>(
     existingSchedule?.recipients ?? [],
   );

@@ -10,12 +10,13 @@ function formatMinutesDecimal(mins: number): string {
   return (mins / 60).toFixed(2);
 }
 
-function formatCell(value: unknown, type: string): string {
+function formatCell(value: unknown, type: string, columnId: string): string {
   if (value === null || value === undefined) return "—";
   if (type === "boolean") return value ? "Yes" : "No";
   if (type === "number" && typeof value === "number") {
-    // If it looks like minutes, show decimal hours
-    if (value > 0 && value % 1 === 0) return formatMinutesDecimal(value);
+    if (columnId.toLowerCase().endsWith("minutes") && value >= 0 && value % 1 === 0) {
+      return formatMinutesDecimal(value);
+    }
     return String(value);
   }
   return String(value);
@@ -80,7 +81,7 @@ export function ResultsTable({
                       col.type === "number" ? "text-right tabular-nums" : ""
                     }`}
                   >
-                    {formatCell(row[col.id], col.type)}
+                    {formatCell(row[col.id], col.type, col.id)}
                   </td>
                 ))}
               </tr>

@@ -212,13 +212,13 @@ export function ReportViewer({
                   CSV
                 </button>
                 <a
-                  href={`/api/reports/${report.id}/export?format=pdf`}
+                  href={`/api/reports/${report.id}/export?format=pdf&dateRange=${encodeURIComponent(JSON.stringify(dateRange))}`}
                   className={btnSecondary + " flex items-center gap-1.5"}
                 >
                   PDF
                 </a>
                 <a
-                  href={`/api/reports/${report.id}/export?format=xlsx`}
+                  href={`/api/reports/${report.id}/export?format=xlsx&dateRange=${encodeURIComponent(JSON.stringify(dateRange))}`}
                   className={btnSecondary + " flex items-center gap-1.5"}
                 >
                   XLSX
