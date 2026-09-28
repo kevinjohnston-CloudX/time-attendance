@@ -71,6 +71,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
     const { timesheet: _ft, ...rootFilterWhere } = filterWhere as Record<string, unknown>;
 
     const where = {
+      durationMinutes: { gt: 0 },
       ...(dateFilter.segmentDate !== undefined ? { segmentDate: dateFilter.segmentDate } : {}),
       ...rootFilterWhere,
       timesheet: {
