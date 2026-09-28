@@ -14,8 +14,37 @@ import { looksLikeBadge } from "@/lib/presence/people-search.service";
 import { MISSING_OPTIONS, PAY_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
+import { currentIdentity } from "@/lib/rbac/current";
+import { employeeRank, forgetIdentity, type LiveIdentity } from "@/lib/rbac/identity";
+import { ROLE_RANK, isValidRole } from "@/lib/rbac/roles";
 
 // Maps system custom role names to their legacy enum values
+/**
+ * Whether the signed-in person may hand out this role: it must belong to
+ * their company and sit below their own rank. Without it an HR admin could
+ * make themselves, or a friend, System Admin. A super admin may give any role.
+ */
+async function assertAssignable(
+  me: LiveIdentity | null,
+  tenantId: string,
+  role: string | undefined,
+  customRoleId: string | null | undefined,
+): Promise<void> {
+  if (!me) throw new Error("FORBIDDEN");
+  let rank: number | null = null;
+  if (customRoleId) {
+    const cr = await db.customRole.findFirst({ where: { id: customRoleId, tenantId }, select: { rank: true } });
+    if (!cr) throw new Error("That role does not exist");
+    rank = cr.rank;
+  } else if (role !== undefined) {
+    if (role === "SUPER_ADMIN" || !isValidRole(role)) throw new Error("That role cannot be given");
+    rank = ROLE_RANK[role];
+  }
+  if (!me.isSuperAdmin && rank !== null && rank >= me.rank) {
+    throw new Error("You can only give a role below your own");
+  }
+}
+
 const SYSTEM_ROLE_NAME_TO_ENUM: Record<string, string> = {
   "Employee": "EMPLOYEE",
   "Supervisor": "SUPERVISOR",
@@ -270,6 +299,7 @@ export const createEmployee = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: CreateEmployeeInput) => {
     if (!tenantId) throw new Error("Tenant context required");
     const parsed = createEmployeeSchema.parse(input);
+    await assertAssignable(await currentIdentity(), tenantId, parsed.role, parsed.customRoleId);
 
     // Auto-assign the system custom role when only a role enum is provided
     let resolvedCustomRoleId = parsed.customRoleId ?? null;
@@ -285,7 +315,7 @@ export const createEmployee = withRBAC(
       }
     } else {
       // Derive role enum from the provided customRoleId
-      const cr = await db.customRole.findUnique({ where: { id: resolvedCustomRoleId }, select: { isSystem: true, name: true } });
+      const cr = await db.customRole.findFirst({ where: { id: resolvedCustomRoleId, tenantId }, select: { isSystem: true, name: true } });
       resolvedRole = (cr?.isSystem ? (SYSTEM_ROLE_NAME_TO_ENUM[cr.name] ?? "EMPLOYEE") : "EMPLOYEE") as typeof parsed.role;
     }
 
@@ -354,16 +384,47 @@ export const updateEmployee = withRBAC(
       address1, address2, city, state, country, zipCode,
     } = updateEmployeeSchema.parse(input);
 
-    const current = await db.employee.findUniqueOrThrow({
-      where: { id: employeeId },
+    if (!tenantId) throw new Error("Tenant context required");
+    const current = await db.employee.findFirst({
+      where: { id: employeeId, tenantId },
       include: { user: true },
     });
+    if (!current) throw new Error("Employee not found");
+
+    // Who may change what. Nobody changes their own role, status, pay or
+    // supervisor. Nobody edits someone senior to them. With a peer, only the
+    // everyday fields: not their email (a Google sign-in follows the email),
+    // role, status or pay. A super admin may do anything.
+    const me = await currentIdentity();
+    if (!me) throw new Error("FORBIDDEN");
+    const roleChanges =
+      (role !== undefined && role !== current.role) ||
+      (customRoleId !== undefined && (customRoleId ?? null) !== current.customRoleId);
+    const sensitive =
+      roleChanges ||
+      (isActive !== undefined && isActive !== current.isActive) ||
+      (payType !== undefined && payType !== current.payType) ||
+      (payRate !== undefined && (payRate ?? null) !== (current.payRate === null ? null : Number(current.payRate)));
+    if (!me.isSuperAdmin) {
+      if (me.employeeId === employeeId) {
+        if (sensitive || (supervisorId !== undefined && (supervisorId ?? null) !== current.supervisorId)) {
+          throw new Error("You can't change your own role, status, pay or supervisor");
+        }
+      } else {
+        const theirs = await employeeRank(employeeId, tenantId);
+        if (theirs === null || theirs > me.rank) throw new Error("Only someone more senior can edit this person");
+        if (theirs === me.rank && (sensitive || (email !== undefined && email !== current.user.email))) {
+          throw new Error("Only someone more senior can change this person's email, role, status or pay");
+        }
+      }
+    }
+    if (roleChanges) await assertAssignable(me, tenantId, role, customRoleId);
 
     // Derive the role enum from the custom role when customRoleId is being set
     let derivedRole: string | undefined = role;
     if (customRoleId !== undefined && customRoleId !== null) {
-      const cr = await db.customRole.findUnique({
-        where: { id: customRoleId },
+      const cr = await db.customRole.findFirst({
+        where: { id: customRoleId, tenantId },
         select: { isSystem: true, name: true },
       });
       derivedRole = cr?.isSystem ? (SYSTEM_ROLE_NAME_TO_ENUM[cr.name] ?? "EMPLOYEE") : "EMPLOYEE";
@@ -651,6 +712,8 @@ export const updateEmployee = withRBAC(
       });
     }
 
+    // A role or status change reaches their next click, not the next cache refresh.
+    forgetIdentity(current.userId);
     revalidatePath("/admin/employees");
     revalidatePath(`/admin/employees/${employeeId}`);
     return { employeeId };
@@ -1472,8 +1535,13 @@ export const bulkCreateEmployees = withRBAC(
       db.department.findMany({ where: { isActive: true, tenantId } }),
       db.ruleSet.findMany({ where: { tenantId } }),
       db.employee.findMany({ where: { tenantId }, select: { id: true, employeeCode: true } }),
-      db.customRole.findMany({ where: { tenantId }, select: { id: true, name: true } }),
+      db.customRole.findMany({ where: { tenantId }, select: { id: true, name: true, rank: true } }),
     ]);
+    // The same rule as one at a time: only roles below the importer's own.
+    const me = await currentIdentity();
+    if (!me) throw new Error("FORBIDDEN");
+    const roleRankById = new Map(customRoles.map((cr) => [cr.id, cr.rank]));
+    const tooSenior = (rank: number) => !me.isSuperAdmin && rank >= me.rank;
 
     const siteMap = new Map(sites.map((s) => [s.name.toLowerCase(), s.id]));
     const deptMap = new Map(departments.map((d) => [d.name.toLowerCase(), d.id]));
@@ -1543,6 +1611,13 @@ export const bulkCreateEmployees = withRBAC(
             errors.push(`Role "${r.role}" is not a valid built-in role or custom role`);
           }
         }
+      }
+
+      const givenRank = resolvedCustomRoleId
+        ? roleRankById.get(resolvedCustomRoleId) ?? 0
+        : isValidRole(resolvedRole) ? ROLE_RANK[resolvedRole] : 0;
+      if (resolvedRole === "SUPER_ADMIN" || tooSenior(givenRank)) {
+        errors.push("You can only give a role below your own");
       }
 
       if (errors.length > 0) {

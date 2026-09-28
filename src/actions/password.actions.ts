@@ -6,6 +6,41 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { sendPasswordInviteEmail } from "@/lib/email/send-invite";
+import { employeeRank, liveIdentity } from "@/lib/rbac/identity";
+
+const LOGIN_MANAGERS = ["SYSTEM_ADMIN", "HR_ADMIN", "PAYROLL_ADMIN", "SUPER_ADMIN"];
+
+/**
+ * The employee whose login the caller may reset, or why not.
+ *
+ * <p>Only an admin, only inside their own company, never their own login
+ * (that is Change password, which asks for the current one), and only for
+ * somebody junior to them. Without the last rule a payroll admin could set a
+ * system admin's password and sign in as them. A super admin may reset anyone.
+ */
+async function manageableLogin(employeeId: string) {
+  const session = await auth();
+  if (!session?.user?.id) return { error: "Not authenticated" } as const;
+  const caller = await liveIdentity(session.user.id);
+  if (!caller || !caller.isActive || !LOGIN_MANAGERS.includes(caller.role)) {
+    return { error: "Insufficient permissions" } as const;
+  }
+  const target = await db.employee.findFirst({
+    where: { id: employeeId, ...(caller.isSuperAdmin ? {} : { tenantId: caller.tenantId ?? "" }) },
+    select: { id: true, tenantId: true, userId: true, user: { select: { id: true, name: true, email: true } } },
+  });
+  if (!target) return { error: "Employee not found" } as const;
+  if (!caller.isSuperAdmin) {
+    if (target.id === caller.employeeId) {
+      return { error: "Use Change password to change your own password" } as const;
+    }
+    const rank = await employeeRank(target.id, target.tenantId);
+    if (rank === null || rank >= caller.rank) {
+      return { error: "Only someone more senior can reset this person's password" } as const;
+    }
+  }
+  return { target } as const;
+}
 
 function sha256(raw: string) {
   return crypto.createHash("sha256").update(raw).digest("hex");
@@ -26,18 +61,9 @@ function generateToken() {
 // ── Send invite / reset email ──────────────────────────────────────────────
 
 export async function sendPasswordInvite(employeeId: string): Promise<{ success: boolean; message: string }> {
-  const session = await auth();
-  if (!session?.user) return { success: false, message: "Not authenticated" };
-
-  const role = session.user.role;
-  if (!["SYSTEM_ADMIN", "HR_ADMIN", "PAYROLL_ADMIN", "SUPER_ADMIN"].includes(role)) {
-    return { success: false, message: "Insufficient permissions" };
-  }
-
-  const employee = await db.employee.findUnique({
-    where: { id: employeeId },
-    select: { user: { select: { id: true, name: true, email: true } } },
-  });
+  const allowed = await manageableLogin(employeeId);
+  if ("error" in allowed) return { success: false, message: allowed.error! };
+  const employee = allowed.target;
 
   if (!employee?.user?.email) {
     return { success: false, message: "Employee has no email address configured" };
@@ -91,14 +117,6 @@ export async function setTemporaryPassword(
   employeeId: string,
   tempPassword: string
 ): Promise<{ success: boolean; message: string }> {
-  const session = await auth();
-  if (!session?.user) return { success: false, message: "Not authenticated" };
-
-  const role = session.user.role;
-  if (!["SYSTEM_ADMIN", "HR_ADMIN", "PAYROLL_ADMIN", "SUPER_ADMIN"].includes(role)) {
-    return { success: false, message: "Insufficient permissions" };
-  }
-
   const parsed = tempPasswordSchema.safeParse({ employeeId, tempPassword });
   if (!parsed.success) {
     return { success: false, message: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -107,12 +125,11 @@ export async function setTemporaryPassword(
   const strengthError = validatePasswordStrength(tempPassword);
   if (strengthError) return { success: false, message: strengthError };
 
-  const employee = await db.employee.findUnique({
-    where: { id: employeeId },
-    select: { userId: true },
-  });
+  const allowed = await manageableLogin(employeeId);
+  if ("error" in allowed) return { success: false, message: allowed.error! };
+  const employee = allowed.target;
 
-  if (!employee?.userId) {
+  if (!employee.userId) {
     return { success: false, message: "Employee not found" };
   }
 
