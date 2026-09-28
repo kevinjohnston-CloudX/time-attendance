@@ -1,8 +1,7 @@
 "use client";
 
-import { Fragment, useState, useTransition, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { createRuleSet, updateRuleSet, deleteRuleSet } from "@/actions/admin.actions";
+import { Fragment, useState } from "react";
+import Link from "next/link";
 import type { AutoPayMode, OtCycle, RuleSet } from "@prisma/client";
 
 const PAY_FREQUENCIES = [
@@ -12,14 +11,10 @@ const PAY_FREQUENCIES = [
   { value: "MONTHLY", label: "Monthly (1st–end of month)" },
 ] as const;
 
-interface Props { ruleSets: RuleSet[]; payCodes: { id: string; code: number; label: string }[] }
+interface Props { ruleSets: RuleSet[] }
 
 const inputCls = "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
 const smInputCls = "rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const saveBtnCls = "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
-const cancelBtnCls = "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
-const dangerBtnCls = "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50";
-const sectionHdrCls = "col-span-full mb-0.5 border-b border-zinc-200 pb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-700";
 
 type AutoPayDaySchedule = { day: number; apply: boolean; minutes: number }[];
 type RSFields = Omit<RuleSet, "id" | "tenantId" | "createdAt" | "updatedAt" | "employees" | "payPeriods" | "isActive" | "payPeriodAnchorDate" | "otCycleAnchorDate" | "otCycle" | "mealPremiumRows" | "autoPayDaySchedule" | "flsaOtLevels" | "flsaIncludeAsRegular" | "flsaType" | "flsaDistributionFrequency" | "flsaWeeklyOtLevel" | "flsaOtRateComputation"> & { isActive?: boolean; payPeriodAnchorDate?: string | null; otCycleAnchorDate?: string | null; otCycle?: OtCycle | null; mealPremiumRows?: MealPremiumRow[]; autoPayDaySchedule?: AutoPayDaySchedule; flsaOtLevels?: string[]; flsaIncludeAsRegular?: string[]; flsaType: "FEDERAL" | "CALIFORNIA"; flsaDistributionFrequency: "PER_PERIOD" | "WEEKLY"; flsaWeeklyOtLevel: "OT1" | "OT2"; flsaOtRateComputation: "BASE_PLUS_AVG_HALF" | "AVG_RATE" | "BASE_RATE" };
@@ -71,7 +66,7 @@ function fmtMins(mins: number): string {
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
-function parseForm(fd: FormData): RSFields {
+export function parseForm(fd: FormData): RSFields {
   const payFreqRaw = fd.get("payFrequency") as string | null;
   const anchorRaw = fd.get("payPeriodAnchorDate") as string | null;
   return {
@@ -430,7 +425,7 @@ function StatePresetPicker({ onChange }: { onChange: (p: OtPreset) => void }) {
   );
 }
 
-function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string; code: number; label: string }[] }) {
+export function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string; code: number; label: string }[] }) {
   const [activeTab, setActiveTab] = useState<RSTab>("general");
   const [shiftRoundingEnabled, setShiftRoundingEnabled] = useState<boolean>(rs?.shiftRoundingEnabled ?? false);
   const [pairRoundingEnabled, setPairRoundingEnabled] = useState<boolean>(rs?.pairRoundingEnabled ?? false);
@@ -1530,56 +1525,10 @@ function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: string;
   );
 }
 
-// ─── Modal ────────────────────────────────────────────────────────────────────
-
-function Modal({
-  title,
-  onClose,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <h3 className="text-base font-semibold text-zinc-900 dark:text-white">{title}</h3>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-            aria-label="Close"
-          >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div className="px-6 py-5">{children}</div>
-      </div>
-    </div>
-  );
-}
 
 // ─── Main manager ─────────────────────────────────────────────────────────────
 
-export function RuleSetsManager({ ruleSets, payCodes }: Props) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [editingRs, setEditingRs] = useState<RuleSet | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+export function RuleSetsManager({ ruleSets }: Props) {
   const [search, setSearch] = useState("");
 
   const searchLower = search.trim().toLowerCase();
@@ -1587,50 +1536,8 @@ export function RuleSetsManager({ ruleSets, payCodes }: Props) {
     ? ruleSets.filter((rs) => rs.name.toLowerCase().includes(searchLower))
     : ruleSets;
 
-  function openCreate() { setShowCreate(true); setError(null); }
-  function closeCreate() { setShowCreate(false); setError(null); }
-
-  function handleCreate(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
-    startTransition(async () => {
-      const result = await createRuleSet(parseForm(new FormData(e.currentTarget)));
-      if (!result.success) { setError(result.error); return; }
-      closeCreate();
-      router.refresh();
-    });
-  }
-
-  function handleDelete(ruleSetId: string) {
-    setError(null);
-    startTransition(async () => {
-      const result = await deleteRuleSet({ ruleSetId });
-      if (!result.success) { setError(result.error); setConfirmDeleteId(null); return; }
-      setConfirmDeleteId(null);
-      setEditingRs(null);
-      router.refresh();
-    });
-  }
-
-  function handleUpdate(ruleSetId: string, e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
-    startTransition(async () => {
-      const result = await updateRuleSet({ ruleSetId, ...parseForm(new FormData(e.currentTarget)) });
-      if (!result.success) { setError(result.error); return; }
-      setEditingRs(null);
-      router.refresh();
-    });
-  }
-
   return (
     <div className="mt-6">
-      {error && (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-          {error}
-        </p>
-      )}
-
       <div className="mb-3 flex items-center gap-3">
         <div className="relative max-w-xs flex-1">
           <svg className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1644,12 +1551,12 @@ export function RuleSetsManager({ ruleSets, payCodes }: Props) {
             className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm text-zinc-700 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:placeholder-zinc-500"
           />
         </div>
-        <button
-          onClick={openCreate}
+        <Link
+          href="/admin/rules-setup/rule-sets/new"
           className="ml-auto rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
         >
           + Add Rule Set
-        </button>
+        </Link>
       </div>
 
       <div className="flex flex-col gap-3">
@@ -1659,11 +1566,10 @@ export function RuleSetsManager({ ruleSets, payCodes }: Props) {
           </p>
         )}
         {visible.map((rs) => (
-          <button
+          <Link
             key={rs.id}
-            type="button"
-            onClick={() => { setEditingRs(rs); setConfirmDeleteId(null); setError(null); }}
-            className="w-full rounded-xl border border-zinc-200 bg-white p-4 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
+            href={`/admin/rules-setup/rule-sets/${rs.id}`}
+            className="block w-full rounded-xl border border-zinc-200 bg-white p-4 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1681,72 +1587,16 @@ export function RuleSetsManager({ ruleSets, payCodes }: Props) {
                   </span>
                 )}
               </div>
-              <span className="text-xs text-zinc-400">Click to edit →</span>
+              <span className="text-xs text-zinc-400">Edit →</span>
             </div>
             <p className="mt-1 text-xs text-zinc-400">
               Daily OT: {fmtMins(rs.dailyOtMinutes)} · Daily DT: {fmtMins(rs.dailyDtMinutes)} ·
               Weekly OT: {fmtMins(rs.weeklyOtMinutes)} · Consec day: day {rs.consecutiveDayOtDay}
             </p>
-          </button>
+          </Link>
         ))}
       </div>
 
-      {/* Create modal */}
-      {showCreate && (
-        <Modal title="New Rule Set" onClose={closeCreate}>
-          {error && !editingRs && (
-            <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>
-          )}
-          <form onSubmit={handleCreate}>
-            <RuleSetFields payCodes={payCodes} />
-            <div className="mt-6 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-              <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Creating…" : "Create"}</button>
-              <button type="button" onClick={closeCreate} className={cancelBtnCls}>Cancel</button>
-            </div>
-          </form>
-        </Modal>
-      )}
-
-      {/* Edit modal */}
-      {editingRs && (
-        <Modal title={`Edit: ${editingRs.name}`} onClose={() => { setEditingRs(null); setConfirmDeleteId(null); setError(null); }}>
-          {error && (
-            <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-              {error}
-            </p>
-          )}
-          <form onSubmit={(e) => handleUpdate(editingRs.id, e)}>
-            <RuleSetFields rs={editingRs} payCodes={payCodes} />
-            <div className="mt-6 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-700">
-              <div className="flex gap-2">
-                <button type="submit" disabled={isPending} className={saveBtnCls}>
-                  {isPending ? "Saving…" : "Save changes"}
-                </button>
-                <button type="button" onClick={() => { setEditingRs(null); setConfirmDeleteId(null); }} className={cancelBtnCls}>
-                  Cancel
-                </button>
-              </div>
-              {!editingRs.isDefault && (
-                confirmDeleteId === editingRs.id ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-zinc-500">Are you sure?</span>
-                    <button type="button" onClick={() => handleDelete(editingRs.id)} disabled={isPending} className={dangerBtnCls}>
-                      {isPending ? "Deleting…" : "Yes, delete"}
-                    </button>
-                    <button type="button" onClick={() => setConfirmDeleteId(null)} className={cancelBtnCls}>
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button type="button" onClick={() => setConfirmDeleteId(editingRs.id)} className="text-xs text-red-500 hover:underline dark:text-red-400">
-                    Delete rule set
-                  </button>
-                )
-              )}
-            </div>
-          </form>
-        </Modal>
-      )}
     </div>
   );
 }

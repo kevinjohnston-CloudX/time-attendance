@@ -1,4 +1,5 @@
 import { redirect, notFound } from "next/navigation";
+import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
@@ -25,12 +26,13 @@ export default async function EmployeeAccrualsPage({
   // Scope enforcement
   if (!canViewTeam && session.user.employeeId !== id) redirect("/accruals");
   if (canViewTeam && !canViewAny && session.user.employeeId !== id) {
-    // Verify this employee is a direct report
-    const emp = await db.employee.findUnique({ where: { id }, select: { supervisorId: true } });
-    if (!emp || emp.supervisorId !== session.user.employeeId) redirect("/accruals");
+    // Verify this employee is in the supervisor's full subordinate tree
+    const subordinateIds = await getSubordinateIds(session.user.employeeId, session.user.tenantId ?? null);
+    if (!subordinateIds.includes(id)) redirect("/accruals");
   }
 
   const canManageEmployee = await userHasPermission(session.user, "EMPLOYEE_MANAGE");
+  const canManageRules = await userHasPermission(session.user, "RULES_MANAGE");
 
   const year = new Date().getFullYear();
   const yearStart = new Date(`${year}-01-01T00:00:00Z`);
@@ -549,10 +551,10 @@ export default async function EmployeeAccrualsPage({
                 </>
               );
               const baseCls = "rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 dark:border-zinc-700 dark:bg-zinc-800/50";
-              return canManageEmployee && policyId ? (
+              return canManageRules && policyId ? (
                 <Link
                   key={name}
-                  href={`/admin/rules-setup?tab=leave-policies${policyId ? `&policy=${policyId}` : ""}`}
+                  href={`/admin/rules-setup/leave-policies/${policyId}`}
                   className={`${baseCls} transition-colors hover:border-blue-400 hover:bg-blue-50 dark:hover:border-blue-500 dark:hover:bg-blue-950/40`}
                 >
                   {tileContent}

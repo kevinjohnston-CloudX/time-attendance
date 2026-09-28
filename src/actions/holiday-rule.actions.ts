@@ -193,6 +193,10 @@ export const deleteHolidayRule = withRBAC(
   async (ctx, input: unknown) => {
     const { ruleId } = z.object({ ruleId: z.string().min(1) }).parse(input);
     const tenantId = ctx.tenantId!;
+
+    const count = await db.employee.count({ where: { holidayRuleId: ruleId, tenantId } });
+    if (count > 0) throw new Error(`Cannot delete — ${count} employee(s) are assigned to this holiday rule. Reassign them first.`);
+
     await db.holidayRule.deleteMany({ where: { id: ruleId, tenantId } });
     return { success: true };
   }

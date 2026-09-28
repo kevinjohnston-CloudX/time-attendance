@@ -1,8 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { createLeaveType, updateLeaveType } from "@/actions/admin.actions";
+import Link from "next/link";
 import { formatMinutes } from "@/lib/utils/duration";
 import type { LeaveType } from "@prisma/client";
 
@@ -12,32 +10,8 @@ interface Props { leaveTypes: LeaveType[]; payCodes: PayCodeOption[] }
 const CATEGORIES = ["PTO","SICK","HOLIDAY","FMLA","BEREAVEMENT","JURY_DUTY","MILITARY","UNPAID"] as const;
 
 const inputCls = "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const saveBtnCls = "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
-const cancelBtnCls = "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <h3 className="text-base font-semibold text-zinc-900 dark:text-white">{title}</h3>
-          <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" aria-label="Close">
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
-        </div>
-        <div className="px-6 py-5">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function HoursInput({ name, label, defaultMinutes, optional = false }: { name: string; label: string; defaultMinutes?: number | null; optional?: boolean }) {
+export function HoursInput({ name, label, defaultMinutes, optional = false }: { name: string; label: string; defaultMinutes?: number | null; optional?: boolean }) {
   const defaultHours = defaultMinutes != null ? String(Math.floor(defaultMinutes / 60)) : "";
   const defaultMins  = defaultMinutes != null ? String(defaultMinutes % 60) : "0";
   return (
@@ -59,31 +33,61 @@ function HoursInput({ name, label, defaultMinutes, optional = false }: { name: s
   );
 }
 
-function LeaveTypeFields({ lt, payCodes }: { lt?: LeaveType & { payCodeId?: string | null }; payCodes: PayCodeOption[] }) {
+export function parseLeaveTypeForm(fd: FormData) {
+  function toMins(name: string): number {
+    return (Number(fd.get(`${name}_hours`) ?? 0) * 60) + Number(fd.get(`${name}_mins`) ?? 0);
+  }
+  const maxH = fd.get("maxBalance_hours");
+  const hasMax = maxH !== "" && maxH !== null;
+  const codeRaw = fd.get("externalCode");
+  const externalCode = codeRaw !== "" && codeRaw !== null ? Number(codeRaw) : null;
+  const payCodeIdRaw = fd.get("payCodeId");
+  return {
+    name: fd.get("name") as string,
+    category: fd.get("category") as "PTO",
+    accrualRateMinutes: 0,
+    maxBalanceMinutes: hasMax ? toMins("maxBalance") || null : null,
+    requiresApproval: fd.get("requiresApproval") === "true",
+    isPaid: fd.get("isPaid") === "true",
+    accrualTracked: fd.get("accrualTracked") !== "false",
+    externalCode,
+    payCodeId: payCodeIdRaw && payCodeIdRaw !== "" ? (payCodeIdRaw as string) : null,
+  };
+}
+
+export function LeaveTypeFields({
+  initial,
+  payCodes,
+  mode,
+}: {
+  initial?: LeaveType & { payCodeId?: string | null };
+  payCodes: PayCodeOption[];
+  mode?: "create" | "edit";
+}) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <div className="col-span-2 sm:col-span-2">
         <label className="mb-1 block text-xs text-zinc-500">Name</label>
-        <input name="name" defaultValue={lt?.name} required placeholder="e.g. Paid Time Off" className={inputCls} />
+        <input name="name" defaultValue={initial?.name} required placeholder="e.g. Paid Time Off" className={inputCls} />
       </div>
       <div className="col-span-2 sm:col-span-1">
         <label className="mb-1 block text-xs text-zinc-500">Category</label>
-        <select name="category" defaultValue={lt?.category} required className={inputCls}>
+        <select name="category" defaultValue={initial?.category} required className={inputCls}>
           <option value="">— Choose —</option>
           {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
       <div className="col-span-2 sm:col-span-1">
         <label className="mb-1 block text-xs text-zinc-500">Paid / Unpaid</label>
-        <select name="isPaid" defaultValue={lt ? (lt.isPaid ? "true" : "false") : "true"} className={inputCls}>
+        <select name="isPaid" defaultValue={initial ? (initial.isPaid ? "true" : "false") : "true"} className={inputCls}>
           <option value="true">Paid</option>
           <option value="false">Unpaid</option>
         </select>
       </div>
-      <HoursInput name="maxBalance"  label="Max balance"         defaultMinutes={lt?.maxBalanceMinutes}     optional />
+      <HoursInput name="maxBalance" label="Max balance" defaultMinutes={initial?.maxBalanceMinutes} optional />
       <div className="col-span-2 sm:col-span-1">
         <label className="mb-1 block text-xs text-zinc-500">Approval</label>
-        <select name="requiresApproval" defaultValue={lt ? (lt.requiresApproval ? "true" : "false") : "true"} className={inputCls}>
+        <select name="requiresApproval" defaultValue={initial ? (initial.requiresApproval ? "true" : "false") : "true"} className={inputCls}>
           <option value="true">Requires supervisor approval</option>
           <option value="false">No approval needed</option>
         </select>
@@ -91,13 +95,13 @@ function LeaveTypeFields({ lt, payCodes }: { lt?: LeaveType & { payCodeId?: stri
       <div className="col-span-2 sm:col-span-1">
         <label className="mb-1 block text-xs text-zinc-500">API Code <span className="text-zinc-400">(optional — auto-assigned)</span></label>
         <input name="externalCode" type="number" min={1} step={1}
-          defaultValue={lt?.externalCode ?? ""}
+          defaultValue={initial?.externalCode ?? ""}
           placeholder="Auto"
           className={inputCls} />
       </div>
       <div className="col-span-2 sm:col-span-2">
         <label className="mb-1 block text-xs text-zinc-500">Accrual Tracking</label>
-        <select name="accrualTracked" defaultValue={lt ? (lt.accrualTracked ? "true" : "false") : "true"} className={inputCls}>
+        <select name="accrualTracked" defaultValue={initial ? (initial.accrualTracked ? "true" : "false") : "true"} className={inputCls}>
           <option value="true">Accrual tracked — balance managed by system</option>
           <option value="false">Not tracked — informational only</option>
         </select>
@@ -105,7 +109,7 @@ function LeaveTypeFields({ lt, payCodes }: { lt?: LeaveType & { payCodeId?: stri
       {payCodes.length > 0 && (
         <div className="col-span-2 sm:col-span-2">
           <label className="mb-1 block text-xs text-zinc-500">Pay Code <span className="text-zinc-400">(for timecard rows)</span></label>
-          <select name="payCodeId" defaultValue={lt?.payCodeId ?? ""} className={inputCls}>
+          <select name="payCodeId" defaultValue={initial?.payCodeId ?? ""} className={inputCls}>
             <option value="">— None —</option>
             {payCodes.map((pc) => (
               <option key={pc.id} value={pc.id}>{pc.code}[{pc.label}]</option>
@@ -113,77 +117,27 @@ function LeaveTypeFields({ lt, payCodes }: { lt?: LeaveType & { payCodeId?: stri
           </select>
         </div>
       )}
+      {mode === "edit" && (
+        <div className="col-span-2 sm:col-span-1">
+          <label className="mb-1 block text-xs text-zinc-500">Status</label>
+          <select name="isActive" defaultValue={initial?.isActive ? "true" : "false"} className={inputCls}>
+            <option value="true">Active</option>
+            <option value="false">Inactive</option>
+          </select>
+        </div>
+      )}
     </div>
   );
 }
 
-export function LeaveTypesManager({ leaveTypes, payCodes }: Props) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [editingLt, setEditingLt] = useState<LeaveType | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-
-  function openEdit(lt: LeaveType) { setEditingLt(lt); setError(null); }
-  function closeEdit() { setEditingLt(null); setError(null); }
-  function openCreate() { setShowCreate(true); setError(null); }
-  function closeCreate() { setShowCreate(false); setError(null); }
-
-  function toMins(fd: FormData, name: string): number {
-    return (Number(fd.get(`${name}_hours`) ?? 0) * 60) + Number(fd.get(`${name}_mins`) ?? 0);
-  }
-
-  function parseForm(fd: FormData) {
-    const maxH = fd.get("maxBalance_hours");
-    const hasMax = maxH !== "" && maxH !== null;
-    const codeRaw = fd.get("externalCode");
-    const externalCode = codeRaw !== "" && codeRaw !== null ? Number(codeRaw) : null;
-    const payCodeIdRaw = fd.get("payCodeId");
-    return {
-      name: fd.get("name") as string,
-      category: fd.get("category") as "PTO",
-      accrualRateMinutes: 0,
-      maxBalanceMinutes: hasMax ? toMins(fd, "maxBalance") || null : null,
-      requiresApproval: fd.get("requiresApproval") === "true",
-      isPaid: fd.get("isPaid") === "true",
-      accrualTracked: fd.get("accrualTracked") !== "false",
-      externalCode,
-      payCodeId: payCodeIdRaw && payCodeIdRaw !== "" ? (payCodeIdRaw as string) : null,
-    };
-  }
-
-  function handleCreate(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    setError(null);
-    startTransition(async () => {
-      const result = await createLeaveType(parseForm(fd));
-      if (!result.success) { setError(result.error); return; }
-      closeCreate();
-      router.refresh();
-    });
-  }
-
-  function handleUpdate(lt: LeaveType, e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    setError(null);
-    startTransition(async () => {
-      const result = await updateLeaveType({ leaveTypeId: lt.id, isActive: fd.get("isActive") === "true", ...parseForm(fd) });
-      if (!result.success) { setError(result.error); return; }
-      closeEdit();
-      router.refresh();
-    });
-  }
-
+export function LeaveTypesManager({ leaveTypes }: Props) {
   return (
     <div className="mt-6">
       <div className="flex flex-col gap-2">
         {leaveTypes.map((lt) => (
-          <button
+          <Link
             key={lt.id}
-            type="button"
-            onClick={() => openEdit(lt)}
+            href={`/admin/site-settings/leave-types/${lt.id}`}
             className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
           >
             <div className="flex items-center justify-between">
@@ -196,50 +150,19 @@ export function LeaveTypesManager({ leaveTypes, payCodes }: Props) {
               </div>
               <div className="flex items-center gap-2">
                 {!lt.isActive && <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">Inactive</span>}
-                <span className="text-xs text-zinc-400">Click to edit →</span>
+                <span className="text-xs text-zinc-400">Edit →</span>
               </div>
             </div>
-          </button>
+          </Link>
         ))}
       </div>
 
-      <button onClick={openCreate} className="mt-4 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-600">
+      <Link
+        href="/admin/site-settings/leave-types/new"
+        className="mt-4 inline-block rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-600"
+      >
         + Add Leave Type
-      </button>
-
-      {/* Create modal */}
-      {showCreate && (
-        <Modal title="New Leave Type" onClose={closeCreate}>
-          {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
-          <form onSubmit={handleCreate}>
-            <LeaveTypeFields payCodes={payCodes} />
-            <div className="mt-6 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-              <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Creating…" : "Create"}</button>
-              <button type="button" onClick={closeCreate} className={cancelBtnCls}>Cancel</button>
-            </div>
-          </form>
-        </Modal>
-      )}
-
-      {/* Edit modal */}
-      {editingLt && (
-        <Modal title={`Edit: ${editingLt.name}`} onClose={closeEdit}>
-          {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
-          <form onSubmit={(e) => handleUpdate(editingLt, e)}>
-            <LeaveTypeFields lt={editingLt} payCodes={payCodes} />
-            <div className="mt-3 grid grid-cols-4 gap-3">
-              <select name="isActive" defaultValue={editingLt.isActive ? "true" : "false"} className={inputCls}>
-                <option value="true">Active</option>
-                <option value="false">Inactive</option>
-              </select>
-            </div>
-            <div className="mt-6 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-              <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Saving…" : "Save changes"}</button>
-              <button type="button" onClick={closeEdit} className={cancelBtnCls}>Cancel</button>
-            </div>
-          </form>
-        </Modal>
-      )}
+      </Link>
     </div>
   );
 }

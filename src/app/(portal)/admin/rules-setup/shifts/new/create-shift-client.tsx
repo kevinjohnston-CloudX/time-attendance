@@ -1,0 +1,38 @@
+"use client";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { createShift } from "@/actions/shift.actions";
+import { ShiftFields, parseShiftForm } from "@/components/admin/shifts-manager";
+
+const saveBtnCls = "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
+const cancelBtnCls = "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
+
+export function CreateShiftClient() {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function handleCreate(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const parsed = parseShiftForm(new FormData(e.currentTarget));
+    setError(null);
+    startTransition(async () => {
+      const result = await createShift(parsed);
+      if (!result.success) { setError((result as { success: false; error: string }).error); return; }
+      router.push("/admin/rules-setup?tab=shifts");
+    });
+  }
+
+  return (
+    <div className="mt-6">
+      {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
+      <form onSubmit={handleCreate}>
+        <ShiftFields />
+        <div className="mt-6 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+          <button type="submit" disabled={isPending} className={saveBtnCls}>{isPending ? "Creating…" : "Create shift"}</button>
+          <button type="button" onClick={() => router.push("/admin/rules-setup?tab=shifts")} className={cancelBtnCls}>Cancel</button>
+        </div>
+      </form>
+    </div>
+  );
+}

@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
+import Link from "next/link";
 import { format, parseISO } from "date-fns";
-import { createHoliday, updateHoliday, deleteHoliday } from "@/actions/holiday.actions";
 
 interface HolidayRule { id: string; name: string; number?: number | null }
 
@@ -24,12 +23,6 @@ interface Props {
 
 const inputCls =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
-const saveBtnCls =
-  "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
-const cancelBtnCls =
-  "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
-const dangerBtnCls =
-  "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50";
 
 function toDateInputValue(date: Date | string): string {
   const d = typeof date === "string" ? parseISO(date) : date;
@@ -44,42 +37,11 @@ function formatUTCDate(date: Date | string, fmt: string): string {
   return format(utc, fmt);
 }
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <h3 className="text-base font-semibold text-zinc-900 dark:text-white">{title}</h3>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-            aria-label="Close"
-          >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div className="px-6 py-5">{children}</div>
-      </div>
-    </div>
-  );
-}
-
 function ruleLabel(r: HolidayRule) {
   return r.number != null ? `${r.number} [${r.name}]` : r.name;
 }
 
-function DualListbox({
+export function DualListbox({
   allRules,
   selectedIds,
   onChange,
@@ -210,15 +172,25 @@ function DualListbox({
   );
 }
 
-function HolidayFields({
-  h,
-  allRules,
-  initialRuleIds,
+export interface HolidayFieldsInitial {
+  name?: string;
+  date?: Date | string;
+  observedOn?: Date | string | null;
+  bypassAfterEligibility?: boolean;
+  isActive?: boolean;
+  holidayRules?: { holidayRuleId: string }[];
+}
+
+export function HolidayFields({
+  holidayRules,
+  initial,
+  mode = "create",
 }: {
-  h?: HolidayWithRules;
-  allRules: HolidayRule[];
-  initialRuleIds: string[];
+  holidayRules: HolidayRule[];
+  initial?: HolidayFieldsInitial;
+  mode?: "create" | "edit";
 }) {
+  const initialRuleIds = (initial?.holidayRules ?? []).map((r) => r.holidayRuleId);
   const [selectedRuleIds, setSelectedRuleIds] = useState<string[]>(initialRuleIds);
 
   return (
@@ -230,7 +202,7 @@ function HolidayFields({
           <input
             name="name"
             required
-            defaultValue={h?.name ?? ""}
+            defaultValue={initial?.name ?? ""}
             placeholder="e.g. Christmas Day"
             className={inputCls}
           />
@@ -241,7 +213,7 @@ function HolidayFields({
             name="date"
             type="date"
             required
-            defaultValue={h ? toDateInputValue(h.date) : ""}
+            defaultValue={initial?.date ? toDateInputValue(initial.date) : ""}
             className={inputCls}
           />
         </div>
@@ -250,13 +222,28 @@ function HolidayFields({
             Observed On <span className="text-zinc-400">(optional)</span>
           </label>
           <input
-            name="observedDate"
+            name="observedOn"
             type="date"
-            defaultValue={h?.observedDate ? toDateInputValue(h.observedDate) : ""}
+            defaultValue={initial?.observedOn ? toDateInputValue(initial.observedOn) : ""}
             className={inputCls}
           />
         </div>
       </div>
+
+      {/* Status — edit mode only */}
+      {mode === "edit" && (
+        <div>
+          <label className="mb-1 block text-xs text-zinc-500">Status</label>
+          <select
+            name="isActive"
+            defaultValue={initial?.isActive ? "true" : "false"}
+            className={`${inputCls} max-w-[160px]`}
+          >
+            <option value="true">Active</option>
+            <option value="false">Inactive</option>
+          </select>
+        </div>
+      )}
 
       {/* Options */}
       <div>
@@ -266,7 +253,7 @@ function HolidayFields({
             type="checkbox"
             name="bypassAfterEligibility"
             value="true"
-            defaultChecked={h?.bypassAfterEligibility ?? false}
+            defaultChecked={initial?.bypassAfterEligibility ?? false}
             className="mt-0.5 rounded"
           />
           <span>
@@ -279,11 +266,11 @@ function HolidayFields({
       </div>
 
       {/* Holiday Rule assignment */}
-      {allRules.length > 0 && (
+      {holidayRules.length > 0 && (
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Holiday Rules</p>
           <DualListbox
-            allRules={allRules}
+            allRules={holidayRules}
             selectedIds={selectedRuleIds}
             onChange={setSelectedRuleIds}
           />
@@ -296,12 +283,6 @@ function HolidayFields({
 }
 
 export function HolidaysManager({ holidays, holidayRules }: Props) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [editingHoliday, setEditingHoliday] = useState<HolidayWithRules | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
 
   const currentYear = new Date().getFullYear();
@@ -315,74 +296,6 @@ export function HolidaysManager({ holidays, holidayRules }: Props) {
   const visible = holidays
     .filter((h) => showInactive || h.isActive)
     .filter((h) => !yearFilter || new Date(h.date).getUTCFullYear() === Number(yearFilter));
-
-  function openEdit(h: HolidayWithRules) {
-    setEditingHoliday(h);
-    setConfirmDeleteId(null);
-    setError(null);
-  }
-  function closeEdit() {
-    setEditingHoliday(null);
-    setConfirmDeleteId(null);
-    setError(null);
-  }
-  function openCreate() {
-    setShowCreate(true);
-    setError(null);
-  }
-  function closeCreate() {
-    setShowCreate(false);
-    setError(null);
-  }
-
-  function handleCreate(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    setError(null);
-    startTransition(async () => {
-      const result = await createHoliday({
-        name: fd.get("name") as string,
-        date: fd.get("date") as string,
-        observedDate: (fd.get("observedDate") as string) || null,
-        bypassAfterEligibility: fd.get("bypassAfterEligibility") === "true",
-        ruleIds: (fd.get("ruleIds") as string) || "",
-      });
-      if (!result.success) { setError(result.error); return; }
-      closeCreate();
-      router.refresh();
-    });
-  }
-
-  function handleUpdate(h: HolidayWithRules, e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    setError(null);
-    startTransition(async () => {
-      const result = await updateHoliday({
-        holidayId: h.id,
-        name: fd.get("name") as string,
-        date: fd.get("date") as string,
-        observedDate: (fd.get("observedDate") as string) || null,
-        isActive: fd.get("isActive") === "true",
-        bypassAfterEligibility: fd.get("bypassAfterEligibility") === "true",
-        ruleIds: (fd.get("ruleIds") as string) || "",
-      });
-      if (!result.success) { setError(result.error); return; }
-      closeEdit();
-      router.refresh();
-    });
-  }
-
-  function handleDelete(holidayId: string) {
-    setError(null);
-    startTransition(async () => {
-      const result = await deleteHoliday({ holidayId });
-      if (!result.success) { setError(result.error); setConfirmDeleteId(null); return; }
-      setConfirmDeleteId(null);
-      closeEdit();
-      router.refresh();
-    });
-  }
 
   return (
     <div className="mt-6">
@@ -415,10 +328,9 @@ export function HolidaysManager({ holidays, holidayRules }: Props) {
         {visible.map((h) => {
           const assignedCount = h.holidayRules?.length ?? 0;
           return (
-            <button
+            <Link
               key={h.id}
-              type="button"
-              onClick={() => openEdit(h)}
+              href={`/admin/site-settings/holidays/${h.id}`}
               className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
             >
               <div className="flex items-center justify-between">
@@ -448,109 +360,20 @@ export function HolidaysManager({ holidays, holidayRules }: Props) {
                   >
                     {h.isActive ? "Active" : "Inactive"}
                   </span>
-                  <span className="text-xs text-zinc-400">Click to edit →</span>
+                  <span className="text-xs text-zinc-400">Edit →</span>
                 </div>
               </div>
-            </button>
+            </Link>
           );
         })}
       </div>
 
-      <button
-        onClick={openCreate}
-        className="mt-4 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-600"
+      <Link
+        href="/admin/site-settings/holidays/new"
+        className="mt-4 inline-block rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-600"
       >
         + Add Holiday
-      </button>
-
-      {/* Create modal */}
-      {showCreate && (
-        <Modal title="New Holiday" onClose={closeCreate}>
-          {error && (
-            <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-              {error}
-            </p>
-          )}
-          <form onSubmit={handleCreate}>
-            <HolidayFields allRules={holidayRules} initialRuleIds={[]} />
-            <div className="mt-6 flex gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-              <button type="submit" disabled={isPending} className={saveBtnCls}>
-                {isPending ? "Creating…" : "Create"}
-              </button>
-              <button type="button" onClick={closeCreate} className={cancelBtnCls}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
-
-      {/* Edit modal */}
-      {editingHoliday && (
-        <Modal title={`Edit: ${editingHoliday.name}`} onClose={closeEdit}>
-          {error && (
-            <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-              {error}
-            </p>
-          )}
-          <form onSubmit={(e) => handleUpdate(editingHoliday, e)}>
-            <HolidayFields
-              h={editingHoliday}
-              allRules={holidayRules}
-              initialRuleIds={(editingHoliday.holidayRules ?? []).map((r) => r.holidayRuleId)}
-            />
-            <div className="mt-3">
-              <label className="mb-1 block text-xs text-zinc-500">Status</label>
-              <select
-                name="isActive"
-                defaultValue={editingHoliday.isActive ? "true" : "false"}
-                className={`${inputCls} max-w-[160px]`}
-              >
-                <option value="true">Active</option>
-                <option value="false">Inactive</option>
-              </select>
-            </div>
-            <div className="mt-6 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-700">
-              <div className="flex gap-2">
-                <button type="submit" disabled={isPending} className={saveBtnCls}>
-                  {isPending ? "Saving…" : "Save changes"}
-                </button>
-                <button type="button" onClick={closeEdit} className={cancelBtnCls}>
-                  Cancel
-                </button>
-              </div>
-              {confirmDeleteId === editingHoliday.id ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-zinc-500">Are you sure?</span>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(editingHoliday.id)}
-                    disabled={isPending}
-                    className={dangerBtnCls}
-                  >
-                    {isPending ? "Deleting…" : "Yes, delete"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDeleteId(null)}
-                    className={cancelBtnCls}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setConfirmDeleteId(editingHoliday.id)}
-                  className="text-xs text-red-500 hover:underline dark:text-red-400"
-                >
-                  Delete holiday
-                </button>
-              )}
-            </div>
-          </form>
-        </Modal>
-      )}
+      </Link>
     </div>
   );
 }

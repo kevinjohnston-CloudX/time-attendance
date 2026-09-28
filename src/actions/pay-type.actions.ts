@@ -89,6 +89,10 @@ export const deletePayType = withRBAC(
     const tenantId = ctx.tenantId;
     if (!tenantId) throw new Error("No tenant");
     const { id } = z.object({ id: z.string() }).parse(input);
+
+    const count = await db.employee.count({ where: { payTypeId: id, tenantId } });
+    if (count > 0) throw new Error(`Cannot delete — ${count} employee(s) are assigned to this pay type. Reassign them first.`);
+
     await db.payType.delete({ where: { id, tenantId } });
     revalidatePath("/admin/site-settings");
     return { success: true as const };

@@ -16,6 +16,8 @@ export default async function EditEmployeePage({
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
 
+  const canManageRules = await userHasPermission(session.user, "RULES_MANAGE");
+
   const [empResult, refResult, logsResult, siteAccessResult] = await Promise.all([
     getEmployeeById({ employeeId: id }),
     getAdminRefData(),
@@ -75,6 +77,7 @@ export default async function EditEmployeePage({
         logs={logs}
         hrSiteAccess={hrSiteAccess}
         actorRole={actorRole ?? "EMPLOYEE"}
+        canManageRules={canManageRules}
       />
 
     </div>

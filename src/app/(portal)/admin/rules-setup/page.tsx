@@ -12,7 +12,7 @@ import { RulesSetupClient } from "./rules-setup-client";
 export default async function RulesSetupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; policy?: string }>;
+  searchParams: Promise<{ tab?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -20,7 +20,7 @@ export default async function RulesSetupPage({
   const hasRulesManage = await userHasPermission(session.user, "RULES_MANAGE");
   if (!hasRulesManage) redirect("/dashboard");
 
-  const { tab, policy } = (await searchParams) ?? {};
+  const { tab } = (await searchParams) ?? {};
 
   const [ruleSetsResult, shiftsResult, holidayRulesResult, ptoPoliciesResult, leaveTypesResult, payCodesResult] =
     await Promise.all([
@@ -51,7 +51,6 @@ export default async function RulesSetupPage({
         leaveTypes={serialize(leaveTypesResult.success ? leaveTypesResult.data : [])}
         payCodes={serialize(payCodesResult.success ? payCodesResult.data : [])}
         initialTab={tab}
-        initialPolicyId={policy}
       />
     </div>
   );
