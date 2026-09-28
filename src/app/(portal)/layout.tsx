@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -9,10 +9,10 @@ import { SECTIONS, ADMIN_GROUPS, INACTIVE_ALLOWED_HREFS } from "@/components/lay
 import { InactiveRouteGuard } from "@/components/layout/inactive-route-guard";
 import { EmployeesListForget } from "@/components/admin/employees-list-forget";
 import { exitTenant } from "@/actions/super-admin.actions";
-import { SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
+import { LIVE_ATTENDANCE_HREF, REQUEST_PATH_HEADER, SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
 import { getPermissions } from "@/lib/rbac/permissions";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
-import { getLegacyPermissions } from "@/lib/rbac/permission-resolver";
+import { getLegacyPermissions, isLiveAttendanceOnly } from "@/lib/rbac/permission-resolver";
 import { getWaitingOnYou } from "@/lib/dashboard/dashboard-data";
 import { photoUrls } from "@/lib/presence/photos";
 
@@ -52,8 +52,26 @@ export default async function PortalLayout({
   let sidebarRole = realRole;
 
   const customRoleId = session.user.customRoleId ?? null;
-  const userCanViewAs = session.user.canViewAs ?? false;
   const isPrivileged = PRIVILEGED_ROLES.includes(realRole);
+
+  /**
+   * A role limited to Live Attendance opens that page and nothing else. This
+   * is the server holding the line for every portal page, the ones that check
+   * no permission of their own included (Dashboard, Punch Clock, My Timesheet
+   * and the rest of Me). The permission resolver refuses everything else
+   * behind them too, so a server action called directly fails the same way.
+   * Read from the role on every request, not the sign in token, so switching
+   * the limit on reaches people already signed in within the resolver's
+   * cache window.
+   */
+  const liveAttendanceOnly = !isPrivileged && (await isLiveAttendanceOnly(customRoleId));
+  if (liveAttendanceOnly) {
+    const path = (await headers()).get(REQUEST_PATH_HEADER) ?? "";
+    const onPage = path === LIVE_ATTENDANCE_HREF || path.startsWith(`${LIVE_ATTENDANCE_HREF}/`);
+    if (!onPage) redirect(LIVE_ATTENDANCE_HREF);
+  }
+
+  const userCanViewAs = !liveAttendanceOnly && (session.user.canViewAs ?? false);
   const canUseViewAs = isPrivileged || userCanViewAs;
 
   // Build sidebar permissions for the user's real role
@@ -142,7 +160,8 @@ export default async function PortalLayout({
    * I have not changed it; the destination pages enforce their own access
    * either way.
    */
-  const can = (permission?: string | string[]) => {
+  const can = (permission?: string | string[], href?: string) => {
+    if (liveAttendanceOnly) return href === LIVE_ATTENDANCE_HREF;
     if (!permission) return true;
     if (Array.isArray(permission)) return permission.some((p) => userPermissions.includes(p));
     return userPermissions.includes(permission);
@@ -156,7 +175,7 @@ export default async function PortalLayout({
    * <p>An inactive employee is shown nothing: every queue behind these counts
    * is a page their route guard already refuses.
    */
-  const waiting = isEmployeeActive
+  const waiting = isEmployeeActive && !liveAttendanceOnly
     ? await getWaitingOnYou({
         employeeId: session.user.employeeId ?? null,
         tenantId: session.user.tenantId ?? null,
@@ -168,11 +187,11 @@ export default async function PortalLayout({
   const destinations: Destination[] = isEmployeeActive
     ? [
         ...SECTIONS.flatMap((s) =>
-          s.items.filter((i) => can(i.permission)).map((i) => ({ label: i.label, href: i.href, group: s.label })),
+          s.items.filter((i) => can(i.permission, i.href)).map((i) => ({ label: i.label, href: i.href, group: s.label })),
         ),
         ...ADMIN_GROUPS.flatMap((g) =>
           g.items
-            .filter((i) => can(i.permission))
+            .filter((i) => can(i.permission, i.href))
             .map((i) => ({ label: i.label, href: i.href, group: g.label, detail: i.detail })),
         ),
       ]
@@ -216,6 +235,7 @@ export default async function PortalLayout({
           canViewAs={canUseViewAs && isEmployeeActive}
           viewAsOptions={viewAsOptions.map((r) => ({ id: r.id, name: r.name }))}
           isInactive={!isEmployeeActive}
+          onlyHrefs={liveAttendanceOnly ? [LIVE_ATTENDANCE_HREF] : undefined}
         />
         {/* Breadcrumb bar sits inside the content column, not above the
             sidebar, so it only ever costs the content its own 40px. */}

@@ -6,6 +6,9 @@ model CustomRole {
   isSystem    Boolean  @default(false)
   rank        Int      @default(0)
   canViewAs   Boolean  @default(false)
+  /// Live Attendance is the only page: sign in lands there, every other page
+  /// sends the person back, and its downloads are off.
+  liveAttendanceOnly Boolean @default(false)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

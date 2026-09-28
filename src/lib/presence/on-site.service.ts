@@ -7,6 +7,7 @@ import { EFFECTIVE_STATE_SQL, PUNCH_CHAIN, PUNCH_CHAIN_JOINS, currentPunch } fro
 import { isHere, scansElsewhere, scansHere, scansHereSql, siteOf, siteScope } from "./site-scope";
 import { NOT_COUNTED_OUTCOMES } from "./scan-rules";
 import { clockStateAfter } from "./lanes";
+import { NOT_SCREEN_ACCOUNT } from "./screen-accounts";
 import type {
   PresenceBoard,
   PresenceDetail,
@@ -198,7 +199,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
     // Everybody whose home is this site, so the board's All view is the whole
     // roster and not only the people who have a reason to be here today.
     db.employee.findMany({
-      where: { tenantId, siteId, isActive: true },
+      where: { tenantId, siteId, isActive: true, ...NOT_SCREEN_ACCOUNT },
       select: { id: true },
     }),
   ]);

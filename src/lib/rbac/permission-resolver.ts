@@ -8,8 +8,21 @@ const REVERSE_MAP = new Map<string, string>(
 
 type CacheEntry = {
   permissions: { resource: string; action: string; scope: string }[];
+  liveAttendanceOnly: boolean;
   expiresAt: number;
 };
+
+/**
+ * What a role limited to Live Attendance may still do. Viewing is implied by
+ * the limit itself, so a role switched to it can never be locked onto a page
+ * it cannot open; a photo edit still needs its own permission; nothing else
+ * passes, whatever the role's rows say.
+ */
+const LIVE_ATTENDANCE_VIEW = { resource: "presence", action: "read", scope: "all" };
+function limitToLiveAttendance(rows: CacheEntry["permissions"]): CacheEntry["permissions"] {
+  const photo = rows.filter((p) => p.resource === "presence" && p.action === "write");
+  return [LIVE_ATTENDANCE_VIEW, ...photo];
+}
 
 const CACHE_TTL_MS = 60_000; // 60 seconds
 const cache = new Map<string, CacheEntry>();
@@ -22,22 +35,42 @@ const SCOPE_RANK: Record<string, number> = { own: 0, team: 1, all: 2 };
 /**
  * Fetches permissions for a customRoleId from DB, with in-memory cache.
  */
+async function getRole(customRoleId: string): Promise<CacheEntry> {
+  const now = Date.now();
+  const cached = cache.get(customRoleId);
+  if (cached && cached.expiresAt > now) return cached;
+
+  const [rows, role] = await Promise.all([
+    db.rolePermission.findMany({
+      where: { customRoleId },
+      select: { resource: true, action: true, scope: true },
+    }),
+    db.customRole.findUnique({ where: { id: customRoleId }, select: { liveAttendanceOnly: true } }),
+  ]);
+  const liveAttendanceOnly = role?.liveAttendanceOnly ?? false;
+
+  const entry = {
+    permissions: liveAttendanceOnly ? limitToLiveAttendance(rows) : rows,
+    liveAttendanceOnly,
+    expiresAt: now + CACHE_TTL_MS,
+  };
+  cache.set(customRoleId, entry);
+  return entry;
+}
+
 async function getPermissions(
   customRoleId: string
 ): Promise<{ resource: string; action: string; scope: string }[]> {
-  const now = Date.now();
-  const cached = cache.get(customRoleId);
-  if (cached && cached.expiresAt > now) {
-    return cached.permissions;
-  }
+  return (await getRole(customRoleId)).permissions;
+}
 
-  const rows = await db.rolePermission.findMany({
-    where: { customRoleId },
-    select: { resource: true, action: true, scope: true },
-  });
-
-  cache.set(customRoleId, { permissions: rows, expiresAt: now + CACHE_TTL_MS });
-  return rows;
+/**
+ * Whether a role is limited to Live Attendance. Read with the permissions and
+ * cached with them, so the layout's check costs no extra query on most pages.
+ */
+export async function isLiveAttendanceOnly(customRoleId: string | null | undefined): Promise<boolean> {
+  if (!customRoleId) return false;
+  return (await getRole(customRoleId)).liveAttendanceOnly;
 }
 
 /**

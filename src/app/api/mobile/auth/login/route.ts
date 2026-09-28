@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
 
     const user = await db.user.findUnique({
       where: { username: parsed.data.username.toLowerCase() },
-      include: { employee: true },
+      include: { employee: { include: { customRole: { select: { liveAttendanceOnly: true } } } } },
     });
 
     if (!user?.passwordHash) {
@@ -58,6 +58,15 @@ export async function POST(req: NextRequest) {
     if (!user.employee.isActive) {
       return NextResponse.json(
         { success: false, error: "Employee account is inactive" },
+        { status: 403 },
+      );
+    }
+
+    // A role limited to Live Attendance has no punch clock, leave or
+    // timesheet, which is everything the mobile app is for.
+    if (user.employee.customRole?.liveAttendanceOnly) {
+      return NextResponse.json(
+        { success: false, error: "This account can only open Live Attendance in the web portal" },
         { status: 403 },
       );
     }

@@ -73,6 +73,8 @@ interface SidebarProps {
   canViewAs?: boolean;
   viewAsOptions?: { id: string; name: string }[];
   isInactive?: boolean;
+  /** When set, the only pages the menu offers, whatever the permissions say. */
+  onlyHrefs?: string[];
 }
 
 /**
@@ -258,6 +260,7 @@ export function Sidebar({
   canViewAs = false,
   viewAsOptions = [],
   isInactive = false,
+  onlyHrefs,
 }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -305,9 +308,11 @@ export function Sidebar({
 
   const sections = SECTIONS.map((section) => ({
     ...section,
-    items: isInactive
-      ? section.items.filter((i) => INACTIVE_ALLOWED_HREFS.includes(i.href))
-      : section.items.filter((i) => hasPermission(i.permission)),
+    items: onlyHrefs
+      ? section.items.filter((i) => onlyHrefs.includes(i.href))
+      : isInactive
+        ? section.items.filter((i) => INACTIVE_ALLOWED_HREFS.includes(i.href))
+        : section.items.filter((i) => hasPermission(i.permission)),
   })).filter((section) => section.items.length > 0);
 
   const current = activeHref(

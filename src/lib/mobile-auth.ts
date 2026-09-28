@@ -89,7 +89,7 @@ export async function rotateRefreshToken(oldToken: string): Promise<{
   const existing = await db.refreshToken.findUnique({
     where: { token: oldToken },
     include: {
-      user: { include: { employee: true } },
+      user: { include: { employee: { include: { customRole: { select: { liveAttendanceOnly: true } } } } } },
     },
   });
 
@@ -112,6 +112,11 @@ export async function rotateRefreshToken(oldToken: string): Promise<{
 
   if (!employee || !employee.isActive) {
     throw new AuthError("Employee account is inactive");
+  }
+  // Limited to Live Attendance after signing in to the app: the next refresh
+  // ends that session rather than keeping it for the refresh token's life.
+  if (employee.customRole?.liveAttendanceOnly) {
+    throw new AuthError("This account can only open Live Attendance in the web portal");
   }
 
   // Rotate: revoke old, create new

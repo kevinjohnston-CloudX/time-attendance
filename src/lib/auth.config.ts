@@ -1,4 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
+import { NextResponse } from "next/server";
+import { REQUEST_PATH_HEADER } from "@/lib/constants";
 
 /**
  * Edge-safe auth config — no Prisma, no bcrypt, no Node.js-only modules.
@@ -22,7 +24,8 @@ export const authConfig = {
       }
       return session;
     },
-    authorized({ auth, request: { nextUrl } }) {
+    authorized({ auth, request }) {
+      const { nextUrl } = request;
       const isLoggedIn = !!auth?.user;
       const isSuperAdmin = auth?.user?.role === "SUPER_ADMIN";
       const isOnSuperAdmin = nextUrl.pathname.startsWith("/super-admin");
@@ -49,8 +52,14 @@ export const authConfig = {
       }
 
       if (isOnPortal) {
-        if (isLoggedIn) return true;
-        return false; // redirect to /login
+        if (!isLoggedIn) return false; // redirect to /login
+        // Allowed through, carrying the address it is for. Server components
+        // cannot read the path, and the portal layout needs it to hold a role
+        // limited to Live Attendance on that page. set() replaces anything the
+        // browser sent under the same name.
+        const headers = new Headers(request.headers);
+        headers.set(REQUEST_PATH_HEADER, nextUrl.pathname);
+        return NextResponse.next({ request: { headers } });
       } else if (isLoggedIn && (
         nextUrl.pathname === "/login" ||
         nextUrl.pathname === "/forgot-password"

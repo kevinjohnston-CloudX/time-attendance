@@ -7,6 +7,7 @@ import { MAX_PICKED } from "./search-limits";
 import { scansHere, siteScope } from "./site-scope";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
+import { NOT_SCREEN_ACCOUNT } from "./screen-accounts";
 
 /**
  * Finding people to pin on Live Attendance, for the search box that holds
@@ -44,6 +45,7 @@ export async function reachable(tenantId: string, siteId: string): Promise<Prism
   const from = snapToLocalTime("00:00", addDays(today, -DAYS_BACK), tz);
   return {
     tenantId,
+    ...NOT_SCREEN_ACCOUNT,
     OR: [{ siteId }, { scanEvents: { some: { tenantId, scanTime: { gte: from }, AND: [scansHere(scope)] } } }],
   };
 }

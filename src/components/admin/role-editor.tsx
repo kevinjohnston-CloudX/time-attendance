@@ -184,6 +184,7 @@ type RoleData = {
   rank: number;
   isSystem: boolean;
   canViewAs: boolean;
+  liveAttendanceOnly?: boolean;
   permissions: { resource: string; action: string; scope: string }[];
   _count: { employees: number };
 };
@@ -273,6 +274,7 @@ export function RoleEditor({
   const [description, setDescription] = useState(role?.description ?? "");
   const [rank, setRank] = useState(role?.rank ?? 0);
   const [canViewAs, setCanViewAs] = useState(role?.canViewAs ?? false);
+  const [liveAttendanceOnly, setLiveAttendanceOnly] = useState(role?.liveAttendanceOnly ?? false);
   const [permSet, setPermSet] = useState<Set<string>>(
     buildPermSet((role?.permissions ?? []) as PermissionEntry[])
   );
@@ -308,7 +310,8 @@ export function RoleEditor({
           name: isSystem ? undefined : name,
           description: description || null,
           rank,
-          canViewAs,
+          canViewAs: liveAttendanceOnly ? false : canViewAs,
+          liveAttendanceOnly: isSystem ? undefined : liveAttendanceOnly,
           permissions,
         });
         if (!res.success) {
@@ -317,7 +320,14 @@ export function RoleEditor({
           return;
         }
       } else {
-        const res = await createRole({ name, description, rank, canViewAs, permissions });
+        const res = await createRole({
+          name,
+          description,
+          rank,
+          canViewAs: liveAttendanceOnly ? false : canViewAs,
+          liveAttendanceOnly,
+          permissions,
+        });
         if (!res.success) {
           setError(res.error);
           setSaving(false);
@@ -423,8 +433,28 @@ export function RoleEditor({
                 experience.
               </span>
             </div>
-            <Switch checked={canViewAs} onChange={setCanViewAs} />
+            <Switch checked={canViewAs && !liveAttendanceOnly} onChange={setCanViewAs} disabled={liveAttendanceOnly} />
           </div>
+
+          {!isSystem && (
+            <div
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3"
+              style={{
+                border: `1px solid ${liveAttendanceOnly ? "var(--stroke-warning)" : "var(--stroke-secondary)"}`,
+                background: liveAttendanceOnly ? "var(--surface-warning)" : undefined,
+              }}
+            >
+              <div className="flex min-w-[240px] flex-1 flex-col gap-0.5">
+                <span className="wms-label">Limit to Live Attendance</span>
+                <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)", textWrap: "pretty" }}>
+                  {liveAttendanceOnly
+                    ? "People with this role can only open Live Attendance. Every other page, their own timesheet and punch clock included, is blocked, and downloads are off. The permissions below no longer apply."
+                    : "For a shared screen or a team that only watches the building. People with this role can open Live Attendance and nothing else."}
+                </span>
+              </div>
+              <Switch checked={liveAttendanceOnly} onChange={setLiveAttendanceOnly} />
+            </div>
+          )}
 
           {builtinRoles.length > 0 && (
             <div

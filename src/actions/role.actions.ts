@@ -12,6 +12,14 @@ import {
   type UpdateRoleInput,
 } from "@/lib/validators/role.schema";
 
+/**
+ * A role limited to Live Attendance never also gets View As: previewing other
+ * roles is a way out of the one page, and the limit exists to leave none.
+ */
+function viewAsFor(liveAttendanceOnly: boolean | undefined, canViewAs: boolean | undefined) {
+  return liveAttendanceOnly ? false : canViewAs;
+}
+
 // ─── Queries ─────────────────────────────────────────────────────────────────
 
 export const getRoles = withRBAC(
@@ -57,7 +65,8 @@ export const createRole = withRBAC(
         name: data.name,
         description: data.description,
         rank: data.rank,
-        canViewAs: data.canViewAs ?? false,
+        canViewAs: viewAsFor(data.liveAttendanceOnly, data.canViewAs) ?? false,
+        liveAttendanceOnly: data.liveAttendanceOnly ?? false,
         permissions: {
           create: data.permissions.map((p) => ({
             resource: p.resource,
@@ -98,6 +107,12 @@ export const updateRole = withRBAC(
     if (existing.isSystem && data.name && data.name !== existing.name) {
       throw new Error("Cannot rename system roles");
     }
+    // The built-in roles carry whole departments; limiting one to a single
+    // page would lock out every HR admin or supervisor at once.
+    if (existing.isSystem && data.liveAttendanceOnly) {
+      throw new Error("A built-in role cannot be limited to Live Attendance. Create a custom role for this.");
+    }
+    const liveAttendanceOnly = data.liveAttendanceOnly ?? existing.liveAttendanceOnly;
 
     // Update role fields
     const role = await db.customRole.update({
@@ -106,7 +121,9 @@ export const updateRole = withRBAC(
         ...(data.name !== undefined && { name: data.name }),
         ...(data.description !== undefined && { description: data.description }),
         ...(data.rank !== undefined && { rank: data.rank }),
-        ...(data.canViewAs !== undefined && { canViewAs: data.canViewAs }),
+        ...(data.canViewAs !== undefined && { canViewAs: viewAsFor(liveAttendanceOnly, data.canViewAs) }),
+        ...(data.liveAttendanceOnly !== undefined && { liveAttendanceOnly: data.liveAttendanceOnly }),
+        ...(liveAttendanceOnly && { canViewAs: false }),
       },
     });
 
@@ -188,6 +205,8 @@ export const duplicateRole = withRBAC(
         name: input.name,
         description: source.description,
         rank: source.rank,
+        canViewAs: source.canViewAs,
+        liveAttendanceOnly: source.liveAttendanceOnly,
         permissions: {
           create: source.permissions.map((p) => ({
             resource: p.resource,
