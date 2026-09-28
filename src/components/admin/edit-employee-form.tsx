@@ -81,7 +81,7 @@ interface Props {
   departments: (Department & { sites: { site: Site }[] })[];
   ruleSets: RuleSet[];
   employees: { id: string; user: { name: string | null } }[];
-  customRoles: { id: string; name: string; isSystem: boolean; rank: number }[];
+  customRoles: { id: string; name: string; isSystem: boolean; rank: number; liveAttendanceOnly?: boolean }[];
   shifts: { id: string; name: string; startTime: string; endTime: string }[];
   holidayRules: { id: string; name: string }[];
   payCategories: { id: string; number: number; description: string | null }[];
@@ -352,11 +352,16 @@ export function EditEmployeeForm({
   // Read mode always shows what is saved; edit mode shows the draft.
   const v = editing ? draft : saved;
   const access = editing ? draftAccess : savedAccess;
+  // An account on a role limited to Live Attendance gets the same section: its
+  // ticked buildings are the ones its Live Attendance can switch between.
+  // Read off the role in the form, so picking that role shows it at once.
+  const limitedToLiveAttendance = customRoles.find((r) => r.id === v.customRoleId)?.liveAttendanceOnly ?? false;
+  const showsSiteAccess = employeeIsHrOrSysAdmin || limitedToLiveAttendance;
 
   const changed = (Object.keys(saved) as Key[]).filter((k) => draft[k] !== saved[k]);
   const accessChanged =
     canManageSiteAccess &&
-    employeeIsHrOrSysAdmin &&
+    showsSiteAccess &&
     (draftAccess.size !== savedAccess.size || [...draftAccess].some((id) => !savedAccess.has(id)));
   const changeCount = changed.length + (accessChanged ? 1 : 0);
   const dirty = editing && changeCount > 0;
@@ -1076,14 +1081,26 @@ export function EditEmployeeForm({
             </Section>
 
             {/* ── Site access ────────────────────────────────────────────── */}
-            {employeeIsHrOrSysAdmin && (
-              <Section icon={Building2} title="Site Access" subtitle="Which sites this HR user can see employees from">
+            {showsSiteAccess && (
+              <Section
+                icon={Building2}
+                title="Site Access"
+                subtitle={
+                  limitedToLiveAttendance
+                    ? "Which buildings this account can see on Live Attendance"
+                    : "Which sites this HR user can see employees from"
+                }
+              >
                 {editing && canManageSiteAccess ? (
                   <div className={styles.accessEdit}>
                     <p className={styles.hint} style={{ margin: 0, font: "var(--type-body2)" }}>
-                      {draftAccess.size === 0
-                        ? "No sites checked, so this user sees employees at every site."
-                        : "Only the checked sites are visible to this user. Uncheck them all to grant every site."}
+                      {limitedToLiveAttendance
+                        ? draftAccess.size === 0
+                          ? "No buildings checked, so this account sees every building on Live Attendance."
+                          : "Only the checked buildings show on Live Attendance. Uncheck them all to show every building."
+                        : draftAccess.size === 0
+                          ? "No sites checked, so this user sees employees at every site."
+                          : "Only the checked sites are visible to this user. Uncheck them all to grant every site."}
                     </p>
                     <div className={styles.checks}>
                       {sites.map((s) => (

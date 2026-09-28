@@ -87,7 +87,7 @@ export const getAdminRefData = withRBAC(
       }),
       db.customRole.findMany({
         where: { tenantId: t, isActive: true },
-        select: { id: true, name: true, isSystem: true, rank: true },
+        select: { id: true, name: true, isSystem: true, rank: true, liveAttendanceOnly: true },
         orderBy: { rank: "asc" },
       }),
       db.shift.findMany({
@@ -661,9 +661,11 @@ export const updateEmployee = withRBAC(
 
 export const getHrSiteAccess = withRBAC(
   "EMPLOYEE_MANAGE",
-  async (_actor, { employeeId }: { employeeId: string }) => {
+  async ({ tenantId }, { employeeId }: { employeeId: string }) => {
+    if (!tenantId) throw new Error("NOT_FOUND");
+    // Held to the company: the id comes from the browser.
     const rows = await db.hrSiteAccess.findMany({
-      where: { employeeId },
+      where: { employeeId, employee: { tenantId } },
       select: { siteId: true },
     });
     return rows.map((r) => r.siteId);
@@ -677,10 +679,15 @@ export const updateHrSiteAccess = withRBAC(
     if (actorRole !== "SYSTEM_ADMIN" && actorRole !== "HR_ADMIN") {
       throw new Error("Only HR_ADMIN or SYSTEM_ADMIN can manage site access");
     }
+    if (!tenantId) throw new Error("NOT_FOUND");
+    // The person whose access is replaced has to be in this company too, not
+    // only the sites: the id comes from the browser.
+    const own = await db.employee.findFirst({ where: { id: employeeId, tenantId }, select: { id: true } });
+    if (!own) throw new Error("NOT_FOUND");
 
     // Verify siteIds belong to this tenant
     const validSites = await db.site.findMany({
-      where: { tenantId: tenantId ?? undefined, id: { in: siteIds } },
+      where: { tenantId, id: { in: siteIds } },
       select: { id: true },
     });
     const validIds = new Set(validSites.map((s) => s.id));

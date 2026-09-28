@@ -82,8 +82,12 @@ export async function getViewableSites(
   tenantId: string,
   viewer: { employeeId: string; role: string },
 ) {
+  // Site access set on the person's record narrows the list: an HR admin's,
+  // and an account limited to Live Attendance, where it is how a team screen
+  // is held to its own buildings. No rows means every site, as it always has.
+  // System and super admins are never narrowed.
   let restrictTo: string[] | null = null;
-  if (viewer.role === "HR_ADMIN" && viewer.employeeId) {
+  if (viewer.role !== "SYSTEM_ADMIN" && viewer.role !== "SUPER_ADMIN" && viewer.employeeId) {
     const rows = await db.hrSiteAccess.findMany({
       where: { employeeId: viewer.employeeId },
       select: { siteId: true },
