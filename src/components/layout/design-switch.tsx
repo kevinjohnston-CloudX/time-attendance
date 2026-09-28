@@ -11,8 +11,8 @@ import { switchedHref } from "@/lib/design-switch";
  * product looks, not what it does. Picking Classic opens this same page in the
  * classic design; this site is always New. See lib/design-switch.
  *
- * <p>When the classic design has an end date, the switch sits in a warning
- * tint with an icon that explains it. The explanation opens by itself once
+ * <p>When the classic design has an end date, a warning icon beside the
+ * switch explains it. The explanation opens by itself once
  * after every sign in, pinned, and closes only with its X; after that,
  * hovering or focusing the icon shows it until the pointer leaves. "Closed
  * for this sign in" is remembered per browser against the sign in's own id,
@@ -74,7 +74,7 @@ export function DesignSwitch({
         className="whitespace-nowrap uppercase"
         style={{
           font: "var(--type-caption1)",
-          color: classicUntil ? "var(--text-warning)" : "var(--text-tertiary)",
+          color: "var(--text-tertiary)",
           letterSpacing: "0.05em",
         }}
       >
@@ -98,10 +98,7 @@ export function DesignSwitch({
   if (!classicUntil) return control;
 
   return (
-    <span
-      className="relative inline-flex flex-none items-center gap-2 rounded-lg py-0.5 pl-2.5 pr-1"
-      style={{ background: "var(--surface-warning)", border: "1px solid var(--stroke-warning)" }}
-    >
+    <span className="relative inline-flex flex-none items-center gap-2">
       {control}
       <button
         type="button"
