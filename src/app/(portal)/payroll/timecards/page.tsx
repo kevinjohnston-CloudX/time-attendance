@@ -132,7 +132,10 @@ export default async function TimecardsPage({
   }
 
   // Resolve selected employee (URL param or first in list)
-  const selectedEmployeeId = sp.employeeId ?? employees[0].employeeId;
+  // Only someone on the list the caller was given: an id typed into the
+  // address for anybody else opens the first person instead.
+  const selectedEmployeeId =
+    sp.employeeId && employees.some((e) => e.employeeId === sp.employeeId) ? sp.employeeId : employees[0].employeeId;
 
   // Load periods for the selected employee's rule set
   let periods: { id: string; startDate: string; endDate: string; status: string }[] = [];

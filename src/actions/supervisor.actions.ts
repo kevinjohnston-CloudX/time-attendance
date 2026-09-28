@@ -6,6 +6,7 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { createCorrectionPunch } from "@/lib/utils/punch-correction";
+import { assertEditable, punchInScope, timesheetInScope } from "@/lib/rbac/scope";
 import { computeRoundedTime } from "@/lib/utils/date";
 import { scheduledWindow } from "@/lib/utils/shift-schedule";
 import {
@@ -54,14 +55,18 @@ export const getTeamTimesheets = withRBAC(
 /** Full timesheet detail — accessible by supervisor of that employee or payroll+. */
 export const getTimesheetForReview = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
-  async ({ employeeId: reviewerId, role }, input: { timesheetId: string }) => {
+  async (ctx, input: { timesheetId: string }) => {
+    const { employeeId: reviewerId, role } = ctx;
     const { timesheetId } = z.object({ timesheetId: z.string() }).parse(input);
+    // Found only inside the caller's company and team.
+    await timesheetInScope(ctx, timesheetId, "TIMESHEET_APPROVE_ANY");
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
       include: {
         payPeriod: true,
-        employee: { include: { user: true } },
+        // Never the whole login row: it carries the password hash.
+        employee: { include: { user: { select: { id: true, name: true, email: true } } } },
         punches: {
           where: { isApproved: true, correctedById: null },
           orderBy: { roundedTime: "asc" },
@@ -326,12 +331,16 @@ export const getExceptionPunches = withRBAC(
 
 export const resolveException = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
-  async ({ employeeId, tenantId }, input: ResolveExceptionInput) => {
+  async (ctx, input: ResolveExceptionInput) => {
+    const { employeeId, tenantId } = ctx;
     const { exceptionId, resolution } = resolveExceptionSchema.parse(input);
 
     const exception = await db.exception.findUniqueOrThrow({
       where: { id: exceptionId },
     });
+    // Only on a timesheet of someone the caller manages, and not their own.
+    const sheet = await timesheetInScope(ctx, exception.timesheetId, "TIMESHEET_APPROVE_ANY");
+    if (sheet.employeeId === employeeId) throw new Error("You can't resolve your own exceptions");
 
     const updated = await db.exception.update({
       where: { id: exceptionId },
@@ -365,10 +374,16 @@ const STATE_AFTER: Record<string, PunchState> = {
 /** Supervisor adds a missing punch directly, auto-resolving the exception. */
 export const addMissingPunchForEmployee = withRBAC(
   "PUNCH_EDIT_TEAM",
-  async ({ employeeId: supervisorId, tenantId }, input: AddMissingPunchInput) => {
+  async (ctx, input: AddMissingPunchInput) => {
+    const { employeeId: supervisorId, tenantId } = ctx;
     const { timesheetId, exceptionId, punchType, punchTime: punchTimeStr, reason } =
       addMissingPunchSchema.parse(input);
     const punchTime = new Date(punchTimeStr);
+    // Only on a timesheet of someone the caller manages, not their own, and
+    // not one payroll has approved or locked.
+    const sheet = await timesheetInScope(ctx, timesheetId, "PUNCH_EDIT_ANY");
+    if (sheet.employeeId === supervisorId) throw new Error("You can't change your own punches");
+    assertEditable(sheet.status);
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
@@ -403,8 +418,9 @@ export const addMissingPunchForEmployee = withRBAC(
           note: reason,
         },
       });
-      await tx.exception.update({
-        where: { id: exceptionId },
+      // The exception must be this timesheet's.
+      await tx.exception.updateMany({
+        where: { id: exceptionId, timesheetId },
         data: { resolvedAt: new Date(), resolvedById: supervisorId, resolution: reason },
       });
       await writeAuditLog({
@@ -427,10 +443,14 @@ export const addMissingPunchForEmployee = withRBAC(
 /** Supervisor corrects a punch time and auto-resolves the exception. */
 export const correctPunchAndResolve = withRBAC(
   "PUNCH_EDIT_TEAM",
-  async ({ employeeId: supervisorId }, input: CorrectAndResolveInput) => {
+  async (ctx, input: CorrectAndResolveInput) => {
+    const { employeeId: supervisorId } = ctx;
     const { originalPunchId, newPunchTime: newPunchTimeStr, reason, exceptionId } =
       correctAndResolveSchema.parse(input);
     const newPunchTime = new Date(newPunchTimeStr);
+    // Only a punch of someone the caller manages, and not their own.
+    const scoped = await punchInScope(ctx, originalPunchId, "PUNCH_EDIT_ANY");
+    if (scoped.employeeId === supervisorId) throw new Error("You can't change your own punches");
 
     const { timesheetId, ruleSet } = await db.$transaction(async (tx) => {
       const result = await createCorrectionPunch(tx, {
@@ -439,8 +459,9 @@ export const correctPunchAndResolve = withRBAC(
         reason,
         supervisorId,
       });
-      await tx.exception.update({
-        where: { id: exceptionId },
+      // The exception must be the corrected punch's timesheet's.
+      await tx.exception.updateMany({
+        where: { id: exceptionId, timesheetId: result.timesheetId },
         data: { resolvedAt: new Date(), resolvedById: supervisorId, resolution: reason },
       });
       return result;

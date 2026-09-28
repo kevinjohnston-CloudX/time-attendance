@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { z } from "zod";
+import { assertEmployeeInScope, timesheetInScope } from "@/lib/rbac/scope";
 
 // ─── Active employee directory (employee-centric timecard) ───────────────────
 
@@ -124,8 +125,9 @@ export const getTeamEmployeesForTimecards = withRBAC(
 
 export const getEmployeePeriods = withRBAC(
   ["TIMECARD_VIEW_TEAM", "TIMECARD_VIEW_ANY", "TIMECARD_EDIT_TEAM", "TIMECARD_EDIT_ANY"],
-  async (_ctx, input: { employeeId: string }) => {
+  async (ctx, input: { employeeId: string }) => {
     const { employeeId } = z.object({ employeeId: z.string() }).parse(input);
+    await assertEmployeeInScope(ctx, employeeId, ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"]);
 
     const employee = await db.employee.findUniqueOrThrow({
       where: { id: employeeId },
@@ -195,11 +197,13 @@ export const getEmployeePeriods = withRBAC(
 
 export const getTimecardByEmployeeAndPeriod = withRBAC(
   ["TIMECARD_VIEW_TEAM", "TIMECARD_VIEW_ANY", "TIMECARD_EDIT_TEAM", "TIMECARD_EDIT_ANY"],
-  async (_ctx, input: { employeeId: string; periodId: string }) => {
+  async (ctx, input: { employeeId: string; periodId: string }) => {
     const { employeeId, periodId } = z.object({
       employeeId: z.string(),
       periodId: z.string(),
     }).parse(input);
+    // A supervisor opens their own team's timecards only.
+    await assertEmployeeInScope(ctx, employeeId, ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"]);
 
     const ts = await db.timesheet.findUnique({
       where: { employeeId_payPeriodId: { employeeId, payPeriodId: periodId } },
@@ -207,7 +211,7 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
         payPeriod: true,
         employee: {
           include: {
-            user: true,
+            user: { select: { id: true, name: true, email: true } },
             department: true,
             shift: { select: { mealConfig: true } },
             ruleSet: {
@@ -289,11 +293,14 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
 
 export const ensureTimesheet = withRBAC(
   ["TIMECARD_EDIT_TEAM", "TIMECARD_EDIT_ANY"],
-  async (_ctx, input: { employeeId: string; periodId: string }) => {
+  async (ctx, input: { employeeId: string; periodId: string }) => {
     const { employeeId, periodId } = z.object({
       employeeId: z.string(),
       periodId: z.string(),
     }).parse(input);
+    await assertEmployeeInScope(ctx, employeeId, ["TIMECARD_EDIT_ANY"]);
+    const period = await db.payPeriod.findFirst({ where: { id: periodId, tenantId: ctx.tenantId ?? "" }, select: { id: true } });
+    if (!period) throw new Error("Pay period not found");
 
     const ts = await db.timesheet.upsert({
       where: { employeeId_payPeriodId: { employeeId, payPeriodId: periodId } },
@@ -310,26 +317,26 @@ export const ensureTimesheet = withRBAC(
 
 export const getTimecardEmployeeList = withRBAC(
   ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"],
-  async (_ctx, input: { payPeriodId: string; siteId?: string | null; departmentId?: string | null }) => {
+  async (ctx, input: { payPeriodId: string; siteId?: string | null; departmentId?: string | null }) => {
     const { payPeriodId, siteId, departmentId } = z.object({
       payPeriodId: z.string(),
       siteId: z.string().nullish(),
       departmentId: z.string().nullish(),
     }).parse(input);
 
-    const empFilter: Record<string, unknown> = {};
+    const empFilter: Record<string, unknown> = { tenantId: ctx.tenantId ?? "" };
     if (siteId) empFilter.siteId = siteId;
     if (departmentId) empFilter.departmentId = departmentId;
 
     const timesheets = await db.timesheet.findMany({
       where: {
         payPeriodId,
-        ...(Object.keys(empFilter).length > 0 ? { employee: empFilter } : {}),
+        employee: empFilter,
       },
       include: {
         employee: {
           include: {
-            user: true,
+            user: { select: { id: true, name: true, email: true } },
             department: true,
             site: { select: { id: true, name: true } },
           },
@@ -368,10 +375,11 @@ export const getTimecardEmployeeList = withRBAC(
 
 export const getTimecardDetail = withRBAC(
   ["TIMECARD_VIEW_TEAM", "TIMECARD_VIEW_ANY", "TIMECARD_EDIT_TEAM", "TIMECARD_EDIT_ANY"],
-  async (_ctx, input: { timesheetId: string }) => {
+  async (ctx, input: { timesheetId: string }) => {
     const { timesheetId } = z
       .object({ timesheetId: z.string() })
       .parse(input);
+    await timesheetInScope(ctx, timesheetId, ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"]);
 
     const ts = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
@@ -379,7 +387,7 @@ export const getTimecardDetail = withRBAC(
         payPeriod: true,
         employee: {
           include: {
-            user: true,
+            user: { select: { id: true, name: true, email: true } },
             department: true,
             shift: { select: { mealConfig: true } },
             ruleSet: {

@@ -7,6 +7,7 @@ import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { createCorrectionPunch } from "@/lib/utils/punch-correction";
+import { assertEditable, punchInScope } from "@/lib/rbac/scope";
 import { computeRoundedTime } from "@/lib/utils/date";
 import { findOpenPayPeriod } from "@/lib/utils/punch-helpers";
 import { recordPunchCore } from "@/lib/services/punch.service";
@@ -118,12 +119,20 @@ export const requestMissedPunch = withRBAC(
 
 export const approveMissedPunch = withRBAC(
   "PUNCH_EDIT_TEAM",
-  async ({ employeeId: supervisorId, tenantId }, input: { punchId: string }): Promise<Punch> => {
+  async (ctx, input: { punchId: string }): Promise<Punch> => {
+    const { employeeId: supervisorId, tenantId } = ctx;
     const { punchId } = approveMissedPunchSchema.parse(input);
 
+    // Only a punch of someone the caller manages, and never their own.
+    const scoped = await punchInScope(ctx, punchId, "PUNCH_EDIT_ANY");
+    if (scoped.employeeId === supervisorId) throw new Error("You can't approve your own punch");
     const punch = await db.punch.findUniqueOrThrow({
-      where: { id: punchId },
+      where: { id: scoped.id },
     });
+    if (punch.timesheetId) {
+      const sheet = await db.timesheet.findUniqueOrThrow({ where: { id: punch.timesheetId }, select: { status: true } });
+      assertEditable(sheet.status);
+    }
 
     if (punch.isApproved) throw new Error("Punch is already approved.");
 
@@ -176,11 +185,15 @@ export const approveMissedPunch = withRBAC(
 
 export const deletePunch = withRBAC(
   "PUNCH_EDIT_TEAM",
-  async ({ employeeId: actorId, tenantId }, input: { punchId: string; reason?: string }): Promise<void> => {
+  async (ctx, input: { punchId: string; reason?: string }): Promise<void> => {
+    const { employeeId: actorId, tenantId } = ctx;
     const { punchId, reason } = input;
 
+    // Only a punch of someone the caller manages, and never their own.
+    const scoped = await punchInScope(ctx, punchId, "PUNCH_EDIT_ANY");
+    if (scoped.employeeId === actorId) throw new Error("You can't change your own punches");
     const original = await db.punch.findUniqueOrThrow({
-      where: { id: punchId },
+      where: { id: scoped.id },
       include: { employee: { include: { ruleSet: true } } },
     });
 
@@ -243,12 +256,13 @@ export const deletePunch = withRBAC(
 
 export const correctPunch = withRBAC(
   "PUNCH_EDIT_TEAM",
-  async (
-    { employeeId: supervisorId, tenantId: _tenantId },
-    input: CorrectPunchInput
-  ): Promise<Punch> => {
+  async (ctx, input: CorrectPunchInput): Promise<Punch> => {
+    const { employeeId: supervisorId } = ctx;
     const { originalPunchId, newPunchTime: newPunchTimeStr, reason } =
       correctPunchSchema.parse(input);
+    // Only a punch of someone the caller manages, and never their own.
+    const scoped = await punchInScope(ctx, originalPunchId, "PUNCH_EDIT_ANY");
+    if (scoped.employeeId === supervisorId) throw new Error("You can't change your own punches");
     const newPunchTime = new Date(newPunchTimeStr);
 
     const { correction, timesheetId, ruleSet } = await db.$transaction(

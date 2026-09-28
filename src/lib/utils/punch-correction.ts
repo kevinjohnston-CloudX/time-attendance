@@ -46,6 +46,14 @@ export async function createCorrectionPunch(
   if (original.correctedById) {
     throw new Error("Punch has already been corrected.");
   }
+  // A timesheet payroll has approved or locked is closed to corrections,
+  // the same rule the payroll timecard edits follow.
+  if (original.timesheetId) {
+    const sheet = await tx.timesheet.findUniqueOrThrow({ where: { id: original.timesheetId }, select: { status: true } });
+    if (sheet.status === "LOCKED" || sheet.status === "PAYROLL_APPROVED") {
+      throw new Error("Cannot modify a locked or approved timesheet.");
+    }
+  }
 
   const roundedTime = computeRoundedTime(
     newPunchTime,
