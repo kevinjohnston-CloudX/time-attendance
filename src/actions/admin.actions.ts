@@ -121,9 +121,9 @@ export const getAdminRefData = withRBAC(
 
 const PAGE_SIZE = 100;
 
-/** Returns the site IDs an HR_ADMIN is restricted to, or null if unrestricted. */
+/** Returns the site IDs an HR_ADMIN or PAYROLL_ADMIN is restricted to, or null if unrestricted. */
 async function getActorSiteRestrictions(employeeId: string, role: string): Promise<string[] | null> {
-  if (role !== "HR_ADMIN") return null;
+  if (role !== "HR_ADMIN" && role !== "PAYROLL_ADMIN") return null;
   const rows = await db.hrSiteAccess.findMany({
     where: { employeeId },
     select: { siteId: true },
@@ -604,8 +604,8 @@ export const updateHrSiteAccess = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ tenantId, employeeId: actorEmpId, role: actorRole }, input: { employeeId: string; siteIds: string[] }) => {
     const { employeeId, siteIds } = input;
-    if (actorRole !== "SYSTEM_ADMIN" && actorRole !== "HR_ADMIN") {
-      throw new Error("Only HR_ADMIN or SYSTEM_ADMIN can manage site access");
+    if (actorRole !== "SYSTEM_ADMIN" && actorRole !== "HR_ADMIN" && actorRole !== "PAYROLL_ADMIN") {
+      throw new Error("Only HR_ADMIN, PAYROLL_ADMIN, or SYSTEM_ADMIN can manage site access");
     }
 
     // Verify siteIds belong to this tenant

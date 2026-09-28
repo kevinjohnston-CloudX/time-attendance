@@ -73,10 +73,10 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
   const [siteAccessSaving, setSiteAccessSaving] = useState(false);
   const [siteAccessMsg, setSiteAccessMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  // Site access tab is only shown when the employee being edited is HR_ADMIN or SYSTEM_ADMIN
-  const employeeIsHrOrSysAdmin = ["HR_ADMIN", "SYSTEM_ADMIN"].includes(employee.role);
-  // Only HR_ADMIN / SYSTEM_ADMIN actors can manage site access
-  const canManageSiteAccess = ["HR_ADMIN", "SYSTEM_ADMIN"].includes(actorRole);
+  // Site access tab is shown for HR_ADMIN, PAYROLL_ADMIN, and SYSTEM_ADMIN
+  const employeeIsHrOrSysAdmin = ["HR_ADMIN", "PAYROLL_ADMIN", "SYSTEM_ADMIN"].includes(employee.role);
+  // Only HR_ADMIN / PAYROLL_ADMIN / SYSTEM_ADMIN actors can manage site access
+  const canManageSiteAccess = ["HR_ADMIN", "PAYROLL_ADMIN", "SYSTEM_ADMIN"].includes(actorRole);
 
   const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === selectedSiteId));
 
