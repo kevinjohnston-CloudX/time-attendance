@@ -9,6 +9,8 @@ declare module "next-auth" {
       customRoleId?: string;
       canViewAs?: boolean;
       mustChangePassword?: boolean;
+      /** A fresh value each time someone signs in; the same until they sign out. */
+      signInId?: string;
     } & DefaultSession["user"];
   }
 
@@ -24,6 +26,7 @@ declare module "next-auth" {
 
 declare module "next-auth/jwt" {
   interface JWT extends DefaultJWT {
+    signInId?: string;
     role?: string;
     employeeId?: string;
     tenantId?: string | null;

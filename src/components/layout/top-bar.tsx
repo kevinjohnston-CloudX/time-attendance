@@ -35,11 +35,16 @@ export function TopBar({
   reachableHrefs,
   waiting,
   classicUrl = null,
+  classicUntil = null,
+  signInId,
 }: {
   reachableHrefs: string[];
   waiting: WaitingItem[];
   /** The classic design's address; null draws no design switch. */
   classicUrl?: string | null;
+  /** The classic design's last day, as words; null for no end date. */
+  classicUntil?: string | null;
+  signInId?: string;
 }) {
   const pathname = usePathname();
   const navMode = useNavMode();
@@ -128,7 +133,7 @@ export function TopBar({
       <div className="flex flex-none items-center gap-2">
         {classicUrl && (
           <Suspense fallback={null}>
-            <DesignSwitch classicUrl={classicUrl} />
+            <DesignSwitch classicUrl={classicUrl} classicUntil={classicUntil} signInId={signInId} />
           </Suspense>
         )}
         {/* The navigation layout switch, where the design puts it: a label and

@@ -115,6 +115,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
     async jwt({ token, user, account }) {
       if (user) {
+        // Stamped once per sign in and kept until sign out, so a screen can
+        // tell "just signed in" from "still in the same session" (the design
+        // notice opens again after every sign in).
+        token.signInId = crypto.randomUUID();
         if (account?.provider === "google" || !(user as { role?: string }).role) {
           // Google sign-in: look up employee from DB
           const fullUser = await db.user.findUnique({
@@ -157,6 +161,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.customRoleId = token.customRoleId as string | undefined;
         session.user.canViewAs = token.canViewAs as boolean | undefined ?? false;
         session.user.mustChangePassword = token.mustChangePassword as boolean | undefined ?? false;
+        session.user.signInId = token.signInId as string | undefined;
       }
       return session;
     },

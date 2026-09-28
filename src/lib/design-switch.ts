@@ -26,6 +26,27 @@ export function classicDesignUrl(): string | null {
   }
 }
 
+/**
+ * The last day the classic design is offered, from CLASSIC_DESIGN_UNTIL
+ * (YYYY-MM-DD, a day in the company's Eastern time). Null when unset or not a
+ * real date: no end date is shown, and the switch stays.
+ */
+export function classicDesignUntil(): { day: string; label: string } | null {
+  const raw = process.env.CLASSIC_DESIGN_UNTIL?.trim() ?? "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const date = new Date(`${raw}T12:00:00Z`);
+  if (Number.isNaN(+date) || date.toISOString().slice(0, 10) !== raw) return null;
+  const label = date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+  return { day: raw, label };
+}
+
+/** Whether that last day is behind us, counted in Eastern time. */
+export function classicDesignEnded(until: { day: string } | null, now = new Date()): boolean {
+  if (!until) return false;
+  const today = now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  return today > until.day;
+}
+
 /** The same page on the other site, marked as arriving by the switch. */
 export function switchedHref(origin: string, pathname: string, search: string): string {
   const params = new URLSearchParams(search);
