@@ -21,6 +21,22 @@ export function DateRangePicker({
   onChange: (range: DateRange) => void;
   payPeriods: PayPeriodOption[];
 }) {
+  const activePeriod =
+    payPeriods.find((p) => p.status === "OPEN") ?? payPeriods[0];
+
+  function formatPeriodLabel(pp: PayPeriodOption) {
+    const start = new Date(pp.startDate).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+    const end = new Date(pp.endDate).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    return `${start} – ${end}`;
+  }
+
   return (
     <div className="space-y-3">
       {/* Type selector */}
@@ -30,8 +46,8 @@ export function DateRangePicker({
             key={type}
             type="button"
             onClick={() => {
-              if (type === "payPeriod" && payPeriods[0]) {
-                onChange({ type: "payPeriod", payPeriodId: payPeriods[0].id });
+              if (type === "payPeriod" && activePeriod) {
+                onChange({ type: "payPeriod", payPeriodId: activePeriod.id });
               } else if (type === "custom") {
                 onChange({ type: "custom", startDate: "", endDate: "" });
               } else {
@@ -53,32 +69,14 @@ export function DateRangePicker({
         ))}
       </div>
 
-      {/* Pay period dropdown */}
-      {value.type === "payPeriod" && (
-        <select
-          value={value.payPeriodId}
-          onChange={(e) =>
-            onChange({ type: "payPeriod", payPeriodId: e.target.value })
-          }
-          className={inputCls + " max-w-sm"}
-        >
-          {payPeriods.map((pp) => {
-            const start = new Date(pp.startDate).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            });
-            const end = new Date(pp.endDate).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            });
-            return (
-              <option key={pp.id} value={pp.id}>
-                {start} – {end} ({pp.status})
-              </option>
-            );
-          })}
-        </select>
+      {/* Current pay period label — no dropdown */}
+      {value.type === "payPeriod" && activePeriod && (
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          {formatPeriodLabel(activePeriod)}
+          <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+            Current
+          </span>
+        </p>
       )}
 
       {/* Custom date range */}
