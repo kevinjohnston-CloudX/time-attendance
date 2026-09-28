@@ -57,7 +57,9 @@ export function withRBAC<TInput, TOutput>(
 
     try {
       let tenantId = session.user.tenantId ?? null;
-      if (["SYSTEM_ADMIN", "SUPER_ADMIN"].includes(realRole)) {
+      // Only a super admin works inside another company. A company's own
+      // System Admin stays in theirs, whatever the cookie says.
+      if (realRole === "SUPER_ADMIN") {
         const cookieStore = await cookies();
         const override = cookieStore.get(SUPER_ADMIN_TENANT_COOKIE)?.value;
         if (override) tenantId = override;

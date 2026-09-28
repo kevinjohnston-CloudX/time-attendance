@@ -3,7 +3,9 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { hasPermission, type Permission } from "./permissions";
 import { hasPermissionByLegacy } from "./permission-resolver";
-import { VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
+import { SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
+import { liveIdentity } from "./identity";
+import { ROLE_RANK, isValidRole } from "./roles";
 
 const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
@@ -21,15 +23,45 @@ const RANK_TO_ROLE: [number, string][] = [
   [0, "EMPLOYEE"],
 ];
 
-async function resolveViewAsId(realRole: string, canViewAs: boolean): Promise<string | null> {
-  const eligible = PRIVILEGED_ROLES.includes(realRole) || canViewAs;
-  if (!eligible) return null;
+/**
+ * The View as role in the cookie, if the signed-in person may use it right
+ * now, or null.
+ *
+ * <p>The cookie is the browser's to edit, so it is checked on every request,
+ * not only when setViewAsRole wrote it: the person must be allowed View as,
+ * and the role must be one of their own company's, switched on, and junior
+ * to them. Anything else, including a hand-written "SYSTEM_ADMIN", is ignored
+ * and they see their own role.
+ */
+export async function validViewAsId(user: { id?: string; role: string; canViewAs?: boolean }): Promise<string | null> {
+  const eligible = PRIVILEGED_ROLES.includes(user.role) || (user.canViewAs ?? false);
+  if (!eligible || !user.id) return null;
+  let raw: string | undefined;
+  let tenantOverride: string | undefined;
   try {
     const cookieStore = await cookies();
-    return cookieStore.get(VIEW_AS_ROLE_COOKIE)?.value ?? null;
+    raw = cookieStore.get(VIEW_AS_ROLE_COOKIE)?.value;
+    tenantOverride = cookieStore.get(SUPER_ADMIN_TENANT_COOKIE)?.value;
   } catch {
     return null;
   }
+  if (!raw) return null;
+  const me = await liveIdentity(user.id);
+  if (!me || !me.isActive) return null;
+  if (LEGACY_ROLE_STRINGS.has(raw)) {
+    return isValidRole(raw) && ROLE_RANK[raw] < me.rank ? raw : null;
+  }
+  const tenantId = me.isSuperAdmin ? tenantOverride ?? null : me.tenantId;
+  if (!tenantId) return null;
+  const role = await db.customRole.findFirst({
+    where: { id: raw, tenantId, isActive: true },
+    select: { rank: true },
+  });
+  return role && role.rank < me.rank ? raw : null;
+}
+
+async function resolveViewAsId(user: { id?: string; role: string; canViewAs?: boolean }): Promise<string | null> {
+  return validViewAsId(user);
 }
 
 /**
@@ -38,10 +70,11 @@ async function resolveViewAsId(realRole: string, canViewAs: boolean): Promise<st
  * For CustomRole ID cookies, maps rank to a legacy role string.
  */
 export async function getEffectiveRole(user: {
+  id?: string;
   role: string;
   canViewAs?: boolean;
 }): Promise<string> {
-  const viewAsId = await resolveViewAsId(user.role ?? "EMPLOYEE", user.canViewAs ?? false);
+  const viewAsId = await resolveViewAsId({ ...user, role: user.role ?? "EMPLOYEE" });
   if (!viewAsId) return user.role ?? "EMPLOYEE";
 
   // Old cookie format (legacy enum string) — return as-is for backward compat
@@ -109,8 +142,7 @@ export async function checkPermission(permission: Permission): Promise<boolean> 
   const session = await auth();
   if (!session?.user) return false;
   const realRole = session.user.role ?? "EMPLOYEE";
-  const canViewAs = session.user.canViewAs ?? false;
-  const viewAsId = await resolveViewAsId(realRole, canViewAs);
+  const viewAsId = await resolveViewAsId({ ...session.user, role: realRole });
 
   if (viewAsId) return checkViewAsPermission(viewAsId, permission);
 
@@ -126,12 +158,11 @@ export async function checkPermission(permission: Permission): Promise<boolean> 
  * Respects the view-as cookie.
  */
 export async function userHasPermission(
-  user: { role: string; customRoleId?: string | null; canViewAs?: boolean },
+  user: { id?: string; role: string; customRoleId?: string | null; canViewAs?: boolean },
   permission: Permission
 ): Promise<boolean> {
   const realRole = user.role ?? "EMPLOYEE";
-  const canViewAs = user.canViewAs ?? false;
-  const viewAsId = await resolveViewAsId(realRole, canViewAs);
+  const viewAsId = await resolveViewAsId({ ...user, role: realRole });
 
   if (viewAsId) return checkViewAsPermission(viewAsId, permission);
 

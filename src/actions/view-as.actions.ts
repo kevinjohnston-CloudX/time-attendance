@@ -3,7 +3,8 @@
 import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
+import { SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
+import { writeAuditLog } from "@/lib/audit/logger";
 
 const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
@@ -17,9 +18,13 @@ export async function setViewAsRole(targetCustomRoleId: string) {
 
   if (!isPrivileged && !canViewAs) throw new Error("Not authorized");
 
-  // Validate target role exists
-  const targetRole = await db.customRole.findUnique({
-    where: { id: targetCustomRoleId },
+  // Validate target role exists, in the company they are working in
+  const cookieStore = await cookies();
+  const tenantId =
+    realRole === "SUPER_ADMIN" ? cookieStore.get(SUPER_ADMIN_TENANT_COOKIE)?.value ?? null : session.user.tenantId ?? null;
+  if (!tenantId) throw new Error("Role not found");
+  const targetRole = await db.customRole.findFirst({
+    where: { id: targetCustomRoleId, tenantId },
     select: { rank: true, name: true, isActive: true },
   });
   if (!targetRole?.isActive) throw new Error("Role not found");
@@ -37,11 +42,19 @@ export async function setViewAsRole(targetCustomRoleId: string) {
     }
   }
 
-  const cookieStore = await cookies();
   cookieStore.set(VIEW_AS_ROLE_COOKIE, targetCustomRoleId, {
     path: "/",
     httpOnly: true,
     sameSite: "lax",
+  });
+  // Who looked at the system as whom, and when.
+  await writeAuditLog({
+    tenantId,
+    actorId: session.user.employeeId ?? null,
+    action: "VIEW_AS_STARTED",
+    entityType: "ROLE",
+    entityId: targetCustomRoleId,
+    changes: { role: targetRole.name },
   });
 }
 

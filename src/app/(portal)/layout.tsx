@@ -8,9 +8,10 @@ import { CommandPalette, type Destination } from "@/components/layout/command-pa
 import { SECTIONS, ADMIN_GROUPS, INACTIVE_ALLOWED_HREFS } from "@/components/layout/nav-model";
 import { InactiveRouteGuard } from "@/components/layout/inactive-route-guard";
 import { INACTIVE_PATHS } from "@/lib/rbac/identity";
+import { validViewAsId } from "@/lib/rbac/check-permission";
 import { EmployeesListForget } from "@/components/admin/employees-list-forget";
 import { exitTenant } from "@/actions/super-admin.actions";
-import { LIVE_ATTENDANCE_HREF, REQUEST_PATH_HEADER, SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
+import { LIVE_ATTENDANCE_HREF, REQUEST_PATH_HEADER, SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { getPermissions } from "@/lib/rbac/permissions";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { getLegacyPermissions, isLiveAttendanceOnly } from "@/lib/rbac/permission-resolver";
@@ -138,8 +139,9 @@ export default async function PortalLayout({
   // View-as role override — reads cookie and uses real DB permissions
   let viewAsRole: string | null = null;
   if (canUseViewAs) {
-    const cookieStore = await cookies();
-    const cookieVal = cookieStore.get(VIEW_AS_ROLE_COOKIE)?.value;
+    // The same check every server action makes: a cookie naming a role that
+    // is not junior to them, or not their company's, is ignored here too.
+    const cookieVal = await validViewAsId(session.user);
     if (cookieVal) {
       // Look up the role name and permissions from DB
       const viewAsRoleData = viewAsOptions.find((r) => r.id === cookieVal)
