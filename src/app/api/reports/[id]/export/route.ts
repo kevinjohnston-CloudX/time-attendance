@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { db } from "@/lib/db";
 import { getDataSource } from "@/lib/reports/data-sources";
-import { reportConfigSchema, type DataSourceId } from "@/lib/validators/report.schema";
+import { reportConfigSchema, dateRangeSchema, type DataSourceId } from "@/lib/validators/report.schema";
 import { generateCsv } from "@/lib/reports/export/csv";
 import { generatePdf } from "@/lib/reports/export/pdf";
 import { generateXlsx } from "@/lib/reports/export/xlsx";
@@ -22,6 +22,7 @@ export async function GET(
   }
 
   const format = req.nextUrl.searchParams.get("format") ?? "csv";
+  const dateRangeParam = req.nextUrl.searchParams.get("dateRange");
 
   const report = await db.reportDefinition.findFirst({
     where: { id },
@@ -30,7 +31,17 @@ export async function GET(
     return new NextResponse("Report not found", { status: 404 });
   }
 
-  const config = reportConfigSchema.parse(report.config);
+  let config = reportConfigSchema.parse(report.config);
+
+  if (dateRangeParam) {
+    try {
+      const parsedRange = dateRangeSchema.parse(JSON.parse(dateRangeParam));
+      config = { ...config, dateRange: parsedRange };
+    } catch {
+      // ignore malformed dateRange param — fall back to saved config
+    }
+  }
+
   const source = getDataSource(report.dataSource as DataSourceId);
   const tenantId = report.tenantId;
 

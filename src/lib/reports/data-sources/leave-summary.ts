@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
-import { format } from "date-fns";
+import { format as fnsFormat } from "date-fns";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "employee.user.name",       type: "string" },
@@ -54,7 +54,7 @@ export const leaveSummarySource: DataSourceDefinition = {
   fieldMap,
 
   async execute(config: ReportConfig, tenantId: string): Promise<ReportResult> {
-    const dateFilter = resolveDateFilter(config.dateRange);
+    const dateFilter = await resolveDateFilter(config.dateRange);
     const filterWhere = buildWhereClause(config.filters, fieldMap);
 
     const where = {
@@ -87,13 +87,13 @@ export const leaveSummarySource: DataSourceDefinition = {
       department: r.employee.department.name,
       leaveType: r.leaveType.name,
       status: r.status,
-      startDate: format(r.startDate, "yyyy-MM-dd"),
-      endDate: format(r.endDate, "yyyy-MM-dd"),
+      startDate: fnsFormat(r.startDate, "yyyy-MM-dd"),
+      endDate: fnsFormat(r.endDate, "yyyy-MM-dd"),
       durationMinutes: r.durationMinutes,
       note: r.note,
       reviewNote: r.reviewNote,
-      submittedAt: r.submittedAt ? format(r.submittedAt, "yyyy-MM-dd HH:mm") : null,
-      reviewedAt: r.reviewedAt ? format(r.reviewedAt, "yyyy-MM-dd HH:mm") : null,
+      submittedAt: r.submittedAt ? fnsFormat(r.submittedAt, "yyyy-MM-dd HH:mm") : null,
+      reviewedAt: r.reviewedAt ? fnsFormat(r.reviewedAt, "yyyy-MM-dd HH:mm") : null,
     }));
 
     // In-memory sort for computed columns (endDate, durationMinutes, etc.)
@@ -111,20 +111,33 @@ export const leaveSummarySource: DataSourceDefinition = {
   },
 };
 
-function resolveDateFilter(dateRange: ReportConfig["dateRange"]): Record<string, unknown> {
+async function resolveDateFilter(dateRange: ReportConfig["dateRange"]): Promise<Record<string, unknown>> {
   switch (dateRange.type) {
-    case "payPeriod":
-      return {}; // Leave requests aren't tied to pay periods; show all
+    case "payPeriod": {
+      const period = await db.payPeriod.findUnique({
+        where: { id: dateRange.payPeriodId },
+        select: { startDate: true, endDate: true },
+      });
+      if (!period) return {};
+      // Return leave requests that overlap the pay period window
+      return {
+        startDate: { lte: period.endDate },
+        endDate: { gte: period.startDate },
+      };
+    }
     case "custom":
       return {
-        startDate: { gte: new Date(dateRange.startDate) },
-        endDate: { lte: new Date(dateRange.endDate) },
+        startDate: { lte: new Date(dateRange.endDate) },
+        endDate: { gte: new Date(dateRange.startDate) },
       };
     case "relative": {
       const now = new Date();
       const start = new Date(now);
       start.setDate(start.getDate() - dateRange.relativeDays);
-      return { startDate: { gte: start } };
+      return {
+        startDate: { lte: now },
+        endDate: { gte: start },
+      };
     }
   }
 }
