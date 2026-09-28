@@ -1333,19 +1333,24 @@ export function TimecardViewer({
         for (const { dayKey, hours, payCodeId } of pendingHoursEntries) {
           ops.push(addManualHoursEntry({ timesheetId, date: dayKey, hours, ...(payCodeId ? { payCodeId } : {}) }));
         }
-        await Promise.all(ops);
-
-        // Save one audit note per affected day
-        const noteOps: Promise<unknown>[] = [];
-        for (const [dayKey, changes] of dayChanges.entries()) {
-          noteOps.push(
-            saveTimesheetNote({
-              timesheetId,
-              noteDate: dayKey,
-              note: `Changes saved\n${changes.map((c) => `  ${c}`).join("\n")}`,
-            })
-          );
+        const results = await Promise.all(ops);
+        const firstFailure = results.find(
+          (r): r is { success: false; error: string } =>
+            typeof r === "object" && r !== null && (r as { success: boolean }).success === false
+        );
+        if (firstFailure) {
+          setActionError(firstFailure.error ?? "Failed to save changes");
+          return;
         }
+
+        // Save one audit note per affected day (best-effort — don't block on failure)
+        const noteOps = Array.from(dayChanges.entries()).map(([dayKey, changes]) =>
+          saveTimesheetNote({
+            timesheetId,
+            noteDate: dayKey,
+            note: `Changes saved\n${changes.map((c) => `  ${c}`).join("\n")}`,
+          })
+        );
         await Promise.all(noteOps);
 
         setPendingPayCodes(new Map());

@@ -426,7 +426,7 @@ const saveTimesheetNoteSchema = z.object({
 });
 
 export const saveTimesheetNote = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_TEAM", "TIMECARD_EDIT_TEAM"],
   async (ctx, input: z.infer<typeof saveTimesheetNoteSchema>) => {
     const { timesheetId, noteDate, note } = saveTimesheetNoteSchema.parse(input);
     if (!note.trim()) return;

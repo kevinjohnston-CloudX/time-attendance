@@ -58,6 +58,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "LEAVE_APPROVE_TEAM",
     "DOCUMENT_VIEW_OWN",
     "TIMECARD_VIEW_TEAM",
+    "TIMECARD_EDIT_TEAM",
     "ACCRUAL_VIEW_OWN",
     "ACCRUAL_VIEW_TEAM",
   ],
