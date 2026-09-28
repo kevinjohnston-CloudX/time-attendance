@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { withRBAC } from "@/lib/rbac/guard";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { validateLeaveTransition } from "@/lib/state-machines/leave-state";
+import { employeeScope, NotFoundError } from "@/lib/rbac/scope";
 import { postLeaveUsage, reverseLeaveUsage } from "@/lib/engines/accrual-engine";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
 import { writeAuditLog } from "@/lib/audit/logger";
@@ -192,14 +193,33 @@ export const createLeaveRequestForEmployee = withRBAC(
 // ─── Supervisor / HR actions ──────────────────────────────────────────────────
 
 /** Supervisor approves a PENDING leave request — moves it to PENDING_HR for HR review. */
+/**
+ * A leave request the caller may review: inside their company, for payroll
+ * and HR anyone in it, for a supervisor their own team, and never their own.
+ */
+async function reviewableRequest(
+  ctx: { employeeId: string; tenantId: string | null; role: string },
+  leaveRequestId: string,
+) {
+  const request = await db.leaveRequest.findFirst({
+    where: { id: leaveRequestId, employee: await employeeScope(ctx, "LEAVE_APPROVE_ANY") },
+  });
+  if (!request) throw new NotFoundError("Leave request not found");
+  if (request.employeeId === ctx.employeeId) throw new Error("You can't review your own leave request");
+  return request;
+}
+
 export const approveLeaveRequest = withRBAC(
   "LEAVE_APPROVE_TEAM",
-  async ({ employeeId: reviewerId, tenantId }, input: ReviewLeaveInput) => {
+  async (ctx, input: ReviewLeaveInput) => {
+    const { employeeId: reviewerId, tenantId } = ctx;
     const { leaveRequestId, reviewNote } = reviewLeaveSchema.parse(input);
 
-    const request = await db.leaveRequest.findUniqueOrThrow({
-      where: { id: leaveRequestId },
-    });
+    const request = await reviewableRequest(ctx, leaveRequestId);
+    // The supervisor's step only: Pending to waiting for HR. The final
+    // approval is HR's, through hrApproveLeaveRequest, which also checks the
+    // balance. Calling this twice used to skip HR altogether.
+    if (request.status !== "PENDING") throw new Error("This request is waiting for HR");
 
     const transition = validateLeaveTransition(request.status, "APPROVE");
     if (!transition.valid) throw new Error(transition.error);
@@ -232,12 +252,11 @@ export const approveLeaveRequest = withRBAC(
 /** HR/Payroll approves a PENDING_HR leave request — finalises approval, debits balance, creates segments. */
 export const hrApproveLeaveRequest = withRBAC(
   "LEAVE_APPROVE_ANY",
-  async ({ employeeId: reviewerId, tenantId }, input: ReviewLeaveInput) => {
+  async (ctx, input: ReviewLeaveInput) => {
     const { leaveRequestId, reviewNote } = reviewLeaveSchema.parse(input);
+    const { employeeId: reviewerId, tenantId } = ctx;
 
-    const request = await db.leaveRequest.findUniqueOrThrow({
-      where: { id: leaveRequestId },
-    });
+    const request = await reviewableRequest(ctx, leaveRequestId);
 
     const transition = validateLeaveTransition(request.status, "APPROVE");
     if (!transition.valid) throw new Error(transition.error);
@@ -276,12 +295,11 @@ export const hrApproveLeaveRequest = withRBAC(
 /** Reject a PENDING or APPROVED leave request. */
 export const rejectLeaveRequest = withRBAC(
   "LEAVE_APPROVE_TEAM",
-  async ({ employeeId: reviewerId, tenantId }, input: ReviewLeaveInput) => {
+  async (ctx, input: ReviewLeaveInput) => {
     const { leaveRequestId, reviewNote } = reviewLeaveSchema.parse(input);
+    const { employeeId: reviewerId, tenantId } = ctx;
 
-    const request = await db.leaveRequest.findUniqueOrThrow({
-      where: { id: leaveRequestId },
-    });
+    const request = await reviewableRequest(ctx, leaveRequestId);
 
     const transition = validateLeaveTransition(request.status, "REJECT");
     if (!transition.valid) throw new Error(transition.error);
@@ -318,12 +336,11 @@ export const rejectLeaveRequest = withRBAC(
 /** Reverse an APPROVED leave request back to PENDING, undoing the balance debit. */
 export const reverseLeaveApproval = withRBAC(
   "LEAVE_APPROVE_TEAM",
-  async ({ employeeId: reviewerId, tenantId }, input: LeaveRequestIdInput) => {
+  async (ctx, input: LeaveRequestIdInput) => {
     const { leaveRequestId } = leaveRequestIdSchema.parse(input);
+    const { employeeId: reviewerId, tenantId } = ctx;
 
-    const request = await db.leaveRequest.findUniqueOrThrow({
-      where: { id: leaveRequestId },
-    });
+    const request = await reviewableRequest(ctx, leaveRequestId);
 
     const transition = validateLeaveTransition(request.status, "REVERT");
     if (!transition.valid) throw new Error(transition.error);
@@ -367,12 +384,11 @@ export const reverseLeaveApproval = withRBAC(
  */
 export const postLeaveRequest = withRBAC(
   "LEAVE_APPROVE_ANY",
-  async ({ employeeId: actorId, tenantId }, input: LeaveRequestIdInput) => {
+  async (ctx, input: LeaveRequestIdInput) => {
     const { leaveRequestId } = leaveRequestIdSchema.parse(input);
+    const { employeeId: actorId, tenantId } = ctx;
 
-    const request = await db.leaveRequest.findUniqueOrThrow({
-      where: { id: leaveRequestId },
-    });
+    const request = await reviewableRequest(ctx, leaveRequestId);
 
     const transition = validateLeaveTransition(request.status, "POST");
     if (!transition.valid) throw new Error(transition.error);

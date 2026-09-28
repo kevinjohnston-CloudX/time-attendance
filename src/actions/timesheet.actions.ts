@@ -1,5 +1,6 @@
 "use server";
 
+import { assertEditable, reachesCompany, timesheetInScope } from "@/lib/rbac/scope";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
@@ -41,8 +42,9 @@ export const recalculateSegments = withRBAC(
 
 export const recalculateSegmentsAdmin = withRBAC(
   "PAY_PERIOD_MANAGE",
-  async (_ctx, input: TimesheetIdInput): Promise<void> => {
+  async (ctx, input: TimesheetIdInput): Promise<void> => {
     const { timesheetId } = timesheetIdSchema.parse(input);
+    await timesheetInScope(ctx, timesheetId, "PAY_PERIOD_MANAGE");
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
@@ -105,8 +107,12 @@ export const submitTimesheet = withRBAC(
 
 export const approveTimesheet = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
-  async ({ employeeId: supervisorId, tenantId }, input: TimesheetIdInput): Promise<Timesheet> => {
+  async (ctx, input: TimesheetIdInput): Promise<Timesheet> => {
+    const { employeeId: supervisorId, tenantId } = ctx;
     const { timesheetId } = timesheetIdSchema.parse(input);
+    // Only a timesheet of someone the caller manages, and never their own.
+    const sheet = await timesheetInScope(ctx, timesheetId, "TIMESHEET_APPROVE_ANY");
+    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timesheet");
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
@@ -146,8 +152,15 @@ export const approveTimesheet = withRBAC(
 
 export const rejectTimesheet = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
-  async ({ employeeId: reviewerId, tenantId }, input: RejectTimesheetInput): Promise<Timesheet> => {
+  async (ctx, input: RejectTimesheetInput): Promise<Timesheet> => {
+    const { employeeId: reviewerId, tenantId } = ctx;
     const { timesheetId, note } = rejectTimesheetSchema.parse(input);
+    const sheet = await timesheetInScope(ctx, timesheetId, "TIMESHEET_APPROVE_ANY");
+    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timesheet");
+    // Sending back a timesheet a supervisor already approved is payroll's step.
+    if (sheet.status !== "SUBMITTED" && !(await reachesCompany(ctx, "TIMESHEET_APPROVE_ANY"))) {
+      throw new Error("Only payroll can send back an approved timesheet");
+    }
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
@@ -191,8 +204,11 @@ export const rejectTimesheet = withRBAC(
 
 export const payrollApproveTimesheet = withRBAC(
   "TIMESHEET_APPROVE_ANY",
-  async ({ employeeId: payrollId, tenantId }, input: TimesheetIdInput): Promise<Timesheet> => {
+  async (ctx, input: TimesheetIdInput): Promise<Timesheet> => {
+    const { employeeId: payrollId, tenantId } = ctx;
     const { timesheetId } = timesheetIdSchema.parse(input);
+    const sheet = await timesheetInScope(ctx, timesheetId, "TIMESHEET_APPROVE_ANY");
+    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timesheet");
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
@@ -237,8 +253,12 @@ const mealWaiverSchema = z.object({
 
 export const toggleMealWaiver = withRBAC(
   "PAY_PERIOD_MANAGE",
-  async ({ employeeId: actorId, tenantId }, input: unknown): Promise<{ success: boolean; waived: boolean }> => {
+  async (ctx, input: unknown): Promise<{ success: boolean; waived: boolean }> => {
+    const { employeeId: actorId, tenantId } = ctx;
     const { timesheetId, segmentDate } = mealWaiverSchema.parse(input);
+    const sheet = await timesheetInScope(ctx, timesheetId, "PAY_PERIOD_MANAGE");
+    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timesheet");
+    assertEditable(sheet.status);
 
     const dateObj = new Date(segmentDate + "T00:00:00.000Z");
 
@@ -295,8 +315,12 @@ const mealPremiumWaiverSchema = z.object({
 
 export const toggleMealPremiumWaiver = withRBAC(
   "PAY_PERIOD_MANAGE",
-  async ({ employeeId: actorId, tenantId }, input: unknown): Promise<{ success: boolean; waived: boolean }> => {
+  async (ctx, input: unknown): Promise<{ success: boolean; waived: boolean }> => {
+    const { employeeId: actorId, tenantId } = ctx;
     const { timesheetId, segmentDate, segmentStart } = mealPremiumWaiverSchema.parse(input);
+    const sheet = await timesheetInScope(ctx, timesheetId, "PAY_PERIOD_MANAGE");
+    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timesheet");
+    assertEditable(sheet.status);
 
     const dateObj = new Date(segmentDate + "T00:00:00.000Z");
     const startObj = new Date(segmentStart);
@@ -348,8 +372,11 @@ export const toggleMealPremiumWaiver = withRBAC(
 
 export const authorizeTimecardOt = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
-  async ({ employeeId: actorId, tenantId }, input: TimesheetIdInput): Promise<{ success: boolean }> => {
+  async (ctx, input: TimesheetIdInput): Promise<{ success: boolean }> => {
+    const { employeeId: actorId, tenantId } = ctx;
     const { timesheetId } = timesheetIdSchema.parse(input);
+    const sheet = await timesheetInScope(ctx, timesheetId, "TIMESHEET_APPROVE_ANY");
+    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timesheet");
 
     await db.$transaction(async (tx) => {
       await tx.timesheet.update({
