@@ -59,7 +59,9 @@ export function ReportBuilder({
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [filters, setFilters] = useState<FilterDef[]>([]);
   const [dateRange, setDateRange] = useState<DateRange>(() => {
-    const pp = filterOptions.payPeriods[0];
+    const pp =
+      filterOptions.payPeriods.find((p) => p.status === "OPEN") ??
+      filterOptions.payPeriods[0];
     return pp
       ? { type: "payPeriod" as const, payPeriodId: pp.id }
       : { type: "relative" as const, relativeDays: 30 };

@@ -561,6 +561,16 @@ export const getFilterOptions = withRBAC(
         where: { tenantId },
         select: { id: true, startDate: true, endDate: true, status: true },
         orderBy: { startDate: "desc" },
+      }).then((periods) => {
+        // Deduplicate: multiple rule sets can create rows with the same date window.
+        // Keep only the first occurrence of each startDate+endDate pair.
+        const seen = new Set<string>();
+        return periods.filter((p) => {
+          const key = `${p.startDate.toISOString()}|${p.endDate.toISOString()}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
       }),
       db.leaveType.findMany({
         where: { tenantId, isActive: true },

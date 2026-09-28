@@ -79,11 +79,14 @@ export function ReportViewer({
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showScheduleForm, setShowScheduleForm] = useState(false);
 
-  // Initialize date range from saved config, or default to most recent pay period
+  // Initialize date range from saved config, or default to the current active pay period
   const savedDateRange = getSavedDateRange(report.config);
+  const activePeriod =
+    filterOptions?.payPeriods.find((p) => p.status === "OPEN") ??
+    filterOptions?.payPeriods[0];
   const defaultDateRange: DateRange = savedDateRange
-    ?? (filterOptions?.payPeriods[0]
-      ? { type: "payPeriod" as const, payPeriodId: filterOptions.payPeriods[0].id }
+    ?? (activePeriod
+      ? { type: "payPeriod" as const, payPeriodId: activePeriod.id }
       : { type: "relative" as const, relativeDays: 30 });
 
   const [dateRange, setDateRange] = useState<DateRange>(defaultDateRange);
