@@ -6,6 +6,36 @@ import { hasPermissionByLegacy } from "./permission-resolver";
 import { getEffectiveRole } from "./check-permission";
 import type { Role } from "./roles";
 import { INACTIVE_PERMISSIONS } from "./identity";
+import { randomBytes } from "crypto";
+import { Prisma } from "@prisma/client";
+import { ZodError } from "zod";
+
+/**
+ * What the browser is told when an action fails.
+ *
+ * <p>Actions throw plain sentences on purpose ("Cannot modify a locked or
+ * approved timesheet."), and those pass through. A database or internal
+ * error never does: its text names tables, fields, queries and file paths,
+ * which anyone can read in devtools. That is logged here with a short
+ * reference, and the browser gets the reference only.
+ */
+function publicError(err: unknown): string {
+  if (err instanceof ZodError) return err.issues[0]?.message ?? "Some of the details are not valid";
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") return "Not found";
+  const internal =
+    err instanceof Prisma.PrismaClientKnownRequestError ||
+    err instanceof Prisma.PrismaClientUnknownRequestError ||
+    err instanceof Prisma.PrismaClientValidationError ||
+    err instanceof Prisma.PrismaClientInitializationError ||
+    err instanceof Prisma.PrismaClientRustPanicError ||
+    !(err instanceof Error) ||
+    /[Pp]risma|invocation|\n|\bat \/|\bSELECT\b|\bINSERT INTO\b|\bUPDATE "|\bDELETE FROM\b|violates|ECONNREFUSED|ETIMEDOUT/.test(err.message) ||
+    err.message.length > 200;
+  if (!internal) return (err as Error).message;
+  const ref = randomBytes(4).toString("hex").toUpperCase();
+  console.error(`[action error ${ref}]`, err);
+  return `Something went wrong. Reference ${ref}`;
+}
 
 type ActionResult<T> =
   | { success: true; data: T }
@@ -75,8 +105,7 @@ export function withRBAC<TInput, TOutput>(
       );
       return { success: true, data };
     } catch (err) {
-      const message = err instanceof Error ? err.message : "INTERNAL_ERROR";
-      return { success: false, error: message };
+      return { success: false, error: publicError(err) };
     }
   };
 }
