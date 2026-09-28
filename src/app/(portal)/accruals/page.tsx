@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
+import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import { format } from "date-fns";
 import { AccrualsEmployeeList } from "@/components/admin/accruals-employee-list";
 
@@ -20,14 +21,19 @@ export default async function AccrualsPage() {
     redirect(`/accruals/${session.user.employeeId}`);
   }
 
-  const employeeWhere = canViewAny
-    ? {}
-    : {
-        OR: [
-          { supervisorId: session.user.employeeId ?? undefined },
-          ...(session.user.employeeId ? [{ id: session.user.employeeId }] : []),
-        ],
-      };
+  let employeeWhere = {};
+  if (!canViewAny && session.user.employeeId) {
+    const subordinateIds = await getSubordinateIds(
+      session.user.employeeId,
+      session.user.tenantId ?? null
+    );
+    employeeWhere = {
+      OR: [
+        { id: { in: subordinateIds } },
+        { id: session.user.employeeId },
+      ],
+    };
+  }
 
   const [employees, sites] = await Promise.all([
     db.employee.findMany({

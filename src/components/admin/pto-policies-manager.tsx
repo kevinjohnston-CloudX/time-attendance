@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { Plus, X, Trash2 } from "lucide-react";
-import { createPtoPolicy, updatePtoPolicy, deletePtoPolicy } from "@/actions/pto-policy.actions";
+import { useState } from "react";
+import Link from "next/link";
+import { Plus, X } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -29,7 +28,7 @@ type ServiceMonthBasis =
   | "ORIENTATION_DATE"
   | "USER_DATE_2";
 
-type PostingConfig = {
+export type PostingConfig = {
   rateMode:          AccrualRateMode;
   serviceMonthBasis: ServiceMonthBasis;
   postingAnchorDate: string | null;
@@ -60,7 +59,7 @@ type Tier = {
 };
 
 // Flat rule as stored / sent to server
-type Rule = Tier & { leaveTypeId: string; carryOverToLeaveTypeId: string | null; payCodeId: string | null };
+export type Rule = Tier & { leaveTypeId: string; carryOverToLeaveTypeId: string | null; payCodeId: string | null };
 
 type RuleFromServer = Rule & {
   id?: string;
@@ -70,9 +69,9 @@ type RuleFromServer = Rule & {
   leaveType?: { id: string; name: string; category: string };
 };
 
-type PayCodeOption = { id: string; code: number; label: string; expressCode: string | null };
+export type PayCodeOption = { id: string; code: number; label: string; expressCode: string | null };
 
-type Policy = {
+export type Policy = {
   id: string;
   name: string;
   description: string | null;
@@ -110,9 +109,9 @@ type Policy = {
   _count: { siteLinks: number; empOverrides: number };
 };
 
-type LeaveTypeOption = { id: string; name: string; category: string };
+export type LeaveTypeOption = { id: string; name: string; category: string };
 
-interface Props { policies: Policy[]; leaveTypes: LeaveTypeOption[]; payCodes: PayCodeOption[]; initialPolicyId?: string }
+interface Props { policies: Policy[]; leaveTypes: LeaveTypeOption[]; payCodes: PayCodeOption[] }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -158,30 +157,6 @@ const smLabelCls = "mb-0.5 block text-[10px] font-medium uppercase tracking-wide
 const saveBtnCls = "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
 const cancelBtnCls = "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300";
 const dangerBtnCls = "rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50";
-
-// ─── Modal ────────────────────────────────────────────────────────────────────
-
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <h3 className="text-base font-semibold text-zinc-900 dark:text-white">{title}</h3>
-          <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" aria-label="Close">
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
-        </div>
-        <div className="px-6 py-5">{children}</div>
-      </div>
-    </div>
-  );
-}
 
 // ─── Posting frequency row ────────────────────────────────────────────────────
 
@@ -258,7 +233,7 @@ function PostingRow({
 
 // ─── Policy form ──────────────────────────────────────────────────────────────
 
-function PolicyForm({ leaveTypes, payCodes, initial, isPending, onSubmit, onCancel }: {
+export function PolicyForm({ leaveTypes, payCodes, initial, isPending, onSubmit, onCancel }: {
   leaveTypes: LeaveTypeOption[];
   payCodes: PayCodeOption[];
   initial?: Policy;
@@ -995,117 +970,7 @@ function PolicyForm({ leaveTypes, payCodes, initial, isPending, onSubmit, onCanc
 
 // ─── Main manager ─────────────────────────────────────────────────────────────
 
-export function PtoPoliciesManager({ policies, leaveTypes, payCodes, initialPolicyId }: Props) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [editingPolicy, setEditingPolicy] = useState<Policy | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-
-  function openEdit(p: Policy) { setEditingPolicy(p); setConfirmDeleteId(null); setError(null); }
-
-  useEffect(() => {
-    if (!initialPolicyId) return;
-    const target = policies.find((p) => p.id === initialPolicyId);
-    if (target) openEdit(target);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  function closeEdit() { setEditingPolicy(null); setConfirmDeleteId(null); setError(null); }
-  function openCreate() { setShowCreate(true); setError(null); }
-  function closeCreate() { setShowCreate(false); setError(null); }
-
-  function handleCreate(e: React.FormEvent<HTMLFormElement>, rules: Rule[], posting: PostingConfig) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    setError(null);
-    const rawMax         = fd.get("maxDailyHours")               as string;
-    const rawNegBal      = fd.get("allowNegativeBalance")        as string;
-    const rawMaxNeg      = fd.get("maxNegativeHours")            as string;
-    const rawCarryOn     = fd.get("carryOverEnabled")            as string;
-    const rawRespectMax  = fd.get("carryOverRespectMaxBalance")  as string;
-    const rawFcEnabled   = fd.get("forecastEnabled")             as string;
-    const rawFcMode      = fd.get("forecastMode")                as string;
-    const rawFcMonths    = fd.get("forecastMonths")              as string;
-    const rawFcApply     = fd.get("forecastApplyToAvailable")    as string;
-    startTransition(async () => {
-      const result = await createPtoPolicy({
-        name:                       fd.get("name") as string,
-        description:                (fd.get("description") as string) || undefined,
-        isDefault:                  fd.get("isDefault") === "true",
-        leaveTypeId:                fd.get("leaveTypeId") as string,
-        maxDailyHours:              rawMax       !== "" ? parseFloat(rawMax) : null,
-        allowNegativeBalance:       rawNegBal    === "true",
-        maxNegativeHours:           rawMaxNeg    !== "" ? parseFloat(rawMaxNeg) : null,
-        carryOverEnabled:           rawCarryOn   !== "false",
-        carryOverRespectMaxBalance: rawRespectMax === "true",
-        forecastEnabled:            rawFcEnabled  === "true",
-        forecastMode:               rawFcMode     !== "" ? rawFcMode as "MONTHS" | "END_OF_YEAR" : null,
-        forecastMonths:             rawFcMonths   !== "" ? parseInt(rawFcMonths, 10) : null,
-        forecastApplyToAvailable:   rawFcApply    === "true",
-        rules,
-        ...posting,
-        postingAnchorDate:  posting.postingAnchorDate  ?? null,
-        posting2AnchorDate: posting.posting2AnchorDate ?? null,
-      });
-      if ("success" in result && !result.success) { setError((result as { success: false; error: string }).error); return; }
-      closeCreate();
-      router.refresh();
-    });
-  }
-
-  function handleUpdate(policy: Policy, e: React.FormEvent<HTMLFormElement>, rules: Rule[], posting: PostingConfig) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    setError(null);
-    const rawMax         = fd.get("maxDailyHours")               as string;
-    const rawNegBal      = fd.get("allowNegativeBalance")        as string;
-    const rawMaxNeg      = fd.get("maxNegativeHours")            as string;
-    const rawCarryOn     = fd.get("carryOverEnabled")            as string;
-    const rawRespectMax  = fd.get("carryOverRespectMaxBalance")  as string;
-    const rawFcEnabled   = fd.get("forecastEnabled")             as string;
-    const rawFcMode      = fd.get("forecastMode")                as string;
-    const rawFcMonths    = fd.get("forecastMonths")              as string;
-    const rawFcApply     = fd.get("forecastApplyToAvailable")    as string;
-    startTransition(async () => {
-      const result = await updatePtoPolicy({
-        ptoPolicyId:                policy.id,
-        name:                       fd.get("name") as string,
-        description:                (fd.get("description") as string) || null,
-        isDefault:                  fd.get("isDefault") === "true",
-        isActive:                   fd.get("isActive") === "true",
-        leaveTypeId:                fd.get("leaveTypeId") as string,
-        maxDailyHours:              rawMax       !== "" ? parseFloat(rawMax) : null,
-        allowNegativeBalance:       rawNegBal    === "true",
-        maxNegativeHours:           rawMaxNeg    !== "" ? parseFloat(rawMaxNeg) : null,
-        carryOverEnabled:           rawCarryOn   !== "false",
-        carryOverRespectMaxBalance: rawRespectMax === "true",
-        forecastEnabled:            rawFcEnabled  === "true",
-        forecastMode:               rawFcMode     !== "" ? rawFcMode as "MONTHS" | "END_OF_YEAR" : null,
-        forecastMonths:             rawFcMonths   !== "" ? parseInt(rawFcMonths, 10) : null,
-        forecastApplyToAvailable:   rawFcApply    === "true",
-        rules,
-        ...posting,
-        postingAnchorDate:  posting.postingAnchorDate  ?? null,
-        posting2AnchorDate: posting.posting2AnchorDate ?? null,
-      });
-      if (!result.success) { setError(result.error); return; }
-      closeEdit();
-      router.refresh();
-    });
-  }
-
-  function handleDelete(policyId: string) {
-    setError(null);
-    startTransition(async () => {
-      const result = await deletePtoPolicy({ ptoPolicyId: policyId });
-      if (!result.success) { setError(result.error); setConfirmDeleteId(null); return; }
-      setConfirmDeleteId(null);
-      closeEdit();
-      router.refresh();
-    });
-  }
-
+export function PtoPoliciesManager({ policies }: Props) {
   function postingLabel(p: Policy): string {
     const freq = (() => {
       const p1 = FREQ_LABELS[p.posting1Freq];
@@ -1183,12 +1048,12 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes, initialPoli
             )}
           </>
         )}
-        <button
-          onClick={openCreate}
+        <Link
+          href="/admin/rules-setup/leave-policies/new"
           className="ml-auto rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
         >
           + Add Policy
-        </button>
+        </Link>
       </div>
       {searchLower && policyGroups.length === 0 && (
         <p className="text-sm text-zinc-400">No policies match &ldquo;{search}&rdquo;.</p>
@@ -1217,11 +1082,10 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes, initialPoli
                   {groupPolicies.map((policy) => {
                     const tierCount = policy.rules.length;
                     return (
-                      <button
+                      <Link
                         key={policy.id}
-                        type="button"
-                        onClick={() => openEdit(policy)}
-                        className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
+                        href={`/admin/rules-setup/leave-policies/${policy.id}`}
+                        className="block w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex flex-wrap items-center gap-2">
@@ -1240,7 +1104,7 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes, initialPoli
                               <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">Default</span>
                             )}
                           </div>
-                          <span className="text-xs text-zinc-400">Click to edit →</span>
+                          <span className="text-xs text-zinc-400">Edit →</span>
                         </div>
                         <p className="mt-0.5 text-xs text-zinc-400">
                           {postingLabel(policy)}
@@ -1249,7 +1113,7 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes, initialPoli
                             <> · {policy._count.siteLinks} site{policy._count.siteLinks !== 1 ? "s" : ""} · {policy._count.empOverrides} override{policy._count.empOverrides !== 1 ? "s" : ""}</>
                           )}
                         </p>
-                      </button>
+                      </Link>
                     );
                   })}
                 </div>
@@ -1259,41 +1123,6 @@ export function PtoPoliciesManager({ policies, leaveTypes, payCodes, initialPoli
         })}
       </div>
 
-      {showCreate && (
-        <Modal title="New PTO Policy" onClose={closeCreate}>
-          {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
-          <PolicyForm leaveTypes={leaveTypes} payCodes={payCodes} isPending={isPending} onSubmit={handleCreate} onCancel={closeCreate} />
-        </Modal>
-      )}
-
-      {editingPolicy && (
-        <Modal title={`Edit: ${editingPolicy.name}`} onClose={closeEdit}>
-          {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
-          <PolicyForm
-            leaveTypes={leaveTypes}
-            payCodes={payCodes}
-            initial={editingPolicy}
-            isPending={isPending}
-            onSubmit={(e, rules, posting) => handleUpdate(editingPolicy, e, rules, posting)}
-            onCancel={closeEdit}
-          />
-          <div className="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-            {confirmDeleteId === editingPolicy.id ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-zinc-500">Are you sure?</span>
-                <button type="button" onClick={() => handleDelete(editingPolicy.id)} disabled={isPending} className={dangerBtnCls}>
-                  {isPending ? "Deleting…" : "Yes, delete"}
-                </button>
-                <button type="button" onClick={() => setConfirmDeleteId(null)} className={cancelBtnCls}>Cancel</button>
-              </div>
-            ) : (
-              <button type="button" onClick={() => setConfirmDeleteId(editingPolicy.id)} className="flex items-center gap-1.5 text-xs text-red-500 hover:underline dark:text-red-400">
-                <Trash2 className="h-3.5 w-3.5" /> Delete policy
-              </button>
-            )}
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }

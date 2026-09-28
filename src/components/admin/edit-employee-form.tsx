@@ -3,6 +3,8 @@
 import { useTransition, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
+import Link from "next/link";
+import { ExternalLink } from "lucide-react";
 import { updateEmployee, updateHrSiteAccess } from "@/actions/admin.actions";
 import { setTemporaryPassword } from "@/actions/password.actions";
 import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
@@ -38,6 +40,7 @@ interface Props {
   }>;
   hrSiteAccess: string[];
   actorRole: string;
+  canManageRules?: boolean;
 }
 
 function fmtTime(hhmm: string): string {
@@ -52,7 +55,7 @@ const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-
 
 type Tab = "general" | "personal" | "pay" | "logs" | "site-access";
 
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, logs, hrSiteAccess, actorRole }: Props) {
+export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, logs, hrSiteAccess, actorRole, canManageRules = false }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -493,55 +496,110 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelCls}>Rule Set</label>
-              <select name="ruleSetId" defaultValue={employee.ruleSetId} className={inputCls}>
-                {ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>)}
-              </select>
+              <div className="flex items-center gap-1.5">
+                <select name="ruleSetId" defaultValue={employee.ruleSetId} className={`${inputCls} flex-1`}>
+                  {ruleSets.map((rs) => <option key={rs.id} value={rs.id}>{rs.name}</option>)}
+                </select>
+                {canManageRules && (
+                  <Link
+                    href={employee.ruleSetId ? `/admin/rules-setup/rule-sets/${employee.ruleSetId}` : "/admin/rules-setup?tab=rule-sets"}
+                    className="shrink-0 rounded-md border border-zinc-300 p-1.5 text-zinc-500 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 dark:border-zinc-600 dark:hover:border-blue-500 dark:hover:bg-blue-950/30 dark:hover:text-blue-400"
+                    title="View Rule Set"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Link>
+                )}
+              </div>
             </div>
 
             <div>
               <label className={labelCls}>Shift</label>
-              <select name="shiftId" defaultValue={employee.shiftId ?? ""} className={inputCls}>
-                <option value="">— None —</option>
-                {shifts.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({fmtTime(s.startTime)} – {fmtTime(s.endTime)})
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-1.5">
+                <select name="shiftId" defaultValue={employee.shiftId ?? ""} className={`${inputCls} flex-1`}>
+                  <option value="">— None —</option>
+                  {shifts.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({fmtTime(s.startTime)} – {fmtTime(s.endTime)})
+                    </option>
+                  ))}
+                </select>
+                {canManageRules && (
+                  <Link
+                    href={employee.shiftId ? `/admin/rules-setup/shifts/${employee.shiftId}` : "/admin/rules-setup?tab=shifts"}
+                    className="shrink-0 rounded-md border border-zinc-300 p-1.5 text-zinc-500 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 dark:border-zinc-600 dark:hover:border-blue-500 dark:hover:bg-blue-950/30 dark:hover:text-blue-400"
+                    title="View Shift"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Link>
+                )}
+              </div>
             </div>
 
             <div>
               <label className={labelCls}>Holiday Rule</label>
-              <select name="holidayRuleId" defaultValue={employee.holidayRuleId ?? ""} className={inputCls}>
-                <option value="">— None —</option>
-                {holidayRules.map((r) => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
-                ))}
-              </select>
+              <div className="flex items-center gap-1.5">
+                <select name="holidayRuleId" defaultValue={employee.holidayRuleId ?? ""} className={`${inputCls} flex-1`}>
+                  <option value="">— None —</option>
+                  {holidayRules.map((r) => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
+                {canManageRules && (
+                  <Link
+                    href={employee.holidayRuleId ? `/admin/rules-setup/holiday-rules/${employee.holidayRuleId}` : "/admin/rules-setup?tab=holiday-rules"}
+                    className="shrink-0 rounded-md border border-zinc-300 p-1.5 text-zinc-500 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 dark:border-zinc-600 dark:hover:border-blue-500 dark:hover:bg-blue-950/30 dark:hover:text-blue-400"
+                    title="View Holiday Rule"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Link>
+                )}
+              </div>
             </div>
 
             <div>
               <label className={labelCls}>Pay Category</label>
-              <select name="payCategoryId" defaultValue={(employee as any).payCategoryId ?? ""} className={inputCls}>
-                <option value="">— None —</option>
-                {payCategories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.number}{c.description ? ` — ${c.description}` : ""}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-1.5">
+                <select name="payCategoryId" defaultValue={(employee as any).payCategoryId ?? ""} className={`${inputCls} flex-1`}>
+                  <option value="">— None —</option>
+                  {payCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.number}{c.description ? ` — ${c.description}` : ""}
+                    </option>
+                  ))}
+                </select>
+                {canManageRules && (
+                  <Link
+                    href={(employee as any).payCategoryId ? `/admin/site-settings/pay-categories/${(employee as any).payCategoryId}` : "/admin/site-settings?tab=pay-categories"}
+                    className="shrink-0 rounded-md border border-zinc-300 p-1.5 text-zinc-500 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 dark:border-zinc-600 dark:hover:border-blue-500 dark:hover:bg-blue-950/30 dark:hover:text-blue-400"
+                    title="View Pay Category"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Link>
+                )}
+              </div>
             </div>
 
             <div>
               <label className={labelCls}>Pay Type</label>
-              <select name="payTypeId" defaultValue={(employee as any).payTypeId ?? ""} className={inputCls}>
-                <option value="">— None —</option>
-                {payTypes.map((pt) => (
-                  <option key={pt.id} value={pt.id}>
-                    {pt.number}{pt.description ? ` — ${pt.description}` : ""}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-1.5">
+                <select name="payTypeId" defaultValue={(employee as any).payTypeId ?? ""} className={`${inputCls} flex-1`}>
+                  <option value="">— None —</option>
+                  {payTypes.map((pt) => (
+                    <option key={pt.id} value={pt.id}>
+                      {pt.number}{pt.description ? ` — ${pt.description}` : ""}
+                    </option>
+                  ))}
+                </select>
+                {canManageRules && (
+                  <Link
+                    href={(employee as any).payTypeId ? `/admin/site-settings/pay-types/${(employee as any).payTypeId}` : "/admin/site-settings?tab=pay-types"}
+                    className="shrink-0 rounded-md border border-zinc-300 p-1.5 text-zinc-500 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 dark:border-zinc-600 dark:hover:border-blue-500 dark:hover:bg-blue-950/30 dark:hover:text-blue-400"
+                    title="View Pay Type"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Link>
+                )}
+              </div>
             </div>
 
             <div>
