@@ -68,7 +68,11 @@ export default function LoginPage() {
 
     if (result?.error) {
       setLoading(false);
-      setError("Invalid email or password.");
+      setError(
+        result.code === "locked"
+          ? "Too many attempts. Wait 15 minutes, then try again."
+          : "Invalid email or password.",
+      );
       return;
     }
 

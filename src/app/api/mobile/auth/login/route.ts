@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { WINDOW_MIN, clientAddress, isLockedOut, recordFailedLogin } from "@/lib/login-limit";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -32,8 +33,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // The same limit as the web sign-in, checked before the password.
+    const address = clientAddress(req.headers);
+    if (await isLockedOut(user.id, address)) {
+      return NextResponse.json(
+        { success: false, error: `Too many attempts. Wait ${WINDOW_MIN} minutes, then try again.` },
+        { status: 429 },
+      );
+    }
+
     const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
     if (!valid) {
+      await recordFailedLogin(user.id, user.employee?.tenantId, address, "mobile");
       return NextResponse.json(
         { success: false, error: "Invalid credentials" },
         { status: 401 },

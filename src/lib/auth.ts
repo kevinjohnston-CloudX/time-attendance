@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
@@ -7,6 +7,12 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { authConfig } from "@/lib/auth.config";
 import { liveIdentity } from "@/lib/rbac/identity";
+import { clientAddress, isLockedOut, recordFailedLogin } from "@/lib/login-limit";
+
+/** Too many wrong passwords: the sign-in page says to wait rather than "wrong password". */
+class LockedOut extends CredentialsSignin {
+  code = "locked";
+}
 
 const credentialsSchema = z.object({
   username: z.string().min(1),
@@ -35,7 +41,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
     // Kept for super-admin and emergency access only
     Credentials({
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         const parsed = credentialsSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
@@ -48,8 +54,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         if (!user?.passwordHash) return null;
 
+        // Checked before the password, so a locked account says nothing
+        // about whether the guess was right.
+        const address = clientAddress(request?.headers);
+        if (await isLockedOut(user.id, address)) throw new LockedOut();
+
         const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
-        if (!valid) return null;
+        if (!valid) {
+          await recordFailedLogin(user.id, user.employee?.tenantId, address, "web");
+          return null;
+        }
 
         if (user.isSuperAdmin) {
           return {
