@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { db } from "@/lib/db";
+import { auth } from "@/lib/auth";
+import { userHasPermission } from "@/lib/rbac/check-permission";
+import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
+
+/** The widest window one request may cover, and the most people it returns. */
+const MAX_DAYS = 93;
+const MAX_ROWS = 5000;
 
 /**
  * Who is not clocking out.
@@ -19,6 +27,22 @@ import { db } from "@/lib/db";
  * scan_events is that the two can disagree.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  // Names, badge codes and sites of the people in it: payroll or Live
+  // Attendance company-wide only, and only for the caller's own company.
+  // Anything else answers "not found".
+  const session = await auth();
+  const notFound = NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  if (!session?.user || session.user.isActive === false) return notFound;
+  const allowed =
+    (await userHasPermission(session.user, "TIMECARD_VIEW_ANY")) ||
+    (await userHasPermission(session.user, "PRESENCE_VIEW_ANY"));
+  if (!allowed) return notFound;
+  const tenantId =
+    session.user.role === "SUPER_ADMIN"
+      ? (await cookies()).get(SUPER_ADMIN_TENANT_COOKIE)?.value ?? null
+      : session.user.tenantId ?? null;
+  if (!tenantId) return notFound;
+
   const { searchParams } = new URL(req.url);
 
   const to = searchParams.get("to")
@@ -32,6 +56,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   if (Number.isNaN(+from) || Number.isNaN(+to)) {
     return NextResponse.json({ success: false, error: "Invalid from/to date" }, { status: 400 });
+  }
+  if (to.getTime() - from.getTime() > MAX_DAYS * 24 * 60 * 60 * 1000) {
+    return NextResponse.json({ success: false, error: `Pick at most ${MAX_DAYS} days` }, { status: 400 });
   }
 
   const rows = await db.$queryRaw<
@@ -60,11 +87,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     LEFT   JOIN "employees" e ON e."id" = s."employeeId"
     LEFT   JOIN "users" u     ON u."id" = e."userId"
     WHERE  s."directionSource" = 'AUTO_CLOSE'
+      AND  s."tenantId" = ${tenantId}
       AND  s."scanTime" >= ${from}
       AND  s."scanTime" <= ${to}
     GROUP  BY s."employeeId"
     HAVING COUNT(*) >= ${minCount}
     ORDER  BY COUNT(*) DESC, MAX(s."scanTime") DESC
+    LIMIT  ${MAX_ROWS}
   `;
 
   const data = rows.map((r) => ({
@@ -81,7 +110,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   if (format === "csv") {
     const esc = (v: unknown) => {
-      const s = v == null ? "" : String(v);
+      // A leading = + - or @ would run as a formula when the file opens in Excel.
+      const raw = v == null ? "" : String(v);
+      const s = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const header = "badgeCode,name,missedClockOuts,timeClock,security,firstSeen,lastSeen,sites";
