@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, ChevronRight, PanelLeft } from "lucide-react";
@@ -8,6 +9,7 @@ import { useBreadcrumbLeafFor } from "./breadcrumb-leaf";
 import { ThemeToggle } from "./theme-toggle";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { NotificationBell } from "./notification-bell";
+import { DesignSwitch } from "./design-switch";
 import { SegmentedControl } from "@/components/ui";
 import { navModeStore, useNavMode, collapseStore, useSidebarCollapsed, type NavMode } from "./nav-mode";
 import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
@@ -32,9 +34,12 @@ import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
 export function TopBar({
   reachableHrefs,
   waiting,
+  classicUrl = null,
 }: {
   reachableHrefs: string[];
   waiting: WaitingItem[];
+  /** The classic design's address; null draws no design switch. */
+  classicUrl?: string | null;
 }) {
   const pathname = usePathname();
   const navMode = useNavMode();
@@ -121,6 +126,11 @@ export function TopBar({
       <div className="flex-1" />
 
       <div className="flex flex-none items-center gap-2">
+        {classicUrl && (
+          <Suspense fallback={null}>
+            <DesignSwitch classicUrl={classicUrl} />
+          </Suspense>
+        )}
         {/* The navigation layout switch, where the design puts it: a label and
             a small segmented control immediately before the theme button. */}
         <span

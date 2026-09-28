@@ -1,8 +1,10 @@
 import { LinkButton } from "@/components/ui";
 import { BrandLockup } from "@/components/layout/brand-mark";
+import { DesignSwitchFallback } from "@/components/layout/design-switch-fallback";
 
 export default function NotFound() {
   return (
+    <DesignSwitchFallback>
     <div
       className="flex min-h-screen items-center justify-center px-6"
       style={{ background: "var(--surface-page)" }}
@@ -25,8 +27,8 @@ export default function NotFound() {
             Page not found
           </h1>
           <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
-            That address does not exist. If you followed a link from inside the product, it is worth
-            telling someone — it means a page is pointing somewhere that is not there.
+            That address does not exist. If you followed a link from inside the product, please tell
+            the HR team, because a page is pointing somewhere that is not there.
           </p>
         </div>
         <LinkButton href="/dashboard" hierarchy="primary">
@@ -34,5 +36,6 @@ export default function NotFound() {
         </LinkButton>
       </div>
     </div>
+    </DesignSwitchFallback>
   );
 }

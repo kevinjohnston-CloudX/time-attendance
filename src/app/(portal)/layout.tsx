@@ -15,6 +15,7 @@ import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { getLegacyPermissions, isLiveAttendanceOnly } from "@/lib/rbac/permission-resolver";
 import { getWaitingOnYou } from "@/lib/dashboard/dashboard-data";
 import { photoUrls } from "@/lib/presence/photos";
+import { classicDesignUrl } from "@/lib/design-switch";
 
 const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
@@ -244,7 +245,13 @@ export default async function PortalLayout({
               viewer's permissions and by whether they are active, so the
               shortcuts list is built from the same set rather than a second
               one that could disagree with it. */}
-          <TopBar reachableHrefs={destinations.map((d) => d.href)} waiting={waiting} />
+          {/* No design switch for a role limited to Live Attendance: the
+              classic design has no such limit, so it would be a way out. */}
+          <TopBar
+            reachableHrefs={destinations.map((d) => d.href)}
+            waiting={waiting}
+            classicUrl={liveAttendanceOnly ? null : classicDesignUrl()}
+          />
           <main className="min-h-0 flex-1 overflow-y-auto">
             <InactiveRouteGuard isInactive={!isEmployeeActive} />
             <EmployeesListForget />
