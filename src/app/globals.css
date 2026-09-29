@@ -260,6 +260,15 @@ textarea {
   outline-offset: 1px;
 }
 
+/* The info button inside the design switch's warning pill. */
+.ta-warn-btn {
+  transition: background-color 120ms ease;
+}
+.ta-warn-btn:hover,
+.ta-warn-btn[aria-expanded="true"] {
+  background: var(--surface-card);
+}
+
 /* The sidebar's search field: a well with a hairline that darkens on hover. */
 .ta-well-field {
   background: var(--ta-well);
