@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { readable } from "../readable";
 import { timesheetPayPeriodWhere } from "../date-scope";
 import type { DataSourceDefinition, ReportResult } from "./index";
-import { buildWhereClause, buildOrderBy, sortRowsInMemory, filterRowsInMemory, type FieldMap } from "../query-builder";
+import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { format } from "date-fns";
 
@@ -56,9 +56,6 @@ export const attendanceDetailSource: DataSourceDefinition = {
       ] },
     { id: "payBucket", label: "Hours type", type: "string", operators: ["eq", "in"] },
     { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
-    { id: "regularMinutes",    label: "REG (min)", type: "number", operators: ["eq", "gt", "gte", "lt", "lte", "between"] },
-    { id: "overtimeMinutes",   label: "OT (min)",  type: "number", operators: ["eq", "gt", "gte", "lt", "lte", "between"] },
-    { id: "doubletimeMinutes", label: "DT (min)",  type: "number", operators: ["eq", "gt", "gte", "lt", "lte", "between"] },
   ],
   groupableFields: ["department", "site", "segmentType"],
   fieldMap,
@@ -136,9 +133,8 @@ export const attendanceDetailSource: DataSourceDefinition = {
       };
     });
 
-    // In-memory filter/sort for computed columns (regularMinutes, overtimeMinutes, etc.)
-    const filteredRows = filterRowsInMemory(rows, config.filters, fieldMap);
-    const sortedRows = sortRowsInMemory(filteredRows, config.sortBy, fieldMap);
+    // In-memory sort for computed columns (date, startTime, endTime, etc.)
+    const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
 
     const visibleColumns = attendanceDetailSource.columns.filter((c) =>
       config.columns.includes(c.id)
