@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 
 /**
@@ -19,6 +21,15 @@ import { db } from "@/lib/db";
  * scan_events is that the two can disagree.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+  const canAccess = await userHasPermission(session.user, "REPORT_MANAGE");
+  if (!canAccess) {
+    return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+  }
+
   const { searchParams } = new URL(req.url);
 
   const to = searchParams.get("to")
