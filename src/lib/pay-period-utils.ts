@@ -1,43 +1,36 @@
-import { addDays, differenceInDays, startOfMonth, endOfMonth } from "date-fns";
 import { db } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit/logger";
 import type { PayFrequency } from "@prisma/client";
+import { getPeriodContaining, periodAfter } from "@/lib/pay-period-math";
+
+export { getPeriodContaining };
 
 /**
- * Given a frequency + anchor, return the pay period that contains `date`.
- * For SEMIMONTHLY / MONTHLY the anchor is unused (calendar-based).
+ * The company level period that comes after the latest one, which is what
+ * Generate creates, or null while no anchor date is saved. Rule set periods
+ * are left out: they follow their own schedule.
  */
-export function getPeriodContaining(
-  frequency: PayFrequency,
-  anchor: Date,
-  date: Date
-): { startDate: Date; endDate: Date } {
-  switch (frequency) {
-    case "WEEKLY": {
-      const n = Math.floor(differenceInDays(date, anchor) / 7);
-      const start = addDays(anchor, n * 7);
-      return { startDate: start, endDate: addDays(start, 7) };
-    }
-    case "BIWEEKLY": {
-      const n = Math.floor(differenceInDays(date, anchor) / 14);
-      const start = addDays(anchor, n * 14);
-      return { startDate: start, endDate: addDays(start, 14) };
-    }
-    case "SEMIMONTHLY": {
-      if (date.getDate() <= 15) {
-        return {
-          startDate: new Date(date.getFullYear(), date.getMonth(), 1),
-          endDate: new Date(date.getFullYear(), date.getMonth(), 15),
-        };
-      }
-      return {
-        startDate: new Date(date.getFullYear(), date.getMonth(), 16),
-        endDate: endOfMonth(date),
-      };
-    }
-    case "MONTHLY":
-      return { startDate: startOfMonth(date), endDate: endOfMonth(date) };
-  }
+export async function nextTenantPeriod(
+  tenantId: string
+): Promise<{ startDate: Date; endDate: Date; frequency: PayFrequency } | null> {
+  const tenant = await db.tenant.findUnique({
+    where: { id: tenantId },
+    select: { payFrequency: true, payPeriodAnchorDate: true },
+  });
+  if (!tenant?.payPeriodAnchorDate) return null;
+
+  const last = await db.payPeriod.findFirst({
+    where: { tenantId, ruleSetId: null },
+    orderBy: { endDate: "desc" },
+    select: { endDate: true },
+  });
+
+  const frequency = tenant.payFrequency;
+  const anchor = tenant.payPeriodAnchorDate;
+  const next = last
+    ? periodAfter(frequency, anchor, last.endDate)
+    : getPeriodContaining(frequency, anchor, new Date());
+  return { ...next, frequency };
 }
 
 /**

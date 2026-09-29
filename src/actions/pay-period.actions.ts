@@ -11,7 +11,7 @@ import {
 } from "@/lib/validators/pay-period.schema";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { postAccruals, postLeaveUsage } from "@/lib/engines/accrual-engine";
-import { getPeriodContaining, generatePeriodsForTenant } from "@/lib/pay-period-utils";
+import { nextTenantPeriod } from "@/lib/pay-period-utils";
 import type { PayFrequency } from "@prisma/client";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
@@ -216,24 +216,57 @@ export const getTenantSettings = withRBAC(
   "PAY_PERIOD_MANAGE",
   async ({ tenantId }, _input: void) => {
     if (!tenantId) throw new Error("No tenant context");
-    return db.tenant.findUniqueOrThrow({
-      where: { id: tenantId },
-      select: { payFrequency: true, payPeriodAnchorDate: true, name: true },
-    });
+    const [tenant, nextPeriod, defaultRuleSets] = await Promise.all([
+      db.tenant.findUniqueOrThrow({
+        where: { id: tenantId },
+        select: { payFrequency: true, payPeriodAnchorDate: true, name: true },
+      }),
+      nextTenantPeriod(tenantId),
+      // The rule sets that fall back to these settings, so the page can say
+      // who they apply to rather than leave the reader to work it out.
+      db.ruleSet.findMany({
+        where: { tenantId, OR: [{ payFrequency: null }, { payPeriodAnchorDate: null }] },
+        select: { name: true },
+        orderBy: { name: "asc" },
+      }),
+    ]);
+    return { ...tenant, nextPeriod, defaultRuleSets: defaultRuleSets.map((r) => r.name) };
   }
 );
 
+const PAY_FREQUENCIES: PayFrequency[] = ["WEEKLY", "BIWEEKLY", "SEMIMONTHLY", "MONTHLY"];
+
 export const updateTenantSettings = withRBAC(
   "PAY_PERIOD_MANAGE",
-  async ({ tenantId }, input: { payFrequency: PayFrequency; payPeriodAnchorDate: string }) => {
+  async ({ tenantId, employeeId }, input: { payFrequency: PayFrequency; payPeriodAnchorDate: string }) => {
     if (!tenantId) throw new Error("No tenant context");
+    if (!PAY_FREQUENCIES.includes(input.payFrequency)) throw new Error("Choose a pay frequency");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.payPeriodAnchorDate ?? "")) throw new Error("Choose an anchor date");
     // Append T12:00:00 so the date string is parsed as local noon, not UTC midnight.
     // Parsing a bare "YYYY-MM-DD" as UTC midnight shifts it back one day for US timezones.
     const anchor = new Date(input.payPeriodAnchorDate + "T12:00:00");
     if (isNaN(anchor.getTime())) throw new Error("Invalid anchor date");
+    const before = await db.tenant.findUniqueOrThrow({
+      where: { id: tenantId },
+      select: { payFrequency: true, payPeriodAnchorDate: true },
+    });
     const updated = await db.tenant.update({
       where: { id: tenantId },
       data: { payFrequency: input.payFrequency, payPeriodAnchorDate: anchor },
+    });
+    // There is no company entry type in the log, and these two fields exist
+    // only to shape pay periods, so the change is filed under pay periods
+    // with the company as the record.
+    await writeAuditLog({
+      tenantId,
+      actorId: employeeId,
+      entityType: "PAY_PERIOD",
+      entityId: tenantId,
+      action: "SETTINGS_UPDATE",
+      changes: {
+        before: { payFrequency: before.payFrequency, payPeriodAnchorDate: before.payPeriodAnchorDate },
+        after: { payFrequency: updated.payFrequency, payPeriodAnchorDate: updated.payPeriodAnchorDate },
+      },
     });
     revalidatePath("/admin/settings");
     return { payFrequency: updated.payFrequency, payPeriodAnchorDate: updated.payPeriodAnchorDate };
@@ -286,25 +319,45 @@ export const submitOpenTimesheets = withRBAC(
   }
 );
 
+/**
+ * Adds the company level period after the latest one: the one the settings
+ * page showed. The caller passes the start date it showed, and a different
+ * answer now (someone else generated one, or the settings changed) refuses
+ * rather than create a period nobody saw.
+ */
 export const generateNextPayPeriod = withRBAC(
   "PAY_PERIOD_MANAGE",
-  async ({ tenantId }, _input: void) => {
+  async ({ tenantId, employeeId }, input: { startDate: string }) => {
     if (!tenantId) throw new Error("No tenant context");
 
-    const tenant = await db.tenant.findUniqueOrThrow({
-      where: { id: tenantId },
-      select: { payPeriodAnchorDate: true },
-    });
-
-    if (!tenant.payPeriodAnchorDate) {
-      throw new Error("Configure a pay period anchor date in Company Settings first");
+    const next = await nextTenantPeriod(tenantId);
+    if (!next) throw new Error("Save an anchor date before generating a pay period.");
+    if (next.startDate.toISOString() !== input?.startDate) {
+      throw new Error("The next pay period changed since this page loaded. Refresh the page and try again.");
     }
 
-    const created = await generatePeriodsForTenant(tenantId, 1);
-    if (created === 0) throw new Error("That pay period already exists");
+    const existing = await db.payPeriod.findFirst({
+      where: { tenantId, ruleSetId: null, startDate: next.startDate },
+      select: { id: true },
+    });
+    if (existing) throw new Error("That pay period already exists.");
+
+    const period = await db.payPeriod.create({
+      data: { tenantId, startDate: next.startDate, endDate: next.endDate, status: "OPEN" },
+    });
+
+    await writeAuditLog({
+      tenantId,
+      actorId: employeeId,
+      entityType: "PAY_PERIOD",
+      entityId: period.id,
+      action: "CREATE",
+      changes: { after: { startDate: next.startDate, endDate: next.endDate, frequency: next.frequency, source: "MANUAL" } },
+    });
 
     revalidatePath("/payroll/pay-periods");
     revalidatePath("/admin/settings");
+    return { startDate: next.startDate, endDate: next.endDate, frequency: next.frequency };
   }
 );
 
