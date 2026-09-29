@@ -20,6 +20,7 @@ import { format, endOfDay, startOfDay } from "date-fns";
 import { z } from "zod";
 import { ExceptionType } from "@prisma/client";
 import type { Role } from "@/lib/rbac/roles";
+import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import type { PunchState, PunchType } from "@prisma/client";
 
 const PAYROLL_ROLES: Role[] = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"];
@@ -36,10 +37,17 @@ export const getTeamTimesheets = withRBAC(
     const isPayroll = PAYROLL_ROLES.includes(role);
     const t = tenantId ?? undefined;
 
+    let timesheetWhere;
+    if (isPayroll) {
+      timesheetWhere = { status: "SUP_APPROVED", employee: { tenantId: t } };
+    } else {
+      const subordinateIds = await getSubordinateIds(employeeId, tenantId);
+      if (subordinateIds.length === 0) return [];
+      timesheetWhere = { employee: { id: { in: subordinateIds }, tenantId: t }, status: "SUBMITTED" };
+    }
+
     return db.timesheet.findMany({
-      where: isPayroll
-        ? { status: "SUP_APPROVED", employee: { tenantId: t } }
-        : { employee: { supervisorId: employeeId, tenantId: t }, status: "SUBMITTED" },
+      where: timesheetWhere,
       include: {
         employee: { include: { user: true } },
         payPeriod: true,
@@ -73,11 +81,11 @@ export const getTimesheetForReview = withRBAC(
     });
 
     const isPayroll = PAYROLL_ROLES.includes(role);
-    const isSupervisor =
-      timesheet.employee.supervisorId === reviewerId;
-
-    if (!isPayroll && !isSupervisor) {
-      throw new Error("You do not have access to this timesheet");
+    if (!isPayroll) {
+      const subordinateIds = await getSubordinateIds(reviewerId, timesheet.employee.tenantId);
+      if (!subordinateIds.includes(timesheet.employeeId)) {
+        throw new Error("You do not have access to this timesheet");
+      }
     }
 
     return timesheet;
@@ -116,9 +124,15 @@ export const getTeamExceptions = withRBAC(
     const isPayroll = PAYROLL_ROLES.includes(role);
     const t = tenantId ?? undefined;
 
+    let idFilter: { id?: { in: string[] } } = {};
+    if (!isPayroll) {
+      const subordinateIds = await getSubordinateIds(employeeId, tenantId);
+      if (subordinateIds.length === 0) return [];
+      idFilter = { id: { in: subordinateIds } };
+    }
     const employeeFilter = {
       tenantId: t,
-      ...(isPayroll ? {} : { supervisorId: employeeId }),
+      ...idFilter,
       ...(siteId ? { siteId } : {}),
       ...(departmentId ? { departmentId } : {}),
       ...(shiftId ? { shiftId } : {}),
@@ -266,6 +280,13 @@ export const getExceptionTypeCounts = withRBAC(
 
     const isPayroll = PAYROLL_ROLES.includes(role);
 
+    let idFilter: { id?: { in: string[] } } = {};
+    if (!isPayroll) {
+      const subordinateIds = await getSubordinateIds(employeeId, tenantId);
+      if (subordinateIds.length === 0) return {};
+      idFilter = { id: { in: subordinateIds } };
+    }
+
     const grouped = await db.exception.groupBy({
       by: ["exceptionType"],
       where: {
@@ -274,7 +295,7 @@ export const getExceptionTypeCounts = withRBAC(
           ...(payPeriodId ? { payPeriodId } : {}),
           employee: {
             tenantId: tenantId ?? undefined,
-            ...(isPayroll ? {} : { supervisorId: employeeId }),
+            ...idFilter,
             ...(siteId ? { siteId } : {}),
             ...(departmentId ? { departmentId } : {}),
             ...(shiftId ? { shiftId } : {}),
@@ -304,12 +325,19 @@ export const getExceptionPunches = withRBAC(
     const { timesheetId } = z.object({ timesheetId: z.string() }).parse(input);
     const isPayroll = PAYROLL_ROLES.includes(role);
 
+    let idFilter: { id?: { in: string[] } } = {};
+    if (!isPayroll) {
+      const subordinateIds = await getSubordinateIds(employeeId, tenantId);
+      if (subordinateIds.length === 0) return null;
+      idFilter = { id: { in: subordinateIds } };
+    }
+
     const timesheet = await db.timesheet.findFirst({
       where: {
         id: timesheetId,
         employee: {
           tenantId: tenantId ?? undefined,
-          ...(isPayroll ? {} : { supervisorId: employeeId }),
+          ...idFilter,
         },
       },
       select: { id: true },
@@ -470,14 +498,19 @@ export const getTeamLeaveRequests = withRBAC(
     const isPayroll = PAYROLL_ROLES.includes(role);
     const t = tenantId ?? undefined;
 
-    const employeeFilter = isPayroll
-      ? {
-          tenantId: t,
-          ...(siteId ? { siteId } : {}),
-          ...(departmentId ? { departmentId } : {}),
-          ...(shiftId ? { shiftId } : {}),
-        }
-      : { supervisorId: employeeId, tenantId: t };
+    let employeeFilter;
+    if (isPayroll) {
+      employeeFilter = {
+        tenantId: t,
+        ...(siteId ? { siteId } : {}),
+        ...(departmentId ? { departmentId } : {}),
+        ...(shiftId ? { shiftId } : {}),
+      };
+    } else {
+      const subordinateIds = await getSubordinateIds(employeeId, tenantId);
+      if (subordinateIds.length === 0) return [];
+      employeeFilter = { id: { in: subordinateIds }, tenantId: t };
+    }
 
     return db.leaveRequest.findMany({
       where: { status: "PENDING", employee: employeeFilter },
@@ -522,14 +555,19 @@ export const getTeamHeadcount = withRBAC(
     const isPayroll = PAYROLL_ROLES.includes(role);
     const t = tenantId ?? undefined;
 
-    const employeeFilter = isPayroll
-      ? {
-          tenantId: t,
-          ...(siteId ? { siteId } : {}),
-          ...(departmentId ? { departmentId } : {}),
-          ...(shiftId ? { shiftId } : {}),
-        }
-      : { supervisorId: employeeId, tenantId: t };
+    let employeeFilter;
+    if (isPayroll) {
+      employeeFilter = {
+        tenantId: t,
+        ...(siteId ? { siteId } : {}),
+        ...(departmentId ? { departmentId } : {}),
+        ...(shiftId ? { shiftId } : {}),
+      };
+    } else {
+      const subordinateIds = await getSubordinateIds(employeeId, tenantId);
+      if (subordinateIds.length === 0) return { total: 0, byDepartment: [] };
+      employeeFilter = { id: { in: subordinateIds }, tenantId: t };
+    }
 
     const grouped = await db.employee.groupBy({
       by: ["departmentId"],
@@ -572,14 +610,19 @@ export const getHrPendingLeave = withRBAC(
     const isPayroll = PAYROLL_ROLES.includes(role);
     const t = tenantId ?? undefined;
 
-    const employeeFilter = isPayroll
-      ? {
-          tenantId: t,
-          ...(siteId ? { siteId } : {}),
-          ...(departmentId ? { departmentId } : {}),
-          ...(shiftId ? { shiftId } : {}),
-        }
-      : { supervisorId: employeeId, tenantId: t };
+    let employeeFilter;
+    if (isPayroll) {
+      employeeFilter = {
+        tenantId: t,
+        ...(siteId ? { siteId } : {}),
+        ...(departmentId ? { departmentId } : {}),
+        ...(shiftId ? { shiftId } : {}),
+      };
+    } else {
+      const subordinateIds = await getSubordinateIds(employeeId, tenantId);
+      if (subordinateIds.length === 0) return [];
+      employeeFilter = { id: { in: subordinateIds }, tenantId: t };
+    }
 
     return db.leaveRequest.findMany({
       where: { status: "PENDING_HR", employee: employeeFilter },
@@ -617,14 +660,19 @@ export const getUpcomingTeamLeave = withRBAC(
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const employeeFilter = isPayroll
-      ? {
-          tenantId: t,
-          ...(siteId ? { siteId } : {}),
-          ...(departmentId ? { departmentId } : {}),
-          ...(shiftId ? { shiftId } : {}),
-        }
-      : { supervisorId: employeeId, tenantId: t };
+    let employeeFilter;
+    if (isPayroll) {
+      employeeFilter = {
+        tenantId: t,
+        ...(siteId ? { siteId } : {}),
+        ...(departmentId ? { departmentId } : {}),
+        ...(shiftId ? { shiftId } : {}),
+      };
+    } else {
+      const subordinateIds = await getSubordinateIds(employeeId, tenantId);
+      if (subordinateIds.length === 0) return [];
+      employeeFilter = { id: { in: subordinateIds }, tenantId: t };
+    }
 
     return db.leaveRequest.findMany({
       where: {
