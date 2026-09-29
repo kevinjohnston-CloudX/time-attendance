@@ -136,7 +136,10 @@ async function resolveDateFilter(
       const now = new Date();
       const start = new Date(now);
       start.setDate(start.getDate() - dateRange.relativeDays);
-      return { startDate: { gte: start } };
+      return {
+        startDate: { lte: now },
+        endDate: { gte: start },
+      };
     }
   }
 }

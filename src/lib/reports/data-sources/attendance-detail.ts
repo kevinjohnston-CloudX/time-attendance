@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { readable } from "../readable";
 import { timesheetPayPeriodWhere } from "../date-scope";
@@ -34,6 +35,12 @@ export const attendanceDetailSource: DataSourceDefinition = {
     { id: "endTime",         label: "End",       type: "string",  defaultVisible: true },
     { id: "durationMinutes", label: "Hours", type: "number",  defaultVisible: true },
     { id: "payBucket",       label: "Hours type",     type: "string",  defaultVisible: true },
+    { id: "payCode",           label: "Pay Code",        type: "string",  defaultVisible: true },
+    { id: "payCodeLabel",      label: "Pay Code Label",  type: "string",  defaultVisible: false },
+    { id: "reasonCode",        label: "Reason Code",     type: "string",  defaultVisible: false },
+    { id: "regularMinutes",    label: "REG (min)",       type: "number",  defaultVisible: false },
+    { id: "overtimeMinutes",   label: "OT (min)",        type: "number",  defaultVisible: false },
+    { id: "doubletimeMinutes", label: "DT (min)",        type: "number",  defaultVisible: false },
     { id: "isPaid",          label: "Paid",           type: "boolean", defaultVisible: false },
   ],
   filters: [
@@ -56,20 +63,28 @@ export const attendanceDetailSource: DataSourceDefinition = {
     const dateFilter = await resolveDateFilter(config.dateRange, tenantId);
     const filterWhere = buildWhereClause(config.filters, fieldMap);
 
-    // The pay period lives on the timesheet too, so the two are merged: this
-    // key used to replace the date filter's, and a report run for one pay
-    // period returned every pay period on file.
+    // dateFilter puts payPeriodId inside timesheet; custom/relative put segmentDate at root.
+    const dateTimesheetFilter = (dateFilter.timesheet as Record<string, unknown>) ?? {};
+    // filterWhere nests all employee-level conditions under timesheet.employee.*
+    const employeeFilter =
+      ((filterWhere.timesheet as Record<string, unknown>)?.employee as Record<string, unknown>) ?? {};
+
+    // Spread root-level scalar filters (segmentType, payBucket, segmentDate from filterWhere)
+    // but exclude the timesheet key — we merge that manually below.
+    const { timesheet: _ft, ...rootFilterWhere } = filterWhere as Record<string, unknown>;
+
     const where = {
-      ...dateFilter,
-      ...filterWhere,
+      durationMinutes: { gt: 0 },
+      ...(dateFilter.segmentDate !== undefined ? { segmentDate: dateFilter.segmentDate } : {}),
+      ...rootFilterWhere,
       timesheet: {
-        ...((dateFilter.timesheet as Record<string, unknown>) ?? {}),
+        ...dateTimesheetFilter,
         employee: {
           tenantId,
-          ...(filterWhere.timesheet as Record<string, unknown> ?? {}),
+          ...employeeFilter,
         },
       },
-    };
+    } as Prisma.WorkSegmentWhereInput;
 
     const orderBy =
       config.sortBy.length > 0
@@ -79,9 +94,11 @@ export const attendanceDetailSource: DataSourceDefinition = {
     const segments = await db.workSegment.findMany({
       where,
       include: {
+        payCode: { select: { code: true, label: true } },
         timesheet: {
           include: {
             employee: { include: { user: true, department: true, site: true } },
+            dayReasons: { include: { reasonCode: { select: { code: true, label: true } } } },
           },
         },
       },
@@ -89,19 +106,31 @@ export const attendanceDetailSource: DataSourceDefinition = {
       take: config.limit,
     });
 
-    const rows = segments.map((seg) => ({
-      employeeName: seg.timesheet.employee.user?.name ?? seg.timesheet.employee.employeeCode,
-      employeeCode: seg.timesheet.employee.employeeCode,
-      department: seg.timesheet.employee.department.name,
-      site: seg.timesheet.employee.site.name,
-      date: format(seg.segmentDate, "yyyy-MM-dd"),
-      segmentType: readable("segmentType", seg.segmentType),
-      startTime: format(seg.startTime, "h:mm a"),
-      endTime: format(seg.endTime, "h:mm a"),
-      durationMinutes: seg.durationMinutes,
-      payBucket: readable("payBucket", seg.payBucket),
-      isPaid: seg.isPaid,
-    }));
+    const rows = segments.map((seg) => {
+      const dayStr = seg.segmentDate.toISOString().slice(0, 10);
+      const dayReason = seg.timesheet.dayReasons.find(
+        (dr) => dr.segmentDate.toISOString().slice(0, 10) === dayStr
+      );
+      return {
+        employeeName: seg.timesheet.employee.user?.name ?? seg.timesheet.employee.employeeCode,
+        employeeCode: seg.timesheet.employee.employeeCode,
+        department: seg.timesheet.employee.department.name,
+        site: seg.timesheet.employee.site.name,
+        date: seg.segmentDate.toISOString().slice(0, 10),
+        segmentType: readable("segmentType", seg.segmentType),
+        startTime: format(seg.startTime, "h:mm a"),
+        endTime: format(seg.endTime, "h:mm a"),
+        durationMinutes: seg.durationMinutes,
+        payBucket: readable("payBucket", seg.payBucket),
+        payCode: seg.payCode?.code ?? null,
+        payCodeLabel: seg.payCode?.label ?? null,
+        reasonCode: dayReason ? `${dayReason.reasonCode.code} – ${dayReason.reasonCode.label}` : null,
+        regularMinutes: seg.payBucket === "REG" ? seg.durationMinutes : null,
+        overtimeMinutes: seg.payBucket === "OT" ? seg.durationMinutes : null,
+        doubletimeMinutes: seg.payBucket === "DT" ? seg.durationMinutes : null,
+        isPaid: seg.isPaid,
+      };
+    });
 
     // In-memory sort for computed columns (date, startTime, endTime, etc.)
     const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
@@ -128,14 +157,15 @@ async function resolveDateFilter(
     case "custom":
       return {
         segmentDate: {
-          gte: new Date(dateRange.startDate),
-          lte: new Date(dateRange.endDate),
+          gte: new Date(`${dateRange.startDate}T00:00:00.000Z`),
+          lte: new Date(`${dateRange.endDate}T23:59:59.999Z`),
         },
       };
     case "relative": {
       const now = new Date();
       const start = new Date(now);
-      start.setDate(start.getDate() - dateRange.relativeDays);
+      start.setUTCDate(start.getUTCDate() - dateRange.relativeDays);
+      start.setUTCHours(0, 0, 0, 0);
       return { segmentDate: { gte: start, lte: now } };
     }
   }

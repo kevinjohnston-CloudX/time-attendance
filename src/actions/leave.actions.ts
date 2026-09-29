@@ -10,6 +10,7 @@ import { employeeScope, NotFoundError } from "@/lib/rbac/scope";
 import { postLeaveUsage, reverseLeaveUsage } from "@/lib/engines/accrual-engine";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
 import { writeAuditLog } from "@/lib/audit/logger";
+import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import {
   getLeaveRequestsCore,
   getLeaveTypesCore,
@@ -110,12 +111,15 @@ export const getTeamMembersForLeave = withRBAC(
       ? await userHasPermission(session.user, "LEAVE_REQUEST_ANY")
       : false;
 
+    let idFilter: { id?: { in: string[] } } = {};
+    if (!canSubmitForAny) {
+      const subordinateIds = await getSubordinateIds(actorId, tenantId);
+      if (subordinateIds.length === 0) return { employees: [], leaveTypes: [] };
+      idFilter = { id: { in: subordinateIds } };
+    }
+
     const employees = await db.employee.findMany({
-      where: {
-        isActive: true,
-        tenantId: tenantId ?? undefined,
-        ...(canSubmitForAny ? {} : { supervisorId: actorId }),
-      },
+      where: { isActive: true, tenantId: tenantId ?? undefined, ...idFilter },
       select: {
         id: true,
         wmsId: true,
@@ -156,14 +160,15 @@ export const createLeaveRequestForEmployee = withRBAC(
     });
     if (target.tenantId !== tenantId) throw new Error("Employee not found.");
 
-    // For team scope: must be a direct report. For any scope: bypass.
-    if (target.supervisorId !== actorId) {
-      const session = await auth();
-      const canSubmitForAny = session?.user
-        ? await userHasPermission(session.user, "LEAVE_REQUEST_ANY")
-        : false;
-      if (!canSubmitForAny) {
-        throw new Error("You can only submit leave for your direct reports.");
+    // For team scope: must be in the subordinate tree. For any scope: bypass.
+    const session = await auth();
+    const canSubmitForAny = session?.user
+      ? await userHasPermission(session.user, "LEAVE_REQUEST_ANY")
+      : false;
+    if (!canSubmitForAny) {
+      const subordinateIds = await getSubordinateIds(actorId, tenantId);
+      if (!subordinateIds.includes(targetEmployeeId)) {
+        throw new Error("You can only submit leave for your direct or indirect reports.");
       }
     }
 

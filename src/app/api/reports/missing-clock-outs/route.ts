@@ -27,13 +27,14 @@ const MAX_ROWS = 5000;
  * scan_events is that the two can disagree.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  // Names, badge codes and sites of the people in it: payroll or Live
-  // Attendance company-wide only, and only for the caller's own company.
+  // Names, badge codes and sites of the people in it: report managers,
+  // payroll or Live Attendance company-wide only, and only for the caller's own company.
   // Anything else answers "not found".
   const session = await auth();
   const notFound = NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   if (!session?.user || session.user.isActive === false) return notFound;
   const allowed =
+    (await userHasPermission(session.user, "REPORT_MANAGE")) ||
     (await userHasPermission(session.user, "TIMECARD_VIEW_ANY")) ||
     (await userHasPermission(session.user, "PRESENCE_VIEW_ANY"));
   if (!allowed) return notFound;

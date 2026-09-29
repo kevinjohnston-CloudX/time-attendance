@@ -31,7 +31,9 @@ export const getLeaveTypesForTimecard = withRBAC(
 // ─── Add a manual IN/OUT punch pair to a timesheet day ───────────────────────
 
 export const addManualPunchPair = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  // Supervisors too, for their own team's timecards: the scope check in
+  // each action keeps them to their direct reports and off their own.
+  ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_TEAM"],
   async (ctx, input: unknown) => {
     const { timesheetId, date: entryDate, inTime, outTime, reason, payCodeId } =
       manualPunchPairSchema.parse(input);
@@ -166,7 +168,9 @@ export const addManualPunchPair = withRBAC(
 // ─── Add a single manual punch (IN or OUT) to a timesheet day ───────────────
 
 export const addSingleManualPunch = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  // Supervisors too, for their own team's timecards: the scope check in
+  // each action keeps them to their direct reports and off their own.
+  ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_TEAM"],
   async (ctx, input: unknown) => {
     const { timesheetId, punchType, punchTime, reason } =
       singleManualPunchSchema.parse(input);
@@ -451,7 +455,7 @@ const saveTimesheetNoteSchema = z.object({
 });
 
 export const saveTimesheetNote = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_TEAM", "TIMECARD_EDIT_TEAM"],
   async (ctx, input: z.infer<typeof saveTimesheetNoteSchema>) => {
     const { timesheetId, noteDate, note } = saveTimesheetNoteSchema.parse(input);
     if (!note.trim()) return;
@@ -485,7 +489,9 @@ export const saveTimesheetNote = withRBAC(
 const LEAVE_BUCKETS = new Set(["PTO", "SICK", "FMLA", "BEREAVEMENT", "JURY_DUTY", "MILITARY", "UNPAID"]);
 
 export const addManualHoursEntry = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  // Supervisors too, for their own team's timecards: the scope check in
+  // each action keeps them to their direct reports and off their own.
+  ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_TEAM"],
   async (ctx, input: unknown) => {
     const { timesheetId, date, hours, payCodeId, note } = z.object({
       timesheetId: z.string(),
