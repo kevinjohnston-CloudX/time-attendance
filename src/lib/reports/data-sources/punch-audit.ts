@@ -8,7 +8,7 @@ import { format } from "date-fns";
 
 const fieldMap: FieldMap = {
   employeeName: { prismaPath: "employee.user.name",       type: "string" },
-  employeeCode: { prismaPath: "employee.employeeCode",    type: "string" },
+  employeeCode: { prismaPath: "employee.wmsId",           type: "string" },
   department:   { prismaPath: "employee.department.name",  type: "string" },
   departmentId: { prismaPath: "employee.departmentId",     type: "string" },
   siteId:       { prismaPath: "employee.siteId",           type: "string" },
@@ -59,6 +59,7 @@ export const punchAuditSource: DataSourceDefinition = {
         { value: "SYSTEM", label: "System" },
       ] },
     { id: "isApproved", label: "Approved", type: "boolean", operators: ["eq"] },
+    { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
   ],
   groupableFields: ["department", "punchType", "source"],
   fieldMap,
