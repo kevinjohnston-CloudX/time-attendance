@@ -17,8 +17,10 @@ import type { PayFrequency } from "@prisma/client";
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
 export const getPayPeriods = withRBAC("PAY_PERIOD_MANAGE", async ({ tenantId }, _input: void) => {
+  // With no company, tenantId undefined would match every company's periods.
+  if (!tenantId) throw new Error("Tenant context required");
   return db.payPeriod.findMany({
-    where: { tenantId: tenantId ?? undefined },
+    where: { tenantId },
     orderBy: { startDate: "desc" },
     include: {
       timesheets: {
@@ -41,8 +43,9 @@ export const getPayPeriodDetail = withRBAC(
 
     // Scoped to the caller's company in the query itself: an id from another
     // tenant finds nothing, the same as an id that does not exist.
+    if (!tenantId) throw new Error("Pay period not found");
     const inScope = await db.payPeriod.findFirst({
-      where: { id: payPeriodId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: payPeriodId, tenantId },
       select: { id: true },
     });
     if (!inScope) throw new Error("Pay period not found");
@@ -70,6 +73,19 @@ export const getPayPeriodDetail = withRBAC(
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
 /**
+ * The period, only if it belongs to the caller's company. Every write below
+ * starts here: looked up by id alone, a period id from another company (they
+ * appear in links and the audit log) would be marked ready, locked, reopened
+ * or bulk approved from this one.
+ */
+async function findPeriodInScope(payPeriodId: string, tenantId: string | null) {
+  if (!tenantId) throw new Error("Pay period not found");
+  const payPeriod = await db.payPeriod.findFirst({ where: { id: payPeriodId, tenantId } });
+  if (!payPeriod) throw new Error("Pay period not found");
+  return payPeriod;
+}
+
+/**
  * OPEN → READY.
  * Requires all timesheets to be PAYROLL_APPROVED with no unresolved exceptions.
  */
@@ -78,9 +94,8 @@ export const markPayPeriodReady = withRBAC(
   async (actor, input: { payPeriodId: string }) => {
     const { payPeriodId } = payPeriodIdSchema.parse(input);
 
-    const payPeriod = await db.payPeriod.findUniqueOrThrow({
-      where: { id: payPeriodId },
-    });
+    // Scoped to the caller's company: an id from another company is not found.
+    const payPeriod = await findPeriodInScope(payPeriodId, actor.tenantId);
 
     const transition = validatePayPeriodTransition(payPeriod.status, "MARK_READY");
     if (!transition.valid) throw new Error(transition.error);
@@ -124,10 +139,7 @@ export const lockPayPeriod = withRBAC(
   async (actor, input: { payPeriodId: string }) => {
     const { payPeriodId } = payPeriodIdSchema.parse(input);
 
-    const payPeriod = await db.payPeriod.findUniqueOrThrow({
-      where: { id: payPeriodId },
-      select: { status: true, startDate: true, endDate: true, tenantId: true },
-    });
+    const payPeriod = await findPeriodInScope(payPeriodId, actor.tenantId);
 
     const transition = validatePayPeriodTransition(payPeriod.status, "LOCK");
     if (!transition.valid) throw new Error(transition.error);
@@ -175,9 +187,7 @@ export const reopenPayPeriod = withRBAC(
   async (actor, input: { payPeriodId: string; reason: string }) => {
     const { payPeriodId, reason } = reopenPayPeriodSchema.parse(input);
 
-    const payPeriod = await db.payPeriod.findUniqueOrThrow({
-      where: { id: payPeriodId },
-    });
+    const payPeriod = await findPeriodInScope(payPeriodId, actor.tenantId);
 
     const transition = validatePayPeriodTransition(payPeriod.status, "REOPEN");
     if (!transition.valid) throw new Error(transition.error);
@@ -278,10 +288,7 @@ export const submitOpenTimesheets = withRBAC(
   async ({ tenantId, employeeId }, input: { payPeriodId: string }) => {
     const { payPeriodId } = payPeriodIdSchema.parse(input);
 
-    const payPeriod = await db.payPeriod.findUniqueOrThrow({
-      where: { id: payPeriodId },
-      select: { endDate: true },
-    });
+    const payPeriod = await findPeriodInScope(payPeriodId, tenantId);
 
     if (payPeriod.endDate >= new Date()) {
       throw new Error("Can only bulk-approve timesheets for past pay periods");
