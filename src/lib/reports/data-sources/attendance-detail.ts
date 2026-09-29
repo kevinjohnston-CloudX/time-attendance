@@ -114,7 +114,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
         employeeCode: seg.timesheet.employee.employeeCode,
         department: seg.timesheet.employee.department.name,
         site: seg.timesheet.employee.site.name,
-        date: format(seg.segmentDate, "yyyy-MM-dd"),
+        date: seg.segmentDate.toISOString().slice(0, 10),
         segmentType: readable("segmentType", seg.segmentType),
         startTime: format(seg.startTime, "h:mm a"),
         endTime: format(seg.endTime, "h:mm a"),
@@ -155,14 +155,15 @@ async function resolveDateFilter(
     case "custom":
       return {
         segmentDate: {
-          gte: new Date(dateRange.startDate),
-          lte: new Date(dateRange.endDate),
+          gte: new Date(`${dateRange.startDate}T00:00:00.000Z`),
+          lte: new Date(`${dateRange.endDate}T23:59:59.999Z`),
         },
       };
     case "relative": {
       const now = new Date();
       const start = new Date(now);
-      start.setDate(start.getDate() - dateRange.relativeDays);
+      start.setUTCDate(start.getUTCDate() - dateRange.relativeDays);
+      start.setUTCHours(0, 0, 0, 0);
       return { segmentDate: { gte: start, lte: now } };
     }
   }
