@@ -6,13 +6,15 @@ import { migrateTimesheetsOnRuleSetChange, migrateTimesheetBetweenRuleSets } fro
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { Prisma } from "@prisma/client";
+import { Prisma, type AuditEntityType } from "@prisma/client";
 import { withRBAC } from "@/lib/rbac/guard";
 import { photoUrls } from "@/lib/presence/photos";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
 import { looksLikeBadge } from "@/lib/presence/people-search.service";
 import { MISSING_OPTIONS, PAY_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
 import { writeAuditLog } from "@/lib/audit/logger";
+import { ENTITY_TYPES, actionsMatching } from "@/lib/audit/labels";
+import { startOfDayInTz } from "@/lib/utils/date";
 import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
 import { currentIdentity } from "@/lib/rbac/current";
 import { employeeRank, forgetIdentity, type LiveIdentity } from "@/lib/rbac/identity";
@@ -1438,36 +1440,161 @@ export const resetLeaveBalanceToAccrual = withRBAC(
 
 // ─── Audit Log ────────────────────────────────────────────────────────────────
 
+export type AuditRange = "any" | "today" | "7" | "30";
+
+/**
+ * One page of the company's audit log, newest first, with the filters the
+ * Audit Log screen offers: a search over the action and the record id, the
+ * record type, who did it ("system" for entries with no person), and how far
+ * back. Each row carries the link to its record where the app has a page
+ * for one, worked out here so the screen never guesses a route.
+ */
 export const getAuditLogs = withRBAC(
   "AUDIT_VIEW",
-  async ({ tenantId }, input: { page?: number; entityType?: string } = {}) => {
-    const page = input.page ?? 1;
+  async (
+    { tenantId },
+    input: { page?: number; entityType?: string; q?: string; actor?: string; range?: AuditRange; tz?: string } = {}
+  ) => {
+    const page = Math.max(1, Math.floor(Number(input.page) || 1));
     const take = 50;
     const skip = (page - 1) * take;
     const tenantFilter = tenantId ? { tenantId } : {};
 
-    const [logs, total] = await Promise.all([
+    const entityType = ENTITY_TYPES.includes(input.entityType as never) ? (input.entityType as AuditEntityType) : undefined;
+    const q = (input.q ?? "").trim().slice(0, 100);
+    const actor = (input.actor ?? "").trim();
+    const range: AuditRange = ["today", "7", "30"].includes(input.range ?? "") ? (input.range as AuditRange) : "any";
+
+    // "Today" is the viewer's own day. A timezone the runtime does not know
+    // falls back to the server's rather than failing the page.
+    let since: Date | undefined;
+    if (range !== "any") {
+      let tz = "America/New_York";
+      try {
+        if (input.tz) {
+          new Intl.DateTimeFormat("en-US", { timeZone: input.tz });
+          tz = input.tz;
+        }
+      } catch {}
+      const todayStart = startOfDayInTz(new Date(), tz);
+      since = range === "today" ? todayStart : new Date(todayStart.getTime() - (Number(range) - 1) * 86400000);
+    }
+
+    const where: Prisma.AuditLogWhereInput = {
+      ...tenantFilter,
+      ...(entityType ? { entityType } : {}),
+      ...(actor === "system" ? { actorId: null } : actor ? { actorId: actor } : {}),
+      ...(since ? { createdAt: { gte: since } } : {}),
+      ...(q
+        ? {
+            OR: [
+              { action: { contains: q, mode: "insensitive" } },
+              { entityId: { contains: q, mode: "insensitive" } },
+              ...(actionsMatching(q).length ? [{ action: { in: actionsMatching(q) } }] : []),
+            ],
+          }
+        : {}),
+    };
+
+    const [rows, total] = await Promise.all([
       db.auditLog.findMany({
-        where: {
-          ...tenantFilter,
-          ...(input.entityType ? { entityType: input.entityType as never } : {}),
+        where,
+        select: {
+          id: true,
+          action: true,
+          entityType: true,
+          entityId: true,
+          changes: true,
+          ipAddress: true,
+          userAgent: true,
+          createdAt: true,
+          actorId: true,
+          actor: { select: { user: { select: { name: true } } } },
         },
-        include: { actor: { include: { user: true } } },
         orderBy: { createdAt: "desc" },
         take,
         skip,
       }),
-      db.auditLog.count({
-        where: {
-          ...tenantFilter,
-          ...(input.entityType ? { entityType: input.entityType as never } : {}),
-        },
-      }),
+      db.auditLog.count({ where }),
     ]);
 
-    return { logs, total, page, pages: Math.ceil(total / take) };
+    // A timesheet opens on the timecard screen, which is addressed by the
+    // employee and the period, so those come from the timesheet itself.
+    const timesheetIds = rows.filter((r) => r.entityType === "TIMESHEET").map((r) => r.entityId);
+    const timesheets = timesheetIds.length
+      ? await db.timesheet.findMany({
+          where: { id: { in: timesheetIds }, ...(tenantId ? { employee: { tenantId } } : {}) },
+          select: { id: true, employeeId: true, payPeriodId: true },
+        })
+      : [];
+    const sheet = new Map(timesheets.map((t) => [t.id, t]));
+
+    const hrefOf = (r: (typeof rows)[number]): string | null => {
+      const id = encodeURIComponent(r.entityId);
+      switch (r.entityType) {
+        case "EMPLOYEE":
+          return `/admin/employees/${id}`;
+        case "PAY_PERIOD":
+          // Company settings changes are filed here with the company as the record.
+          return r.action === "SETTINGS_UPDATE" ? "/admin/settings" : `/payroll/pay-periods?id=${id}`;
+        case "RULE_SET":
+          return r.action === "RULE_SET_DELETED" ? null : `/admin/rules-setup/rule-sets/${id}`;
+        case "PTO_POLICY":
+          return r.action === "PTO_POLICY_DELETED" ? null : `/admin/rules-setup/leave-policies/${id}`;
+        case "TIMESHEET": {
+          const t = sheet.get(r.entityId);
+          return t ? `/payroll/timecards?employeeId=${encodeURIComponent(t.employeeId)}&periodId=${encodeURIComponent(t.payPeriodId)}` : null;
+        }
+        case "ADP_SYNC":
+          return "/admin/adp";
+        default:
+          return null;
+      }
+    };
+
+    const logs = rows.map((r) => ({
+      id: r.id,
+      action: r.action,
+      entityType: r.entityType,
+      entityId: r.entityId,
+      changes: r.changes,
+      ipAddress: r.ipAddress,
+      userAgent: r.userAgent,
+      createdAt: r.createdAt.toISOString(),
+      actorId: r.actorId,
+      actorName: r.actor?.user?.name ?? null,
+      href: hrefOf(r),
+    }));
+
+    return { logs, total, page, pages: Math.max(1, Math.ceil(total / take)) };
   }
 );
+
+/**
+ * Everybody who appears in the company's audit log, most entries first, for
+ * the Actor filter. Entries with no person are offered separately as System.
+ */
+export const getAuditActors = withRBAC("AUDIT_VIEW", async ({ tenantId }, _input: void) => {
+  const grouped = await db.auditLog.groupBy({
+    by: ["actorId"],
+    where: { ...(tenantId ? { tenantId } : {}), actorId: { not: null } },
+    _count: { _all: true },
+    orderBy: { _count: { actorId: "desc" } },
+    take: 200,
+  });
+  const ids = grouped.map((g) => g.actorId).filter((id): id is string => !!id);
+  const people = ids.length
+    ? await db.employee.findMany({
+        where: { id: { in: ids }, ...(tenantId ? { tenantId } : {}) },
+        select: { id: true, user: { select: { name: true } } },
+      })
+    : [];
+  const name = new Map(people.map((p) => [p.id, p.user?.name ?? null]));
+  return ids
+    .filter((id) => name.has(id))
+    .map((id) => ({ id, name: name.get(id) || "Unnamed employee" }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+});
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
 
