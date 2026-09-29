@@ -56,14 +56,17 @@ export function TopBar({
   return (
     // z-30: above the pages' pinned headers (z-20), so the bell's list and
     // the design switch's note open over them rather than behind.
-    <header className="relative z-30 flex h-9 flex-none items-center gap-2.5 px-3">
+    <header className="relative z-30 flex h-9 flex-none items-center gap-2 px-3 lg:gap-2.5">
       <nav
         aria-label="Breadcrumb"
-        className="flex h-8 min-w-0 items-center gap-0.5 overflow-hidden rounded-full pl-[3px] pr-2.5 uppercase"
+        // Under 1024px the pill keeps only the sidebar toggle: the trail has
+        // no room there, and the page's own title sits right under it. The
+        // rail has no toggle, so there the pill goes until the window widens.
+        className={`${navMode === "rail" ? "hidden lg:flex" : "flex"} h-8 min-w-0 items-center gap-0.5 overflow-hidden rounded-full pl-[3px] pr-[3px] uppercase lg:pr-2.5`}
         style={{
           // Never narrower than the sidebar toggle and home, which stay whole
           // while the trail truncates.
-          minWidth: navMode === "grouped" ? 72 : 40,
+          minWidth: navMode === "grouped" ? 32 : undefined,
           background: "var(--ta-glass)",
           boxShadow: "inset 0 0 0 1px var(--ta-ring-strong)",
           font: "var(--weight-semibold) 11px/1 var(--font-sans)",
@@ -88,7 +91,7 @@ export function TopBar({
             </button>
             <span
               aria-hidden
-              className="ml-0.5 mr-1 h-3.5 w-px flex-none"
+              className="ml-0.5 mr-1 hidden h-3.5 w-px flex-none lg:block"
               style={{ background: "var(--stroke-secondary)" }}
             />
           </>
@@ -97,14 +100,14 @@ export function TopBar({
         <Link
           href="/dashboard"
           title="Dashboard"
-          className="ta-pill-btn grid h-6 w-6 flex-none place-items-center rounded-full"
+          className="ta-pill-btn hidden h-6 w-6 flex-none place-items-center rounded-full lg:grid"
           style={{ color: "var(--icon-secondary)" }}
         >
           <Home className="h-3.5 w-3.5" />
         </Link>
 
         {here && (
-          <>
+          <span className="hidden min-w-0 items-center gap-0.5 lg:flex">
             <Chevron />
             <Crumb
               label={here.section.label}
@@ -131,7 +134,7 @@ export function TopBar({
                 <Crumb label={leaf} current last />
               </>
             )}
-          </>
+          </span>
         )}
       </nav>
 
@@ -143,9 +146,11 @@ export function TopBar({
         </Suspense>
       )}
 
-      {/* The navigation layout switch: a label and a small segmented control. */}
+      {/* The navigation layout switch: a label and a small segmented control.
+          Under 1024px the label goes and the switch stays, so the bell never
+          gets pushed off the edge. */}
       <span
-        className="flex-none whitespace-nowrap uppercase"
+        className="hidden flex-none whitespace-nowrap uppercase lg:inline"
         style={{
           font: "var(--weight-semibold) 10px/1 var(--font-sans)",
           letterSpacing: "0.08em",
@@ -177,8 +182,8 @@ export function TopBar({
   );
 }
 
-function Chevron() {
-  return <ChevronRight className="h-3 w-3 flex-none" style={{ color: "var(--icon-disabled)" }} />;
+function Chevron({ className = "" }: { className?: string }) {
+  return <ChevronRight className={`h-3 w-3 flex-none ${className}`} style={{ color: "var(--icon-disabled)" }} />;
 }
 
 /**

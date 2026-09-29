@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Building2, Check, ChevronDown, Clock, DoorOpen, Download, Maximize2, Minimize2, SearchX, SlidersHorizontal, UserRoundX } from "lucide-react";
+import { ArrowUpDown, ArrowDown, ArrowUp, Building2, Check, ChevronDown, Clock, DoorOpen, Download, Maximize2, Minimize2, SearchX, SlidersHorizontal, UserRoundX } from "lucide-react";
 import {
   Badge,
   Button,
@@ -892,7 +892,8 @@ export function OnSiteBoard({
               {!condensed && liveLine}
             </div>
           </div>
-          <div className="flex items-center gap-2">{actions}</div>
+          {/* Wraps rather than running off a narrow window. */}
+          <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div>
         </div>
 
         {/* Row two, how you are looking at it: search first, then who, then
@@ -1781,12 +1782,13 @@ function SortChip({ sort, onChange }: { sort: Sort; onChange: (s: Sort) => void 
   const options = sort.key === "status" ? [...SORT_OPTIONS, { key: "status" as SortKey, label: "Status" }] : SORT_OPTIONS;
   return (
     <span className={`ta-chip ${styles.pill}`}>
+      <ArrowUpDown className="h-[15px] w-[15px] flex-none" aria-hidden="true" />
       <span>Sort</span>
       <span className={styles.pillValue}>
         {SORT_LABEL[sort.key]}
         {sort.key !== "default" && sort.dir === "desc" ? ", reversed" : ""}
       </span>
-      <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+      <ChevronDown className={`h-3.5 w-3.5 ${styles.sortChevron}`} style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
       <select
         aria-label="Sort people by"
         value={sort.key}
@@ -1807,9 +1809,10 @@ function SortChip({ sort, onChange }: { sort: Sort; onChange: (s: Sort) => void 
 function MvSortChip({ sort, onChange }: { sort: MvSort; onChange: (s: MvSort) => void }) {
   return (
     <span className={`ta-chip ${styles.pill}`}>
+      <ArrowUpDown className="h-[15px] w-[15px] flex-none" aria-hidden="true" />
       <span>Sort</span>
       <span className={styles.pillValue}>{MV_SORTS.find((o) => o.key === sort)?.label}</span>
-      <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+      <ChevronDown className={`h-3.5 w-3.5 ${styles.sortChevron}`} style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
       <select
         aria-label="Sort people by"
         value={sort}

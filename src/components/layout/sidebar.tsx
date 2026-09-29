@@ -233,7 +233,9 @@ function NavRow({
           <LinkPendingSpinner />
           {item.badge ? (
             <CountBadge n={item.badge} />
-          ) : isActive ? (
+          ) : isActive && withIcon ? (
+            // The grouped layout's dot. The rail's panel has none in the
+            // handoff: its section button already says where you are.
             <span className="h-1.5 w-1.5 flex-none rounded-full" style={{ background: "var(--fill-accent)" }} />
           ) : null}
         </>

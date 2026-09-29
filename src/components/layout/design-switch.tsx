@@ -75,7 +75,7 @@ export function DesignSwitch({
   const control = (
     <>
       <span
-        className="flex-none whitespace-nowrap uppercase"
+        className="hidden flex-none whitespace-nowrap uppercase lg:inline"
         style={{
           font: "var(--weight-semibold) 10px/1 var(--font-sans)",
           letterSpacing: "0.08em",

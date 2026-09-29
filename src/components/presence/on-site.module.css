@@ -4601,10 +4601,16 @@
   box-shadow: var(--ta-toolbar-shadow);
 }
 
+/* The handoff's search: an 18px icon and a field that grows to 320px. */
 .tools .psWrap {
-  flex: 1 1 220px;
+  flex: 1 1 226px;
   min-width: 200px;
-  max-width: 420px;
+  max-width: 346px;
+}
+
+/* Sort reads as a label with a sort icon in the handoff, not a dropdown. */
+.tools .sortChevron {
+  display: none;
 }
 
 .tools .psField {
