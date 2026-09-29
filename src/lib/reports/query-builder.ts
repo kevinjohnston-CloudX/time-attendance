@@ -28,9 +28,7 @@ export function buildWhereClause(
 
   for (const filter of filters) {
     const entry = fieldMap[filter.field];
-    if (!entry) {
-      throw new Error(`Unknown filter field: ${filter.field}`);
-    }
+    if (!entry) continue; // computed field — handled by filterRowsInMemory after query
 
     const prismaCondition = buildSingleCondition(filter, entry);
     conditions.push(prismaCondition);
