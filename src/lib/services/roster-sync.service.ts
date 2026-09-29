@@ -12,6 +12,11 @@ import { SyncTally } from "@/lib/services/sync-run.service";
  * actually being turned away at a kiosk are staged as RosterCandidate rows for
  * a human to create properly.
  *
+ * <p><b>Nor does it rename them.</b> CloudTime holds each person's legal name,
+ * which payroll and HR need; WMS can hold a different one (a nickname, a short
+ * form, a different spelling or case). Oracle's name is only used for the
+ * RosterCandidate rows below, where CloudTime has no name of its own yet.
+ *
  * <p><b>And it does not flip isActive.</b> Deactivating someone stops them
  * clocking in, which costs them pay and is discovered at the gate; activating
  * someone Oracle has terminated creates a ghost who can still punch. Both are
@@ -142,8 +147,6 @@ export async function applyRosterBatch(
       barcode: true,
       barcodeOverride: true,
       isActive: true,
-      userId: true,
-      user: { select: { name: true } },
     },
   });
 
@@ -305,14 +308,7 @@ export async function applyRosterBatch(
       }
     }
 
-    /* ---- name ---- */
-    const name = (row.name ?? "").trim();
-    let nameChanged = false;
-    if (name && name !== employee.user.name) {
-      await db.user.update({ where: { id: employee.userId }, data: { name } });
-      tally.note("NAME_UPDATED", empId, `${employee.user.name ?? "(blank)"} -> ${name}`);
-      nameChanged = true;
-    }
+    /* The name is never taken from Oracle: see the note above. */
 
     const substantive = Object.keys(changes).filter((k) => k !== "barcodeSyncedAt");
 
@@ -320,7 +316,7 @@ export async function applyRosterBatch(
       await db.employee.update({ where: { id: employee.id }, data: changes });
     }
 
-    if (substantive.length || nameChanged) tally.applied++;
+    if (substantive.length) tally.applied++;
     else tally.skipped++;
 
     resolvedEmpIds.push(empId);
