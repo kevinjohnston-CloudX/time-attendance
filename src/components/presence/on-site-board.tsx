@@ -674,32 +674,43 @@ export function OnSiteBoard({
     );
   }
 
+  // The handoff's Live pill beside the title: whether the numbers are still
+  // moving, and when they last did. "Try again" sits outside it, so the pill
+  // keeps its one line height.
   const liveLine = (
-    <span className="inline-flex flex-wrap items-center gap-2">
-      {/* With a site button beside the title, the name is already there. */}
-      {siteName && sites.length <= 1 && (
-        <span style={{ color: "var(--text-primary)", fontWeight: "var(--weight-medium)" }}>{siteName}</span>
-      )}
-      <span className={styles.live} data-state={liveState} aria-hidden="true" />
-      {liveState === "paused" ? (
-        <span>Paused while this tab is in the background</span>
-      ) : liveState === "stale" ? (
-        <>
-          <span style={{ color: "var(--text-warning)" }}>
-            {lastOk ? `Not updating. Last updated ${fmtTime(new Date(lastOk).toISOString(), tz)}` : "Not updating"}
+    <span className="inline-flex min-w-0 flex-wrap items-center gap-2">
+      <span
+        className="inline-flex h-[26px] min-w-0 flex-none items-center gap-2 whitespace-nowrap rounded-full pl-[9px] pr-2.5"
+        style={{
+          background: "var(--surface-card)",
+          boxShadow: "0 0 0 1px var(--ta-ring-strong)",
+          font: "var(--weight-medium) 12px/1 var(--font-sans)",
+          color: liveState === "stale" ? "var(--text-warning)" : "var(--text-secondary)",
+        }}
+      >
+        <span className={styles.live} data-state={liveState} aria-hidden="true" />
+        {/* With a site button beside the title, the name is already there. */}
+        {siteName && sites.length <= 1 && (
+          <span className="truncate" style={{ color: "var(--text-primary)", maxWidth: 200 }}>
+            {siteName} ·
           </span>
-          <Button hierarchy="link" size="sm" onClick={() => void refresh(siteId)}>
-            Try again
-          </Button>
-        </>
-      ) : tab !== "people" && logDayShown ? (
-        <span>
-          Showing {dayLabel(logDayShown, today) === "Yesterday" ? "yesterday" : dayLabel(logDayShown, today)}, a finished day
-        </span>
-      ) : (
-        <span>
-          Live · updated {age < 10_000 ? "just now" : `${Math.round(age / 1000)} seconds ago`}
-        </span>
+        )}
+        {liveState === "paused" ? (
+          <span>Paused while this tab is in the background</span>
+        ) : liveState === "stale" ? (
+          <span>{lastOk ? `Not updating. Last updated ${fmtTime(new Date(lastOk).toISOString(), tz)}` : "Not updating"}</span>
+        ) : tab !== "people" && logDayShown ? (
+          <span>
+            Showing {dayLabel(logDayShown, today) === "Yesterday" ? "yesterday" : dayLabel(logDayShown, today)}, a finished day
+          </span>
+        ) : (
+          <span>Live · updated {age < 10_000 ? "just now" : `${Math.round(age / 1000)} seconds ago`}</span>
+        )}
+      </span>
+      {liveState === "stale" && (
+        <Button hierarchy="link" size="sm" onClick={() => void refresh(siteId)}>
+          Try again
+        </Button>
       )}
     </span>
   );
@@ -784,14 +795,17 @@ export function OnSiteBoard({
       <div
         ref={barRef}
         className="ta-canvas sticky top-0 z-20 flex flex-col"
-        style={{ marginBottom: "var(--pin-gap, 0px)" }}
+        // The bar keeps 14px of canvas under the tools while pinned; the
+        // board's own 16px gap is taken back, so the content sits 14px under
+        // the tools, as the handoff spaces its main column.
+        style={{ marginBottom: "calc(var(--pin-gap, 0px) - 16px)" }}
       >
         <div
-          className="flex flex-wrap items-center gap-x-3 gap-y-2"
-          style={{ paddingTop: condensed ? 8 : 0, paddingBottom: condensed ? 8 : 12, transition: "padding 140ms ease" }}
+          className="flex flex-wrap items-center gap-x-4 gap-y-3"
+          style={{ paddingTop: condensed ? 8 : 0, paddingBottom: condensed ? 8 : 14, transition: "padding 140ms ease" }}
         >
-          <div className="flex min-w-60 flex-1 flex-col gap-0.5">
-            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="flex min-w-[260px] flex-1 flex-col gap-0.5">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3.5 gap-y-1">
               <h1
                 className="truncate"
                 style={{
@@ -875,8 +889,8 @@ export function OnSiteBoard({
                   )}
                 </span>
               )}
+              {!condensed && liveLine}
             </div>
-            {!condensed && <div style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>{liveLine}</div>}
           </div>
           <div className="flex items-center gap-2">{actions}</div>
         </div>
@@ -885,7 +899,8 @@ export function OnSiteBoard({
             how the list is ordered and laid out. The count and the order sit in
             the same place on every view, and each view's own layout choices
             live behind one View button, so the row keeps its shape. */}
-        <div className="flex flex-wrap items-center gap-2.5 pb-3">
+        <div className="pb-3.5">
+        <div className={styles.tools}>
           {ready && (
             <>
               {siteId && (
@@ -904,6 +919,9 @@ export function OnSiteBoard({
                   max={MAX_PICKED}
                   onBadgeHolders={(forText, ids) => setBadgeHit({ for: forText, ids: new Set(ids) })}
                 />
+              )}
+              {siteId && (departments.length > 0 || shifts.length > 0 || (tab !== "people" && !!today)) && (
+                <span className={styles.toolsDivider} aria-hidden="true" />
               )}
               {departments.length > 0 && (
                 <FilterSelectChip label="Department" value={dept} options={departments} onChange={setDept} />
@@ -1005,6 +1023,7 @@ export function OnSiteBoard({
               </span>
             </>
           )}
+        </div>
         </div>
         {pickedAbsent.length > 0 && (
           <p className="-mt-1 pb-3" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
@@ -1860,7 +1879,7 @@ function ViewOptions({ children }: { children: React.ReactNode }) {
     <span ref={wrap} className="relative inline-flex">
       <button
         type="button"
-        className={`ta-chip ${styles.pill}`}
+        className={`ta-chip ${styles.pill} ${styles.toolsWell}`}
         data-applied={open ? "true" : undefined}
         aria-expanded={open}
         aria-haspopup="dialog"

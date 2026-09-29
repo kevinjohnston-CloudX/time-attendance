@@ -4581,3 +4581,79 @@
     transform: translateY(6px) scale(0.985);
   }
 }
+
+/* ── The tools bar, from the Layout handoff ────────────────────────────────
+   Search, the filters, the count, Sort and View in one white bar. Inside it
+   the pills lose their outline and become 34px ghost buttons, as the handoff
+   draws them; an applied filter keeps its tint and an accent hairline, so it
+   still reads as applied. */
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 48px;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 6px 6px 6px 14px;
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-toolbar-shadow);
+}
+
+.tools .psWrap {
+  flex: 1 1 220px;
+  min-width: 200px;
+  max-width: 420px;
+}
+
+.tools .psField {
+  min-height: 34px;
+  padding-left: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.tools .psField:hover {
+  border-color: transparent;
+}
+
+.tools .psField:focus-within {
+  border-color: var(--stroke-accent-focus);
+  padding-left: 8px;
+}
+
+.toolsDivider {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+  background: var(--ta-ring-strong);
+}
+
+.tools :global(.ta-chip) {
+  height: 34px !important;
+  border-radius: 10px !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  font: var(--weight-medium) 13px/1 var(--font-sans) !important;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.tools :global(.ta-chip):not([data-applied]):hover {
+  background: var(--fill-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+.tools :global(.ta-chip)[data-applied="true"] {
+  background: var(--surface-info) !important;
+  box-shadow: inset 0 0 0 1px var(--stroke-accent);
+  color: var(--text-accent) !important;
+}
+
+/* View: the one button in the bar that sits in a well, as the handoff has it. */
+.tools .toolsWell:not([data-applied]) {
+  padding: 0 12px;
+  background: var(--ta-well) !important;
+  box-shadow: inset 0 0 0 1px var(--ta-well-ring);
+}
