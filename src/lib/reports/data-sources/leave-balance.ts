@@ -21,7 +21,7 @@ export const leaveBalanceSource: DataSourceDefinition = {
   icon: "Wallet",
   columns: [
     { id: "employeeName",   label: "Employee",       type: "string",  defaultVisible: true },
-    { id: "employeeCode",   label: "Emp Code",       type: "string",  defaultVisible: false },
+    { id: "employeeCode",   label: "Badge ID",       type: "string",  defaultVisible: false },
     { id: "department",     label: "Department",      type: "string",  defaultVisible: true },
     { id: "leaveType",      label: "Leave Type",      type: "string",  defaultVisible: true },
     { id: "accrualYear",    label: "Year",            type: "number",  defaultVisible: true },
@@ -70,7 +70,7 @@ export const leaveBalanceSource: DataSourceDefinition = {
 
     const rows = balances.map((b) => ({
       employeeName: b.employee.user?.name ?? b.employee.employeeCode,
-      employeeCode: b.employee.employeeCode,
+      employeeCode: b.employee.wmsId ?? b.employee.employeeCode,
       department: b.employee.department.name,
       leaveType: b.leaveType.name,
       accrualYear: b.accrualYear,

@@ -23,7 +23,7 @@ export const punchAuditSource: DataSourceDefinition = {
   icon: "FileSearch",
   columns: [
     { id: "employeeName",  label: "Employee",       type: "string",  defaultVisible: true },
-    { id: "employeeCode",  label: "Emp Code",       type: "string",  defaultVisible: false },
+    { id: "employeeCode",  label: "Badge ID",       type: "string",  defaultVisible: false },
     { id: "department",    label: "Department",      type: "string",  defaultVisible: true },
     { id: "punchType",     label: "Punch Type",      type: "string",  defaultVisible: true },
     { id: "punchTime",     label: "Punch Time",      type: "string",  defaultVisible: true },
@@ -90,7 +90,7 @@ export const punchAuditSource: DataSourceDefinition = {
 
     const rows = punches.map((p) => ({
       employeeName: p.employee.user?.name ?? p.employee.employeeCode,
-      employeeCode: p.employee.employeeCode,
+      employeeCode: p.employee.wmsId ?? p.employee.employeeCode,
       department: p.employee.department.name,
       punchType: p.punchType,
       punchTime: format(p.punchTime, "yyyy-MM-dd h:mm:ss a"),

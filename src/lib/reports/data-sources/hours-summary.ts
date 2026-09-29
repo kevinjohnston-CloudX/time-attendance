@@ -21,7 +21,7 @@ export const hoursSummarySource: DataSourceDefinition = {
   icon: "Clock",
   columns: [
     { id: "employeeName",  label: "Employee",   type: "string",  defaultVisible: true },
-    { id: "employeeCode",  label: "Emp Code",   type: "string",  defaultVisible: false },
+    { id: "employeeCode",  label: "Badge ID",   type: "string",  defaultVisible: false },
     { id: "department",    label: "Department",  type: "string",  defaultVisible: true },
     { id: "site",          label: "Site",        type: "string",  defaultVisible: true },
     { id: "regMinutes",    label: "REG",         type: "number",  defaultVisible: true },
@@ -115,7 +115,7 @@ export const hoursSummarySource: DataSourceDefinition = {
 
       return {
         employeeName: ts.employee.user?.name ?? ts.employeeId,
-        employeeCode: ts.employee.employeeCode,
+        employeeCode: ts.employee.wmsId ?? ts.employee.employeeCode,
         department: ts.employee.department.name,
         site: ts.employee.site.name,
         regMinutes: reg,
