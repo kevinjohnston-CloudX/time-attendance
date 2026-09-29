@@ -24,7 +24,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
   icon: "CalendarDays",
   columns: [
     { id: "employeeName",    label: "Employee",      type: "string",  defaultVisible: true },
-    { id: "employeeCode",    label: "Emp Code",      type: "string",  defaultVisible: false },
+    { id: "employeeCode",    label: "Badge ID",      type: "string",  defaultVisible: false },
     { id: "department",      label: "Department",     type: "string",  defaultVisible: true },
     { id: "site",            label: "Site",           type: "string",  defaultVisible: false },
     { id: "date",            label: "Date",           type: "date",    defaultVisible: true },
@@ -111,7 +111,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
       );
       return {
         employeeName: seg.timesheet.employee.user?.name ?? seg.timesheet.employee.employeeCode,
-        employeeCode: seg.timesheet.employee.employeeCode,
+        employeeCode: seg.timesheet.employee.wmsId ?? seg.timesheet.employee.employeeCode,
         department: seg.timesheet.employee.department.name,
         site: seg.timesheet.employee.site.name,
         date: seg.segmentDate.toISOString().slice(0, 10),

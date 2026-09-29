@@ -23,7 +23,7 @@ export const leaveSummarySource: DataSourceDefinition = {
   icon: "CalendarDays",
   columns: [
     { id: "employeeName",    label: "Employee",       type: "string",  defaultVisible: true },
-    { id: "employeeCode",    label: "Emp Code",       type: "string",  defaultVisible: false },
+    { id: "employeeCode",    label: "Badge ID",       type: "string",  defaultVisible: false },
     { id: "department",      label: "Department",      type: "string",  defaultVisible: true },
     { id: "leaveType",       label: "Leave Type",      type: "string",  defaultVisible: true },
     { id: "status",          label: "Status",          type: "string",  defaultVisible: true },
@@ -83,7 +83,7 @@ export const leaveSummarySource: DataSourceDefinition = {
 
     const rows = requests.map((r) => ({
       employeeName: r.employee.user?.name ?? r.employee.employeeCode,
-      employeeCode: r.employee.employeeCode,
+      employeeCode: r.employee.wmsId ?? r.employee.employeeCode,
       department: r.employee.department.name,
       leaveType: r.leaveType.name,
       status: r.status,
