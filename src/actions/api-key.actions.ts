@@ -16,8 +16,11 @@ function hashKey(key: string): string {
 export const listApiKeys = withRBAC(
   "SITE_MANAGE",
   async ({ tenantId }, _input: void) => {
+    // A super admin outside any company has no tenantId, and a where with
+    // tenantId undefined matches every company's keys.
+    if (!tenantId) throw new Error("Tenant context required");
     return db.apiKey.findMany({
-      where: { tenantId: tenantId! },
+      where: { tenantId },
       orderBy: { createdAt: "desc" },
       select: { id: true, name: true, keyPrefix: true, createdAt: true, lastUsedAt: true, isActive: true },
     });
@@ -44,9 +47,10 @@ export const createApiKey = withRBAC(
 export const revokeApiKey = withRBAC(
   "SITE_MANAGE",
   async ({ tenantId }, input: { apiKeyId: string }) => {
+    if (!tenantId) throw new Error("Tenant context required");
     const { apiKeyId } = apiKeyIdSchema.parse(input);
     await db.apiKey.update({
-      where: { id: apiKeyId, tenantId: tenantId! },
+      where: { id: apiKeyId, tenantId },
       data: { isActive: false },
     });
     revalidatePath("/admin/api-keys");

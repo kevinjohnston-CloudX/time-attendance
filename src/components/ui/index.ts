@@ -23,3 +23,4 @@ export { Toolbar, FilterBar, FilterChip, FilterSelectChip, SortSelectChip, Selec
 export { Toast, useToast } from "./toast";
 export { StatCard, type StatTone } from "./stat";
 export { Banner, type BannerTone } from "./banner";
+export { ConfirmDialog } from "./confirm-dialog";
