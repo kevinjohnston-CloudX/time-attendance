@@ -23,7 +23,9 @@ export default async function EditHolidayRulePage({ params }: { params: Promise<
       <h1 className="mt-1 text-2xl font-bold text-zinc-900 dark:text-white">{rule.name}</h1>
       <EditHolidayRuleClient
         rule={serialize(rule)}
-        payCodes={serialize(payCodesResult.success ? payCodesResult.data : [])}
+        payCodes={serialize(
+          (payCodesResult.success ? payCodesResult.data : []).map((pc) => ({ id: pc.id, code: String(pc.code), label: pc.label }))
+        )}
       />
     </div>
   );

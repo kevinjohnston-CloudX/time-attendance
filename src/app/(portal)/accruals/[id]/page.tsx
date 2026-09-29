@@ -27,6 +27,7 @@ export default async function EmployeeAccrualsPage({
   if (!canViewTeam && session.user.employeeId !== id) redirect("/accruals");
   if (canViewTeam && !canViewAny && session.user.employeeId !== id) {
     // Verify this employee is in the supervisor's full subordinate tree
+    if (!session.user.employeeId) redirect("/accruals");
     const subordinateIds = await getSubordinateIds(session.user.employeeId, session.user.tenantId ?? null);
     if (!subordinateIds.includes(id)) redirect("/accruals");
   }

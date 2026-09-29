@@ -16,7 +16,11 @@ export default async function NewHolidayRulePage() {
     <div className="mx-auto max-w-3xl px-4 py-6">
       <Link href="/admin/rules-setup?tab=holiday-rules" className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white">← Holiday Rules</Link>
       <h1 className="mt-1 text-2xl font-bold text-zinc-900 dark:text-white">New Holiday Rule</h1>
-      <CreateHolidayRuleClient payCodes={serialize(payCodesResult.success ? payCodesResult.data : [])} />
+      <CreateHolidayRuleClient
+        payCodes={serialize(
+          (payCodesResult.success ? payCodesResult.data : []).map((pc) => ({ id: pc.id, code: String(pc.code), label: pc.label }))
+        )}
+      />
     </div>
   );
 }

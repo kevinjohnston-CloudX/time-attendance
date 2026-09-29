@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
@@ -81,7 +82,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
           ...employeeFilter,
         },
       },
-    };
+    } as Prisma.WorkSegmentWhereInput;
 
     const orderBy =
       config.sortBy.length > 0
