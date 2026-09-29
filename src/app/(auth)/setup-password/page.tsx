@@ -60,7 +60,7 @@ function SetupPasswordForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-2.5">
+    <form method="post" action="" onSubmit={handleSubmit} className="flex flex-col gap-2.5">
       <Input
         id="password"
         type="password"

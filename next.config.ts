@@ -17,7 +17,17 @@ import type { NextConfig } from "next";
  */
 const devTunnelOrigins = ["localhost:3000", "*.devtunnels.ms"];
 
+/**
+ * Where the app is opened locally. Next 16.3 refuses the dev server's live
+ * connection (and with it the page ever finishing loading) from any address
+ * but localhost unless it is listed here, and we open CloudTime on
+ * 127.0.0.1 so its sign-in cookie does not clash with the ticketing copy on
+ * localhost:3100 (see CLAUDE.md). Development only; production ignores it.
+ */
+const localDevHosts = ["127.0.0.1"];
+
 const nextConfig: NextConfig = {
+  allowedDevOrigins: localDevHosts,
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",

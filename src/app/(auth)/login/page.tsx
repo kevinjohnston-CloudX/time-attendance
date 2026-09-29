@@ -112,7 +112,10 @@ export default function LoginPage() {
             </p>
           </div>
 
-          <form onSubmit={handleCredentials} className="flex flex-col gap-2.5">
+          {/* method="post": if the page's code has not loaded yet, a plain submit
+              must never put the password in the address bar and the server
+              log, which is what a form without a method does. */}
+          <form method="post" action="" onSubmit={handleCredentials} className="flex flex-col gap-2.5">
             <Input
               id="email"
               // name and autoComplete together are what a password manager

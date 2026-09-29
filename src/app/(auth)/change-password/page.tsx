@@ -47,7 +47,7 @@ export default function ChangePasswordPage() {
       sub="You must set a new password before continuing."
       note="You will be signed out and asked to sign in again with the new password."
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-2.5">
+      <form method="post" action="" onSubmit={handleSubmit} className="flex flex-col gap-2.5">
         <Input
           id="password"
           type="password"
