@@ -342,8 +342,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
           slides; and rows cannot show through the side gutters. */}
       <div
         ref={barRef}
-        className="sticky top-0 z-20 -mx-4 -mt-4 flex flex-col gap-3.5 px-4 pb-3.5 pt-4"
-        style={{ background: "var(--surface-page)" }}
+        className="ta-pin ta-canvas sticky top-0 z-20 flex flex-col gap-3.5 pb-3.5"
       >
         <PageHeader
           title="Team Punch History"

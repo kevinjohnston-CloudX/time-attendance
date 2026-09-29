@@ -783,8 +783,8 @@ export function OnSiteBoard({
 
       <div
         ref={barRef}
-        className="sticky top-0 z-20 flex flex-col"
-        style={{ background: "var(--surface-page)", marginBottom: "var(--pin-gap, 0px)" }}
+        className="ta-canvas sticky top-0 z-20 flex flex-col"
+        style={{ marginBottom: "var(--pin-gap, 0px)" }}
       >
         <div
           className="flex flex-wrap items-center gap-x-3 gap-y-2"

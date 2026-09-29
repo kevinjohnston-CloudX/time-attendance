@@ -216,10 +216,7 @@ export default async function PortalLayout({
       );
 
   return (
-    <div
-      className="flex h-screen flex-col overflow-hidden"
-      style={{ background: "var(--surface-page)" }}
-    >
+    <div className="ta-canvas flex h-screen flex-col overflow-hidden">
       {tenantBannerName && (
         <div className="flex shrink-0 items-center justify-between bg-amber-400 px-4 py-2 text-sm font-medium text-amber-950">
           <span>Super Admin — viewing as: <strong>{tenantBannerName}</strong></span>
@@ -238,7 +235,11 @@ export default async function PortalLayout({
           </form>
         </div>
       )}
-      <div className="flex flex-1 overflow-hidden">
+      {/* The Layout handoff's canvas: the sidebar floats as a card 12px in
+          from every edge, and the content column sits beside it. Clipped,
+          not hidden: a hidden box can still be scrolled sideways by focus,
+          which pushed the sidebar off the left edge on a narrow window. */}
+      <div className="flex min-h-0 flex-1 gap-3 overflow-clip p-3">
         <Sidebar
           role={sidebarRole}
           userName={session.user.name}
@@ -253,7 +254,7 @@ export default async function PortalLayout({
         />
         {/* Breadcrumb bar sits inside the content column, not above the
             sidebar, so it only ever costs the content its own 40px. */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col overflow-x-clip">
           {/* The palette's destinations are already filtered by this
               viewer's permissions and by whether they are active, so the
               shortcuts list is built from the same set rather than a second
@@ -271,9 +272,9 @@ export default async function PortalLayout({
           <main className="min-h-0 flex-1 overflow-y-auto">
             <InactiveRouteGuard isInactive={!isEmployeeActive} />
             <EmployeesListForget />
-            {/* --space-content: the design moved main padding from 24px to
-                16px so tables get the width back. */}
-            <div className="px-4 pb-6 pt-4">{children}</div>
+            {/* The page's padding, from the Layout handoff. Pinned headers
+                read the same two numbers (.ta-pin), so they sit where they pin. */}
+            <div style={{ padding: "var(--ta-page-top) var(--ta-page-x) 16px" }}>{children}</div>
           </main>
         </div>
       </div>

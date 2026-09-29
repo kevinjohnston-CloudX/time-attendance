@@ -123,6 +123,42 @@
      --surface-page, so a placeholder filled with it is invisible on any
      part of a screen that is not inside a card. This reads on both. */
   --ta-skeleton: var(--wms-color-gray-200);
+
+  /* The app shell from the Layout handoff: a gray canvas with a soft blue
+     glow top left, and the sidebar as a floating white card on it. */
+  --ta-canvas:      var(--wms-color-gray-75);
+  --ta-canvas-glow: rgba(219, 234, 254, 0.55);
+  --ta-shell-shadow: inset 0 0 0 1px var(--wms-color-gray-100), 0 1px 2px rgba(16, 24, 40, 0.04),
+    0 12px 32px -16px rgba(16, 24, 40, 0.12);
+  /* Wells inside the sidebar card: search, the rail column, the user card. */
+  --ta-well:        var(--wms-color-gray-50);
+  --ta-well-ring:   var(--wms-color-gray-100);
+  --ta-ring-strong: var(--wms-color-gray-150);
+  --ta-nav-on-ring: var(--wms-color-primary-100);
+  --ta-tile-shadow: 0 4px 10px -4px rgba(8, 96, 170, 0.55);
+  --ta-menu-shadow: 0 16px 36px -12px rgba(16, 24, 40, 0.25), 0 0 0 1px rgba(17, 24, 39, 0.06);
+  --ta-raised:      0 1px 2px rgba(16, 24, 40, 0.08), 0 0 0 1px rgba(17, 24, 39, 0.06);
+
+  /* The page's own padding inside the shell. Pinned headers pull themselves
+     up and out into it (.ta-pin), so both read the same two numbers. */
+  --ta-page-top: 10px;
+  --ta-page-x:   12px;
+}
+
+/* The canvas, glow included. Fixed to the window so a pinned header painted
+   with it lines up with the page behind it instead of showing a band. */
+.ta-canvas {
+  background: radial-gradient(900px 420px at 18% -10%, var(--ta-canvas-glow), transparent 70%) fixed,
+    var(--ta-canvas);
+}
+
+/* A header that pins to the top of the page and already sits where it pins:
+   pulled up into the page's top padding and out to its sides. */
+.ta-pin {
+  margin-top: calc(var(--ta-page-top) * -1);
+  margin-inline: calc(var(--ta-page-x) * -1);
+  padding-top: var(--ta-page-top);
+  padding-inline: var(--ta-page-x);
 }
 
 /* ------------------------------------------------------------------
@@ -182,17 +218,45 @@ textarea {
   outline: 2px solid var(--stroke-accent-focus);
   outline-offset: 1px;
 }
-/* The rail sits on a dark surface of its own, so --fill-hover, which is tuned
-   for the light card behind the rest of the shell, disappears on it. The
-   design uses a white wash instead, in both themes, because the rail is dark
-   in both. */
+/* A section button in the rail's well. The open one is raised on a card
+   and keeps it under the pointer; the others answer with the usual hover. */
 .ta-rail-btn {
   transition: background-color 120ms ease, color 120ms ease;
   cursor: pointer;
 }
-.ta-rail-btn:hover {
-  background: rgba(255, 255, 255, 0.10) !important;
-  color: var(--wms-color-base-white) !important;
+.ta-rail-btn:not([aria-current="true"]):hover {
+  background: var(--fill-hover) !important;
+  color: var(--text-primary) !important;
+}
+/* The user card's rows lift to the card color under the pointer, as the
+   handoff draws them, rather than taking the gray hover the well already is. */
+.ta-lift {
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.ta-lift:hover {
+  background: var(--surface-card);
+}
+/* The sidebar menus scroll with no bar, as the handoff draws them, so the
+   rows keep their full width whether or not the list overflows. */
+.ta-scroll-hidden { scrollbar-width: none; }
+.ta-scroll-hidden::-webkit-scrollbar { display: none; }
+
+/* The sidebar's search field: a well with a hairline that darkens on hover. */
+.ta-well-field {
+  background: var(--ta-well);
+  box-shadow: inset 0 0 0 1px var(--ta-well-ring);
+  transition: box-shadow 120ms ease;
+}
+.ta-well-field:hover {
+  box-shadow: inset 0 0 0 1px var(--stroke-default);
+}
+.ta-well-field:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 1px;
+}
+.ta-signout:hover {
+  background: var(--surface-card);
+  color: var(--text-error) !important;
 }
 
 .ta-outlined {

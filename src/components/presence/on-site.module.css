@@ -4453,7 +4453,8 @@
   z-index: 45;
   overflow: auto;
   padding: 0 24px 24px;
-  background: var(--surface-page);
+  background: radial-gradient(900px 420px at 18% -10%, var(--ta-canvas-glow), transparent 70%) fixed,
+    var(--ta-canvas);
 }
 
 /* ── Top bar: View options ─────────────────────────────────────────────── */

@@ -364,8 +364,7 @@ export function ExceptionsScreen({
         ref={toolbarRef}
         // Pulled up into the page's top padding so it already sits where it
         // pins: a bar that does not shrink has no business sliding either.
-        className="sticky top-0 z-20 -mx-4 -mt-4 flex flex-col px-4 pt-4"
-        style={{ background: "var(--surface-page)" }}
+        className="ta-pin ta-canvas sticky top-0 z-20 flex flex-col"
       >
         <div
           className="flex flex-wrap items-baseline gap-x-3 gap-y-1"

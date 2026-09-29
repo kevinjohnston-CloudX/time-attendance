@@ -636,8 +636,7 @@ export function LeaveTabs({
           same pull to the sides stops rows showing through the gutters. */}
       <div
         ref={toolbarRef}
-        className="sticky top-0 z-20 -mx-4 -mt-4 flex flex-col px-4 pt-4"
-        style={{ background: "var(--surface-page)" }}
+        className="ta-pin ta-canvas sticky top-0 z-20 flex flex-col"
       >
         <div className="flex flex-wrap items-end gap-3" style={{ paddingBottom: 12 }}>
           <div className="flex min-w-60 flex-1 flex-col gap-0.5">

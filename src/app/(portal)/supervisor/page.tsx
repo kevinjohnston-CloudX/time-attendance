@@ -188,8 +188,7 @@ export default async function TeamOverviewPage() {
           move either: it is pulled up into the page's top padding (-mt-4 pt-4)
           so it already sits where it pins, instead of sliding 16px first. */}
       <div
-        className="sticky top-0 z-20 -mx-4 -mt-4 flex flex-wrap items-end gap-3 px-4 pb-3 pt-4"
-        style={{ background: "var(--surface-page)" }}
+        className="ta-pin ta-canvas sticky top-0 z-20 flex flex-wrap items-end gap-3 pb-3"
       >
         <div className="flex min-w-60 flex-1 flex-col gap-0.5">
           <h1 style={{ margin: 0, font: "var(--type-h1)", letterSpacing: "-0.02em", color: "var(--text-primary)" }}>

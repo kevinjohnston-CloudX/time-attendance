@@ -5,9 +5,9 @@ import { usePathname } from "next/navigation";
 import { LinkPendingSpinner, useRouter } from "@/components/layout/navigation-progress";
 import { useRef, useState, useEffect, useTransition } from "react";
 import { signOut } from "next-auth/react";
-import { LogOut, Eye, X, Search, ChevronsUpDown } from "lucide-react";
+import { LogOut, Eye, X, Search, ChevronsUpDown, TriangleAlert } from "lucide-react";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
-import { BrandIcon, BrandMark } from "./brand-mark";
+import { BrandTile } from "./cloudtime-logo";
 import { openCommandPalette } from "./command-palette";
 import { useNavMode, useSidebarCollapsed } from "./nav-mode";
 import {
@@ -29,7 +29,18 @@ function initials(name?: string | null): string {
  * their initials, so a photo that fails to load (or a link that has expired
  * in a tab left open) steps aside and the initials show with nothing moving.
  */
-export function Avatar({ name, photo, size = 28 }: { name?: string | null; photo?: string | null; size?: number }) {
+export function Avatar({
+  name,
+  photo,
+  size = 28,
+  ring = false,
+}: {
+  name?: string | null;
+  photo?: string | null;
+  size?: number;
+  /** A 2px card-colored ring, as the user card draws it against its well. */
+  ring?: boolean;
+}) {
   const [failed, setFailed] = useState<string | null>(null);
   const showPhoto = !!photo && failed !== photo;
   return (
@@ -42,8 +53,9 @@ export function Avatar({ name, photo, size = 28 }: { name?: string | null; photo
         color: "var(--wms-color-primary-700)",
         fontFamily: "var(--font-sans)",
         fontWeight: 600,
-        fontSize: Math.round(size * 0.4),
+        fontSize: Math.round(size * 0.375),
         lineHeight: 1,
+        boxShadow: ring ? "0 0 0 2px var(--surface-card)" : undefined,
       }}
       title={name ?? undefined}
     >
@@ -77,9 +89,185 @@ interface SidebarProps {
   onlyHrefs?: string[];
 }
 
+/** The floating white card both layouts sit in, from the Layout handoff. */
+const SHELL_CARD: React.CSSProperties = {
+  background: "var(--surface-card)",
+  borderRadius: 16,
+  boxShadow: "var(--ta-shell-shadow)",
+};
+
+const INACTIVE_NOTE = "Account inactive. View only.";
+
+/** The CloudTime tile at 34px, lifted off the card by its own blue shadow. */
+function Tile() {
+  return (
+    <span className="flex-none" style={{ borderRadius: 9, boxShadow: "var(--ta-tile-shadow)" }}>
+      <BrandTile size={34} />
+    </span>
+  );
+}
+
+/** Tile, wordmark and attribution, sized as the handoff's sidebar draws them. */
+function SidebarLockup() {
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-3">
+      <Tile />
+      <span className="flex min-w-0 flex-col gap-1">
+        <span
+          className="whitespace-nowrap"
+          style={{ font: "var(--weight-bold) 20px/1 var(--font-sans)", letterSpacing: "-0.025em" }}
+        >
+          <span style={{ color: "var(--ta-wordmark-cloud)" }}>Cloud</span>
+          <span style={{ color: "var(--ta-brand-orange)" }}>Time</span>
+        </span>
+        <span
+          className="whitespace-nowrap uppercase"
+          style={{
+            font: "var(--weight-medium) 8px/1 var(--font-sans)",
+            letterSpacing: "0.16em",
+            color: "var(--text-tertiary)",
+          }}
+        >
+          Powered by CloudX
+        </span>
+      </span>
+    </span>
+  );
+}
+
+/** The search field. It opens the ⌘K palette rather than being a second search box. */
+function SearchField({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="ta-well-field flex h-[34px] w-full items-center gap-2 rounded-[10px] pl-2.5 pr-1.5"
+      style={{ color: "var(--text-tertiary)", font: "var(--type-body2)" }}
+    >
+      <Search className="h-4 w-4 flex-none" />
+      <span className="min-w-0 flex-1 truncate text-left">Search</span>
+      <kbd
+        className="inline-flex h-5 flex-none items-center rounded-md px-1.5"
+        style={{
+          background: "var(--surface-card)",
+          boxShadow: "0 0 0 1px var(--ta-ring-strong), 0 1px 1px rgba(16, 24, 40, 0.05)",
+          font: "var(--weight-medium) 11px/1 var(--font-sans)",
+          color: "var(--text-secondary)",
+        }}
+      >
+        ⌘K
+      </kbd>
+    </button>
+  );
+}
+
+/** A count on a nav row, for the queues that carry one. */
+function CountBadge({ n }: { n: number }) {
+  return (
+    <span
+      className="inline-flex h-[18px] min-w-[18px] flex-none items-center justify-center rounded-full px-1.5"
+      style={{
+        font: "var(--type-caption2)",
+        fontWeight: "var(--weight-semibold)",
+        background: "var(--fill-accent)",
+        color: "var(--text-on-accent)",
+      }}
+    >
+      {n}
+    </span>
+  );
+}
+
 /**
- * The Rail layout: a 64px column of sections, and a panel listing what is
- * inside the one that is open.
+ * One page in the menu, in either layout.
+ *
+ * <p>The open page gets the handoff's tint, a hairline ring and a small dot at
+ * the end of the row. A row that carries a count shows the count instead of
+ * the dot, so the number is never pushed off by a decoration.
+ */
+function NavRow({
+  item,
+  isActive,
+  collapsed = false,
+  withIcon = true,
+}: {
+  item: NavItem;
+  isActive: boolean;
+  collapsed?: boolean;
+  withIcon?: boolean;
+}) {
+  return (
+    <Link
+      href={item.href}
+      title={collapsed ? (item.badge ? `${item.label} (${item.badge})` : item.label) : undefined}
+      data-active={isActive}
+      aria-current={isActive ? "page" : undefined}
+      className={`ta-hoverable relative flex h-[34px] flex-none items-center rounded-[10px] ${
+        collapsed ? "justify-center px-0" : "gap-2.5 px-2.5"
+      }`}
+      style={{
+        font: "500 14px/20px var(--font-sans)",
+        fontWeight: isActive ? 600 : 500,
+        background: isActive ? "var(--surface-info)" : "transparent",
+        boxShadow: isActive ? "inset 0 0 0 1px var(--ta-nav-on-ring)" : "none",
+        color: isActive ? "var(--text-accent)" : "var(--text-secondary)",
+      }}
+    >
+      {withIcon && (
+        <item.icon
+          className="h-[18px] w-[18px] shrink-0"
+          style={{ color: isActive ? "var(--icon-accent)" : "var(--icon-secondary)" }}
+        />
+      )}
+      {collapsed ? (
+        item.badge ? (
+          <span
+            aria-hidden="true"
+            className="absolute right-3 top-1.5 h-2 w-2 rounded-full"
+            style={{ background: "var(--fill-accent)", boxShadow: "0 0 0 2px var(--surface-card)" }}
+          />
+        ) : null
+      ) : (
+        <>
+          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+          <LinkPendingSpinner />
+          {item.badge ? (
+            <CountBadge n={item.badge} />
+          ) : isActive ? (
+            <span className="h-1.5 w-1.5 flex-none rounded-full" style={{ background: "var(--fill-accent)" }} />
+          ) : null}
+        </>
+      )}
+    </Link>
+  );
+}
+
+/** The inactive account notice, in the handoff's warning tint. */
+function InactiveNote({ compact }: { compact?: boolean }) {
+  if (compact) {
+    return (
+      <div
+        title={INACTIVE_NOTE}
+        className="mx-2.5 mb-2 flex h-9 flex-none items-center justify-center rounded-[10px]"
+        style={{ background: "var(--surface-warning)", color: "var(--icon-warning)" }}
+      >
+        <TriangleAlert className="h-4 w-4" />
+      </div>
+    );
+  }
+  return (
+    <div
+      className="mx-2.5 mb-2 flex-none rounded-[10px] px-2.5 py-2"
+      style={{ background: "var(--surface-warning)", font: "var(--type-caption1)", color: "var(--text-warning)" }}
+    >
+      {INACTIVE_NOTE}
+    </div>
+  );
+}
+
+/**
+ * The Rail layout: one card holding a 64px well of sections, and a panel
+ * listing what is inside the one that is open.
  *
  * <p>Presentational on purpose. It reads no router and no storage, so the
  * layout can be rendered and looked at without a browser or a session, which
@@ -104,40 +292,38 @@ export function SidebarRail({
   isInactive?: boolean;
   onPickSection: (id: string) => void;
   onOpenSearch: () => void;
-  /** Avatar, view-as and sign out, drawn at the foot of the rail. */
+  /** Avatar, view-as and sign out, drawn at the foot of the well. */
   identity: React.ReactNode;
 }) {
-return (
-    <div className="flex h-full flex-none">
-      {/* The 64px rail: one button per section. */}
-      <aside
-        className="flex h-full flex-none flex-col items-center gap-1 py-2.5"
-        style={{ width: 64, background: "var(--ta-rail)" }}
+  return (
+    <aside className="flex w-[284px] flex-none p-1.5" style={SHELL_CARD}>
+      {/* The well: one button per section. */}
+      <div
+        className="flex w-16 flex-none flex-col items-center gap-1 rounded-xl py-2"
+        style={{ background: "var(--ta-well)" }}
       >
-        <div className="mb-3 flex h-[34px] w-[34px] flex-none items-center justify-center">
-          <BrandIcon />
-        </div>
+        <span className="mb-3">
+          <Tile />
+        </span>
 
         {sections.map((sec) => {
           const isActive = sec.id === activeSectionId;
-        return (
+          return (
             <button
               key={sec.id}
               type="button"
               onClick={() => onPickSection(sec.id)}
               title={sec.label}
               aria-current={isActive ? "true" : undefined}
-              className="ta-rail-btn flex flex-none flex-col items-center justify-center gap-[3px] rounded-lg"
+              className="ta-rail-btn flex min-h-[50px] w-[52px] flex-none flex-col items-center justify-center gap-1 rounded-[10px]"
               style={{
-                width: 48,
-                minHeight: 46,
-                padding: "4px 2px",
-                background: isActive ? "rgba(255,255,255,0.14)" : "transparent",
-                color: isActive ? "var(--wms-color-base-white)" : "var(--wms-color-gray-400)",
+                background: isActive ? "var(--surface-card)" : "transparent",
+                boxShadow: isActive ? "var(--ta-raised)" : "none",
+                color: isActive ? "var(--text-accent)" : "var(--icon-secondary)",
               }}
             >
-              <sec.icon className="h-[19px] w-[19px]" />
-              <span className="whitespace-nowrap" style={{ font: "var(--type-caption2)" }}>
+              <sec.icon className="h-5 w-5" />
+              <span className="whitespace-nowrap" style={{ font: "var(--weight-semibold) 10px/12px var(--font-sans)" }}>
                 {sec.railLabel}
               </span>
             </button>
@@ -146,109 +332,36 @@ return (
 
         <div className="flex-1" />
 
-        {/* Who you are and the way out, at the foot of the rail. The panel
-            beside it carries Search alone, which is how the design splits
-            them: a 196px column is too narrow for a name and a role, and
-            putting them there truncated both. */}
         {identity}
-      </aside>
+      </div>
 
-      {/* The 196px panel: what is inside the section the rail has open. */}
-      <aside
-        className="flex h-full flex-none flex-col"
-        style={{
-          width: 196,
-          background: "var(--surface-card)",
-          borderRight: "1px solid var(--stroke-secondary)",
-        }}
-      >
-        {/* No rule under the header: the top bar is slimmer than this block,
-            so a line here would stop short of the one across the page. */}
-        <div className="flex h-14 flex-none items-center px-3.5">
-          <span
-            className="min-w-0 truncate"
-            style={{ font: "var(--type-h4)", color: "var(--text-primary)" }}
-          >
-            {activeSectionLabel}
-          </span>
+      {/* The panel: what is inside the section the well has open. */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div
+          className="flex h-[52px] flex-none items-center px-3.5"
+          style={{
+            font: "var(--weight-bold) 17px/22px var(--font-sans)",
+            letterSpacing: "-0.015em",
+            color: "var(--text-primary)",
+          }}
+        >
+          <span className="min-w-0 truncate">{activeSectionLabel}</span>
         </div>
 
-        <nav className="ta-scroll flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
-          {items.map((item) => {
-            const isActive = current === item.href;
-          return (
-              <Link
-                key={item.href}
-                href={item.href}
-                data-active={isActive}
-                className="ta-hoverable flex h-8 items-center gap-2 rounded-md px-2"
-                style={{
-                  font: "var(--type-button1)",
-                  background: isActive ? "var(--surface-info)" : "transparent",
-                  color: isActive ? "var(--text-accent)" : "var(--text-secondary)",
-                }}
-              >
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                <LinkPendingSpinner />
-                {item.badge ? (
-                  <span
-                    className="inline-flex h-4 min-w-[18px] flex-none items-center justify-center rounded-full px-1.5"
-                    style={{
-                      font: "var(--type-caption2)",
-                      background: "var(--wms-color-primary-600)",
-                      color: "var(--text-on-accent)",
-                    }}
-                  >
-                    {item.badge}
-                  </span>
-                ) : null}
-              </Link>
-            );
-          })}
+        <nav className="ta-scroll-hidden flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2">
+          {items.map((item) => (
+            <NavRow key={item.href} item={item} isActive={current === item.href} withIcon={false} />
+          ))}
         </nav>
 
-        {isInactive && (
-          <div
-            className="mx-2 mb-2 rounded-md px-3 py-2"
-            style={{
-              font: "var(--type-caption1)",
-              background: "var(--surface-warning)",
-              color: "var(--text-warning)",
-              border: "1px solid var(--stroke-warning)",
-            }}
-          >
-            Account inactive — view only
-          </div>
-        )}
+        {isInactive && <InactiveNote />}
 
-        <div className="flex-none px-2.5 pb-2" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
-          <button
-            onClick={onOpenSearch}
-            className="ta-field mt-2 flex h-[30px] w-full items-center gap-2 rounded-md px-2"
-            style={{
-              border: "1px solid var(--stroke-secondary)",
-              background: "var(--surface-tertiary)",
-              color: "var(--text-tertiary)",
-              font: "var(--type-body2)",
-            }}
-          >
-            <Search className="h-[15px] w-[15px] flex-none" />
-            <span className="flex-1 truncate text-left">Search</span>
-            <kbd
-              className="flex-none rounded px-1"
-              style={{
-                font: "var(--type-caption1)",
-                border: "1px solid var(--stroke-secondary)",
-                background: "var(--surface-card)",
-              }}
-            >
-              ⌘K
-            </kbd>
-          </button>
+        <div className="flex-none p-2">
+          <SearchField onOpen={onOpenSearch} />
         </div>
-      </aside>
-    </div>
-);
+      </div>
+    </aside>
+  );
 }
 
 export function Sidebar({
@@ -320,263 +433,227 @@ export function Sidebar({
     sections.flatMap((s) => s.items.map((i) => i.href)),
   );
 
+  const realRoleLabel = ROLE_LABEL[realRole ?? ""] ?? realRole;
+  const togglePicker = () => canViewAs && setShowRolePicker((v) => !v);
+  const signOutNow = () => signOut({ callbackUrl: "/login" });
+
   /**
-   * The block under the nav: who you are, view-as, sign out, and the two
-   * layout controls. Shared by both layouts rather than written twice, which
-   * is how the view-as control would quietly go missing from one of them.
-   *
-   * <p>`narrow` is "this is the 64px column", which the rail's panel is not.
+   * The View as list. One list for every layout, placed by the caller, so it
+   * can never quietly go missing from one of them.
    */
-  const renderFooter = (narrow: boolean) => (
-      <div className="flex-none px-3 py-2.5" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
-        {viewAsRole && !narrow && (
-          <div
-            className="mb-2 flex items-center justify-between rounded-md px-2 py-1.5"
-            style={{ background: "var(--surface-warning)" }}
-          >
-            <span className="flex items-center gap-1.5">
-              <Eye className="h-3 w-3" style={{ color: "var(--icon-warning)" }} />
-              <span style={{ font: "var(--type-caption1)", color: "var(--text-warning)" }}>
-                {viewAsRole}
-              </span>
-            </span>
-            <button
-              onClick={handleClearViewAs}
-              disabled={isPending}
-              title="Return to your role"
-              className="rounded p-0.5 disabled:opacity-50"
-              style={{ color: "var(--icon-warning)" }}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
+  const renderRolePicker = (placement: string) =>
+    showRolePicker && (
+      <div
+        role="menu"
+        className={`absolute z-50 w-[228px] rounded-xl p-1.5 ${placement}`}
+        style={{ background: "var(--surface-card)", boxShadow: "var(--ta-menu-shadow)" }}
+      >
+        <div
+          className="px-2 pb-1 pt-1.5 uppercase"
+          style={{
+            font: "var(--weight-semibold) 11px/14px var(--font-sans)",
+            letterSpacing: "0.07em",
+            color: "var(--text-tertiary)",
+          }}
+        >
+          View as
+        </div>
+        {viewAsOptions.length === 0 && (
+          <p className="px-2 py-2" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+            No roles available
+          </p>
         )}
-
-        <div ref={rolePickerRef} className="relative flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => canViewAs && setShowRolePicker((v) => !v)}
-            className={`ta-hoverable flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1 py-1 ${
-              canViewAs ? "cursor-pointer" : "cursor-default"
-            }`}
-            title={narrow ? (userName ?? undefined) : canViewAs ? "View as another role" : undefined}
-            aria-haspopup={canViewAs ? "menu" : undefined}
-            aria-expanded={canViewAs ? showRolePicker : undefined}
-          >
-            <Avatar name={userName} photo={userPhoto} />
-            {!narrow && (
-              <span className="min-w-0 flex-1 text-left">
-                <span
-                  className="block truncate"
-                  style={{ font: "var(--type-body2)", fontWeight: "var(--weight-medium)" }}
-                >
-                  {userName ?? "—"}
-                </span>
-                <span
-                  className="block truncate"
-                  style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}
-                >
-                  {ROLE_LABEL[realRole ?? ""] ?? realRole}
-                </span>
-              </span>
-            )}
-            {!narrow && canViewAs && (
-              <ChevronsUpDown className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--icon-secondary)" }} />
-            )}
-          </button>
-
-          {!narrow && (
+        {viewAsOptions.map((r) => {
+          const on = r.name === viewAsRole;
+          return (
             <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              title="Sign out"
-              className="ta-hoverable inline-flex flex-none rounded-md p-1.5"
-              style={{ color: "var(--icon-secondary)" }}
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
-          )}
-
-          {showRolePicker && (
-            <div
-              className="absolute bottom-full left-0 mb-1 w-full overflow-hidden rounded-lg py-1.5"
+              key={r.id}
+              type="button"
+              role="menuitem"
+              data-active={on}
+              disabled={isPending || on}
+              onClick={() => handleSetViewAs(r.id)}
+              className="ta-hoverable flex h-8 w-full items-center gap-2 rounded-lg px-2 disabled:cursor-default"
               style={{
-                background: "var(--surface-card)",
-                border: "1px solid var(--stroke-secondary)",
-                boxShadow: "var(--shadow-menu)",
+                font: "var(--type-body2)",
+                background: on ? "var(--surface-info)" : "transparent",
+                color: on ? "var(--text-accent)" : "var(--text-secondary)",
+                opacity: isPending && !on ? 0.5 : 1,
               }}
             >
-              <p
-                className="px-3 pb-1 pt-0.5 uppercase"
-                style={{ font: "var(--type-overline)", color: "var(--text-tertiary)" }}
-              >
-                View as
-              </p>
-              {viewAsOptions.length === 0 && (
-                <p className="px-3 py-2" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                  No roles available
-                </p>
-              )}
-              {viewAsOptions.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  disabled={isPending || r.name === viewAsRole}
-                  onClick={() => handleSetViewAs(r.id)}
-                  className="ta-hoverable flex w-full items-center px-3 py-1.5 disabled:opacity-40"
-                  style={{
-                    font: "var(--type-body2)",
-                    background: r.name === viewAsRole ? "var(--surface-info)" : "transparent",
-                    color: r.name === viewAsRole ? "var(--text-accent)" : "var(--text-secondary)",
-                  }}
-                >
-                  {r.name}
-                  {r.name === viewAsRole && (
-                    <span className="ml-auto" style={{ font: "var(--type-caption1)" }}>
-                      active
-                    </span>
-                  )}
-                </button>
-              ))}
-              {viewAsRole && (
-                <>
-                  <div className="my-1 h-px" style={{ background: "var(--stroke-divider)" }} />
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={handleClearViewAs}
-                    className="ta-hoverable flex w-full items-center gap-2 px-3 py-1.5 disabled:opacity-40"
-                    style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                    Return to {ROLE_LABEL[realRole ?? ""] ?? realRole}
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
+              <span className="min-w-0 flex-1 truncate text-left">{r.name}</span>
+              {on && <span style={{ font: "var(--type-caption1)" }}>Active</span>}
+            </button>
+          );
+        })}
+        {viewAsRole && (
+          <>
+            <div className="mx-1.5 my-1 h-px" style={{ background: "var(--stroke-divider)" }} />
+            <button
+              type="button"
+              role="menuitem"
+              disabled={isPending}
+              onClick={handleClearViewAs}
+              className="ta-hoverable flex h-8 w-full items-center gap-2 rounded-lg px-2 disabled:opacity-50"
+              style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+            >
+              <X className="h-3.5 w-3.5 flex-none" />
+              <span className="min-w-0 truncate">Return to {realRoleLabel}</span>
+            </button>
+          </>
+        )}
+      </div>
+    );
 
-        {narrow && (
+  /** A small eye in the warning tint, for layouts too narrow for the full chip. */
+  const viewAsEye = viewAsRole && (
+    <span
+      title={`Viewing as ${viewAsRole}`}
+      className="inline-flex h-5 w-7 flex-none items-center justify-center rounded-md"
+      style={{ background: "var(--surface-warning)", color: "var(--icon-warning)" }}
+    >
+      <Eye className="h-3.5 w-3.5" />
+    </span>
+  );
+
+  /**
+   * The user card at the foot of the grouped layout: who you are, view-as,
+   * sign out. Collapsed, it keeps the avatar and the way out, and the eye
+   * says a view-as is on.
+   */
+  const renderFooter = (narrow: boolean) => (
+    <div ref={rolePickerRef} className="relative flex-none p-2">
+      {renderRolePicker("bottom-[calc(100%-2px)] left-2")}
+
+      {narrow ? (
+        <div
+          className="flex flex-col items-center gap-1 rounded-xl py-1.5"
+          style={{ background: "var(--ta-well)" }}
+        >
+          {viewAsEye}
           <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
+            type="button"
+            onClick={togglePicker}
+            title={
+              viewAsRole
+                ? `${userName ?? "Signed in"}, viewing as ${viewAsRole}`
+                : `${userName ?? "Signed in"} (${realRoleLabel})`
+            }
+            aria-haspopup={canViewAs ? "menu" : undefined}
+            aria-expanded={canViewAs ? showRolePicker : undefined}
+            className={`inline-flex rounded-full ${canViewAs ? "cursor-pointer" : "cursor-default"}`}
+          >
+            <Avatar name={userName} photo={userPhoto} size={32} />
+          </button>
+          <button
+            type="button"
+            onClick={signOutNow}
             title="Sign out"
-            className="ta-hoverable mt-1 flex h-8 w-full items-center justify-center rounded-md"
+            className="ta-signout inline-flex h-7 w-8 items-center justify-center rounded-lg"
             style={{ color: "var(--icon-secondary)" }}
           >
             <LogOut className="h-4 w-4" />
           </button>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div
+          className="flex flex-col gap-1.5 rounded-xl p-1.5"
+          style={{ background: "var(--ta-well)", boxShadow: "inset 0 0 0 1px var(--ta-well-ring)" }}
+        >
+          {viewAsRole && (
+            <div
+              className="flex h-[26px] items-center gap-1.5 rounded-lg pl-2 pr-1"
+              style={{ background: "var(--surface-warning)", font: "var(--type-caption1)", color: "var(--text-warning)" }}
+            >
+              <Eye className="h-3.5 w-3.5 flex-none" />
+              <span className="min-w-0 flex-1 truncate">Viewing as {viewAsRole}</span>
+              <button
+                type="button"
+                onClick={handleClearViewAs}
+                disabled={isPending}
+                title={`Return to ${realRoleLabel}`}
+                className="flex flex-none rounded-md p-[3px] disabled:opacity-50"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={togglePicker}
+              title={canViewAs ? "View as another role" : undefined}
+              aria-haspopup={canViewAs ? "menu" : undefined}
+              aria-expanded={canViewAs ? showRolePicker : undefined}
+              className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-[9px] p-1 text-left ${
+                canViewAs ? "ta-lift cursor-pointer" : "cursor-default"
+              }`}
+            >
+              <Avatar name={userName} photo={userPhoto} size={32} ring />
+              <span className="min-w-0 flex-1">
+                <span
+                  className="block truncate"
+                  style={{ font: "var(--weight-semibold) 13px/18px var(--font-sans)", color: "var(--text-primary)" }}
+                >
+                  {userName ?? "Signed in"}
+                </span>
+                <span className="block truncate" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                  {realRoleLabel}
+                </span>
+              </span>
+              {canViewAs && (
+                <ChevronsUpDown className="h-3.5 w-3.5 flex-none" style={{ color: "var(--icon-secondary)" }} />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={signOutNow}
+              title="Sign out"
+              className="ta-signout inline-flex h-8 w-8 flex-none items-center justify-center rounded-[9px]"
+              style={{ color: "var(--icon-secondary)" }}
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 
   /**
-   * The foot of the rail: who you are, and the way out.
+   * The foot of the rail's well: who you are, and the way out.
    *
    * <p>64px has no room for a name, so the avatar carries it in a title and
-   * opens the view-as list the grouped footer opens. The list itself opens to
-   * the right rather than above, because a popover inside a 64px column is a
-   * popover nobody can read.
+   * opens the same View as list, to the right, because a list inside a 64px
+   * column is a list nobody can read.
    */
   const renderRailIdentity = () => (
-    <div ref={rolePickerRef} className="relative flex flex-none flex-col items-center pb-1">
-      {viewAsRole && (
-        <span
-          title={`Viewing as ${viewAsRole}`}
-          className="mb-1.5 inline-flex h-4 items-center rounded-full px-1.5"
-          style={{
-            font: "var(--type-caption2)",
-            background: "var(--surface-warning)",
-            color: "var(--text-warning)",
-          }}
-        >
-          <Eye className="h-3 w-3" />
-        </span>
-      )}
-
+    <div ref={rolePickerRef} className="relative flex flex-none flex-col items-center gap-1">
+      {viewAsEye}
       <button
         type="button"
-        onClick={() => canViewAs && setShowRolePicker((v) => !v)}
+        onClick={togglePicker}
         title={
           viewAsRole
             ? `${userName ?? "Signed in"}, viewing as ${viewAsRole}`
-            : `${userName ?? "Signed in"} (${ROLE_LABEL[realRole ?? ""] ?? realRole})`
+            : `${userName ?? "Signed in"} (${realRoleLabel})`
         }
-        className={`ta-rail-btn inline-flex h-9 w-9 items-center justify-center rounded-lg ${
-          canViewAs ? "cursor-pointer" : "cursor-default"
-        }`}
+        aria-haspopup={canViewAs ? "menu" : undefined}
+        aria-expanded={canViewAs ? showRolePicker : undefined}
+        className={`inline-flex rounded-full ${canViewAs ? "cursor-pointer" : "cursor-default"}`}
       >
-        <Avatar name={userName} photo={userPhoto} />
+        <Avatar name={userName} photo={userPhoto} size={32} />
       </button>
-
       <button
-        onClick={() => signOut({ callbackUrl: "/login" })}
+        type="button"
+        onClick={signOutNow}
         title="Sign out"
-        className="ta-rail-btn mt-1 inline-flex h-8 w-8 items-center justify-center rounded-lg"
-        style={{ color: "var(--wms-color-gray-400)" }}
+        className="ta-signout inline-flex h-[30px] w-8 items-center justify-center rounded-lg"
+        style={{ color: "var(--icon-secondary)" }}
       >
-        <LogOut className="h-[17px] w-[17px]" />
+        <LogOut className="h-4 w-4" />
       </button>
-
-      {showRolePicker && (
-        <div
-          className="absolute bottom-1 left-full z-50 ml-1 w-56 overflow-hidden rounded-lg py-1.5"
-          style={{
-            background: "var(--surface-card)",
-            border: "1px solid var(--stroke-secondary)",
-            boxShadow: "var(--shadow-menu)",
-          }}
-        >
-          <p
-            className="px-3 pb-1 pt-0.5 uppercase"
-            style={{ font: "var(--type-overline)", color: "var(--text-tertiary)" }}
-          >
-            View as
-          </p>
-          {viewAsOptions.length === 0 && (
-            <p className="px-3 py-2" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-              No roles available
-            </p>
-          )}
-          {viewAsOptions.map((r) => (
-            <button
-              key={r.id}
-              type="button"
-              disabled={isPending || r.name === viewAsRole}
-              onClick={() => handleSetViewAs(r.id)}
-              className="ta-hoverable flex w-full items-center px-3 py-1.5 disabled:opacity-40"
-              style={{
-                font: "var(--type-body2)",
-                background: r.name === viewAsRole ? "var(--surface-info)" : "transparent",
-                color: r.name === viewAsRole ? "var(--text-accent)" : "var(--text-secondary)",
-              }}
-            >
-              <span className="min-w-0 flex-1 truncate text-left">{r.name}</span>
-              {r.name === viewAsRole && (
-                <span className="ml-auto flex-none" style={{ font: "var(--type-caption1)" }}>
-                  active
-                </span>
-              )}
-            </button>
-          ))}
-          {viewAsRole && (
-            <>
-              <div className="my-1 h-px" style={{ background: "var(--stroke-divider)" }} />
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={handleClearViewAs}
-                className="ta-hoverable flex w-full items-center gap-2 px-3 py-1.5 disabled:opacity-40"
-                style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-              >
-                <X className="h-3.5 w-3.5 flex-none" />
-                <span className="min-w-0 truncate">
-                  Return to {ROLE_LABEL[realRole ?? ""] ?? realRole}
-                </span>
-              </button>
-            </>
-          )}
-        </div>
-      )}
+      {renderRolePicker("bottom-0 left-[calc(100%+10px)]")}
     </div>
   );
 
@@ -617,60 +694,46 @@ export function Sidebar({
 
   return (
     <aside
-      className="flex h-full flex-none flex-col transition-[width] duration-200 ease-in-out"
-      style={{
-        width: collapsed ? 64 : 232,
-        background: "var(--surface-card)",
-        borderRight: "1px solid var(--stroke-secondary)",
-      }}
+      className="relative flex flex-none flex-col transition-[width] duration-200 ease-in-out"
+      style={{ ...SHELL_CARD, width: collapsed ? 64 : 244 }}
     >
-      {/* No rule under the brand. The top bar is 40px and this block is 56,
-          so a line here would sit below the top bar's and read as a stray. */}
-      <div className="flex h-14 flex-none items-center gap-2.5 px-3.5">
-        {collapsed ? <BrandIcon /> : <BrandMark />}
+      <div
+        className={`flex h-16 flex-none items-center gap-2 ${collapsed ? "justify-center" : "pl-4 pr-3"}`}
+      >
+        {collapsed ? <Tile /> : <SidebarLockup />}
       </div>
 
-      {/* The design's search field. It opens the ⌘K palette rather than
-          being a second search box with its own behaviour. */}
-      {!collapsed && (
-        <div className="flex-none px-3 pb-1.5 pt-2.5">
+      <div className="flex-none px-3 pb-2.5">
+        {collapsed ? (
           <button
+            type="button"
             onClick={openCommandPalette}
-            className="ta-field flex h-[30px] w-full items-center gap-2 rounded-md px-2"
-            style={{
-              border: "1px solid var(--stroke-secondary)",
-              background: "var(--surface-tertiary)",
-              color: "var(--text-tertiary)",
-              font: "var(--type-body2)",
-            }}
+            title="Search ⌘K"
+            className="ta-well-field grid h-9 w-full place-items-center rounded-[10px]"
+            style={{ color: "var(--icon-secondary)" }}
           >
-            <Search className="h-[15px] w-[15px] flex-none" />
-            <span className="flex-1 text-left">Search</span>
-            <kbd
-              className="rounded px-1"
-              style={{
-                font: "var(--type-caption1)",
-                border: "1px solid var(--stroke-secondary)",
-                background: "var(--surface-card)",
-              }}
-            >
-              ⌘K
-            </kbd>
+            <Search className="h-[18px] w-[18px]" />
           </button>
-        </div>
-      )}
+        ) : (
+          <SearchField onOpen={openCommandPalette} />
+        )}
+      </div>
 
-      <nav className="ta-scroll flex flex-1 flex-col gap-3.5 overflow-y-auto px-2 pb-3 pt-1">
+      <nav className="ta-scroll-hidden flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2.5 pb-3 pt-1.5">
         {sections.map((section) => (
           <div key={section.id} className="flex flex-col gap-0.5">
             {collapsed ? (
-              <div className="mx-2 my-1 h-px" style={{ background: "var(--stroke-divider)" }} />
+              <div
+                aria-hidden="true"
+                className="mx-[18px] mb-1.5 h-1 rounded"
+                style={{ background: "var(--stroke-divider)" }}
+              />
             ) : (
               <div
-                className="px-2 py-1 uppercase"
+                className="truncate px-2.5 pb-1.5 pt-0.5 uppercase"
                 style={{
-                  font: "var(--type-overline)",
-                  letterSpacing: "0.05em",
+                  font: "var(--weight-semibold) 11px/14px var(--font-sans)",
+                  letterSpacing: "0.07em",
                   color: "var(--text-tertiary)",
                 }}
               >
@@ -678,65 +741,14 @@ export function Sidebar({
               </div>
             )}
 
-            {section.items.map((item) => {
-              const isActive = current === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  title={collapsed ? item.label : undefined}
-                  data-active={isActive}
-                  className={`ta-hoverable flex h-8 items-center rounded-md ${
-                    collapsed ? "justify-center px-0" : "gap-2.5 px-2"
-                  }`}
-                  style={{
-                    font: "var(--type-button1)",
-                    background: isActive ? "var(--surface-info)" : "transparent",
-                    color: isActive ? "var(--text-accent)" : "var(--text-secondary)",
-                  }}
-                >
-                  <item.icon
-                    className="h-[18px] w-[18px] shrink-0"
-                    style={{ color: isActive ? "var(--icon-accent)" : "var(--icon-secondary)" }}
-                  />
-                  {!collapsed && (
-                    <>
-                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                      <LinkPendingSpinner />
-                      {item.badge ? (
-                        <span
-                          className="inline-flex h-4 min-w-[18px] items-center justify-center rounded-full px-1.5"
-                          style={{
-                            font: "var(--type-caption2)",
-                            background: "var(--wms-color-primary-600)",
-                            color: "var(--text-on-accent)",
-                          }}
-                        >
-                          {item.badge}
-                        </span>
-                      ) : null}
-                    </>
-                  )}
-                </Link>
-              );
-            })}
+            {section.items.map((item) => (
+              <NavRow key={item.href} item={item} isActive={current === item.href} collapsed={collapsed} />
+            ))}
           </div>
         ))}
       </nav>
 
-      {isInactive && !collapsed && (
-        <div
-          className="mx-2 mb-2 rounded-md px-3 py-2"
-          style={{
-            font: "var(--type-caption1)",
-            background: "var(--surface-warning)",
-            color: "var(--text-warning)",
-            border: "1px solid var(--stroke-warning)",
-          }}
-        >
-          Account inactive — view only
-        </div>
-      )}
+      {isInactive && <InactiveNote compact={collapsed} />}
 
       {renderFooter(collapsed)}
     </aside>
