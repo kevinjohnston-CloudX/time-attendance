@@ -5,7 +5,7 @@ import type { ReportConfig } from "@/lib/validators/report.schema";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "employee.user.name",       type: "string" },
-  employeeCode:  { prismaPath: "employee.employeeCode",    type: "string" },
+  employeeCode:  { prismaPath: "employee.wmsId",           type: "string" },
   department:    { prismaPath: "employee.department.name",  type: "string" },
   departmentId:  { prismaPath: "employee.departmentId",     type: "string" },
   site:          { prismaPath: "employee.site.name",        type: "string" },
@@ -35,6 +35,7 @@ export const hoursSummarySource: DataSourceDefinition = {
   ],
   filters: [
     { id: "employeeName", label: "Employee Name", type: "string", operators: ["contains", "eq"] },
+    { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
     { id: "departmentId", label: "Department", type: "string", operators: ["eq", "in"] },
     { id: "siteId", label: "Site", type: "string", operators: ["eq", "in"] },
     { id: "status", label: "Timesheet Status", type: "string", operators: ["eq", "in"],

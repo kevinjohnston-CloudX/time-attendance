@@ -6,7 +6,7 @@ import { format as fnsFormat } from "date-fns";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "employee.user.name",       type: "string" },
-  employeeCode:  { prismaPath: "employee.employeeCode",    type: "string" },
+  employeeCode:  { prismaPath: "employee.wmsId",           type: "string" },
   department:    { prismaPath: "employee.department.name",  type: "string" },
   departmentId:  { prismaPath: "employee.departmentId",     type: "string" },
   siteId:        { prismaPath: "employee.siteId",           type: "string" },
@@ -40,6 +40,7 @@ export const leaveSummarySource: DataSourceDefinition = {
     { id: "departmentId", label: "Department", type: "string", operators: ["eq", "in"] },
     { id: "siteId", label: "Site", type: "string", operators: ["eq", "in"] },
     { id: "leaveTypeId", label: "Leave Type", type: "string", operators: ["eq", "in"] },
+    { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
     { id: "status", label: "Status", type: "string", operators: ["eq", "in"],
       options: [
         { value: "DRAFT", label: "Draft" },

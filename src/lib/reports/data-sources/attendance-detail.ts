@@ -7,7 +7,7 @@ import { format } from "date-fns";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "timesheet.employee.user.name",       type: "string" },
-  employeeCode:  { prismaPath: "timesheet.employee.employeeCode",    type: "string" },
+  employeeCode:  { prismaPath: "timesheet.employee.wmsId",           type: "string" },
   department:    { prismaPath: "timesheet.employee.department.name",  type: "string" },
   departmentId:  { prismaPath: "timesheet.employee.departmentId",     type: "string" },
   site:          { prismaPath: "timesheet.employee.site.name",        type: "string" },
@@ -53,6 +53,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
         { value: "LEAVE", label: "Leave" },
       ] },
     { id: "payBucket", label: "Pay Bucket", type: "string", operators: ["eq", "in"] },
+    { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
   ],
   groupableFields: ["department", "site", "segmentType"],
   fieldMap,
