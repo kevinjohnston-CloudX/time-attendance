@@ -27,7 +27,7 @@ export default async function EditPolicyPage({ params }: { params: Promise<{ id:
       <Link href="/admin/rules-setup?tab=leave-policies" className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white">← Leave Policies</Link>
       <h1 className="mt-1 text-2xl font-bold text-zinc-900 dark:text-white">{policy.name}</h1>
       <EditPolicyClient
-        policy={serialize(policy)}
+        policy={serialize({ ...policy, _count: { ...policy._count, empOverrides: 0 } })}
         leaveTypes={serialize(leaveTypesResult.success ? leaveTypesResult.data : [])}
         payCodes={serialize(payCodesResult.success ? payCodesResult.data : [])}
       />

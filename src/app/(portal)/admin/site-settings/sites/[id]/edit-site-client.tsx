@@ -26,7 +26,7 @@ export function EditSiteClient({ site }: Props) {
         siteId: site.id,
         name: fd.get("name") as string,
         timezone: (fd.get("timezone") as string) || "America/New_York",
-        address: (fd.get("address") as string) || null,
+        address: (fd.get("address") as string) || "",
         isActive: fd.get("isActive") === "true",
       });
       if (!result.success) { setError(result.error); return; }

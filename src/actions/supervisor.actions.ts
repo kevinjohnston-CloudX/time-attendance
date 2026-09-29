@@ -1,5 +1,6 @@
 "use server";
 
+import type { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
@@ -35,7 +36,7 @@ export const getTeamTimesheets = withRBAC(
     const isPayroll = PAYROLL_ROLES.includes(role);
     const t = tenantId ?? undefined;
 
-    let timesheetWhere;
+    let timesheetWhere: Prisma.TimesheetWhereInput;
     if (isPayroll) {
       timesheetWhere = { status: "SUP_APPROVED", employee: { tenantId: t } };
     } else {

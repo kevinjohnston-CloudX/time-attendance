@@ -25,8 +25,8 @@ export default async function EditHolidayPage({ params }: { params: Promise<{ id
   const holidayForClient = serialize({
     id: holiday.id,
     name: holiday.name,
-    date: holiday.date,
-    observedOn: holiday.observedDate ?? null,
+    date: holiday.date.toISOString(),
+    observedOn: holiday.observedDate?.toISOString() ?? null,
     bypassAfterEligibility: holiday.bypassAfterEligibility,
     isActive: holiday.isActive,
     holidayRules: holiday.holidayRules ?? [],
