@@ -22,11 +22,8 @@ const noSubscribe = () => () => {};
 const useHydrated = () => useSyncExternalStore(noSubscribe, () => true, () => false);
 
 /**
- * Cycles system -> light -> dark, as a 28px outlined control in the top bar.
- *
- * <p>Shape taken from the portal design, which puts it beside the other
- * header controls. It used to be a full-width labelled row in the sidebar
- * footer, where it took as much space as a destination without being one.
+ * Cycles system -> light -> dark, as a round 28px button in the top bar's
+ * icon pill, from the Layout handoff.
  */
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -35,7 +32,7 @@ export function ThemeToggle() {
   // The server has no idea which theme this browser will pick, so rendering
   // the icon before hydration guarantees a mismatch. A fixed-size placeholder
   // keeps the header from shifting when the real control appears.
-  if (!hydrated) return <span className="h-7 w-[38px]" aria-hidden />;
+  if (!hydrated) return <span className="h-7 w-7 flex-none" aria-hidden />;
 
   const currentIdx = THEMES.findIndex((t) => t.value === theme);
   const current = THEMES[currentIdx === -1 ? 0 : currentIdx];
@@ -44,13 +41,11 @@ export function ThemeToggle() {
   return (
     <button
       onClick={() => setTheme(next.value)}
-      title={`${current.label} theme — switch to ${next.label}`}
-      className="ta-outlined inline-flex h-7 items-center gap-1.5 rounded-md px-2"
-      style={{
-        border: "1px solid var(--stroke-secondary)",
-        background: "var(--surface-card)",
-        color: "var(--text-secondary)",
-      }}
+      type="button"
+      title={`${current.label} theme. Switch to ${next.label}`}
+      aria-label={`${current.label} theme. Switch to ${next.label}`}
+      className="ta-pill-btn grid h-7 w-7 flex-none place-items-center rounded-full"
+      style={{ color: "var(--icon-tertiary)" }}
     >
       <current.icon className="h-4 w-4" />
     </button>

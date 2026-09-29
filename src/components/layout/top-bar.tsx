@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, ChevronRight, PanelLeft } from "lucide-react";
+import { Home, ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { locate } from "./nav-model";
 import { useBreadcrumbLeafFor } from "./breadcrumb-leaf";
 import { ThemeToggle } from "./theme-toggle";
@@ -15,21 +15,21 @@ import { navModeStore, useNavMode, collapseStore, useSidebarCollapsed, type NavM
 import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
 
 /**
- * The bar above the content, from the portal design, at 40px rather than the
- * design's 56px: it carries a breadcrumb and four small buttons, and every
- * pixel it takes is a pixel of list the page cannot show. The 28px controls
- * inside it keep their size.
+ * The bar above the content, from the Layout handoff: 36px with no rule under
+ * it, sitting on the canvas. A glass pill on the left holds the sidebar toggle
+ * and the breadcrumb; on the right the Nav switch, then one pill holding the
+ * theme, the shortcuts and the bell.
  *
  * <p>It exists for the breadcrumb. The admin area is three levels deep in
- * places — a site inside Sites inside Administration — and until now the only
- * thing telling you where you were was which sidebar row happened to be
- * highlighted. The trail is built from the same nav model the sidebar renders,
- * so the two cannot disagree about which section a page belongs to.
+ * places, a site inside Sites inside Administration, and the trail is built
+ * from the same nav model the sidebar renders, so the two cannot disagree
+ * about which section a page belongs to. Every step before the page you are on
+ * is a link back, and a record page ends the trail on the record's own name,
+ * both beyond what the handoff draws.
  *
- * <p>The avatar menu the design puts up here is still absent: it would
- * duplicate the sidebar footer, which already carries the name, the role and
- * sign out, and two places to sign out is worse than one. The command palette
- * the design draws here is reached from the sidebar search and ⌘K instead.
+ * <p>The avatar menu some designs put up here is absent on purpose: the
+ * sidebar's user card already carries the name, the role and sign out, and two
+ * places to sign out is worse than one.
  */
 export function TopBar({
   reachableHrefs,
@@ -51,46 +51,53 @@ export function TopBar({
   const collapsed = useSidebarCollapsed();
   const here = locate(pathname);
   const leaf = useBreadcrumbLeafFor(pathname);
+  const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
 
   return (
-    <header
-      className="flex h-10 flex-none items-center gap-3 px-4"
-      style={{
-        background: "var(--surface-card)",
-        borderBottom: "1px solid var(--stroke-secondary)",
-      }}
-    >
-      {/* The grouped sidebar's collapse toggle. One button in one place for
-          both states, first in the bar beside the column it resizes. It used
-          to sit in the sidebar's own header, squeezed against the wordmark
-          when open and moved under the logo when closed. The rail has no
-          collapsed state, so it gets no toggle. */}
-      {navMode === "grouped" && (
-        <>
-          <button
-            type="button"
-            onClick={() => collapseStore.set(!collapsed)}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-expanded={!collapsed}
-            className="ta-hoverable -ml-1 inline-flex h-7 w-7 flex-none items-center justify-center rounded-md"
-            style={{ color: "var(--icon-secondary)" }}
-          >
-            <PanelLeft className="h-4 w-4" />
-          </button>
-          <span aria-hidden className="h-4 w-px flex-none" style={{ background: "var(--stroke-divider)" }} />
-        </>
-      )}
-
+    // z-30: above the pages' pinned headers (z-20), so the bell's list and
+    // the design switch's note open over them rather than behind.
+    <header className="relative z-30 flex h-9 flex-none items-center gap-2.5 px-3">
       <nav
         aria-label="Breadcrumb"
-        className="flex min-w-0 items-center gap-1.5"
-        style={{ font: "var(--type-overline)", color: "var(--text-secondary)" }}
+        className="flex h-8 min-w-0 items-center gap-0.5 overflow-hidden rounded-full pl-[3px] pr-2.5 uppercase"
+        style={{
+          // Never narrower than the sidebar toggle and home, which stay whole
+          // while the trail truncates.
+          minWidth: navMode === "grouped" ? 72 : 40,
+          background: "var(--ta-glass)",
+          boxShadow: "inset 0 0 0 1px var(--ta-ring-strong)",
+          font: "var(--weight-semibold) 11px/1 var(--font-sans)",
+          letterSpacing: "0.06em",
+          color: "var(--text-tertiary)",
+        }}
       >
+        {/* The grouped sidebar's collapse toggle, first in the pill beside the
+            column it resizes. The rail has no collapsed state, so no toggle. */}
+        {navMode === "grouped" && (
+          <>
+            <button
+              type="button"
+              onClick={() => collapseStore.set(!collapsed)}
+              title={`${toggleLabel}  [`}
+              aria-label={toggleLabel}
+              aria-expanded={!collapsed}
+              className="ta-pill-btn grid h-[26px] w-[26px] flex-none place-items-center rounded-full"
+              style={{ color: "var(--icon-secondary)" }}
+            >
+              {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            </button>
+            <span
+              aria-hidden
+              className="ml-0.5 mr-1 h-3.5 w-px flex-none"
+              style={{ background: "var(--stroke-secondary)" }}
+            />
+          </>
+        )}
+
         <Link
           href="/dashboard"
-          className="ta-hoverable inline-flex rounded p-1"
           title="Dashboard"
+          className="ta-pill-btn grid h-6 w-6 flex-none place-items-center rounded-full"
           style={{ color: "var(--icon-secondary)" }}
         >
           <Home className="h-3.5 w-3.5" />
@@ -98,7 +105,7 @@ export function TopBar({
 
         {here && (
           <>
-            <ChevronRight className="h-3.5 w-3.5 flex-none" style={{ color: "var(--icon-disabled)" }} />
+            <Chevron />
             <Crumb
               label={here.section.label}
               href={here.section.href}
@@ -107,7 +114,7 @@ export function TopBar({
             />
             {here.item && (
               <>
-                <ChevronRight className="h-3.5 w-3.5 flex-none" style={{ color: "var(--icon-disabled)" }} />
+                <Chevron />
                 <Crumb
                   label={here.item.label}
                   href={here.item.href}
@@ -120,7 +127,7 @@ export function TopBar({
                 rather than on the list it came from. */}
             {leaf && (
               <>
-                <ChevronRight className="h-3.5 w-3.5 flex-none" style={{ color: "var(--icon-disabled)" }} />
+                <Chevron />
                 <Crumb label={leaf} current last />
               </>
             )}
@@ -130,36 +137,48 @@ export function TopBar({
 
       <div className="flex-1" />
 
-      <div className="flex flex-none items-center gap-2">
-        {classicUrl && (
-          <Suspense fallback={null}>
-            <DesignSwitch classicUrl={classicUrl} classicUntil={classicUntil} signInId={signInId} />
-          </Suspense>
-        )}
-        {/* The navigation layout switch, where the design puts it: a label and
-            a small segmented control immediately before the theme button. */}
-        <span
-          className="whitespace-nowrap uppercase"
-          style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)", letterSpacing: "0.05em" }}
-        >
-          Nav
-        </span>
-        <SegmentedControl
-          size="sm"
-          ariaLabel="Navigation layout"
-          value={navMode}
-          onChange={(next) => navModeStore.set(next as NavMode)}
-          items={[
-            { value: "grouped", label: "Grouped" },
-            { value: "rail", label: "Rail" },
-          ]}
-        />
+      {classicUrl && (
+        <Suspense fallback={null}>
+          <DesignSwitch classicUrl={classicUrl} classicUntil={classicUntil} signInId={signInId} />
+        </Suspense>
+      )}
+
+      {/* The navigation layout switch: a label and a small segmented control. */}
+      <span
+        className="flex-none whitespace-nowrap uppercase"
+        style={{
+          font: "var(--weight-semibold) 10px/1 var(--font-sans)",
+          letterSpacing: "0.08em",
+          color: "var(--text-tertiary)",
+        }}
+      >
+        Nav
+      </span>
+      <SegmentedControl
+        size="sm"
+        ariaLabel="Navigation layout"
+        value={navMode}
+        onChange={(next) => navModeStore.set(next as NavMode)}
+        items={[
+          { value: "grouped", label: "Grouped" },
+          { value: "rail", label: "Rail" },
+        ]}
+      />
+
+      <div
+        className="relative flex h-[34px] flex-none items-center gap-0.5 rounded-full px-[3px]"
+        style={{ background: "var(--surface-card)", boxShadow: "var(--ta-pill-shadow)" }}
+      >
         <ThemeToggle />
         <KeyboardShortcuts reachableHrefs={reachableHrefs} />
         <NotificationBell items={waiting} />
       </div>
     </header>
   );
+}
+
+function Chevron() {
+  return <ChevronRight className="h-3 w-3 flex-none" style={{ color: "var(--icon-disabled)" }} />;
 }
 
 /**
@@ -177,12 +196,14 @@ function Crumb({
   current?: boolean;
   last?: boolean;
 }) {
-  const cls = `uppercase tracking-[0.04em] whitespace-nowrap${last ? " min-w-0 truncate" : ""}`;
+  // Every step can shrink, the page you are on last of all, so a narrow
+  // window truncates the trail inside its pill instead of spilling over.
+  const cls = `min-w-0 truncate whitespace-nowrap px-1${last ? " shrink-[0.2]" : ""}`;
   if (href && !current) {
     return (
       <Link
         href={href}
-        className={`ta-crumb ${cls} rounded px-1 -mx-1`}
+        className={`ta-crumb ${cls} rounded-full`}
         style={{ color: last ? "var(--text-primary)" : undefined }}
       >
         {label}

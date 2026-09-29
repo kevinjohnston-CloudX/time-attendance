@@ -138,6 +138,10 @@
   --ta-tile-shadow: 0 4px 10px -4px rgba(8, 96, 170, 0.55);
   --ta-menu-shadow: 0 16px 36px -12px rgba(16, 24, 40, 0.25), 0 0 0 1px rgba(17, 24, 39, 0.06);
   --ta-raised:      0 1px 2px rgba(16, 24, 40, 0.08), 0 0 0 1px rgba(17, 24, 39, 0.06);
+  /* The top bar's two pills: the breadcrumb sits on glass, the icons on a card. */
+  --ta-glass:       rgba(255, 255, 255, 0.75);
+  --ta-pill-shadow: 0 0 0 1px var(--ta-ring-strong), 0 1px 2px rgba(16, 24, 40, 0.05);
+  --ta-drop-shadow: 0 18px 40px -12px rgba(16, 24, 40, 0.25), 0 0 0 1px rgba(17, 24, 39, 0.06);
 
   /* The page's own padding inside the shell. Pinned headers pull themselves
      up and out into it (.ta-pin), so both read the same two numbers. */
@@ -240,6 +244,21 @@ textarea {
    rows keep their full width whether or not the list overflows. */
 .ta-scroll-hidden { scrollbar-width: none; }
 .ta-scroll-hidden::-webkit-scrollbar { display: none; }
+
+/* A round 28px button inside one of the top bar's pills. */
+.ta-pill-btn {
+  transition: background-color 120ms ease, color 120ms ease;
+  cursor: pointer;
+}
+.ta-pill-btn:hover,
+.ta-pill-btn[aria-expanded="true"] {
+  background: var(--fill-hover);
+  color: var(--text-primary);
+}
+.ta-pill-btn:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 1px;
+}
 
 /* The sidebar's search field: a well with a hairline that darkens on hover. */
 .ta-well-field {

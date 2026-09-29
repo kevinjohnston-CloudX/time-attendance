@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { Keyboard } from "lucide-react";
+import { collapseStore, navModeStore, useNavMode } from "./nav-mode";
 
 /**
  * The shortcuts button in the top bar, the list behind it, and the keys
@@ -53,6 +54,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 export function KeyboardShortcuts({ reachableHrefs }: { reachableHrefs: string[] }) {
   const router = useRouter();
   const hydrated = useHydrated();
+  const navMode = useNavMode();
   const [open, setOpen] = useState(false);
 
   /** When "G" was pressed, or null. A ref because no render depends on it. */
@@ -80,6 +82,16 @@ export function KeyboardShortcuts({ reachableHrefs }: { reachableHrefs: string[]
       // Escape closes this list. Every other dialog closes itself.
       if (e.key === "Escape") {
         pendingGoTo.current = null;
+        return;
+      }
+
+      // "[" collapses or expands the grouped sidebar, as the handoff has it.
+      // The rail has no collapsed state, so there it does nothing.
+      if (e.key === "[") {
+        if (navModeStore.get() !== "grouped") return;
+        e.preventDefault();
+        pendingGoTo.current = null;
+        collapseStore.set(!collapseStore.get());
         return;
       }
 
@@ -111,23 +123,20 @@ export function KeyboardShortcuts({ reachableHrefs }: { reachableHrefs: string[]
   // Rendered after hydration only: the server cannot know whether this
   // browser writes ⌘ or Ctrl, and guessing produces a mismatch.
   const isMac = hydrated && /Mac|iPhone|iPad/.test(navigator.platform ?? "");
-  const rows = shortcutRows(reachableHrefs, isMac);
+  const rows = shortcutRows(reachableHrefs, isMac, navMode === "grouped");
 
   return (
     <>
       <button
+        type="button"
         onClick={() => setOpen(true)}
-        title="Keyboard shortcuts"
+        title="Keyboard shortcuts (?)"
+        aria-label="Keyboard shortcuts"
         aria-haspopup="dialog"
-        className="ta-outlined inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2"
-        style={{
-          border: "1px solid var(--stroke-secondary)",
-          background: "var(--surface-card)",
-          color: "var(--text-secondary)",
-        }}
+        className="ta-pill-btn grid h-7 w-7 flex-none place-items-center rounded-full"
+        style={{ color: "var(--icon-tertiary)" }}
       >
         <Keyboard className="h-4 w-4" />
-        <span style={{ font: "var(--type-body2)" }}>?</span>
       </button>
 
       {open && <ShortcutsDialog rows={rows} onClose={close} />}
@@ -144,11 +153,12 @@ export type ShortcutRow = { what: string; keys: string };
  * <p>Pure and exported so the list can be rendered and looked at without a
  * browser, a session or a database behind it.
  */
-export function shortcutRows(reachableHrefs: string[], isMac: boolean): ShortcutRow[] {
+export function shortcutRows(reachableHrefs: string[], isMac: boolean, grouped = true): ShortcutRow[] {
   const reachable = new Set(reachableHrefs);
   return [
     { what: "Search and jump to a page", keys: isMac ? "\u2318 K" : "Ctrl K" },
     { what: "This list of shortcuts", keys: "?" },
+    ...(grouped ? [{ what: "Collapse or expand the sidebar", keys: "[" }] : []),
     ...GO_TO.filter((g) => reachable.has(g.href)).map((g) => ({
       what: g.what,
       keys: `G then ${g.key.toUpperCase()}`,

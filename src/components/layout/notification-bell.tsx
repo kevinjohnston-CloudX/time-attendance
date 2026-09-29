@@ -40,38 +40,38 @@ export function NotificationBell({ items }: { items: WaitingItem[] }) {
     };
   }, [open]);
 
+  const label = total > 0 ? `${total} waiting on you` : "Nothing waiting on you";
+
   return (
-    <div ref={ref} className="relative flex-none">
+    <div ref={ref} className="flex-none">
       <button
+        type="button"
         onClick={() => setOpen((v) => !v)}
-        title={total > 0 ? `${total} waiting on you` : "Nothing waiting on you"}
+        title={label}
+        aria-label={label}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="ta-outlined relative inline-flex h-7 items-center rounded-md px-2"
-        style={{
-          border: "1px solid var(--stroke-secondary)",
-          background: "var(--surface-card)",
-          color: "var(--text-secondary)",
-        }}
+        className="ta-pill-btn relative grid h-7 w-7 place-items-center rounded-full"
+        style={{ color: "var(--icon-tertiary)" }}
       >
         <Bell className="h-4 w-4" />
         {total > 0 && (
           <span
             aria-hidden
-            className="absolute rounded-full"
+            className="tabular absolute right-[3px] top-[3px] h-3.5 min-w-3.5 rounded-full px-[3px] text-center"
             style={{
-              top: 3,
-              right: 4,
-              width: 7,
-              height: 7,
               background: "var(--fill-accent)",
-              outline: "2px solid var(--surface-card)",
+              color: "var(--text-on-accent)",
+              font: "var(--weight-semibold) 9px/14px var(--font-sans)",
+              boxShadow: "0 0 0 2px var(--surface-card)",
             }}
-          />
+          >
+            {total > 99 ? "99+" : total}
+          </span>
         )}
-        <span className="sr-only">{total > 0 ? `${total} waiting on you` : "Nothing waiting on you"}</span>
       </button>
 
+      {/* Anchored to the icon pill, as the handoff does, not to the bell. */}
       {open && <WaitingPanel items={items} onNavigate={() => setOpen(false)} />}
     </div>
   );
@@ -89,55 +89,51 @@ export function WaitingPanel({
   onNavigate?: () => void;
 }) {
   return (
-      <div
-        role="dialog"
-        aria-label="Waiting on you"
-        className="absolute right-0 z-50 mt-1.5 w-[280px] overflow-hidden rounded-lg"
+    <div
+      role="dialog"
+      aria-label="Waiting on you"
+      className="absolute right-0 top-[calc(100%+8px)] z-50 w-[300px] rounded-[14px] p-1.5"
+      style={{ background: "var(--surface-card)", boxShadow: "var(--ta-drop-shadow)" }}
+    >
+      <p
+        className="px-2.5 pb-1.5 pt-2 uppercase"
         style={{
-          background: "var(--surface-card)",
-          border: "1px solid var(--stroke-secondary)",
-          boxShadow: "var(--shadow-menu)",
+          margin: 0,
+          font: "var(--weight-semibold) 11px/14px var(--font-sans)",
+          letterSpacing: "0.07em",
+          color: "var(--text-tertiary)",
         }}
       >
-        <p
-          className="px-3 pb-1 pt-2 uppercase"
-          style={{ margin: 0, font: "var(--type-overline)", color: "var(--text-tertiary)" }}
-        >
-          Waiting on you
-        </p>
+        Waiting on you
+      </p>
 
-        {items.length === 0 ? (
-          <p
-            className="px-3 pb-3 pt-1"
-            style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+      {items.length === 0 ? (
+        <p className="px-2.5 pb-2.5 pt-1" style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+          Nothing needs you right now.
+        </p>
+      ) : (
+        items.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={onNavigate}
+            className="ta-pill-btn flex h-[38px] items-center gap-2.5 rounded-[9px] px-2.5"
+            style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
           >
-            Nothing needs you right now.
-          </p>
-        ) : (
-          <div className="flex flex-col pb-1">
-            {items.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onNavigate}
-                className="ta-hoverable flex h-9 items-center gap-2 px-3"
-                style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-              >
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                <span
-                  className="tabular inline-flex h-4 min-w-[18px] flex-none items-center justify-center rounded-full px-1.5"
-                  style={{
-                    font: "var(--type-caption2)",
-                    background: "var(--wms-color-primary-600)",
-                    color: "var(--text-on-accent)",
-                  }}
-                >
-                  {item.count}
-                </span>
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+            <span
+              className="tabular h-[18px] min-w-5 flex-none rounded-full px-1.5 text-center"
+              style={{
+                background: "var(--surface-info)",
+                color: "var(--text-accent)",
+                font: "var(--weight-semibold) 11px/18px var(--font-sans)",
+              }}
+            >
+              {item.count}
+            </span>
+          </Link>
+        ))
+      )}
+    </div>
   );
 }
