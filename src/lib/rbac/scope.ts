@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { checkPermission } from "./check-permission";
+import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import type { Permission } from "./permissions";
 
 /**
@@ -9,8 +10,9 @@ import type { Permission } from "./permissions";
  * <p>Always the caller's own company. Beyond that, payroll, HR and system
  * admins (the roles the supervisor screens already treat as company wide),
  * or anybody holding one of the action's company-wide permissions, reach
- * everyone in the company; a supervisor reaches their direct reports only,
- * the same team the supervisor screens list.
+ * everyone in the company; a supervisor reaches the people who report to
+ * them at any depth (getSubordinateIds), the same team the supervisor
+ * screens list, and never themselves.
  *
  * <p>An id outside the scope answers "not found", never "forbidden", so a
  * guessed id says nothing about whether it exists.
@@ -37,13 +39,14 @@ export async function reachesCompany(ctx: Ctx, companyWide: Wide): Promise<boole
 export async function employeeScope(ctx: Ctx, companyWide: Wide): Promise<Prisma.EmployeeWhereInput> {
   const company: Prisma.EmployeeWhereInput = { tenantId: ctx.tenantId ?? "__no_company__" };
   if (await reachesCompany(ctx, companyWide)) return company;
-  return { ...company, supervisorId: ctx.employeeId || "__no_supervisor__" };
+  const team = ctx.employeeId ? await getSubordinateIds(ctx.employeeId, ctx.tenantId) : [];
+  return { ...company, id: { in: team } };
 }
 
 /** The employee, if the caller may act on them. */
 export async function assertEmployeeInScope(ctx: Ctx, employeeId: string, companyWide: Wide): Promise<void> {
   const found = await db.employee.findFirst({
-    where: { id: employeeId, ...(await employeeScope(ctx, companyWide)) },
+    where: { AND: [{ id: employeeId }, await employeeScope(ctx, companyWide)] },
     select: { id: true },
   });
   if (!found) throw new NotFoundError("Employee not found");
