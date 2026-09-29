@@ -26,6 +26,7 @@ type EmployeeListItem = {
   id: string;
   name: string;
   employeeCode: string;
+  wmsId?: string | null;
   department: string;
 };
 
@@ -365,7 +366,7 @@ export function TeamPunchHistoryViewer({
                     {emp.name}
                   </p>
                   <p className="truncate text-xs text-zinc-400">
-                    {emp.employeeCode} · {emp.department}
+                    {emp.wmsId ?? emp.employeeCode} · {emp.department}
                   </p>
                 </button>
               );
@@ -388,7 +389,7 @@ export function TeamPunchHistoryViewer({
                   {selectedEmployee.name}
                 </h2>
                 <p className="text-xs text-zinc-500">
-                  {selectedEmployee.employeeCode} · {selectedEmployee.department}
+                  {selectedEmployee.wmsId ?? selectedEmployee.employeeCode} · {selectedEmployee.department}
                 </p>
               </div>
 

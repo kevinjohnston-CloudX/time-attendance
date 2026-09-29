@@ -69,6 +69,7 @@ type EmployeeListItem = {
   employeeId: string;
   name: string;
   employeeCode: string;
+  wmsId?: string | null;
   department: string;
   siteId: string | null;
   siteName: string | null;
@@ -171,6 +172,7 @@ type TimecardDetail = {
     user: { name: string | null } | null;
     department: { name: string };
     employeeCode: string;
+    wmsId: string | null;
     payRate: number | null;
     payType: string | null;
     shift: { mealConfig: { autoDeduct?: boolean; minMealMinutes?: number; maxMealMinutes?: number; meals?: { workAtLeastHours: number; deductMinutes: number }[] } | null } | null;
@@ -776,16 +778,22 @@ export function TimecardViewer({
       return null;
     }
 
-    // Cap the end at today when today falls inside this pay period (and no custom range is set)
     const todayMidnight = new Date(today);
+    // For salary/auto-pay employees the timecard has pre-generated future segments;
+    // show the full period so non-working days (e.g. Saturday) still appear.
+    // For hourly employees cap at today so empty future rows don't clutter the grid.
+    const hasFutureSegments =
+      timecard?.segments.some((s) => parseUtcDate(s.segmentDate) > todayMidnight) ?? false;
     const effectiveEnd =
-      !customStartDate && !customEndDate && todayMidnight >= periodStart && todayMidnight < periodEnd
+      hasFutureSegments
+        ? periodEnd
+        : !customStartDate && !customEndDate && todayMidnight >= periodStart && todayMidnight < periodEnd
         ? todayMidnight
         : periodEnd;
     // Guard: if period hasn't started yet, nothing to show
     if (effectiveEnd < periodStart) return [];
     const baseDays = eachDayOfInterval({ start: periodStart, end: effectiveEnd });
-    // Append any future dates (beyond effectiveEnd, within the period) that already have segments
+    // Append any future dates beyond effectiveEnd that have segments (e.g. late entries)
     if (timecard && effectiveEnd < periodEnd) {
       const baseDayStrs = new Set(baseDays.map((d) => format(d, "yyyy-MM-dd")));
       const futureDayStrs = new Set(
@@ -793,9 +801,7 @@ export function TimecardViewer({
           .map((s) => format(parseUtcDate(s.segmentDate), "yyyy-MM-dd"))
           .filter((ds) => !baseDayStrs.has(ds) && ds > format(effectiveEnd, "yyyy-MM-dd") && ds <= format(periodEnd, "yyyy-MM-dd"))
       );
-      const futureDays = Array.from(futureDayStrs)
-        .sort()
-        .map((ds) => parseISO(ds));
+      const futureDays = Array.from(futureDayStrs).sort().map((ds) => parseISO(ds));
       return [...baseDays, ...futureDays];
     }
     return baseDays;
@@ -1748,7 +1754,7 @@ export function TimecardViewer({
                         </div>
                         <div className="mt-1 flex items-center justify-between gap-2">
                           <p className="truncate text-xs text-zinc-400">
-                            {emp.employeeCode} · {emp.department}
+                            {emp.wmsId ?? emp.employeeCode} · {emp.department}
                           </p>
                           {emp.status && (
                             <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[empStatus] ?? STATUS_BADGE.OPEN}`}>
@@ -1779,7 +1785,7 @@ export function TimecardViewer({
               {(() => {
                 const listEmp = employees.find((e) => e.employeeId === selectedEmployeeId);
                 const displayName = timecard?.employee.user?.name ?? listEmp?.name ?? selectedEmployeeId;
-                const displayCode = timecard?.employee.employeeCode ?? listEmp?.employeeCode ?? "";
+                const displayCode = timecard?.employee.wmsId ?? timecard?.employee.employeeCode ?? listEmp?.wmsId ?? listEmp?.employeeCode ?? "";
                 const displayDept = timecard?.employee.department.name ?? listEmp?.department ?? "";
                 const displayPayType = timecard?.employee.payType ?? null;
                 return (

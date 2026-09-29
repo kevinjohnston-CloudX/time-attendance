@@ -147,6 +147,7 @@ export default async function TimecardsPage({
             : null,
           department: { name: timecard.employee.department.name },
           employeeCode: timecard.employee.employeeCode,
+          wmsId: timecard.employee.wmsId ?? null,
           payRate: timecard.employee.payRate
             ? Number(timecard.employee.payRate)
             : null,

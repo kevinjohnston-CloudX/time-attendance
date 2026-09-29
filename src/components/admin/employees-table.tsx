@@ -23,6 +23,7 @@ const ROLE_LABEL: Record<string, string> = {
 interface Employee {
   id: string;
   employeeCode: string;
+  wmsId: string | null;
   role: string;
   isActive: boolean;
   onLeave: boolean;
@@ -140,7 +141,7 @@ export function EmployeesTable({ employees, total, page, pageSize, sites, depart
           <thead className="bg-zinc-50 dark:bg-zinc-900">
             <tr>
               <th className="px-4 py-3 text-left font-medium text-zinc-500">Name</th>
-              <th className="px-4 py-3 text-left font-medium text-zinc-500">Code</th>
+              <th className="px-4 py-3 text-left font-medium text-zinc-500">Badge ID</th>
               <th className="px-4 py-3 text-left font-medium text-zinc-500">Role</th>
               <th className="px-4 py-3 text-left font-medium text-zinc-500">Department</th>
               <th className="px-4 py-3 text-left font-medium text-zinc-500">Hire Date</th>
@@ -168,7 +169,7 @@ export function EmployeesTable({ employees, total, page, pageSize, sites, depart
                   )}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-zinc-500">
-                  {emp.employeeCode}
+                  {emp.wmsId ?? emp.employeeCode}
                 </td>
                 <td className="px-4 py-3">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${emp.customRole ? "bg-indigo-100 text-indigo-700" : ROLE_BADGE[emp.role]}`}>

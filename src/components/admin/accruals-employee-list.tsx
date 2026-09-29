@@ -8,6 +8,7 @@ type EmployeeRow = {
   id: string;
   name: string;
   employeeCode: string;
+  wmsId?: string | null;
   department: string;
   siteId: string;
   site: string;
@@ -92,7 +93,7 @@ export function AccrualsEmployeeList({
             <div>
               <p className="text-sm font-medium text-zinc-900 dark:text-white">{emp.name}</p>
               <p className="text-xs text-zinc-500">
-                {emp.employeeCode} · {emp.site} · {emp.department}
+                {emp.wmsId ?? emp.employeeCode} · {emp.site} · {emp.department}
                 {emp.payCategory ? ` · ${emp.payCategory}` : ""}
                 {emp.hireDate ? ` · Hired ${emp.hireDate}` : ""}
               </p>

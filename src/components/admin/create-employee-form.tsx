@@ -29,6 +29,8 @@ interface Props {
   holidayRules: { id: string; name: string }[];
   payCategories: { id: string; number: number; description: string | null }[];
   payTypes: { id: string; number: number; description: string | null }[];
+  jobTitles: { id: string; name: string; externalId: string | null }[];
+  agencies: { id: string; code: number; description: string; inactiveOn: Date | string | null }[];
 }
 
 function fmtTime(hhmm: string): string {
@@ -41,7 +43,7 @@ const inputCls =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
 const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400";
 
-export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes }: Props) {
+export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +90,8 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
         payType: (fd.get("payType") as "HOURLY" | "SALARY" | null) || null,
         payTypeId: (fd.get("payTypeId") as string) || null,
         payRate: payRateRaw ? Number(payRateRaw) : null,
-        jobTitle: fd.get("jobTitle") as string,
+        jobTitleId: (fd.get("jobTitleId") as string) || null,
+        agencyId: (fd.get("agencyId") as string) || null,
         adpWorkerId: fd.get("adpWorkerId") as string,
         shiftId: fd.get("shiftId") as string,
         holidayRuleId: fd.get("holidayRuleId") as string,
@@ -192,11 +195,6 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                     </div>
 
                     <div>
-                      <label className={labelCls}>Employee Code</label>
-                      <input name="employeeCode" required className={inputCls} />
-                    </div>
-
-                    <div>
                       <label className={labelCls}>Hire Date</label>
                       <input name="hireDate" type="date" required className={inputCls} />
                     </div>
@@ -248,7 +246,28 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
                     <div>
                       <label className={labelCls}>Job Title</label>
-                      <input name="jobTitle" className={inputCls} />
+                      <select name="jobTitleId" className={inputCls}>
+                        <option value="">— None —</option>
+                        {jobTitles.map((jt) => (
+                          <option key={jt.id} value={jt.id}>
+                            {jt.name}{jt.externalId ? ` (${jt.externalId})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className={labelCls}>Agency</label>
+                      <select name="agencyId" className={inputCls}>
+                        <option value="">— None —</option>
+                        {agencies
+                          .filter((a) => !a.inactiveOn || new Date(a.inactiveOn) > new Date())
+                          .map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.code} — {a.description}
+                            </option>
+                          ))}
+                      </select>
                     </div>
 
                     <div>

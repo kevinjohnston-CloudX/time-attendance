@@ -139,5 +139,21 @@ async function resolveDateFilter(dateRange: ReportConfig["dateRange"]): Promise<
         endDate: { gte: start },
       };
     }
+    case "today": {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setHours(23, 59, 59, 999);
+      return { startDate: { lte: end }, endDate: { gte: start } };
+    }
+    case "yesterday": {
+      const start = new Date();
+      start.setDate(start.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setDate(end.getDate() - 1);
+      end.setHours(23, 59, 59, 999);
+      return { startDate: { lte: end }, endDate: { gte: start } };
+    }
   }
 }

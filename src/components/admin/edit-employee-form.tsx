@@ -117,6 +117,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       jobTitleId: (fd.get("jobTitleId") as string) || null,
       agencyId: (fd.get("agencyId") as string) || null,
       terminationReason: fd.get("terminationReason") as string,
+      adjustedHireDate: (fd.get("adjustedHireDate") as string) || null,
     });
   }
 

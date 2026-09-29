@@ -163,5 +163,21 @@ function resolveDateFilter(dateRange: ReportConfig["dateRange"]): Record<string,
       start.setUTCHours(0, 0, 0, 0);
       return { segmentDate: { gte: start, lte: now } };
     }
+    case "today": {
+      const start = new Date();
+      start.setUTCHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setUTCHours(23, 59, 59, 999);
+      return { segmentDate: { gte: start, lte: end } };
+    }
+    case "yesterday": {
+      const start = new Date();
+      start.setUTCDate(start.getUTCDate() - 1);
+      start.setUTCHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setUTCDate(end.getUTCDate() - 1);
+      end.setUTCHours(23, 59, 59, 999);
+      return { segmentDate: { gte: start, lte: end } };
+    }
   }
 }

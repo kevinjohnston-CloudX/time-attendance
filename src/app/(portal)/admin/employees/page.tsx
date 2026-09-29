@@ -32,7 +32,7 @@ export default async function EmployeesPage({ searchParams }: Props) {
   if (!employeesResult.success || !refDataResult.success) redirect("/admin");
 
   const { employees, total, pageSize } = employeesResult.data;
-  const { sites, departments, ruleSets, employees: allEmps, customRoles, shifts, holidayRules, payCategories, payTypes } = refDataResult.data;
+  const { sites, departments, ruleSets, employees: allEmps, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies } = refDataResult.data;
 
   return (
     <div>
@@ -61,6 +61,8 @@ export default async function EmployeesPage({ searchParams }: Props) {
             holidayRules={holidayRules}
             payCategories={payCategories ?? []}
             payTypes={payTypes ?? []}
+            jobTitles={jobTitles ?? []}
+            agencies={agencies ?? []}
           />
         </div>
       </div>
