@@ -4,52 +4,56 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { PinnedBar } from "@/components/ui";
 
 /**
- * Pay Periods' frame: the same pinned page header every screen has, then the
- * period list beside the period itself, as Team Punch History lays out its
- * people beside their punches.
+ * Pay Periods' frame, from the page handoff: the period list beside the
+ * period, the list pinned and reaching the bottom of the window, and the
+ * period's title and actions pinned over its column.
  *
- * <p>The list pins under the header and reaches the bottom of the window, so
- * it is in reach however far down the period is read. The header wraps onto
- * more lines on a narrow window, so the list pins under its measured height
- * rather than a guess.
+ * <p>The list is as tall as the scrolling area it sits in, less the page's
+ * own padding, measured rather than guessed so a banner above the page (a
+ * super admin inside a company, say) cannot push its foot off the screen.
+ * The header's height rides along as --pp-bar, so a jump to the timesheets
+ * stops just under it.
  */
-export function PayPeriodsShell({ header, rail, children }: { header: ReactNode; rail: ReactNode; children: ReactNode }) {
+export function PayPeriodsShell({ rail, header, children }: { rail: ReactNode; header: ReactNode | null; children: ReactNode }) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
-  const [barHeight, setBarHeight] = useState(104);
+  const [railH, setRailH] = useState<number | null>(null);
+  const [barH, setBarH] = useState(96);
 
   useEffect(() => {
-    const el = barRef.current;
-    if (!el || typeof ResizeObserver !== "function") return;
-    const ro = new ResizeObserver(() => {
-      const h = Math.round(el.getBoundingClientRect().height);
-      if (h) setBarHeight((prev) => (prev === h ? prev : h));
-    });
-    ro.observe(el);
+    const root = rootRef.current;
+    const bar = barRef.current;
+    if (!root || typeof ResizeObserver !== "function") return;
+    let scroller: HTMLElement | null = root.parentElement;
+    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
+    const measure = () => {
+      if (scroller) {
+        const pad = root.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+        // The page's bottom padding is 16px; the list stops where the page does.
+        setRailH(Math.max(420, Math.round(scroller.clientHeight - pad - 16)));
+      }
+      if (bar) {
+        const h = Math.round(bar.getBoundingClientRect().height);
+        if (h) setBarH(h);
+      }
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (scroller) ro.observe(scroller);
+    if (bar) ro.observe(bar);
     return () => ro.disconnect();
   }, []);
 
   return (
-    <div className="flex flex-col gap-4" style={{ "--pp-bar": `${barHeight}px` } as CSSProperties}>
-      <PinnedBar barRef={barRef}>{header}</PinnedBar>
-      <div className="flex flex-col items-start gap-4 lg:flex-row">
-        <aside
-          className="flex w-full flex-col overflow-hidden lg:sticky lg:w-80 lg:flex-none"
-          style={{
-            // Pinned exactly where it rests, so it never nudges when the page
-            // starts to scroll: the header's height, less the 0.75rem it
-            // gives back underneath, plus the 1rem gap.
-            top: "calc(var(--pp-bar) + 0.25rem)",
-            // The window, less the 40px top bar, that offset and the page's
-            // 24px bottom padding, so it ends where the page does.
-            maxHeight: "calc(100vh - 2.5rem - var(--pp-bar) - 0.25rem - 1.5rem)",
-            background: "var(--surface-card)",
-            borderRadius: "var(--radius-l)",
-            boxShadow: "var(--shadow-card)",
-          }}
-        >
-          {rail}
-        </aside>
-        <div className="@container flex w-full min-w-0 flex-1 flex-col">{children}</div>
+    <div
+      ref={rootRef}
+      className="flex flex-col items-stretch gap-[18px] lg:flex-row lg:items-start"
+      style={{ "--pp-rail-h": railH ? `${railH}px` : "calc(100dvh - 7rem)", "--pp-bar": `${barH}px` } as CSSProperties}
+    >
+      {rail}
+      <div className="flex min-w-0 flex-1 flex-col gap-[18px]">
+        {header && <PinnedBar barRef={barRef}>{header}</PinnedBar>}
+        {children}
       </div>
     </div>
   );

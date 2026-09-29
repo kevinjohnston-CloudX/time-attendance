@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
-import { OctagonAlert, TriangleAlert, X } from "lucide-react";
+import { Info, OctagonAlert, TriangleAlert, X } from "lucide-react";
 import { Button } from "./button";
 
 /**
@@ -30,7 +30,9 @@ export function ConfirmDialog({
   confirmLabel: string;
   /** What the action button says while it runs ("Revoking…"). */
   pendingLabel?: string;
-  tone?: "danger" | "warning";
+  /** danger (red) for what takes access or data away, warning (amber) for
+   *  what cannot be undone quietly, info (blue) for a routine bulk step. */
+  tone?: "danger" | "warning" | "info";
   pending?: boolean;
   error?: string | null;
   onConfirm: () => void;
@@ -60,7 +62,7 @@ export function ConfirmDialog({
     };
   }, []);
 
-  const Icon = tone === "danger" ? OctagonAlert : TriangleAlert;
+  const Icon = tone === "danger" ? OctagonAlert : tone === "warning" ? TriangleAlert : Info;
 
   return (
     <div
@@ -90,7 +92,7 @@ export function ConfirmDialog({
           className="h-12 w-12"
           strokeWidth={1.3}
           aria-hidden
-          style={{ color: tone === "danger" ? "var(--icon-error)" : "var(--icon-warning)" }}
+          style={{ color: tone === "danger" ? "var(--icon-error)" : tone === "warning" ? "var(--icon-warning)" : "var(--icon-accent)" }}
         />
         <div className="flex flex-col items-center">
           <h3
@@ -113,7 +115,7 @@ export function ConfirmDialog({
             Cancel
           </Button>
           <Button
-            tone={tone === "danger" ? "error" : "warning"}
+            tone={tone === "danger" ? "error" : tone === "warning" ? "warning" : "regular"}
             onClick={onConfirm}
             disabled={pending}
           >
