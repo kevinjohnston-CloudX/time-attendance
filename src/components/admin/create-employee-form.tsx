@@ -156,6 +156,9 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
         payTypeId: (fd.get("payTypeId") as string) || null,
         payRate: payRateRaw ? Number(payRateRaw) : null,
         jobTitle: fd.get("jobTitle") as string,
+        // No job title or agency pickers on this form yet; copy's form (5449161) has both.
+        jobTitleId: null,
+        agencyId: null,
         adpWorkerId: fd.get("adpWorkerId") as string,
         shiftId: fd.get("shiftId") as string,
         holidayRuleId: fd.get("holidayRuleId") as string,

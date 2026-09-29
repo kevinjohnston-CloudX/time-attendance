@@ -44,6 +44,7 @@ export const getActiveEmployeesForTimecards = withRBAC(
       select: {
         id: true,
         employeeCode: true,
+        wmsId: true,
         isActive: true,
         payType: true,
         user: { select: { name: true } },
