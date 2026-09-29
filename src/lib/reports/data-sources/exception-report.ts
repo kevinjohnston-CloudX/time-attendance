@@ -24,7 +24,7 @@ export const exceptionReportSource: DataSourceDefinition = {
   icon: "AlertCircle",
   columns: [
     { id: "employeeName",  label: "Employee",       type: "string",  defaultVisible: true },
-    { id: "employeeCode",  label: "Employee code",       type: "string",  defaultVisible: false },
+    { id: "employeeCode",  label: "Badge ID",       type: "string",  defaultVisible: false },
     { id: "department",    label: "Department",      type: "string",  defaultVisible: true },
     { id: "exceptionType", label: "Exception",  type: "string",  defaultVisible: true },
     { id: "description",   label: "Description",     type: "string",  defaultVisible: true },
@@ -90,7 +90,7 @@ export const exceptionReportSource: DataSourceDefinition = {
 
     const rows = exceptions.map((e) => ({
       employeeName: e.timesheet.employee.user?.name ?? e.timesheet.employee.employeeCode,
-      employeeCode: e.timesheet.employee.employeeCode,
+      employeeCode: e.timesheet.employee.wmsId ?? e.timesheet.employee.employeeCode,
       department: e.timesheet.employee.department.name,
       exceptionType: readable("exceptionType", e.exceptionType),
       description: e.description,
