@@ -236,11 +236,13 @@ export const createEmployee = withRBAC(
         address1: parsed.address1, address2: parsed.address2, city: parsed.city, state: parsed.state, country: parsed.country, zipCode: parsed.zipCode,
       });
 
+      const employeeCode = parsed.employeeCode || parsed.wmsId || `EMP-${Date.now()}`;
+
       return tx.employee.create({
         data: {
           userId: user.id,
           tenantId,
-          employeeCode: parsed.employeeCode,
+          employeeCode,
           role: resolvedRole,
           customRoleId: resolvedCustomRoleId,
           siteId: parsed.siteId,
@@ -252,6 +254,8 @@ export const createEmployee = withRBAC(
           payType: parsed.payType ?? null,
           payRate: parsed.payRate ?? null,
           jobTitle: parsed.jobTitle ?? null,
+          jobTitleId: parsed.jobTitleId ?? null,
+          agencyId: parsed.agencyId ?? null,
           adpWorkerId: parsed.adpWorkerId ?? null,
           shiftId: parsed.shiftId ?? null,
           holidayRuleId: parsed.holidayRuleId ?? null,

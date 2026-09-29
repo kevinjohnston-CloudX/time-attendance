@@ -523,7 +523,7 @@ export default async function EmployeeAccrualsPage({
             {employee.user.name}
           </h1>
           <p className="mt-0.5 text-sm text-zinc-500">
-            {employee.employeeCode} · Hired {format(employee.hireDate, "MMM d, yyyy")}
+            {employee.wmsId ?? employee.employeeCode} · Hired {format(employee.hireDate, "MMM d, yyyy")}
           </p>
         </div>
         {canManageEmployee && (

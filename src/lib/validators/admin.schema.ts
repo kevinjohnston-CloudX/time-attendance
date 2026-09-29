@@ -25,7 +25,7 @@ const nullableStr = z.string().nullable().optional().transform((v) => v === unde
 export const createEmployeeSchema = z.object({
   name: z.string().min(1),
   email: z.string().email("A valid email address is required"),
-  employeeCode: z.string().min(1),
+  employeeCode: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
   role: z.enum(ROLES).default("EMPLOYEE"),
   customRoleId: z.string().optional(),
   siteId: z.string().min(1),
@@ -38,6 +38,8 @@ export const createEmployeeSchema = z.object({
   payRate: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().positive().nullable().optional()),
   // Work info
   jobTitle: nullableStr,
+  jobTitleId: nullableStr,
+  agencyId: nullableStr,
   adpWorkerId: nullableStr,
   shiftId: nullableStr,
   holidayRuleId: nullableStr,

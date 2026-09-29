@@ -57,6 +57,7 @@ export default async function AccrualsPage() {
     id: emp.id,
     name: emp.user?.name ?? emp.id,
     employeeCode: emp.employeeCode,
+    wmsId: emp.wmsId ?? null,
     department: emp.department.name,
     siteId: emp.site.id,
     site: emp.site.name,

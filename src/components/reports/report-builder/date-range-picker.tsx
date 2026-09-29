@@ -55,7 +55,8 @@ export function DateRangePicker({
               }
             }}
             className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-              value.type === type
+              (value.type === type ||
+                (type === "relative" && (value.type === "today" || value.type === "yesterday")))
                 ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
                 : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300"
             }`}
@@ -103,15 +104,37 @@ export function DateRangePicker({
       )}
 
       {/* Relative days */}
-      {value.type === "relative" && (
+      {(value.type === "relative" || value.type === "today" || value.type === "yesterday") && (
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => onChange({ type: "today" })}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              value.type === "today"
+                ? "bg-blue-600 text-white"
+                : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300"
+            }`}
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange({ type: "yesterday" })}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              value.type === "yesterday"
+                ? "bg-blue-600 text-white"
+                : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300"
+            }`}
+          >
+            Yesterday
+          </button>
           {[7, 14, 30, 60, 90].map((days) => (
             <button
               key={days}
               type="button"
               onClick={() => onChange({ type: "relative", relativeDays: days })}
               className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                value.relativeDays === days
+                value.type === "relative" && value.relativeDays === days
                   ? "bg-blue-600 text-white"
                   : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300"
               }`}

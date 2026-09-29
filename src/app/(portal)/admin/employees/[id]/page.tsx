@@ -49,7 +49,7 @@ export default async function EditEmployeePage({
             {employee.user.name}
           </h1>
           <p className="mt-0.5 text-sm text-zinc-500">
-            {employee.user.email ?? employee.user.username} · Code: {employee.employeeCode} · Hired{" "}
+            {employee.user.email ?? employee.user.username} · Badge ID: {employee.wmsId ?? employee.employeeCode} · Hired{" "}
             {format(employee.hireDate, "MMM d, yyyy")}
           </p>
         </div>

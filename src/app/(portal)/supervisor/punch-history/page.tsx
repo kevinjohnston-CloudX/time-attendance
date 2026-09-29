@@ -118,6 +118,7 @@ export default async function TeamPunchHistoryPage({
           id: emp.id,
           name: emp.user?.name ?? emp.employeeCode,
           employeeCode: emp.employeeCode,
+          wmsId: emp.wmsId ?? null,
           department: emp.department?.name ?? "—",
         }))}
         selectedEmployeeId={selectedEmployeeId}

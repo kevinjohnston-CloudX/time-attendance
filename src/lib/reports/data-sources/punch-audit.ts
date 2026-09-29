@@ -135,5 +135,21 @@ function resolveDateFilter(dateRange: ReportConfig["dateRange"]): Record<string,
       start.setDate(start.getDate() - dateRange.relativeDays);
       return { punchTime: { gte: start, lte: now } };
     }
+    case "today": {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setHours(23, 59, 59, 999);
+      return { punchTime: { gte: start, lte: end } };
+    }
+    case "yesterday": {
+      const start = new Date();
+      start.setDate(start.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setDate(end.getDate() - 1);
+      end.setHours(23, 59, 59, 999);
+      return { punchTime: { gte: start, lte: end } };
+    }
   }
 }
