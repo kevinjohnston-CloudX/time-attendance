@@ -663,9 +663,14 @@ tbody .ta-row:hover {
   z-index: 20;
   /* --pin-gap is the height a slimmed bar gave up (useCondensingBar), kept
      as margin so the page under it does not move. */
-  margin: calc(var(--pin-t, 1rem) * -1) calc(var(--pin-x, 1rem) * -1) calc(var(--pin-gap, 0px) - 0.75rem);
-  padding: var(--pin-t, 1rem) var(--pin-x, 1rem) 0.75rem;
-  background: var(--surface-page);
+  /* The page's own padding by default (--ta-page-top and --ta-page-x, the
+     portal shell's), and the canvas behind it, glow included, so the bar is
+     invisible until content slides under it. A layout with a different page
+     sets --pin-t, --pin-x and --pin-bg. */
+  margin: calc(var(--pin-t, var(--ta-page-top)) * -1) calc(var(--pin-x, var(--ta-page-x)) * -1)
+    calc(var(--pin-gap, 0px) - 0.75rem);
+  padding: var(--pin-t, var(--ta-page-top)) var(--pin-x, var(--ta-page-x)) 0.75rem;
+  background: var(--pin-bg, radial-gradient(900px 420px at 18% -10%, var(--ta-canvas-glow), transparent 70%) fixed, var(--ta-canvas));
 }
 /* In a narrow or short window the filters stack and the bar would cover
    close to half the screen, so there it scrolls away with the page. */

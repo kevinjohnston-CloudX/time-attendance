@@ -65,7 +65,7 @@ export function PageHeader({
  * into the layout's top padding so it already sits where it pins and never
  * slides on the first scroll, and out into the side padding so rows cannot
  * show through the gutters beside it. The layout's padding comes from
- * --pin-x and --pin-t, 16px unless a layout says otherwise.
+ * --pin-x and --pin-t, the portal's page padding unless a layout says otherwise.
  *
  * <p>Its bottom padding is taken back by a matching negative margin, so at
  * rest the page is spaced exactly as it was, and once pinned the rows sliding
