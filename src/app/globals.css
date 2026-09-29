@@ -269,6 +269,14 @@ textarea {
   background: var(--surface-card);
 }
 
+/* Exit to Super Admin, on the super admin bar. */
+.ta-warn-exit {
+  transition: box-shadow 120ms ease;
+}
+.ta-warn-exit:hover {
+  box-shadow: inset 0 0 0 1px var(--stroke-warning), var(--shadow-xs) !important;
+}
+
 /* The sidebar's search field: a well with a hairline that darkens on hover. */
 .ta-well-field {
   background: var(--ta-well);

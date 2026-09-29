@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ShieldCheck } from "lucide-react";
 import { cookies, headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -217,9 +218,23 @@ export default async function PortalLayout({
 
   return (
     <div className="ta-canvas flex h-screen flex-col overflow-hidden">
+      {/* The Layout handoff's super admin bar: a warning strip on the canvas,
+          above the shell, with the way back to the super admin console. */}
       {tenantBannerName && (
-        <div className="flex shrink-0 items-center justify-between bg-amber-400 px-4 py-2 text-sm font-medium text-amber-950">
-          <span>Super Admin — viewing as: <strong>{tenantBannerName}</strong></span>
+        <div
+          className="mx-2.5 mt-2.5 flex h-9 flex-none items-center gap-2.5 rounded-xl pl-3.5 pr-1.5"
+          style={{
+            background: "var(--surface-warning)",
+            boxShadow: "inset 0 0 0 1px var(--stroke-warning)",
+            font: "var(--type-body2)",
+            color: "var(--text-warning)",
+          }}
+        >
+          <ShieldCheck className="h-4 w-4 flex-none" aria-hidden="true" />
+          <span className="min-w-0 truncate">
+            Super Admin, viewing <b style={{ fontWeight: "var(--weight-semibold)" }}>{tenantBannerName}</b>
+          </span>
+          <span className="flex-1" />
           <form
             action={async () => {
               "use server";
@@ -228,9 +243,15 @@ export default async function PortalLayout({
           >
             <button
               type="submit"
-              className="rounded bg-amber-950/20 px-3 py-1 text-xs hover:bg-amber-950/30"
+              className="ta-warn-exit inline-flex h-[26px] flex-none items-center whitespace-nowrap rounded-lg px-2.5"
+              style={{
+                background: "var(--surface-card)",
+                boxShadow: "var(--shadow-xs)",
+                font: "var(--type-button2)",
+                color: "var(--text-warning)",
+              }}
             >
-              ← Exit to Super Admin
+              Exit to Super Admin
             </button>
           </form>
         </div>
