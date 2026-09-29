@@ -90,6 +90,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
         payType: (fd.get("payType") as "HOURLY" | "SALARY" | null) || null,
         payTypeId: (fd.get("payTypeId") as string) || null,
         payRate: payRateRaw ? Number(payRateRaw) : null,
+        jobTitle: null, // legacy free-text title; the form now picks a job title by id
         jobTitleId: (fd.get("jobTitleId") as string) || null,
         agencyId: (fd.get("agencyId") as string) || null,
         adpWorkerId: fd.get("adpWorkerId") as string,
