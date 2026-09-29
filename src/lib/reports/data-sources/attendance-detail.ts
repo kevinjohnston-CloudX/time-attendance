@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { readable } from "../readable";
 import { timesheetPayPeriodWhere } from "../date-scope";
@@ -83,7 +84,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
           ...employeeFilter,
         },
       },
-    };
+    } as Prisma.WorkSegmentWhereInput;
 
     const orderBy =
       config.sortBy.length > 0
