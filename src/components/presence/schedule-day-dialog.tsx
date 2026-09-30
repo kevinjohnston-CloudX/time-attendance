@@ -15,7 +15,8 @@ import styles from "./on-site.module.css";
  * guessed, because 8:00 AM and 8:00 PM are a whole shift apart. An end before
  * the start is an overnight shift and is said so under the fields rather than
  * refused. Nothing is saved until Add to schedule, and Escape closes this
- * without closing the panel underneath.
+ * without closing the panel underneath. Opened from the gate alert, it starts
+ * filled in with the hours of the shift on their record.
  */
 
 const SAVE_ERRORS: Record<string, string> = {
@@ -27,6 +28,14 @@ const SAVE_ERRORS: Record<string, string> = {
   ALREADY_SCHEDULED: "This employee is already on today's schedule.",
   BAD_TIME: "Enter a start and an end time.",
 };
+
+/** "07:00" as the fields hold it: "7:00" and AM. */
+function toField(hhmm: string | null | undefined): { text: string; half: Meridiem } | null {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm ?? "");
+  if (!m) return null;
+  const h = Number(m[1]);
+  return { text: `${h % 12 || 12}:${m[2]}`, half: h < 12 ? "AM" : "PM" };
+}
 
 const MEALS = [
   { value: "", label: "No meal" },
@@ -40,6 +49,7 @@ export function ScheduleDayDialog({
   employeeId,
   name,
   dayLabel,
+  initial,
   onClose,
   onSaved,
 }: {
@@ -48,13 +58,15 @@ export function ScheduleDayDialog({
   name: string;
   /** Today, as the panel names it. */
   dayLabel: string;
+  /** Hours to start from, HH:mm, such as the shift on their record. */
+  initial?: { startTime: string | null; endTime: string | null } | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [start, setStart] = useState("");
-  const [startHalf, setStartHalf] = useState<Meridiem>("AM");
-  const [end, setEnd] = useState("");
-  const [endHalf, setEndHalf] = useState<Meridiem>("PM");
+  const [start, setStart] = useState(() => toField(initial?.startTime)?.text ?? "");
+  const [startHalf, setStartHalf] = useState<Meridiem>(() => toField(initial?.startTime)?.half ?? "AM");
+  const [end, setEnd] = useState(() => toField(initial?.endTime)?.text ?? "");
+  const [endHalf, setEndHalf] = useState<Meridiem>(() => toField(initial?.endTime)?.half ?? "PM");
   const [meal, setMeal] = useState("30");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -227,17 +239,21 @@ function TimeField({
         {label}
       </label>
       <span className="flex items-center gap-1.5">
-        <Input
-          id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          inputMode="numeric"
-          autoComplete="off"
-          aria-invalid={invalid || undefined}
-          className="tabular"
-          style={{ flex: 1, minWidth: 0 }}
-        />
+        {/* The input's field fills its parent, so it gets one that may
+            shrink, and the AM or PM button beside it keeps its room. */}
+        <span className="min-w-0 flex-1">
+          <Input
+            id={id}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            inputMode="numeric"
+            autoComplete="off"
+            aria-invalid={invalid || undefined}
+            className="tabular"
+            style={{ minWidth: 0 }}
+          />
+        </span>
         <Button
           hierarchy="secondary"
           size="sm"

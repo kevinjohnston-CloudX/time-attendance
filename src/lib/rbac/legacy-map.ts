@@ -54,4 +54,5 @@ export const LEGACY_MAP: Record<string, PermissionTuple> = {
   // On Site
   PRESENCE_VIEW_ANY:      { resource: "presence",  action: "read",    scope: "all" },
   PRESENCE_PHOTO_EDIT:    { resource: "presence",  action: "write",   scope: "all" },
+  PRESENCE_SCHEDULE_ADD:  { resource: "presence",  action: "execute", scope: "all" },
 };

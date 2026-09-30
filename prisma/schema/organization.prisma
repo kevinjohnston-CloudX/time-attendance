@@ -80,6 +80,7 @@ model Site {
   employees   Employee[]
   ptoPolicies SitePtoPolicy[]
   hrAccess    HrSiteAccess[]
+  gateRefusals GateRefusal[]
 
   @@unique([tenantId, name])
   @@map("sites")
@@ -201,6 +202,7 @@ model Employee {
   punches      Punch[]
   scanEvents   ScanEvent[]
   scheduleDays ScheduleDay[]
+  gateRefusals GateRefusal[]
   timesheets   Timesheet[]
   leaveBalances    LeaveBalance[]
   leaveRequests    LeaveRequest[]

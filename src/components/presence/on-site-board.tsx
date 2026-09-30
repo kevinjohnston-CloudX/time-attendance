@@ -50,6 +50,7 @@ import {
   statusLabel,
 } from "./presence-meta";
 import { PersonPanel } from "./person-panel";
+import { GateRefusalAlert } from "./gate-refusal-alert";
 import { PhotoSwaps, PhotoViewer } from "./face";
 import { PeopleSearch, pickedLabel } from "./people-search";
 import { useCondensingBar } from "@/components/layout/use-condensing-bar";
@@ -137,6 +138,7 @@ export function OnSiteBoard({
   canEditPhotos = false,
   canExport = true,
   scheduling = null,
+  gateAlerts = false,
 }: {
   sites: { id: string; name: string }[];
   initialSiteId: string | null;
@@ -171,6 +173,12 @@ export function OnSiteBoard({
    * greyed out. The save checks both again on the server.
    */
   scheduling?: { live: boolean } | null;
+  /**
+   * Pops up the gate alert when the gate turns away somebody with no shift
+   * today, for viewers who answer it (PRESENCE_SCHEDULE_ADD). Its calls check
+   * that again on the server.
+   */
+  gateAlerts?: boolean;
 }) {
   const [siteId, setSiteId] = useState(initialSiteId);
   // Photos saved here, drawn at once on every face until the server's own
@@ -217,7 +225,7 @@ export function OnSiteBoard({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || document.fullscreenElement || selectedRef.current) return;
       const t = e.target as HTMLElement | null;
-      if (t?.closest("input, select, textarea, [role='dialog']") || document.querySelector("[role='dialog']")) return;
+      if (t?.closest("input, select, textarea, [role='dialog'], [role='alertdialog']") || document.querySelector("[role='dialog'], [role='alertdialog']")) return;
       setFullscreen(false);
     };
     document.addEventListener("fullscreenchange", onChange);
@@ -1411,6 +1419,19 @@ export function OnSiteBoard({
           onScheduled={() => {
             if (siteId) void refresh(siteId);
             toast.flash("Added to today's schedule");
+          }}
+        />
+      )}
+
+      {gateAlerts && siteId && (
+        <GateRefusalAlert
+          key={siteId}
+          siteId={siteId}
+          tz={tz}
+          live={!!scheduling?.live}
+          onScheduled={(name) => {
+            void refresh(siteId);
+            toast.flash(`${name} added to today's schedule`);
           }}
         />
       )}

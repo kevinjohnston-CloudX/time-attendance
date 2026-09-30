@@ -163,10 +163,11 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
     },
   },
   presence: {
-    summary: "Controls who can see which employees are in the building right now, and who can update their photos.",
+    summary: "Controls who can see which employees are in the building right now, who can update their photos, and who is alerted when the gate turns somebody away.",
     cells: {
       "read:all": "See everyone at a site on Live Attendance, with their gate and time clock scans.",
       "write:all": "Update an employee's photo from Live Attendance. The photo it replaces is kept.",
+      "execute:all": "Get an alert on Live Attendance when the gate turns away somebody with no shift today, and add them to today's schedule.",
     },
   },
   role: {
@@ -448,7 +449,7 @@ export function RoleEditor({
                 <span className="wms-label">Limit to Live Attendance</span>
                 <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)", textWrap: "pretty" }}>
                   {liveAttendanceOnly
-                    ? "People with this role can only open Live Attendance. Every other page, their own timesheet and punch clock included, is blocked, and downloads are off. The permissions below no longer apply."
+                    ? "People with this role can only open Live Attendance. Every other page, their own timesheet and punch clock included, is blocked, and downloads are off. Of the permissions below, only Live Attendance Write (photos) and Execute (gate alerts) still apply."
                     : "For a shared screen or a team that only watches the building. People with this role can open Live Attendance and nothing else."}
                 </span>
               </div>

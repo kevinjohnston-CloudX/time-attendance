@@ -11,6 +11,7 @@ import { MAX_PICKED, peopleByIds, reachable, resolveNames, suggestPeople } from 
 import { gateReadsCloudTimeSchedule } from "@/lib/presence/gate-schedule";
 import { localDateString } from "@/lib/presence/on-site.service";
 import { setScheduleDay } from "@/lib/services/schedule-sync.service";
+import { markGateRefusalScheduled, turnedAwayHereToday } from "@/lib/presence/gate-refusals.service";
 
 /**
  * On Site: who is in the building right now.
@@ -207,17 +208,20 @@ export const updateEmployeePhoto = withRBAC("PRESENCE_PHOTO_EDIT", async ({ tena
  * because until then the day would change what CloudTime shows and not who
  * gets in. The button is drawn greyed out for the same reason.
  *
- * <p>Needs EMPLOYEE_MANAGE, the same as the WMS sync page, on top of being
- * able to open this site's board: seeing a building is not the same as
- * deciding who works in it. Only people this site's pages can show (based
- * here, or scanned here in the last week) can be added, only for today in
- * their own site's timezone (the day the gate check reads), and never over a
- * shift they already have. The day is kept as a CloudTime edit, so the next
+ * <p>Needs EMPLOYEE_MANAGE, the same as the WMS sync page, or
+ * PRESENCE_SCHEDULE_ADD, which is this one action and the gate alert and
+ * nothing else of employee records, on top of being able to open this site's
+ * board: seeing a building is not the same as deciding who works in it. Only
+ * people this site's pages can show (based here, or scanned here in the last
+ * week) or whom this site's gate turned away today can be added, only for
+ * today in their own site's timezone (the day the gate check reads), and
+ * never over a shift they already have. Adding somebody settles their gate
+ * alert here. The day is kept as a CloudTime edit, so the next
  * WMS pull does not undo it; if WMS later schedules the same day differently,
  * the day is flagged on the WMS sync page instead of either side being lost.
  */
 export const addToTodaysSchedule = withRBAC(
-  "EMPLOYEE_MANAGE",
+  ["EMPLOYEE_MANAGE", "PRESENCE_SCHEDULE_ADD"],
   async (
     { tenantId, employeeId, role },
     input: { siteId: string; employeeId: string; startTime: string; endTime: string; mealMinutes: number | null },
@@ -233,8 +237,9 @@ export const addToTodaysSchedule = withRBAC(
     if (typeof input.siteId !== "string" || typeof input.employeeId !== "string") throw new Error("NOT_FOUND");
 
     await assertSite(tenantId, { employeeId, role }, input.siteId);
+    const [shown, turnedAway] = await Promise.all([reachable(tenantId, input.siteId), turnedAwayHereToday(tenantId, input.siteId)]);
     const person = await db.employee.findFirst({
-      where: { AND: [await reachable(tenantId, input.siteId), { id: input.employeeId }] },
+      where: { AND: [{ id: input.employeeId, tenantId }, { OR: turnedAway ? [shown, turnedAway] : [shown] }] },
       select: { id: true, isActive: true, terminatedAt: true, site: { select: { timezone: true } } },
     });
     if (!person) throw new Error("NOT_FOUND");
@@ -264,6 +269,7 @@ export const addToTodaysSchedule = withRBAC(
         from: "Live Attendance",
       },
     });
+    await markGateRefusalScheduled(tenantId, input.siteId, person.id, employeeId || null);
     return { workDate: today, startTime, endTime };
   },
 );

@@ -15,13 +15,14 @@ type CacheEntry = {
 /**
  * What a role limited to Live Attendance may still do. Viewing is implied by
  * the limit itself, so a role switched to it can never be locked onto a page
- * it cannot open; a photo edit still needs its own permission; nothing else
- * passes, whatever the role's rows say.
+ * it cannot open; a photo edit and the gate alert (with its Add to schedule)
+ * still need their own permission; nothing else passes, whatever the role's
+ * rows say.
  */
 const LIVE_ATTENDANCE_VIEW = { resource: "presence", action: "read", scope: "all" };
 function limitToLiveAttendance(rows: CacheEntry["permissions"]): CacheEntry["permissions"] {
-  const photo = rows.filter((p) => p.resource === "presence" && p.action === "write");
-  return [LIVE_ATTENDANCE_VIEW, ...photo];
+  const onPage = rows.filter((p) => p.resource === "presence" && (p.action === "write" || p.action === "execute"));
+  return [LIVE_ATTENDANCE_VIEW, ...onPage];
 }
 
 const CACHE_TTL_MS = 60_000; // 60 seconds

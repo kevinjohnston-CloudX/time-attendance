@@ -45,6 +45,9 @@ export const PERMISSIONS = [
   "PRESENCE_VIEW_ANY",
   // Live Attendance: replace a person's time clock photo
   "PRESENCE_PHOTO_EDIT",
+  // Live Attendance: hear when the gate turns away somebody with no shift
+  // today, and add them to today's schedule
+  "PRESENCE_SCHEDULE_ADD",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];

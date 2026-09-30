@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { db } from "@/lib/db";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
+import { recordGateRefusal } from "@/lib/presence/gate-refusals.service";
 
 /**
  * May this badge scan right now, and who is it?
@@ -25,8 +26,14 @@ import { badgeWhere } from "@/lib/utils/badge-lookup";
  * Measured the same day: of 57 people who scanned at NJ299, 56 had a scheduled
  * workday here and one had a row saying otherwise. None were unknown.
  *
- * <p>Read-only. It decides nothing and writes nothing; a kiosk that cannot
- * reach it is no worse off than today.
+ * <p>It decides nothing, and a kiosk that cannot reach it is no worse off
+ * than today. The one thing it writes is a note of each person it answers "not
+ * scheduled" for, so Live Attendance can alert loss prevention (see
+ * gate-refusals.service.ts). That note is written after the answer has gone,
+ * and a failure to write it is logged and dropped, so it can never slow or
+ * fail the gate. A tablet may add `warehouse` (the number every scan carries)
+ * so the right building hears about it, `device` (its own name), and `stream`;
+ * a TIME_CLOCK check is never noted, because the alert is about the door.
  */
 
 export const dynamic = "force-dynamic";
@@ -66,6 +73,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     where: badgeWhere(badge),
     select: {
       id: true,
+      tenantId: true,
       wmsId: true,
       isActive: true,
       terminatedAt: true,
@@ -146,6 +154,30 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       : scheduleDay
         ? "NOT_A_WORKDAY"
         : "NO_SCHEDULE";
+
+  // Turned away at the door: noted for Live Attendance once the tablet has
+  // its answer. Only a person CloudTime knows and still employs, since an
+  // unknown badge has its own list and a former employee is not a scheduling
+  // question.
+  const param = (k: string, max: number) => (req.nextUrl.searchParams.get(k) ?? "").trim().slice(0, max) || null;
+  if (!scheduled && !terminated && param("stream", 20) !== "TIME_CLOCK") {
+    const refusal = {
+      tenantId: employee.tenantId,
+      employeeId: employee.id,
+      homeSiteId: employee.siteId,
+      warehouse: param("warehouse", 20),
+      device: param("device", 100),
+      reason: reason as "NO_SCHEDULE" | "NOT_A_WORKDAY",
+      at: new Date(),
+    };
+    after(async () => {
+      try {
+        await recordGateRefusal(refusal);
+      } catch (err) {
+        console.error("eligibility: could not note the refusal for employee", refusal.employeeId, err);
+      }
+    });
+  }
 
   const name = employee.user?.name?.trim() ?? "";
   const space = name.indexOf(" ");

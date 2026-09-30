@@ -228,6 +228,47 @@ model ScanEvent {
   @@map("scan_events")
 }
 
+/// Somebody CloudTime's gate check turned away because they had no shift
+/// today: one row per person, per building, per day, for Live Attendance.
+///
+/// Written by /api/timeclock/eligibility after it has answered the tablet, so
+/// keeping the record can never slow or fail the gate. Another try the same
+/// day adds to `attempts` rather than a second row. A row is settled when
+/// somebody dismisses it or adds the person to today's schedule, and both are
+/// kept with who did it and when.
+model GateRefusal {
+  id         String   @id @default(cuid())
+  tenantId   String
+  /// The building whose gate turned them away.
+  siteId     String
+  employeeId String
+  /// That building's calendar day, keyed the way schedule_days keys it.
+  workDate   DateTime @db.Date
+  /// NO_SCHEDULE (no row for the day) or NOT_A_WORKDAY (a row saying off).
+  reason     String
+  attempts   Int      @default(1)
+  firstAt    DateTime
+  lastAt     DateTime
+  /// The reader that last turned them away, as the tablet names itself.
+  deviceName String?
+
+  dismissedAt   DateTime?
+  dismissedById String?
+  scheduledAt   DateTime?
+  scheduledById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  site     Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, siteId, workDate])
+  /// What Live Attendance polls: a building's day.
+  @@index([tenantId, siteId, workDate])
+  @@map("gate_refusals")
+}
+
 model WorkSegment {
   id              String      @id @default(cuid())
   timesheetId     String
