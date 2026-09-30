@@ -98,102 +98,140 @@ export async function applyScheduleBatch(
   const tally = new SyncTally();
   tally.received = rows.length;
 
+  /* One row at a time, and one bad row must never stop the others. On
+     2026-09-28 and again on 09-29 a single collision aborted every pull for a
+     day, the next day's schedules never arrived, and the gates refused
+     everyone without one. A row that throws is now counted as rejected, with
+     the error's last line, and the batch carries on. If every row throws,
+     the cause is not the data (the database is unreachable, say), so the
+     last error is raised and the run is recorded as FAILED, not PARTIAL. */
+  let errors = 0;
+  let lastError: unknown = null;
   for (const row of rows) {
-    const empId = (row.empId ?? "").trim();
-    const workDate = toWorkDate(row.workDate ?? "");
-
-    if (!empId || !workDate) {
+    try {
+      await applyScheduleRow(tenantId, row, tally);
+    } catch (err) {
+      errors++;
+      lastError = err;
       tally.rejected++;
-      tally.note("BAD_ROW", empId || "-", `Unusable empId or workDate (${row.workDate})`);
-      continue;
+      const msg = err instanceof Error ? err.message : String(err);
+      const lastLine = msg.trim().split("\n").filter(Boolean).pop() ?? "unknown error";
+      tally.note("ROW_ERROR", (row.empId ?? "").trim() || "-", `${row.workDate}: ${lastLine.slice(0, 200)}`);
     }
+  }
+  if (errors > 0 && errors === rows.length) throw lastError;
 
-    const employee = await db.employee.findFirst({
-      where: { tenantId, wmsId: empId },
-      select: { id: true },
+  return tally;
+}
+
+/**
+ * Takes an Oracle schedule id away from any other CloudTime record that still
+ * holds it, so it can be written on the record that owns the empId now.
+ *
+ * <p>This is the case that broke the pull twice. An employee's Oracle empId
+ * (wmsId) was moved from an old CloudTime record to a newer one, by hand or by
+ * the roster sync. The old record kept its Oracle schedule days, each carrying
+ * the unique oracleScheduleId, so creating the same day on the new record hit
+ * the unique constraint. The old record can never receive that day again (the
+ * pull finds employees only by wmsId), so its link is stale: only the id is
+ * cleared, the old row itself is left as it was.
+ */
+async function releaseScheduleId(
+  tenantId: string,
+  scheduleId: string | null,
+  employeeId: string,
+  empId: string,
+  tally: SyncTally,
+): Promise<void> {
+  if (!scheduleId) return;
+  const released = await db.scheduleDay.updateMany({
+    where: { tenantId, oracleScheduleId: scheduleId, employeeId: { not: employeeId } },
+    data: { oracleScheduleId: null },
+  });
+  if (released.count > 0) {
+    tally.note(
+      "SCHEDULE_ID_MOVED",
+      empId,
+      `Oracle schedule ${scheduleId} was still on another CloudTime record; moved to this employee's current record`,
+    );
+  }
+}
+
+async function applyScheduleRow(
+  tenantId: string,
+  row: OracleScheduleRow,
+  tally: SyncTally,
+): Promise<void> {
+  const empId = (row.empId ?? "").trim();
+  const workDate = toWorkDate(row.workDate ?? "");
+
+  if (!empId || !workDate) {
+    tally.rejected++;
+    tally.note("BAD_ROW", empId || "-", `Unusable empId or workDate (${row.workDate})`);
+    return;
+  }
+
+  const employee = await db.employee.findFirst({
+    where: { tenantId, wmsId: empId },
+    select: { id: true },
+  });
+  if (!employee) {
+    tally.rejected++;
+    tally.note("NO_EMPLOYEE", empId, "No CloudTime employee for this Oracle empId");
+    return;
+  }
+
+  const incoming = schedulingOf(row);
+  const incomingPrint = fingerprint(incoming);
+
+  const existing = await db.scheduleDay.findUnique({
+    where: { employeeId_workDate: { employeeId: employee.id, workDate } },
+  });
+
+  const oracleFields = {
+    oracleScheduleId: row.scheduleId?.trim() || null,
+    oracleUsersId: row.usersId?.trim() || null,
+    oracleFingerprint: incomingPrint,
+    oracleSyncedAt: new Date(),
+  };
+
+  if (!existing) {
+    await releaseScheduleId(tenantId, oracleFields.oracleScheduleId, employee.id, empId, tally);
+    await db.scheduleDay.create({
+      data: {
+        tenantId,
+        employeeId: employee.id,
+        workDate,
+        ...incoming,
+        ...oracleFields,
+        source: "ORACLE",
+        syncState: "SYNCED",
+      },
     });
-    if (!employee) {
-      tally.rejected++;
-      tally.note("NO_EMPLOYEE", empId, "No CloudTime employee for this Oracle empId");
-      continue;
-    }
+    tally.applied++;
+    return;
+  }
 
-    const incoming = schedulingOf(row);
-    const incomingPrint = fingerprint(incoming);
+  const local: Scheduling = {
+    isWorkday: existing.isWorkday,
+    startTime: existing.startTime,
+    endTime: existing.endTime,
+    mealMinutes: existing.mealMinutes,
+  };
 
-    const existing = await db.scheduleDay.findUnique({
-      where: { employeeId_workDate: { employeeId: employee.id, workDate } },
-    });
+  /* A row a human already flagged stays flagged. Re-applying Oracle here
+     would silently discard the very edit the conflict was raised about. */
+  if (existing.syncState === "CONFLICT") {
+    tally.skipped++;
+    tally.note("CONFLICT_PENDING", empId, `${row.workDate} still awaiting resolution`);
+    return;
+  }
 
-    const oracleFields = {
-      oracleScheduleId: row.scheduleId?.trim() || null,
-      oracleUsersId: row.usersId?.trim() || null,
-      oracleFingerprint: incomingPrint,
-      oracleSyncedAt: new Date(),
-    };
-
-    if (!existing) {
-      await db.scheduleDay.create({
-        data: {
-          tenantId,
-          employeeId: employee.id,
-          workDate,
-          ...incoming,
-          ...oracleFields,
-          source: "ORACLE",
-          syncState: "SYNCED",
-        },
-      });
-      tally.applied++;
-      continue;
-    }
-
-    const local: Scheduling = {
-      isWorkday: existing.isWorkday,
-      startTime: existing.startTime,
-      endTime: existing.endTime,
-      mealMinutes: existing.mealMinutes,
-    };
-
-    /* A row a human already flagged stays flagged. Re-applying Oracle here
-       would silently discard the very edit the conflict was raised about. */
-    if (existing.syncState === "CONFLICT") {
-      tally.skipped++;
-      tally.note("CONFLICT_PENDING", empId, `${row.workDate} still awaiting resolution`);
-      continue;
-    }
-
-    /* CloudTime holds an edit Oracle has never been told about. */
-    if (existing.syncState === "LOCAL_EDIT") {
-      if (existing.oracleFingerprint === incomingPrint) {
-        // Oracle has not moved since we last looked, so the local edit is the
-        // only change and survives untouched. Record that we checked.
-        await db.scheduleDay.update({
-          where: { id: existing.id },
-          data: { oracleSyncedAt: new Date() },
-        });
-        tally.skipped++;
-      } else {
-        await db.scheduleDay.update({
-          where: { id: existing.id },
-          data: {
-            syncState: "CONFLICT",
-            conflictNote:
-              `Oracle changed this day to ${describe(incoming)} after CloudTime had ` +
-              `set it to ${describe(local)}. CloudTime's value was kept and nothing ` +
-              `was overwritten; Oracle cannot be updated from here.`,
-            oracleFingerprint: incomingPrint,
-            oracleSyncedAt: new Date(),
-          },
-        });
-        tally.rejected++;
-        tally.note("CONFLICT", empId, `${row.workDate}: both sides changed`);
-      }
-      continue;
-    }
-
-    /* SYNCED: Oracle is authoritative. */
-    if (existing.oracleFingerprint === incomingPrint && sameScheduling(incoming, local)) {
+  /* CloudTime holds an edit Oracle has never been told about. */
+  if (existing.syncState === "LOCAL_EDIT") {
+    if (existing.oracleFingerprint === incomingPrint) {
+      // Oracle has not moved since we last looked, so the local edit is the
+      // only change and survives untouched. Record that we checked.
       await db.scheduleDay.update({
         where: { id: existing.id },
         data: { oracleSyncedAt: new Date() },
@@ -202,13 +240,39 @@ export async function applyScheduleBatch(
     } else {
       await db.scheduleDay.update({
         where: { id: existing.id },
-        data: { ...incoming, ...oracleFields, source: "ORACLE", syncState: "SYNCED" },
+        data: {
+          syncState: "CONFLICT",
+          conflictNote:
+            `Oracle changed this day to ${describe(incoming)} after CloudTime had ` +
+            `set it to ${describe(local)}. CloudTime's value was kept and nothing ` +
+            `was overwritten; Oracle cannot be updated from here.`,
+          oracleFingerprint: incomingPrint,
+          oracleSyncedAt: new Date(),
+        },
       });
-      tally.applied++;
+      tally.rejected++;
+      tally.note("CONFLICT", empId, `${row.workDate}: both sides changed`);
     }
+    return;
   }
 
-  return tally;
+  /* SYNCED: Oracle is authoritative. */
+  if (existing.oracleFingerprint === incomingPrint && sameScheduling(incoming, local)) {
+    await db.scheduleDay.update({
+      where: { id: existing.id },
+      data: { oracleSyncedAt: new Date() },
+    });
+    tally.skipped++;
+  } else {
+    if (existing.oracleScheduleId !== oracleFields.oracleScheduleId) {
+      await releaseScheduleId(tenantId, oracleFields.oracleScheduleId, employee.id, empId, tally);
+    }
+    await db.scheduleDay.update({
+      where: { id: existing.id },
+      data: { ...incoming, ...oracleFields, source: "ORACLE", syncState: "SYNCED" },
+    });
+    tally.applied++;
+  }
 }
 
 /* ------------------------------------------------------------------ */
