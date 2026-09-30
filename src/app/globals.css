@@ -374,9 +374,53 @@ textarea {
   font: var(--type-body2);
   color: var(--text-tertiary);
 }
+/* The bar's parts. The search gives way first: a small basis, growing back
+   to 320px when there is room. Whatever sits inside it (the kit's search, a
+   plain GET form) fills it rather than bringing its own width. */
+.ta-tools-search {
+  display: flex;
+  flex: 1 1 170px;
+  min-width: 150px;
+  max-width: 320px;
+}
+.ta-tools-search > * {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+.ta-tools-group,
+.ta-tools-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.ta-tools-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+/* The two line shape, set by the bar when one line cannot hold it: search and
+   the end on top, every filter on its own line under a hairline. */
+.ta-tools[data-stacked="true"] {
+  row-gap: 0;
+}
+.ta-tools[data-stacked="true"] .ta-tools-divider-filters {
+  display: none;
+}
+.ta-tools[data-stacked="true"] .ta-tools-filters {
+  order: 10;
+  flex: 1 1 100%;
+  margin: 6px -6px 0 -14px;
+  padding: 6px 6px 0;
+  border-top: 1px solid var(--stroke-divider);
+}
 .ta-tools .ta-search {
   height: 34px;
-  min-width: 180px;
   padding-left: 0;
   border-color: transparent !important;
   background: transparent !important;

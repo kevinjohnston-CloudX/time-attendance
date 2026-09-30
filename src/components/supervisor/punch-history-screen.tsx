@@ -363,6 +363,29 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
         {/* Dates first, since they decide everything below, then the search
             and the filters, all in the shared tools bar Live Attendance uses. */}
         <ToolsBar
+          lead={
+            <>
+              <PunchHistoryDatePicker
+                startDate={data.startDate}
+                endDate={data.endDate}
+                today={data.today}
+                payPeriods={data.payPeriods}
+                isCustomRange={data.isCustomRange}
+                open={calendarOpen}
+                onOpenChange={setCalendarOpen}
+                onPick={pickRange}
+              />
+              <button
+                type="button"
+                className="ta-tool-trigger"
+                style={{ border: 0, background: "transparent", cursor: "pointer" }}
+                onClick={() => navigate({ startDate: data.today, endDate: data.today })}
+              >
+                Today
+              </button>
+            </>
+          }
+          search={<SearchInput value={query} onValueChange={onType} placeholder="Name, ID or department" />}
           end={
             dirty && (
               <Button hierarchy="link" size="sm" onClick={clearAll}>
@@ -371,27 +394,6 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
             )
           }
         >
-          <PunchHistoryDatePicker
-            startDate={data.startDate}
-            endDate={data.endDate}
-            today={data.today}
-            payPeriods={data.payPeriods}
-            isCustomRange={data.isCustomRange}
-            open={calendarOpen}
-            onOpenChange={setCalendarOpen}
-            onPick={pickRange}
-          />
-          <button
-            type="button"
-            className="ta-tool-trigger"
-            style={{ border: 0, background: "transparent", cursor: "pointer" }}
-            onClick={() => navigate({ startDate: data.today, endDate: data.today })}
-          >
-            Today
-          </button>
-          <span aria-hidden="true" className="ta-tools-divider" />
-          <SearchInput value={query} onValueChange={onType} placeholder="Name, ID or department" width={260} />
-          <span aria-hidden="true" className="ta-tools-divider" />
           {data.isPayroll && data.sites.length > 0 && (
             <FilterSelectChip
               label="Site"

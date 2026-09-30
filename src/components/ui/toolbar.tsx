@@ -48,43 +48,6 @@ export function Toolbar({
 }
 
 /**
- * The white tools bar from the Live Attendance handoff, for every list screen
- * that searches and filters: search, a divider, the filters, then whatever
- * sits at the end (the count, Clear all, a sort) pushed right.
- *
- * <p>View tabs stay outside it, to its left, as they do on Live Attendance:
- * they choose which list you are in, the bar narrows the one you chose.
- */
-export function ToolsBar({
-  search,
-  children,
-  end,
-  beside = false,
-}: {
-  search?: ReactNode;
-  children?: ReactNode;
-  end?: ReactNode;
-  /** Set when the bar shares a row with view tabs: it takes the rest of the
-      row, and drops under the tabs when the window is too narrow for both. */
-  beside?: boolean;
-}) {
-  return (
-    <div className={`ta-tools${beside ? " flex-[1_1_520px]" : ""}`}>
-      {search}
-      {search && children && <span aria-hidden className="ta-tools-divider" />}
-      {children}
-      {/* Pushed right, and kept right when the bar wraps onto a second line. */}
-      {end && <span className="ml-auto flex items-center gap-1">{end}</span>}
-    </div>
-  );
-}
-
-/** The count at the end of a tools bar: "12 of 40 reports", or "40 reports". */
-export function ToolsCount({ children }: { children: ReactNode }) {
-  return <span className="ta-tools-count tabular">{children}</span>;
-}
-
-/**
  * The second row: which filters are on, and how to take them off.
  *
  * <p>Renders nothing when no chip is passed, so a page can hand it a list that
