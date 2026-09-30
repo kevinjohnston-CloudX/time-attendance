@@ -10,6 +10,8 @@ import {
   FilterSelectChip,
   SearchInput,
   Toast,
+  ToolsBar,
+  ToolsCount,
   useToast,
 } from "@/components/ui";
 
@@ -402,78 +404,78 @@ export function ExceptionsScreen({
           </div>
         </div>
 
-        {/* One row for everything, so the pinned bar costs as little height as
-            possible. It wraps on a narrow window rather than overflowing. */}
-        <div
-          className="flex flex-wrap items-center gap-2.5 pb-3.5"
-          style={{ borderBottom: "1px solid var(--stroke-secondary)" }}
-        >
-          <SearchInput
-            aria-label="Search employees"
-            placeholder="Search employees"
-            value={query}
-            onValueChange={setQuery}
-          />
-
-          <FilterSelectChip
-            label="Type"
-            value={selected.exceptionType ?? ""}
-            options={typeOptions}
-            onChange={(id) => navigate({ exceptionType: id || undefined })}
-          />
-          <FilterSelectChip
-            label="Department"
-            value={selected.departmentId ?? ""}
-            options={departments}
-            onChange={(id) => navigate({ departmentId: id || undefined })}
-          />
-          <FilterSelectChip
-            label="Shift"
-            value={selected.shiftId ?? ""}
-            options={shifts}
-            onChange={(id) => navigate({ shiftId: id || undefined })}
-          />
-          <FilterSelectChip
-            label="Site"
-            value={selected.siteId ?? ""}
-            options={sites}
-            // Departments are listed per site, so the department picked under
-            // the old one goes too. Otherwise the list stays narrowed by a
-            // department the new site may not even have, and reads as clean.
-            onChange={(id) => navigate({ siteId: id || undefined, departmentId: undefined })}
-          />
-          {/* Not in the handoff, and kept: closing a period is the whole
-              reason this screen gets worked through, so the period has to be
-              selectable. Rendered as a pill like the others rather than as
-              the select it used to be. */}
-          <FilterSelectChip
-            label="Pay period"
-            value={selected.payPeriodId ?? ""}
-            options={payPeriods}
-            disabled={payPeriods.length === 0}
-            onChange={(id) => navigate({ payPeriodId: id || undefined })}
-          />
-
-          {dirty && (
-            <Button
-              hierarchy="link"
-              size="sm"
-              onClick={() => {
-                setQuery("");
-                setOpenEmployeeId(null);
-                router.push("/supervisor/exceptions", { scroll: false });
-              }}
-            >
-              Clear all
-            </Button>
-          )}
-
-          <span
-            className="tabular ml-auto whitespace-nowrap"
-            style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+        {/* One bar for everything, the shared tools bar Live Attendance uses,
+            so the pinned bar costs as little height as possible. It wraps on a
+            narrow window rather than overflowing. */}
+        <div className="pb-3.5">
+          <ToolsBar
+            search={
+              <SearchInput
+                aria-label="Search employees"
+                placeholder="Search employees"
+                value={query}
+                onValueChange={setQuery}
+              />
+            }
+            end={
+              <>
+                {dirty && (
+                  <Button
+                    hierarchy="link"
+                    size="sm"
+                    onClick={() => {
+                      setQuery("");
+                      setOpenEmployeeId(null);
+                      router.push("/supervisor/exceptions", { scroll: false });
+                    }}
+                  >
+                    Clear all
+                  </Button>
+                )}
+                <ToolsCount>{countLabel}</ToolsCount>
+              </>
+            }
           >
-            {countLabel}
-          </span>
+
+            <FilterSelectChip
+              label="Type"
+              value={selected.exceptionType ?? ""}
+              options={typeOptions}
+              onChange={(id) => navigate({ exceptionType: id || undefined })}
+            />
+            <FilterSelectChip
+              label="Department"
+              value={selected.departmentId ?? ""}
+              options={departments}
+              onChange={(id) => navigate({ departmentId: id || undefined })}
+            />
+            <FilterSelectChip
+              label="Shift"
+              value={selected.shiftId ?? ""}
+              options={shifts}
+              onChange={(id) => navigate({ shiftId: id || undefined })}
+            />
+            <FilterSelectChip
+              label="Site"
+              value={selected.siteId ?? ""}
+              options={sites}
+              // Departments are listed per site, so the department picked under
+              // the old one goes too. Otherwise the list stays narrowed by a
+              // department the new site may not even have, and reads as clean.
+              onChange={(id) => navigate({ siteId: id || undefined, departmentId: undefined })}
+            />
+            {/* Not in the handoff, and kept: closing a period is the whole
+                reason this screen gets worked through, so the period has to be
+                selectable. Rendered as a pill like the others rather than as
+                the select it used to be. */}
+            <FilterSelectChip
+              label="Pay period"
+              value={selected.payPeriodId ?? ""}
+              options={payPeriods}
+              disabled={payPeriods.length === 0}
+              onChange={(id) => navigate({ payPeriodId: id || undefined })}
+            />
+          </ToolsBar>
         </div>
       </div>
 
