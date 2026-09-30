@@ -263,10 +263,15 @@ export const FIELD_GRID = "grid gap-x-4 gap-y-3.5 [grid-template-columns:repeat(
  * Add or edit one record: its name, the fields, then Cancel and Save at the
  * foot, with Delete on the left when the area allows it. Escape, the X and the
  * scrim close it; nothing is saved until Save.
+ *
+ * <p>With an icon, the header is the product's form window header (the Pay
+ * Periods handoff's): the area's glyph on a tile, the title at the design
+ * system's modal size, and one line under it saying what the record is.
  */
 export function SetupDialog({
   title,
   subtitle,
+  icon,
   submitLabel,
   pending,
   error,
@@ -278,6 +283,8 @@ export function SetupDialog({
 }: {
   title: string;
   subtitle?: string;
+  /** The area's glyph, 18px, the same one its empty state draws. */
+  icon?: ReactNode;
   submitLabel: string;
   pending: boolean;
   error: string | null;
@@ -323,12 +330,30 @@ export function SetupDialog({
         className="ta-modal flex max-h-[calc(100dvh-2rem)] w-full flex-col"
         style={{ maxWidth: width, borderRadius: "var(--radius-l)" }}
       >
-        <header className="flex flex-none items-start gap-3 px-5 pb-3.5 pt-4" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
+        <header
+          className={`flex flex-none items-start gap-3 px-5 ${icon ? "pb-4 pt-5" : "pb-3.5 pt-4"}`}
+          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+        >
+          {icon && (
+            <span
+              className="grid h-[38px] w-[38px] flex-none place-items-center"
+              style={{ borderRadius: 11, background: "var(--ta-well)", boxShadow: "inset 0 0 0 1px var(--ta-well-ring)", color: "var(--icon-tertiary)" }}
+              aria-hidden="true"
+            >
+              {icon}
+            </span>
+          )}
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <h2 id="setup-dialog-title" className="truncate" style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
+            <h2
+              id="setup-dialog-title"
+              className="truncate"
+              style={{ margin: 0, font: icon ? "var(--type-h3)" : "var(--type-h4)", color: "var(--text-primary)" }}
+            >
               {title}
             </h2>
-            {subtitle && <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>{subtitle}</span>}
+            {subtitle && (
+              <span style={{ font: "var(--type-body2)", color: icon ? "var(--text-secondary)" : "var(--text-tertiary)" }}>{subtitle}</span>
+            )}
           </span>
           <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} disabled={pending} aria-label="Close">
             <X className="h-4 w-4" />

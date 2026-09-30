@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { Building2, ChevronRight, Plus } from "lucide-react";
 import { createSite, updateSite } from "@/actions/admin.actions";
@@ -8,7 +8,6 @@ import type { Site } from "@prisma/client";
 import { Button, EmptyState, Input, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
 import {
   AreaPanel,
-  FIELD_GRID,
   Muted,
   SelectField,
   SetupDialog,
@@ -150,7 +149,30 @@ export function SitesManager({ sites }: { sites: Site[] }) {
   );
 }
 
-/** Add or edit one site. Also used from the site's own page. */
+/**
+ * What the clock reads in a time zone right now, "11:42 AM", kept current
+ * while the window is open. Null for a zone the browser does not know.
+ */
+function useTimeIn(timeZone: string): string | null {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 15_000);
+    return () => window.clearInterval(id);
+  }, []);
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true }).format(now);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Add or edit one site. Also used from the site's own page.
+ *
+ * <p>One column, in the order someone describes a building: what it is
+ * called, where it is, then the time zone its clocks keep, which shows the
+ * time there now so a wrong pick is obvious before it stamps a punch.
+ */
 export function SiteDialog({
   site,
   pending,
@@ -165,43 +187,52 @@ export function SiteDialog({
   onClose: () => void;
 }) {
   const zones = timeZoneOptions(site?.timezone);
+  const [zone, setZone] = useState(site?.timezone ?? "America/New_York");
+  const timeNow = useTimeIn(zone);
   return (
     <SetupDialog
       title={site ? site.name : "Add site"}
-      subtitle={site ? "Edit site" : undefined}
+      subtitle={site ? "Edit site" : "A building people clock in at."}
+      icon={<Building2 className="h-[18px] w-[18px]" />}
+      width={480}
       submitLabel={site ? "Save changes" : "Add site"}
       pending={pending}
       error={error}
       onSubmit={onSubmit}
       onClose={onClose}
     >
-      <div className={FIELD_GRID}>
-        <Input label="Name" name="name" required defaultValue={site?.name ?? ""} placeholder="Main Office" />
-        <SelectField
-          label="Time zone"
-          name="timezone"
-          defaultValue={site?.timezone ?? "America/New_York"}
-          hint="Punches at this site are stamped in this time zone."
-        >
-          <optgroup label="Common">
-            {zones.common.map((z) => (
+      <Input label="Name" name="name" required defaultValue={site?.name ?? ""} placeholder="Rutherford warehouse" />
+      <Input
+        label="Address"
+        name="address"
+        defaultValue={site?.address ?? ""}
+        hint="Optional. Helps tell buildings apart on the Sites list."
+        placeholder="123 Main St, Rutherford, NJ"
+      />
+      <SelectField
+        label="Time zone"
+        name="timezone"
+        defaultValue={site?.timezone ?? "America/New_York"}
+        onChange={(e) => setZone(e.target.value)}
+        hint={`Punches at this site are stamped in this time zone${timeNow ? `, where it's ${timeNow} now.` : "."}`}
+      >
+        <optgroup label="Common">
+          {zones.common.map((z) => (
+            <option key={z.id} value={z.id}>
+              {z.label}
+            </option>
+          ))}
+        </optgroup>
+        {zones.others.length > 0 && (
+          <optgroup label="All time zones">
+            {zones.others.map((z) => (
               <option key={z.id} value={z.id}>
                 {z.label}
               </option>
             ))}
           </optgroup>
-          {zones.others.length > 0 && (
-            <optgroup label="All time zones">
-              {zones.others.map((z) => (
-                <option key={z.id} value={z.id}>
-                  {z.label}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </SelectField>
-      </div>
-      <Input label="Address" name="address" defaultValue={site?.address ?? ""} hint="Optional" placeholder="123 Main St, Rutherford, NJ" />
+        )}
+      </SelectField>
       {site && (
         <StatusField defaultActive={site.isActive} hint="An inactive site stays on the records that already use it." />
       )}
