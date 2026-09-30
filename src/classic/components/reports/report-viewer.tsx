@@ -41,6 +41,8 @@ interface ReportData {
   shares: { id: string; user: { id: string; name: string | null; email: string | null }; canEdit: boolean }[];
   schedules: { id: string; cronExpr: string; isActive: boolean; format: string; recipients: unknown; timezone: string }[];
   runs: { id: string; status: string; startedAt: string | Date; rowCount: number | null }[];
+  /** What this person may change. Added after prod, whose actions let anyone with Reports access change any report. */
+  access?: { isOwner: boolean; canEdit: boolean };
 }
 
 interface FilterOptions {
@@ -228,20 +230,26 @@ export function ReportViewer({
                 </a>
               </>
             )}
-            <button
-              onClick={() => setShowShareDialog(true)}
-              className={btnSecondary + " flex items-center gap-1.5"}
-              title="Share"
-            >
-              <Share2 className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setShowScheduleForm(true)}
-              className={btnSecondary + " flex items-center gap-1.5"}
-              title="Schedule"
-            >
-              <Clock className="h-4 w-4" />
-            </button>
+            {/* Share and Schedule need edit rights, Delete needs the owner:
+                the server refuses anyone else, so the buttons are not drawn. */}
+            {report.access?.canEdit && (
+              <>
+                <button
+                  onClick={() => setShowShareDialog(true)}
+                  className={btnSecondary + " flex items-center gap-1.5"}
+                  title="Share"
+                >
+                  <Share2 className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setShowScheduleForm(true)}
+                  className={btnSecondary + " flex items-center gap-1.5"}
+                  title="Schedule"
+                >
+                  <Clock className="h-4 w-4" />
+                </button>
+              </>
+            )}
             <button
               onClick={handleDuplicate}
               className={btnSecondary + " flex items-center gap-1.5"}
@@ -249,7 +257,7 @@ export function ReportViewer({
             >
               <Copy className="h-4 w-4" />
             </button>
-            {!report.isTemplate && (
+            {report.access?.isOwner && !report.isTemplate && (
               <button
                 onClick={handleDelete}
                 className={btnDanger + " flex items-center gap-1.5"}

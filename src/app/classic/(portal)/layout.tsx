@@ -5,7 +5,8 @@ import { db } from "@/lib/db";
 import { Sidebar } from "@/classic/components/layout/sidebar";
 import { InactiveRouteGuard } from "@/classic/components/layout/inactive-route-guard";
 import { exitTenant } from "@/actions/super-admin.actions";
-import { SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
+import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
+import { validViewAsId } from "@/lib/rbac/check-permission";
 import { getPermissions } from "@/lib/rbac/permissions";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { getLegacyPermissions, isLiveAttendanceOnly } from "@/lib/rbac/permission-resolver";
@@ -102,8 +103,11 @@ export default async function PortalLayout({
   // View-as role override — reads cookie and uses real DB permissions
   let viewAsRole: string | null = null;
   if (canUseViewAs) {
-    const cookieStore = await cookies();
-    const cookieVal = cookieStore.get(VIEW_AS_ROLE_COOKIE)?.value;
+    // Changed from prod: the same check every server action makes, so a
+    // cookie naming a role that is switched off, another company's, or not
+    // junior to them is ignored here too, and the menu never shows a role
+    // the pages are not using.
+    const cookieVal = await validViewAsId(session.user);
     if (cookieVal) {
       // Look up the role name and permissions from DB
       const viewAsRoleData = viewAsOptions.find((r) => r.id === cookieVal)

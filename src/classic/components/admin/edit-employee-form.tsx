@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition, useState } from "react";
+import { useRef, useTransition, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import Link from "next/link";
@@ -87,24 +87,44 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
 
   const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === selectedSiteId));
 
-  function save(fields: Record<string, unknown>) {
+  // Changed from prod: a save sends only the fields the person changed. Each
+  // form sent every field, including values it filled in itself (a built-in
+  // role for someone with none saved, "None" for a supervisor not in the
+  // list, Hourly for a blank pay type). Those read as changes: saving a name
+  // could quietly clear a supervisor, and the server now refuses a role, pay
+  // or supervisor change on your own record or a peer's.
+  const baselines = useRef<Record<string, Record<string, unknown>>>({});
+  function remember(key: string, fields: (fd: FormData) => Record<string, unknown>) {
+    return (el: HTMLFormElement | null) => {
+      if (el && !baselines.current[key]) baselines.current[key] = fields(new FormData(el));
+    };
+  }
+
+  function save(key: string, fields: Record<string, unknown>) {
     setError(null);
     setSuccess(false);
+    const base = baselines.current[key] ?? {};
+    const changed = Object.fromEntries(
+      Object.entries(fields).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(base[k])),
+    );
+    if (Object.keys(changed).length === 0) {
+      setSuccess(true);
+      return;
+    }
     startTransition(async () => {
-      const result = await updateEmployee({ employeeId: employee.id, ...fields } as Parameters<typeof updateEmployee>[0]);
+      const result = await updateEmployee({ employeeId: employee.id, ...changed } as Parameters<typeof updateEmployee>[0]);
       if (!result.success) {
         setError(result.error);
       } else {
+        baselines.current[key] = { ...base, ...changed };
         setSuccess(true);
         router.refresh();
       }
     });
   }
 
-  function handleGeneral(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    save({
+  function generalFields(fd: FormData): Record<string, unknown> {
+    return {
       name: fd.get("name") as string,
       email: fd.get("email") as string,
       customRoleId: (fd.get("customRoleId") as string) || null,
@@ -122,13 +142,16 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       agencyId: (fd.get("agencyId") as string) || null,
       terminationReason: fd.get("terminationReason") as string,
       adjustedHireDate: (fd.get("adjustedHireDate") as string) || null,
-    });
+    };
   }
 
-  function handlePersonal(e: React.FormEvent<HTMLFormElement>) {
+  function handleGeneral(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    save({
+    save("general", generalFields(new FormData(e.currentTarget)));
+  }
+
+  function personalFields(fd: FormData): Record<string, unknown> {
+    return {
       gender: fd.get("gender") as string,
       maritalStatus: fd.get("maritalStatus") as string,
       phone: fd.get("phone") as string,
@@ -142,14 +165,17 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       state: fd.get("state") as string,
       country: fd.get("country") as string,
       zipCode: fd.get("zipCode") as string,
-    });
+    };
   }
 
-  function handlePay(e: React.FormEvent<HTMLFormElement>) {
+  function handlePersonal(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
+    save("personal", personalFields(new FormData(e.currentTarget)));
+  }
+
+  function payFields(fd: FormData): Record<string, unknown> {
     const rateStr = fd.get("payRate") as string;
-    save({
+    return {
       ruleSetId: fd.get("ruleSetId") as string,
       shiftId: (fd.get("shiftId") as string) || null,
       holidayRuleId: (fd.get("holidayRuleId") as string) || null,
@@ -157,7 +183,12 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       payTypeId: (fd.get("payTypeId") as string) || null,
       payType: fd.get("payType") as string,
       payRate: rateStr ? parseFloat(rateStr) : null,
-    });
+    };
+  }
+
+  function handlePay(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    save("pay", payFields(new FormData(e.currentTarget)));
   }
 
   const allLogFieldNames = [...new Set(logs.flatMap((e) => e.fields.map((f) => f.field)))].sort();
@@ -210,7 +241,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
 
       {/* ── General tab ─────────────────────────────────────────────────── */}
       {activeTab === "general" && (
-        <form onSubmit={handleGeneral} className="mt-5 flex flex-col gap-4">
+        <form ref={remember("general", generalFields)} onSubmit={handleGeneral} className="mt-5 flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelCls}>Full Name</label>
@@ -403,7 +434,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
 
       {/* ── Personal tab ────────────────────────────────────────────────── */}
       {activeTab === "personal" && (
-        <form onSubmit={handlePersonal} className="mt-5 flex flex-col gap-4">
+        <form ref={remember("personal", personalFields)} onSubmit={handlePersonal} className="mt-5 flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelCls}>Gender</label>
@@ -497,7 +528,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       {/* ── Pay tab ─────────────────────────────────────────────────────── */}
       {activeTab === "pay" && (
         <>
-        <form onSubmit={handlePay} className="mt-5 flex flex-col gap-4">
+        <form ref={remember("pay", payFields)} onSubmit={handlePay} className="mt-5 flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelCls}>Rule Set</label>

@@ -12,8 +12,9 @@ import { generateXlsx } from "@/lib/reports/export/xlsx";
  * open on screen can be downloaded, and one you cannot answers 404, the same
  * as one that does not exist.
  *
- * <p>`range` is the date range on screen, as JSON. Without it the report's
- * saved dates are used, which is what a bookmarked link gets.
+ * <p>`range` (or `dateRange`, from the classic design) is the date range on
+ * screen, as JSON. Without it the report's saved dates are used, which is
+ * what a bookmarked link gets.
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -23,7 +24,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   let dateRange: unknown;
-  const range = req.nextUrl.searchParams.get("range");
+  // `dateRange` is the classic design's name for the same value.
+  const range = req.nextUrl.searchParams.get("range") ?? req.nextUrl.searchParams.get("dateRange");
   if (range) {
     try {
       dateRange = JSON.parse(range);

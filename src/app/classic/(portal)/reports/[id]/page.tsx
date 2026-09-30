@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getReport, getFilterOptions, getTenantUsers } from "@/actions/report.actions";
 import { ReportViewer } from "@/classic/components/reports/report-viewer";
+import { classicFilterOptions } from "@/classic/lib/report-options";
 
 export default async function ReportDetailPage({
   params,
@@ -31,7 +32,7 @@ export default async function ReportDetailPage({
   return (
     <ReportViewer
       report={reportResult.data}
-      filterOptions={filterResult.success ? filterResult.data : null}
+      filterOptions={filterResult.success ? classicFilterOptions(filterResult.data) : null}
       tenantUsers={usersResult.success ? usersResult.data : []}
     />
   );

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getDataSourceDefinitions, getFilterOptions } from "@/actions/report.actions";
 import { ReportBuilder } from "@/classic/components/reports/report-builder/report-builder";
+import { classicFilterOptions } from "@/classic/lib/report-options";
 
 export default async function NewReportPage() {
   const session = await auth();
@@ -25,7 +26,7 @@ export default async function NewReportPage() {
       </h1>
       <ReportBuilder
         dataSources={dsResult.data}
-        filterOptions={filterResult.data}
+        filterOptions={classicFilterOptions(filterResult.data)}
       />
     </div>
   );

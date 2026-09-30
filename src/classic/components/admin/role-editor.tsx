@@ -26,6 +26,8 @@ const RESOURCE_LABELS: Record<string, string> = {
   document: "Documents",
   report: "Reports",
   audit: "Audit Log",
+  // Added after prod: the Live Attendance permission, which the new design's page uses.
+  presence: "Live Attendance",
   role: "Roles",
 };
 
@@ -132,6 +134,13 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
     summary: "Controls access to the system audit trail.",
     cells: {
       "read:all": "View the full audit log showing all changes made across the system.",
+    },
+  },
+  presence: {
+    summary: "Controls who can see which employees are in the building right now, and who can update their photos.",
+    cells: {
+      "read:all": "See everyone at a site on Live Attendance, with their gate and time clock scans.",
+      "write:all": "Update an employee's photo from Live Attendance. The photo it replaces is kept.",
     },
   },
   role: {

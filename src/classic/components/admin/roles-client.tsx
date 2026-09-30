@@ -51,6 +51,8 @@ const RESOURCE_LABELS: Record<string, string> = {
   document: "Documents",
   report: "Reports",
   audit: "Audit Log",
+  // Added after prod: the Live Attendance permission, which the new design's page uses.
+  presence: "Live Attendance",
   role: "Roles",
 };
 
