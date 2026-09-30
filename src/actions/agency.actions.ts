@@ -78,6 +78,15 @@ export const deleteAgency = withRBAC(
     const tenantId = ctx.tenantId;
     if (!tenantId) throw new Error("No tenant");
     const { id } = z.object({ id: z.string() }).parse(input);
+    // Deleting an agency takes it off every employee in it (the column is
+    // ON DELETE SET NULL) with nothing to say so, so it is refused while
+    // anyone is in it, as pay categories and pay types are.
+    const inUse = await db.employee.count({ where: { tenantId, agencyId: id } });
+    if (inUse > 0) {
+      throw new Error(
+        `${inUse.toLocaleString()} ${inUse === 1 ? "employee is" : "employees are"} in this agency. Move them to another one first, or give it an inactive date.`,
+      );
+    }
     await db.agency.delete({ where: { id, tenantId } });
     revalidatePath("/admin/site-settings");
     return { success: true as const };

@@ -87,6 +87,14 @@ export const deleteJobTitle = withRBAC(
     const tenantId = ctx.tenantId;
     if (!tenantId) throw new Error("No tenant");
     const { id } = z.object({ id: z.string() }).parse(input);
+    // Deleting a job title clears it from every employee who has it (ON
+    // DELETE SET NULL), so it is refused while anyone does.
+    const inUse = await db.employee.count({ where: { tenantId, jobTitleId: id } });
+    if (inUse > 0) {
+      throw new Error(
+        `${inUse.toLocaleString()} ${inUse === 1 ? "employee has" : "employees have"} this job title. Move them to another one first, or set it to inactive.`,
+      );
+    }
     await db.jobTitle.delete({ where: { id, tenantId } });
     revalidatePath("/admin/site-settings");
     return { success: true as const };
