@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ChevronRight, LayoutGrid } from "lucide-react";
-import { Button, EmptyState, SearchInput, Toolbar } from "@/components/ui";
+import { Button, EmptyState, SearchInput, ToolsBar, ToolsCount } from "@/components/ui";
 
 /**
  * The Administration hub, from the portal design.
@@ -123,9 +123,10 @@ export function AdminHub({ groups }: { groups: HubGroup[] }) {
       {/* The count is the whole point of this row. "Nothing here" and "nothing
           matching that word" look identical without it, and the area card above
           still shows what the unfiltered totals are. */}
-      <Toolbar count={shown} countLabel="settings page">
-        <SearchInput value={query} onValueChange={setQuery} placeholder="Filter settings" width={320} />
-      </Toolbar>
+      <ToolsBar
+        search={<SearchInput value={query} onValueChange={setQuery} placeholder="Filter settings" width={320} />}
+        end={<ToolsCount>{shown} {shown === 1 ? "settings page" : "settings pages"}</ToolsCount>}
+      />
 
       {shown === 0 ? (
         <div className="ta-card rounded-xl">

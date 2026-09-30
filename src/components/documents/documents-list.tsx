@@ -18,7 +18,6 @@ import {
   TH,
   THead,
   TR,
-  Toolbar,
   PinnedBar,
 } from "@/components/ui";
 
@@ -119,16 +118,15 @@ export function DocumentsList({
       <PinnedBar>
         {header}
         <div className="flex flex-col gap-2.5">
-          <Toolbar count={filtered.length} countLabel="document">
-            <DocumentsFilters
-              q={q}
-              type={type}
-              year={year}
-              typeOptions={typeOptions}
-              yearOptions={yearOptions}
-              placeholder={searchPlaceholder}
-            />
-          </Toolbar>
+          <DocumentsFilters
+            q={q}
+            type={type}
+            year={year}
+            typeOptions={typeOptions}
+            yearOptions={yearOptions}
+            placeholder={searchPlaceholder}
+            count={`${filtered.length} ${filtered.length === 1 ? "document" : "documents"}`}
+          />
 
           <FilterBar clearHref={filtersApplied ? basePath : undefined}>
             {type ? (

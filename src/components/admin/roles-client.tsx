@@ -20,7 +20,8 @@ import {
   TH,
   THead,
   TR,
-  Toolbar,
+  ToolsBar,
+  ToolsCount,
   statusTone,
 } from "@/components/ui";
 
@@ -126,9 +127,10 @@ export function RolesClient({
           }
         />
 
-        <Toolbar count={visible.length} countLabel="role">
-          <SearchInput value={search} onValueChange={setSearch} placeholder="Role or description" />
-        </Toolbar>
+        <ToolsBar
+          search={<SearchInput value={search} onValueChange={setSearch} placeholder="Role or description" width={320} />}
+          end={<ToolsCount>{visible.length} {visible.length === 1 ? "role" : "roles"}</ToolsCount>}
+        />
       </PinnedBar>
 
       <Card padding={0}>
