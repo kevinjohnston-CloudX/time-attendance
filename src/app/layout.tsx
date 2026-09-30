@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Providers } from "@/app/_components/providers";
 import { NavigationProgress } from "@/components/layout/navigation-progress";
+import { DesignSwitchMarkerCleanup } from "@/components/layout/design-switch-marker";
 
 /**
  * Inter, loaded as a variable font.
@@ -41,6 +42,7 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <NavigationProgress />
         </Suspense>
+        <DesignSwitchMarkerCleanup />
         <Providers>{children}</Providers>
       </body>
     </html>

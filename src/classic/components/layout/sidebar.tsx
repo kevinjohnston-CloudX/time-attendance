@@ -294,7 +294,8 @@ export function Sidebar({ role, userName, permissions, realRole, viewAsRole, can
                 <div
                   ref={teamPopupRef}
                   style={{ top: teamPopupTop, left: popupLeft }}
-                  className="fixed z-50 w-52 rounded-xl border border-zinc-200 bg-white py-1.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 max-h-[calc(100vh-1rem)] overflow-y-auto"
+                  // Wider than prod's w-52, so Live Attendance and its pill sit on one line.
+                  className="fixed z-50 w-60 rounded-xl border border-zinc-200 bg-white py-1.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 max-h-[calc(100vh-1rem)] overflow-y-auto"
                 >
                   <p className="px-3 pb-1.5 pt-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
                     My Team
@@ -310,14 +311,14 @@ export function Sidebar({ role, userName, permissions, realRole, viewAsRole, can
                         if (item.newDesign) window.location.assign(switchHref("new", item.href));
                         else router.push(item.href);
                       }}
-                      className={`flex w-full items-center gap-2.5 px-3 py-2 text-sm transition-colors ${
+                      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
                         pathname === item.href || (item.href !== "/supervisor" && pathname.startsWith(item.href))
                           ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-white"
                           : "text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
                       }`}
                     >
                       <item.icon className="h-4 w-4 shrink-0 text-zinc-400" />
-                      {item.label}
+                      <span className="whitespace-nowrap">{item.label}</span>
                       {item.newDesign && (
                         <span className="ml-auto whitespace-nowrap rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
                           New design

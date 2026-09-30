@@ -29,6 +29,7 @@ export function LinkButton({
   leadingIcon,
   trailingIcon,
   title,
+  reloadDocument = false,
 }: {
   href: string;
   children: ReactNode;
@@ -37,6 +38,8 @@ export function LinkButton({
   leadingIcon?: ReactNode;
   trailingIcon?: ReactNode;
   title?: string;
+  /** Load the page fresh instead of moving in place, for a screen whose styles must not come along. */
+  reloadDocument?: boolean;
 }) {
   const s = SIZES[size];
   const isLink = hierarchy === "link";
@@ -77,8 +80,10 @@ export function LinkButton({
               "--bd": "transparent",
             };
 
+  const Anchor = reloadDocument ? "a" : Link;
+
   return (
-    <Link
+    <Anchor
       href={href}
       title={title}
       className={`wms-btn${isLink ? " wms-btn-link" : ""}`}
@@ -101,6 +106,6 @@ export function LinkButton({
       {leadingIcon}
       {children}
       {trailingIcon}
-    </Link>
+    </Anchor>
   );
 }

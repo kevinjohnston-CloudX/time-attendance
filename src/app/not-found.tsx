@@ -1,13 +1,16 @@
-// The new design's styles, loaded by its own layouts rather than the shared
-// root, so the classic design never gets them.
+// The new design's styles. Only this screen brings them: a not found screen's
+// styles load when it shows, never on the pages around it.
 import "@/app/globals.css";
+import { cookies } from "next/headers";
 import { LinkButton } from "@/components/ui";
 import { BrandLockup } from "@/components/layout/brand-mark";
 import { DesignSwitchFallback } from "@/components/layout/design-switch-fallback";
+import { DESIGN_COOKIE, designFromCookie } from "@/lib/design-switch";
 
-export default function NotFound() {
+export default async function NotFound() {
+  const design = designFromCookie((await cookies()).get(DESIGN_COOKIE)?.value);
   return (
-    <DesignSwitchFallback>
+    <DesignSwitchFallback design={design}>
     <div
       className="flex min-h-screen items-center justify-center px-6"
       style={{ background: "var(--surface-page)" }}
@@ -34,7 +37,9 @@ export default function NotFound() {
             the HR team, because a page is pointing somewhere that is not there.
           </p>
         </div>
-        <LinkButton href="/dashboard" hierarchy="primary">
+        {/* A full load, not an in place move: on Classic this screen's styles
+            must not come along to the classic dashboard. */}
+        <LinkButton href="/dashboard" hierarchy="primary" reloadDocument>
           Go to Dashboard
         </LinkButton>
       </div>

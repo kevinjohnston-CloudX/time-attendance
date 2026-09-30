@@ -1,7 +1,7 @@
 import type { NextAuthConfig } from "next-auth";
 import { NextResponse } from "next/server";
 import { REQUEST_PATH_HEADER } from "@/lib/constants";
-import { CLASSIC_PREFIX, DESIGN_COOKIE, designFromCookie, safeNext } from "@/lib/design-switch";
+import { CLASSIC_PREFIX, DESIGN_COOKIE, DESIGN_PROBE_HEADER, designFromCookie, safeNext } from "@/lib/design-switch";
 
 /**
  * Edge-safe auth config — no Prisma, no bcrypt, no Node.js-only modules.
@@ -42,12 +42,15 @@ function classicServes(pathname: string): boolean {
 /**
  * The response for a request that is allowed through: served from the
  * classic folder when this browser's design is Classic, at the same address,
- * else passed on. `headers` carries the portal's request path header.
+ * else passed on. One request can pick its design by DESIGN_PROBE_HEADER
+ * instead (the not found screen asking New). `headers` carries the portal's
+ * request path header.
  */
 function serve(request: Request & { nextUrl: URL; cookies: { get(name: string): { value: string } | undefined } }, headers?: Headers) {
   const { nextUrl } = request;
   const init = headers ? { request: { headers } } : undefined;
-  if (classicServes(nextUrl.pathname) && designFromCookie(request.cookies.get(DESIGN_COOKIE)?.value) === "classic") {
+  const chosen = request.headers.get(DESIGN_PROBE_HEADER) ?? request.cookies.get(DESIGN_COOKIE)?.value;
+  if (classicServes(nextUrl.pathname) && designFromCookie(chosen) === "classic") {
     const url = new URL(`${CLASSIC_PREFIX}${nextUrl.pathname}${nextUrl.search}`, nextUrl);
     return NextResponse.rewrite(url, init);
   }

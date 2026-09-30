@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PageSpinner } from "@/components/layout/page-spinner";
 import {
-  DESIGN_COOKIE,
+  DESIGN_PROBE_HEADER,
   DESIGN_SWITCH_PARAM,
   DESIGN_SWITCH_VALUE,
-  parseDesign,
   switchHref,
+  type Design,
 } from "@/lib/design-switch";
 
 /**
@@ -16,42 +17,53 @@ import {
  * page, so it steps up to the parent address (keeping the marker) until it
  * reaches one it has, and the Dashboard at the top, instead of switching back.
  *
- * <p>On Classic otherwise: the classic design has no such page, and the new
- * one may (Live Attendance is New only), so it opens the same address in New.
- * This browser switches, the person's saved choice does not: a stray link
- * never changes their design for good, and the next sign in brings Classic
- * back. If New has no such page either, its not found screen shows.
+ * <p>On Classic otherwise: New may have the page (Live Attendance is New
+ * only), so New is asked first, for this one request. When it has it, the
+ * same address opens in New for this browser; the person's saved choice does
+ * not change, so the next sign in brings Classic back. When it does not (a
+ * mistyped address, a page nobody has), the not found screen shows and
+ * nothing switches. Nothing is drawn while New is asked, so a page New has
+ * never flashes a not found screen first.
  *
- * <p>Any other visit gets the not found screen as before.
+ * <p>On New, any other visit gets the not found screen as before.
  */
-function currentDesign(): string | null {
-  const hit = document.cookie.split("; ").find((c) => c.startsWith(`${DESIGN_COOKIE}=`));
-  return parseDesign(hit?.slice(DESIGN_COOKIE.length + 1)) ?? null;
-}
-
-export function DesignSwitchFallback({ children }: { children: React.ReactNode }) {
-  const [leaving, setLeaving] = useState(false);
+export function DesignSwitchFallback({ design, children }: { design: Design; children: React.ReactNode }) {
+  const [shown, setShown] = useState(design !== "classic");
 
   useEffect(() => {
     const url = new URL(window.location.href);
-    let target: string | null = null;
+    const here = `${url.pathname}${url.search}`;
+
     if (url.searchParams.get(DESIGN_SWITCH_PARAM) === DESIGN_SWITCH_VALUE) {
       const parts = url.pathname.split("/").filter(Boolean);
       parts.pop();
       const parent = parts.length ? `/${parts.join("/")}` : "/dashboard";
-      target = `${parent}?${DESIGN_SWITCH_PARAM}=${DESIGN_SWITCH_VALUE}`;
-    } else if (currentDesign() === "classic" || currentDesign() === null) {
-      // No cookie is Classic too (the default).
-      target = `${switchHref("new", `${url.pathname}${url.search}`)}&remember=0`;
+      window.location.replace(`${parent}?${DESIGN_SWITCH_PARAM}=${DESIGN_SWITCH_VALUE}`);
+      return;
     }
-    if (!target) return;
-    // Deferred so the effect does not set state synchronously on mount.
-    const t = setTimeout(() => {
-      setLeaving(true);
-      window.location.replace(target);
-    }, 0);
-    return () => clearTimeout(t);
-  }, []);
+    if (design !== "classic") return;
 
-  return leaving ? null : <>{children}</>;
+    let cancelled = false;
+    fetch(here, {
+      method: "HEAD",
+      headers: { [DESIGN_PROBE_HEADER]: "new" },
+      redirect: "manual",
+      cache: "no-store",
+    })
+      .then((res) => {
+        if (cancelled) return;
+        // Only a page New actually draws counts. A redirect (no access, signed
+        // out) or a not found there too leaves this screen as it is.
+        if (res.status === 200) window.location.replace(`${switchHref("new", here)}&remember=0`);
+        else setShown(true);
+      })
+      .catch(() => {
+        if (!cancelled) setShown(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [design]);
+
+  return shown ? <>{children}</> : <PageSpinner />;
 }

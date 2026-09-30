@@ -39,6 +39,15 @@ export const CLASSIC_PREFIX = "/classic";
 export const DESIGN_SWITCH_PARAM = "via";
 export const DESIGN_SWITCH_VALUE = "design-switch";
 
+/**
+ * A request header that picks the design for that one request, over the
+ * cookie. The not found screen on Classic uses it to ask whether New has the
+ * page before switching, so a mistyped address never moves anyone to New. It
+ * only chooses which screens draw the page: the same sign in and the same
+ * server checks apply either way.
+ */
+export const DESIGN_PROBE_HEADER = "x-ct-design";
+
 export function parseDesign(value: string | null | undefined): Design | null {
   return value === "classic" || value === "new" ? value : null;
 }
