@@ -3,7 +3,7 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
-import { Users, AlertCircle, ClipboardList, CalendarDays, CalendarCheck } from "lucide-react";
+import { Users, AlertCircle, CalendarDays, CalendarCheck } from "lucide-react";
 
 export default async function SupervisorDashboardPage() {
   const session = await auth();
@@ -18,12 +18,7 @@ export default async function SupervisorDashboardPage() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const [pendingTimesheets, openExceptions, pendingLeave, hrPendingLeave, upcomingLeave] = await Promise.all([
-    db.timesheet.count({
-      where: isPayroll
-        ? { status: "SUP_APPROVED" }
-        : { employee: { supervisorId: employeeId }, status: "SUBMITTED" },
-    }),
+  const [openExceptions, pendingLeave, hrPendingLeave, upcomingLeave] = await Promise.all([
     db.exception.count({
       where: {
         resolvedAt: null,
@@ -54,13 +49,6 @@ export default async function SupervisorDashboardPage() {
   ]);
 
   const cards = [
-    {
-      label: isPayroll ? "Awaiting Payroll Approval" : "Awaiting Approval",
-      count: pendingTimesheets,
-      href: "/supervisor/timesheets",
-      icon: ClipboardList,
-      urgency: pendingTimesheets > 0,
-    },
     {
       label: "Open Exceptions",
       count: openExceptions,

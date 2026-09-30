@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight, Calendar, CalendarCheck } from "lucide-react
 import { parseUtcDate } from "@/lib/utils/date";
 
 type FilterValue = "all" | "current" | "ytd";
-type StatusFilter = "all" | "open" | "ready" | "locked";
+type StatusFilter = "all" | "open" | "locked";
 
 interface PayPeriodItem {
   id: string;
@@ -171,7 +171,6 @@ export function PayPeriodsFilter({
       ) return false;
     }
     if (statusFilter === "open") return pp.status === "OPEN";
-    if (statusFilter === "ready") return pp.status === "READY";
     if (statusFilter === "locked") return pp.status === "LOCKED";
     return true;
   });
@@ -236,7 +235,6 @@ export function PayPeriodsFilter({
         >
           <option value="all">All Status</option>
           <option value="open">Open</option>
-          <option value="ready">Ready</option>
           <option value="locked">Locked</option>
         </select>
         <button

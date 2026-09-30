@@ -4,19 +4,19 @@ import { useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, Clock } from "lucide-react";
 import { useRouter } from "@/components/layout/navigation-progress";
-import { Badge, Button, SearchInput, SegmentedControl, type BadgeTone } from "@/components/ui";
+import { Badge, Button, SearchInput, SegmentedControl } from "@/components/ui";
 import { PpSelect } from "@/components/payroll/pp-select";
 import { SHOW_OPTIONS, type TimesheetShow } from "./pay-period-show";
 
 /**
  * Every timesheet in the pay period, grouped by site, from the Pay Periods
- * handoff: a round state icon, the person and their hours as chips, where the
- * timesheet sits, and a count of what is still in the way of the close that
+ * handoff: a round state icon, the person and their hours as chips, whether the
+ * timesheet is open or locked, and a count of its unresolved exceptions that
  * opens into the reasons.
  *
  * <p>Two narrowings, kept apart on purpose. Site, department and Show live in
  * the link: a clerk working one warehouse sends it to that warehouse's
- * supervisor, and the close checklist's "See these timesheets" lands on a
+ * supervisor, and the page summary's "See these timesheets" lands on a
  * Show. The name search and All / With issues / No issues only narrow what
  * is already on the screen.
  *
@@ -38,40 +38,13 @@ export type TimesheetRow = {
 
 type IssueMode = "all" | "issues" | "clear";
 
-const STATUS_LABEL: Record<string, string> = {
-  OPEN: "Open",
-  REJECTED: "Rejected",
-  SUBMITTED: "Submitted",
-  SUP_APPROVED: "Supervisor Approved",
-  PAYROLL_APPROVED: "Payroll Approved",
-  LOCKED: "Locked",
-};
-const STATUS_TONE: Record<string, BadgeTone> = {
-  OPEN: "neutral",
-  REJECTED: "error",
-  SUBMITTED: "warning",
-  SUP_APPROVED: "info",
-  PAYROLL_APPROVED: "success",
-  LOCKED: "success",
-};
-/** Whose move it is, the same words the Approvals list uses. */
-const WAITING_ON: Record<string, string> = {
-  OPEN: "Waiting on the employee",
-  REJECTED: "Sent back to the employee",
-  SUBMITTED: "Waiting on the supervisor",
-  SUP_APPROVED: "Waiting on payroll",
-  PAYROLL_APPROVED: "Ready to lock",
-  LOCKED: "Closed",
-};
-
 const PANEL: CSSProperties = { background: "var(--surface-card)", borderRadius: 18, boxShadow: "var(--ta-shell-shadow)" };
 const n = (v: number) => v.toLocaleString("en-US");
 const hours = (minutes: number) => (minutes / 60).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const approvedStatus = (s: string) => s === "PAYROLL_APPROVED" || s === "LOCKED";
+const lockedStatus = (s: string) => s === "LOCKED";
 
 function issuesOf(ts: TimesheetRow): string[] {
   const out: string[] = [];
-  if (!approvedStatus(ts.status)) out.push("Not yet approved by payroll");
   if (ts.exceptions > 0) out.push(`${n(ts.exceptions)} unresolved ${ts.exceptions === 1 ? "exception" : "exceptions"}, like a missed punch`);
   return out;
 }
@@ -227,7 +200,7 @@ export function PayPeriodTimesheets({
             {g.sheets.map((ts) => {
               const iss = issuesOf(ts);
               const expanded = !!open[ts.id] && iss.length > 0;
-              const done = approvedStatus(ts.status);
+              const done = lockedStatus(ts.status);
               const Icon = ts.exceptions ? CircleAlert : done ? CircleCheck : Clock;
               const href = `/payroll/timecards?periodId=${encodeURIComponent(payPeriodId)}&employeeId=${encodeURIComponent(ts.employeeId)}`;
               return (
@@ -260,13 +233,10 @@ export function PayPeriodTimesheets({
                           <Chip k="REG" v={hours(ts.reg)} tone="reg" />
                           {ts.ot > 0 && <Chip k="OT" v={hours(ts.ot)} tone="ot" />}
                           {ts.dt > 0 && <Chip k="DT" v={hours(ts.dt)} tone="dt" />}
-                          <span className="truncate pl-1" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-                            {WAITING_ON[ts.status] ?? ""}
-                          </span>
                         </span>
                       </span>
-                      <Badge tone={STATUS_TONE[ts.status] ?? "neutral"} dot>
-                        {STATUS_LABEL[ts.status] ?? ts.status}
+                      <Badge tone={done ? "success" : "neutral"} dot>
+                        {done ? "Locked" : "Open"}
                       </Badge>
                     </Link>
                     {iss.length > 0 && (

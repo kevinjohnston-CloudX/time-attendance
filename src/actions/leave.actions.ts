@@ -6,7 +6,7 @@ import { auth } from "@/lib/auth";
 import { withRBAC } from "@/lib/rbac/guard";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { validateLeaveTransition } from "@/lib/state-machines/leave-state";
-import { employeeScope, NotFoundError } from "@/lib/rbac/scope";
+import { assertNotSenior, employeeScope, NotFoundError } from "@/lib/rbac/scope";
 import { postLeaveUsage, reverseLeaveUsage } from "@/lib/engines/accrual-engine";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
 import { writeAuditLog } from "@/lib/audit/logger";
@@ -149,7 +149,8 @@ export const getTeamMembersForLeave = withRBAC(
 /** Create and submit a leave request on behalf of a team member. */
 export const createLeaveRequestForEmployee = withRBAC(
   "LEAVE_REQUEST_TEAM",
-  async ({ employeeId: actorId, tenantId }, input: SubmitLeaveForEmployeeInput) => {
+  async (ctx, input: SubmitLeaveForEmployeeInput) => {
+    const { employeeId: actorId, tenantId } = ctx;
     const { targetEmployeeId, leaveTypeId, selectedDays, note } =
       submitLeaveForEmployeeSchema.parse(input);
 
@@ -171,6 +172,7 @@ export const createLeaveRequestForEmployee = withRBAC(
         throw new Error("You can only submit leave for your direct or indirect reports.");
       }
     }
+    await assertNotSenior(ctx, targetEmployeeId);
 
     // Create DRAFT → submit → supervisor-approve (moves to PENDING_HR)
     const request = await createLeaveRequestCore(targetEmployeeId, { leaveTypeId, selectedDays, note });
@@ -211,6 +213,7 @@ async function reviewableRequest(
   });
   if (!request) throw new NotFoundError("Leave request not found");
   if (request.employeeId === ctx.employeeId) throw new Error("You can't review your own leave request");
+  await assertNotSenior(ctx, request.employeeId);
   return request;
 }
 

@@ -47,9 +47,6 @@ import {
 } from "@/lib/state-machines/labels";
 import { correctPunch, deletePunch } from "@/actions/punch.actions";
 import {
-  approveTimesheet,
-  payrollApproveTimesheet,
-  rejectTimesheet,
   toggleMealWaiver,
   toggleMealPremiumWaiver,
   authorizeTimecardOt,
@@ -78,12 +75,12 @@ import {
   Calendar,
   UserCircle,
   StickyNote,
-  Check,
   RefreshCw,
   SlidersHorizontal,
   Users,
 } from "lucide-react";
 import { RefusedScansNotice } from "@/components/payroll/refused-scans-notice";
+import { TimecardLockControl } from "@/components/payroll/timecard-lock-control";
 import grid from "./timecard.module.css";
 
 /**
@@ -211,7 +208,7 @@ type TimecardDetail = {
   otAuthorized: boolean;
   exceptionCount: number;
   exceptions: TimecardException[];
-  payPeriod: { startDate: string; endDate: string };
+  payPeriod: { startDate: string; endDate: string; status: string };
   employee: {
     user: { name: string | null } | null;
     department: { name: string };
@@ -257,6 +254,8 @@ interface TimecardViewerProps {
   selectedDepartmentId: string | null;
   userRole: string;
   readOnly?: boolean;
+  /** May lock and unlock a single timecard (pay period managers). */
+  canLockTimecards?: boolean;
   /** The line under the page title, after the pay frequency: the headcount. */
   subtitle?: string;
   /** Page actions drawn at the end of the title row, after the pay period. */
@@ -418,28 +417,18 @@ function punchCellStyle(pending: boolean, editable: boolean): React.CSSPropertie
 }
 
 /**
- * The three views the design gives this screen, expressed as the timesheet
- * statuses behind them.
- *
- * <p>"Ready to pay" is SUP_APPROVED, not PAYROLL_APPROVED: the phrase names the
- * queue this screen exists to clear. A supervisor has signed the hours off and
- * payroll has not, which is exactly the set the approve button on each row can
- * act on. Payroll-approved cards are already done, and a tab of finished work
- * is not a tab anybody opens twice.
+ * The views the design gives this screen, expressed as the timesheet statuses
+ * behind them. A timecard is open until its pay period is locked.
  */
 const VIEW_SEGMENTS: { value: string; label: string }[] = [
   { value: "ALL", label: "All" },
-  { value: "SUBMITTED", label: "Submitted" },
-  { value: "SUP_APPROVED", label: "Ready to pay" },
+  { value: "OPEN", label: "Open" },
+  { value: "LOCKED", label: "Locked" },
 ];
 
-/** Every status, for the Status pill. "Not open" is everything past the employee. */
+/** Every status, for the Status pill. */
 const STATUS_FILTER_OPTIONS = [
-  { id: "ALL_EXCLUDING_OPEN", name: "Not open" },
   { id: "OPEN", name: "Open" },
-  { id: "SUBMITTED", name: "Submitted" },
-  { id: "SUP_APPROVED", name: "Supervisor approved" },
-  { id: "PAYROLL_APPROVED", name: "Payroll approved" },
   { id: "LOCKED", name: "Locked" },
 ];
 
@@ -706,6 +695,7 @@ export function TimecardViewer({
   selectedDepartmentId,
   userRole,
   readOnly = false,
+  canLockTimecards = false,
   subtitle,
   headerActions,
 }: TimecardViewerProps) {
@@ -716,7 +706,6 @@ export function TimecardViewer({
   const [payTypeFilter, setPayTypeFilter] = useState("ALL");
   const [activeOnly, setActiveOnly] = useState(true);
   const [isPending, startTransition] = useTransition();
-  const [approvingId, setApprovingId] = useState<string | null>(null);
   const [pendingPayCodes, setPendingPayCodes] = useState<Map<string, string>>(new Map());
   const [pendingReasonCodes, setPendingReasonCodes] = useState<Map<string, string>>(new Map());
   const [pendingPunchEdits, setPendingPunchEdits] = useState<Map<string, Date>>(new Map());
@@ -856,20 +845,7 @@ export function TimecardViewer({
   const [editOriginalDate, setEditOriginalDate] = useState<Date | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
 
-  // Rejection form
-  const [showRejectForm, setShowRejectForm] = useState(false);
-  const [rejectNote, setRejectNote] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
-
-  function handleQuickApprove(emp: EmployeeListItem & { timesheetId: string; status: string }) {
-    setApprovingId(emp.timesheetId);
-    const action = emp.status === "SUP_APPROVED" ? payrollApproveTimesheet : approveTimesheet;
-    action({ timesheetId: emp.timesheetId }).then((result) => {
-      setApprovingId(null);
-      if (!result.success) setActionError((result as { success: false; error: string }).error);
-      else router.refresh();
-    });
-  }
 
   // Meal waiver
   const [waiverError, setWaiverError] = useState<string | null>(null);
@@ -931,8 +907,6 @@ export function TimecardViewer({
     setExpandedDays(new Set());
     setEditingPunchId(null);
     setEditError(null);
-    setShowRejectForm(false);
-    setRejectNote("");
     setWaiverError(null);
     setAddEntryDay(null);
     setShowAddEntryModal(false);
@@ -978,8 +952,8 @@ export function TimecardViewer({
 
     // Status filter (only applies when period-dependent data is present)
     const empStatus = emp.status ?? "OPEN";
-    if (statusFilter === "ALL_EXCLUDING_OPEN" && empStatus === "OPEN") return false;
-    if (statusFilter !== "ALL" && statusFilter !== "ALL_EXCLUDING_OPEN" && empStatus !== statusFilter) return false;
+    if (statusFilter === "LOCKED" && empStatus !== "LOCKED") return false;
+    if (statusFilter === "OPEN" && empStatus === "LOCKED") return false;
 
     // Exception filter (only applies when period-dependent data is present)
     const empExceptions = emp.exceptionTypes ?? [];
@@ -1391,39 +1365,6 @@ export function TimecardViewer({
     });
   }
 
-  function handleApprove() {
-    if (!timecard) return;
-    setActionError(null);
-    startTransition(async () => {
-      const action =
-        timecard.status === "SUP_APPROVED"
-          ? payrollApproveTimesheet
-          : approveTimesheet;
-      const result = await action({ timesheetId: timecard.timesheetId });
-      if (!result.success) setActionError(result.error);
-      else router.refresh();
-    });
-  }
-
-  function handleReject(e: React.FormEvent) {
-    e.preventDefault();
-    if (!timecard) return;
-    setActionError(null);
-    startTransition(async () => {
-      const result = await rejectTimesheet({
-        timesheetId: timecard.timesheetId,
-        note: rejectNote,
-      });
-      if (!result.success) {
-        setActionError(result.error);
-        return;
-      }
-      setShowRejectForm(false);
-      setRejectNote("");
-      router.refresh();
-    });
-  }
-
   function handleToggleWaiver(segmentDate: string) {
     setWaiverError(null);
     setPendingWaiverToggles((prev) => {
@@ -1766,13 +1707,6 @@ export function TimecardViewer({
   const colCount = 9 + (payCodes.length > 0 ? 1 : 0) + (reasonCodes.length > 0 ? 1 : 0) + (showMealColumn ? 1 : 0) + (canDeleteManual ? 1 : 0);
 
 
-  const canApprove =
-    timecard &&
-    (timecard.status === "SUBMITTED" || timecard.status === "SUP_APPROVED");
-  const canReject =
-    timecard &&
-    (timecard.status === "SUBMITTED" || timecard.status === "SUP_APPROVED");
-
   // Overtime the rules engine produced on a rule set that will not pay it until
   // somebody signs for it. Read twice below — once to say so, once to offer the
   // button — and the two must never disagree about whether there is any.
@@ -1810,39 +1744,18 @@ export function TimecardViewer({
         return {
           tone: "info",
           title: "Locked",
-          body: "This pay period is closed. The hours are final and cannot be changed here.",
-        };
-      case "PAYROLL_APPROVED":
-        return {
-          tone: "success",
-          title: "Payroll approved",
-          body: "Approved for pay. Reopen the pay period to change anything on it.",
-        };
-      case "REJECTED":
-        return {
-          tone: "error",
-          title: "Sent back",
-          body: "This timecard was sent back to be corrected, so it can be changed again.",
-        };
-      case "SUP_APPROVED":
-        return {
-          tone: blockers.length > 0 ? "warning" : "info",
-          title: "Ready to pay",
-          body:
-            blockers.length > 0
-              ? `A supervisor approved it, but it has ${blockers.join(" and ")}.`
-              : "A supervisor approved it. It is waiting for payroll to approve it.",
-        };
-      case "SUBMITTED":
-        return {
-          tone: blockers.length > 0 ? "warning" : "info",
-          title: "Submitted",
-          body:
-            blockers.length > 0
-              ? `Waiting for a supervisor to approve it, and it has ${blockers.join(" and ")}.`
-              : "Waiting for a supervisor to approve it.",
+          body: canLockTimecards
+            ? "This timecard is locked and cannot be edited. Unlock it to make a correction; the pay period stays locked."
+            : "This timecard is locked. The hours are final and cannot be changed here.",
         };
       default:
+        if (timecard.payPeriod.status === "LOCKED") {
+          return {
+            tone: "warning",
+            title: "Unlocked for a correction",
+            body: "Its pay period is still locked, so this timecard is left out of the ADP export until it is locked again.",
+          };
+        }
         if (blockers.length > 0) {
           return {
             tone: "warning",
@@ -2121,9 +2034,8 @@ export function TimecardViewer({
                 </div>
               )}
             </div>
-            {/* The three views most visits start from. Status in Filters has
-                every status, and both write the same filter, so a status no
-                view names lights none of them. */}
+            {/* The views most visits start from. Status in Filters writes the
+                same filter, so the two always agree. */}
             <SegmentedControl
               size="sm"
               fullWidth
@@ -2137,7 +2049,7 @@ export function TimecardViewer({
           <div className="ta-scroll min-h-0 flex-1 overflow-y-auto pb-2">
             {filteredEmployees.length === 0 && (
               // Says which of the two empty lists this is. "No employees" after
-              // narrowing to Submitted reads as "this site is clean", and that
+              // narrowing to Open reads as "this site is clean", and that
               // is how a pay period gets closed on somebody's unfinished card.
               <EmptyState
                 icon={<Users className="h-7 w-7" />}
@@ -2181,7 +2093,6 @@ export function TimecardViewer({
                       const isSelected = emp.employeeId === selectedEmployeeId;
                       const empStatus = emp.status ?? "OPEN";
                       const empExceptions = emp.exceptionTypes ?? [];
-                      const canQuickApprove = !readOnly && emp.timesheetId && (empStatus === "SUBMITTED" || empStatus === "SUP_APPROVED");
                       return (
                         <div
                           key={emp.employeeId}
@@ -2224,39 +2135,19 @@ export function TimecardViewer({
                               </span>
                             )}
                           </div>
-                          {(empExceptions.length > 0 || canQuickApprove) && (
+                          {empExceptions.length > 0 && (
                             <div className="flex items-center justify-between gap-2">
-                              {empExceptions.length > 0 ? (
-                                <span
-                                  className="tabular inline-flex h-5 items-center whitespace-nowrap rounded-full px-2"
-                                  style={{
-                                    background: "var(--surface-warning)",
-                                    color: "var(--text-warning)",
-                                    font: "var(--type-caption1)",
-                                    fontWeight: "var(--weight-semibold)",
-                                  }}
-                                >
-                                  {empExceptions.length} {empExceptions.length === 1 ? "exception" : "exceptions"}
-                                </span>
-                              ) : (
-                                <span />
-                              )}
-                              {canQuickApprove && (
-                                <Button
-                                  hierarchy="secondary"
-                                  tone="success"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleQuickApprove(emp as EmployeeListItem & { timesheetId: string; status: string });
-                                  }}
-                                  disabled={approvingId === emp.timesheetId}
-                                  leadingIcon={<Check className="h-3.5 w-3.5" />}
-                                  title={empStatus === "SUP_APPROVED" ? "Approve for payroll" : "Approve as supervisor"}
-                                >
-                                  {approvingId === emp.timesheetId ? "Approving…" : "Approve"}
-                                </Button>
-                              )}
+                              <span
+                                className="tabular inline-flex h-5 items-center whitespace-nowrap rounded-full px-2"
+                                style={{
+                                  background: "var(--surface-warning)",
+                                  color: "var(--text-warning)",
+                                  font: "var(--type-caption1)",
+                                  fontWeight: "var(--weight-semibold)",
+                                }}
+                              >
+                                {empExceptions.length} {empExceptions.length === 1 ? "exception" : "exceptions"}
+                              </span>
                             </div>
                           )}
                         </div>
@@ -2385,74 +2276,18 @@ export function TimecardViewer({
                       {actionError}
                     </p>
                   )}
-                  {showRejectForm ? (
-                    <form onSubmit={handleReject} className="flex items-center gap-2">
-                      <input
-                        value={rejectNote}
-                        onChange={(e) => setRejectNote(e.target.value)}
-                        placeholder="Why is it being sent back?"
-                        required
-                        autoFocus
-                        aria-label="Reason for sending the timecard back"
-                        className="ta-field w-60 rounded-md px-2.5"
-                        style={{
-                          height: 32,
-                          border: "1px solid var(--stroke-default)",
-                          background: "var(--surface-card)",
-                          color: "var(--text-primary)",
-                          font: "var(--type-body2)",
-                          outline: "none",
-                        }}
-                      />
-                      <Button type="submit" size="sm" tone="error" disabled={isPending || !rejectNote.trim()}>
-                        {isPending ? "Sending…" : "Send back"}
-                      </Button>
-                      <Button
-                        hierarchy="link"
-                        size="sm"
-                        onClick={() => {
-                          setShowRejectForm(false);
-                          setRejectNote("");
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                    </form>
-                  ) : (
-                    <>
-                      {canApprove && (
-                        <Button
-                          size="sm"
-                          tone="success"
-                          onClick={handleApprove}
-                          disabled={isPending}
-                          leadingIcon={<Check className="h-3.5 w-3.5" />}
-                        >
-                          {isPending
-                            ? "Saving…"
-                            : timecard.status === "SUP_APPROVED"
-                              ? "Approve for payroll"
-                              : "Approve"}
-                        </Button>
-                      )}
-                      {canReject && (
-                        <Button
-                          hierarchy="secondary"
-                          size="sm"
-                          tone="error"
-                          onClick={() => setShowRejectForm(true)}
-                          disabled={isPending}
-                          title="Send this timecard back to be corrected"
-                        >
-                          Send back
-                        </Button>
-                      )}
-                      {canAuthorizeOt && (
-                        <Button size="sm" tone="warning" onClick={handleAuthorizeOt} disabled={isPending}>
-                          {isPending ? "Saving…" : "Approve overtime"}
-                        </Button>
-                      )}
-                    </>
+                  {canAuthorizeOt && (
+                    <Button size="sm" tone="warning" onClick={handleAuthorizeOt} disabled={isPending}>
+                      {isPending ? "Saving…" : "Approve overtime"}
+                    </Button>
+                  )}
+                  {canLockTimecards && timecard && (
+                    <TimecardLockControl
+                      timesheetId={timecard.timesheetId}
+                      status={timecard.status}
+                      periodStatus={timecard.payPeriod.status}
+                      employeeName={displayName ?? ""}
+                    />
                   )}
                   {canEdit && (
                     <>

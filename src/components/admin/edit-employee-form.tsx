@@ -27,6 +27,7 @@ import {
   Briefcase,
   Camera,
   Building2,
+  Copy,
   CircleDollarSign,
   ContactRound,
   ExternalLink,
@@ -687,6 +688,13 @@ export function EditEmployeeForm({
                     leadingIcon={<Wallet className="h-4 w-4" aria-hidden="true" />}
                   >
                     View Accruals
+                  </LinkButton>
+                  <LinkButton
+                    href={`/admin/employees?copyFrom=${employee.id}`}
+                    hierarchy="secondary"
+                    leadingIcon={<Copy className="h-4 w-4" aria-hidden="true" />}
+                  >
+                    Copy to new employee
                   </LinkButton>
                   <Button
                     type="button"

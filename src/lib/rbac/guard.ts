@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { hasPermission, type Permission } from "./permissions";
 import { hasPermissionByLegacy } from "./permission-resolver";
-import { getEffectiveRole } from "./check-permission";
+import { checkViewAsPermission, getEffectiveRole, validViewAsId, viewAsRank } from "./check-permission";
 import type { Role } from "./roles";
 import { INACTIVE_PERMISSIONS } from "./identity";
 import { randomBytes } from "crypto";
@@ -49,7 +49,7 @@ type ActionResult<T> =
 export function withRBAC<TInput, TOutput>(
   permission: Permission | Permission[],
   handler: (
-    ctx: { employeeId: string; role: Role; tenantId: string | null },
+    ctx: { employeeId: string; role: Role; tenantId: string | null; viewAsRank?: number },
     input: TInput
   ) => Promise<TOutput>
 ) {
@@ -75,13 +75,18 @@ export function withRBAC<TInput, TOutput>(
 
     const realRole = session.user.role ?? "EMPLOYEE";
     const effectiveRole = await getEffectiveRole(session.user);
-    const isPrivilegedAdmin = ["SUPER_ADMIN", "SYSTEM_ADMIN"].includes(realRole);
+    // While viewing as a role, actions get that role's permissions and rank,
+    // so View as shows what the role can do and not only what it can see.
+    const viewAsId = await validViewAsId(session.user);
+    const isPrivilegedAdmin = !viewAsId && ["SUPER_ADMIN", "SYSTEM_ADMIN"].includes(realRole);
 
     if (!isPrivilegedAdmin) {
       const customRoleId = (session.user as { customRoleId?: string | null }).customRoleId ?? null;
-      const allowed = customRoleId
-        ? await Promise.all(perms.map((p) => hasPermissionByLegacy(customRoleId, p))).then((r) => r.some(Boolean))
-        : perms.some((p) => hasPermission(effectiveRole, p));
+      const allowed = viewAsId
+        ? await Promise.all(perms.map((p) => checkViewAsPermission(viewAsId, p))).then((r) => r.some(Boolean))
+        : customRoleId
+          ? await Promise.all(perms.map((p) => hasPermissionByLegacy(customRoleId, p))).then((r) => r.some(Boolean))
+          : perms.some((p) => hasPermission(effectiveRole, p));
       if (!allowed) return { success: false, error: "FORBIDDEN" };
     }
 
@@ -100,6 +105,7 @@ export function withRBAC<TInput, TOutput>(
           employeeId: session.user.employeeId ?? "",
           role: effectiveRole as Role,
           tenantId,
+          viewAsRank: viewAsId ? await viewAsRank(viewAsId) : undefined,
         },
         input
       );

@@ -18,9 +18,7 @@ import { parseUtcDate } from "@/lib/utils/date";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { OverviewPeriodFilter } from "@/components/dashboard/overview-period-filter";
 import { TodayPunchActions } from "@/components/dashboard/today-punch-actions";
-import { SubmitTimesheetButton } from "@/components/time/submit-timesheet-button";
 import {
-  getApprovalQueue,
   getExceptionsFeed,
   getPresence,
   getToday,
@@ -35,13 +33,13 @@ import {
 /**
  * The dashboard, as the portal design lays it out.
  *
- * <p>Seven cards in a two-column grid rather than a row of stat tiles: Today,
- * Pay Period, Needs Your Approval, Exceptions, Team Presence, Coming Up, and
- * the period overview.
+ * <p>Six cards rather than a row of stat tiles: Today, Pay Period, Exceptions
+ * and Team Presence in a two-column grid, then Coming Up and the period
+ * overview across the width.
  *
  * <p>Which cards appear depends on what the viewer can do. An employee with no
- * team sees Today, Pay Period and Coming Up; the grid is `auto-fit`, so those
- * fill the width rather than leaving holes where the team cards would be.
+ * team sees Today, Pay Period and Coming Up; the team cards come as a pair, so
+ * the grid is always full rows rather than a hole where one would be.
  */
 
 const PUNCH_STATE_LABEL: Record<string, string> = {
@@ -134,9 +132,8 @@ export default async function DashboardPage({
     : false;
 
   // ── The cards ─────────────────────────────────────────────────────────────
-  const [today, approvals, exceptionsFeed, presence, upcoming] = await Promise.all([
+  const [today, exceptionsFeed, presence, upcoming] = await Promise.all([
     employeeId ? getToday(employeeId, now) : null,
-    canApproveTeam && tenantId ? getApprovalQueue(employeeId, tenantId, hasPayrollAccess) : null,
     canApproveTeam && tenantId
       ? getExceptionsFeed(employeeId, tenantId, hasPayrollAccess, payPeriod?.id ?? null)
       : null,
@@ -288,15 +285,11 @@ export default async function DashboardPage({
   // Grouped the way the pay period page filters. These count every pay rule's
   // period on these dates, and a pay period page is one rule's period, so the
   // lines do not link: one would open a fraction of the number beside it.
-  const sheetCount = (...st: string[]) =>
-    timesheetStatusCounts.filter((t) => st.includes(t.status)).reduce((n, t) => n + t._count._all, 0);
-  const timesheetTotal = sheetCount("OPEN", "REJECTED", "SUBMITTED", "SUP_APPROVED", "PAYROLL_APPROVED", "LOCKED");
-  const timesheetApproved = sheetCount("PAYROLL_APPROVED", "LOCKED");
+  const timesheetTotal = timesheetStatusCounts.reduce((n, t) => n + t._count._all, 0);
+  const timesheetLocked = timesheetStatusCounts.find((t) => t.status === "LOCKED")?._count._all ?? 0;
   const timesheetRows = [
-    { key: "employee", label: "Not submitted", count: sheetCount("OPEN", "REJECTED"), color: "var(--icon-tertiary)", hint: "Waiting on the employee" },
-    { key: "supervisor", label: "Waiting on supervisor", count: sheetCount("SUBMITTED"), color: "var(--fill-warning)" },
-    { key: "payroll", label: "Waiting on payroll", count: sheetCount("SUP_APPROVED"), color: "var(--fill-accent)" },
-    { key: "approved", label: "Approved", count: timesheetApproved, color: "var(--fill-success)", hint: "Approved by payroll, or locked" },
+    { key: "open", label: "Open", count: timesheetTotal - timesheetLocked, color: "var(--icon-tertiary)", hint: "Editable until the period is locked" },
+    { key: "locked", label: "Locked", count: timesheetLocked, color: "var(--fill-success)" },
   ];
 
   // ── Header line ───────────────────────────────────────────────────────────
@@ -356,7 +349,7 @@ export default async function DashboardPage({
         }
       />
 
-      {/* ── Row 1: your day, and what is waiting on you ── */}
+      {/* ── Row 1: your day, and your team's ── */}
       <div className={CARD_GRID}>
         {today && (
           <Card
@@ -524,73 +517,15 @@ export default async function DashboardPage({
                   <Badge tone={statusTone(currentTimesheet.status)} size="sm">
                     {TIMESHEET_STATUS_LABEL[currentTimesheet.status as TimesheetStatusValue]}
                   </Badge>
-                  <div className="flex items-center gap-2">
-                    <LinkButton
-                      href={`/time/timesheet/${currentTimesheet.id}`}
-                      hierarchy="secondary"
-                      size="sm"
-                    >
-                      Open Timesheet
-                    </LinkButton>
-                    {currentTimesheet.status === "OPEN" && (
-                      <SubmitTimesheetButton timesheetId={currentTimesheet.id} />
-                    )}
-                  </div>
+                  <LinkButton
+                    href={`/time/timesheet/${currentTimesheet.id}`}
+                    hierarchy="secondary"
+                    size="sm"
+                  >
+                    Open Timesheet
+                  </LinkButton>
                 </div>
               )}
-
-              {currentTimesheet?.status === "OPEN" && currentTimesheet.rejectionNote && (
-                <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-error)" }}>
-                  Returned: {currentTimesheet.rejectionNote}
-                </p>
-              )}
-            </div>
-          </Card>
-        )}
-
-        {approvals && (
-          <Card
-            title="Needs Your Approval"
-            subtitle={`${approvals.total} timesheet${approvals.total === 1 ? "" : "s"} · ${approvals.leaveCount} leave request${approvals.leaveCount === 1 ? "" : "s"}`}
-          >
-            <div className="flex flex-col">
-              {approvals.rows.length === 0 ? (
-                <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-tertiary)" }}>
-                  Nothing waiting on you.
-                </p>
-              ) : (
-                approvals.rows.map((r) => (
-                  <div
-                    key={r.id}
-                    className="flex items-center gap-2.5 py-2"
-                    style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-                  >
-                    <span className="min-w-0 flex-1 truncate" style={{ font: "var(--type-body1)" }}>
-                      {r.name}
-                    </span>
-                    <span
-                      className="tabular"
-                      style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-                    >
-                      {r.hours} h
-                    </span>
-                    <span
-                      className="w-24 text-right"
-                      style={{
-                        font: "var(--type-body2)",
-                        color: r.tone ? "var(--text-warning)" : "var(--text-tertiary)",
-                      }}
-                    >
-                      {r.kind}
-                    </span>
-                  </div>
-                ))
-              )}
-              <div className="pt-2.5">
-                <LinkButton href="/supervisor/timesheets" hierarchy="secondary" size="sm">
-                  Review All
-                </LinkButton>
-              </div>
             </div>
           </Card>
         )}
@@ -632,137 +567,133 @@ export default async function DashboardPage({
             </div>
           </Card>
         )}
-      </div>
 
-      {/* ── Row 2: the floor right now, and what is coming ── */}
-      {(presence || upcoming.length > 0) && (
-        <div className={CARD_GRID}>
-          {presence && (
-            <Card
-              title="Team Presence"
-              subtitle={`Live · ${format(now, "MMM d, h:mm a")}${me?.site?.name ? ` · ${me.site.name}` : ""}`}
-            >
-              <div className="flex flex-col gap-3">
-                <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(126px,1fr))]">
-                  {[
-                    { label: "On the clock", value: presence.onClock, bg: "var(--surface-success)", color: "var(--text-success)" },
-                    { label: "On meal", value: presence.onMeal, bg: "var(--surface-warning)", color: "var(--text-warning)" },
-                    { label: "Not in", value: presence.notIn, bg: "var(--surface-card)", color: "var(--text-primary)" },
-                    { label: "On leave", value: presence.onLeave, bg: "var(--surface-info)", color: "var(--text-accent)" },
-                  ].map((p) => (
-                    <div
-                      key={p.label}
-                      className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5"
-                      style={{ border: "1px solid var(--stroke-divider)", background: p.bg }}
-                    >
-                      <span className="wms-overline">{p.label}</span>
-                      <span
-                        className="tabular"
-                        style={{
-                          font: "var(--weight-semibold) 22px/28px var(--font-sans)",
-                          color: p.color,
-                        }}
-                      >
-                        {p.value}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex flex-col">
-                  {presence.byDept.map((d) => {
-                    const inPct = d.total ? (d.inCount / d.total) * 100 : 0;
-                    const mealPct = d.total ? (d.mealCount / d.total) * 100 : 0;
-                    return (
-                      <div
-                        key={d.dept}
-                        className="flex items-center gap-3 py-2"
-                        style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-                      >
-                        <span
-                          className="w-[82px] flex-none truncate"
-                          style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)" }}
-                          title={d.dept}
-                        >
-                          {d.dept}
-                        </span>
-                        <div
-                          className="flex h-2 flex-1 overflow-hidden rounded-full"
-                          style={{ background: "var(--ta-track)" }}
-                        >
-                          <div style={{ width: `${inPct}%`, background: "var(--fill-success)" }} />
-                          <div style={{ width: `${mealPct}%`, background: "var(--fill-warning)" }} />
-                        </div>
-                        <span
-                          className="tabular flex-none whitespace-nowrap text-right"
-                          style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-                        >
-                          {d.inCount} / {d.total} in
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div
-                  className="flex flex-wrap items-center gap-4"
-                  style={{ font: "var(--type-caption1)", color: "var(--text-secondary)" }}
-                >
-                  {[
-                    { label: "On the clock", bg: "var(--fill-success)" },
-                    { label: "On meal", bg: "var(--fill-warning)" },
-                    { label: "Not in", bg: "var(--ta-track)" },
-                  ].map((l) => (
-                    <span key={l.label} className="inline-flex items-center gap-1.5">
-                      <span style={{ width: 10, height: 8, borderRadius: 2, background: l.bg }} />
-                      {l.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {upcoming.length > 0 && (
-            <Card title="Coming Up" subtitle="Next 30 days">
-              <div className="flex flex-col">
-                {upcoming.map((u) => (
+        {presence && (
+          <Card
+            title="Team Presence"
+            subtitle={`Live · ${format(now, "MMM d, h:mm a")}${me?.site?.name ? ` · ${me.site.name}` : ""}`}
+          >
+            <div className="flex flex-col gap-3">
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(126px,1fr))]">
+                {[
+                  { label: "On the clock", value: presence.onClock, bg: "var(--surface-success)", color: "var(--text-success)" },
+                  { label: "On meal", value: presence.onMeal, bg: "var(--surface-warning)", color: "var(--text-warning)" },
+                  { label: "Not in", value: presence.notIn, bg: "var(--surface-card)", color: "var(--text-primary)" },
+                  { label: "On leave", value: presence.onLeave, bg: "var(--surface-info)", color: "var(--text-accent)" },
+                ].map((p) => (
                   <div
-                    key={u.key}
-                    className="flex items-center gap-3 py-2"
-                    style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+                    key={p.label}
+                    className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5"
+                    style={{ border: "1px solid var(--stroke-divider)", background: p.bg }}
                   >
+                    <span className="wms-overline">{p.label}</span>
                     <span
-                      className="tabular w-[66px] flex-none"
-                      style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                      className="tabular"
+                      style={{
+                        font: "var(--weight-semibold) 22px/28px var(--font-sans)",
+                        color: p.color,
+                      }}
                     >
-                      {format(u.date, "MMM d")}
+                      {p.value}
                     </span>
-                    <span
-                      className="min-w-0 flex-1"
-                      style={{ font: "var(--type-body1)", textWrap: "pretty" }}
-                    >
-                      {u.what}
-                    </span>
-                    <Badge tone={u.tone} size="sm">
-                      {u.kind}
-                    </Badge>
                   </div>
                 ))}
-                <div className="flex gap-2 pt-2.5">
-                  <LinkButton href="/leave" hierarchy="secondary" size="sm">
-                    My Leave
-                  </LinkButton>
-                  {canApproveTeam && (
-                    <LinkButton href="/supervisor/leave" hierarchy="tertiary" size="sm">
-                      Team Calendar
-                    </LinkButton>
-                  )}
-                </div>
               </div>
-            </Card>
-          )}
-        </div>
+
+              <div className="flex flex-col">
+                {presence.byDept.map((d) => {
+                  const inPct = d.total ? (d.inCount / d.total) * 100 : 0;
+                  const mealPct = d.total ? (d.mealCount / d.total) * 100 : 0;
+                  return (
+                    <div
+                      key={d.dept}
+                      className="flex items-center gap-3 py-2"
+                      style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+                    >
+                      <span
+                        className="w-[82px] flex-none truncate"
+                        style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)" }}
+                        title={d.dept}
+                      >
+                        {d.dept}
+                      </span>
+                      <div
+                        className="flex h-2 flex-1 overflow-hidden rounded-full"
+                        style={{ background: "var(--ta-track)" }}
+                      >
+                        <div style={{ width: `${inPct}%`, background: "var(--fill-success)" }} />
+                        <div style={{ width: `${mealPct}%`, background: "var(--fill-warning)" }} />
+                      </div>
+                      <span
+                        className="tabular flex-none whitespace-nowrap text-right"
+                        style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                      >
+                        {d.inCount} / {d.total} in
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div
+                className="flex flex-wrap items-center gap-4"
+                style={{ font: "var(--type-caption1)", color: "var(--text-secondary)" }}
+              >
+                {[
+                  { label: "On the clock", bg: "var(--fill-success)" },
+                  { label: "On meal", bg: "var(--fill-warning)" },
+                  { label: "Not in", bg: "var(--ta-track)" },
+                ].map((l) => (
+                  <span key={l.label} className="inline-flex items-center gap-1.5">
+                    <span style={{ width: 10, height: 8, borderRadius: 2, background: l.bg }} />
+                    {l.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </Card>
+        )}
+      </div>
+
+      {/* ── Row 2: what is coming ── */}
+      {upcoming.length > 0 && (
+        <Card title="Coming Up" subtitle="Next 30 days">
+          <div className="flex flex-col">
+            {upcoming.map((u) => (
+              <div
+                key={u.key}
+                className="flex items-center gap-3 py-2"
+                style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+              >
+                <span
+                  className="tabular w-[66px] flex-none"
+                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                >
+                  {format(u.date, "MMM d")}
+                </span>
+                <span
+                  className="min-w-0 flex-1"
+                  style={{ font: "var(--type-body1)", textWrap: "pretty" }}
+                >
+                  {u.what}
+                </span>
+                <Badge tone={u.tone} size="sm">
+                  {u.kind}
+                </Badge>
+              </div>
+            ))}
+            <div className="flex gap-2 pt-2.5">
+              <LinkButton href="/leave" hierarchy="secondary" size="sm">
+                My Leave
+              </LinkButton>
+              {canApproveTeam && (
+                <LinkButton href="/supervisor/leave" hierarchy="tertiary" size="sm">
+                  Team Calendar
+                </LinkButton>
+              )}
+            </div>
+          </div>
+        </Card>
       )}
 
       {/* ── Pay period overview ── */}
@@ -810,11 +741,11 @@ export default async function DashboardPage({
             <OverviewColumn
               title="Timesheets"
               link={{ href: "/payroll/pay-periods", label: "Open pay periods" }}
-              figure={timesheetApproved}
-              caption={timesheetTotal > 0 ? `of ${timesheetTotal.toLocaleString()} approved` : "timesheets"}
-              // Not submitted is the empty track, so the bar fills only as
-              // timesheets move along. Drawn grey, 728 of 728 read as done.
-              bar={timesheetTotal > 0 ? timesheetRows.filter((r) => r.key !== "employee") : undefined}
+              figure={timesheetLocked}
+              caption={timesheetTotal > 0 ? `of ${timesheetTotal.toLocaleString()} locked` : "timesheets"}
+              // Open is the empty track, so the bar fills only as periods are
+              // locked. Drawn grey, 728 of 728 read as done.
+              bar={timesheetTotal > 0 ? timesheetRows.filter((r) => r.key !== "open") : undefined}
               barTotal={timesheetTotal}
               empty="No timesheets for this period yet"
               rows={timesheetTotal > 0 ? timesheetRows : []}

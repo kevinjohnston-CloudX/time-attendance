@@ -38,6 +38,7 @@ export const LEGACY_MAP: Record<string, PermissionTuple> = {
   TIMECARD_EDIT_ANY:      { resource: "timecard",  action: "write",   scope: "all" },
   // Payroll & admin
   PAY_PERIOD_MANAGE:      { resource: "payroll",   action: "write",   scope: "all" },
+  PAYROLL_RUN:            { resource: "payroll",   action: "execute", scope: "all" },
   EMPLOYEE_MANAGE:        { resource: "employee",  action: "write",   scope: "all" },
   RULES_MANAGE:           { resource: "rules",     action: "write",   scope: "all" },
   AUDIT_VIEW:             { resource: "audit",     action: "read",    scope: "all" },

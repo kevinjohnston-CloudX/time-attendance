@@ -1,6 +1,4 @@
 import { db } from "@/lib/db";
-import { TimesheetStatus } from "@prisma/client";
-import { TIMESHEET_STATUS_LABEL, type TimesheetStatusValue } from "@/lib/state-machines/labels";
 
 export interface TimesheetIssue {
   timesheetId: string;
@@ -9,22 +7,15 @@ export interface TimesheetIssue {
 }
 
 export interface ValidationResult {
-  isReady: boolean;
   totalTimesheets: number;
-  approvedCount: number;
-  pendingCount: number;
   unresolvedExceptions: number;
   issues: TimesheetIssue[];
 }
 
-const APPROVED_STATUSES = new Set<TimesheetStatus>([
-  TimesheetStatus.PAYROLL_APPROVED,
-  TimesheetStatus.LOCKED,
-]);
-
 /**
- * Check whether all timesheets in a pay period are ready for locking.
- * Returns a structured ValidationResult so the UI can show per-employee issues.
+ * What is still open on a pay period's timecards. There are no approval steps,
+ * so the only thing to report is unresolved exceptions; they are shown before
+ * locking, not required to be cleared.
  */
 export async function validatePayPeriod(
   payPeriodId: string
@@ -38,39 +29,20 @@ export async function validatePayPeriod(
   });
 
   const issues: TimesheetIssue[] = [];
-  let approvedCount = 0;
-  let pendingCount = 0;
   let unresolvedExceptions = 0;
 
   for (const ts of timesheets) {
-    const name = ts.employee.user?.name ?? `Employee ${ts.employeeId}`;
-
-    if (!APPROVED_STATUSES.has(ts.status)) {
-      issues.push({
-        timesheetId: ts.id,
-        employeeName: name,
-        issue: `${TIMESHEET_STATUS_LABEL[ts.status as TimesheetStatusValue] ?? ts.status}, not yet approved by payroll`,
-      });
-      pendingCount++;
-    } else {
-      approvedCount++;
-    }
-
-    if (ts.exceptions.length > 0) {
-      unresolvedExceptions += ts.exceptions.length;
-      issues.push({
-        timesheetId: ts.id,
-        employeeName: name,
-        issue: `${ts.exceptions.length} unresolved exception(s)`,
-      });
-    }
+    if (ts.exceptions.length === 0) continue;
+    unresolvedExceptions += ts.exceptions.length;
+    issues.push({
+      timesheetId: ts.id,
+      employeeName: ts.employee.user?.name ?? `Employee ${ts.employeeId}`,
+      issue: `${ts.exceptions.length} unresolved exception(s)`,
+    });
   }
 
   return {
-    isReady: issues.length === 0,
     totalTimesheets: timesheets.length,
-    approvedCount,
-    pendingCount,
     unresolvedExceptions,
     issues,
   };

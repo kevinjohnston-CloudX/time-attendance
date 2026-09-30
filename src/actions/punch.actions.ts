@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
+import { TIMECARD_EDITORS, TIMECARD_EDITORS_COMPANY } from "@/lib/rbac/permissions";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
@@ -185,13 +186,13 @@ export const approveMissedPunch = withRBAC(
 // ─── deletePunch ──────────────────────────────────────────────────────────────
 
 export const deletePunch = withRBAC(
-  "PUNCH_EDIT_TEAM",
+  TIMECARD_EDITORS,
   async (ctx, input: { punchId: string; reason?: string }): Promise<void> => {
     const { employeeId: actorId, tenantId } = ctx;
     const { punchId, reason } = input;
 
     // Only a punch of someone the caller manages, and never their own.
-    const scoped = await punchInScope(ctx, punchId, "PUNCH_EDIT_ANY");
+    const scoped = await punchInScope(ctx, punchId, TIMECARD_EDITORS_COMPANY);
     if (scoped.employeeId === actorId) throw new Error("You can't change your own punches");
     const original = await db.punch.findUniqueOrThrow({
       where: { id: scoped.id },
@@ -256,13 +257,13 @@ export const deletePunch = withRBAC(
 // ─── correctPunch ─────────────────────────────────────────────────────────────
 
 export const correctPunch = withRBAC(
-  "PUNCH_EDIT_TEAM",
+  TIMECARD_EDITORS,
   async (ctx, input: CorrectPunchInput): Promise<Punch> => {
     const { employeeId: supervisorId } = ctx;
     const { originalPunchId, newPunchTime: newPunchTimeStr, reason } =
       correctPunchSchema.parse(input);
     // Only a punch of someone the caller manages, and never their own.
-    const scoped = await punchInScope(ctx, originalPunchId, "PUNCH_EDIT_ANY");
+    const scoped = await punchInScope(ctx, originalPunchId, TIMECARD_EDITORS_COMPANY);
     if (scoped.employeeId === supervisorId) throw new Error("You can't change your own punches");
     const newPunchTime = new Date(newPunchTimeStr);
 

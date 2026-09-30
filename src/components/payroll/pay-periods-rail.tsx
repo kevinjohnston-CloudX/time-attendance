@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
-import { ArrowUpRight, Calendar, Check, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ArrowUpRight, Calendar, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { Badge, SegmentedControl, type BadgeTone } from "@/components/ui";
 import { PpSelect } from "@/components/payroll/pp-select";
@@ -35,11 +35,10 @@ export type RailPeriod = {
   groupName: string;
   freqLabel: string | null;
   total: number;
-  approved: number;
 };
 
 export type RailScope = "all" | "current" | "ytd";
-export type RailStatus = "all" | "open" | "ready" | "locked";
+export type RailStatus = "all" | "open" | "locked";
 
 const STATUS_LABEL: Record<RailPeriod["status"], string> = { OPEN: "Open", READY: "Ready for Lock", LOCKED: "Locked" };
 const STATUS_TONE: Record<RailPeriod["status"], BadgeTone> = { OPEN: "info", READY: "warning", LOCKED: "success" };
@@ -345,7 +344,6 @@ export function PayPeriodsRail({
             options={[
               { value: "", label: "All statuses" },
               { value: "open", label: "Open" },
-              { value: "ready", label: "Ready for Lock" },
               { value: "locked", label: "Locked" },
             ]}
           />
@@ -385,7 +383,6 @@ export function PayPeriodsRail({
             </div>
             {g.rows.map((p) => {
               const on = p.id === selectedId;
-              const pct = p.total ? (p.approved / p.total) * 100 : 0;
               return (
                 <Link
                   key={p.id}
@@ -413,22 +410,15 @@ export function PayPeriodsRail({
                     </Badge>
                   </span>
                   <span className="flex items-center gap-2.5">
-                    {p.total > 0 && (
-                      <span className="block h-1 flex-1 overflow-hidden rounded-full" style={{ background: "var(--ta-track)" }} role="presentation">
-                        <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: "var(--fill-success)" }} />
-                      </span>
-                    )}
-                    <span className="tabular whitespace-nowrap" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-                      {p.total === 0 ? "No timesheets" : `${n(p.approved)} of ${n(p.total)} approved`}
+                    <span className="tabular flex-1 whitespace-nowrap" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                      {p.total === 0 ? "No timesheets" : `${n(p.total)} ${p.total === 1 ? "timesheet" : "timesheets"}`}
                     </span>
                     {/* Which row is today's, once the list holds more than today's. */}
                     {scope !== "current" && isCurrent(p) && (
                       <span className="whitespace-nowrap" style={{ font: "var(--weight-semibold) 12px/16px var(--font-sans)", color: "var(--text-accent)" }}>
                         Current
                       </span>
-                    )}
-                    {p.approved === p.total && p.total > 0 && <Check className="h-3.5 w-3.5 flex-none" aria-hidden style={{ color: "var(--icon-success)" }} />}
-                  </span>
+                    )}                  </span>
                 </Link>
               );
             })}

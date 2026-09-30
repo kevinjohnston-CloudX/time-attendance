@@ -4,14 +4,16 @@ type ValidTransition = { valid: true; newStatus: PayPeriodStatus };
 type InvalidTransition = { valid: false; error: string };
 export type PayPeriodTransitionResult = ValidTransition | InvalidTransition;
 
-type PayPeriodEvent = "MARK_READY" | "LOCK" | "REOPEN";
+type PayPeriodEvent = "LOCK" | "REOPEN";
 
+// A period is Open until it is locked. READY is no longer entered; periods
+// left in it by the old approval flow can still be locked or reopened.
 const TRANSITIONS: Record<
   PayPeriodStatus,
   Partial<Record<PayPeriodEvent, PayPeriodStatus>>
 > = {
   OPEN: {
-    MARK_READY: PayPeriodStatus.READY,
+    LOCK: PayPeriodStatus.LOCKED,
   },
   READY: {
     LOCK: PayPeriodStatus.LOCKED,
@@ -35,4 +37,3 @@ export function validatePayPeriodTransition(
   }
   return { valid: true, newStatus };
 }
-

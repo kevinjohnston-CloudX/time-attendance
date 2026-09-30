@@ -85,8 +85,8 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
     summary: "Controls timesheet submission and the approval workflow.",
     cells: {
       "write:own":    "Submit your own timesheet for approval at the end of a pay period.",
-      "execute:team": "Approve or reject timesheets submitted by your direct reports.",
-      "execute:all":  "Approve or reject timesheets for any employee across all teams.",
+      "execute:team": "Resolve exceptions and authorize overtime for your direct reports.",
+      "execute:all":  "Resolve exceptions and authorize overtime for any employee across all teams.",
     },
   },
   timecard: {
@@ -120,7 +120,8 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
   payroll: {
     summary: "Controls pay period management and payroll operations.",
     cells: {
-      "write:all": "Open and close pay periods, manage pay codes and payroll settings. Timecard access is controlled separately under Timecards.",
+      "write:all": "View pay periods, manage pay codes and payroll settings, and make payroll changes on open timecards. Timecard access is controlled separately under Timecards.",
+      "execute:all": "Run payroll: lock and unlock pay periods, unlock and re-lock a single timecard, and export or push to ADP.",
     },
   },
   employee: {

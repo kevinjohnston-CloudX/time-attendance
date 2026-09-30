@@ -6,7 +6,9 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { sendPasswordInviteEmail } from "@/lib/email/send-invite";
-import { employeeRank, liveIdentity } from "@/lib/rbac/identity";
+import { employeeRank } from "@/lib/rbac/identity";
+import { currentIdentity } from "@/lib/rbac/current";
+import { getEffectiveRole } from "@/lib/rbac/check-permission";
 
 const LOGIN_MANAGERS = ["SYSTEM_ADMIN", "HR_ADMIN", "PAYROLL_ADMIN", "SUPER_ADMIN"];
 
@@ -21,8 +23,10 @@ const LOGIN_MANAGERS = ["SYSTEM_ADMIN", "HR_ADMIN", "PAYROLL_ADMIN", "SUPER_ADMI
 async function manageableLogin(employeeId: string) {
   const session = await auth();
   if (!session?.user?.id) return { error: "Not authenticated" } as const;
-  const caller = await liveIdentity(session.user.id);
-  if (!caller || !caller.isActive || !LOGIN_MANAGERS.includes(caller.role)) {
+  // Rank and role as View as sets them, so viewing as a junior role cannot reset logins it could not.
+  const caller = await currentIdentity();
+  const viewedRole = await getEffectiveRole(session.user);
+  if (!caller || !caller.isActive || !LOGIN_MANAGERS.includes(caller.role) || !LOGIN_MANAGERS.includes(viewedRole)) {
     return { error: "Insufficient permissions" } as const;
   }
   const target = await db.employee.findFirst({

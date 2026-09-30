@@ -127,7 +127,14 @@ export async function requirePermission(permission: Permission): Promise<{
   };
 }
 
-async function checkViewAsPermission(viewAsId: string, permission: Permission): Promise<boolean> {
+/** The rank of the role being viewed as: a built-in role's, or the custom role's. */
+export async function viewAsRank(viewAsId: string): Promise<number> {
+  if (LEGACY_ROLE_STRINGS.has(viewAsId)) return isValidRole(viewAsId) ? ROLE_RANK[viewAsId] : 0;
+  const role = await db.customRole.findUnique({ where: { id: viewAsId }, select: { rank: true } });
+  return role?.rank ?? 0;
+}
+
+export async function checkViewAsPermission(viewAsId: string, permission: Permission): Promise<boolean> {
   // Old cookie format — use static map
   if (LEGACY_ROLE_STRINGS.has(viewAsId)) return hasPermission(viewAsId, permission);
   // New format — use real DB permissions

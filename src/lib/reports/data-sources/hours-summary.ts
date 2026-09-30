@@ -43,9 +43,6 @@ export const hoursSummarySource: DataSourceDefinition = {
     { id: "status", label: "Timesheet status", type: "string", operators: ["eq", "in"],
       options: [
         { value: "OPEN", label: "Open" },
-        { value: "SUBMITTED", label: "Submitted" },
-        { value: "SUP_APPROVED", label: "Supervisor Approved" },
-        { value: "PAYROLL_APPROVED", label: "Payroll Approved" },
         { value: "LOCKED", label: "Locked" },
       ] },
   ],

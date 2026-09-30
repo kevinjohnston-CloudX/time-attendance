@@ -127,70 +127,6 @@ export async function getToday(employeeId: string, now: Date): Promise<TodayCard
 
 // ─── Needs your approval ──────────────────────────────────────────────────────
 
-export interface ApprovalRow {
-  id: string;
-  name: string;
-  hours: string;
-  kind: string;
-  tone: BadgeTone | null;
-}
-
-/**
- * The approval queue, summarised.
- *
- * <p>Scoped exactly like the Team Timesheets page: a supervisor sees their own
- * team's submitted sheets, payroll sees everything already supervisor-approved.
- * A dashboard that counted differently from the page it links to would be worse
- * than no count.
- */
-export async function getApprovalQueue(
-  employeeId: string | null,
-  tenantId: string,
-  isPayroll: boolean,
-  limit = 5,
-): Promise<{ rows: ApprovalRow[]; total: number; leaveCount: number }> {
-  const where = isPayroll
-    ? { status: "SUP_APPROVED" as const, employee: { tenantId } }
-    : { status: "SUBMITTED" as const, employee: { tenantId, supervisorId: employeeId ?? "" } };
-
-  const [sheets, total, leaveCount] = await Promise.all([
-    db.timesheet.findMany({
-      where,
-      take: limit,
-      orderBy: { updatedAt: "asc" },
-      select: {
-        id: true,
-        employee: { select: { user: { select: { name: true } } } },
-        overtimeBuckets: { select: { bucket: true, totalMinutes: true } },
-        exceptions: { where: { resolvedAt: null }, select: { id: true } },
-      },
-    }),
-    db.timesheet.count({ where }),
-    db.leaveRequest.count({
-      where: {
-        status: "PENDING",
-        employee: isPayroll ? { tenantId } : { tenantId, supervisorId: employeeId ?? "" },
-      },
-    }),
-  ]);
-
-  return {
-    total,
-    leaveCount,
-    rows: sheets.map((ts) => {
-      const mins = ts.overtimeBuckets.reduce((n, b) => n + b.totalMinutes, 0);
-      const open = ts.exceptions.length;
-      return {
-        id: ts.id,
-        name: ts.employee.user?.name ?? "Unknown",
-        hours: (mins / 60).toFixed(2),
-        kind: open > 0 ? `${open} exception${open === 1 ? "" : "s"}` : "Clean",
-        tone: open > 0 ? ("warning" as BadgeTone) : null,
-      };
-    }),
-  };
-}
-
 // ─── Exceptions feed ──────────────────────────────────────────────────────────
 
 export interface ExceptionRow {
@@ -493,14 +429,7 @@ export async function getWaitingOnYou({
     ? { tenantId }
     : { tenantId, supervisorId: employeeId ?? "" };
 
-  const [toApprove, leaveToApprove, openExceptions, myRejected, myDrafts] = await Promise.all([
-    canApproveTeam
-      ? db.timesheet.count({
-          where: isPayroll
-            ? { status: "SUP_APPROVED", employee: { tenantId } }
-            : { status: "SUBMITTED", employee: teamScope },
-        })
-      : 0,
+  const [leaveToApprove, openExceptions, myDrafts] = await Promise.all([
     canApproveTeam
       ? db.leaveRequest.count({ where: { status: "PENDING", employee: teamScope } })
       : 0,
@@ -509,24 +438,16 @@ export async function getWaitingOnYou({
           where: { resolvedAt: null, timesheet: { employee: teamScope } },
         })
       : 0,
-    // Yours to act on whether or not you have a team: a timesheet sent back
-    // needs you to fix it, and a draft leave request was never submitted.
-    // A rejection sends the sheet back to OPEN and stamps rejectedAt, so
-    // "sent back to you" is those two together. There is no REJECTED status
-    // to count: the sheet is open again precisely so it can be fixed.
-    employeeId
-      ? db.timesheet.count({ where: { employeeId, status: "OPEN", rejectedAt: { not: null } } })
-      : 0,
+    // Yours to act on whether or not you have a team: a draft leave request
+    // was never submitted.
     employeeId
       ? db.leaveRequest.count({ where: { employeeId, status: "DRAFT" } })
       : 0,
   ]);
 
   return [
-    { label: "Timesheets to approve", count: toApprove,       href: "/supervisor/timesheets" },
     { label: "Leave to approve",      count: leaveToApprove,  href: "/supervisor/leave" },
     { label: "Open exceptions",       count: openExceptions,  href: "/supervisor/exceptions" },
-    { label: "Timesheets sent back",  count: myRejected,      href: "/time/timesheet" },
     { label: "Unsent leave requests", count: myDrafts,        href: "/leave" },
   ].filter((i) => i.count > 0);
 }

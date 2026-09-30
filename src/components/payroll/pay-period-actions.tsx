@@ -2,28 +2,27 @@
 
 import { useState, useTransition } from "react";
 import { LockOpen } from "lucide-react";
-import { markPayPeriodReady, lockPayPeriod, reopenPayPeriod, submitOpenTimesheets } from "@/actions/pay-period.actions";
+import { lockPayPeriod, reopenPayPeriod } from "@/actions/pay-period.actions";
 import { pushPayrollToAdp } from "@/actions/adp.actions";
 import { Button, ConfirmDialog, Textarea, Toast, useToast } from "@/components/ui";
 import { PpDialog } from "@/components/payroll/pp-dialog";
 
 /**
  * The close controls in the pay period's header, with the handoff's windows:
- * a confirm before Approve Open Timesheets, Lock and Push to ADP, and a
- * reason window before Reopen and Unlock.
+ * a confirm before Lock and Push to ADP, and a reason window before Reopen
+ * and Unlock.
  *
  * <p>Which buttons exist is the period's state machine, not a preference:
- * OPEN offers Mark Ready (and, once the period has ended, Approve Open
- * Timesheets), READY offers Reopen and Lock, LOCKED offers Unlock and, once
- * ADP is configured, the payroll push. Rendering the whole set and disabling
- * the wrong ones would invite someone to click Lock on a period still taking
- * punches.
+ * OPEN offers Lock, a legacy READY period offers Reopen and Lock, LOCKED
+ * offers Unlock and, once ADP is configured, the payroll push. Unresolved
+ * exceptions and a period that has not ended yet are warnings in the Lock
+ * confirm, never a reason to refuse it.
  *
  * <p>Counts print under the buttons rather than in a toast. "412 pushed, 3
  * skipped" is a number somebody has to reconcile against ADP, and a message
  * that disappears after three seconds is a number they have to ask for again.
- * A plain change of state (marked ready, locked, reopened) is a toast, since
- * the badge beside the title already shows it.
+ * A plain change of state (locked, unlocked) is a toast, since the badge
+ * beside the title already shows it.
  */
 
 interface PayrollRun {
@@ -39,27 +38,23 @@ interface Props {
   /** "Sep 1 to Sep 30, 2026", for the windows and the toasts. */
   label: string;
   status: "OPEN" | "READY" | "LOCKED";
-  isReady: boolean;
   isPast: boolean;
+  /** Lock, unlock and the ADP push are PAYROLL_RUN; without it only `leading` is drawn. */
+  canRunPayroll: boolean;
+  /** Unresolved exceptions in the period, warned about before locking. */
+  exceptions?: number;
   adpConfigured?: boolean;
   payrollRun?: PayrollRun | null;
   /** Buttons drawn first in the same row (Export to ADP, Reports). */
   leading?: React.ReactNode;
 }
 
-type Confirm = "approve" | "lock" | "push";
+type Confirm = "lock" | "push";
 
 const CONFIRM: Record<Confirm, { title: string; text: string; label: string; pending: string; tone: "info" | "warning" }> = {
-  approve: {
-    title: "Approve open timesheets?",
-    text: "Every open and submitted timesheet in this period moves to Supervisor Approved.",
-    label: "Approve",
-    pending: "Approving…",
-    tone: "info",
-  },
   lock: {
     title: "Lock pay period?",
-    text: "Every approved timesheet is locked, and the period's accruals and approved leave are posted.",
+    text: "Every timesheet in this period is locked, and the period's accruals and approved leave are posted.",
     label: "Lock Pay Period",
     pending: "Locking…",
     tone: "warning",
@@ -83,37 +78,22 @@ function Note({ tone, children }: { tone: "error" | "success" | "muted"; childre
   );
 }
 
-export function PayPeriodActions({ payPeriodId, label, status, isReady, isPast, adpConfigured, payrollRun, leading }: Props) {
+export function PayPeriodActions({ payPeriodId, label, status, isPast, canRunPayroll, exceptions = 0, adpConfigured, payrollRun, leading }: Props) {
   const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [reopen, setReopen] = useState(false);
   const [reason, setReason] = useState("");
   const [reopenError, setReopenError] = useState<string | null>(null);
-  const [submitResult, setSubmitResult] = useState<{ submitted: number } | null>(null);
   const [pushResult, setPushResult] = useState<{ pushed: number; skipped: number; errors: string[] } | null>(null);
   const { message, flash } = useToast();
-
-  function handleMarkReady() {
-    setError(null);
-    startTransition(async () => {
-      const result = await markPayPeriodReady({ payPeriodId });
-      if (!result.success) setError(result.error);
-      else flash(`${label} marked ready`);
-    });
-  }
 
   function handleConfirm() {
     if (!confirm) return;
     const kind = confirm;
     setConfirmError(null);
     startTransition(async () => {
-      if (kind === "approve") {
-        const result = await submitOpenTimesheets({ payPeriodId });
-        if (!result.success) return setConfirmError(result.error);
-        setSubmitResult(result.data);
-      } else if (kind === "lock") {
+      if (kind === "lock") {
         const result = await lockPayPeriod({ payPeriodId });
         if (!result.success) return setConfirmError(result.error);
         flash(`${label} locked`);
@@ -157,33 +137,17 @@ export function PayPeriodActions({ payPeriodId, label, status, isReady, isPast, 
     <>
       <div className="flex flex-wrap items-center justify-end gap-2">
         {leading}
-        {status === "OPEN" && isPast && (
-          <Button hierarchy="secondary" onClick={() => ask("approve")} disabled={isPending}>
-            Approve Open Timesheets
+        {canRunPayroll && status === "READY" && (
+          <Button hierarchy="secondary" onClick={askReopen} disabled={isPending}>
+            Reopen
           </Button>
         )}
-        {status === "OPEN" && (
-          /* Amber, not accent: marking a period ready is the step that stops
-             supervisors editing it. Disabled until the close checklist is
-             clear, with the reason in the tooltip, since a button that is
-             simply grey is how someone concludes the screen is broken. */
-          <span title={isReady ? undefined : "Clear every blocking item below before marking the period ready"}>
-            <Button tone="warning" onClick={handleMarkReady} disabled={isPending || !isReady}>
-              {isPending && !confirm ? "Saving…" : "Mark Ready"}
-            </Button>
-          </span>
+        {canRunPayroll && (status === "OPEN" || status === "READY") && (
+          <Button tone="success" onClick={() => ask("lock")} disabled={isPending}>
+            Lock Pay Period
+          </Button>
         )}
-        {status === "READY" && (
-          <>
-            <Button hierarchy="secondary" onClick={askReopen} disabled={isPending}>
-              Reopen
-            </Button>
-            <Button tone="success" onClick={() => ask("lock")} disabled={isPending}>
-              Lock Pay Period
-            </Button>
-          </>
-        )}
-        {status === "LOCKED" && (
+        {canRunPayroll && status === "LOCKED" && (
           <>
             <Button hierarchy="secondary" onClick={askReopen} disabled={isPending}>
               Unlock
@@ -197,14 +161,6 @@ export function PayPeriodActions({ payPeriodId, label, status, isReady, isPast, 
         )}
       </div>
 
-      {error && <Note tone="error">{error}</Note>}
-      {submitResult && (
-        <Note tone="success">
-          {submitResult.submitted === 0
-            ? "No open timesheets found."
-            : `${submitResult.submitted} ${submitResult.submitted === 1 ? "timesheet" : "timesheets"} moved to Supervisor Approved.`}
-        </Note>
-      )}
       {status === "LOCKED" && adpConfigured && alreadyPushed && !pushResult && (
         <Note tone="success">
           Pushed to ADP{" "}
@@ -243,6 +199,9 @@ export function PayPeriodActions({ payPeriodId, label, status, isReady, isPast, 
           onCancel={() => setConfirm(null)}
         >
           {CONFIRM[confirm].text}
+          {confirm === "lock" && !isPast && " This period has not ended yet."}
+          {confirm === "lock" && exceptions > 0 &&
+            ` ${exceptions.toLocaleString("en-US")} unresolved ${exceptions === 1 ? "exception is" : "exceptions are"} still open, like a missed punch. Locking does not wait for them.`}
         </ConfirmDialog>
       )}
 
@@ -274,7 +233,7 @@ export function PayPeriodActions({ payPeriodId, label, status, isReady, isPast, 
             placeholder="e.g. Missed punches found after the close"
             hint={
               status === "LOCKED"
-                ? "Saved to the audit log with your name. Locked timesheets go back to Payroll Approved."
+                ? "Saved to the audit log with your name. Locked timesheets go back to Open."
                 : "Saved to the audit log with your name."
             }
             error={reopenError ?? undefined}

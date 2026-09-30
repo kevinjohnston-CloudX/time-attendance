@@ -2,7 +2,8 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { checkPermission } from "./check-permission";
 import { getSubordinateIds } from "@/lib/get-subordinate-ids";
-import type { Permission } from "./permissions";
+import { TIMECARD_EDITORS_COMPANY, type Permission } from "./permissions";
+import { employeeRank } from "./identity";
 
 /**
  * Whose records an action may touch, for actions that take an id.
@@ -18,7 +19,7 @@ import type { Permission } from "./permissions";
  * guessed id says nothing about whether it exists.
  */
 
-type Ctx = { employeeId: string; tenantId: string | null; role: string };
+type Ctx = { employeeId: string; tenantId: string | null; role: string; viewAsRank?: number };
 
 const COMPANY_WIDE_ROLES = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN", "SUPER_ADMIN"];
 type Wide = Permission | Permission[];
@@ -43,23 +44,56 @@ export async function employeeScope(ctx: Ctx, companyWide: Wide): Promise<Prisma
   return { ...company, id: { in: team } };
 }
 
+/**
+ * Nobody changes the records of someone ranked above them (a Payroll Admin
+ * cannot touch an HR Admin's timecard or leave). Peers and juniors are fine;
+ * seeing a senior's records is not affected.
+ */
+export async function assertNotSenior(ctx: Ctx, targetEmployeeId: string): Promise<void> {
+  if (ctx.role === "SUPER_ADMIN" || !ctx.tenantId) return;
+  const [mine, theirs] = await Promise.all([
+    ctx.viewAsRank !== undefined
+      ? Promise.resolve(ctx.viewAsRank)
+      : ctx.employeeId ? employeeRank(ctx.employeeId, ctx.tenantId) : Promise.resolve(null),
+    employeeRank(targetEmployeeId, ctx.tenantId),
+  ]);
+  if (theirs !== null && (mine ?? 0) < theirs) {
+    throw new Error("You can't change the records of someone ranked above you");
+  }
+}
+
+type ScopeOptions = { forChange?: boolean };
+
 /** The employee, if the caller may act on them. */
-export async function assertEmployeeInScope(ctx: Ctx, employeeId: string, companyWide: Wide): Promise<void> {
+export async function assertEmployeeInScope(ctx: Ctx, employeeId: string, companyWide: Wide, { forChange = true }: ScopeOptions = {}): Promise<void> {
   const found = await db.employee.findFirst({
     where: { AND: [{ id: employeeId }, await employeeScope(ctx, companyWide)] },
     select: { id: true },
   });
   if (!found) throw new NotFoundError("Employee not found");
+  if (forChange) await assertNotSenior(ctx, employeeId);
 }
 
 /** The timesheet's employee and status, if the caller may act on it. */
-export async function timesheetInScope(ctx: Ctx, timesheetId: string, companyWide: Wide) {
+export async function timesheetInScope(ctx: Ctx, timesheetId: string, companyWide: Wide, { forChange = true }: ScopeOptions = {}) {
   const ts = await db.timesheet.findFirst({
     where: { id: timesheetId, employee: await employeeScope(ctx, companyWide) },
     select: { id: true, employeeId: true, status: true },
   });
   if (!ts) throw new NotFoundError("Timesheet not found");
+  if (forChange) await assertNotSenior(ctx, ts.employeeId);
   return ts;
+}
+
+/**
+ * A timecard the caller may change right now: in their scope, not their own,
+ * not ranked above them, and not locked.
+ */
+export async function editableTimesheetInScope(ctx: Ctx, timesheetId: string) {
+  const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
+  if (sheet.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
+  assertEditable(sheet.status);
+  return sheet;
 }
 
 /** The punch's employee and timesheet, if the caller may act on it. */
@@ -69,6 +103,7 @@ export async function punchInScope(ctx: Ctx, punchId: string, companyWide: Wide)
     select: { id: true, employeeId: true, timesheetId: true },
   });
   if (!punch) throw new NotFoundError("Punch not found");
+  await assertNotSenior(ctx, punch.employeeId);
   return punch;
 }
 

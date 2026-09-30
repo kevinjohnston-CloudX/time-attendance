@@ -13,7 +13,6 @@ import { parseUtcDate } from "@/lib/utils/date";
 import { PayPeriodTimesheets } from "@/classic/components/payroll/pay-period-timesheets";
 import { PayPeriodDetailFilter } from "@/classic/components/payroll/pay-period-detail-filter";
 import { PayPeriodDownload } from "@/classic/components/payroll/pay-period-download";
-import { PayPeriodExport } from "@/classic/components/payroll/pay-period-export";
 
 const PP_BADGE: Record<string, string> = {
   OPEN:   "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
@@ -22,7 +21,7 @@ const PP_BADGE: Record<string, string> = {
 };
 
 type FilterValue = "all" | "current" | "ytd";
-type StatusFilter = "all" | "open" | "ready" | "locked";
+type StatusFilter = "all" | "open" | "locked";
 
 export default async function PayPeriodsPage({
   searchParams,
@@ -33,13 +32,14 @@ export default async function PayPeriodsPage({
   const currentFilter: FilterValue =
     filter === "current" || filter === "ytd" ? filter : "all";
   const statusFilter: StatusFilter =
-    status === "open" || status === "ready" || status === "locked" ? status : "all";
+    status === "open" || status === "locked" ? status : "all";
   // month param: "YYYY-MM" — when set, overrides scope filter for the visible list
   const monthParam = /^\d{4}-\d{2}$/.test(month ?? "") ? month! : null;
 
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "PAY_PERIOD_MANAGE")) redirect("/dashboard");
+  const canRunPayroll = await userHasPermission(session.user, "PAYROLL_RUN");
 
   const t = session.user.tenantId ?? undefined;
 
@@ -108,7 +108,6 @@ export default async function PayPeriodsPage({
     }
     // Status filter always applies
     if (statusFilter === "open") return pp.status === "OPEN";
-    if (statusFilter === "ready") return pp.status === "READY";
     if (statusFilter === "locked") return pp.status === "LOCKED";
     return true;
   });
@@ -140,6 +139,9 @@ export default async function PayPeriodsPage({
   }
 
   const adpConfigured = getAdpConfig() !== null;
+  const lockedCount = detail
+    ? detail.payPeriod.timesheets.filter((ts) => ts.status === "LOCKED").length
+    : 0;
 
   return (
     <div className="flex items-start gap-0 -mx-6 -my-8 h-screen">
@@ -193,9 +195,7 @@ export default async function PayPeriodsPage({
 
             const renderItem = (pp: typeof payPeriods[number]) => {
               const total = pp.timesheets.length;
-              const approved = pp.timesheets.filter(
-                (t) => t.status === "PAYROLL_APPROVED" || t.status === "LOCKED"
-              ).length;
+              const locked = pp.timesheets.filter((t) => t.status === "LOCKED").length;
               const isSelected = pp.id === selectedId;
               const siteParam = siteId ? `&siteId=${siteId}` : "";
               const deptParam = departmentId ? `&departmentId=${departmentId}` : "";
@@ -222,7 +222,7 @@ export default async function PayPeriodsPage({
                     </span>
                   </div>
                   <p className="mt-0.5 text-xs text-zinc-500">
-                    {approved}/{total} approved
+                    {locked}/{total} locked
                   </p>
                 </Link>
               );
@@ -274,47 +274,43 @@ export default async function PayPeriodsPage({
                 </div>
               </div>
               <div className="flex items-start gap-2">
-                <PayPeriodExport
-                  payPeriodId={detail.payPeriod.id}
-                  label={`${format(detail.payPeriod.startDate, "MMM d")} – ${format(detail.payPeriod.endDate, "MMM d, yyyy")}`}
-                  sites={sites}
-                />
                 <PayPeriodDownload
                   payPeriodId={detail.payPeriod.id}
                   label={`${format(detail.payPeriod.startDate, "MMM d")} – ${format(detail.payPeriod.endDate, "MMM d, yyyy")}`}
                 />
-                <PayPeriodActions
-                  payPeriodId={detail.payPeriod.id}
-                  status={detail.payPeriod.status}
-                  isReady={detail.validation.isReady}
-                  isPast={parseUtcDate(detail.payPeriod.endDate) < new Date()}
-                  adpConfigured={adpConfigured}
-                  payrollRun={payrollRun}
-                />
+                {canRunPayroll && (
+                  <PayPeriodActions
+                    payPeriodId={detail.payPeriod.id}
+                    status={detail.payPeriod.status}
+                    unresolvedExceptions={detail.validation.unresolvedExceptions}
+                    adpConfigured={adpConfigured}
+                    payrollRun={payrollRun}
+                  />
+                )}
               </div>
             </div>
 
             <div className="mt-6 grid grid-cols-3 gap-4">
               <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Total Timesheets</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Open</p>
                 <p className="mt-1 text-2xl font-bold text-zinc-900 dark:text-white">
-                  {detail.validation.totalTimesheets}
+                  {detail.payPeriod.timesheets.length - lockedCount}
                 </p>
               </div>
               <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Approved</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Locked</p>
                 <p className="mt-1 text-2xl font-bold text-green-600">
-                  {detail.validation.approvedCount}
+                  {lockedCount}
                 </p>
               </div>
               <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Pending / Issues</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Exceptions to Review</p>
                 <p className={`mt-1 text-2xl font-bold ${
-                  detail.validation.pendingCount > 0 || detail.validation.unresolvedExceptions > 0
-                    ? "text-red-600"
+                  detail.validation.unresolvedExceptions > 0
+                    ? "text-amber-600"
                     : "text-zinc-900 dark:text-white"
                 }`}>
-                  {detail.validation.pendingCount + detail.validation.unresolvedExceptions}
+                  {detail.validation.unresolvedExceptions}
                 </p>
               </div>
             </div>

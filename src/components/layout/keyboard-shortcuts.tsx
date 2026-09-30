@@ -26,7 +26,6 @@ const GO_TO = [
   { key: "d", what: "Go to Dashboard",       href: "/dashboard" },
   { key: "p", what: "Go to Punch Clock",     href: "/time/punch" },
   { key: "t", what: "Go to My Timesheet",    href: "/time/timesheet" },
-  { key: "a", what: "Go to Team Timesheets", href: "/supervisor/timesheets" },
   { key: "e", what: "Go to Exceptions",      href: "/supervisor/exceptions" },
 ] as const;
 

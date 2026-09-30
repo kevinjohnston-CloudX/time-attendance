@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createEmployee } from "@/actions/admin.actions";
+import type { CopyFromEmployee } from "@/lib/employee-copy";
 import type { Site, Department, RuleSet } from "@prisma/client";
 
 type EmployeeOption = { id: string; user: { name: string | null } };
@@ -31,6 +32,7 @@ interface Props {
   payTypes: { id: string; number: number; description: string | null }[];
   jobTitles: { id: string; name: string; externalId: string | null }[];
   agencies: { id: string; code: number; description: string; inactiveOn: Date | string | null }[];
+  copyFrom?: CopyFromEmployee | null;
 }
 
 function fmtTime(hhmm: string): string {
@@ -43,23 +45,33 @@ const inputCls =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
 const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400";
 
-export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies }: Props) {
+export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, copyFrom }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const [copy, setCopy] = useState<CopyFromEmployee | null>(copyFrom ?? null);
+  const [open, setOpen] = useState(!!copyFrom);
   const [activeTab, setActiveTab] = useState<Tab>("general");
-  const [payType, setPayType] = useState("HOURLY");
 
-  const [selectedSiteId, setSelectedSiteId] = useState(
-    () => sites.find((s) => departments.some((d) => d.sites.some((ds) => ds.site.id === s.id)))?.id ?? sites[0]?.id ?? ""
-  );
+  const defaultSiteId =
+    sites.find((s) => departments.some((d) => d.sites.some((ds) => ds.site.id === s.id)))?.id ?? sites[0]?.id ?? "";
+  const [payType, setPayType] = useState<string>(copyFrom ? (copyFrom.payType ?? "") : "HOURLY");
+  const [selectedSiteId, setSelectedSiteId] = useState(copyFrom?.siteId ?? defaultSiteId);
   const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === selectedSiteId));
 
   function handleClose() {
     setOpen(false);
     setActiveTab("general");
     setError(null);
+    if (copy) {
+      // The next Add Employee starts blank, and a refresh does not reopen the copy.
+      setCopy(null);
+      setSelectedSiteId(defaultSiteId);
+      setPayType("HOURLY");
+      const url = new URL(window.location.href);
+      url.searchParams.delete("copyFrom");
+      router.replace(url.pathname + url.search);
+    }
   }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -145,7 +157,14 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
           <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-              <h3 className="text-base font-semibold text-zinc-900 dark:text-white">New Employee</h3>
+              <div>
+                <h3 className="text-base font-semibold text-zinc-900 dark:text-white">New Employee</h3>
+                {copy && (
+                  <p className="mt-0.5 text-xs text-zinc-500">
+                    Setup copied from {copy.sourceName}. Name, email, badge, hire date, personal details and pay rate start blank.
+                  </p>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={handleClose}
@@ -202,7 +221,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
                     <div>
                       <label className={labelCls}>Role</label>
-                      <select name="role" className={inputCls}>
+                      <select name="role" defaultValue={copy?.role} className={inputCls}>
                         {BUILTIN_ROLES.map((r) => (
                           <option key={r.value} value={r.value}>{r.label}</option>
                         ))}
@@ -228,7 +247,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
                     <div>
                       <label className={labelCls}>Department</label>
-                      <select name="departmentId" required className={inputCls}>
+                      <select name="departmentId" required defaultValue={copy?.departmentId} className={inputCls}>
                         {filteredDepts.map((d) => (
                           <option key={d.id} value={d.id}>{d.name}</option>
                         ))}
@@ -237,7 +256,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
                     <div>
                       <label className={labelCls}>Supervisor</label>
-                      <select name="supervisorId" className={inputCls}>
+                      <select name="supervisorId" defaultValue={copy?.supervisorId ?? ""} className={inputCls}>
                         <option value="">— None —</option>
                         {employees.map((emp) => (
                           <option key={emp.id} value={emp.id}>{emp.user.name}</option>
@@ -247,7 +266,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
                     <div>
                       <label className={labelCls}>Job Title</label>
-                      <select name="jobTitleId" className={inputCls}>
+                      <select name="jobTitleId" defaultValue={copy?.jobTitleId ?? ""} className={inputCls}>
                         <option value="">— None —</option>
                         {jobTitles.map((jt) => (
                           <option key={jt.id} value={jt.id}>
@@ -259,7 +278,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
                     <div>
                       <label className={labelCls}>Agency</label>
-                      <select name="agencyId" className={inputCls}>
+                      <select name="agencyId" defaultValue={copy?.agencyId ?? ""} className={inputCls}>
                         <option value="">— None —</option>
                         {agencies
                           .filter((a) => !a.inactiveOn || new Date(a.inactiveOn) > new Date())
@@ -373,7 +392,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className={labelCls}>Rule Set</label>
-                      <select name="ruleSetId" required className={inputCls}>
+                      <select name="ruleSetId" required defaultValue={copy?.ruleSetId} className={inputCls}>
                         {ruleSets.map((rs) => (
                           <option key={rs.id} value={rs.id}>{rs.name}</option>
                         ))}
@@ -382,7 +401,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
                     <div>
                       <label className={labelCls}>Shift</label>
-                      <select name="shiftId" className={inputCls}>
+                      <select name="shiftId" defaultValue={copy?.shiftId ?? ""} className={inputCls}>
                         <option value="">— None —</option>
                         {shifts.map((s) => (
                           <option key={s.id} value={s.id}>
@@ -394,7 +413,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
                     <div>
                       <label className={labelCls}>Holiday Rule</label>
-                      <select name="holidayRuleId" className={inputCls}>
+                      <select name="holidayRuleId" defaultValue={copy?.holidayRuleId ?? ""} className={inputCls}>
                         <option value="">— None —</option>
                         {holidayRules.map((r) => (
                           <option key={r.id} value={r.id}>{r.name}</option>
@@ -404,7 +423,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
                     <div>
                       <label className={labelCls}>Pay Category</label>
-                      <select name="payCategoryId" className={inputCls}>
+                      <select name="payCategoryId" defaultValue={copy?.payCategoryId ?? ""} className={inputCls}>
                         <option value="">— None —</option>
                         {payCategories.map((c) => (
                           <option key={c.id} value={c.id}>
@@ -416,7 +435,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
                     <div>
                       <label className={labelCls}>Pay Type</label>
-                      <select name="payTypeId" className={inputCls}>
+                      <select name="payTypeId" defaultValue={copy?.payTypeId ?? ""} className={inputCls}>
                         <option value="">— None —</option>
                         {payTypes.map((pt) => (
                           <option key={pt.id} value={pt.id}>
