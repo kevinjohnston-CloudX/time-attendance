@@ -105,8 +105,6 @@ import { Face } from "./face";
  */
 
 const POLL_MS = 30_000;
-/** Past this without a good answer, the board says it is not updating. */
-const STALE_MS = 90_000;
 const TILES_PER_GROUP = 60;
 /** Compact cards are half the size, so a screenful holds twice as many. */
 const TILES_PER_GROUP_COMPACT = 120;
@@ -257,7 +255,6 @@ export function OnSiteBoard({
   const [lastOk, setLastOk] = useState(() => (initialBoard ? Date.now() : 0));
   const [failure, setFailure] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
-  const [hidden, setHidden] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [changed, setChanged] = useState<Set<string>>(new Set());
 
@@ -371,7 +368,6 @@ export function OnSiteBoard({
     const id = window.setInterval(tick, POLL_MS);
     const onVisibility = () => {
       const visible = document.visibilityState === "visible";
-      setHidden(!visible);
       // Coming back to a tab that has been asleep: catch up straight away
       // instead of showing old faces for up to another 30 seconds.
       if (visible && Date.now() - lastOkRef.current > POLL_MS) void refresh(siteId);
@@ -576,7 +572,6 @@ export function OnSiteBoard({
 
   // ── Live line ───────────────────────────────────────────────────────────
   const age = lastOk ? now - lastOk : Infinity;
-  const liveState: "live" | "stale" | "paused" = hidden ? "paused" : age > STALE_MS || failure === "error" ? "stale" : "live";
 
   async function exportLog() {
     if (!board) return;
@@ -674,43 +669,35 @@ export function OnSiteBoard({
     );
   }
 
-  // The handoff's Live pill beside the title: whether the numbers are still
-  // moving, and when they last did. "Try again" sits outside it, so the pill
-  // keeps its one line height.
+  // One quiet line beside the title: live, and how long ago the numbers last
+  // moved. No pill and no retry: the page refreshes itself every 30 seconds,
+  // so the age is the honest signal when it falls behind.
+  const updated =
+    age < 10_000
+      ? "just now"
+      : age < 60_000
+        ? `${Math.round(age / 1000)} seconds ago`
+        : age === Infinity
+          ? "a moment ago"
+          : `${Math.round(age / 60_000)} min ago`;
   const liveLine = (
-    <span className="inline-flex min-w-0 flex-wrap items-center gap-2">
-      <span
-        className="inline-flex h-[26px] min-w-0 flex-none items-center gap-2 whitespace-nowrap rounded-full pl-[9px] pr-2.5"
-        style={{
-          background: "var(--surface-card)",
-          boxShadow: "0 0 0 1px var(--ta-ring-strong)",
-          font: "var(--weight-medium) 12px/1 var(--font-sans)",
-          color: liveState === "stale" ? "var(--text-warning)" : "var(--text-secondary)",
-        }}
-      >
-        <span className={styles.live} data-state={liveState} aria-hidden="true" />
-        {/* With a site button beside the title, the name is already there. */}
-        {siteName && sites.length <= 1 && (
-          <span className="truncate" style={{ color: "var(--text-primary)", maxWidth: 200 }}>
-            {siteName} ·
-          </span>
-        )}
-        {liveState === "paused" ? (
-          <span>Paused while this tab is in the background</span>
-        ) : liveState === "stale" ? (
-          <span>{lastOk ? `Not updating. Last updated ${fmtTime(new Date(lastOk).toISOString(), tz)}` : "Not updating"}</span>
-        ) : tab !== "people" && logDayShown ? (
-          <span>
-            Showing {dayLabel(logDayShown, today) === "Yesterday" ? "yesterday" : dayLabel(logDayShown, today)}, a finished day
-          </span>
-        ) : (
-          <span>Live · updated {age < 10_000 ? "just now" : `${Math.round(age / 1000)} seconds ago`}</span>
-        )}
-      </span>
-      {liveState === "stale" && (
-        <Button hierarchy="link" size="sm" onClick={() => void refresh(siteId)}>
-          Try again
-        </Button>
+    <span
+      className="inline-flex min-w-0 items-center gap-2 whitespace-nowrap"
+      style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+    >
+      <span className={styles.live} data-state="live" aria-hidden="true" />
+      {/* With a site button beside the title, the name is already there. */}
+      {siteName && sites.length <= 1 && (
+        <span className="truncate" style={{ color: "var(--text-primary)", maxWidth: 200 }}>
+          {siteName} ·
+        </span>
+      )}
+      {tab !== "people" && logDayShown ? (
+        <span>
+          Showing {dayLabel(logDayShown, today) === "Yesterday" ? "yesterday" : dayLabel(logDayShown, today)}, a finished day
+        </span>
+      ) : (
+        <span>Live · updated {updated}</span>
       )}
     </span>
   );
@@ -827,9 +814,9 @@ export function OnSiteBoard({
               {condensed && board && tab === "movements" && (
                 <span
                   className={styles.live}
-                  data-state={liveState}
-                  title={liveState === "live" ? "Live" : liveState === "paused" ? "Paused" : "Not updating"}
-                  aria-label={liveState === "live" ? "Live" : liveState === "paused" ? "Paused" : "Not updating"}
+                  data-state="live"
+                  title="Live"
+                  aria-label="Live"
                 />
               )}
               {condensed && board && tab === "log" && (
@@ -837,7 +824,7 @@ export function OnSiteBoard({
                   className="tabular inline-flex items-center gap-2 whitespace-nowrap"
                   style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
                 >
-                  <span className={styles.live} data-state={liveState} aria-hidden="true" />
+                  <span className={styles.live} data-state="live" aria-hidden="true" />
                   <span>
                     <strong style={{ color: "var(--text-primary)", fontWeight: "var(--weight-semibold)" }}>
                       {logTotal.toLocaleString()}
@@ -854,9 +841,9 @@ export function OnSiteBoard({
                 <span
                   className="tabular inline-flex items-center gap-2 whitespace-nowrap"
                   style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-                  title={liveState === "live" ? "Live" : liveState === "paused" ? "Paused" : "Not updating"}
+                  title="Live"
                 >
-                  <span className={styles.live} data-state={liveState} aria-hidden="true" />
+                  <span className={styles.live} data-state="live" aria-hidden="true" />
                   <span>
                     <strong style={{ color: "var(--text-primary)", fontWeight: "var(--weight-semibold)" }}>
                       {insideTotal.toLocaleString()}
