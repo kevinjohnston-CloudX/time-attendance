@@ -285,20 +285,19 @@ export default async function DashboardPage({
           href: l.href,
         }));
 
-  // Grouped the way the pay period page filters, so each line opens exactly
-  // the timesheets it counts.
+  // Grouped the way the pay period page filters. These count every pay rule's
+  // period on these dates, and a pay period page is one rule's period, so the
+  // lines do not link: one would open a fraction of the number beside it.
   const sheetCount = (...st: string[]) =>
     timesheetStatusCounts.filter((t) => st.includes(t.status)).reduce((n, t) => n + t._count._all, 0);
   const timesheetTotal = sheetCount("OPEN", "REJECTED", "SUBMITTED", "SUP_APPROVED", "PAYROLL_APPROVED", "LOCKED");
   const timesheetApproved = sheetCount("PAYROLL_APPROVED", "LOCKED");
-  const sheetHref = (show: string) =>
-    selectedOverviewPeriodId ? `/payroll/pay-periods?id=${selectedOverviewPeriodId}&show=${show}` : undefined;
   const timesheetRows = [
     { key: "employee", label: "Not submitted", count: sheetCount("OPEN", "REJECTED"), color: "var(--icon-tertiary)", hint: "Waiting on the employee" },
     { key: "supervisor", label: "Waiting on supervisor", count: sheetCount("SUBMITTED"), color: "var(--fill-warning)" },
     { key: "payroll", label: "Waiting on payroll", count: sheetCount("SUP_APPROVED"), color: "var(--fill-accent)" },
     { key: "approved", label: "Approved", count: timesheetApproved, color: "var(--fill-success)", hint: "Approved by payroll, or locked" },
-  ].map((r) => ({ ...r, href: sheetHref(r.key) }));
+  ];
 
   // ── Header line ───────────────────────────────────────────────────────────
   const periodLabel = payPeriod
@@ -810,11 +809,7 @@ export default async function DashboardPage({
             />
             <OverviewColumn
               title="Timesheets"
-              link={
-                selectedOverviewPeriodId
-                  ? { href: `/payroll/pay-periods?id=${selectedOverviewPeriodId}`, label: "Open pay period" }
-                  : undefined
-              }
+              link={{ href: "/payroll/pay-periods", label: "Open pay periods" }}
               figure={timesheetApproved}
               caption={timesheetTotal > 0 ? `of ${timesheetTotal.toLocaleString()} approved` : "timesheets"}
               // Not submitted is the empty track, so the bar fills only as
