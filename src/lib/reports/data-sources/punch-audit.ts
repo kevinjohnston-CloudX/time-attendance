@@ -107,9 +107,8 @@ export const punchAuditSource: DataSourceDefinition = {
     // In-memory sort for computed columns (roundedTime, stateBefore, stateAfter, etc.)
     const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
 
-    const visibleColumns = punchAuditSource.columns.filter((c) =>
-      config.columns.includes(c.id)
-    );
+    const colById = Object.fromEntries(punchAuditSource.columns.map((c) => [c.id, c]));
+    const visibleColumns = config.columns.map((id) => colById[id]).filter(Boolean);
 
     return {
       columns: visibleColumns.map((c) => ({ id: c.id, label: c.label, type: c.type })),

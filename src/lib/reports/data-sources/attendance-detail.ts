@@ -14,6 +14,7 @@ const fieldMap: FieldMap = {
   siteId:        { prismaPath: "timesheet.employee.siteId",           type: "string" },
   segmentType:   { prismaPath: "segmentType",                         type: "string" },
   payBucket:     { prismaPath: "payBucket",                           type: "string" },
+  payCodeLabel:  { prismaPath: "payCode.label",                       type: "string" },
   segmentDate:   { prismaPath: "segmentDate",                         type: "date" },
 };
 
@@ -68,6 +69,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
         { value: "UNPAID",       label: "Unpaid" },
       ] },
     { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
+    { id: "payCodeLabel", label: "Pay Code Label", type: "string", operators: ["eq", "neq"] },
   ],
   groupableFields: ["department", "site", "segmentType"],
   fieldMap,
@@ -137,7 +139,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
         payBucket: seg.payBucket,
         payCode: seg.payCode?.code ?? null,
         payCodeLabel: seg.payCode?.label ?? null,
-        reasonCode: dayReason ? `${dayReason.reasonCode.code} – ${dayReason.reasonCode.label}` : null,
+        reasonCode: dayReason ? `${dayReason.reasonCode.code} - ${dayReason.reasonCode.label}` : null,
         regularMinutes: seg.payBucket === "REG" ? seg.durationMinutes : null,
         overtimeMinutes: seg.payBucket === "OT" ? seg.durationMinutes : null,
         doubletimeMinutes: seg.payBucket === "DT" ? seg.durationMinutes : null,
@@ -148,9 +150,8 @@ export const attendanceDetailSource: DataSourceDefinition = {
     // In-memory sort for computed columns (date, startTime, endTime, etc.)
     const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
 
-    const visibleColumns = attendanceDetailSource.columns.filter((c) =>
-      config.columns.includes(c.id)
-    );
+    const colById = Object.fromEntries(attendanceDetailSource.columns.map((c) => [c.id, c]));
+    const visibleColumns = config.columns.map((id) => colById[id]).filter(Boolean);
 
     return {
       columns: visibleColumns.map((c) => ({ id: c.id, label: c.label, type: c.type })),

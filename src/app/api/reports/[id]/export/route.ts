@@ -52,9 +52,10 @@ export async function GET(
   switch (format) {
     case "csv": {
       const csv = generateCsv(result);
-      return new NextResponse(csv, {
+      const bytes = new TextEncoder().encode(csv);
+      return new NextResponse(bytes, {
         headers: {
-          "Content-Type": "text/csv",
+          "Content-Type": "text/csv; charset=utf-8",
           "Content-Disposition": `attachment; filename="${safeName}.csv"`,
         },
       });

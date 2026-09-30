@@ -379,6 +379,13 @@ export const setAbsentDayPayCode = withRBAC(
       });
     }
 
+    // Also update any non-zero LEAVE segments on this day (e.g. created by leave requests)
+    // so the pay code change is reflected on the actual hours, not just the 0-duration marker.
+    await db.workSegment.updateMany({
+      where: { timesheetId, segmentDate: date, durationMinutes: { gt: 0 }, segmentType: "LEAVE" },
+      data: { payCodeId },
+    });
+
     // Also propagate to any existing CLOCK_IN on this day that hasn't been paired yet
     // (handles the case where In time was entered before the pay code was set)
     const dayEnd = new Date(date.getTime() + 24 * 60 * 60 * 1000);

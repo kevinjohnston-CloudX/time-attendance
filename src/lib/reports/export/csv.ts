@@ -10,7 +10,7 @@ export function generateCsv(result: ReportResult): string {
     })
   );
 
-  return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+  return "﻿" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
 }
 
 function escapeCsvField(value: string): string {

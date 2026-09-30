@@ -546,7 +546,7 @@ export const getFilterOptions = withRBAC(
   async ({ tenantId }) => {
     if (!tenantId) throw new Error("Tenant context required");
 
-    const [sites, departments, payPeriods, leaveTypes] = await Promise.all([
+    const [sites, departments, payPeriods, leaveTypes, payCodes] = await Promise.all([
       db.site.findMany({
         where: { tenantId, isActive: true },
         select: { id: true, name: true },
@@ -577,9 +577,14 @@ export const getFilterOptions = withRBAC(
         select: { id: true, name: true },
         orderBy: { name: "asc" },
       }),
+      db.payCode.findMany({
+        where: { tenantId, isActive: true },
+        select: { code: true, label: true },
+        orderBy: { label: "asc" },
+      }),
     ]);
 
-    return { sites, departments, payPeriods, leaveTypes };
+    return { sites, departments, payPeriods, leaveTypes, payCodes };
   }
 );
 

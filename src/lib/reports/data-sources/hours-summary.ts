@@ -134,9 +134,8 @@ export const hoursSummarySource: DataSourceDefinition = {
     const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
 
     // Select only requested columns
-    const visibleColumns = hoursSummarySource.columns.filter((c) =>
-      config.columns.includes(c.id)
-    );
+    const colById = Object.fromEntries(hoursSummarySource.columns.map((c) => [c.id, c]));
+    const visibleColumns = config.columns.map((id) => colById[id]).filter(Boolean);
 
     return {
       columns: visibleColumns.map((c) => ({

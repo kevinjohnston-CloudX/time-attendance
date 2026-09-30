@@ -21,8 +21,17 @@ export function DateRangePicker({
   onChange: (range: DateRange) => void;
   payPeriods: PayPeriodOption[];
 }) {
+  const today = new Date();
+  // Prefer the OPEN period whose window contains today; fall back to first OPEN, then first overall.
   const activePeriod =
-    payPeriods.find((p) => p.status === "OPEN") ?? payPeriods[0];
+    payPeriods.find(
+      (p) =>
+        p.status === "OPEN" &&
+        new Date(p.startDate) <= today &&
+        new Date(p.endDate) >= today
+    ) ??
+    payPeriods.find((p) => p.status === "OPEN") ??
+    payPeriods[0];
 
   function formatPeriodLabel(pp: PayPeriodOption) {
     const start = new Date(pp.startDate).toLocaleDateString("en-US", {
@@ -35,6 +44,10 @@ export function DateRangePicker({
       year: "numeric",
     });
     return `${start} – ${end}`;
+  }
+
+  function isCurrent(pp: PayPeriodOption) {
+    return new Date(pp.startDate) <= today && new Date(pp.endDate) >= today;
   }
 
   return (
@@ -70,14 +83,21 @@ export function DateRangePicker({
         ))}
       </div>
 
-      {/* Current pay period label — no dropdown */}
-      {value.type === "payPeriod" && activePeriod && (
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          {formatPeriodLabel(activePeriod)}
-          <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-            Current
-          </span>
-        </p>
+      {/* Pay period dropdown */}
+      {value.type === "payPeriod" && (
+        <div className="flex items-center gap-3">
+          <select
+            value={value.payPeriodId}
+            onChange={(e) => onChange({ type: "payPeriod", payPeriodId: e.target.value })}
+            className={inputCls + " max-w-xs"}
+          >
+            {payPeriods.map((pp) => (
+              <option key={pp.id} value={pp.id}>
+                {formatPeriodLabel(pp)}{isCurrent(pp) ? "  (Current)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
 
       {/* Custom date range */}

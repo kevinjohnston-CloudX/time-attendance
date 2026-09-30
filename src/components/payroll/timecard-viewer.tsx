@@ -3559,7 +3559,7 @@ export function TimecardViewer({
                     <div className="flex items-center gap-2">
                       <input
                         type="number"
-                        min="0.25"
+                        min="0"
                         max="24"
                         step="0.25"
                         value={newEntryHours}

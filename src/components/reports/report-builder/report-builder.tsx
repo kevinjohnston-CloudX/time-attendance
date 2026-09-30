@@ -33,6 +33,7 @@ interface FilterOptions {
   departments: { id: string; name: string }[];
   payPeriods: { id: string; startDate: string | Date; endDate: string | Date; status: string }[];
   leaveTypes: { id: string; name: string }[];
+  payCodes: { code: string; label: string }[];
 }
 
 const TABS = ["Source", "Columns", "Filters", "Date Range", "Group & Sort", "Preview"] as const;
@@ -59,7 +60,14 @@ export function ReportBuilder({
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [filters, setFilters] = useState<FilterDef[]>([]);
   const [dateRange, setDateRange] = useState<DateRange>(() => {
+    const today = new Date();
     const pp =
+      filterOptions.payPeriods.find(
+        (p) =>
+          p.status === "OPEN" &&
+          new Date(p.startDate) <= today &&
+          new Date(p.endDate) >= today
+      ) ??
       filterOptions.payPeriods.find((p) => p.status === "OPEN") ??
       filterOptions.payPeriods[0];
     return pp

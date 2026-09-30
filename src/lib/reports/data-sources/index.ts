@@ -2,6 +2,7 @@ import type { ReportConfig, DataSourceId } from "@/lib/validators/report.schema"
 import type { FieldMap } from "../query-builder";
 import { hoursSummarySource } from "./hours-summary";
 import { attendanceDetailSource } from "./attendance-detail";
+import { dailyHoursSource } from "./daily-hours";
 import { leaveSummarySource } from "./leave-summary";
 import { leaveBalanceSource } from "./leave-balance";
 import { punchAuditSource } from "./punch-audit";
@@ -53,6 +54,7 @@ export interface DataSourceDefinition {
 const dataSources: Record<DataSourceId, DataSourceDefinition> = {
   HOURS_SUMMARY: hoursSummarySource,
   ATTENDANCE_DETAIL: attendanceDetailSource,
+  DAILY_HOURS: dailyHoursSource,
   LEAVE_SUMMARY: leaveSummarySource,
   LEAVE_BALANCE: leaveBalanceSource,
   PUNCH_AUDIT: punchAuditSource,

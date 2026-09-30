@@ -76,6 +76,7 @@ export type DateRange = z.infer<typeof dateRangeSchema>;
 export const DATA_SOURCES = [
   "HOURS_SUMMARY",
   "ATTENDANCE_DETAIL",
+  "DAILY_HOURS",
   "LEAVE_SUMMARY",
   "LEAVE_BALANCE",
   "PUNCH_AUDIT",
