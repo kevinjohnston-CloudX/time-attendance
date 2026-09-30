@@ -25,6 +25,8 @@ import {
   LinkButton,
   SearchInput,
   SegmentedControl,
+  ToolsBar,
+  ToolsCount,
   Toast,
   useToast,
   Select,
@@ -706,81 +708,88 @@ export function LeaveTabs({
             }}
           />
 
-          <SearchInput
-            aria-label="Search by employee name"
-            placeholder="Employee name"
-            value={query}
-            onValueChange={(v) => {
-              setQuery(v);
-              setShown(PAGE_SIZE);
-            }}
-          />
-
-          {/* Department, shift, then site, in the handoff's order. Each clears
-              from inside its own pill rather than from a second row repeating
-              the same filters. */}
-          {canFilter && (
-            <FilterSelectChip
-              label="Department"
-              value={selectedDepartmentId ?? ""}
-              options={departments}
-              disabled={departments.length === 0}
-              onChange={(id) =>
-                navigate({
-                  siteId: selectedSiteId,
-                  departmentId: id || undefined,
-                  shiftId: selectedShiftId,
-                })
-              }
-            />
-          )}
-          {canFilter && shifts.length > 0 && (
-            <FilterSelectChip
-              label="Shift"
-              value={selectedShiftId ?? ""}
-              options={shifts}
-              onChange={(id) =>
-                navigate({
-                  siteId: selectedSiteId,
-                  departmentId: selectedDepartmentId,
-                  shiftId: id || undefined,
-                })
-              }
-            />
-          )}
-          {/* Changing the site clears the department with it: the department
-              list the server offers is scoped to the chosen site, so one left
-              behind would filter by something no longer on the screen. */}
-          {canFilter && sites.length > 0 && (
-            <FilterSelectChip
-              label="Site"
-              value={selectedSiteId ?? ""}
-              options={sites}
-              onChange={(id) => navigate({ siteId: id || undefined, shiftId: selectedShiftId })}
-            />
-          )}
-
-          {(isFiltered || query.trim()) && (
-            <Button
-              hierarchy="link"
-              size="sm"
-              onClick={() => {
-                setQuery("");
-                setShown(PAGE_SIZE);
-                if (isFiltered) navigate({});
-              }}
-            >
-              Clear all
-            </Button>
-          )}
-
-          <span
-            className="tabular ml-auto whitespace-nowrap"
-            style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+          <ToolsBar
+            beside
+            search={
+              <SearchInput
+                aria-label="Search by employee name"
+                placeholder="Employee name"
+                width={210}
+                value={query}
+                onValueChange={(v) => {
+                  setQuery(v);
+                  setShown(PAGE_SIZE);
+                }}
+              />
+            }
+            end={
+              <>
+                {(isFiltered || query.trim()) && (
+                  <Button
+                    hierarchy="link"
+                    size="sm"
+                    onClick={() => {
+                      setQuery("");
+                      setShown(PAGE_SIZE);
+                      if (isFiltered) navigate({});
+                    }}
+                  >
+                    Clear all
+                  </Button>
+                )}
+                <ToolsCount>
+                  {rows.length} {rows.length === 1 ? "request" : "requests"}
+                </ToolsCount>
+              </>
+            }
           >
-            {rows.length} {rows.length === 1 ? "request" : "requests"}
-          </span>
+            {/* Department, shift, then site, in the handoff's order. Each clears
+                from inside its own pill rather than from a second row repeating
+                the same filters. */}
+            {canFilter && (
+              <FilterSelectChip
+                label="Department"
+                value={selectedDepartmentId ?? ""}
+                options={departments}
+                disabled={departments.length === 0}
+                onChange={(id) =>
+                  navigate({
+                    siteId: selectedSiteId,
+                    departmentId: id || undefined,
+                    shiftId: selectedShiftId,
+                  })
+                }
+              />
+            )}
+            {canFilter && shifts.length > 0 && (
+              <FilterSelectChip
+                label="Shift"
+                value={selectedShiftId ?? ""}
+                options={shifts}
+                onChange={(id) =>
+                  navigate({
+                    siteId: selectedSiteId,
+                    departmentId: selectedDepartmentId,
+                    shiftId: id || undefined,
+                  })
+                }
+              />
+            )}
+            {/* Changing the site clears the department with it: the department
+                list the server offers is scoped to the chosen site, so one left
+                behind would filter by something no longer on the screen. */}
+            {canFilter && sites.length > 0 && (
+              <FilterSelectChip
+                label="Site"
+                value={selectedSiteId ?? ""}
+                options={sites}
+                onChange={(id) => navigate({ siteId: id || undefined, shiftId: selectedShiftId })}
+              />
+            )}
+          </ToolsBar>
 
+          {/* Saving the view acts on the whole page, so it sits outside the
+              bar that only narrows the list. */}
           <Button hierarchy="link" size="sm" onClick={saveCurrentView}>
             Save current view
           </Button>
