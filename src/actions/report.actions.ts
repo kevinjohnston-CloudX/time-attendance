@@ -17,6 +17,7 @@ import {
   type ReportConfig,
 } from "@/lib/validators/report.schema";
 import type { ReportResult } from "@/lib/reports/data-sources";
+import { dayKey, periodLastDay } from "@/lib/pay-period-display";
 
 // ─── Data Sources (metadata only, no execution) ────────────────────────────
 
@@ -624,7 +625,8 @@ export const getFilterOptions = withRBAC(
           startDate: true,
           endDate: true,
           status: true,
-          ruleSet: { select: { name: true } },
+          ruleSet: { select: { name: true, payFrequency: true } },
+          tenant: { select: { payFrequency: true } },
           _count: { select: { timesheets: true } },
         },
         orderBy: { startDate: "desc" },
@@ -642,9 +644,13 @@ export const getFilterOptions = withRBAC(
     return {
       sites,
       departments,
-      payPeriods: payPeriods.map(({ ruleSet, _count, ...pp }) => ({
+      payPeriods: payPeriods.map(({ ruleSet, tenant, _count, ...pp }) => ({
         ...pp,
         groupName: ruleSet?.name ?? null,
+        // The last day worked, by the period's own frequency: monthly and
+        // semi-monthly periods store it as their end, weekly and biweekly
+        // ones store the day after (see periodLastDay).
+        lastDay: dayKey(periodLastDay(pp.endDate, ruleSet?.payFrequency ?? tenant.payFrequency)),
         people: _count.timesheets,
       })),
       leaveTypes,

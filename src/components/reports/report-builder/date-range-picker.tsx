@@ -50,6 +50,8 @@ export interface PayPeriodOption {
   groupName?: string | null;
   /** Timesheets in it, which is people. */
   people?: number;
+  /** The last day worked, yyyy-mm-dd, by the period's own frequency. */
+  lastDay?: string;
 }
 
 /** Date columns arrive as UTC midnight, so they are read in UTC to keep the day. */
@@ -62,25 +64,37 @@ const day = (d: string | Date, withYear: boolean) =>
   });
 
 /**
+ * The last day worked, yyyy-mm-dd. The server works it out from the period's
+ * frequency, since weekly and biweekly periods store the day after it and
+ * monthly and semi-monthly ones the day itself; failing that, the day before
+ * the stored end.
+ */
+function lastDayKey(p: { endDate: string | Date; lastDay?: string }): string {
+  return p.lastDay ?? dayKey(new Date(new Date(p.endDate).getTime() - 86400000));
+}
+
+/** Today on this computer's calendar, yyyy-mm-dd. */
+const todayKey = () => new Date().toLocaleDateString("en-CA");
+
+/**
  * The pay period to open on: of those that include today, the one with the
  * most people in it, since every pay group has its own and most are empty.
- * Failing that, the latest one that has started. The stored end is the day
- * after the last day worked.
+ * Failing that, the latest one that has started.
  */
 export function currentPayPeriod(payPeriods: PayPeriodOption[]): PayPeriodOption | undefined {
   const now = Date.now();
   const started = payPeriods
     .filter((p) => new Date(p.startDate).getTime() <= now)
     .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
-  const current = started
-    .filter((p) => now < new Date(p.endDate).getTime())
-    .sort((a, b) => (b.people ?? 0) - (a.people ?? 0));
+  const current = started.filter((p) => isCurrent(p)).sort((a, b) => (b.people ?? 0) - (a.people ?? 0));
   return current[0] ?? started[0] ?? payPeriods[payPeriods.length - 1];
 }
 
-/** Whether a pay period includes today. */
-const isCurrent = (p: { startDate: string | Date; endDate: string | Date }) =>
-  new Date(p.startDate).getTime() <= Date.now() && Date.now() < new Date(p.endDate).getTime();
+/** Whether a pay period includes today, counted in whole days. */
+const isCurrent = (p: { startDate: string | Date; endDate: string | Date; lastDay?: string }) => {
+  const today = todayKey();
+  return dayKey(p.startDate) <= today && today <= lastDayKey(p);
+};
 
 /**
  * The order the list reads in: what is running now, biggest first, then the
@@ -117,7 +131,7 @@ function groupNames(payPeriods: PayPeriodOption[]): string[] {
     .map(([k]) => k);
 }
 
-type Span = { key: string; rep: PayPeriodOption; startDate: string | Date; endDate: string | Date; people: number };
+type Span = { key: string; rep: PayPeriodOption; startDate: string | Date; endDate: string | Date; lastDay?: string; people: number };
 
 /**
  * Every distinct run of pay period dates across all pay groups, newest
@@ -146,6 +160,7 @@ function spans(payPeriods: PayPeriodOption[]): Span[] {
         rep,
         startDate: rep.startDate,
         endDate: rep.endDate,
+        lastDay: rep.lastDay,
         people: [...perGroup.values()].reduce((n, v) => n + v, 0),
       };
     })
@@ -153,9 +168,8 @@ function spans(payPeriods: PayPeriodOption[]): Span[] {
 }
 
 /** "Sep 13 to Sep 26, 2026 · Current · 841 people", for one option. */
-function optionText(p: { startDate: string | Date; endDate: string | Date; status?: string; people?: number }): string {
-  // The end is stored as the day after the last day worked.
-  const last = new Date(new Date(p.endDate).getTime() - 86400000);
+function optionText(p: { startDate: string | Date; endDate: string | Date; lastDay?: string; status?: string; people?: number }): string {
+  const last = lastDayKey(p);
   const tag = isCurrent(p)
     ? "Current"
     : new Date(p.startDate).getTime() > Date.now()
@@ -179,7 +193,7 @@ export function describeRange(range: DateRange | undefined, payPeriods: PayPerio
   }
   const pp = payPeriods.find((p) => p.id === range.payPeriodId);
   if (!pp) return "A pay period that is no longer on file";
-  const last = new Date(new Date(pp.endDate).getTime() - 86400000);
+  const last = lastDayKey(pp);
   const who = range.allGroups ? "All pay groups" : pp.groupName ?? "One pay group";
   return `${day(pp.startDate, false)} to ${day(last, true)} · ${who}`;
 }
