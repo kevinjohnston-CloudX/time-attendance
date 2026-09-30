@@ -9,10 +9,8 @@ import {
   Button,
   Card,
   EmptyState,
-  FilterBar,
-  FilterChip,
+  FilterSelectChip,
   SearchInput,
-  Select,
   TBody,
   TD,
   TH,
@@ -20,7 +18,8 @@ import {
   TR,
   Table,
   TableFooter,
-  Toolbar,
+  ToolsBar,
+  ToolsCount,
   statusTone,
   PinnedBar,
 } from "@/components/ui";
@@ -121,77 +120,62 @@ export function AccrualsEmployeeList({
     filters.q || filters.site || filters.dept || filters.status !== "active",
   );
 
-  /** Clearing one chip keeps the other three. */
-  const clearOne = (key: keyof Filters) =>
-    buildUrl({ [key]: key === "status" ? "active" : "" } as Partial<Filters>);
-
-  const siteName = sites.find((s) => s.id === filters.site)?.name ?? filters.site;
-
   return (
     <div className="flex flex-col gap-4">
       <PinnedBar>
         {header}
         <div className="flex flex-col gap-2.5">
-          <Toolbar count={employees.length} countLabel="employee">
-            <SearchInput
-              value={searchValue}
-              onValueChange={onSearchChange}
-              placeholder="Name, employee code or department"
-            />
+          <ToolsBar
+            search={
+              <SearchInput
+                value={searchValue}
+                onValueChange={onSearchChange}
+                placeholder="Name, employee code or department"
+                width={320}
+              />
+            }
+            end={
+              <>
+                {isFiltered && (
+                  <Button hierarchy="link" size="sm" onClick={() => router.push("/accruals")}>
+                    Clear all
+                  </Button>
+                )}
+                <ToolsCount>{employees.length} {employees.length === 1 ? "employee" : "employees"}</ToolsCount>
+              </>
+            }
+          >
+            {/* Flat triggers, as on every other list, rather than the boxed
+                selects this row had; each shows and clears its own value. */}
             {sites.length > 1 && (
-              <Select
-                aria-label="Site"
+              <FilterSelectChip
+                label="Site"
                 value={filters.site}
-                onChange={(e) => navigate({ site: e.target.value })}
-              >
-                <option value="">All sites</option>
-                {sites.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </Select>
+                options={sites}
+                onChange={(v) => navigate({ site: v })}
+              />
             )}
             {departments.length > 1 && (
-              <Select
-                aria-label="Department"
+              <FilterSelectChip
+                label="Department"
                 value={filters.dept}
-                onChange={(e) => navigate({ dept: e.target.value })}
-              >
-                <option value="">All departments</option>
-                {departments.map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </Select>
+                options={departments.map((d) => ({ id: d, name: d }))}
+                onChange={(v) => navigate({ dept: v })}
+              />
             )}
-            <Select
-              aria-label="Status"
-              value={filters.status}
-              onChange={(e) => navigate({ status: e.target.value })}
-            >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="all">All</option>
-            </Select>
-          </Toolbar>
+            {/* Active is the default view, so it is the pill's unset state. */}
+            <FilterSelectChip
+              label="Status"
+              allLabel="Active"
+              value={filters.status === "active" ? "" : filters.status}
+              options={[
+                { id: "inactive", name: STATUS_LABEL.inactive },
+                { id: "all", name: STATUS_LABEL.all },
+              ]}
+              onChange={(v) => navigate({ status: v || "active" })}
+            />
+          </ToolsBar>
 
-          <FilterBar clearHref={isFiltered ? "/accruals" : undefined}>
-            {filters.site
-              ? <FilterChip key="site" label="Site" value={siteName} clearHref={clearOne("site")} />
-              : null}
-            {filters.dept
-              ? <FilterChip key="dept" label="Department" value={filters.dept} clearHref={clearOne("dept")} />
-              : null}
-            {filters.status !== "active"
-              ? <FilterChip
-                  key="status"
-                  label="Status"
-                  value={STATUS_LABEL[filters.status] ?? filters.status}
-                  clearHref={clearOne("status")}
-                />
-              : null}
-            {filters.q
-              ? <FilterChip key="q" label="Search" value={filters.q} clearHref={clearOne("q")} />
-              : null}
-          </FilterBar>
         </div>
       </PinnedBar>
 
