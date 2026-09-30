@@ -66,11 +66,68 @@ async function siteDay(tenantId: string, siteId: string): Promise<{ today: strin
 }
 
 /**
- * Keeps one refusal. The building is the one whose warehouse number the
- * tablet sent, the same rule every scan follows (see site-scope.ts), or the
- * person's own site when the tablet sent none. Another try the same day adds
- * to the count on the same row, and reopens it if they had been added to the
- * schedule since, because being turned away again means that day is gone.
+ * How long a gate scan still says which building somebody is standing at.
+ * Long enough for walking out and turning back, which is how a person with no
+ * shift usually meets the refusal once they are already on site; short enough
+ * that a scan at one building is never read as a try at another across town.
+ */
+const RECENT_SCAN_MS = 10 * 60 * 1000;
+
+type Placement = { site: { id: string; timezone: string }; placedBy: "tablet" | "last scan" | "home site" };
+
+/**
+ * Which building a refusal belongs to: the one the person was trying to get
+ * into, never simply the site on their record.
+ *
+ * <p>In order: the warehouse number the tablet sent, the same rule every scan
+ * follows (see site-scope.ts); else the building of their own gate scan in the
+ * last {@link RECENT_SCAN_MS}, because the tablets do not send a number with
+ * this check yet and somebody refused a few minutes after walking out is at
+ * that door; else their own site, the only thing left to go on. Reads only.
+ */
+export async function placeGateRefusal(input: {
+  tenantId: string;
+  employeeId: string;
+  homeSiteId: string | null;
+  warehouse: string | null;
+  at: Date;
+}): Promise<Placement | null> {
+  const bySite = async (code: string | null | undefined) =>
+    code && /^\d{1,9}$/.test(code)
+      ? db.site.findFirst({ where: { tenantId: input.tenantId, wmsWarehouseId: Number(code) }, select: { id: true, timezone: true } })
+      : null;
+
+  const fromTablet = await bySite(input.warehouse);
+  if (fromTablet) return { site: fromTablet, placedBy: "tablet" };
+
+  if (!input.warehouse) {
+    // Arrival time on the server, not the tablet's clock, which can run a
+    // minute either way; the scan time bound only lets the index narrow it.
+    const last = await db.scanEvent.findFirst({
+      where: {
+        employeeId: input.employeeId,
+        stream: "SECURITY",
+        scanTime: { gte: new Date(input.at.getTime() - 60 * 60 * 1000) },
+        createdAt: { gte: new Date(input.at.getTime() - RECENT_SCAN_MS), lte: input.at },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { site: true },
+    });
+    const fromScan = await bySite(last?.site);
+    if (fromScan) return { site: fromScan, placedBy: "last scan" };
+  }
+
+  const home = input.homeSiteId
+    ? await db.site.findFirst({ where: { tenantId: input.tenantId, id: input.homeSiteId }, select: { id: true, timezone: true } })
+    : null;
+  return home ? { site: home, placedBy: "home site" } : null;
+}
+
+/**
+ * Keeps one refusal, at the building from {@link placeGateRefusal}. Another
+ * try the same day adds to the count on the same row, and reopens it if they
+ * had been added to the schedule since, because being turned away again means
+ * that day is gone.
  */
 export async function recordGateRefusal(input: {
   tenantId: string;
@@ -81,22 +138,14 @@ export async function recordGateRefusal(input: {
   reason: GateRefusalReason;
   at: Date;
 }): Promise<void> {
-  const code = input.warehouse && /^\d{1,9}$/.test(input.warehouse) ? Number(input.warehouse) : null;
-  const byWarehouse =
-    code !== null
-      ? await db.site.findFirst({ where: { tenantId: input.tenantId, wmsWarehouseId: code }, select: { id: true, timezone: true } })
-      : null;
-  const site =
-    byWarehouse ??
-    (input.homeSiteId
-      ? await db.site.findFirst({ where: { tenantId: input.tenantId, id: input.homeSiteId }, select: { id: true, timezone: true } })
-      : null);
-  if (!site) {
+  const placed = await placeGateRefusal(input);
+  if (!placed) {
     // Nowhere to show it: the tablet's warehouse number belongs to no site
     // and the person has no site on their record.
     gateLog("unplaced", { employee: input.employeeId, warehouse: input.warehouse, homeSite: input.homeSiteId }, "warn");
     return;
   }
+  const { site, placedBy } = placed;
 
   const workDate = workDateOf(localDateString(input.at, site.timezone || "America/New_York"));
   const key = { employeeId_siteId_workDate: { employeeId: input.employeeId, siteId: site.id, workDate } };
@@ -136,7 +185,7 @@ export async function recordGateRefusal(input: {
     refusal: row.id,
     employee: input.employeeId,
     site: site.id,
-    placedBy: byWarehouse ? "warehouse" : "home site",
+    placedBy,
     attempts: row.attempts,
     // Dismissed earlier today: counted, but no card shows again today.
     dismissedToday: row.dismissedAt ? true : undefined,

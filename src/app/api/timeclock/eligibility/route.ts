@@ -8,10 +8,10 @@ import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
  * May this badge scan right now, and who is it?
  *
  * <p>The answer the kiosk currently gets from the legacy `GET employees/{id}`,
- * sourced from CloudTime instead. Nothing calls this yet: the tablets still ask
- * cajaapi, and will until an app build ships that prefers this and falls back.
- * Deployed ahead of that deliberately, so it can be watched against real
- * badges before anything depends on it.
+ * sourced from CloudTime instead. Deployed ahead of the tablets deliberately,
+ * so it could be watched against real badges before anything depended on it.
+ * At least one gate tablet at NJ5903 asks it now: on 2026-09-30 it turned
+ * somebody away there, sending neither its warehouse nor its name.
  *
  * <p><b>Why move it at all.</b> The legacy rule for somebody with no shift is
  * "let them through only while Oracle has them showing IN" — which is sound
@@ -35,6 +35,8 @@ import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
  * fail the gate. A tablet may add `warehouse` (the number every scan carries)
  * so the right building hears about it, `device` (its own name), and `stream`;
  * a TIME_CLOCK check is never noted, because the alert is about the door.
+ * Without a number the building comes from the person's own gate scan a few
+ * minutes before, else their site (see placeGateRefusal).
  */
 
 export const dynamic = "force-dynamic";
@@ -58,8 +60,19 @@ function localDate(now: Date, timezone: string): string {
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const started = Date.now();
   // What the tablet said about itself, for the log line and the refusal note.
-  const param = (k: string, max: number) => (req.nextUrl.searchParams.get(k) ?? "").trim().slice(0, max) || null;
-  const from = { stream: param("stream", 20), warehouse: param("warehouse", 20), device: param("device", 100) };
+  // Each under the name documented here or the one its scan post uses
+  // (Warehouse, DeviceName, Stream), since both come from the same app.
+  const q = req.nextUrl.searchParams;
+  const param = (names: string[], max: number) =>
+    names.map((k) => (q.get(k) ?? "").trim().slice(0, max)).find(Boolean) || null;
+  const from = {
+    stream: param(["stream", "Stream"], 20),
+    warehouse: param(["warehouse", "Warehouse", "site", "Site"], 20),
+    device: param(["device", "Device", "deviceName", "DeviceName"], 100),
+    // The names alone, never the values: shows what a tablet build sends
+    // without having to find one and read its code.
+    params: [...new Set(q.keys())].sort().join(",").slice(0, 200) || undefined,
+  };
   const apiKey = req.headers.get("x-api-key");
   const expectedKey = process.env.TIMECLOCK_API_KEY;
   if (!expectedKey || !apiKey || apiKey !== expectedKey) {
