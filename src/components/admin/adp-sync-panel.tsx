@@ -505,7 +505,7 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
       {credentials.length > 0 && (
         <Card
           title="New employee sign ins"
-          subtitle="Shown once. Passwords are stored scrambled, so copy these before leaving this page."
+          subtitle="Shown only once. Copy these before you leave this page, because the passwords cannot be shown again."
           padding={0}
         >
           <Table>

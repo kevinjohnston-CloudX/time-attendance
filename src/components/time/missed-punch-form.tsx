@@ -94,7 +94,7 @@ export function MissedPunchForm() {
 
         <Card
           title="Missed Punch"
-          subtitle="Tell us which punch was missed and when it should have happened."
+          subtitle="Choose the punch you missed and when it should have happened."
         >
           <div className={FIELD_GRID}>
             {/* The kit's Select has no label prop, so the label, the required

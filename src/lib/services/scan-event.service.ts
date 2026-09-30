@@ -744,7 +744,7 @@ export async function findScanDiscrepancies(
       description:
         `The gate at ${g.deviceName ?? "an unknown reader"} recorded the ${g.scanTime.toISOString()} scan as ${g.direction}, ` +
         `but the employee ${leaving ? "clocked out" : "clocked in"} at ${witness.scanTime.toISOString()}, ` +
-        `${leaving ? "just before" : "just after"} it. The gate missed an earlier crossing; this scan was almost certainly ${expected}.`,
+        `${leaving ? "just before" : "just after"} it. The gate missed an earlier crossing, so this scan was almost certainly ${expected}.`,
     });
   }
 

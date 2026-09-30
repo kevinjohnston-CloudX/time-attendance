@@ -150,9 +150,9 @@ export function PeopleSearch({
         : "",
       missing.length ? `No one found for ${missing.map((m) => `"${m}"`).join(", ")}.` : "",
       unclear.length
-        ? `${unclear.map((u) => `"${u.text}"`).join(", ")} matched more than one person; type ${unclear.length === 1 ? "it" : "them"} to pick.`
+        ? `${unclear.map((u) => `"${u.text}"`).join(", ")} matched more than one person. Search for ${unclear.length === 1 ? "it" : "them"} again to choose.`
         : "",
-      over ? `${over} more did not fit; a search holds ${max} people.` : "",
+      over ? `${over} more did not fit. A search holds up to ${max} people.` : "",
     ].filter(Boolean);
     setNote({ tone: missing.length || unclear.length || over ? "warning" : "info", text: parts.join(" ") });
   }

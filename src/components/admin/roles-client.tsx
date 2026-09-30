@@ -111,7 +111,7 @@ export function RolesClient({
       <PinnedBar>
         <PageHeader
           title="Roles & Permissions"
-          subtitle="Who can see and approve what"
+          subtitle="Control what each role can see and approve"
           actions={
             <>
               <LinkButton href="/admin" hierarchy="tertiary">

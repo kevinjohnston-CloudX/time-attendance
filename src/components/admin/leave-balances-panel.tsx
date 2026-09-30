@@ -609,7 +609,7 @@ function LedgerCard({
           <Banner
             tone="warning"
             title="Accrual does not match the policy"
-            body={`The policy should have posted ${hrs(row.expectedAccrualMinutes ?? 0)} h by now; the ledger has ${hrs(row.accruedMinutes)} h.`}
+            body={`The policy should have posted ${hrs(row.expectedAccrualMinutes ?? 0)} h by now, but the ledger shows ${hrs(row.accruedMinutes)} h.`}
             meta={`Difference ${delta(gap)} h`}
             actions={
               canManage && !fixOpen ? (

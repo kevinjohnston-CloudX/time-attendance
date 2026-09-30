@@ -640,7 +640,7 @@ export default async function DashboardPage({
           {presence && (
             <Card
               title="Team Presence"
-              subtitle={`Live · ${format(now, "d MMM HH:mm")}${me?.site?.name ? ` · ${me.site.name}` : ""}`}
+              subtitle={`Live · ${format(now, "MMM d, h:mm a")}${me?.site?.name ? ` · ${me.site.name}` : ""}`}
             >
               <div className="flex flex-col gap-3">
                 <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(126px,1fr))]">

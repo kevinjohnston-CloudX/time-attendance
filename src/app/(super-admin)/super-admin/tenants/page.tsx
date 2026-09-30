@@ -35,7 +35,7 @@ export default async function TenantsPage() {
     <div className="flex flex-col gap-4">
       <PageHeader pinned
         title="Tenants"
-        subtitle="Super-admin · every company on this deployment"
+        subtitle="Every company on this deployment"
         actions={
           <LinkButton href="/super-admin/tenants/new" hierarchy="primary">
             Create Tenant

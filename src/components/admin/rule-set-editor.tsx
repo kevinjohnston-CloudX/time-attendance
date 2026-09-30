@@ -852,7 +852,7 @@ function StatePresetPicker({ onChange }: { onChange: (p: OtPreset) => void }) {
           ))}
         </optgroup>
       </Select>
-      {rule && <span style={caption}>{rule} The fields below were filled in; nothing is saved until you save.</span>}
+      {rule && <span style={caption}>{rule} The fields below have been filled in. Nothing is saved until you save the rule set.</span>}
     </span>
   );
 }

@@ -106,7 +106,7 @@ export function RequestLeaveForm({ leaveTypes, shift, layout = "page", onSuccess
       {isPage && (
         <PageHeader pinned
           title="Request Leave"
-          subtitle="Pick your days and send it for approval"
+          subtitle="Choose your days and send the request for approval"
           actions={
             <>
               <LinkButton href="/leave" hierarchy="tertiary">
@@ -146,7 +146,7 @@ export function RequestLeaveForm({ leaveTypes, shift, layout = "page", onSuccess
 
         <Card
           title="Select Days"
-          subtitle="Pick the days you will be off. Hours follow your shift; switch a day to partial to take less."
+          subtitle="Choose the days you will be off. Hours come from your shift. Set a day to partial to take fewer hours."
         >
           <LeaveDayPicker value={selectedDays} onChange={setSelectedDays} shift={shift} />
         </Card>

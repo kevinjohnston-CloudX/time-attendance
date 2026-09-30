@@ -346,7 +346,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
       >
         <PageHeader
           title="Team Punch History"
-          subtitle="Every punch by employee, where it came from, and whether it is approved"
+          subtitle="Each employee's punches, where they came from and whether they are approved"
           actions={
             <Button
               hierarchy="secondary"

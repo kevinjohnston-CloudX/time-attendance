@@ -868,7 +868,7 @@ export function EditEmployeeForm({
             <Section
               icon={CircleDollarSign}
               title="Pay & Rules"
-              subtitle="The rule set computes the hours; the pay method decides whether punches drive pay at all"
+              subtitle="The rule set calculates the hours. The pay method decides whether punches affect pay at all."
             >
               <div className={styles.grid}>
                 <Field label="Rule set" htmlFor="f-ruleSetId" read={ruleSets.find((r) => r.id === v.ruleSetId)?.name ?? employee.ruleSet.name}>

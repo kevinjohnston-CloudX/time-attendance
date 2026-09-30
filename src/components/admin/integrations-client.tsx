@@ -106,7 +106,7 @@ export function IntegrationsClient({
       <PinnedBar barRef={barRef}>
         <PageHeader
           title="Integrations"
-          subtitle="Keys used by timeclocks and exports"
+          subtitle="API keys for time clocks and exports"
           condensed={condensed}
           actions={
             <>

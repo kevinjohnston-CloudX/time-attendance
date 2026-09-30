@@ -111,7 +111,7 @@ export default async function NewTenantPage({
           />
         )}
 
-        <Card title="Tenant" subtitle="The company itself. Everything else hangs off this record.">
+        <Card title="Tenant" subtitle="The company record. Its sites, employees and rules belong to it.">
           <div className="grid gap-3" style={{ gridTemplateColumns: fieldGrid(2) }}>
             <Input name="name" label="Company Name" required placeholder="Bergen Logistics LLC" />
             <Input
@@ -125,7 +125,7 @@ export default async function NewTenantPage({
           </div>
         </Card>
 
-        <Card title="First Site" subtitle="The time zone decides how this site's punches are stamped.">
+        <Card title="First Site" subtitle="The site's time zone sets the time on its punches.">
           <div className="grid gap-3" style={{ gridTemplateColumns: fieldGrid(2) }}>
             <Input name="siteName" label="Site Name" required placeholder="Main Office" />
             <SelectField label="Timezone" htmlFor="siteTimezone">
@@ -160,7 +160,7 @@ export default async function NewTenantPage({
               required
               minLength={8}
               placeholder="At least 8 characters"
-              hint="Give this to them directly; it is not emailed."
+              hint="Give this to them yourself. It is not sent by email."
             />
           </div>
         </Card>

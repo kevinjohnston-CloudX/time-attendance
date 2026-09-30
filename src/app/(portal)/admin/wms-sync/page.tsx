@@ -137,7 +137,7 @@ export default async function WmsSyncPage() {
     <div className="flex flex-col gap-4">
       <PageHeader pinned
         title="WMS Sync"
-        subtitle="Roster, schedules and gate baselines, read out of the warehouse Oracle database"
+        subtitle="Employees, schedules and security gate status from the warehouse system"
         actions={
           <div className="flex items-center gap-3">
             <SyncNowButton />
@@ -185,7 +185,7 @@ export default async function WmsSyncPage() {
         </div>
 
         <Card
-          title="Last run of each leg"
+          title="Latest sync of each type"
           subtitle="Shown separately because each can fail on its own. Schedules can stop arriving while the roster keeps updating."
           padding={0}
         >
@@ -230,7 +230,7 @@ export default async function WmsSyncPage() {
 
         {s.topCandidates.length > 0 && (
           <Card
-            title="Missing employees, by refused scans"
+            title="Employees missing from CloudTime"
             subtitle="Oracle knows these badges and CloudTime does not, so every scan they make is turned away."
             padding={0}
           >

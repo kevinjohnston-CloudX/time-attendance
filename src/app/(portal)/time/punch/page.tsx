@@ -119,7 +119,7 @@ export default async function PunchPage() {
       href: "/leave/request",
       icon: Plane,
       label: "Request leave",
-      detail: "Pick your days and send them for approval.",
+      detail: "Choose your days and send them for approval.",
     },
     {
       href: "/time/timesheet",
@@ -139,7 +139,7 @@ export default async function PunchPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader pinned title="Punch Clock" subtitle="Clock in, take your meal, clock out" />
+      <PageHeader pinned title="Punch Clock" subtitle="Clock in and out, and record your meal break" />
 
       <PunchHero state={today.state as PunchStateValue} context={context} stats={stats} />
 
@@ -273,7 +273,7 @@ export default async function PunchPage() {
           </div>
         </Card>
 
-        <Card title="Need Something Else?" subtitle="Common follow-ups from this screen">
+        <Card title="Related Tasks" subtitle="Corrections, time off and your hours">
           <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,45%)),1fr))]">
             {links.map((l) => (
               <Link

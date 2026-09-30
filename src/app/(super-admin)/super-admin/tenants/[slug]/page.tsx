@@ -105,7 +105,7 @@ export default async function TenantDetailPage({
           />
         )}
 
-        <Card title="Overview" subtitle="What this tenant is made of.">
+        <Card title="Overview" subtitle="The company record and its totals.">
           <div
             className="grid gap-4"
             style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))" }}
@@ -125,7 +125,7 @@ export default async function TenantDetailPage({
           </div>
         </Card>
 
-        <Card title="Sites" subtitle="The time zone is what stamps a punch." padding={0}>
+        <Card title="Sites" subtitle="Each site's time zone sets the time on its punches." padding={0}>
           {tenant.sites.length === 0 ? (
             <EmptyState
               title="No sites"
