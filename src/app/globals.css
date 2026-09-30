@@ -224,6 +224,13 @@ textarea {
 .ta-hoverable[data-active="true"]:hover {
   background: var(--surface-info) !important;
 }
+/* Keyboard focus draws the design's accent ring, inside the row so a scroll
+   edge never clips it. Without this the browser's own heavy blue ring shows,
+   for example on the open page in the menu after a key is pressed. */
+.ta-hoverable:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: -2px;
+}
 /* A breadcrumb step you can go back to: it reads as the trail until the
    pointer is on it, then answers like a link. */
 .ta-crumb {
@@ -246,6 +253,11 @@ textarea {
 .ta-rail-btn:not([aria-current="true"]):hover {
   background: var(--fill-hover) !important;
   color: var(--text-primary) !important;
+}
+.ta-rail-btn:focus-visible,
+.ta-lift:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: -2px;
 }
 /* The user card's rows lift to the card color under the pointer, as the
    handoff draws them, rather than taking the gray hover the well already is. */
