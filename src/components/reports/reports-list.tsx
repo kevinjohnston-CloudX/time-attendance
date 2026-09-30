@@ -232,6 +232,7 @@ export function ReportsList({
               }))}
             />
             <ToolsBar
+              beside
               search={<SearchInput value={query} onValueChange={setQuery} placeholder="Report name or owner" width={300} />}
               end={
                 <>

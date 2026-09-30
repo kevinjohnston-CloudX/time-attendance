@@ -415,6 +415,33 @@ textarea {
   outline: 2px solid var(--stroke-accent-focus);
   outline-offset: 1px;
 }
+/* A boxed trigger (a date range, a plain select) goes flat the same way. */
+.ta-tools select.ta-field {
+  font: var(--weight-medium) 13px/1 var(--font-sans) !important;
+  color: var(--text-secondary) !important;
+}
+.ta-tools select.ta-field,
+.ta-tools button.ta-field {
+  height: 34px;
+  border-radius: 10px;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none;
+  transition: background-color 120ms ease;
+}
+.ta-tools select.ta-field:hover,
+.ta-tools button.ta-field:hover {
+  background: var(--fill-hover) !important;
+}
+.ta-tools button.ta-field[data-applied="true"] {
+  background: var(--surface-info) !important;
+  box-shadow: inset 0 0 0 1px var(--stroke-accent);
+}
+.ta-tools select.ta-field:focus-visible,
+.ta-tools button.ta-field:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 1px;
+}
 
 /* A small square icon button that lightens on hover (copy, close). */
 .ta-icon-btn {
