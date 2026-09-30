@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { authConfig } from "@/lib/auth.config";
 import { liveIdentity } from "@/lib/rbac/identity";
 import { clientAddress, isLockedOut, recordFailedLogin } from "@/lib/login-limit";
+import { findLoginUserId } from "@/lib/login-lookup";
 
 /** Too many wrong passwords: the sign-in page says to wait rather than "wrong password". */
 class LockedOut extends CredentialsSignin {
@@ -45,12 +46,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const parsed = credentialsSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
-        // Try email first; fall back to username for super-admin accounts
-        const identifier = parsed.data.username.toLowerCase();
-        const user = await db.user.findFirst({
-          where: { OR: [{ email: identifier }, { username: identifier }] },
-          include: { employee: { include: { customRole: { select: { canViewAs: true } } } } },
-        });
+        // Email, or username for super-admin accounts, ignoring capitals
+        const userId = await findLoginUserId(parsed.data.username, { email: true, username: true });
+        const user = userId
+          ? await db.user.findUnique({
+              where: { id: userId },
+              include: { employee: { include: { customRole: { select: { canViewAs: true } } } } },
+            })
+          : null;
 
         if (!user?.passwordHash) return null;
 
@@ -101,19 +104,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (allowedDomains.length > 0 && !allowedDomains.includes(domain)) {
           return false;
         }
-        // Only allow Google sign-in for users the admin has already registered
-        const existing = await db.user.findUnique({ where: { email } });
-        if (!existing) return false;
+        // Only allow Google sign-in for users the admin has already registered,
+        // ignoring capitals: Google sends the address lowercase, the record may not be.
+        const existingId = await findLoginUserId(email, { email: true });
+        if (!existingId) return false;
 
         // If no Account row exists yet, create it now so NextAuth doesn't
         // throw OAuthAccountNotLinked for users provisioned outside OAuth
         const linked = await db.account.findFirst({
-          where: { userId: existing.id, provider: "google" },
+          where: { userId: existingId, provider: "google" },
         });
         if (!linked && account.providerAccountId) {
           await db.account.create({
             data: {
-              userId: existing.id,
+              userId: existingId,
               type: "oauth",
               provider: "google",
               providerAccountId: account.providerAccountId,

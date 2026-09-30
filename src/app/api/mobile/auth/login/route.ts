@@ -3,6 +3,7 @@ import { WINDOW_MIN, clientAddress, isLockedOut, recordFailedLogin } from "@/lib
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { findLoginUserId } from "@/lib/login-lookup";
 import { signAccessToken, createRefreshToken } from "@/lib/mobile-auth";
 
 const loginSchema = z.object({
@@ -21,10 +22,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const user = await db.user.findUnique({
-      where: { username: parsed.data.username.toLowerCase() },
-      include: { employee: { include: { customRole: { select: { liveAttendanceOnly: true } } } } },
-    });
+    const userId = await findLoginUserId(parsed.data.username, { username: true });
+    const user = userId
+      ? await db.user.findUnique({
+          where: { id: userId },
+          include: { employee: { include: { customRole: { select: { liveAttendanceOnly: true } } } } },
+        })
+      : null;
 
     if (!user?.passwordHash) {
       return NextResponse.json(
