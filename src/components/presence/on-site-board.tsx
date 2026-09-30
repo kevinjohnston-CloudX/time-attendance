@@ -18,6 +18,7 @@ import {
   THead,
   TR,
   Toast,
+  ToolsBar,
   useToast,
 } from "@/components/ui";
 import { findOnSitePeople, getOnSiteBoard } from "@/actions/presence.actions";
@@ -879,8 +880,9 @@ export function OnSiteBoard({
               {!condensed && liveLine}
             </div>
           </div>
-          {/* Wraps rather than running off a narrow window. */}
-          <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div>
+          {/* Wraps rather than running off a narrow window, and stays on the
+              right when it does, as every page header does. */}
+          <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">{actions}</div>
         </div>
 
         {/* Row two, how you are looking at it: search first, then who, then
@@ -888,10 +890,11 @@ export function OnSiteBoard({
             the same place on every view, and each view's own layout choices
             live behind one View button, so the row keeps its shape. */}
         <div className="pb-3.5">
-        <div className={styles.tools}>
-          {ready && (
-            <>
-              {siteId && (
+          <ToolsBar
+            className={styles.tools}
+            search={
+              ready &&
+              siteId && (
                 <PeopleSearch
                   siteId={siteId}
                   picked={picked}
@@ -907,111 +910,108 @@ export function OnSiteBoard({
                   max={MAX_PICKED}
                   onBadgeHolders={(forText, ids) => setBadgeHit({ for: forText, ids: new Set(ids) })}
                 />
-              )}
-              {siteId && (departments.length > 0 || shifts.length > 0 || (tab !== "people" && !!today)) && (
-                <span className={styles.toolsDivider} aria-hidden="true" />
-              )}
-              {departments.length > 0 && (
-                <FilterSelectChip label="Department" value={dept} options={departments} onChange={setDept} />
-              )}
-              {shifts.length > 0 && <FilterSelectChip label="Shift" value={shift} options={shifts} onChange={setShift} />}
-              {tab !== "people" && today && (
-                <DayChip
-                  day={logDayShown}
-                  today={today}
-                  onChange={(d) => {
-                    setLogDay(d);
-                    setMvShown(PEOPLE_PER_PAGE);
-                  }}
-                />
-              )}
-              {tab === "movements" && mvFlagShown && (
-                <ToggleChip label={flagLabel(mvFlagShown, mvHasGate)} pressed onClick={() => setMvFlag(null)} />
-              )}
-              {tab === "log" && counter && (
-                <ToggleChip label={COUNTER_LABEL[counter]} pressed onClick={() => setCounter(null)} />
-              )}
-              {(isFiltered || (tab === "movements" && !!mvFlagShown)) && (
-                <Button
-                  hierarchy="link"
-                  size="sm"
-                  onClick={() => {
-                    setQuery("");
-                    setPicked([]);
-                    setDept("");
-                    setShift("");
-                    if (tab === "movements") setMvFlag(null);
-                  }}
-                >
-                  Clear all
-                </Button>
-              )}
-              {/* One group, so a narrow window wraps it whole, to the right. */}
-              <span className="ml-auto flex flex-none items-center gap-2.5">
-              <span
-                className="tabular whitespace-nowrap"
-                style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
-              >
-                {tab === "movements"
-                  ? siteDay.data
-                    ? `${mvRows.length.toLocaleString()} ${mvRows.length === 1 ? "person" : "people"}`
-                    : ""
-                  : tab === "log"
-                  ? logSummary
-                    ? counter === "unknown"
-                      ? `${logTotal.toLocaleString()} ${logTotal === 1 ? "badge" : "badges"}`
-                      : `${logTotal.toLocaleString()} ${logTotal === 1 ? "scan" : "scans"}`
-                    : ""
-                  : searching
-                    ? `${matches.length.toLocaleString()} ${matches.length === 1 ? "match" : "matches"} in every group`
-                    : `${matches.length.toLocaleString()} ${matches.length === 1 ? "person" : "people"}`}
-              </span>
-              {tab === "movements" && <MvSortChip sort={mvSort} onChange={setMvSort} />}
-              {tab === "people" && <SortChip sort={sort} onChange={setSort} />}
-              {tab === "movements" && (
-                <ViewOptions>
-                  <ViewOptionCheck
-                    label="Expand every row"
-                    hint="Show each person's stretches and scans"
-                    checked={mvAllOpen}
-                    onChange={() => {
-                      setMvAllOpen((v) => !v);
-                      setMvToggled(new Set());
-                    }}
-                  />
-                </ViewOptions>
-              )}
-              {tab === "people" && (
-                <ViewOptions>
-                  <div className={styles.voGroup} role="group" aria-label="Layout">
-                    <span className={styles.voLabel}>Layout</span>
-                    <SegmentedControl
-                      ariaLabel="Layout"
+              )
+            }
+            end={
+              ready && (
+                <>
+                  {(isFiltered || (tab === "movements" && !!mvFlagShown)) && (
+                    <Button
+                      hierarchy="link"
                       size="sm"
-                      fullWidth
-                      items={[
-                        { value: "photos", label: "Photos" },
-                        { value: "compact", label: "Compact" },
-                        { value: "list", label: "List" },
-                      ]}
-                      value={view}
-                      onChange={(v) => setView(v as View)}
-                    />
-                  </div>
-                  {view !== "list" && departments.length > 1 && (
-                    <ViewOptionCheck
-                      label="Group by department"
-                      hint="One section per department"
-                      checked={byDept}
-                      onChange={() => setByDept((v) => !v)}
-                    />
+                      onClick={() => {
+                        setQuery("");
+                        setPicked([]);
+                        setDept("");
+                        setShift("");
+                        if (tab === "movements") setMvFlag(null);
+                      }}
+                    >
+                      Clear all
+                    </Button>
                   )}
-                </ViewOptions>
-              )}
-              </span>
-            </>
-          )}
-        </div>
+                  <span className="ta-tools-count tabular">
+                    {tab === "movements"
+                      ? siteDay.data
+                        ? `${mvRows.length.toLocaleString()} ${mvRows.length === 1 ? "person" : "people"}`
+                        : ""
+                      : tab === "log"
+                      ? logSummary
+                        ? counter === "unknown"
+                          ? `${logTotal.toLocaleString()} ${logTotal === 1 ? "badge" : "badges"}`
+                          : `${logTotal.toLocaleString()} ${logTotal === 1 ? "scan" : "scans"}`
+                        : ""
+                      : searching
+                        ? `${matches.length.toLocaleString()} ${matches.length === 1 ? "match" : "matches"} in every group`
+                        : `${matches.length.toLocaleString()} ${matches.length === 1 ? "person" : "people"}`}
+                  </span>
+                  {tab === "movements" && <MvSortChip sort={mvSort} onChange={setMvSort} />}
+                  {tab === "people" && <SortChip sort={sort} onChange={setSort} />}
+                  {tab === "movements" && (
+                    <ViewOptions>
+                      <ViewOptionCheck
+                        label="Expand every row"
+                        hint="Show each person's stretches and scans"
+                        checked={mvAllOpen}
+                        onChange={() => {
+                          setMvAllOpen((v) => !v);
+                          setMvToggled(new Set());
+                        }}
+                      />
+                    </ViewOptions>
+                  )}
+                  {tab === "people" && (
+                    <ViewOptions>
+                      <div className={styles.voGroup} role="group" aria-label="Layout">
+                        <span className={styles.voLabel}>Layout</span>
+                        <SegmentedControl
+                          ariaLabel="Layout"
+                          size="sm"
+                          fullWidth
+                          items={[
+                            { value: "photos", label: "Photos" },
+                            { value: "compact", label: "Compact" },
+                            { value: "list", label: "List" },
+                          ]}
+                          value={view}
+                          onChange={(v) => setView(v as View)}
+                        />
+                      </div>
+                      {view !== "list" && departments.length > 1 && (
+                        <ViewOptionCheck
+                          label="Group by department"
+                          hint="One section per department"
+                          checked={byDept}
+                          onChange={() => setByDept((v) => !v)}
+                        />
+                      )}
+                    </ViewOptions>
+                  )}
+                </>
+              )
+            }
+          >
+            {ready && departments.length > 0 && (
+              <FilterSelectChip label="Department" value={dept} options={departments} onChange={setDept} />
+            )}
+            {ready && shifts.length > 0 && <FilterSelectChip label="Shift" value={shift} options={shifts} onChange={setShift} />}
+            {ready && tab !== "people" && today && (
+              <DayChip
+                day={logDayShown}
+                today={today}
+                onChange={(d) => {
+                  setLogDay(d);
+                  setMvShown(PEOPLE_PER_PAGE);
+                }}
+              />
+            )}
+            {ready && tab === "movements" && mvFlagShown && (
+              <ToggleChip label={flagLabel(mvFlagShown, mvHasGate)} pressed onClick={() => setMvFlag(null)} />
+            )}
+            {ready && tab === "log" && counter && (
+              <ToggleChip label={COUNTER_LABEL[counter]} pressed onClick={() => setCounter(null)} />
+            )}
+          </ToolsBar>
         </div>
         {pickedAbsent.length > 0 && (
           <p className="-mt-1 pb-3" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
