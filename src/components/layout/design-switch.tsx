@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { TriangleAlert, X } from "lucide-react";
 import { SegmentedControl } from "@/components/ui";
 import { switchHref } from "@/lib/design-switch";
+import { rememberSwitchSpot, useDesignNotice } from "./use-design-notice";
 
 /**
  * Classic or New, beside the navigation layout control: both are how the
@@ -17,29 +18,12 @@ import { switchHref } from "@/lib/design-switch";
  * so this is its language applied to one.
  *
  * <p>When the classic design has an end date, the switch sits in a warning
- * pill with an icon that explains it. The explanation opens by itself once
- * after every sign in, pinned, and closes only with its X; after that,
- * hovering or focusing the icon shows it until the pointer leaves. "Closed
- * for this sign in" is remembered per browser against the sign in's own id,
- * so signing out and back in brings it up again.
+ * pill with an icon that explains it (see useDesignNotice for when the
+ * explanation opens).
+ *
+ * <p>It records where it sits (rememberSwitchSpot), so the classic design's
+ * switch is drawn at exactly the same spot and nothing moves on a flip.
  */
-const SEEN_KEY = "ct.design-notice.closed";
-
-function closedFor(signInId: string): boolean {
-  try {
-    return window.localStorage.getItem(SEEN_KEY) === signInId;
-  } catch {
-    return false;
-  }
-}
-
-function rememberClosed(signInId: string) {
-  try {
-    window.localStorage.setItem(SEEN_KEY, signInId);
-  } catch {
-    // Storage blocked: it simply opens again on the next page load.
-  }
-}
 
 export function DesignSwitch({
   classicUntil = null,
@@ -52,24 +36,16 @@ export function DesignSwitch({
   const pathname = usePathname();
   const search = useSearchParams();
   const noticeId = useId();
-  const [pinned, setPinned] = useState(false);
-  const [hovering, setHovering] = useState(false);
+  const { open, pinned, setHovering, close } = useDesignNotice(classicUntil, signInId);
+  const spotRef = useRef<HTMLSpanElement>(null);
 
-  // Opens by itself once per sign in. Read after mount, since storage only
-  // exists in the browser; deferred so the effect does not set state inline.
+  // Where it sits now, and again whenever the window changes size.
   useEffect(() => {
-    if (!classicUntil || closedFor(signInId)) return;
-    const t = setTimeout(() => setPinned(true), 0);
-    return () => clearTimeout(t);
-  }, [classicUntil, signInId]);
-
-  const open = pinned || hovering;
-
-  function close() {
-    setPinned(false);
-    setHovering(false);
-    rememberClosed(signInId);
-  }
+    const save = () => spotRef.current && rememberSwitchSpot(spotRef.current);
+    save();
+    window.addEventListener("resize", save);
+    return () => window.removeEventListener("resize", save);
+  }, []);
 
   const control = (
     <>
@@ -89,6 +65,9 @@ export function DesignSwitch({
         value="new"
         onChange={(next) => {
           if (next !== "classic") return;
+          // Measured once more on the way out, so the classic switch lands on
+          // the spot this one is on right now.
+          if (spotRef.current) rememberSwitchSpot(spotRef.current);
           const here = `${pathname}${search.size ? `?${search.toString()}` : ""}`;
           // A full load: the two designs have their own styles, and one
           // design's must not linger on the other's pages.
@@ -102,10 +81,17 @@ export function DesignSwitch({
     </>
   );
 
-  if (!classicUntil) return <span className="inline-flex flex-none items-center gap-2.5">{control}</span>;
+  if (!classicUntil) {
+    return (
+      <span ref={spotRef} className="inline-flex flex-none items-center gap-2.5">
+        {control}
+      </span>
+    );
+  }
 
   return (
     <span
+      ref={spotRef}
       className="relative inline-flex h-8 flex-none items-center gap-2 rounded-full pl-3 pr-[3px]"
       style={{ background: "var(--surface-warning)", boxShadow: "inset 0 0 0 1px var(--stroke-warning)" }}
     >

@@ -12,7 +12,7 @@ import { getPermissions } from "@/lib/rbac/permissions";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { getLegacyPermissions, isLiveAttendanceOnly } from "@/lib/rbac/permission-resolver";
 import { LIVE_ATTENDANCE_HREF } from "@/lib/constants";
-import { classicDesignUntil, switchHref } from "@/lib/design-switch";
+import { classicDesignUntil, parseSwitchSpot, switchHref, SWITCH_SPOT_COOKIE } from "@/lib/design-switch";
 
 const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
@@ -123,6 +123,8 @@ export default async function PortalLayout({
     }
   }
 
+  const cookieJar = await cookies();
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-zinc-50 dark:bg-zinc-950">
       {tenantBannerName && (
@@ -156,12 +158,17 @@ export default async function PortalLayout({
         />
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {/* Added after prod: a slim bar across the top, the new design's
-              height, holding the design switch in the same place as there.
-              It stays put while the page scrolls under it, and the page's top
-              padding is shorter by about the bar's height. The 12px above it
-              is the new design's, so the switch does not move when you flip. */}
-          <header className="mt-3 flex h-9 flex-none items-center justify-end px-3">
-            <ClassicDesignSwitch classicUntil={classicDesignUntil()?.label ?? null} />
+              height and 12px below the top as there, holding the design
+              switch on exactly the spot the new design's sits (measured
+              there, SWITCH_SPOT_COOKIE), so nothing moves when you flip. It
+              stays put while the page scrolls under it, and the page's top
+              padding is shorter by about the bar's height. */}
+          <header className="relative z-30 mt-3 h-9 flex-none">
+            <ClassicDesignSwitch
+              spot={parseSwitchSpot(cookieJar.get(SWITCH_SPOT_COOKIE)?.value)}
+              classicUntil={classicDesignUntil()?.label ?? null}
+              signInId={session.user.signInId}
+            />
           </header>
           <main className="flex-1 overflow-y-auto">
             <InactiveRouteGuard isInactive={!isEmployeeActive} />

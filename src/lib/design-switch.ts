@@ -48,6 +48,41 @@ export const DESIGN_SWITCH_VALUE = "design-switch";
  */
 export const DESIGN_PROBE_HEADER = "x-ct-design";
 
+/**
+ * Where the new design's switch sits, so the classic one can sit at exactly
+ * the same spot and nothing moves when somebody flips between them. It is
+ * measured there, because it depends on the controls to its right (the Nav
+ * switch and the bell, whose count badge changes width), and kept in a cookie
+ * so the classic page is drawn with it from the server, without a jump.
+ *
+ * <p>The value is "<wide>|<narrow>": how far the switch's right edge is from
+ * the window's right edge, in pixels, at 1024px and wider (Tailwind's lg,
+ * where its labels show) and below.
+ */
+export const SWITCH_SPOT_COOKIE = "ct-design-spot";
+
+export type SwitchSpot = { wide: number; narrow: number };
+
+/** Measured with a "99+" bell, for a browser that has not opened New yet. */
+export const SWITCH_SPOT_DEFAULT: SwitchSpot = { wide: 324.09, narrow: 286.28 };
+
+const spotPart = (v: string | undefined, fallback: number) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 && n <= 4000 ? n : fallback;
+};
+
+export function parseSwitchSpot(value: string | null | undefined): SwitchSpot {
+  const [wide, narrow] = (value ?? "").split("|");
+  return {
+    wide: spotPart(wide, SWITCH_SPOT_DEFAULT.wide),
+    narrow: spotPart(narrow, SWITCH_SPOT_DEFAULT.narrow),
+  };
+}
+
+export function formatSwitchSpot(spot: SwitchSpot): string {
+  return `${spot.wide.toFixed(2)}|${spot.narrow.toFixed(2)}`;
+}
+
 export function parseDesign(value: string | null | undefined): Design | null {
   return value === "classic" || value === "new" ? value : null;
 }
