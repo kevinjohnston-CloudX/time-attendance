@@ -11,6 +11,7 @@ import {
 } from "@/components/ui";
 import { db } from "@/lib/db";
 import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { formatMinutes } from "@/lib/utils/duration";
 import { parseUtcDate } from "@/lib/utils/date";
@@ -60,15 +61,6 @@ const EXCEPTION_LABEL: Record<string, string> = {
   ABSENT:           "Absent",
   LATE_IN:          "Late In",
   EARLY_OUT:        "Early Out",
-};
-
-const LEAVE_STATUS_LABEL: Record<string, string> = {
-  DRAFT:     "Draft",
-  PENDING:   "Pending",
-  APPROVED:  "Approved",
-  REJECTED:  "Rejected",
-  CANCELLED: "Cancelled",
-  POSTED:    "Posted",
 };
 
 /** The card row the design uses: two up, one up when narrow. */
@@ -244,6 +236,69 @@ export default async function DashboardPage({
       ]);
     }
   }
+
+  // ── Pay period overview, from the three counts above ─────────────────────
+  // One colour per badge tone, as the dot beside each line.
+  const TONE_DOT: Record<string, string> = {
+    error: "var(--fill-error)",
+    warning: "var(--fill-warning)",
+    success: "var(--fill-success)",
+    info: "var(--fill-accent)",
+    purple: "var(--fill-accent)",
+    neutral: "var(--icon-tertiary)",
+  };
+  const periodQs = selectedOverviewPeriodId ? `&payPeriodId=${selectedOverviewPeriodId}` : "";
+
+  const exceptionRows = [...exceptionCounts]
+    .sort((a, b) => b._count._all - a._count._all)
+    .map((ec) => ({
+      key: ec.exceptionType,
+      label: EXCEPTION_LABEL[ec.exceptionType] ?? ec.exceptionType,
+      count: ec._count._all,
+      color: TONE_DOT[exceptionTone(ec.exceptionType)],
+      href: `/supervisor/exceptions?exceptionType=${ec.exceptionType}${periodQs}`,
+    }));
+  const exceptionTotal = exceptionRows.reduce((n, r) => n + r.count, 0);
+
+  // The two waiting steps always show, so "nothing waiting" reads as an
+  // answer. The rest only when something is in them.
+  const leaveCount = (st: string) => leaveStatusCounts.find((l) => l.status === st)?._count._all ?? 0;
+  const LEAVE_LINES: { status: string; label: string; href?: string; always?: boolean }[] = [
+    { status: "PENDING", label: "Waiting on supervisor", href: "/supervisor/leave?tab=pending", always: true },
+    { status: "PENDING_HR", label: "Waiting on HR", href: "/supervisor/leave?tab=hr-pending", always: true },
+    { status: "APPROVED", label: "Approved", href: "/supervisor/leave?tab=upcoming" },
+    { status: "POSTED", label: "Posted to timesheets" },
+    { status: "DRAFT", label: "Draft, not sent" },
+    { status: "REJECTED", label: "Rejected" },
+    { status: "CANCELLED", label: "Cancelled" },
+  ];
+  const leaveTotal = leaveStatusCounts.reduce((n, l) => n + l._count._all, 0);
+  const leaveWaiting = leaveCount("PENDING") + leaveCount("PENDING_HR");
+  const leaveRows =
+    leaveTotal === 0
+      ? []
+      : LEAVE_LINES.filter((l) => l.always || leaveCount(l.status) > 0).map((l) => ({
+          key: l.status,
+          label: l.label,
+          count: leaveCount(l.status),
+          color: TONE_DOT[leaveTone(l.status)],
+          href: l.href,
+        }));
+
+  // Grouped the way the pay period page filters, so each line opens exactly
+  // the timesheets it counts.
+  const sheetCount = (...st: string[]) =>
+    timesheetStatusCounts.filter((t) => st.includes(t.status)).reduce((n, t) => n + t._count._all, 0);
+  const timesheetTotal = sheetCount("OPEN", "REJECTED", "SUBMITTED", "SUP_APPROVED", "PAYROLL_APPROVED", "LOCKED");
+  const timesheetApproved = sheetCount("PAYROLL_APPROVED", "LOCKED");
+  const sheetHref = (show: string) =>
+    selectedOverviewPeriodId ? `/payroll/pay-periods?id=${selectedOverviewPeriodId}&show=${show}` : undefined;
+  const timesheetRows = [
+    { key: "employee", label: "Not submitted", count: sheetCount("OPEN", "REJECTED"), color: "var(--icon-tertiary)", hint: "Waiting on the employee" },
+    { key: "supervisor", label: "Waiting on supervisor", count: sheetCount("SUBMITTED"), color: "var(--fill-warning)" },
+    { key: "payroll", label: "Waiting on payroll", count: sheetCount("SUP_APPROVED"), color: "var(--fill-accent)" },
+    { key: "approved", label: "Approved", count: timesheetApproved, color: "var(--fill-success)", hint: "Approved by payroll, or locked" },
+  ].map((r) => ({ ...r, href: sheetHref(r.key) }));
 
   // ── Header line ───────────────────────────────────────────────────────────
   const periodLabel = payPeriod
@@ -711,11 +766,12 @@ export default async function DashboardPage({
         </div>
       )}
 
-      {/* ── Period overview ── */}
+      {/* ── Pay period overview ── */}
       {hasPayrollAccess && (
         <Card
-          title="Period Overview"
-          subtitle="Exceptions, leave and timesheet status for the selected period"
+          title="Pay Period Overview"
+          subtitle="Exceptions, time off and timesheets for the selected pay period"
+          padding={0}
           actions={
             overviewFilterOptions.length > 0 ? (
               <OverviewPeriodFilter
@@ -725,109 +781,49 @@ export default async function DashboardPage({
             ) : undefined
           }
         >
-          <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))]">
-            <OverviewGroup title="Open Exceptions" empty="No open exceptions" count={exceptionCounts.length}>
-              {exceptionCounts.map((ec) => {
-                const params = new URLSearchParams({ exceptionType: ec.exceptionType });
-                if (selectedOverviewPeriodId) params.set("payPeriodId", selectedOverviewPeriodId);
-                return (
-                  <Link
-                    key={ec.exceptionType}
-                    href={`/supervisor/exceptions?${params.toString()}`}
-                    className="ta-hub-card min-w-[104px] rounded-lg p-3"
-                    style={{
-                      border: "1px solid var(--stroke-divider)",
-                      background: "var(--surface-secondary)",
-                    }}
-                  >
-                    <Badge tone={exceptionTone(ec.exceptionType)} size="sm">
-                      {EXCEPTION_LABEL[ec.exceptionType] ?? ec.exceptionType}
-                    </Badge>
-                    <p
-                      className="tabular mt-2"
-                      style={{ margin: 0, font: "var(--type-h2)", color: "var(--text-primary)" }}
-                    >
-                      {ec._count._all}
-                    </p>
-                  </Link>
-                );
-              })}
-            </OverviewGroup>
-
-            <OverviewGroup title="Time-Off Requests" empty="No requests" count={leaveStatusCounts.length}>
-              {leaveStatusCounts.map((lc) => {
-                const href =
-                  lc.status === "PENDING"
-                    ? "/supervisor/leave?tab=pending"
-                    : lc.status === "APPROVED"
-                      ? "/supervisor/leave?tab=upcoming"
-                      : null;
-                const inner = (
-                  <>
-                    <Badge tone={leaveTone(lc.status)} size="sm">
-                      {LEAVE_STATUS_LABEL[lc.status] ?? lc.status}
-                    </Badge>
-                    <p
-                      className="tabular mt-2"
-                      style={{ margin: 0, font: "var(--type-h2)", color: "var(--text-primary)" }}
-                    >
-                      {lc._count._all}
-                    </p>
-                  </>
-                );
-                return href ? (
-                  <Link
-                    key={lc.status}
-                    href={href}
-                    className="ta-hub-card min-w-[104px] rounded-lg p-3"
-                    style={{
-                      border: "1px solid var(--stroke-divider)",
-                      background: "var(--surface-secondary)",
-                    }}
-                  >
-                    {inner}
-                  </Link>
-                ) : (
-                  <div
-                    key={lc.status}
-                    className="min-w-[104px] rounded-lg p-3"
-                    style={{
-                      border: "1px solid var(--stroke-divider)",
-                      background: "var(--surface-secondary)",
-                    }}
-                  >
-                    {inner}
-                  </div>
-                );
-              })}
-            </OverviewGroup>
-
-            <OverviewGroup
+          <div className="grid md:grid-cols-3 [&>*+*]:border-t [&>*+*]:border-[var(--stroke-divider)] md:[&>*+*]:border-t-0 md:[&>*+*]:border-l">
+            <OverviewColumn
+              title="Exceptions"
+              link={{
+                href: selectedOverviewPeriodId
+                  ? `/supervisor/exceptions?payPeriodId=${selectedOverviewPeriodId}`
+                  : "/supervisor/exceptions",
+                label: "Review exceptions",
+              }}
+              figure={exceptionTotal}
+              caption={exceptionTotal === 1 ? "open exception" : "open exceptions"}
+              empty="No open exceptions"
+              rows={exceptionRows}
+            />
+            <OverviewColumn
+              title="Time Off"
+              link={{ href: "/supervisor/leave", label: "Open leave requests" }}
+              figure={leaveWaiting}
+              caption="waiting for approval"
+              detail={
+                leaveTotal > 0
+                  ? `${leaveTotal.toLocaleString()} ${leaveTotal === 1 ? "request starts" : "requests start"} in this period`
+                  : undefined
+              }
+              empty="No time off starts in this period"
+              rows={leaveRows}
+            />
+            <OverviewColumn
               title="Timesheets"
-              empty="No timesheets in open pay periods"
-              count={timesheetStatusCounts.length}
-            >
-              {timesheetStatusCounts.map((tc) => (
-                <div
-                  key={tc.status}
-                  className="min-w-[104px] rounded-lg p-3"
-                  style={{
-                    border: "1px solid var(--stroke-divider)",
-                    background: "var(--surface-secondary)",
-                  }}
-                >
-                  <Badge tone={statusTone(tc.status)} size="sm">
-                    {TIMESHEET_STATUS_LABEL[tc.status as TimesheetStatusValue] ?? tc.status}
-                  </Badge>
-                  <p
-                    className="tabular mt-2"
-                    style={{ margin: 0, font: "var(--type-h2)", color: "var(--text-primary)" }}
-                  >
-                    {tc._count._all}
-                  </p>
-                </div>
-              ))}
-            </OverviewGroup>
+              link={
+                selectedOverviewPeriodId
+                  ? { href: `/payroll/pay-periods?id=${selectedOverviewPeriodId}`, label: "Open pay period" }
+                  : undefined
+              }
+              figure={timesheetApproved}
+              caption={timesheetTotal > 0 ? `of ${timesheetTotal.toLocaleString()} approved` : "timesheets"}
+              // Not submitted is the empty track, so the bar fills only as
+              // timesheets move along. Drawn grey, 728 of 728 read as done.
+              bar={timesheetTotal > 0 ? timesheetRows.filter((r) => r.key !== "employee") : undefined}
+              barTotal={timesheetTotal}
+              empty="No timesheets for this period yet"
+              rows={timesheetTotal > 0 ? timesheetRows : []}
+            />
           </div>
         </Card>
       )}
@@ -835,26 +831,133 @@ export default async function DashboardPage({
   );
 }
 
-/** One labelled group of count tiles inside the period overview. */
-function OverviewGroup({
+/** A line under one of the overview's three answers. */
+type OverviewRow = {
+  key: string;
+  label: string;
+  count: number;
+  color: string;
+  href?: string;
+  /** Says whose move it is, on hover. */
+  hint?: string;
+};
+
+/**
+ * One column of the pay period overview: the answer first, as one large
+ * figure, then the lines it is made of. Every column draws the same row
+ * height so the three read as one table across.
+ */
+function OverviewColumn({
   title,
+  link,
+  figure,
+  caption,
+  detail,
+  bar,
+  barTotal = 0,
   empty,
-  count,
-  children,
+  rows,
 }: {
   title: string;
+  link?: { href: string; label: string };
+  figure: number;
+  caption: string;
+  detail?: string;
+  bar?: OverviewRow[];
+  barTotal?: number;
   empty: string;
-  count: number;
-  children: React.ReactNode;
+  rows: OverviewRow[];
 }) {
   return (
-    <div className="flex flex-col gap-2.5">
-      <span className="wms-overline">{title}</span>
-      {count === 0 ? (
-        <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-tertiary)" }}>{empty}</p>
+    <section className="flex min-w-0 flex-col gap-3 p-4" aria-label={title}>
+      <div className="flex h-7 items-center justify-between gap-2">
+        <span className="wms-overline whitespace-nowrap">{title}</span>
+        {link && (
+          <LinkButton href={link.href} hierarchy="tertiary" size="sm">
+            {link.label}
+          </LinkButton>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <p className="m-0 flex items-baseline gap-2">
+          <span className="tabular" style={{ font: "var(--type-h1)", color: "var(--text-primary)" }}>
+            {figure.toLocaleString()}
+          </span>
+          <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{caption}</span>
+        </p>
+        {detail && <p className="m-0" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{detail}</p>}
+        {bar && barTotal > 0 && (
+          <div
+            className="mt-1.5 flex h-2 w-full overflow-hidden rounded-full"
+            style={{ background: "var(--ta-track)", gap: 2 }}
+            role="img"
+            aria-label={bar.map((r) => `${r.label} ${r.count}`).join(", ")}
+          >
+            {bar
+              .filter((r) => r.count > 0)
+              .map((r) => (
+                <span key={r.key} className="block h-full" style={{ width: `${(r.count / barTotal) * 100}%`, background: r.color }} />
+              ))}
+          </div>
+        )}
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="m-0 flex h-9 items-center" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+          {empty}
+        </p>
       ) : (
-        <div className="flex flex-wrap gap-2">{children}</div>
+        <ul className="m-0 flex list-none flex-col p-0" style={{ boxShadow: "inset 0 1px 0 var(--stroke-divider)" }}>
+          {rows.map((r) => {
+            const inner = (
+              <>
+                <span className="h-2 w-2 flex-none rounded-full" style={{ background: r.count ? r.color : "var(--ta-track)" }} aria-hidden />
+                <span
+                  className="min-w-0 flex-1 truncate whitespace-nowrap"
+                  style={{ font: "var(--type-body2)", color: r.count ? "var(--text-secondary)" : "var(--text-tertiary)" }}
+                >
+                  {r.label}
+                </span>
+                <span
+                  className="tabular flex-none"
+                  style={{
+                    font: "var(--type-body2)",
+                    fontWeight: "var(--weight-semibold)",
+                    color: r.count ? "var(--text-primary)" : "var(--text-tertiary)",
+                  }}
+                >
+                  {r.count.toLocaleString()}
+                </span>
+                <ChevronRight
+                  className="h-3.5 w-3.5 flex-none"
+                  style={{ color: "var(--icon-tertiary)", visibility: r.href ? "visible" : "hidden" }}
+                  aria-hidden
+                />
+              </>
+            );
+            return (
+              <li key={r.key} style={{ boxShadow: "inset 0 -1px 0 var(--stroke-divider)" }}>
+                {r.href ? (
+                  <Link
+                    href={r.href}
+                    title={r.hint}
+                    className="ta-hoverable -mx-2 flex h-9 items-center gap-2.5 rounded-md px-2"
+                    style={{ textDecoration: "none" }}
+                  >
+                    {inner}
+                  </Link>
+                ) : (
+                  <div title={r.hint} className="-mx-2 flex h-9 items-center gap-2.5 px-2">
+                    {inner}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
-    </div>
+    </section>
   );
 }
+
