@@ -103,7 +103,7 @@ export default async function AdminPage() {
           organised instead, which is the question someone arriving here asks. */}
       <PageHeader pinned
         title="Administration"
-        subtitle="People, policy and configuration — grouped by what each page controls"
+        subtitle="Manage people, policies and company settings"
       />
       <AdminHub groups={groups} />
     </div>

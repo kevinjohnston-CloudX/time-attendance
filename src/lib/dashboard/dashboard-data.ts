@@ -415,7 +415,7 @@ export async function getUpcoming(
     rows.push({
       key: "close",
       date: payPeriodEnd,
-      what: "Pay period close — approvals due",
+      what: "Pay period closes, approvals due",
       kind: "Payroll",
       tone: "info",
     });
@@ -426,7 +426,7 @@ export async function getUpcoming(
     const span =
       parseUtcDate(l.startDate).getTime() === parseUtcDate(l.endDate).getTime()
         ? `${l.leaveType.name} (${days}h)`
-        : `${l.leaveType.name} — ${days}h`;
+        : `${l.leaveType.name}, ${Math.round((parseUtcDate(l.endDate).getTime() - parseUtcDate(l.startDate).getTime()) / 86_400_000) + 1} days (${days}h)`;
     rows.push({
       key: l.id,
       date: parseUtcDate(l.startDate),

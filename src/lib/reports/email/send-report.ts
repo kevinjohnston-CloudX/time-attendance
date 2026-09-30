@@ -26,7 +26,7 @@ export async function sendReportEmail({
 }: SendReportParams): Promise<void> {
   if (!process.env.SENDGRID_API_KEY) {
     console.warn(
-      "[reports] SendGrid not configured (SENDGRID_API_KEY missing) — skipping email for:",
+      "[reports] SendGrid not configured (SENDGRID_API_KEY missing), skipping email for:",
       reportName
     );
     return;
@@ -35,7 +35,7 @@ export async function sendReportEmail({
   const fromEmail = process.env.SENDGRID_FROM_EMAIL;
   if (!fromEmail) {
     console.warn(
-      "[reports] SendGrid not configured (SENDGRID_FROM_EMAIL missing) — skipping email for:",
+      "[reports] SendGrid not configured (SENDGRID_FROM_EMAIL missing), skipping email for:",
       reportName
     );
     return;

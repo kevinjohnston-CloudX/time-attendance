@@ -1417,7 +1417,7 @@ async function syncMissingPunchExceptions(
             stateBefore: lastPunch.stateAfter,
             stateAfter: "OUT",
             isApproved: false,
-            note: "Auto-generated: missing punch-out — state reset pending payroll correction",
+            note: "Added automatically. No clock out was recorded, so payroll needs to confirm the clock out time.",
           },
         });
       }

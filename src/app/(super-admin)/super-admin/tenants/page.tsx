@@ -50,7 +50,7 @@ export default async function TenantsPage() {
           <EmptyState
             icon={<Building2 className="h-8 w-8" />}
             title="No tenants yet"
-            body="A tenant is one company. Everything else — sites, employees, rules — hangs off one."
+            body="A tenant is one company. Its sites, employees and rules all belong to it."
             action={
               <LinkButton href="/super-admin/tenants/new" size="sm">
                 Create the first tenant

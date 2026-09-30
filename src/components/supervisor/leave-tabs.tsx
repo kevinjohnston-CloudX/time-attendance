@@ -604,7 +604,7 @@ export function LeaveTabs({
     },
     pending: {
       title: "Awaiting Your Decision",
-      subtitle: "Oldest first — the ones people have been waiting on longest",
+      subtitle: "Oldest first, so the longest waits are at the top",
       empty: "No pending leave requests",
       emptyBody: "Nothing on your team is waiting for a decision right now.",
     },
@@ -1326,7 +1326,7 @@ export function LeaveTabs({
 
                 <Textarea
                   label="Note"
-                  hint="Optional — visible to the employee"
+                  hint="Optional. The employee can see this note."
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   rows={2}
@@ -1372,7 +1372,7 @@ export function LeaveTabs({
           )}
           {tooltip.pending.length > 0 && (
             <TooltipGroup
-              label={tooltip.hasConflict ? "Pending — overlaps approved leave" : "Pending"}
+              label={tooltip.hasConflict ? "Pending, overlaps approved leave" : "Pending"}
               color={tooltip.hasConflict ? "var(--text-error)" : "var(--text-warning)"}
               entries={tooltip.pending}
             />

@@ -178,7 +178,7 @@ function AmountField({
             type="number"
             min={0}
             placeholder="0"
-            aria-label={`${label} — hours`}
+            aria-label={`${label}, hours`}
             value={hours}
             onChange={(e) => onHours(e.target.value)}
           />
@@ -190,7 +190,7 @@ function AmountField({
             min={0}
             max={59}
             placeholder="0"
-            aria-label={`${label} — minutes`}
+            aria-label={`${label}, minutes`}
             value={minutes}
             onChange={(e) => onMinutes(e.target.value)}
           />
@@ -265,7 +265,7 @@ function AddEntryForm({
       className="flex flex-col gap-3.5 px-4 py-3.5"
       style={{ background: "var(--surface-secondary)", borderBottom: "1px solid var(--stroke-divider)" }}
     >
-      <span className="wms-overline">Add entry — {row.leaveTypeName}</span>
+      <span className="wms-overline">Add entry for {row.leaveTypeName}</span>
 
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,30%)),1fr))]">
         <Input
@@ -279,21 +279,21 @@ function AddEntryForm({
       <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(260px,30%)),1fr))]">
         <AmountField
           label="Accrual Hours"
-          hint="Adds to the earned total — for missed or catch-up postings"
+          hint="Adds to the earned total. Use it for missed or late postings."
           sign={accrualSign} onSign={setAccrualSign}
           hours={accrualH} onHours={setAccrualH}
           minutes={accrualM} onMinutes={setAccrualM}
         />
         <AmountField
           label="Adjust Earn Hours"
-          hint="Also counts toward accrued hours — for earn-rate corrections"
+          hint="Also counts toward accrued hours. Use it to correct the earning rate."
           sign={earnAdjSign} onSign={setEarnAdjSign}
           hours={earnAdjH} onHours={setEarnAdjH}
           minutes={earnAdjM} onMinutes={setEarnAdjM}
         />
         <AmountField
           label="Adjust Hours"
-          hint="Balance only — for one-time grants and corrections"
+          hint="Changes the balance only. Use it for one time grants and corrections."
           sign={adjustSign} onSign={setAdjustSign}
           hours={adjustH} onHours={setAdjustH}
           minutes={adjustM} onMinutes={setAdjustM}
@@ -553,7 +553,7 @@ function LedgerCard({
 
   return (
     <Card
-      title={`Ledger — ${row.leaveTypeName}`}
+      title={`${row.leaveTypeName} ledger`}
       subtitle={[
         row.policyName ?? "No policy",
         gap === null && row.expectedAccrualMinutes !== null ? "accrual on track" : null,

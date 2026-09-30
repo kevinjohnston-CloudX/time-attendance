@@ -285,7 +285,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                   </SelectField>
 
                   <SelectField label="Supervisor" name="supervisorId">
-                    <option value="">— None —</option>
+                    <option value="">None</option>
                     {employees.map((emp) => (
                       <option key={emp.id} value={emp.id}>{emp.user.name}</option>
                     ))}
@@ -301,7 +301,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                   <Input label="Gender" name="gender" />
 
                   <SelectField label="Marital Status" name="maritalStatus">
-                    <option value="">— Select —</option>
+                    <option value="">Not specified</option>
                     <option value="Single">Single</option>
                     <option value="Married">Married</option>
                     <option value="Divorced">Divorced</option>
@@ -342,7 +342,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                   </SelectField>
 
                   <SelectField label="Shift" name="shiftId">
-                    <option value="">— None —</option>
+                    <option value="">None</option>
                     {shifts.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name} ({fmtTime(s.startTime)} – {fmtTime(s.endTime)})
@@ -351,26 +351,26 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                   </SelectField>
 
                   <SelectField label="Holiday Rule" name="holidayRuleId">
-                    <option value="">— None —</option>
+                    <option value="">None</option>
                     {holidayRules.map((r) => (
                       <option key={r.id} value={r.id}>{r.name}</option>
                     ))}
                   </SelectField>
 
                   <SelectField label="Pay Category" name="payCategoryId">
-                    <option value="">— None —</option>
+                    <option value="">None</option>
                     {payCategories.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.number}{c.description ? ` — ${c.description}` : ""}
+                        {c.number}{c.description ? ` (${c.description})` : ""}
                       </option>
                     ))}
                   </SelectField>
 
                   <SelectField label="Pay Type" name="payTypeId">
-                    <option value="">— None —</option>
+                    <option value="">None</option>
                     {payTypes.map((pt) => (
                       <option key={pt.id} value={pt.id}>
-                        {pt.number}{pt.description ? ` — ${pt.description}` : ""}
+                        {pt.number}{pt.description ? ` (${pt.description})` : ""}
                       </option>
                     ))}
                   </SelectField>
@@ -381,7 +381,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                     value={payType}
                     onChange={(e) => setPayType(e.target.value)}
                   >
-                    <option value="">— Not set —</option>
+                    <option value="">Not set</option>
                     <option value="HOURLY">Hourly</option>
                     <option value="SALARY">Salary</option>
                   </SelectField>

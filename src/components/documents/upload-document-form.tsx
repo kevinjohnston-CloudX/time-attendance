@@ -251,7 +251,7 @@ export function UploadDocumentForm({ employees }: Props) {
                   style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
                 />
                 <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-                  PDF, JPG, PNG or Word — max 10 MB.
+                  PDF, JPG, PNG or Word, up to 10 MB.
                 </span>
               </div>
 

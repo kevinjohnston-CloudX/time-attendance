@@ -646,7 +646,7 @@ export async function findScanDiscrepancies(
 
     if (s.outcome === "PENDING") {
       out.push({ ...base, kind: "UNRESOLVED",
-        description: `A scan at ${s.deviceName ?? "an unknown device"} on ${when} was never resolved — the timecard system did not report back. No punch exists for it.` });
+        description: `A scan at ${s.deviceName ?? "an unknown device"} on ${when} was never resolved. The timecard system did not report back, so no punch exists for it.` });
       continue;
     }
 

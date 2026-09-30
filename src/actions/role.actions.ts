@@ -168,7 +168,7 @@ export const deleteRole = withRBAC(
     if (role.isSystem) throw new Error("Cannot delete system roles");
     if (role._count.employees > 0) {
       throw new Error(
-        `Cannot delete role "${role.name}" — ${role._count.employees} employee(s) are still assigned to it`
+        `The role "${role.name}" cannot be deleted while ${role._count.employees} ${role._count.employees === 1 ? "employee is" : "employees are"} assigned to it.`
       );
     }
 

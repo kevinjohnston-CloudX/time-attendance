@@ -193,7 +193,7 @@ export function AccrualsEmployeeList({
               total === 0
                 ? "There is nobody here to open an accrual ledger for."
                 : `None of the ${total} employees you can see are shown${
-                    filters.status === "active" ? " — this page opens on active employees only" : ""
+                    filters.status === "active" ? ". The list shows active employees until you change the status filter" : ""
                   }. Try a wider search, or clear the filters.`
             }
             action={

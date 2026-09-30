@@ -20,6 +20,7 @@ import {
   type CorrectPunchInput,
 } from "@/lib/validators/punch.schema";
 import type { Punch } from "@prisma/client";
+import { PUNCH_TYPE_LABEL, type PunchTypeValue } from "@/lib/state-machines/labels";
 
 
 // ─── recordPunch ─────────────────────────────────────────────────────────────
@@ -93,7 +94,7 @@ export const requestMissedPunch = withRBAC(
         data: {
           timesheetId: timesheet.id,
           exceptionType: "MISSING_PUNCH",
-          description: `Missing ${punchType} at ${punchTime.toISOString()} — ${note}`,
+          description: `The employee reported a missed ${PUNCH_TYPE_LABEL[punchType as PunchTypeValue].toLowerCase()}. Their note: "${note}"`,
           occurredAt: punchTime,
         },
       });

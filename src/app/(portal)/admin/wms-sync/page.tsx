@@ -69,7 +69,7 @@ const HEALTH: Record<BridgeHealth, { tone: BannerTone; title: string; note: stri
   STALE: {
     tone: "error",
     title: "Bridge has stopped checking in",
-    note: "The bridge has not checked in. Nothing is syncing — check the scheduled task on the VM.",
+    note: "The bridge has not checked in, so nothing is syncing. Check the scheduled task on the warehouse VM.",
   },
   NEVER: {
     tone: "warning",
@@ -153,7 +153,7 @@ export default async function WmsSyncPage() {
           tone={health.tone}
           title={health.title}
           body={health.note}
-          meta="A small service on the warehouse VM does the reading and calls out to CloudTime on its own cadence — nothing here can reach into that network, so a job nobody collects waits rather than failing."
+          meta="A small service on the warehouse VM reads Oracle and sends the results to CloudTime on its own schedule. CloudTime cannot reach into that network, so a job the bridge has not collected waits instead of failing."
         />
 
         <Card title="Bridge" subtitle={s.agentName}>
@@ -174,7 +174,7 @@ export default async function WmsSyncPage() {
             label="Oracle employees with no CloudTime record"
             value={s.candidates}
             tone={s.candidates > 0 ? "warning" : "default"}
-            sub="The sync will not invent these — an employee needs a site, department and rule set, and the rule set is what computes overtime. Until someone creates them, their badge is refused at the kiosk."
+            sub="The sync does not create these on its own. An employee needs a site, a department and a rule set, and the rule set is what calculates overtime. Until someone creates them, their badge is refused at the time clock."
           />
           <StatCard
             label="Schedule days awaiting a decision"
@@ -186,7 +186,7 @@ export default async function WmsSyncPage() {
 
         <Card
           title="Last run of each leg"
-          subtitle="Shown separately because they fail independently — schedules can stop flowing while the roster keeps arriving."
+          subtitle="Shown separately because each can fail on its own. Schedules can stop arriving while the roster keeps updating."
           padding={0}
         >
           <Table>
@@ -275,7 +275,7 @@ export default async function WmsSyncPage() {
             <EmptyState
               icon={<PlugZap className="h-7 w-7" />}
               title="No runs yet"
-              body="The bridge has not answered a job. Until it does there is nothing to report — which is not the same as nothing having changed in Oracle."
+              body="The bridge has not answered a job yet. Until it does there is nothing to report, which does not mean nothing has changed in Oracle."
             />
           ) : (
             <Table>

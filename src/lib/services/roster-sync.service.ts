@@ -241,7 +241,7 @@ export async function applyRosterBatch(
       tally.note(
         "NO_EMPLOYEE",
         empId,
-        `No CloudTime employee — ${failedScans} scan(s) already refused, staged for review`,
+        `Not in CloudTime yet. ${failedScans} ${failedScans === 1 ? "scan was" : "scans were"} already refused, so this person is held for review`,
       );
       continue;
     }
@@ -350,7 +350,7 @@ export async function applyRosterBatch(
     tally.note(
       "UNMATCHED_NOT_STAGED",
       "-",
-      `${unmatchedUnseen} Oracle employees unknown to CloudTime with no refused scans — not staged`,
+      `${unmatchedUnseen} Oracle employees are not in CloudTime and have no refused scans, so they were not held for review`,
     );
   }
   if (ignoredJunk) {

@@ -471,7 +471,7 @@ export function RoleEditor({
                   onChange={(e) => setSelectedBuiltinKey(e.target.value)}
                   style={{ flex: "1 1 220px" }}
                 >
-                  <option value="">— Select a built-in role —</option>
+                  <option value="">Select a built-in role</option>
                   {builtinRoles.map((r) => (
                     <option key={r.key} value={r.key}>{r.name}</option>
                   ))}
@@ -590,7 +590,7 @@ export function RoleEditor({
                                     title={
                                       isActive
                                         ? undefined
-                                        : "Not enforced — no server action checks this permission"
+                                        : "Not enforced yet. Nothing in the system checks this permission."
                                     }
                                   >
                                     <Checkbox

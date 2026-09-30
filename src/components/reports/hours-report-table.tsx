@@ -171,7 +171,7 @@ export function HoursReportTable({ rows, periodLabel }: Props) {
     <>
       <div className="mt-6 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-[var(--text-secondary)]">
-          Hours Summary — {periodLabel}
+          Hours Summary for {periodLabel}
         </h2>
         <div className="flex items-center gap-3">
           {/* Column visibility toggle */}

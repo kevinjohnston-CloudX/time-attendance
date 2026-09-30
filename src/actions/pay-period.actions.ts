@@ -104,7 +104,7 @@ export const markPayPeriodReady = withRBAC(
     if (!validation.isReady) {
       const count = validation.issues.length;
       throw new Error(
-        `Pay period has ${count} outstanding issue${count === 1 ? "" : "s"} — resolve them before marking ready`
+        `This pay period has ${count} open issue${count === 1 ? "" : "s"}. Resolve ${count === 1 ? "it" : "them"} before marking the period ready.`
       );
     }
 

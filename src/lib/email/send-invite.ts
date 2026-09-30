@@ -20,7 +20,7 @@ export async function sendPasswordInviteEmail({
   appUrl: string;
 }): Promise<{ sent: boolean }> {
   if (!process.env.SENDGRID_API_KEY || !process.env.SENDGRID_FROM_EMAIL) {
-    console.warn("[invite] SendGrid not configured — skipping invite email to:", to);
+    console.warn("[invite] SendGrid not configured, skipping invite email to:", to);
     return { sent: false };
   }
 

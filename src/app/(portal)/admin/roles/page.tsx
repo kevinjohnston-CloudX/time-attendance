@@ -42,10 +42,10 @@ const BUILTIN_LABELS: Record<string, string> = {
 };
 
 const BUILTIN_DESCRIPTIONS: Record<string, string> = {
-  EMPLOYEE:      "Standard employee — punch, timesheet, and leave access",
-  SUPERVISOR:    "Team management — approve timesheets and leave for direct reports",
-  PAYROLL_ADMIN: "Payroll processing — manage pay periods and approve all timesheets",
-  HR_ADMIN:      "HR management — full employee, site, and approval access",
+  EMPLOYEE:      "Clocks in and out, and manages their own timesheet and leave",
+  SUPERVISOR:    "Approves timesheets and leave for their direct reports",
+  PAYROLL_ADMIN: "Manages pay periods and approves every timesheet",
+  HR_ADMIN:      "Full access to employees, sites and approvals",
   SYSTEM_ADMIN:  "Full access to all system features and settings",
   SUPER_ADMIN:   "Unrestricted super-administrator",
 };

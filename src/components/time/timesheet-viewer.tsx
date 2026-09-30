@@ -337,8 +337,8 @@ function sheetBanner(
   if (detail.status === "SUBMITTED") {
     return {
       tone: "info",
-      title: "Submitted — waiting on your supervisor",
-      body: "You cannot change it while it is with them; they can send it back for edits.",
+      title: "Waiting on your supervisor",
+      body: "You cannot change it while it is with them. They can send it back if it needs edits.",
       meta,
     };
   }

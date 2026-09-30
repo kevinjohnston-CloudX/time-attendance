@@ -138,7 +138,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       check: "PUNCH_NOT_IN_ORACLE",
       detail:
         `${broken.length} punch(es) in 24h that CloudTime holds and Oracle does not` +
-        (broken.length > 10 ? ` (first 10) — ${detail}` : ` — ${detail}`),
+        (broken.length > 10 ? ` (first 10): ${detail}` : `: ${detail}`),
     });
   }
 
@@ -228,7 +228,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   console.error(
-    "[legacy-sync] UNHEALTHY —",
+    "[legacy-sync] UNHEALTHY:",
     findings.map((f) => `${f.check}: ${f.detail}`).join(" | "),
   );
 

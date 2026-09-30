@@ -602,7 +602,7 @@ export default async function EmployeeAccrualsPage({
           </div>
         ) : (
           <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
-            No PTO policies applied — assign policies to this employee&apos;s pay category.
+            No time off policies apply to this employee. Assign policies to their pay category to start accruing.
           </p>
         )}
       </Card>

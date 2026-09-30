@@ -133,7 +133,7 @@ export function MissedPunchForm() {
           </div>
         </Card>
 
-        <Card title="Explanation" subtitle="Required — your supervisor sees this.">
+        <Card title="Explanation" subtitle="Required. Your supervisor will read this.">
           <Textarea
             name="note"
             label="Note"

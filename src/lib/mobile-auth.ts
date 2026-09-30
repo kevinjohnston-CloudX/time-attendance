@@ -100,7 +100,7 @@ export async function rotateRefreshToken(oldToken: string): Promise<{
   // Reuse detection: if already revoked, someone stole it → revoke all
   if (existing.revokedAt) {
     await revokeAllUserTokens(existing.userId);
-    throw new AuthError("Token reuse detected — all sessions revoked");
+    throw new AuthError("Token reuse detected. All sessions were signed out.");
   }
 
   if (existing.expiresAt < new Date()) {

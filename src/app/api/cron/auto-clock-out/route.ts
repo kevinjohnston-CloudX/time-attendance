@@ -137,7 +137,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           stateBefore: latestPunch.stateAfter,
           stateAfter: PunchState.OUT,
           isApproved: false,
-          note: "Auto-generated: employee still clocked in after workday expansion window — pending payroll correction",
+          note: "Added automatically. The employee was still clocked in after the workday ended, so payroll needs to confirm the clock out time.",
         },
       });
       created++;

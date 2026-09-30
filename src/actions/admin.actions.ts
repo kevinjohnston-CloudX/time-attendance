@@ -600,7 +600,7 @@ export const updateEmployee = withRBAC(
     }
     if (payCategoryId !== undefined && payCategoryId !== current.payCategoryId) {
       const fmtCat = (c: { number: number; description: string | null } | null) =>
-        c ? `${c.number}${c.description ? ` — ${c.description}` : ""}` : null;
+        c ? `${c.number}${c.description ? ` (${c.description})` : ""}` : null;
       const [from, to] = await Promise.all([
         current.payCategoryId ? db.payCategory.findUnique({ where: { id: current.payCategoryId }, select: { number: true, description: true } }) : Promise.resolve(null),
         payCategoryId ? db.payCategory.findUnique({ where: { id: payCategoryId }, select: { number: true, description: true } }) : Promise.resolve(null),
@@ -699,7 +699,7 @@ export const updateEmployee = withRBAC(
         currentAgencyId ? db.agency.findUnique({ where: { id: currentAgencyId }, select: { code: true, description: true } }) : Promise.resolve(null),
         agencyId ? db.agency.findUnique({ where: { id: agencyId }, select: { code: true, description: true } }) : Promise.resolve(null),
       ]);
-      const fmt = (a: { code: number; description: string } | null) => a ? `${a.code} – ${a.description}` : null;
+      const fmt = (a: { code: number; description: string } | null) => a ? `${a.code} (${a.description})` : null;
       diff("Agency", fmt(from), fmt(to));
     }
 
@@ -1776,7 +1776,7 @@ export const bulkCreateEmployees = withRBAC(
           } catch (createErr: unknown) {
             const msg = createErr instanceof Error ? createErr.message : String(createErr);
             if (msg.includes("Unique constraint") && r.email) {
-              throw new Error(`Email already in use: "${r.email}" (employee ${r.employeeCode} — ${r.name})`);
+              throw new Error(`The email "${r.email}" already belongs to ${r.name} (employee ${r.employeeCode}).`);
             }
             throw createErr;
           }
@@ -1804,7 +1804,7 @@ export const bulkCreateEmployees = withRBAC(
           } catch (empErr: unknown) {
             const msg = empErr instanceof Error ? empErr.message : String(empErr);
             if (msg.includes("Unique constraint") && msg.includes("wmsId")) {
-              throw new Error(`WMS ID already in use: "${r.wmsId}" (employee ${r.employeeCode} — ${r.name})`);
+              throw new Error(`The WMS ID "${r.wmsId}" already belongs to ${r.name} (employee ${r.employeeCode}).`);
             }
             if (msg.includes("Unique constraint") && msg.includes("employeeCode")) {
               throw new Error(`Employee code already in use: "${r.employeeCode}" (${r.name})`);

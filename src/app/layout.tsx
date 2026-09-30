@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   // The product is CloudTime; "time & attendance" is what it does, which is
   // the descriptor the brand lockup carries under the name.
   title: "CloudTime",
-  description: "CloudTime — time & attendance for CloudX Systems.",
+  description: "Time and attendance for CloudX Systems.",
 };
 
 export default function RootLayout({

@@ -157,7 +157,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // console.error puts it in the platform's log at error level; the 500 makes
   // the invocation itself show as failed. Two places, neither needing setup.
   console.error(
-    "[bridge-health] UNHEALTHY —",
+    "[bridge-health] UNHEALTHY:",
     findings.map((f) => `${f.check}: ${f.detail}`).join(" | "),
   );
 

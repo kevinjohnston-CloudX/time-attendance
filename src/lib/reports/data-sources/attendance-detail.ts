@@ -124,7 +124,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
         payBucket: readable("payBucket", seg.payBucket),
         payCode: seg.payCode?.code ?? null,
         payCodeLabel: seg.payCode?.label ?? null,
-        reasonCode: dayReason ? `${dayReason.reasonCode.code} – ${dayReason.reasonCode.label}` : null,
+        reasonCode: dayReason ? `${dayReason.reasonCode.code} (${dayReason.reasonCode.label})` : null,
         regularMinutes: seg.payBucket === "REG" ? seg.durationMinutes : null,
         overtimeMinutes: seg.payBucket === "OT" ? seg.durationMinutes : null,
         doubletimeMinutes: seg.payBucket === "DT" ? seg.durationMinutes : null,

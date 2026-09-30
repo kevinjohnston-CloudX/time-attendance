@@ -15,8 +15,8 @@ export default function ForgotPasswordPage() {
   return (
     <AuthScreen
       title="Forgot password"
-      sub="Password resets are issued by an administrator — there is no self-serve reset here."
-      note="Kiosk-only users have no portal password at all: your badge is what identifies you at the timeclock."
+      sub="Passwords are reset by an administrator."
+      note="If you only use the time clock, you do not need a password. Your badge identifies you there."
     >
       <Banner
         tone="info"

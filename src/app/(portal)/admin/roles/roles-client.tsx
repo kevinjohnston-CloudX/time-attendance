@@ -105,7 +105,7 @@ function PermissionModal({ role, onClose }: { role: BuiltinRoleSummary; onClose:
         <div className="px-6 py-4">
           {role.key === "SUPER_ADMIN" ? (
             <p className="text-sm text-[var(--text-tertiary)]">
-              Super Admin bypasses all permission checks — unrestricted access to every resource and action.
+              Super Admin skips every permission check and can see and change everything.
             </p>
           ) : (
             <div>

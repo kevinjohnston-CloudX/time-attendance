@@ -32,7 +32,7 @@ function SetupPasswordForm() {
       <Banner
         tone="error"
         title="This link is not valid any more"
-        body="Ask whoever invited you to send a new one — setup links are single-use and expire after 24 hours."
+        body="Setup links work once and expire after 24 hours. Ask the person who invited you to send a new one."
       />
     );
   }
@@ -100,8 +100,8 @@ export default function SetupPasswordPage() {
   return (
     <AuthScreen
       title="Set your password"
-      sub="First time signing in — pick a password."
-      note="Your badge is separate — setting a password here does not change how you clock in."
+      sub="Choose a password to finish setting up your account."
+      note="Your badge works the same as before. This password is only for signing in to CloudTime."
     >
       <Suspense
         fallback={

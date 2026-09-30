@@ -3067,7 +3067,7 @@ export function TimecardViewer({
                                           className={`ta-field ${grid.ghostSelect}`}
                                           style={gridSelectStyle(absentPending, 168)}
                                         >
-                                          <option value="">—</option>
+                                          <option value="">None</option>
                                           {payCodes.map((pc) => (
                                             <option key={pc.id} value={pc.id}>{payCodeOption(pc)}</option>
                                           ))}
@@ -3107,7 +3107,7 @@ export function TimecardViewer({
                                           className={`ta-field ${grid.ghostSelect}`}
                                           style={gridSelectStyle(absentPending, 168)}
                                         >
-                                          <option value="">—</option>
+                                          <option value="">None</option>
                                           {payCodes.map((pc) => (
                                             <option key={pc.id} value={pc.id}>
                                               {payCodeOption(pc)}
@@ -3127,7 +3127,7 @@ export function TimecardViewer({
                                       className={`ta-field ${grid.ghostSelect}`}
                                       style={gridSelectStyle(workSegPending, 168)}
                                     >
-                                      <option value="">—</option>
+                                      <option value="">None</option>
                                       {payCodes.map((pc) => (
                                         <option key={pc.id} value={pc.id}>
                                           {payCodeOption(pc)}
@@ -3166,7 +3166,7 @@ export function TimecardViewer({
                                         className={`ta-field ${grid.ghostSelect}`}
                                         style={gridSelectStyle(reasonPending, 150)}
                                       >
-                                        <option value="">—</option>
+                                        <option value="">None</option>
                                         {reasonCodes.map((rc) => (
                                           <option key={rc.id} value={rc.id}>
                                             {reasonName(rc)}
@@ -3383,7 +3383,7 @@ export function TimecardViewer({
                                         className={`ta-field ${grid.ghostSelect}`}
                                         style={gridSelectStyle(pendingPayCodes.has(pairWorkSeg.id), 168)}
                                       >
-                                        <option value="">—</option>
+                                        <option value="">None</option>
                                         {payCodes.map((pc) => (
                                           <option key={pc.id} value={pc.id}>
                                             {payCodeOption(pc)}
@@ -3405,7 +3405,7 @@ export function TimecardViewer({
                                           className={`ta-field ${grid.ghostSelect}`}
                                           style={gridSelectStyle(absentPending, 168)}
                                         >
-                                          <option value="">—</option>
+                                          <option value="">None</option>
                                           {payCodes.map((pc) => (
                                             <option key={pc.id} value={pc.id}>
                                               {payCodeOption(pc)}
@@ -4260,7 +4260,7 @@ export function TimecardViewer({
                       onChange={(e) => setNewEntryReasonCodeId(e.target.value)}
                       style={{ width: "100%" }}
                     >
-                      <option value="">—</option>
+                      <option value="">None</option>
                       {reasonCodes.map((rc) => (
                         <option key={rc.id} value={rc.id}>{reasonName(rc)}</option>
                       ))}

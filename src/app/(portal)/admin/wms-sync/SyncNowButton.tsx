@@ -30,7 +30,7 @@ export function SyncNowButton() {
       const result = await requestWmsSync(undefined);
 
       if (!result.success) {
-        setNote("Could not queue — check your permissions.");
+        setNote("The sync could not be queued. Check that you have permission to run it.");
         return;
       }
 
@@ -42,7 +42,7 @@ export function SyncNowButton() {
         queued.length > 0
           ? "Queued. The bridge picks it up on its next check-in."
           : alreadyPending.length > 0
-            ? "Already queued — waiting on the bridge's next check-in."
+            ? "A sync is already queued. It runs the next time the bridge checks in."
             : "Nothing to queue.",
       );
 

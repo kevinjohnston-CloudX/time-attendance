@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { TimesheetStatus } from "@prisma/client";
+import { TIMESHEET_STATUS_LABEL, type TimesheetStatusValue } from "@/lib/state-machines/labels";
 
 export interface TimesheetIssue {
   timesheetId: string;
@@ -48,7 +49,7 @@ export async function validatePayPeriod(
       issues.push({
         timesheetId: ts.id,
         employeeName: name,
-        issue: `Timesheet is ${ts.status} — not yet payroll-approved`,
+        issue: `${TIMESHEET_STATUS_LABEL[ts.status as TimesheetStatusValue] ?? ts.status}, not yet approved by payroll`,
       });
       pendingCount++;
     } else {
