@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { localDateString } from "@/lib/presence/on-site.service";
 import { SHIFT_HOURS_SELECT, shiftHoursOn } from "@/lib/presence/expected-hours";
 import { photoUrls } from "@/lib/presence/photos";
+import { gateLog } from "@/lib/presence/gate-alert-log";
 
 /**
  * People CloudTime's gate check turned away for having no shift today, for
@@ -81,19 +82,27 @@ export async function recordGateRefusal(input: {
   at: Date;
 }): Promise<void> {
   const code = input.warehouse && /^\d{1,9}$/.test(input.warehouse) ? Number(input.warehouse) : null;
-  const site =
-    (code !== null
+  const byWarehouse =
+    code !== null
       ? await db.site.findFirst({ where: { tenantId: input.tenantId, wmsWarehouseId: code }, select: { id: true, timezone: true } })
-      : null) ??
+      : null;
+  const site =
+    byWarehouse ??
     (input.homeSiteId
       ? await db.site.findFirst({ where: { tenantId: input.tenantId, id: input.homeSiteId }, select: { id: true, timezone: true } })
       : null);
-  if (!site) return;
+  if (!site) {
+    // Nowhere to show it: the tablet's warehouse number belongs to no site
+    // and the person has no site on their record.
+    gateLog("unplaced", { employee: input.employeeId, warehouse: input.warehouse, homeSite: input.homeSiteId }, "warn");
+    return;
+  }
 
   const workDate = workDateOf(localDateString(input.at, site.timezone || "America/New_York"));
   const key = { employeeId_siteId_workDate: { employeeId: input.employeeId, siteId: site.id, workDate } };
   const write = () =>
     db.gateRefusal.upsert({
+      select: { id: true, attempts: true, dismissedAt: true },
       where: key,
       create: {
         tenantId: input.tenantId,
@@ -114,14 +123,24 @@ export async function recordGateRefusal(input: {
         scheduledById: null,
       },
     });
+  let row: Awaited<ReturnType<typeof write>>;
   try {
-    await write();
+    row = await write();
   } catch (err) {
     // Two readers answering the same badge at once both try to create the
     // row; the one that loses finds it there on a second go.
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") await write();
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") row = await write();
     else throw err;
   }
+  gateLog("noted", {
+    refusal: row.id,
+    employee: input.employeeId,
+    site: site.id,
+    placedBy: byWarehouse ? "warehouse" : "home site",
+    attempts: row.attempts,
+    // Dismissed earlier today: counted, but no card shows again today.
+    dismissedToday: row.dismissedAt ? true : undefined,
+  });
 }
 
 /**

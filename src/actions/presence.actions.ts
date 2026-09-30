@@ -12,6 +12,7 @@ import { gateReadsCloudTimeSchedule } from "@/lib/presence/gate-schedule";
 import { localDateString } from "@/lib/presence/on-site.service";
 import { setScheduleDay } from "@/lib/services/schedule-sync.service";
 import { markGateRefusalScheduled, turnedAwayHereToday } from "@/lib/presence/gate-refusals.service";
+import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 
 /**
  * On Site: who is in the building right now.
@@ -226,51 +227,69 @@ export const addToTodaysSchedule = withRBAC(
     { tenantId, employeeId, role },
     input: { siteId: string; employeeId: string; startTime: string; endTime: string; mealMinutes: number | null },
   ) => {
-    if (!tenantId) throw new Error("NOT_FOUND");
-    if (!gateReadsCloudTimeSchedule()) throw new Error("NOT_LIVE");
-    const hhmm = (v: unknown) => (typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : null);
-    const startTime = hhmm(input.startTime);
-    const endTime = hhmm(input.endTime);
-    if (!startTime || !endTime || startTime === endTime) throw new Error("BAD_TIME");
-    const meal = input.mealMinutes;
-    if (meal !== null && !(Number.isInteger(meal) && meal >= 0 && meal <= 120)) throw new Error("BAD_TIME");
-    if (typeof input.siteId !== "string" || typeof input.employeeId !== "string") throw new Error("NOT_FOUND");
+    try {
+      if (!tenantId) throw new Error("NOT_FOUND");
+      if (!gateReadsCloudTimeSchedule()) throw new Error("NOT_LIVE");
+      const hhmm = (v: unknown) => (typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : null);
+      const startTime = hhmm(input.startTime);
+      const endTime = hhmm(input.endTime);
+      if (!startTime || !endTime || startTime === endTime) throw new Error("BAD_TIME");
+      const meal = input.mealMinutes;
+      if (meal !== null && !(Number.isInteger(meal) && meal >= 0 && meal <= 120)) throw new Error("BAD_TIME");
+      if (typeof input.siteId !== "string" || typeof input.employeeId !== "string") throw new Error("NOT_FOUND");
 
-    await assertSite(tenantId, { employeeId, role }, input.siteId);
-    const [shown, turnedAway] = await Promise.all([reachable(tenantId, input.siteId), turnedAwayHereToday(tenantId, input.siteId)]);
-    const person = await db.employee.findFirst({
-      where: { AND: [{ id: input.employeeId, tenantId }, { OR: turnedAway ? [shown, turnedAway] : [shown] }] },
-      select: { id: true, isActive: true, terminatedAt: true, site: { select: { timezone: true } } },
-    });
-    if (!person) throw new Error("NOT_FOUND");
-    if (!person.isActive || person.terminatedAt) throw new Error("INACTIVE");
+      await assertSite(tenantId, { employeeId, role }, input.siteId);
+      const [shown, turnedAway] = await Promise.all([reachable(tenantId, input.siteId), turnedAwayHereToday(tenantId, input.siteId)]);
+      const person = await db.employee.findFirst({
+        where: { AND: [{ id: input.employeeId, tenantId }, { OR: turnedAway ? [shown, turnedAway] : [shown] }] },
+        select: { id: true, isActive: true, terminatedAt: true, site: { select: { timezone: true } } },
+      });
+      if (!person) throw new Error("NOT_FOUND");
+      if (!person.isActive || person.terminatedAt) throw new Error("INACTIVE");
 
-    const today = localDateString(new Date(), person.site?.timezone || "America/New_York");
-    const existing = await db.scheduleDay.findFirst({
-      where: { tenantId, employeeId: person.id, workDate: new Date(`${today}T00:00:00.000Z`) },
-      select: { isWorkday: true, startTime: true, endTime: true, mealMinutes: true },
-    });
-    if (existing?.isWorkday) throw new Error("ALREADY_SCHEDULED");
+      const today = localDateString(new Date(), person.site?.timezone || "America/New_York");
+      const existing = await db.scheduleDay.findFirst({
+        where: { tenantId, employeeId: person.id, workDate: new Date(`${today}T00:00:00.000Z`) },
+        select: { isWorkday: true, startTime: true, endTime: true, mealMinutes: true },
+      });
+      if (existing?.isWorkday) throw new Error("ALREADY_SCHEDULED");
 
-    await setScheduleDay(tenantId, person.id, today, { isWorkday: true, startTime, endTime, mealMinutes: meal }, employeeId || undefined);
-    await writeAuditLog({
-      tenantId,
-      actorId: employeeId || null,
-      action: "SCHEDULE_DAY_ADDED",
-      entityType: "EMPLOYEE",
-      entityId: person.id,
-      changes: {
-        workDate: today,
-        startTime,
-        endTime,
-        mealMinutes: meal,
-        replaced: existing ? { isWorkday: existing.isWorkday, startTime: existing.startTime, endTime: existing.endTime } : null,
-        siteId: input.siteId,
-        from: "Live Attendance",
-      },
-    });
-    await markGateRefusalScheduled(tenantId, input.siteId, person.id, employeeId || null);
-    return { workDate: today, startTime, endTime };
+      await setScheduleDay(tenantId, person.id, today, { isWorkday: true, startTime, endTime, mealMinutes: meal }, employeeId || undefined);
+      await writeAuditLog({
+        tenantId,
+        actorId: employeeId || null,
+        action: "SCHEDULE_DAY_ADDED",
+        entityType: "EMPLOYEE",
+        entityId: person.id,
+        changes: {
+          workDate: today,
+          startTime,
+          endTime,
+          mealMinutes: meal,
+          replaced: existing ? { isWorkday: existing.isWorkday, startTime: existing.startTime, endTime: existing.endTime } : null,
+          siteId: input.siteId,
+          from: "Live Attendance",
+        },
+      });
+      await markGateRefusalScheduled(tenantId, input.siteId, person.id, employeeId || null);
+      gateLog("scheduled", {
+        employee: person.id,
+        site: input.siteId,
+        by: employeeId,
+        day: today,
+        start: startTime,
+        end: endTime,
+        replaced: existing ? true : undefined,
+      });
+      return { workDate: today, startTime, endTime };
+    } catch (err) {
+      gateLog(
+        "failed",
+        { at: "add to schedule", viewer: employeeId, employee: input?.employeeId, site: input?.siteId, error: errorCode(err) },
+        "warn",
+      );
+      throw err;
+    }
   },
 );
 

@@ -4,6 +4,7 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { getViewableSites } from "@/lib/presence/on-site.service";
 import { dismissGateRefusals, getOpenGateRefusals } from "@/lib/presence/gate-refusals.service";
 import { writeAuditLog } from "@/lib/audit/logger";
+import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 
 /**
  * The gate alert on Live Attendance: who the gate turned away today for
@@ -20,6 +21,10 @@ import { writeAuditLog } from "@/lib/audit/logger";
  * answers NOT_FOUND, the same as one that does not exist. A dismissal is
  * scoped by that site and today in the write itself, so an id from another
  * building or another day changes nothing.
+ *
+ * <p>Every failure is logged under "[gate-alert]" (see gate-alert-log.ts),
+ * because the page answers a failed check with silence by design. A
+ * successful check is not logged: the page asks every 15 seconds.
  */
 
 async function assertSite(tenantId: string, viewer: { employeeId: string; role: string }, siteId: unknown): Promise<string> {
@@ -32,37 +37,48 @@ async function assertSite(tenantId: string, viewer: { employeeId: string; role: 
 export const getOnSiteGateRefusals = withRBAC(
   "PRESENCE_SCHEDULE_ADD",
   async ({ tenantId, employeeId, role }, input: { siteId: string }) => {
-    if (!tenantId) throw new Error("NOT_FOUND");
-    const siteId = await assertSite(tenantId, { employeeId, role }, input?.siteId);
-    const queue = await getOpenGateRefusals(tenantId, siteId);
-    if (!queue) throw new Error("NOT_FOUND");
-    return queue;
+    try {
+      if (!tenantId) throw new Error("NOT_FOUND");
+      const siteId = await assertSite(tenantId, { employeeId, role }, input?.siteId);
+      const queue = await getOpenGateRefusals(tenantId, siteId);
+      if (!queue) throw new Error("NOT_FOUND");
+      return queue;
+    } catch (err) {
+      gateLog("failed", { at: "list", viewer: employeeId, site: input?.siteId, error: errorCode(err) }, "warn");
+      throw err;
+    }
   },
 );
 
 export const dismissOnSiteGateRefusals = withRBAC(
   "PRESENCE_SCHEDULE_ADD",
   async ({ tenantId, employeeId, role }, input: { siteId: string; refusalIds: string[] }) => {
-    if (!tenantId) throw new Error("NOT_FOUND");
-    const siteId = await assertSite(tenantId, { employeeId, role }, input?.siteId);
-    const ids = Array.isArray(input.refusalIds)
-      ? input.refusalIds.filter((x): x is string => typeof x === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(x)).slice(0, 100)
-      : [];
-    if (!ids.length) throw new Error("NOT_FOUND");
-    const dismissed = await dismissGateRefusals(tenantId, siteId, ids, employeeId || null);
-    if (!dismissed.length) throw new Error("NOT_FOUND");
-    await Promise.all(
-      dismissed.map((r) =>
-        writeAuditLog({
-          tenantId,
-          actorId: employeeId || null,
-          action: "GATE_REFUSAL_DISMISSED",
-          entityType: "EMPLOYEE",
-          entityId: r.employeeId,
-          changes: { refusalId: r.id, siteId, from: "Live Attendance" },
-        }),
-      ),
-    );
-    return { dismissed: dismissed.length };
+    try {
+      if (!tenantId) throw new Error("NOT_FOUND");
+      const siteId = await assertSite(tenantId, { employeeId, role }, input?.siteId);
+      const ids = Array.isArray(input.refusalIds)
+        ? input.refusalIds.filter((x): x is string => typeof x === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(x)).slice(0, 100)
+        : [];
+      if (!ids.length) throw new Error("NOT_FOUND");
+      const dismissed = await dismissGateRefusals(tenantId, siteId, ids, employeeId || null);
+      if (!dismissed.length) throw new Error("NOT_FOUND");
+      await Promise.all(
+        dismissed.map((r) =>
+          writeAuditLog({
+            tenantId,
+            actorId: employeeId || null,
+            action: "GATE_REFUSAL_DISMISSED",
+            entityType: "EMPLOYEE",
+            entityId: r.employeeId,
+            changes: { refusalId: r.id, siteId, from: "Live Attendance" },
+          }),
+        ),
+      );
+      gateLog("dismissed", { site: siteId, by: employeeId, count: dismissed.length, refusals: dismissed.map((r) => r.id).join(",") });
+      return { dismissed: dismissed.length };
+    } catch (err) {
+      gateLog("failed", { at: "dismiss", viewer: employeeId, site: input?.siteId, error: errorCode(err) }, "warn");
+      throw err;
+    }
   },
 );

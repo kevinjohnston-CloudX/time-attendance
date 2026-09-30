@@ -7,6 +7,7 @@ import { Button, ConfirmDialog } from "@/components/ui";
 import { dismissOnSiteGateRefusals, getOnSiteGateRefusals } from "@/actions/gate-refusals.actions";
 import type { GateRefusalCard } from "@/lib/presence/gate-refusals.service";
 import { formatTimeOfDay } from "@/lib/utils/date";
+import { gateLog } from "@/lib/presence/gate-alert-log";
 import { Face } from "./face";
 import { fmtTime, initialsOf } from "./presence-meta";
 import { ScheduleDayDialog } from "./schedule-day-dialog";
@@ -37,6 +38,10 @@ import styles from "./on-site.module.css";
  *
  * <p>Drawn at the top of the page rather than inside the board, so nothing in
  * the header or the full screen board can end up on top of it.
+ *
+ * <p>Says what it does in the browser console under "[gate-alert]": each card
+ * it shows, each one that closes on its own, and any check or dismissal that
+ * fails, once per run of failures rather than every 15 seconds.
  */
 
 const POLL_MS = 15_000;
@@ -74,16 +79,27 @@ export function GateRefusalAlert({
   const [now, setNow] = useState(0);
   const cardRef = useRef<HTMLDivElement>(null);
   const bumpedAt = useRef(0);
+  const failing = useRef<string | null>(null);
 
   useEffect(() => {
     let dead = false;
     const load = async () => {
       if (document.hidden) return;
+      // A failure is said once, and again only after a check has worked.
+      const failed = (error: string) => {
+        if (failing.current !== error) gateLog("failed", { at: "check for alerts", site: siteId, error }, "warn");
+        failing.current = error;
+      };
       try {
         const r = await getOnSiteGateRefusals({ siteId });
-        if (!dead && r.success) setQueue({ siteId, cards: r.data.cards, total: r.data.total });
+        if (dead) return;
+        if (r.success) {
+          failing.current = null;
+          setQueue({ siteId, cards: r.data.cards, total: r.data.total });
+        } else failed(r.error);
       } catch {
-        // The next check tries again.
+        // Offline or the server is restarting: the next check tries again.
+        if (!dead) failed("UNREACHABLE");
       }
     };
     void load();
@@ -113,6 +129,12 @@ export function GateRefusalAlert({
     if (cardId && !adding && !confirmingAll) cardRef.current?.focus();
   }, [cardId, adding, confirmingAll]);
 
+  useEffect(() => {
+    if (clockKey) gateLog("showing", { refusal: clockKey.split("|")[0], lastTry: clockKey.split("|")[1], waiting: open });
+    // Once per card and try, not on every change to the count.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clockKey]);
+
   // The idle clock: a full 45 seconds for each card, and again after anybody
   // touches it, comes back from the form, or returns to the tab.
   useEffect(() => {
@@ -133,6 +155,7 @@ export function GateRefusalAlert({
   const running = clock && clock.key === clockKey ? clock : null;
   useEffect(() => {
     if (card && !paused && running && now >= running.until) {
+      gateLog("closed on its own", { refusal: card.id, after: `${IDLE_MS / 1000}s` });
       setTimedOut((m) => new Map(m).set(card.id, card.lastAt));
     }
   }, [card, paused, running, now]);
@@ -163,6 +186,7 @@ export function GateRefusalAlert({
         settle(ids);
         setConfirmingAll(false);
       } else {
+        gateLog("failed", { at: "dismiss", site: siteId, error: r.error }, "warn");
         setError(
           r.error === "FORBIDDEN"
             ? "You do not have permission to dismiss these alerts."
@@ -170,6 +194,7 @@ export function GateRefusalAlert({
         );
       }
     } catch {
+      gateLog("failed", { at: "dismiss", site: siteId, error: "UNREACHABLE" }, "warn");
       setError("The alert could not be dismissed. Try again.");
     } finally {
       setBusy(false);

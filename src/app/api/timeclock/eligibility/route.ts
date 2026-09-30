@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { db } from "@/lib/db";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
 import { recordGateRefusal } from "@/lib/presence/gate-refusals.service";
+import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 
 /**
  * May this badge scan right now, and who is it?
@@ -55,9 +56,14 @@ function localDate(now: Date, timezone: string): string {
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  const started = Date.now();
+  // What the tablet said about itself, for the log line and the refusal note.
+  const param = (k: string, max: number) => (req.nextUrl.searchParams.get(k) ?? "").trim().slice(0, max) || null;
+  const from = { stream: param("stream", 20), warehouse: param("warehouse", 20), device: param("device", 100) };
   const apiKey = req.headers.get("x-api-key");
   const expectedKey = process.env.TIMECLOCK_API_KEY;
   if (!expectedKey || !apiKey || apiKey !== expectedKey) {
+    gateLog("failed", { at: "check", error: expectedKey ? "BAD_KEY" : "NO_KEY_SET", ...from }, "warn");
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
@@ -87,6 +93,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!employee) {
     // Not an error: an unknown badge is a real thing that happens at a reader,
     // and the kiosk needs to say so rather than treat it as a fault.
+    gateLog("check", { badge, found: false, ...from, ms: Date.now() - started });
     return NextResponse.json({ success: true, found: false, badge });
   }
 
@@ -159,14 +166,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // its answer. Only a person CloudTime knows and still employs, since an
   // unknown badge has its own list and a former employee is not a scheduling
   // question.
-  const param = (k: string, max: number) => (req.nextUrl.searchParams.get(k) ?? "").trim().slice(0, max) || null;
-  if (!scheduled && !terminated && param("stream", 20) !== "TIME_CLOCK") {
+  const noting = !scheduled && !terminated && from.stream !== "TIME_CLOCK";
+  gateLog("check", {
+    badge,
+    employee: employee.id,
+    scheduled,
+    reason,
+    terminated: terminated || undefined,
+    ...from,
+    noting,
+    ms: Date.now() - started,
+  });
+  if (noting) {
     const refusal = {
       tenantId: employee.tenantId,
       employeeId: employee.id,
       homeSiteId: employee.siteId,
-      warehouse: param("warehouse", 20),
-      device: param("device", 100),
+      warehouse: from.warehouse,
+      device: from.device,
       reason: reason as "NO_SCHEDULE" | "NOT_A_WORKDAY",
       at: new Date(),
     };
@@ -174,7 +191,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       try {
         await recordGateRefusal(refusal);
       } catch (err) {
-        console.error("eligibility: could not note the refusal for employee", refusal.employeeId, err);
+        gateLog("failed", { at: "noting", employee: refusal.employeeId, error: errorCode(err) }, "error");
       }
     });
   }
