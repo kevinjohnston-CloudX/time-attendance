@@ -62,6 +62,11 @@ export async function findOpenPayPeriod(
   ruleSetId?: string | null
 ) {
   const now = new Date();
+  // Use start-of-today (UTC) for the endDate comparison so that periods whose endDate is
+  // stored as midnight of the last day (semi-monthly period 1 legacy convention) are still
+  // matched on that day. orderBy startDate desc ensures the newest matching period wins
+  // when two consecutive periods both satisfy the query on a period boundary.
+  const todayUTCStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
   // Try rule-set-specific period first when ruleSetId is provided
   if (ruleSetId) {
@@ -69,9 +74,10 @@ export async function findOpenPayPeriod(
       where: {
         ruleSetId,
         startDate: { lte: now },
-        endDate: { gt: now },
+        endDate: { gte: todayUTCStart },
         status: "OPEN",
       },
+      orderBy: { startDate: "desc" },
     });
     if (rsPeriod) return rsPeriod;
   }
@@ -82,8 +88,9 @@ export async function findOpenPayPeriod(
       ...(tenantId && { tenantId }),
       ruleSetId: null,
       startDate: { lte: now },
-      endDate: { gt: now },
+      endDate: { gte: todayUTCStart },
       status: "OPEN",
     },
+    orderBy: { startDate: "desc" },
   });
 }

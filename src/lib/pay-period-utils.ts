@@ -1,4 +1,4 @@
-import { addDays, differenceInDays, startOfMonth, endOfMonth } from "date-fns";
+import { addDays, differenceInDays, startOfMonth } from "date-fns";
 import { db } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit/logger";
 import type { PayFrequency } from "@prisma/client";
@@ -24,19 +24,21 @@ export function getPeriodContaining(
       return { startDate: start, endDate: addDays(start, 14) };
     }
     case "SEMIMONTHLY": {
+      // endDate is exclusive (midnight of the day after the last day), consistent with WEEKLY/BIWEEKLY.
       if (date.getDate() <= 15) {
         return {
           startDate: new Date(date.getFullYear(), date.getMonth(), 1),
-          endDate: new Date(date.getFullYear(), date.getMonth(), 15),
+          endDate: new Date(date.getFullYear(), date.getMonth(), 16), // midnight of the 16th
         };
       }
       return {
         startDate: new Date(date.getFullYear(), date.getMonth(), 16),
-        endDate: endOfMonth(date),
+        endDate: new Date(date.getFullYear(), date.getMonth() + 1, 1), // midnight of 1st of next month
       };
     }
     case "MONTHLY":
-      return { startDate: startOfMonth(date), endDate: endOfMonth(date) };
+      // endDate is exclusive (midnight of 1st of next month), consistent with WEEKLY/BIWEEKLY.
+      return { startDate: startOfMonth(date), endDate: new Date(date.getFullYear(), date.getMonth() + 1, 1) };
   }
 }
 
@@ -72,8 +74,17 @@ export async function generatePeriodsForTenant(
       orderBy: { endDate: "desc" },
     });
 
-    const referenceDate = last ? last.endDate : today;
-    const { startDate, endDate } = getPeriodContaining(tenant.payFrequency, anchor, referenceDate);
+    // Advance one day past last.endDate so getPeriodContaining lands in the NEXT period,
+    // regardless of whether last.endDate used the old inclusive or new exclusive convention.
+    const referenceDate = last ? addDays(last.endDate, 1) : today;
+    let { startDate, endDate } = getPeriodContaining(tenant.payFrequency, anchor, referenceDate);
+
+    // On a frequency/anchor change the calendar-based startDate may fall before the last
+    // period's end (e.g. weekly → biweekly). Pin startDate forward to avoid overlap and
+    // prevent double-paying periods that are already closed.
+    if (last && startDate < last.endDate) {
+      startDate = last.endDate;
+    }
 
     const existing = await db.payPeriod.findFirst({
       where: { tenantId, startDate, endDate },
@@ -135,8 +146,12 @@ export async function generatePeriodsForRuleSet(
       orderBy: { endDate: "desc" },
     });
 
-    const referenceDate = last ? last.endDate : today;
-    const { startDate, endDate } = getPeriodContaining(ruleSet.payFrequency, anchor, referenceDate);
+    const referenceDate = last ? addDays(last.endDate, 1) : today;
+    let { startDate, endDate } = getPeriodContaining(ruleSet.payFrequency, anchor, referenceDate);
+
+    if (last && startDate < last.endDate) {
+      startDate = last.endDate;
+    }
 
     const existing = await db.payPeriod.findFirst({
       where: { ruleSetId, startDate, endDate },

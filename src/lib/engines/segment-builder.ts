@@ -438,7 +438,11 @@ async function applyAutoPayCredits(
   shift: { startTime: string; endTime: string; workDays: number[] } | null,
   creditsFrom?: Date,
 ): Promise<void> {
-  const periodEndInclusive = addDays(periodEnd, -1);
+  // Normalize to the last inclusive calendar day.
+  // Midnight endDate = exclusive next-day boundary (weekly/biweekly + new semi/monthly periods).
+  // Non-midnight endDate = end-of-day inclusive (legacy semi-monthly/monthly periods).
+  const isExclusiveEnd = periodEnd.getUTCHours() === 0 && periodEnd.getUTCMinutes() === 0 && periodEnd.getUTCSeconds() === 0;
+  const periodEndInclusive = isExclusiveEnd ? addDays(periodEnd, -1) : periodEnd;
 
   const allDays = eachDayOfInterval({ start: periodStart, end: periodEndInclusive });
 
@@ -557,7 +561,8 @@ async function ensureSalarySegments(
   defaultPayCodeId?: string | null,
   creditsFrom?: Date,
 ): Promise<void> {
-  const periodEndInclusive = addDays(periodEnd, -1);
+  const isExclusiveEnd = periodEnd.getUTCHours() === 0 && periodEnd.getUTCMinutes() === 0 && periodEnd.getUTCSeconds() === 0;
+  const periodEndInclusive = isExclusiveEnd ? addDays(periodEnd, -1) : periodEnd;
 
   const workDays = eachDayOfInterval({ start: periodStart, end: periodEndInclusive }).filter(
     (d) => !isWeekend(d)
@@ -1212,7 +1217,10 @@ async function syncAbsentExceptions(
 ): Promise<void> {
   // Calendar date strings (YYYY-MM-DD) for the period bounds and today in site timezone.
   const periodStartStr = format(payPeriodStart, "yyyy-MM-dd");
-  const periodEndStr = format(payPeriodEnd, "yyyy-MM-dd");
+  // Normalize to the last inclusive calendar day so the loop covers the full period
+  // regardless of whether endDate uses the exclusive-midnight or end-of-day convention.
+  const isExclusiveEndAbs = payPeriodEnd.getUTCHours() === 0 && payPeriodEnd.getUTCMinutes() === 0 && payPeriodEnd.getUTCSeconds() === 0;
+  const periodEndStr = format(isExclusiveEndAbs ? addDays(payPeriodEnd, -1) : payPeriodEnd, "yyyy-MM-dd");
   const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
 
   // Build set of days that have at least one approved punch (local timezone).
@@ -1239,7 +1247,7 @@ async function syncAbsentExceptions(
   // Collect all past calendar days in the pay period that have no activity.
   const absentDays = new Set<string>();
   let dateStr = periodStartStr;
-  while (dateStr < todayStr && dateStr < periodEndStr) {
+  while (dateStr < todayStr && dateStr <= periodEndStr) {
     const dow = new Date(dateStr + "T12:00:00.000Z").getUTCDay();
     const isScheduledDay = !shiftWorkDays || shiftWorkDays.includes(dow);
     if (isScheduledDay && !punchedDays.has(dateStr) && !leaveDays.has(dateStr) && !workDays.has(dateStr)) {
@@ -1313,7 +1321,8 @@ async function syncMissingPunchExceptions(
   if (punches.length === 0) return;
 
   const periodStartStr = format(payPeriodStart, "yyyy-MM-dd");
-  const periodEndStr = format(payPeriodEnd, "yyyy-MM-dd");
+  const isExclusiveEndMp = payPeriodEnd.getUTCHours() === 0 && payPeriodEnd.getUTCMinutes() === 0 && payPeriodEnd.getUTCSeconds() === 0;
+  const periodEndStr = format(isExclusiveEndMp ? addDays(payPeriodEnd, -1) : payPeriodEnd, "yyyy-MM-dd");
   const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
   const localDateOf = (d: Date) =>
     new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(d);
@@ -1334,7 +1343,7 @@ async function syncMissingPunchExceptions(
   // missingPunchDays maps date string → description of what's missing.
   const missingPunchDays = new Map<string, string>();
   let dateStr = periodStartStr;
-  while (dateStr < todayStr && dateStr < periodEndStr) {
+  while (dateStr < todayStr && dateStr <= periodEndStr) {
     const dayPunches = punchesByDay.get(dateStr);
     if (dayPunches && dayPunches.length > 0) {
       const firstPunch = dayPunches[0];

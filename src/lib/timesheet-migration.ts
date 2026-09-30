@@ -21,6 +21,7 @@ export async function migrateTimesheetBetweenRuleSets(
   ruleSet: RuleSet,
 ): Promise<void> {
   const now = new Date();
+  const todayUTCStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
   // Find the employee's current open timesheet on the old rule set's period
   const oldTimesheet = await db.timesheet.findFirst({
@@ -29,7 +30,7 @@ export async function migrateTimesheetBetweenRuleSets(
       payPeriod: {
         ruleSetId: oldRuleSetId,
         startDate: { lte: now },
-        endDate: { gt: now },
+        endDate: { gte: todayUTCStart },
         status: "OPEN",
       },
     },

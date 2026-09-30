@@ -19,8 +19,9 @@ export const getActiveEmployeesForTimecards = withRBAC(
     let payPeriodId = payPeriodIdInput ?? null;
     if (!payPeriodId && tenantId) {
       const now = new Date();
+      const todayUTCStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
       const current = await db.payPeriod.findFirst({
-        where: { tenantId, ruleSetId: null, startDate: { lte: now }, endDate: { gt: now } },
+        where: { tenantId, ruleSetId: null, startDate: { lte: now }, endDate: { gte: todayUTCStart } },
         select: { id: true },
         orderBy: { startDate: "desc" },
       });
