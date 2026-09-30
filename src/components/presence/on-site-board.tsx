@@ -51,6 +51,7 @@ import {
 } from "./presence-meta";
 import { PersonPanel } from "./person-panel";
 import { GateRefusalAlert } from "./gate-refusal-alert";
+import { useOnPulseChange, useSitePulse } from "./use-site-pulse";
 import { PhotoSwaps, PhotoViewer } from "./face";
 import { PeopleSearch, pickedLabel } from "./people-search";
 import { useCondensingBar } from "@/components/layout/use-condensing-bar";
@@ -100,9 +101,11 @@ import { Face } from "./face";
  * it are also the filters, so the number and the way to see those people are
  * the same thing. Below that, faces, grouped by what each person is doing.
  *
- * <p>Refreshes itself every 30 seconds while the tab is visible and stops while
- * it is hidden, so a board left open in a background tab all weekend costs
- * nothing. The filters live in the query string, which is what lets a filtered
+ * <p>Asks every 2 seconds whether anything happened at the building and
+ * reloads what moved the moment it did, with a full refresh every 30 seconds
+ * underneath for what that ask does not see (schedule and leave edits). Both
+ * stop while the tab is hidden, so a board left open in a background tab all
+ * weekend costs nothing. The filters live in the query string, which is what lets a filtered
  * board survive a reload and be sent to somebody else.
  */
 
@@ -368,6 +371,14 @@ export function OnSiteBoard({
     lastOkRef.current = lastOk;
   }, [lastOk]);
 
+  // ── A new scan, straight away ───────────────────────────────────────────
+  // The pulse says when the newest scan here was recorded; each new one
+  // reloads the board, the log or the movements on screen within seconds.
+  const pulse = useSitePulse(siteId, gateAlerts);
+  useOnPulseChange(pulse?.scans, !!siteId, () => {
+    if (siteId) void refresh(siteId);
+  });
+
   // ── The 30 second poll ──────────────────────────────────────────────────
   useEffect(() => {
     if (!siteId) return;
@@ -489,6 +500,7 @@ export function OnSiteBoard({
     shiftId: shift,
     q: query,
     ids: pickedList,
+    pulse: pulse?.scans,
   });
   const today = board ? siteDate(board.generatedAt, tz) : "";
   // The day already picked stays picked only while it is inside the window.
@@ -499,7 +511,7 @@ export function OnSiteBoard({
   const when = !logDayShown ? "today" : dayLabel(logDayShown, today) === "Yesterday" ? "yesterday" : `on ${dayLabel(logDayShown, today)}`;
 
   // ── Movements ──
-  const siteDay = useSiteDay({ siteId, active: tab === "movements", day: logDayShown });
+  const siteDay = useSiteDay({ siteId, active: tab === "movements", day: logDayShown, pulse: pulse?.scans });
   const dayViews = useMemo(
     () => (siteDay.data ? buildSiteDay(siteDay.data, now) : []),
     [siteDay.data, now],
@@ -1429,6 +1441,7 @@ export function OnSiteBoard({
           siteId={siteId}
           tz={tz}
           live={!!scheduling?.live}
+          pulse={pulse?.refusals}
           onScheduled={(name) => {
             void refresh(siteId);
             toast.flash(`${name} added to today's schedule`);

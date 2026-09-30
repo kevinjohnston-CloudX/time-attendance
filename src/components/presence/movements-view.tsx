@@ -18,6 +18,7 @@ import { iconFor } from "./person-panel";
 import { leftBuilding } from "@/lib/presence/lanes";
 import styles from "./on-site.module.css";
 import { ZoomableFace } from "./face";
+import { useOnPulseChange } from "./use-site-pulse";
 
 /**
  * Movements: one block per person, their photo and name on the left, and on
@@ -34,7 +35,18 @@ export const PEOPLE_PER_PAGE = 50;
  * sends what it already has; the server answers "unchanged" unless a new
  * scan was recorded, so most refreshes cost one small query.
  */
-export function useSiteDay({ siteId, active, day }: { siteId: string | null; active: boolean; day: string }) {
+export function useSiteDay({
+  siteId,
+  active,
+  day,
+  pulse,
+}: {
+  siteId: string | null;
+  active: boolean;
+  day: string;
+  /** When the newest scan at the building was recorded (see use-site-pulse.ts): a new one reloads straight away. */
+  pulse?: string | null;
+}) {
   const [data, setData] = useState<SiteDay | null>(null);
   const [failure, setFailure] = useState<"access" | "error" | null>(null);
   const key = `${siteId}|${day}`;
@@ -96,6 +108,11 @@ export function useSiteDay({ siteId, active, day }: { siteId: string | null; act
       document.removeEventListener("visibilitychange", tick);
     };
   }, [active, siteId, load]);
+
+  useOnPulseChange(pulse, active && !!siteId, () => {
+    const d = dataRef.current;
+    if (d && d.day === d.today) void load(true);
+  });
 
   return { data: data && data.site.id === siteId ? data : null, failure, retry: () => load(false) };
 }

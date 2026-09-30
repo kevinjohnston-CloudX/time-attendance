@@ -11,6 +11,7 @@ import { gateLog } from "@/lib/presence/gate-alert-log";
 import { Face } from "./face";
 import { fmtTime, initialsOf } from "./presence-meta";
 import { ScheduleDayDialog } from "./schedule-day-dialog";
+import { useOnPulseChange } from "./use-site-pulse";
 import styles from "./on-site.module.css";
 
 /**
@@ -31,8 +32,10 @@ import styles from "./on-site.module.css";
  * across the room: an amber header, a pulsing icon and a slow amber glow
  * around the card for as long as it waits.
  *
- * <p>Asks every 15 seconds while the tab is visible, and at once when it comes
- * back, since somebody is standing at the gate. A failed check says nothing
+ * <p>Loads the moment the page's 2 second check sees today's refusals here
+ * change (a new try, or a dismissal on another screen), every 15 seconds
+ * besides while the tab is visible, and at once when it comes back, since
+ * somebody is standing at the gate. A failed check says nothing
  * and the next one tries again: this sits over the page, and an error box
  * appearing on its own would be louder than the thing it failed to show.
  *
@@ -54,6 +57,7 @@ export function GateRefusalAlert({
   siteId,
   tz,
   live,
+  pulse,
   onScheduled,
 }: {
   siteId: string;
@@ -61,6 +65,8 @@ export function GateRefusalAlert({
   tz: string;
   /** Whether the gates decide from CloudTime's schedule, so adding opens the door. */
   live: boolean;
+  /** When today's refusals here last changed (see use-site-pulse.ts): a change loads them straight away. */
+  pulse?: string | null;
   onScheduled: (name: string) => void;
 }) {
   const [queue, setQueue] = useState<{ siteId: string; cards: GateRefusalCard[]; total: number } | null>(null);
@@ -114,6 +120,8 @@ export function GateRefusalAlert({
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [siteId, reload]);
+
+  useOnPulseChange(pulse, true, () => setReload((n) => n + 1));
 
   // Another building's alerts never show while this one's are on the way.
   const mine = queue?.siteId === siteId ? queue : null;

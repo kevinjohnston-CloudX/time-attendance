@@ -10,6 +10,7 @@ import { iconFor } from "./person-panel";
 import styles from "./on-site.module.css";
 import { Face } from "./face";
 import { SummarySkeleton } from "./movements-view";
+import { useOnPulseChange } from "./use-site-pulse";
 
 /**
  * The scan log: every security gate and time clock scan at the site today,
@@ -97,6 +98,7 @@ export function useScanLog({
   shiftId,
   q,
   ids = NO_IDS,
+  pulse,
 }: {
   siteId: string | null;
   active: boolean;
@@ -108,6 +110,8 @@ export function useScanLog({
   q: string;
   /** People picked in the search box; the log shows them plus any match for `q`. */
   ids?: readonly string[];
+  /** When the newest scan at the building was recorded (see use-site-pulse.ts): a new one is fetched straight away. */
+  pulse?: string | null;
 }) {
   const [state, setState] = useState<State>({ page: null, rows: [], failure: null, loadingMore: false });
   const [changed, setChanged] = useState<Set<string>>(new Set());
@@ -219,6 +223,8 @@ export function useScanLog({
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [active, siteId, poll]);
+
+  useOnPulseChange(pulse, active && !!siteId, () => void poll());
 
   useEffect(() => {
     if (!changed.size) return;
