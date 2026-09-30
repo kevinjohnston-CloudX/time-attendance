@@ -39,13 +39,13 @@ export function dayLabel(iso: string, withWeekday = false): string {
   return `${withWeekday ? `${DOW[d.getDay()]}, ` : ""}${MONTH[d.getMonth()]} ${d.getDate()}`;
 }
 
-/** "Sep 7 – Sep 20, 2026", "Tue, Sep 15, 2026", or both years when they differ. */
+/** "Sep 7 to Sep 20, 2026", "Tue, Sep 15, 2026", or both years when they differ. */
 export function rangeLabel(from: string, to: string): string {
   if (from === to) return `${dayLabel(from, true)}, ${from.slice(0, 4)}`;
   if (from.slice(0, 4) !== to.slice(0, 4)) {
-    return `${dayLabel(from)}, ${from.slice(0, 4)} – ${dayLabel(to)}, ${to.slice(0, 4)}`;
+    return `${dayLabel(from)}, ${from.slice(0, 4)} to ${dayLabel(to)}, ${to.slice(0, 4)}`;
   }
-  return `${dayLabel(from)} – ${dayLabel(to)}, ${to.slice(0, 4)}`;
+  return `${dayLabel(from)} to ${dayLabel(to)}, ${to.slice(0, 4)}`;
 }
 
 function presetCaption(p: PayPeriodPreset, i: number, all: PayPeriodPreset[]): string {
@@ -139,6 +139,7 @@ export function PunchHistoryDatePicker({
         onClick={toggle}
         title="Pick a date range"
         aria-expanded={open}
+        data-applied={isCustomRange ? "true" : undefined}
         className="ta-field tabular inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-md pl-[11px] pr-2.5"
         style={{
           border: `1px solid ${isCustomRange ? "var(--stroke-accent)" : "var(--stroke-default)"}`,
@@ -201,7 +202,7 @@ export function PunchHistoryDatePicker({
                         color: on ? "var(--text-accent)" : "var(--text-primary)",
                       }}
                     >
-                      {dayLabel(p.startDate)} – {dayLabel(p.endDate)}
+                      {dayLabel(p.startDate)} to {dayLabel(p.endDate)}
                     </span>
                     {caption && (
                       <span style={{ font: "var(--type-caption1)", color: "var(--text-secondary)" }}>{caption}</span>

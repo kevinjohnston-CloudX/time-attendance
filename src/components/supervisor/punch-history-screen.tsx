@@ -13,7 +13,7 @@ import {
   UtensilsCrossed,
   type LucideIcon,
 } from "lucide-react";
-import { Button, EmptyState, FilterSelectChip, PageHeader, SearchInput, Toast, useToast } from "@/components/ui";
+import { Button, EmptyState, FilterSelectChip, PageHeader, SearchInput, Toast, ToolsBar, useToast } from "@/components/ui";
 import { PUNCH_TYPE_LABEL, type PunchTypeValue } from "@/lib/state-machines/labels";
 import type { PunchHistoryData, PunchHistoryParams, PunchHistoryPunch } from "@/lib/punch-history/punch-history-data";
 import { PunchHistoryDatePicker, dayLabel, rangeLabel } from "./punch-history-date-picker";
@@ -361,8 +361,16 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
         />
 
         {/* Dates first, since they decide everything below, then the search
-            and the filters as the same pills Employees and Live Attendance use. */}
-        <div className="flex flex-wrap items-center gap-2.5">
+            and the filters, all in the shared tools bar Live Attendance uses. */}
+        <ToolsBar
+          end={
+            dirty && (
+              <Button hierarchy="link" size="sm" onClick={clearAll}>
+                Clear all
+              </Button>
+            )
+          }
+        >
           <PunchHistoryDatePicker
             startDate={data.startDate}
             endDate={data.endDate}
@@ -373,11 +381,17 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
             onOpenChange={setCalendarOpen}
             onPick={pickRange}
           />
-          <Button hierarchy="secondary" onClick={() => navigate({ startDate: data.today, endDate: data.today })}>
+          <button
+            type="button"
+            className="ta-tool-trigger"
+            style={{ border: 0, background: "transparent", cursor: "pointer" }}
+            onClick={() => navigate({ startDate: data.today, endDate: data.today })}
+          >
             Today
-          </Button>
-          <span aria-hidden="true" className="mx-0.5 h-5 w-px flex-none" style={{ background: "var(--stroke-secondary)" }} />
-          <SearchInput value={query} onValueChange={onType} placeholder="Name, ID or department" width={250} />
+          </button>
+          <span aria-hidden="true" className="ta-tools-divider" />
+          <SearchInput value={query} onValueChange={onType} placeholder="Name, ID or department" width={260} />
+          <span aria-hidden="true" className="ta-tools-divider" />
           {data.isPayroll && data.sites.length > 0 && (
             <FilterSelectChip
               label="Site"
@@ -403,12 +417,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
             options={SHOW_OPTIONS}
             onChange={(v) => navigate({ show: v || undefined })}
           />
-          {dirty && (
-            <Button hierarchy="link" size="sm" onClick={clearAll}>
-              Clear all
-            </Button>
-          )}
-        </div>
+        </ToolsBar>
       </div>
 
       {/* ── Board ──────────────────────────────────────────────────────────── */}
