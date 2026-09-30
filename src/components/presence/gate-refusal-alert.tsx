@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { CalendarPlus, ShieldAlert } from "lucide-react";
-import { Badge, Button, ConfirmDialog } from "@/components/ui";
+import { AlertTriangle, CalendarPlus } from "lucide-react";
+import { Button, ConfirmDialog } from "@/components/ui";
 import { dismissOnSiteGateRefusals, getOnSiteGateRefusals } from "@/actions/gate-refusals.actions";
 import type { GateRefusalCard } from "@/lib/presence/gate-refusals.service";
 import { formatTimeOfDay } from "@/lib/utils/date";
@@ -17,12 +17,18 @@ import styles from "./on-site.module.css";
  * today, for loss prevention to settle while they are still at the door.
  *
  * <p>One card at a time, oldest first, so the card being read stays put while
- * others arrive; the band says how many more are waiting. Dismiss hides that
+ * others arrive; the top line says how many are waiting. Dismiss hides that
  * person's alert for the rest of the day, however many more times they try.
  * Add to schedule opens the usual form filled in with the shift on their
  * record, and saving it lets them in on their next try. Neither can be skipped
- * with Escape or a click outside, because an alert nobody answered is exactly
- * the one that matters.
+ * with Escape or a click outside. A card nobody touches for 45 seconds steps
+ * aside on its own, on this screen only, and comes back if they try again.
+ *
+ * <p>Drawn from the page's own pieces: a photo with the status band across
+ * its foot like the tiles, the soft amber chip the rows use for a warning,
+ * and the employee panel's day at a glance strip. Built to be noticed from
+ * across the room: an amber header, a pulsing icon and a slow amber glow
+ * around the card for as long as it waits.
  *
  * <p>Asks every 15 seconds while the tab is visible, and at once when it comes
  * back, since somebody is standing at the gate. A failed check says nothing
@@ -34,6 +40,10 @@ import styles from "./on-site.module.css";
  */
 
 const POLL_MS = 15_000;
+/** How long a card waits for somebody before it steps aside. */
+const IDLE_MS = 45_000;
+/** The card's two answers, drawn larger than the page's buttons. */
+const BIG = { height: 56, padding: "0 24px", gap: 10, borderRadius: 14, font: "var(--weight-semibold) 17px/24px var(--font-sans)" };
 
 export function GateRefusalAlert({
   siteId,
@@ -51,12 +61,19 @@ export function GateRefusalAlert({
   const [queue, setQueue] = useState<{ siteId: string; cards: GateRefusalCard[]; total: number } | null>(null);
   // Settled here and hidden at once, before the next check agrees.
   const [settled, setSettled] = useState<ReadonlySet<string>>(new Set());
+  // Cards nobody answered, by the try they were showing. A new try shows them again.
+  const [timedOut, setTimedOut] = useState<ReadonlyMap<string, string>>(new Map());
   const [reload, setReload] = useState(0);
   const [adding, setAdding] = useState(false);
   const [confirmingAll, setConfirmingAll] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The idle clock, keyed by the card and try it is counting for, so the next
+  // card never inherits one that has already run out.
+  const [clock, setClock] = useState<{ key: string; until: number } | null>(null);
+  const [now, setNow] = useState(0);
   const cardRef = useRef<HTMLDivElement>(null);
+  const bumpedAt = useRef(0);
 
   useEffect(() => {
     let dead = false;
@@ -83,18 +100,51 @@ export function GateRefusalAlert({
   }, [siteId, reload]);
 
   // Another building's alerts never show while this one's are on the way.
-  const cards = queue?.siteId === siteId ? queue.cards.filter((c) => !settled.has(c.id)) : [];
+  const mine = queue?.siteId === siteId ? queue : null;
+  const cards = mine ? mine.cards.filter((c) => !settled.has(c.id) && timedOut.get(c.id) !== c.lastAt) : [];
   const card = cards[0] ?? null;
-  const settledHere = queue?.siteId === siteId ? queue.cards.length - cards.length : 0;
-  const open = Math.max(cards.length, (queue?.siteId === siteId ? queue.total : 0) - settledHere);
+  const open = mine ? Math.max(cards.length, mine.total - (mine.cards.length - cards.length)) : 0;
+  const cardId = card?.id ?? null;
+  const clockKey = card ? `${card.id}|${card.lastAt}` : null;
+  const paused = adding || confirmingAll || busy;
 
   // A new card takes focus, so a keyboard lands on it rather than the page behind.
-  const cardId = card?.id ?? null;
   useEffect(() => {
     if (cardId && !adding && !confirmingAll) cardRef.current?.focus();
   }, [cardId, adding, confirmingAll]);
 
+  // The idle clock: a full 45 seconds for each card, and again after anybody
+  // touches it, comes back from the form, or returns to the tab.
+  useEffect(() => {
+    if (!clockKey || paused) return;
+    const start = Date.now();
+    setNow(start);
+    setClock({ key: clockKey, until: start + IDLE_MS });
+    const t = setInterval(() => {
+      const at = Date.now();
+      if (document.hidden) setClock({ key: clockKey, until: at + IDLE_MS });
+      setNow(at);
+    }, 1000);
+    return () => clearInterval(t);
+  }, [clockKey, paused]);
+
+  // Nobody answered: it steps aside on this screen. Not a dismissal, so the
+  // next try at the gate brings it straight back.
+  const running = clock && clock.key === clockKey ? clock : null;
+  useEffect(() => {
+    if (card && !paused && running && now >= running.until) {
+      setTimedOut((m) => new Map(m).set(card.id, card.lastAt));
+    }
+  }, [card, paused, running, now]);
+
   if (!card) return null;
+
+  function bump() {
+    const at = Date.now();
+    if (!clockKey || at - bumpedAt.current < 1000) return;
+    bumpedAt.current = at;
+    setClock({ key: clockKey, until: at + IDLE_MS });
+  }
 
   function settle(ids: string[]) {
     setSettled((s) => new Set([...s, ...ids]));
@@ -165,13 +215,12 @@ export function GateRefusalAlert({
     );
   }
 
-  const waiting = open - 1;
   const role = [card.jobTitle, card.department].filter(Boolean).join(" · ");
   // The hours first, since shift names run long; the name sits under them.
   const hours =
     card.usualStart && card.usualEnd ? `${formatTimeOfDay(card.usualStart)} to ${formatTimeOfDay(card.usualEnd)}` : null;
-  const tried =
-    card.attempts > 1 ? `Tried ${card.attempts} times since ${fmtTime(card.firstAt, tz)}` : `Tried at ${fmtTime(card.lastAt, tz)}`;
+  const firstTry = card.attempts > 1 ? `First at ${fmtTime(card.firstAt, tz)}` : `At ${fmtTime(card.lastAt, tz)}`;
+  const left = running ? Math.max(0, Math.ceil((running.until - now) / 1000)) : IDLE_MS / 1000;
 
   return onTop(
     <div className={styles.gaScrim}>
@@ -179,125 +228,122 @@ export function GateRefusalAlert({
         key={card.id}
         ref={cardRef}
         tabIndex={-1}
-        className={styles.gaDialog}
+        className={styles.gaCard}
         role="alertdialog"
         aria-modal="true"
-        aria-labelledby="ga-title"
+        aria-labelledby="ga-title ga-name"
         aria-describedby="ga-reason"
+        onPointerMove={bump}
+        onPointerDown={bump}
+        onKeyDown={bump}
       >
-        <div className={styles.gaBand}>
-          <span className={styles.gaBandIcon} aria-hidden="true">
-            <ShieldAlert className="h-5 w-5" />
+        <div className={styles.gaHead}>
+          <span className={styles.gaHeadIcon} aria-hidden="true">
+            <AlertTriangle className="h-6 w-6" />
           </span>
-          <span className={styles.gaBandText}>
-            <span id="ga-title" className={styles.gaBandTitle}>
+          <span className={styles.gaHeadText}>
+            <span id="ga-title" className={styles.gaHeadTitle}>
               Entry refused
             </span>
-            <span className={styles.gaBandSub} title={card.device ?? undefined}>
-              {[card.device ?? "Security gate", tried].join(" · ")}
+            <span className={styles.gaHeadSub} title={card.device ?? undefined}>
+              {card.device ?? "Security gate"} · {fmtTime(card.lastAt, tz)}
             </span>
           </span>
-          {waiting > 0 && (
-            <Badge tone="warning" variant="solid" style={{ flex: "none", whiteSpace: "nowrap" }}>
-              {waiting} more waiting
-            </Badge>
+          {open > 1 && (
+            <span className={styles.gaQueue}>
+              <span className={styles.gaQueueCount}>1 of {open}</span>
+              {cards.length > 1 && (
+                <Button hierarchy="link" size="sm" onClick={() => setConfirmingAll(true)} disabled={busy}>
+                  Dismiss all
+                </Button>
+              )}
+            </span>
           )}
         </div>
 
         <div className={styles.gaBody}>
-          <div className={styles.gaWho}>
-            <span className={styles.gaPortrait}>
-              <span className={styles.initials} style={{ fontSize: 36 }} aria-hidden="true">
-                {initialsOf(card.name)}
-              </span>
-              <Face src={card.photoUrl} personId={card.employeeId} alt={card.name} />
+        <div className={styles.gaHero}>
+          <span className={styles.gaPhoto}>
+            <span className={styles.initials} style={{ fontSize: 56 }} aria-hidden="true">
+              {initialsOf(card.name)}
             </span>
-            <span className={styles.gaWhoText}>
-              <h2 className={styles.gaName} title={card.name}>
-                {card.name}
-              </h2>
-              {role && (
-                <span className={styles.gaRole} title={role}>
-                  {role}
-                </span>
-              )}
-              <span className={styles.gaCode}>Employee ID {card.employeeCode}</span>
-              <span id="ga-reason" className={styles.gaReason}>
-                {card.reason === "NOT_A_WORKDAY" ? "Scheduled off today" : "Not on today's schedule"}
+            <Face src={card.photoUrl} personId={card.employeeId} alt={card.name} />
+            <span className={styles.gaStripe} aria-hidden="true" />
+          </span>
+          <span className={styles.gaWho}>
+            <h2 id="ga-name" className={styles.gaName} title={card.name}>
+              {card.name}
+            </h2>
+            {role && (
+              <span className={styles.gaRole} title={role}>
+                {role}
               </span>
-            </span>
-          </div>
-
-          <dl className={styles.gaFacts}>
-            <Fact label="Supervisor" value={card.supervisor} empty="None on their record" />
-            <Fact label="Usual shift" value={hours ?? card.shift} sub={hours ? card.shift : null} empty="No shift on their record" />
-            {card.homeSite && <Fact label="Based at" value={card.homeSite} />}
-          </dl>
-
-          <p className={styles.gaHint}>
-            {live
-              ? "Add them to today's schedule and the gate lets them in on their next try."
-              : "Adding to the schedule turns on once the gates check CloudTime's schedule."}
-          </p>
-          {error && <p className={styles.peError}>{error}</p>}
-        </div>
-
-        <div className={styles.gaFoot}>
-          <span>
-            {cards.length > 1 && (
-              <Button hierarchy="tertiary" onClick={() => setConfirmingAll(true)} disabled={busy}>
-                Dismiss all {cards.length}
-              </Button>
             )}
-          </span>
-          <span className="flex gap-2">
-            <Button hierarchy="secondary" onClick={() => void dismiss([card.id])} disabled={busy}>
-              {busy ? "Dismissing…" : "Dismiss"}
-            </Button>
-            <Button
-              leadingIcon={<CalendarPlus className="h-4 w-4" aria-hidden="true" />}
-              onClick={() => setAdding(true)}
-              disabled={busy || !live}
-            >
-              Add to schedule
-            </Button>
+            <span className={styles.gaMeta}>
+              Employee ID {card.employeeCode}
+              {card.homeSite ? ` · Based at ${card.homeSite}` : ""}
+            </span>
+            <span id="ga-reason" className={styles.gaStatus}>
+              <AlertTriangle className="h-[18px] w-[18px]" aria-hidden="true" />
+              {card.reason === "NOT_A_WORKDAY" ? "Scheduled off today" : "Not on today's schedule"}
+            </span>
           </span>
         </div>
+
+        <div className={styles.gaGlance}>
+          <Cell label="Supervisor" value={card.supervisor} empty="None on record" />
+          <Cell label="Usual shift" value={hours ?? card.shift} sub={hours ? card.shift : null} empty="No shift on record" />
+          <Cell label="Tries today" value={String(card.attempts)} sub={firstTry} />
+        </div>
+
+        {!live && <p className={styles.gaNote}>Adding to the schedule turns on once the gates check CloudTime&apos;s schedule.</p>}
+        {error && <p className={styles.peError}>{error}</p>}
+
+        <div className={styles.gaActions}>
+          <Button hierarchy="secondary" fullWidth style={BIG} onClick={() => void dismiss([card.id])} disabled={busy}>
+            {busy ? "Dismissing…" : "Dismiss"}
+          </Button>
+          <Button
+            fullWidth
+            style={BIG}
+            leadingIcon={<CalendarPlus className="h-5 w-5" aria-hidden="true" />}
+            onClick={() => setAdding(true)}
+            disabled={busy || !live}
+          >
+            Add to schedule
+          </Button>
+        </div>
+        <p className={styles.gaCountdown}>
+          Closes on its own in <span className="tabular">{left}</span> {left === 1 ? "second" : "seconds"}
+        </p>
+        </div>
+        <span className={styles.gaTimer} aria-hidden="true">
+          <span style={{ width: `${(left / (IDLE_MS / 1000)) * 100}%` }} />
+        </span>
       </div>
     </div>,
   );
 }
 
-/** Straight onto the page's body, above every layer the board and header make. */
+/**
+ * Straight onto the page's body, above every layer the board and header make,
+ * inside the board's class so the page's status colours still apply.
+ */
 function onTop(node: ReactNode) {
-  return createPortal(node, document.body);
+  return createPortal(<div className={styles.board}>{node}</div>, document.body);
 }
 
-function Fact({
-  label,
-  value,
-  sub,
-  empty,
-}: {
-  label: string;
-  value: string | null;
-  /** A quieter second line, such as the shift's name under its hours. */
-  sub?: string | null;
-  empty?: string;
-}) {
+/** One cell of the strip, drawn like the employee panel's day at a glance. */
+function Cell({ label, value, sub, empty = "" }: { label: string; value: string | null; sub?: string | null; empty?: string }) {
   return (
-    <div className={styles.gaFact}>
-      <dt>{label}</dt>
-      <dd className={value ? undefined : styles.gaFactEmpty}>
-        <span className={styles.gaFactValue} title={value ?? undefined}>
-          {value || empty}
-        </span>
-        {sub && (
-          <span className={styles.gaFactSub} title={sub}>
-            {sub}
-          </span>
-        )}
-      </dd>
+    <div className={styles.gaCell}>
+      <span className={styles.ppGlanceLabel}>{label}</span>
+      <span className={styles.gaCellValue} data-empty={value ? undefined : "true"} title={value ?? undefined}>
+        {value || empty}
+      </span>
+      <span className={styles.ppGlanceSub} title={sub ?? undefined}>
+        {sub}
+      </span>
     </div>
   );
 }

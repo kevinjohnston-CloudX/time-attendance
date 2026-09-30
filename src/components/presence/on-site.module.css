@@ -4121,10 +4121,12 @@
 }
 
 /* ── Gate alert ─────────────────────────────────────────────────────────────
-   Somebody the gate just turned away. Built like the windows above, with an
-   amber band across the top and a large photo, so it reads as an alert from
-   across the room without turning red: nothing is broken, somebody is
-   waiting. Above the employee panel and its windows, below the photo viewer. */
+   Somebody the gate just turned away, made from the page's own pieces: the
+   photo carries the status band across its foot like the tiles, the reason
+   is the soft amber chip the rows use for a warning, and the details are the
+   employee panel's day at a glance strip. Big, calm and white, so it reads
+   from across the room without shouting. Above every layer on the page but
+   the photo viewer. */
 
 .gaScrim {
   position: fixed;
@@ -4133,78 +4135,92 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
-  background: rgba(3, 7, 18, 0.5);
-  animation: fade 160ms ease-out;
+  padding: 24px;
+  background: rgba(3, 7, 18, 0.55);
+  animation: fade 180ms ease-out;
 }
 
-.gaDialog {
-  width: min(520px, 100%);
+.gaCard {
+  position: relative;
+  width: min(760px, 100%);
   max-height: 100%;
   display: flex;
   flex-direction: column;
   overflow: auto;
-  border-radius: 16px;
+  border-radius: 24px;
   background: var(--surface-card);
-  box-shadow:
-    0 0 0 1px var(--stroke-warning),
-    var(--shadow-modal);
+  box-shadow: var(--shadow-modal);
   outline: none;
-  animation: pop 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation:
+    pop 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    gaGlow 2s ease-out 260ms infinite;
 }
 
-.gaBand {
+/* A slow amber glow out from the card for as long as it waits: movement is
+   what the corner of an eye notices. */
+@keyframes gaGlow {
+  0% {
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--fill-warning) 55%, transparent),
+      var(--shadow-modal);
+  }
+  70%,
+  100% {
+    box-shadow:
+      0 0 0 18px color-mix(in srgb, var(--fill-warning) 0%, transparent),
+      var(--shadow-modal);
+  }
+}
+
+.gaHead {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px 14px 18px;
+  gap: 16px;
+  padding: 20px 28px;
   background: var(--surface-warning);
   border-bottom: 1px solid var(--stroke-warning);
 }
 
-.gaBandIcon {
+.gaHeadIcon {
   position: relative;
   flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 48px;
+  height: 48px;
   border-radius: 999px;
   background: var(--fill-warning);
   color: var(--text-on-accent);
 }
 
-/* Two rings out from the icon when a card arrives, then still. */
-.gaBandIcon::after {
+/* The page's live dot, in amber and larger: rings keep leaving the icon. */
+.gaHeadIcon::after {
   content: "";
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--fill-warning);
-  animation: ping 1.2s ease-out 2;
+  inset: -5px;
+  border-radius: 999px;
+  border: 3px solid var(--fill-warning);
+  opacity: 0;
+  animation: ping 1.6s ease-out infinite;
 }
 
-.gaBandIcon svg {
-  position: relative;
-  z-index: 1;
-}
-
-.gaBandText {
+.gaHeadText {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
-.gaBandTitle {
-  font: var(--weight-semibold) 16px/22px var(--font-sans);
+.gaHeadTitle {
+  font: var(--weight-semibold) 24px/30px var(--font-sans);
+  letter-spacing: -0.01em;
   color: var(--text-warning);
 }
 
-.gaBandSub {
-  font: var(--type-body2);
+.gaHeadSub {
+  font: var(--type-body1);
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -4212,26 +4228,47 @@
   text-overflow: ellipsis;
 }
 
+.gaQueue {
+  flex: none;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.gaQueueCount {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--fill-warning);
+  color: var(--text-on-accent);
+  font: var(--weight-semibold) 13px/18px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
 .gaBody {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 20px 20px 18px;
+  gap: 26px;
+  padding: 28px 28px 22px;
 }
 
-.gaWho {
+.gaHero {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 28px;
   min-width: 0;
 }
 
-.gaPortrait {
+.gaPhoto {
   position: relative;
   flex: none;
-  width: 128px;
-  height: 144px;
-  border-radius: 14px;
+  width: 208px;
+  height: 232px;
+  border-radius: 20px;
   overflow: hidden;
   background: var(--ps-photo);
   display: flex;
@@ -4240,7 +4277,7 @@
   box-shadow: 0 0 0 1px var(--stroke-divider);
 }
 
-.gaPortrait img {
+.gaPhoto img {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -4248,19 +4285,28 @@
   object-fit: cover;
 }
 
-.gaWhoText {
+.gaStripe {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 8px;
+  background: var(--fill-warning);
+}
+
+.gaWho {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
 }
 
 .gaName {
   margin: 0;
   max-width: 100%;
-  font: var(--weight-semibold) 24px/30px var(--font-sans);
-  letter-spacing: -0.01em;
+  font: var(--weight-semibold) 38px/44px var(--font-sans);
+  letter-spacing: -0.02em;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4269,119 +4315,153 @@
 
 .gaRole {
   max-width: 100%;
-  font: var(--type-body2);
+  font: var(--weight-regular) 18px/26px var(--font-sans);
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.gaCode {
-  font: var(--type-body2);
+.gaMeta {
+  max-width: 100%;
+  font: var(--type-body1);
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
-}
-
-.gaReason {
-  margin-top: 8px;
-  display: inline-flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: var(--surface-warning);
-  box-shadow: inset 0 0 0 1px var(--stroke-warning);
-  font: var(--weight-semibold) 13px/18px var(--font-sans);
-  color: var(--text-warning);
-  white-space: nowrap;
-}
-
-.gaFacts {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--stroke-divider);
-  border-radius: var(--radius-m);
-}
-
-.gaFact {
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  min-height: 40px;
-  padding: 0 14px;
-}
-
-.gaFact + .gaFact {
-  border-top: 1px solid var(--stroke-divider);
-}
-
-.gaFact dt {
-  font: var(--type-body2);
-  color: var(--text-tertiary);
-}
-
-.gaFact dd {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  padding: 10px 0;
-  font: var(--weight-medium) 14px/20px var(--font-sans);
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.gaFactValue,
-.gaFactSub {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.gaFactSub {
-  font: var(--type-body2);
-  color: var(--text-tertiary);
-}
-
-.gaFact dd.gaFactEmpty {
-  font-weight: var(--weight-regular);
-  color: var(--text-tertiary);
-}
-
-.gaHint {
-  margin: 0;
-  font: var(--type-body2);
-  color: var(--text-tertiary);
-}
-
-.gaFoot {
-  display: flex;
+.gaStatus {
+  margin-top: 12px;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px 16px 20px;
-  border-top: 1px solid var(--stroke-divider);
+  gap: 8px;
+  height: 42px;
+  padding: 0 18px 0 14px;
+  border-radius: 999px;
+  background: var(--ps-flag-bg);
+  color: var(--ps-flag-fg);
+  box-shadow: 0 0 0 1px var(--stroke-warning);
+  font: var(--weight-semibold) 16px/22px var(--font-sans);
+  white-space: nowrap;
 }
 
-@media (max-width: 520px) {
-  .gaWho {
-    flex-direction: column;
-    align-items: flex-start;
+.gaGlance {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 0.8fr);
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.gaCell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 16px 18px 17px;
+}
+
+.gaCell + .gaCell {
+  border-left: 1px solid var(--stroke-divider);
+}
+
+.gaCellValue {
+  font: var(--weight-semibold) 20px/28px var(--font-sans);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gaCellValue[data-empty="true"] {
+  font-weight: var(--weight-medium);
+  color: var(--text-tertiary);
+}
+
+.gaNote {
+  margin: -8px 0 0;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}
+
+.gaActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.gaCountdown {
+  margin: -12px 0 0;
+  text-align: center;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}
+
+/* How long is left before it steps aside, as a hairline along the foot. */
+.gaTimer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: var(--fill-disabled);
+}
+
+.gaTimer > span {
+  display: block;
+  height: 100%;
+  background: var(--fill-warning);
+  transition: width 1s linear;
+}
+
+@media (max-width: 560px) {
+  .gaHead {
+    padding: 16px 20px;
   }
 
-  .gaFoot {
-    flex-direction: column-reverse;
-    align-items: stretch;
+  .gaBody {
+    padding: 20px;
+    gap: 20px;
+  }
+
+  .gaName {
+    font-size: 30px;
+    line-height: 36px;
+  }
+
+  .gaHero {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .gaGlance {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gaCell + .gaCell {
+    border-left: 0;
+    border-top: 1px solid var(--stroke-divider);
+  }
+
+  .gaActions {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .gaScrim,
-  .gaDialog,
-  .gaBandIcon::after {
+  .gaCard,
+  .gaHeadIcon::after {
     animation: none;
+  }
+
+  .gaTimer > span {
+    transition: none;
   }
 }
 
