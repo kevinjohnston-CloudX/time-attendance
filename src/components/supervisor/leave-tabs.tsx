@@ -659,7 +659,24 @@ export function LeaveTabs({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Pushed right, and kept right when a narrow window wraps it
+              under the title. */}
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            <SegmentedControl
+              ariaLabel="Leave view"
+              items={[
+                { value: "all", label: "All", count: pending.length + hrPending.length + upcoming.length },
+                { value: "pending", label: "Pending", count: pending.length },
+                { value: "hr-pending", label: "HR Review", count: hrPending.length },
+                { value: "upcoming", label: "Approved", count: upcoming.length },
+              ]}
+              value={tab}
+              onChange={(v) => {
+                setTab(v as Tab);
+                setSelectedId(null);
+                setShown(PAGE_SIZE);
+              }}
+            />
             <LinkButton href="/supervisor" hierarchy="tertiary">
               ← Team Overview
             </LinkButton>
@@ -682,39 +699,18 @@ export function LeaveTabs({
           </div>
         </div>
 
-        {/* One row, not two: the views, the search and the three filters sit
-            together so the pinned bar costs as little height as possible. It
-            still wraps on a narrow window rather than overflowing. */}
-        <div className="flex flex-wrap items-center gap-2.5 pb-3">
-          {/* Stays a SegmentedControl rather than the URL-backed
-              SegmentedLinks: each tab is a separate permission-scoped query
-              the server has already run, so switching filters rows in hand
-              rather than re-fetching. The ?tab= parameter still picks the
-              opening tab, which the dashboard's link relies on. */}
-          <SegmentedControl
-            ariaLabel="Leave view"
-            size="sm"
-            items={[
-              { value: "all", label: "All", count: pending.length + hrPending.length + upcoming.length },
-              { value: "pending", label: "Pending", count: pending.length },
-              { value: "hr-pending", label: "HR Review", count: hrPending.length },
-              { value: "upcoming", label: "Approved", count: upcoming.length },
-            ]}
-            value={tab}
-            onChange={(v) => {
-              setTab(v as Tab);
-              setSelectedId(null);
-              setShown(PAGE_SIZE);
-            }}
-          />
-
+        {/* The views sit in the title row, as Live Attendance has them, so
+            the bar below gets its own full line. Still a SegmentedControl
+            rather than the URL-backed SegmentedLinks: each tab is a separate
+            permission-scoped query the server has already run, so switching
+            filters rows in hand rather than re-fetching. The ?tab= parameter
+            still picks the opening tab, which the dashboard's link relies on. */}
+        <div className="pb-3">
           <ToolsBar
-            beside
             search={
               <SearchInput
                 aria-label="Search by employee name"
                 placeholder="Employee name"
-                width={210}
                 value={query}
                 onValueChange={(v) => {
                   setQuery(v);
@@ -740,6 +736,10 @@ export function LeaveTabs({
                 <ToolsCount>
                   {rows.length} {rows.length === 1 ? "request" : "requests"}
                 </ToolsCount>
+                {/* It saves what this bar is set to, so it lives in the bar. */}
+                <Button hierarchy="link" size="sm" onClick={saveCurrentView}>
+                  Save current view
+                </Button>
               </>
             }
           >
@@ -787,12 +787,6 @@ export function LeaveTabs({
               />
             )}
           </ToolsBar>
-
-          {/* Saving the view acts on the whole page, so it sits outside the
-              bar that only narrows the list. */}
-          <Button hierarchy="link" size="sm" onClick={saveCurrentView}>
-            Save current view
-          </Button>
         </div>
       </div>
 
@@ -952,9 +946,11 @@ export function LeaveTabs({
             56px top bar, the pinned toolbar and its 16px gap, and the 24px of
             padding under the page. A floor keeps the month readable on a
             short window, where the page scrolls instead. Stacked below lg it
-            sizes to its content as before. */}
+            sizes to its content as before. That height is a floor, not a
+            cap: a month needs about 700px, and on a shorter window a fixed
+            height let the weeks spill under the colour key. */}
         <div
-          className="sticky min-w-0 lg:h-[var(--coverage-h)]"
+          className="sticky min-w-0 lg:flex lg:min-h-[var(--coverage-h)] lg:flex-col"
           style={{
             top: toolbarHeight + 16,
             ["--coverage-h" as string]: `max(560px, calc(100dvh - ${toolbarHeight + 96}px))`,
@@ -962,7 +958,7 @@ export function LeaveTabs({
         >
         <Card
           fill
-          style={{ height: "100%" }}
+          style={{ flex: "1 0 auto" }}
           title="Coverage"
           subtitle={
             focused

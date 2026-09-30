@@ -208,31 +208,36 @@ export function ReportsList({
           subtitle={status}
           condensed={condensed}
           actions={
-            <Button
-              hierarchy="primary"
-              leadingIcon={<Plus className="h-4 w-4" />}
-              disabled={sources.length === 0}
-              title={sources.length === 0 ? "The report types did not load. Reload the page to try again." : undefined}
-              onClick={() => setPicking(true)}
-            >
-              New report
-            </Button>
+            <>
+              {/* The views sit in the title row, as on Live Attendance, so the
+                  bar below gets its own full line. */}
+              {rows.length > 0 && (
+                <SegmentedLinks
+                  ariaLabel="Whose reports"
+                  active={activeView.value}
+                  items={VIEWS.map((v) => ({
+                    value: v.value,
+                    label: v.label,
+                    href: listHref({ view: v.value }),
+                    count: v.keep ? rows.filter((r) => r.access === v.keep).length : rows.length,
+                  }))}
+                />
+              )}
+              <Button
+                hierarchy="primary"
+                leadingIcon={<Plus className="h-4 w-4" />}
+                disabled={sources.length === 0}
+                title={sources.length === 0 ? "The report types did not load. Reload the page to try again." : undefined}
+                onClick={() => setPicking(true)}
+              >
+                New report
+              </Button>
+            </>
           }
         />
         {rows.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2.5">
-            <SegmentedLinks
-              ariaLabel="Whose reports"
-              active={activeView.value}
-              items={VIEWS.map((v) => ({
-                value: v.value,
-                label: v.label,
-                href: listHref({ view: v.value }),
-                count: v.keep ? rows.filter((r) => r.access === v.keep).length : rows.length,
-              }))}
-            />
+          <div>
             <ToolsBar
-              beside
               search={<SearchInput value={query} onValueChange={setQuery} placeholder="Report name or owner" width={300} />}
               end={
                 <>

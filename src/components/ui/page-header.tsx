@@ -50,7 +50,8 @@ export function PageHeader({
           <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>{subtitle}</p>
         )}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {/* Kept right when a narrow window wraps them under the title. */}
+      {actions && <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{actions}</div>}
     </div>
   );
   return pinned ? <PinnedBar>{header}</PinnedBar> : header;

@@ -121,13 +121,11 @@ export default async function TeamTimesheetsPage({
                 ? `${all.length} supervisor-approved ${all.length === 1 ? "timesheet is" : "timesheets are"} waiting on payroll`
                 : `${all.length} ${all.length === 1 ? "timesheet is" : "timesheets are"} waiting on your approval`
           }
-        />
-
-        <div className="flex flex-col gap-2.5">
-          <div className="flex flex-wrap items-center gap-2.5">
+          actions={
+            // The views sit in the title row, as on Live Attendance, so the
+            // bar below gets its own full line.
             <SegmentedLinks
               ariaLabel="Filter timesheets"
-              size="sm"
               active={view}
               items={[
                 { value: "all", label: VIEW_LABEL.all, href: href("all", query), count: searched.length },
@@ -135,9 +133,12 @@ export default async function TeamTimesheetsPage({
                 { value: "clean", label: VIEW_LABEL.clean, href: href("clean", query), count: clean.length },
               ]}
             />
+          }
+        />
 
+        <div className="flex flex-col gap-2.5">
+          <div>
             <ToolsBar
-              beside
               end={<ToolsCount>{rows.length} {rows.length === 1 ? "timesheet" : "timesheets"}</ToolsCount>}
               search={
                 /* A plain GET form rather than the kit's SearchInput: this page is a
@@ -145,7 +146,7 @@ export default async function TeamTimesheetsPage({
                     be sendable to somebody. Styled to match SearchInput because it is
                     the same control; the hidden field is what stops searching from
                     throwing you back to the All tab. */
-                <form method="GET" role="search" style={{ flex: "0 1 300px", minWidth: 180 }}>
+                <form method="GET" role="search">
                   {view !== "all" && <input type="hidden" name="view" value={view} />}
                   <label
                     className="ta-field ta-search flex h-8 w-full items-center gap-2 rounded-md px-2.5"
