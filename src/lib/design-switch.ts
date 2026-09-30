@@ -14,10 +14,27 @@
  * again at sign in, from their saved choice, so a new browser or a different
  * person signing in gets their own design. Nobody saved yet means Classic.
  *
- * <p>This module is edge safe (the proxy imports it): no database, no Node.
+ * <p>This module is edge safe (the proxy imports it): no database, no Node,
+ * nothing but the plain constants module.
  */
 
+import { LIVE_ATTENDANCE_HREF } from "@/lib/constants";
+
 export type Design = "classic" | "new";
+
+/**
+ * Pages only the new design has. Switching to Classic on one of them goes to
+ * the classic Dashboard instead, straight away, rather than to a page that is
+ * not there. Any other page Classic lacks is caught by the not found screen,
+ * which goes to the Dashboard too.
+ */
+const NEW_ONLY_PAGES = [LIVE_ATTENDANCE_HREF];
+
+/** Whether the classic design has the page at this path. */
+export function classicHas(path: string): boolean {
+  const pathname = path.split(/[?#]/)[0];
+  return !NEW_ONLY_PAGES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
 
 /** Read by the proxy on every request; written by the switch and at sign in. */
 export const DESIGN_COOKIE = "ct-design";
@@ -38,6 +55,14 @@ export const CLASSIC_PREFIX = "/classic";
  */
 export const DESIGN_SWITCH_PARAM = "via";
 export const DESIGN_SWITCH_VALUE = "design-switch";
+
+/**
+ * Set by the proxy on a request that carries the marker, so the not found
+ * screen knows on the server. Read from the address in the browser it could
+ * already be gone: the address is tidied as soon as the page opens, and the
+ * not found screen can finish loading after that.
+ */
+export const DESIGN_SWITCH_HEADER = "x-ct-via-switch";
 
 /**
  * A request header that picks the design for that one request, over the
@@ -80,7 +105,7 @@ export function parseSwitchSpot(value: string | null | undefined): SwitchSpot {
 }
 
 export function formatSwitchSpot(spot: SwitchSpot): string {
-  return `${spot.wide.toFixed(2)}|${spot.narrow.toFixed(2)}`;
+  return `${spot.wide.toFixed(3)}|${spot.narrow.toFixed(3)}`;
 }
 
 export function parseDesign(value: string | null | undefined): Design | null {

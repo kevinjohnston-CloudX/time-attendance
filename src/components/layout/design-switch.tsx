@@ -17,9 +17,10 @@ import { rememberSwitchSpot, useDesignNotice } from "./use-design-notice";
  * caps label and a small segmented control. The handoff has no design switch,
  * so this is its language applied to one.
  *
- * <p>When the classic design has an end date, the switch sits in a warning
- * pill with an icon that explains it (see useDesignNotice for when the
- * explanation opens).
+ * <p>When the classic design has an end date, a warning icon beside the
+ * switch explains it (see useDesignNotice for when the explanation opens).
+ * No warning pill here: the classic design's switch has one, and the new
+ * design shows only the icon, as asked on September 28.
  *
  * <p>It records where it sits (rememberSwitchSpot), so the classic design's
  * switch is drawn at exactly the same spot and nothing moves on a flip.
@@ -54,7 +55,7 @@ export function DesignSwitch({
         style={{
           font: "var(--weight-semibold) 10px/1 var(--font-sans)",
           letterSpacing: "0.08em",
-          color: classicUntil ? "var(--text-warning)" : "var(--text-tertiary)",
+          color: "var(--text-tertiary)",
         }}
       >
         Design
@@ -90,11 +91,7 @@ export function DesignSwitch({
   }
 
   return (
-    <span
-      ref={spotRef}
-      className="relative inline-flex h-8 flex-none items-center gap-2 rounded-full pl-3 pr-[3px]"
-      style={{ background: "var(--surface-warning)", boxShadow: "inset 0 0 0 1px var(--stroke-warning)" }}
-    >
+    <span ref={spotRef} className="relative inline-flex flex-none items-center gap-2.5">
       {control}
       <button
         type="button"

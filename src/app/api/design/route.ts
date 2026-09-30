@@ -8,6 +8,7 @@ import {
   DESIGN_COOKIE_MAX_AGE,
   DESIGN_SWITCH_PARAM,
   DESIGN_SWITCH_VALUE,
+  classicHas,
   classicOffered,
   parseDesign,
   safeNext,
@@ -65,7 +66,8 @@ export async function GET(req: NextRequest) {
     if (userId && params.get("remember") !== "0") await saveDesign(userId, design);
   }
 
-  const target = new URL(next, req.nextUrl);
+  // Classic has no such page (Live Attendance): its Dashboard instead.
+  const target = new URL(design === "classic" && !classicHas(next) ? "/dashboard" : next, req.nextUrl);
   // Arrived by the switch: if the design just picked has no such page, its not
   // found screen steps up to one it has rather than switching straight back.
   if (params.get(DESIGN_SWITCH_PARAM) === DESIGN_SWITCH_VALUE) {

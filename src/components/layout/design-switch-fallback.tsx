@@ -2,20 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { PageSpinner } from "@/components/layout/page-spinner";
-import {
-  DESIGN_PROBE_HEADER,
-  DESIGN_SWITCH_PARAM,
-  DESIGN_SWITCH_VALUE,
-  switchHref,
-  type Design,
-} from "@/lib/design-switch";
+import { DESIGN_PROBE_HEADER, switchHref, type Design } from "@/lib/design-switch";
 
 /**
  * On the not found screen, which every address neither design has lands on.
  *
- * <p>Arrived by the design switch: the design just picked does not have that
- * page, so it steps up to the parent address (keeping the marker) until it
- * reaches one it has, and the Dashboard at the top, instead of switching back.
+ * <p>Arrived by the design switch (the server says so, see
+ * DESIGN_SWITCH_HEADER): the design just picked does not have that page, so
+ * it opens that design's Dashboard instead of switching back.
  *
  * <p>On Classic otherwise: New may have the page (Live Attendance is New
  * only), so New is asked first, for this one request. When it has it, the
@@ -29,18 +23,23 @@ import {
  */
 const AUTH_PAGES = ["/login", "/forgot-password", "/setup-password", "/change-password"];
 
-export function DesignSwitchFallback({ design, children }: { design: Design; children: React.ReactNode }) {
-  const [shown, setShown] = useState(design !== "classic");
+export function DesignSwitchFallback({
+  design,
+  viaSwitch = false,
+  children,
+}: {
+  design: Design;
+  viaSwitch?: boolean;
+  children: React.ReactNode;
+}) {
+  const [shown, setShown] = useState(design !== "classic" && !viaSwitch);
 
   useEffect(() => {
     const url = new URL(window.location.href);
     const here = `${url.pathname}${url.search}`;
 
-    if (url.searchParams.get(DESIGN_SWITCH_PARAM) === DESIGN_SWITCH_VALUE) {
-      const parts = url.pathname.split("/").filter(Boolean);
-      parts.pop();
-      const parent = parts.length ? `/${parts.join("/")}` : "/dashboard";
-      window.location.replace(`${parent}?${DESIGN_SWITCH_PARAM}=${DESIGN_SWITCH_VALUE}`);
+    if (viaSwitch) {
+      window.location.replace("/dashboard");
       return;
     }
     if (design !== "classic") return;
@@ -89,7 +88,7 @@ export function DesignSwitchFallback({ design, children }: { design: Design; chi
     return () => {
       cancelled = true;
     };
-  }, [design]);
+  }, [design, viaSwitch]);
 
   return shown ? <>{children}</> : <PageSpinner />;
 }

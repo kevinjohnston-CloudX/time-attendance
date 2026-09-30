@@ -1,16 +1,17 @@
 // The new design's styles. Only this screen brings them: a not found screen's
 // styles load when it shows, never on the pages around it.
 import "@/app/globals.css";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { LinkButton } from "@/components/ui";
 import { BrandLockup } from "@/components/layout/brand-mark";
 import { DesignSwitchFallback } from "@/components/layout/design-switch-fallback";
-import { DESIGN_COOKIE, designFromCookie } from "@/lib/design-switch";
+import { DESIGN_COOKIE, DESIGN_SWITCH_HEADER, designFromCookie } from "@/lib/design-switch";
 
 export default async function NotFound() {
   const design = designFromCookie((await cookies()).get(DESIGN_COOKIE)?.value);
+  const viaSwitch = (await headers()).get(DESIGN_SWITCH_HEADER) === "1";
   return (
-    <DesignSwitchFallback design={design}>
+    <DesignSwitchFallback design={design} viaSwitch={viaSwitch}>
     <div
       className="flex min-h-screen items-center justify-center px-6"
       style={{ background: "var(--surface-page)" }}

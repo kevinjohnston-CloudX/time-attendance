@@ -62,7 +62,7 @@ export function rememberSwitchSpot(el: HTMLElement) {
   const current = document.cookie.split("; ").find((c) => c.startsWith(`${SWITCH_SPOT_COOKIE}=`));
   const spot = parseSwitchSpot(current?.slice(SWITCH_SPOT_COOKIE.length + 1));
   const before = wide ? spot.wide : spot.narrow;
-  if (Math.abs(before - right) < 0.01 && current) return;
+  if (Math.abs(before - right) < 0.0005 && current) return;
   const next = wide ? { ...spot, wide: right } : { ...spot, narrow: right };
   document.cookie = `${SWITCH_SPOT_COOKIE}=${formatSwitchSpot(next)}; path=/; max-age=31536000; samesite=lax`;
 }

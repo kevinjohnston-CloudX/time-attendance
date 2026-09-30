@@ -17,9 +17,11 @@ import { useDesignNotice } from "@/components/layout/use-design-notice";
  * weight and New the bold one. Only the colors are the classic palette, since
  * the new design's styles never load here.
  *
- * <p>With an end date it sits in the same warning pill, with the same notice
- * (useDesignNotice): it opens by itself once per sign in, and closing it in
- * either design closes it in both.
+ * <p>With an end date it sits in a warning pill (the new design shows only
+ * the icon), with the same notice (useDesignNotice): it opens by itself once
+ * per sign in, and closing it in either design closes it in both. The pill
+ * only adds a tinted edge around them: the label, the switch, the icon and
+ * the notice sit exactly where the new design's do.
  *
  * <p>Picking New saves it for this person and reloads the page they are on in
  * the new design, at the same address. A full load on purpose: each design
@@ -105,9 +107,12 @@ export function ClassicDesignSwitch({
   );
 
   // The spot is measured from the window's right edge, which is this bar's.
+  // With the pill, its 3px right edge sits past the icon, so the icon stays
+  // on the new design's spot.
+  const edge = classicUntil ? 3 : 0;
   const place = {
-    ["--spot-narrow" as string]: `${spot.narrow}px`,
-    ["--spot-wide" as string]: `${spot.wide}px`,
+    ["--spot-narrow" as string]: `${spot.narrow - edge}px`,
+    ["--spot-wide" as string]: `${spot.wide - edge}px`,
   };
   const at = "absolute top-1/2 -translate-y-1/2 right-[var(--spot-narrow)] lg:right-[var(--spot-wide)]";
 
@@ -121,7 +126,7 @@ export function ClassicDesignSwitch({
 
   return (
     <span
-      className={`${at} inline-flex h-8 flex-none items-center gap-2 rounded-full bg-amber-50 pl-3 pr-[3px] ring-1 ring-inset ring-amber-300 dark:bg-amber-950/40 dark:ring-amber-800`}
+      className={`${at} inline-flex h-8 flex-none items-center gap-2.5 rounded-full bg-amber-50 pl-3 pr-[3px] ring-1 ring-inset ring-amber-300 dark:bg-amber-950/40 dark:ring-amber-800`}
       style={place}
     >
       {control}
@@ -147,7 +152,8 @@ export function ClassicDesignSwitch({
           id={noticeId}
           role={pinned ? "dialog" : "tooltip"}
           aria-label={pinned ? "Classic design ending" : undefined}
-          className="absolute right-0 top-[calc(100%+8px)] z-50 flex w-[320px] gap-3 rounded-[14px] bg-white p-3.5 shadow-[0_18px_40px_-12px_rgba(16,24,40,0.25),0_0_0_1px_rgba(17,24,39,0.06)] dark:bg-zinc-900 dark:shadow-[0_18px_40px_-12px_rgba(0,0,0,0.6),0_0_0_1px_rgba(63,63,70,1)]"
+          // Offset by the pill's edge, so it opens where the new design's does.
+          className="absolute right-[3px] top-[calc(100%+5px)] z-50 flex w-[320px] gap-3 rounded-[14px] bg-white p-3.5 shadow-[0_18px_40px_-12px_rgba(16,24,40,0.25),0_0_0_1px_rgba(17,24,39,0.06)] dark:bg-zinc-900 dark:shadow-[0_18px_40px_-12px_rgba(0,0,0,0.6),0_0_0_1px_rgba(63,63,70,1)]"
           style={{ fontFamily: INTER }}
           // Moving onto the card keeps a hover-opened card open, so its text
           // can be read without it vanishing under the pointer.

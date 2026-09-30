@@ -1,7 +1,16 @@
 import type { NextAuthConfig } from "next-auth";
 import { NextResponse } from "next/server";
 import { REQUEST_PATH_HEADER } from "@/lib/constants";
-import { CLASSIC_PREFIX, DESIGN_COOKIE, DESIGN_PROBE_HEADER, designFromCookie, safeNext } from "@/lib/design-switch";
+import {
+  CLASSIC_PREFIX,
+  DESIGN_COOKIE,
+  DESIGN_PROBE_HEADER,
+  DESIGN_SWITCH_HEADER,
+  DESIGN_SWITCH_PARAM,
+  DESIGN_SWITCH_VALUE,
+  designFromCookie,
+  safeNext,
+} from "@/lib/design-switch";
 
 /**
  * Edge-safe auth config — no Prisma, no bcrypt, no Node.js-only modules.
@@ -117,6 +126,10 @@ export const authConfig = {
         // browser sent under the same name.
         const headers = new Headers(request.headers);
         headers.set(REQUEST_PATH_HEADER, nextUrl.pathname);
+        // Arrived by the design switch, for the not found screen (see
+        // DESIGN_SWITCH_HEADER). Never what the browser sent.
+        if (nextUrl.searchParams.get(DESIGN_SWITCH_PARAM) === DESIGN_SWITCH_VALUE) headers.set(DESIGN_SWITCH_HEADER, "1");
+        else headers.delete(DESIGN_SWITCH_HEADER);
         return serve(request, headers);
       } else if (isLoggedIn && (
         nextUrl.pathname === "/login" ||
