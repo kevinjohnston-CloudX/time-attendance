@@ -51,19 +51,24 @@ export function NotificationBell({ items }: { items: WaitingItem[] }) {
         aria-label={label}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="ta-pill-btn relative grid h-7 w-7 place-items-center rounded-full"
+        // With something waiting, the button widens into a capsule and the
+        // count sits beside the bell, so no count ever covers the icon.
+        className={
+          total > 0
+            ? "ta-pill-btn inline-flex h-7 items-center gap-[5px] rounded-full pl-1.5 pr-[5px]"
+            : "ta-pill-btn grid h-7 w-7 place-items-center rounded-full"
+        }
         style={{ color: "var(--icon-tertiary)" }}
       >
-        <Bell className="h-4 w-4" />
+        <Bell className="h-4 w-4 flex-none" />
         {total > 0 && (
           <span
             aria-hidden
-            className="tabular absolute right-[3px] top-[3px] h-3.5 min-w-3.5 rounded-full px-[3px] text-center"
+            className="tabular h-[18px] min-w-[18px] whitespace-nowrap rounded-full px-[5px] text-center"
             style={{
               background: "var(--fill-accent)",
               color: "var(--text-on-accent)",
-              font: "var(--weight-semibold) 9px/14px var(--font-sans)",
-              boxShadow: "0 0 0 2px var(--surface-card)",
+              font: "var(--weight-semibold) 11px/18px var(--font-sans)",
             }}
           >
             {total > 99 ? "99+" : total}
