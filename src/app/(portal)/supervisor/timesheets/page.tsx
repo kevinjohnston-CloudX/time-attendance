@@ -22,7 +22,8 @@ import {
   THead,
   TR,
   TableFooter,
-  Toolbar,
+  ToolsBar,
+  ToolsCount,
   statusTone,
 } from "@/components/ui";
 import { format, addDays } from "date-fns";
@@ -123,7 +124,7 @@ export default async function TeamTimesheetsPage({
         />
 
         <div className="flex flex-col gap-2.5">
-          <Toolbar count={rows.length} countLabel="timesheet">
+          <div className="flex flex-wrap items-center gap-2.5">
             <SegmentedLinks
               ariaLabel="Filter timesheets"
               size="sm"
@@ -135,33 +136,39 @@ export default async function TeamTimesheetsPage({
               ]}
             />
 
-            {/* A plain GET form rather than the kit's SearchInput: this page is a
-                server component, and a narrowed queue has to survive a reload and
-                be sendable to somebody. Styled to match SearchInput because it is
-                the same control; the hidden field is what stops searching from
-                throwing you back to the All tab. */}
-            <form method="GET" role="search" style={{ flex: "0 1 260px", minWidth: 180 }}>
-              {view !== "all" && <input type="hidden" name="view" value={view} />}
-              <label
-                className="ta-field flex h-8 w-full items-center gap-2 rounded-md px-2.5"
-                style={{
-                  border: "1px solid var(--stroke-default)",
-                  background: "var(--surface-card)",
-                }}
-              >
-                <Search className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} />
-                <input
-                  type="search"
-                  name="q"
-                  defaultValue={query}
-                  placeholder="Employee name or code"
-                  aria-label="Search this queue"
-                  className="min-w-0 flex-1 border-0 bg-transparent outline-none"
-                  style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}
-                />
-              </label>
-            </form>
-          </Toolbar>
+            <ToolsBar
+              beside
+              end={<ToolsCount>{rows.length} {rows.length === 1 ? "timesheet" : "timesheets"}</ToolsCount>}
+              search={
+                /* A plain GET form rather than the kit's SearchInput: this page is a
+                    server component, and a narrowed queue has to survive a reload and
+                    be sendable to somebody. Styled to match SearchInput because it is
+                    the same control; the hidden field is what stops searching from
+                    throwing you back to the All tab. */
+                <form method="GET" role="search" style={{ flex: "0 1 300px", minWidth: 180 }}>
+                  {view !== "all" && <input type="hidden" name="view" value={view} />}
+                  <label
+                    className="ta-field ta-search flex h-8 w-full items-center gap-2 rounded-md px-2.5"
+                    style={{
+                      border: "1px solid var(--stroke-default)",
+                      background: "var(--surface-card)",
+                    }}
+                  >
+                    <Search className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} />
+                    <input
+                      type="search"
+                      name="q"
+                      defaultValue={query}
+                      placeholder="Employee name or code"
+                      aria-label="Search this queue"
+                      className="min-w-0 flex-1 border-0 bg-transparent outline-none"
+                      style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}
+                    />
+                  </label>
+                </form>
+              }
+            />
+          </div>
 
           <FilterBar clearHref={isNarrowed ? unfiltered : undefined}>
             {view !== "all" ? (
