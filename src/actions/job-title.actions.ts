@@ -13,6 +13,8 @@ export const getJobTitles = withRBAC(
     if (!tenantId) return [];
     return db.jobTitle.findMany({
       where: { tenantId },
+      // How many people have it, so the list can say so and a delete can be refused.
+      include: { _count: { select: { employees: true } } },
       orderBy: { name: "asc" },
     });
   }

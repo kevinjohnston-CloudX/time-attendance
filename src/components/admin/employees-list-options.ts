@@ -5,10 +5,12 @@
  * link cannot ask the database for a field it was never meant to sort on.
  */
 
+/** Unset is current employees (active or on leave); "all" includes the inactive. */
 export const STATUS_OPTIONS = [
   { id: "active", name: "Active" },
   { id: "leave", name: "On leave" },
   { id: "inactive", name: "Inactive" },
+  { id: "all", name: "Everyone" },
 ] as const;
 
 export const PAY_OPTIONS = [

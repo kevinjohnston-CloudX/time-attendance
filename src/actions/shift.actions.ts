@@ -301,9 +301,6 @@ export const deleteShift = withRBAC(
       );
     }
 
-    const count = await db.employee.count({ where: { shiftId, tenantId } });
-    if (count > 0) throw new Error(`This shift cannot be deleted while ${count} ${count === 1 ? "employee is" : "employees are"} assigned to it. Reassign them first.`);
-
     await db.shift.deleteMany({
       where: { id: own.id, tenantId },
     });

@@ -17,10 +17,27 @@ import type { DateRange } from "@/lib/validators/report.schema";
 const RANGE_KINDS = [
   { value: "payPeriod", label: "Pay period" },
   { value: "custom", label: "Pick dates" },
-  { value: "relative", label: "Last few days" },
+  { value: "relative", label: "Recent days" },
 ];
 
 const RELATIVE_DAYS = [7, 14, 30, 60, 90];
+
+/** Today and Yesterday lead the recent choices, as John added them. */
+const RECENT: { value: string; label: string; wide: string }[] = [
+  { value: "today", label: "Today", wide: "Today" },
+  { value: "yesterday", label: "Yesterday", wide: "Yesterday" },
+  ...RELATIVE_DAYS.map((d) => ({ value: String(d), label: `The last ${d} days`, wide: `${d} days` })),
+];
+
+function recentValue(range: DateRange): string {
+  if (range.type === "today" || range.type === "yesterday") return range.type;
+  return range.type === "relative" ? String(range.relativeDays) : "";
+}
+
+function fromRecent(v: string): DateRange {
+  if (v === "today" || v === "yesterday") return { type: v };
+  return { type: "relative", relativeDays: Number(v) };
+}
 
 const STATUS_WORD: Record<string, string> = { OPEN: "Open", READY: "Ready to close", LOCKED: "Closed" };
 
@@ -201,7 +218,7 @@ export function DateRangePicker({
     <div className="flex flex-col gap-3">
       <SegmentedControl
         items={payPeriods.length ? RANGE_KINDS : RANGE_KINDS.filter((k) => k.value !== "payPeriod")}
-        value={value.type}
+        value={value.type === "today" || value.type === "yesterday" ? "relative" : value.type}
         onChange={pickKind}
         ariaLabel="How to pick the dates"
         fullWidth={stacked}
@@ -234,27 +251,23 @@ export function DateRangePicker({
         </div>
       )}
 
-      {/* Five choices do not fit a narrow column side by side. */}
-      {value.type === "relative" && stacked && (
-        <Select
-          value={String(value.relativeDays)}
-          onChange={(e) => onChange({ type: "relative", relativeDays: Number(e.target.value) })}
-          aria-label="How many days back"
-        >
-          {RELATIVE_DAYS.map((d) => (
-            <option key={d} value={d}>
-              The last {d} days
+      {/* Seven choices do not fit a narrow column side by side. */}
+      {recentValue(value) && stacked && (
+        <Select value={recentValue(value)} onChange={(e) => onChange(fromRecent(e.target.value))} aria-label="Which days">
+          {RECENT.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
             </option>
           ))}
         </Select>
       )}
 
-      {value.type === "relative" && !stacked && (
+      {recentValue(value) && !stacked && (
         <SegmentedControl
-          items={RELATIVE_DAYS.map((d) => ({ value: String(d), label: `${d} days` }))}
-          value={String(value.relativeDays)}
-          onChange={(v) => onChange({ type: "relative", relativeDays: Number(v) })}
-          ariaLabel="How many days back"
+          items={RECENT.map((r) => ({ value: r.value, label: r.wide }))}
+          value={recentValue(value)}
+          onChange={(v) => onChange(fromRecent(v))}
+          ariaLabel="Which days"
         />
       )}
     </div>

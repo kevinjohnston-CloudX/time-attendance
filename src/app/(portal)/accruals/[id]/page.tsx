@@ -1,4 +1,5 @@
 import { redirect, notFound } from "next/navigation";
+import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
@@ -41,12 +42,14 @@ export default async function EmployeeAccrualsPage({
   // Scope enforcement
   if (!canViewTeam && session.user.employeeId !== id) redirect("/accruals");
   if (canViewTeam && !canViewAny && session.user.employeeId !== id) {
-    // Verify this employee is a direct report
-    const emp = await db.employee.findUnique({ where: { id }, select: { supervisorId: true } });
-    if (!emp || emp.supervisorId !== session.user.employeeId) redirect("/accruals");
+    // Verify this employee is in the supervisor's full subordinate tree
+    if (!session.user.employeeId) redirect("/accruals");
+    const subordinateIds = await getSubordinateIds(session.user.employeeId, session.user.tenantId ?? null);
+    if (!subordinateIds.includes(id)) redirect("/accruals");
   }
 
   const canManageEmployee = await userHasPermission(session.user, "EMPLOYEE_MANAGE");
+  const canManageRules = await userHasPermission(session.user, "RULES_MANAGE");
 
   const year = new Date().getFullYear();
   const yearStart = new Date(`${year}-01-01T00:00:00Z`);
@@ -546,10 +549,10 @@ export default async function EmployeeAccrualsPage({
       border: "1px solid var(--stroke-secondary)",
       background: "var(--surface-card)",
     };
-    // Only somebody who can edit the policy gets a link to it. For everyone
+    // Only somebody who can edit the policy (RULES_MANAGE) gets a link to it. For everyone
     // else the tile is still the answer to "why is this leave type earning
     // nothing" — it just does not pretend to be a way in.
-    return canManageEmployee && policyId ? (
+    return canManageRules && policyId ? (
       <Link
         key={name}
         href={`/admin/rules-setup/leave-policies/${policyId}`}
@@ -569,7 +572,7 @@ export default async function EmployeeAccrualsPage({
     <div className="flex flex-col gap-4">
       <PageHeader pinned
         title={employee.user.name}
-        subtitle={`${employee.employeeCode} · Hired ${format(employee.hireDate, "MMM d, yyyy")} · ${year} accrual year`}
+        subtitle={`${employee.wmsId ?? employee.employeeCode} · Hired ${format(employee.hireDate, "MMM d, yyyy")} · ${year} accrual year`}
         actions={
           <>
             {/* Somebody with own-scope only is redirected off the list page

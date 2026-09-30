@@ -37,7 +37,8 @@ export type ExceptionRow = {
   employeeName: string;
   siteName: string | null;
   departmentName: string | null;
-  payPeriod: { id: string; startDate: Date; endDate: Date };
+  /** "Sep 1 to Sep 14, 2026", the period's real last day. */
+  payPeriod: { id: string; label: string };
   hasPunches: boolean;
   scheduled: { start: string | null; end: string | null };
   recorded: { in: string | null; out: string | null };
@@ -123,7 +124,7 @@ type Props = {
     departmentId?: string;
     shiftId?: string;
     exceptionType?: string;
-    payPeriodId?: string;
+    payPeriodStart?: string;
     employeeId?: string;
   };
 };
@@ -340,7 +341,7 @@ export function ExceptionsScreen({
       selected.departmentId ||
       selected.shiftId ||
       selected.exceptionType ||
-      selected.payPeriodId,
+      selected.payPeriodStart,
   );
 
   const matching = visible.length;
@@ -470,10 +471,10 @@ export function ExceptionsScreen({
                 the select it used to be. */}
             <FilterSelectChip
               label="Pay period"
-              value={selected.payPeriodId ?? ""}
+              value={selected.payPeriodStart ?? ""}
               options={payPeriods}
               disabled={payPeriods.length === 0}
-              onChange={(id) => navigate({ payPeriodId: id || undefined })}
+              onChange={(id) => navigate({ payPeriodStart: id || undefined })}
             />
           </ToolsBar>
         </div>

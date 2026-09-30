@@ -192,6 +192,9 @@ export const getEmployees = withRBAC(
     const allowedSiteIds = await getActorSiteRestrictions(actorEmpId, actorRole);
 
     const where: Prisma.EmployeeWhereInput = { tenantId: tenantId ?? undefined };
+    // No status picked means current employees (active or on leave), as the
+    // list has opened since Job Titles; "Everyone" brings the inactive back.
+    if (!status) where.isActive = true;
     if (allowedSiteIds) where.siteId = { in: allowedSiteIds };
     if (site) where.site = { name: site };
     if (dept) where.department = { name: dept };
@@ -249,8 +252,10 @@ export const getEmployees = withRBAC(
           site:       { select: { name: true } },
           department: { select: { name: true } },
           customRole: { select: { id: true, name: true } },
-          // Only to find each person's tablet photo; dropped below, so the
-          // badge numbers never reach the browser, only the signed link.
+          // The barcode only finds each person's tablet photo and is dropped
+          // below. The WMS badge ID stays: it is the Badge ID column, and
+          // this list is behind EMPLOYEE_MANAGE, whose holders see and edit
+          // it on every record already.
           barcode: true,
           wmsId: true,
         },
@@ -267,7 +272,7 @@ export const getEmployees = withRBAC(
     } catch {
       // A failed lookup costs the faces, never the list.
     }
-    const employees = rows.map(({ barcode: _barcode, wmsId: _wmsId, ...row }) => ({
+    const employees = rows.map(({ barcode: _barcode, ...row }) => ({
       ...row,
       photo: photos.get(row.id) ?? null,
     }));
@@ -371,7 +376,7 @@ export const createEmployee = withRBAC(
       entityType: "EMPLOYEE",
       entityId: employee.id,
       action: "EMPLOYEE_CREATED",
-      changes: { after: { employeeCode: parsed.employeeCode, role: parsed.role } },
+      changes: { after: { employeeCode: employee.employeeCode, role: parsed.role } },
     });
 
     revalidatePath("/admin/employees");

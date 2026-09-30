@@ -49,7 +49,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const header = [
     "Employee",
-    "Employee ID",
+    "Badge ID",
     "Department",
     "Site",
     "Date",
@@ -65,7 +65,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     lines.push(
       [
         r.employee,
-        r.employeeCode,
+        r.badgeId,
         r.department,
         r.site,
         r.date,

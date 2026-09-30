@@ -44,6 +44,8 @@ interface Props {
   holidayRules: { id: string; name: string }[];
   payCategories: { id: string; number: number; description: string | null }[];
   payTypes: { id: string; number: number; description: string | null }[];
+  jobTitles: { id: string; name: string; externalId: string | null }[];
+  agencies: { id: string; code: number; description: string; inactiveOn: Date | string | null }[];
 }
 
 function fmtTime(hhmm: string): string {
@@ -108,7 +110,7 @@ const FIELD_GRID: React.CSSProperties = {
   gap: 12,
 };
 
-export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes }: Props) {
+export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -120,6 +122,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
     () => sites.find((s) => departments.some((d) => d.sites.some((ds) => ds.site.id === s.id)))?.id ?? sites[0]?.id ?? ""
   );
   const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === selectedSiteId));
+  const activeAgencies = agencies.filter((a) => !a.inactiveOn || new Date(a.inactiveOn) > new Date());
 
   function handleClose() {
     setOpen(false);
@@ -155,10 +158,9 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
         payType: (fd.get("payType") as "HOURLY" | "SALARY" | null) || null,
         payTypeId: (fd.get("payTypeId") as string) || null,
         payRate: payRateRaw ? Number(payRateRaw) : null,
-        jobTitle: fd.get("jobTitle") as string,
-        // No job title or agency pickers on this form yet; copy's form (5449161) has both.
-        jobTitleId: null,
-        agencyId: null,
+        jobTitle: null, // legacy free-text title; the form now picks a job title by id
+        jobTitleId: (fd.get("jobTitleId") as string) || null,
+        agencyId: (fd.get("agencyId") as string) || null,
         adpWorkerId: fd.get("adpWorkerId") as string,
         shiftId: fd.get("shiftId") as string,
         holidayRuleId: fd.get("holidayRuleId") as string,
@@ -258,7 +260,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                 <div style={panelStyle("general")}>
                   <Input label="Full Name" name="name" required />
                   <Input label="Email (Google login)" name="email" type="email" required />
-                  <Input label="Employee Code" name="employeeCode" required />
+                  <Input label="Employee Code" name="employeeCode" hint="Optional. Left blank, the Badge ID is used." />
                   <Input label="Hire Date" name="hireDate" type="date" required />
 
                   <SelectField label="Role" name="role">
@@ -294,7 +296,24 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                     ))}
                   </SelectField>
 
-                  <Input label="Job Title" name="jobTitle" />
+                  <SelectField label="Job Title" name="jobTitleId">
+                    <option value="">None</option>
+                    {jobTitles.map((jt) => (
+                      <option key={jt.id} value={jt.id}>
+                        {jt.name}{jt.externalId ? ` (${jt.externalId})` : ""}
+                      </option>
+                    ))}
+                  </SelectField>
+                  {/* Agencies past their inactive date stay on file for the
+                      people already in them, but are not offered for new hires. */}
+                  <SelectField label="Agency" name="agencyId">
+                    <option value="">None</option>
+                    {activeAgencies.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.code} ({a.description})
+                      </option>
+                    ))}
+                  </SelectField>
                   <Input label="Badge ID (WMS)" name="wmsId" placeholder="QR code badge ID" />
                   <Input label="ADP Worker ID" name="adpWorkerId" placeholder="ADP Workforce Now ID" />
                 </div>

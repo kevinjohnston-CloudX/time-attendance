@@ -50,7 +50,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     departmentId: searchParams.get("departmentId") ?? undefined,
     shiftId: searchParams.get("shiftId") ?? undefined,
     exceptionType,
-    payPeriodId: searchParams.get("payPeriodId") ?? undefined,
+    // The screen's period is a start day, matching every rule set's period.
+    // A malformed day would fail the schema, so it is dropped here instead.
+    payPeriodStart: /^\d{4}-\d{2}-\d{2}$/.test(searchParams.get("payPeriodStart") ?? "")
+      ? searchParams.get("payPeriodStart")!
+      : undefined,
   });
 
   if (!result.success) {

@@ -628,6 +628,9 @@ export const getFilterOptions = withRBAC(
           _count: { select: { timesheets: true } },
         },
         orderBy: { startDate: "desc" },
+        // Every group's period is kept. The picker lists each run of dates
+        // once under "All pay groups" (the repeated lines prod removed here),
+        // and still needs each group's own period to offer one group.
       }),
       db.leaveType.findMany({
         where: { tenantId, isActive: true },

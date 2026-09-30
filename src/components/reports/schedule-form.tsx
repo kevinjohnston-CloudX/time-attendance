@@ -60,9 +60,11 @@ const TIMEZONES = [
 ] as const;
 
 const FORMATS = [
-  { value: "xlsx", label: "Excel" },
-  { value: "csv", label: "CSV" },
-  { value: "pdf", label: "PDF" },
+  // Capitals, as the schedule schema takes them. Lowercase failed its check,
+  // so no schedule could be saved.
+  { value: "XLSX", label: "Excel" },
+  { value: "CSV", label: "CSV" },
+  { value: "PDF", label: "PDF" },
 ] as const;
 
 /* ------------------------------------------------------------------ */
@@ -181,7 +183,7 @@ export function ScheduleForm({
   const [timezone, setTimezone] = useState(
     existingSchedule?.timezone ?? "America/New_York",
   );
-  const [format, setFormat] = useState(existingSchedule?.format ?? "xlsx");
+  const [format, setFormat] = useState(existingSchedule?.format?.toUpperCase() ?? "XLSX");
   const [recipients, setRecipients] = useState<string[]>(
     existingSchedule?.recipients ?? [],
   );

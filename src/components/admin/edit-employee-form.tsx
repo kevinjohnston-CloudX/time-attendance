@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
+import Link from "next/link";
 import { updateEmployee, updateHrSiteAccess } from "@/actions/admin.actions";
 import { setTemporaryPassword } from "@/actions/password.actions";
 import type { Site, Department, RuleSet, Employee } from "@prisma/client";
@@ -28,6 +29,7 @@ import {
   Building2,
   CircleDollarSign,
   ContactRound,
+  ExternalLink,
   History,
   KeyRound,
   Pencil,
@@ -86,14 +88,18 @@ interface Props {
   holidayRules: { id: string; name: string }[];
   payCategories: { id: string; number: number; description: string | null }[];
   payTypes: { id: string; number: number; description: string | null }[];
+  jobTitles: { id: string; name: string; externalId: string | null }[];
+  agencies: { id: string; code: number; description: string; inactiveOn: Date | string | null }[];
   logs: Array<{
     id: string;
     createdAt: string;
     actorName: string;
+    action?: string;
     fields: Array<{ field: string; before: string; after: string }>;
   }>;
   hrSiteAccess: string[];
   actorRole: string;
+  canManageRules?: boolean;
 }
 
 const SYSTEM_ROLE_NAME: Record<string, string> = {
@@ -111,7 +117,10 @@ const MARITAL = ["Single", "Married", "Divorced", "Widowed", "Other"];
 type Values = {
   name: string;
   email: string;
+  /** The free text title older records carry; shown, no longer edited. */
   jobTitle: string;
+  jobTitleId: string;
+  agencyId: string;
   customRoleId: string;
   siteId: string;
   departmentId: string;
@@ -173,6 +182,24 @@ function Coded({ item }: { item: { number: number; description: string | null } 
       <span className={styles.code}>{item.number}</span>
       {item.description && <span className="min-w-0">{item.description}</span>}
     </span>
+  );
+}
+
+/**
+ * A setup record's name that opens it, for someone who may edit rules. Only
+ * in read mode, so leaving the page never costs unsaved changes.
+ */
+function SetupLink({ href, children }: { href: string | null; children: ReactNode }) {
+  if (!href) return <>{children}</>;
+  return (
+    <Link
+      href={href}
+      className="inline-flex min-w-0 items-center gap-1.5 hover:underline"
+      style={{ color: "var(--text-accent)" }}
+    >
+      {children}
+      <ExternalLink className="h-3.5 w-3.5 flex-none" aria-hidden="true" />
+    </Link>
   );
 }
 
@@ -270,9 +297,12 @@ export function EditEmployeeForm({
   holidayRules,
   payCategories,
   payTypes,
+  jobTitles,
+  agencies,
   logs,
   hrSiteAccess,
   actorRole,
+  canManageRules = false,
 }: Props) {
   const router = useRouter();
   const toast = useToast();
@@ -293,10 +323,10 @@ export function EditEmployeeForm({
   const [photoSaved, setPhotoSaved] = useState<{ url: string | null } | null>(null);
   const photo = photoSaved ? photoSaved.url : photoFromServer;
 
-  // Site access section is only shown when the employee being edited is HR_ADMIN or SYSTEM_ADMIN
-  const employeeIsHrOrSysAdmin = ["HR_ADMIN", "SYSTEM_ADMIN"].includes(employee.role);
-  // Only HR_ADMIN / SYSTEM_ADMIN actors can manage site access
-  const canManageSiteAccess = ["HR_ADMIN", "SYSTEM_ADMIN"].includes(actorRole);
+  // Site access is shown for HR_ADMIN, PAYROLL_ADMIN and SYSTEM_ADMIN
+  const employeeIsHrOrSysAdmin = ["HR_ADMIN", "PAYROLL_ADMIN", "SYSTEM_ADMIN"].includes(employee.role);
+  // Only HR_ADMIN / PAYROLL_ADMIN / SYSTEM_ADMIN actors can manage site access
+  const canManageSiteAccess = ["HR_ADMIN", "PAYROLL_ADMIN", "SYSTEM_ADMIN"].includes(actorRole);
 
   // The role the record is on: its custom role, else the system role of the
   // same name. The select has no empty option, so this is also what it shows.
@@ -311,6 +341,8 @@ export function EditEmployeeForm({
       name: employee.user.name ?? "",
       email: employee.user.email ?? "",
       jobTitle: employee.jobTitle ?? "",
+      jobTitleId: employee.jobTitleId ?? "",
+      agencyId: employee.agencyId ?? "",
       customRoleId: roleId,
       siteId: employee.siteId,
       departmentId: employee.departmentId,
@@ -470,6 +502,8 @@ export function EditEmployeeForm({
         case "holidayRuleId":
         case "payCategoryId":
         case "payTypeId":
+        case "jobTitleId":
+        case "agencyId":
         case "adjustedHireDate":
           out[k] = val || null;
           break;
@@ -538,6 +572,17 @@ export function EditEmployeeForm({
         (id === employee.supervisorId ? employee.supervisor?.user.name ?? "" : "")
       : "";
   const roleName = (id: string) => customRoles.find((r) => r.id === id)?.name ?? SYSTEM_ROLE_NAME[employee.role] ?? "";
+  /** The picked Job Title's name, else the free text title older records carry. */
+  const jobTitleName = (vals: Values) =>
+    jobTitles.find((jt) => jt.id === vals.jobTitleId)?.name ?? (vals.jobTitleId ? "" : vals.jobTitle);
+  const agencyEnded = (a: { inactiveOn: Date | string | null }) => !!a.inactiveOn && new Date(a.inactiveOn) <= new Date();
+  /** Where a Pay & Rules value opens, or null when it cannot or should not. */
+  const setupHref = (area: string, id: string, known: { id: string }[]) =>
+    canManageRules && id && known.some((x) => x.id === id) ? `/admin/${area}/${id}` : null;
+  const agencyName = (id: string) => {
+    const a = agencies.find((x) => x.id === id);
+    return a ? `${a.code} (${a.description})${agencyEnded(a) ? ", inactive" : ""}` : "";
+  };
   const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === v.siteId));
   const tone = v.status === "inactive" ? "inactive" : v.status === "on-leave" ? "leave" : "active";
   const statusWord = v.status === "inactive" ? "Inactive" : v.status === "on-leave" ? "On leave" : "Active";
@@ -613,7 +658,7 @@ export function EditEmployeeForm({
                 ? changeCount === 0
                   ? "Editing. Nothing changed yet."
                   : `Editing. ${changeCount === 1 ? "1 unsaved change" : `${changeCount} unsaved changes`}.`
-                : [v.jobTitle || roleName(v.customRoleId), employee.department.name, employee.site.name]
+                : [jobTitleName(v) || roleName(v.customRoleId), employee.department.name, employee.site.name]
                     .filter(Boolean)
                     .join(" · ")
             }
@@ -703,9 +748,11 @@ export function EditEmployeeForm({
               {/* Assigned once or worked out from other fields, so these stay
                   as text in edit mode too. */}
               <dl className={styles.facts}>
+                {/* The WMS badge people know them by, as across the app; the
+                    employee code stands in for a record with no badge yet. */}
                 <div className={styles.fact}>
-                  <dt>Employee code</dt>
-                  <dd className={styles.mono}>{employee.employeeCode}</dd>
+                  <dt>Badge ID</dt>
+                  <dd className={styles.mono}>{employee.wmsId ?? employee.employeeCode}</dd>
                 </div>
                 <div className={styles.fact}>
                   <dt>Hire date</dt>
@@ -768,8 +815,43 @@ export function EditEmployeeForm({
                 <Field label="Email (Google login)" htmlFor="f-email" read={v.email}>
                   {text("email", { type: "email" })}
                 </Field>
-                <Field label="Job title" htmlFor="f-jobTitle" read={v.jobTitle}>
-                  {text("jobTitle")}
+                {/* Picked from the company's Job Titles. A record from before
+                    those existed keeps its typed title, shown until one is picked. */}
+                <Field
+                  label="Job title"
+                  htmlFor="f-jobTitleId"
+                  read={jobTitleName(v)}
+                  readHint={!v.jobTitleId && v.jobTitle ? "Typed in before Job Titles existed." : undefined}
+                  hint={!v.jobTitleId && v.jobTitle ? `On file as \u201c${v.jobTitle}\u201d until one is picked.` : undefined}
+                >
+                  {pick(
+                    "jobTitleId",
+                    <>
+                      <option value="">None</option>
+                      {jobTitles.map((jt) => (
+                        <option key={jt.id} value={jt.id}>
+                          {jt.name}
+                          {jt.externalId ? ` (${jt.externalId})` : ""}
+                        </option>
+                      ))}
+                    </>,
+                  )}
+                </Field>
+                <Field label="Agency" htmlFor="f-agencyId" read={agencyName(v.agencyId)}>
+                  {pick(
+                    "agencyId",
+                    <>
+                      <option value="">None</option>
+                      {/* A past agency stays listed, marked, so the record
+                          shows who it really is rather than falling to None. */}
+                      {agencies.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.code} ({a.description})
+                          {agencyEnded(a) ? " (inactive)" : ""}
+                        </option>
+                      ))}
+                    </>,
+                  )}
                 </Field>
 
                 <Field label="Role" htmlFor="f-customRoleId" read={roleName(v.customRoleId)}>
@@ -871,7 +953,15 @@ export function EditEmployeeForm({
               subtitle="The rule set calculates the hours. The pay method decides whether punches affect pay at all."
             >
               <div className={styles.grid}>
-                <Field label="Rule set" htmlFor="f-ruleSetId" read={ruleSets.find((r) => r.id === v.ruleSetId)?.name ?? employee.ruleSet.name}>
+                <Field
+                  label="Rule set"
+                  htmlFor="f-ruleSetId"
+                  read={
+                    <SetupLink href={setupHref("rules-setup/rule-sets", v.ruleSetId, ruleSets)}>
+                      {ruleSets.find((r) => r.id === v.ruleSetId)?.name ?? employee.ruleSet.name}
+                    </SetupLink>
+                  }
+                >
                   {pick(
                     "ruleSetId",
                     <>
@@ -888,7 +978,7 @@ export function EditEmployeeForm({
                     if (!sh) return v.shiftId ? "Retired shift" : "None";
                     return (
                       <span className="flex flex-col gap-0.5">
-                        <span>{sh.name}</span>
+                        <SetupLink href={setupHref("rules-setup/shifts", sh.id, shifts)}>{sh.name}</SetupLink>
                         <span className={styles.subValue}>
                           {fmtTime(sh.startTime)} to {fmtTime(sh.endTime)}
                         </span>
@@ -909,7 +999,15 @@ export function EditEmployeeForm({
                     </>,
                   )}
                 </Field>
-                <Field label="Holiday rule" htmlFor="f-holidayRuleId" read={holidayRules.find((r) => r.id === v.holidayRuleId)?.name ?? (v.holidayRuleId ? "Retired holiday rule" : "None")}>
+                <Field
+                  label="Holiday rule"
+                  htmlFor="f-holidayRuleId"
+                  read={(() => {
+                    const r = holidayRules.find((x) => x.id === v.holidayRuleId);
+                    if (!r) return v.holidayRuleId ? "Retired holiday rule" : "None";
+                    return <SetupLink href={setupHref("rules-setup/holiday-rules", r.id, holidayRules)}>{r.name}</SetupLink>;
+                  })()}
+                >
                   {pick(
                     "holidayRuleId",
                     <>
@@ -925,7 +1023,11 @@ export function EditEmployeeForm({
                   htmlFor="f-payCategoryId"
                   read={(() => {
                     const c = payCategories.find((x) => x.id === v.payCategoryId);
-                    return c ? <Coded item={c} /> : v.payCategoryId ? "Retired pay category" : "None";
+                    return c ? (
+                      <SetupLink href={setupHref("site-settings/pay-categories", c.id, payCategories)}>
+                        <Coded item={c} />
+                      </SetupLink>
+                    ) : v.payCategoryId ? "Retired pay category" : "None";
                   })()}
                 >
                   {pick(
@@ -942,7 +1044,11 @@ export function EditEmployeeForm({
                   htmlFor="f-payTypeId"
                   read={(() => {
                     const t = payTypes.find((x) => x.id === v.payTypeId);
-                    return t ? <Coded item={t} /> : v.payTypeId ? "Retired pay type" : "None";
+                    return t ? (
+                      <SetupLink href={setupHref("site-settings/pay-types", t.id, payTypes)}>
+                        <Coded item={t} />
+                      </SetupLink>
+                    ) : v.payTypeId ? "Retired pay type" : "None";
                   })()}
                 >
                   {pick(
@@ -1202,6 +1308,10 @@ export function EditEmployeeForm({
                       <div className={styles.entryWhen}>
                         <span>{format(new Date(entry.createdAt), "MMM d, yyyy h:mm a")}</span>
                         <span className={styles.entryWho}>{entry.actorName}</span>
+                        {/* The first entry is the record being made, not a change to it. */}
+                        {entry.action === "EMPLOYEE_CREATED" && (
+                          <span className={styles.factNote}>Record created</span>
+                        )}
                       </div>
                       <div className={styles.changes}>
                         {entry.fields.map((f, i) => (
@@ -1232,7 +1342,7 @@ export function EditEmployeeForm({
           siteId={employee.siteId}
           employeeId={employee.id}
           name={employee.user.name ?? employee.employeeCode}
-          detail={[employee.employeeCode, employee.jobTitle ?? employee.department.name].filter(Boolean).join(" · ")}
+          detail={[employee.wmsId ?? employee.employeeCode, jobTitleName(saved) || employee.department.name].filter(Boolean).join(" · ")}
           currentSrc={photo}
           onClose={() => setEditingPhoto(false)}
           onSaved={(url) => {
@@ -1250,7 +1360,7 @@ export function EditEmployeeForm({
         <PhotoViewer
           src={zoomed}
           name={employee.user.name ?? employee.employeeCode}
-          detail={`${employee.employeeCode} · ${employee.department.name} · ${employee.site.name}`}
+          detail={`${employee.wmsId ?? employee.employeeCode} · ${employee.department.name} · ${employee.site.name}`}
           onClose={() => setZoomed(null)}
         />
       )}

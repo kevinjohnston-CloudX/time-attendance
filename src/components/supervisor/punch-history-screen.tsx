@@ -385,7 +385,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
               </button>
             </>
           }
-          search={<SearchInput value={query} onValueChange={onType} placeholder="Name, ID or department" />}
+          search={<SearchInput value={query} onValueChange={onType} placeholder="Name, badge ID or department" />}
           end={
             dirty && (
               <Button hierarchy="link" size="sm" onClick={clearAll}>
@@ -496,7 +496,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                         {e.name}
                       </span>
                       <span className="truncate" style={{ font: "var(--type-caption1)", color: "var(--text-secondary)" }}>
-                        {e.employeeCode} · {e.department}
+                        {e.badgeId} · {e.department}
                       </span>
                     </span>
                     {/* What needs looking at, as one small tinted mark each:
@@ -585,7 +585,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                       {selected.name}
                     </span>
                     <span className="truncate" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                      {[selected.employeeCode, selected.department, selected.site].filter(Boolean).join(" · ")}
+                      {[selected.badgeId, selected.department, selected.site].filter(Boolean).join(" · ")}
                     </span>
                   </div>
                   <div className="flex items-center gap-[22px]">
@@ -930,7 +930,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
         <PhotoViewer
           src={zoomed}
           name={selected.name}
-          detail={[selected.employeeCode, selected.department, selected.site].filter(Boolean).join(" · ")}
+          detail={[selected.badgeId, selected.department, selected.site].filter(Boolean).join(" · ")}
           onClose={() => setZoomed(null)}
         />
       )}

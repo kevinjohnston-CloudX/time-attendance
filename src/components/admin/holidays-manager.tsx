@@ -19,6 +19,7 @@ import {
   matches,
   saveError,
   useStatusView,
+  useOpenFromLink,
 } from "./setup/setup-ui";
 
 /**
@@ -86,6 +87,8 @@ export function HolidaysManager({ holidays, holidayRules }: { holidays: HolidayW
     setEditing(h);
     setError(null);
   }
+  // A link from elsewhere (an employee record, a classic address) opens its record.
+  useOpenFromLink(holidays, open);
   function close() {
     setEditing(null);
     setError(null);

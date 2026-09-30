@@ -31,6 +31,36 @@ export function useStatusView<T extends { isActive: boolean }>(rows: T[], initia
   return { view, setView, counts, kept };
 }
 
+/**
+ * Opens a record's window when the address names one, then takes the name
+ * off the address so a reload does not open it again. It is how a link from
+ * elsewhere lands on the record itself: an employee's Pay & Rules, or the
+ * one page per form addresses the classic design uses. `?edit=<id>` opens
+ * that record, `?new=1` an empty form.
+ */
+export function useOpenFromLink<T extends { id: string }>(rows: T[], open: (row: T | "new") => void) {
+  const done = useRef(false);
+  useEffect(() => {
+    if (done.current) return;
+    done.current = true;
+    const url = new URL(window.location.href);
+    const edit = url.searchParams.get("edit");
+    const isNew = url.searchParams.get("new") === "1";
+    if (!edit && !isNew) return;
+    const row = edit ? rows.find((r) => r.id === edit) : undefined;
+    url.searchParams.delete("edit");
+    url.searchParams.delete("new");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}`);
+    // After this render, so opening the window is not a state change made
+    // while the effect runs. Not cancelled on the next render: the caller's
+    // open changes every render, and the ref above already makes this once.
+    setTimeout(() => {
+      if (row) open(row);
+      else if (isNew) open("new");
+    }, 0);
+  }, [rows, open]);
+}
+
 /* ── Summary tiles ────────────────────────────────────────────────────── */
 
 /**

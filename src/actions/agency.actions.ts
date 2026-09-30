@@ -12,6 +12,8 @@ export const getAgencies = withRBAC(
     if (!tenantId) return [];
     return db.agency.findMany({
       where: { tenantId },
+      // How many people have it, so the list can say so and a delete can be refused.
+      include: { _count: { select: { employees: true } } },
       orderBy: { code: "asc" },
     });
   }

@@ -42,6 +42,7 @@ type EmployeeRow = {
   id: string;
   name: string;
   employeeCode: string;
+  wmsId?: string | null;
   department: string;
   siteId: string;
   site: string;
@@ -130,7 +131,7 @@ export function AccrualsEmployeeList({
               <SearchInput
                 value={searchValue}
                 onValueChange={onSearchChange}
-                placeholder="Name, employee code or department"
+                placeholder="Name, badge ID or department"
                 width={320}
               />
             }
@@ -214,7 +215,7 @@ export function AccrualsEmployeeList({
               <THead>
                 <TR>
                   <TH>Employee</TH>
-                  <TH>Employee ID</TH>
+                  <TH>Badge ID</TH>
                   <TH>Department</TH>
                   <TH>Pay Category</TH>
                   <TH>Hired</TH>
@@ -237,7 +238,7 @@ export function AccrualsEmployeeList({
                           color: "var(--text-secondary)",
                         }}
                       >
-                        {emp.employeeCode}
+                        {emp.wmsId ?? emp.employeeCode}
                       </TD>
                       <TD style={{ color: "var(--text-secondary)" }}>
                         {emp.department}

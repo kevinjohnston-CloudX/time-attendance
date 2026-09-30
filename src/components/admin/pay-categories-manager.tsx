@@ -18,6 +18,7 @@ import {
   matches,
   saveError,
   useStatusView,
+  useOpenFromLink,
 } from "./setup/setup-ui";
 
 /**
@@ -30,9 +31,9 @@ import {
  * deleting it used to clear it from every one of them without a word.
  */
 
-type PolicyRule = { leaveTypeId: string; leaveType: { id: string; name: string } };
-type PolicyOption = { id: string; name: string; rules: PolicyRule[] };
-type LeaveTypeOption = { id: string; name: string };
+export type PolicyRule = { leaveTypeId: string; leaveType: { id: string; name: string } };
+export type PolicyOption = { id: string; name: string; rules: PolicyRule[] };
+export type LeaveTypeOption = { id: string; name: string };
 
 type Category = {
   id: string;
@@ -87,6 +88,8 @@ export function PayCategoriesManager({
     setEditing(c);
     setError(null);
   }
+  // A link from elsewhere (an employee record, a classic address) opens its record.
+  useOpenFromLink(categories, open);
   function close() {
     setEditing(null);
     setError(null);

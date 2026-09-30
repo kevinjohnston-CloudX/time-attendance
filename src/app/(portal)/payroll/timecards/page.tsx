@@ -147,12 +147,15 @@ export default async function TimecardsPage({
     periods = periodsResult.data.periods;
     payFrequency = periodsResult.data.payFrequency;
 
-    if (!selectedPeriodId && periods.length > 0) {
-      const now = new Date();
+    const now = new Date();
+    const periodIds = new Set(periods.map((p) => p.id));
+
+    if (!selectedPeriodId || !periodIds.has(selectedPeriodId)) {
+      // URL period doesn't belong to this employee's rule set — find their current period
       const current = periods.find(
         (p) => new Date(p.startDate) <= now && new Date(p.endDate) > now
       );
-      selectedPeriodId = current?.id ?? periods[periods.length - 1].id;
+      selectedPeriodId = current?.id ?? periods[periods.length - 1]?.id ?? null;
     }
   }
 
@@ -198,10 +201,14 @@ export default async function TimecardsPage({
             : null,
           department: { name: timecard.employee.department.name },
           employeeCode: timecard.employee.employeeCode,
+          wmsId: timecard.employee.wmsId ?? null,
           payRate: timecard.employee.payRate
             ? Number(timecard.employee.payRate)
             : null,
           payType: timecard.employee.payType,
+          shift: timecard.employee.shift
+            ? { mealConfig: timecard.employee.shift.mealConfig as { autoDeduct?: boolean; meals?: { workAtLeastHours: number; deductMinutes: number }[] } | null }
+            : null,
           ruleSet: {
             autoDeductMeal: timecard.employee.ruleSet.autoDeductMeal,
             mealBreakMinutes: timecard.employee.ruleSet.mealBreakMinutes,
@@ -239,6 +246,7 @@ export default async function TimecardsPage({
           totalMinutes: b.totalMinutes,
         })),
         mealWaivers: timecard.mealWaivers,
+        mealPremiumWaivers: timecard.mealPremiumWaivers,
         notes: timecard.notes,
         dayReasons: timecard.dayReasons.map((dr) => ({
           segmentDate: dr.segmentDate.toISOString().slice(0, 10),

@@ -17,6 +17,7 @@ import {
   matches,
   saveError,
   useStatusView,
+  useOpenFromLink,
 } from "./setup/setup-ui";
 
 /**
@@ -51,6 +52,8 @@ export function PayTypesManager({ payTypes }: { payTypes: PayType[] }) {
     setEditing(p);
     setError(null);
   }
+  // A link from elsewhere (an employee record, a classic address) opens its record.
+  useOpenFromLink(payTypes, open);
   function close() {
     setEditing(null);
     setError(null);

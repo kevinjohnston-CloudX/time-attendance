@@ -18,6 +18,7 @@ import {
   matches,
   saveError,
   useStatusView,
+  useOpenFromLink,
 } from "./setup/setup-ui";
 import { timeZoneLabel, timeZoneOptions } from "./setup/time-zones";
 
@@ -43,6 +44,8 @@ export function SitesManager({ sites }: { sites: Site[] }) {
     setEditing(site);
     setError(null);
   }
+  // A link from elsewhere (an employee record, a classic address) opens its record.
+  useOpenFromLink(sites, open);
   function close() {
     setEditing(null);
     setError(null);

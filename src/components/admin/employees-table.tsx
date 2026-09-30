@@ -25,7 +25,7 @@ import styles from "./employees.module.css";
  * The employee list, in Live Attendance's language: one row of search and
  * filter pills under the title, then a card of two line rows on one grid.
  *
- * <p>Columns are Employee, Employee ID, Department, Shift, Role and Status.
+ * <p>Columns are Employee, Badge ID, Department, Shift, Role and Status.
  * Where a column has two facts they stack (name over email, department over
  * site, shift over its start time) so every row has the same rhythm. Status
  * is a dot and a word, the only colour in the row. Role stays plain text.
@@ -47,6 +47,7 @@ const ROLE_LABEL: Record<string, string> = {
 interface Employee {
   id: string;
   employeeCode: string;
+  wmsId: string | null;
   role: string;
   isActive: boolean;
   onLeave: boolean;
@@ -185,7 +186,7 @@ export function EmployeesTable({
                   narrower window the bar wraps as filters then order, not mid pill. */}
               <span className="flex items-center">
                 <ToolsCount>
-                  {total.toLocaleString()} {total === 1 ? "employee" : "employees"}
+                  {total.toLocaleString()} {currentFilters.status ? "" : "current "}{total === 1 ? "employee" : "employees"}
                 </ToolsCount>
                 <SortSelectChip
                   value={currentFilters.sort}
@@ -216,7 +217,7 @@ export function EmployeesTable({
             />
             <FilterSelectChip
               label="Status"
-              allLabel="All statuses"
+              allLabel="Current employees"
               value={currentFilters.status}
               options={STATUS_OPTIONS}
               onChange={(v) => onFilterChange("status", v)}
@@ -269,7 +270,7 @@ export function EmployeesTable({
           <>
             <div className={styles.head} style={{ top: barHeight }} role="presentation">
               <span>Employee</span>
-              <span className={styles.wide}>Employee ID</span>
+              <span className={styles.wide}>Badge ID</span>
               <span className={styles.wide}>Department</span>
               <span className={styles.optional}>Shift</span>
               <span className={styles.optional}>Role</span>
@@ -306,8 +307,8 @@ export function EmployeesTable({
                           )}
                         </span>
                       </span>
-                      <span className={`${styles.code} ${styles.wide}`} title={emp.employeeCode}>
-                        {emp.employeeCode}
+                      <span className={`${styles.code} ${styles.wide}`} title={emp.wmsId ?? emp.employeeCode}>
+                        {emp.wmsId ?? emp.employeeCode}
                       </span>
                       <span className={`${styles.cell} ${styles.wide}`}>
                         <span className={styles.secondary} title={emp.department.name}>{emp.department.name}</span>

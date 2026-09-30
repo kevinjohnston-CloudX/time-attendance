@@ -12,6 +12,8 @@ import {
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 import { parseUtcDate } from "@/lib/utils/date";
+import { periodLastDay } from "@/lib/pay-period-display";
+import type { PayFrequency } from "@prisma/client";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
 import {
   Badge,
@@ -49,6 +51,7 @@ import {
   payrollApproveTimesheet,
   rejectTimesheet,
   toggleMealWaiver,
+  toggleMealPremiumWaiver,
   authorizeTimecardOt,
   recalculateSegmentsAdmin,
 } from "@/actions/timesheet.actions";
@@ -110,6 +113,7 @@ type EmployeeListItem = {
   employeeId: string;
   name: string;
   employeeCode: string;
+  wmsId?: string | null;
   department: string;
   siteId: string | null;
   siteName: string | null;
@@ -212,14 +216,17 @@ type TimecardDetail = {
     user: { name: string | null } | null;
     department: { name: string };
     employeeCode: string;
+    wmsId: string | null;
     payRate: number | null;
     payType: string | null;
+    shift: { mealConfig: { autoDeduct?: boolean; minMealMinutes?: number; maxMealMinutes?: number; meals?: { workAtLeastHours: number; deductMinutes: number }[] } | null } | null;
     ruleSet: { autoDeductMeal: boolean; mealBreakMinutes: number; mealBreakAfterMinutes: number; overtimeRequiresAuth: boolean; allowTimesheetOtAuth: boolean; defaultPayCodeId: string | null };
   };
   punches: TimecardPunch[];
   segments: TimecardSegment[];
   overtimeBuckets: TimecardBucket[];
   mealWaivers: { id: string; segmentDate: string; reason: string | null }[];
+  mealPremiumWaivers: { id: string; segmentDate: string; segmentStart: string }[];
   notes: TimesheetNoteItem[];
   dayReasons: { segmentDate: string; reasonCodeId: string; reasonCode: { id: string; code: string; label: string; color?: string | null } }[];
 };
@@ -715,6 +722,8 @@ export function TimecardViewer({
   const [pendingPunchEdits, setPendingPunchEdits] = useState<Map<string, Date>>(new Map());
   const [pendingNewPunches, setPendingNewPunches] = useState<Array<{ dayKey: string; pairIndex: number; punchType: "CLOCK_IN" | "CLOCK_OUT"; punchDate: Date }>>([]);
   const [pendingWaiverToggles, setPendingWaiverToggles] = useState<Set<string>>(new Set());
+  // Map<segmentStart (ISO), segmentDate (yyyy-MM-dd)>
+  const [pendingPremiumWaiverToggles, setPendingPremiumWaiverToggles] = useState<Map<string, string>>(new Map());
   const [pendingDeletions, setPendingDeletions] = useState<Array<{ punchIds: string[]; dayKey: string; inTime: string | null; outTime: string | null }>>([]);
   const [pendingHoursEntries, setPendingHoursEntries] = useState<Array<{ dayKey: string; hours: number; payCodeId?: string }>>([]);
 
@@ -728,13 +737,17 @@ export function TimecardViewer({
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < sortedPeriods.length - 1;
 
+  // A period's last calendar day. Weekly and bi-weekly periods store the day
+  // after it, semi-monthly and monthly ones the day itself, so taking a day
+  // off every end date dropped the last day of every monthly period.
+  const lastDayOf = (endDate: string) => periodLastDay(endDate, payFrequency as PayFrequency);
+
   // Find "current" pay period (the one containing today)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const currentPeriod = sortedPeriods.find((pp) => {
     const start = parseUtcDate(pp.startDate);
-    const end = parseUtcDate(pp.endDate);
-    return today >= start && today <= end;
+    return today >= start && today <= lastDayOf(pp.endDate);
   });
 
   // Month/year picker
@@ -952,6 +965,7 @@ export function TimecardViewer({
     const matchesSearch =
       emp.name.toLowerCase().includes(q) ||
       emp.employeeCode.toLowerCase().includes(q) ||
+      (emp.wmsId ?? "").toLowerCase().includes(q) ||
       emp.department.toLowerCase().includes(q);
     if (!matchesSearch) return false;
 
@@ -1016,27 +1030,33 @@ export function TimecardViewer({
 
     if (timecard) {
       periodStart = customStartDate ?? parseUtcDate(timecard.payPeriod.startDate);
-      periodEnd = customEndDate ?? parseUtcDate(timecard.payPeriod.endDate);
+      periodEnd = customEndDate ?? lastDayOf(timecard.payPeriod.endDate);
     } else if (selectedPeriodId && selectedEmployeeId) {
       // No timesheet yet — still build the day grid so absent days render
       const period = sortedPeriods.find((p) => p.id === selectedPeriodId);
       if (!period) return null;
       periodStart = parseUtcDate(period.startDate);
-      periodEnd = parseUtcDate(period.endDate);
+      periodEnd = lastDayOf(period.endDate);
     } else {
       return null;
     }
 
-    // Cap the end at today when today falls inside this pay period (and no custom range is set)
     const todayMidnight = new Date(today);
+    // For salary/auto-pay employees the timecard has pre-generated future segments;
+    // show the full period so non-working days (e.g. Saturday) still appear.
+    // For hourly employees cap at today so empty future rows don't clutter the grid.
+    const hasFutureSegments =
+      timecard?.segments.some((s) => parseUtcDate(s.segmentDate) > todayMidnight) ?? false;
     const effectiveEnd =
-      !customStartDate && !customEndDate && todayMidnight >= periodStart && todayMidnight < periodEnd
+      hasFutureSegments
+        ? periodEnd
+        : !customStartDate && !customEndDate && todayMidnight >= periodStart && todayMidnight < periodEnd
         ? todayMidnight
         : periodEnd;
     // Guard: if period hasn't started yet, nothing to show
     if (effectiveEnd < periodStart) return [];
     const baseDays = eachDayOfInterval({ start: periodStart, end: effectiveEnd });
-    // Append any future dates (beyond effectiveEnd, within the period) that already have segments
+    // Append any future dates beyond effectiveEnd that have segments (e.g. late entries)
     if (timecard && effectiveEnd < periodEnd) {
       const baseDayStrs = new Set(baseDays.map((d) => format(d, "yyyy-MM-dd")));
       const futureDayStrs = new Set(
@@ -1044,9 +1064,7 @@ export function TimecardViewer({
           .map((s) => format(parseUtcDate(s.segmentDate), "yyyy-MM-dd"))
           .filter((ds) => !baseDayStrs.has(ds) && ds > format(effectiveEnd, "yyyy-MM-dd") && ds <= format(periodEnd, "yyyy-MM-dd"))
       );
-      const futureDays = Array.from(futureDayStrs)
-        .sort()
-        .map((ds) => parseISO(ds));
+      const futureDays = Array.from(futureDayStrs).sort().map((ds) => parseISO(ds));
       return [...baseDays, ...futureDays];
     }
     return baseDays;
@@ -1414,8 +1432,26 @@ export function TimecardViewer({
     });
   }
 
-  function handlePayCodeChange(segmentId: string, payCodeId: string) {
-    setPendingPayCodes((prev) => { const n = new Map(prev); n.set(segmentId, payCodeId); return n; });
+  function handleTogglePremiumWaiver(segmentStart: string, segmentDate: string) {
+    setPendingPremiumWaiverToggles((prev) => {
+      const n = new Map(prev);
+      if (n.has(segmentStart)) n.delete(segmentStart); else n.set(segmentStart, segmentDate);
+      return n;
+    });
+  }
+
+  function handlePayCodeChange(segmentId: string, payCodeId: string, dayKey?: string) {
+    setPendingPayCodes((prev) => {
+      const n = new Map(prev);
+      n.set(segmentId, payCodeId);
+      // Cascade to all other WORK segments on the same day so every pair gets the code
+      if (dayKey) {
+        timecard?.segments
+          .filter((s) => format(parseUtcDate(s.segmentDate), "yyyy-MM-dd") === dayKey && s.segmentType === "WORK" && s.id !== segmentId)
+          .forEach((s) => n.set(s.id, payCodeId));
+      }
+      return n;
+    });
   }
 
   function handleAbsentDayPayCodeChange(_timesheetId: string | null, segmentDate: string, payCodeId: string) {
@@ -1446,6 +1482,7 @@ export function TimecardViewer({
     pendingPunchEdits.size +
     pendingNewPunches.length +
     pendingWaiverToggles.size +
+    pendingPremiumWaiverToggles.size +
     pendingDeletions.length +
     pendingHoursEntries.length;
   const hasPendingChanges = pendingChangeCount > 0;
@@ -1456,6 +1493,7 @@ export function TimecardViewer({
     setPendingPunchEdits(new Map());
     setPendingNewPunches([]);
     setPendingWaiverToggles(new Set());
+    setPendingPremiumWaiverToggles(new Map());
     setPendingDeletions([]);
     setPendingHoursEntries([]);
   }
@@ -1620,25 +1658,33 @@ export function TimecardViewer({
         for (const segmentDate of pendingWaiverToggles) {
           ops.push(toggleMealWaiver({ timesheetId, segmentDate }));
         }
+        for (const [segmentStart, segmentDate] of pendingPremiumWaiverToggles) {
+          ops.push(toggleMealPremiumWaiver({ timesheetId, segmentDate, segmentStart }));
+        }
         for (const { punchIds } of pendingDeletions) {
           ops.push(deleteManualPunchPair({ punchIds }));
         }
         for (const { dayKey, hours, payCodeId } of pendingHoursEntries) {
           ops.push(addManualHoursEntry({ timesheetId, date: dayKey, hours, ...(payCodeId ? { payCodeId } : {}) }));
         }
-        await Promise.all(ops);
-
-        // Save one audit note per affected day
-        const noteOps: Promise<unknown>[] = [];
-        for (const [dayKey, changes] of dayChanges.entries()) {
-          noteOps.push(
-            saveTimesheetNote({
-              timesheetId,
-              noteDate: dayKey,
-              note: `Changes saved\n${changes.map((c) => `  ${c}`).join("\n")}`,
-            })
-          );
+        const results = await Promise.all(ops);
+        const firstFailure = results.find(
+          (r): r is { success: false; error: string } =>
+            typeof r === "object" && r !== null && (r as { success: boolean }).success === false
+        );
+        if (firstFailure) {
+          setActionError(firstFailure.error ?? "Failed to save changes");
+          return;
         }
+
+        // Save one audit note per affected day (best-effort — don't block on failure)
+        const noteOps = Array.from(dayChanges.entries()).map(([dayKey, changes]) =>
+          saveTimesheetNote({
+            timesheetId,
+            noteDate: dayKey,
+            note: `Changes saved\n${changes.map((c) => `  ${c}`).join("\n")}`,
+          })
+        );
         await Promise.all(noteOps);
 
         setPendingPayCodes(new Map());
@@ -1646,6 +1692,7 @@ export function TimecardViewer({
         setPendingPunchEdits(new Map());
         setPendingNewPunches([]);
         setPendingWaiverToggles(new Set());
+        setPendingPremiumWaiverToggles(new Map());
         setPendingDeletions([]);
         setPendingHoursEntries([]);
         router.refresh();
@@ -1700,10 +1747,22 @@ export function TimecardViewer({
     });
   }
 
+  // Effective meal deduction settings: shift overrides ruleset, matching segment-builder logic.
+  const shiftMeal = timecard?.employee.shift?.mealConfig;
+  const shiftFirstMeal = shiftMeal?.meals?.[0];
+  const effectiveAutoDeductMeal = timecard
+    ? (timecard.employee.shift ? (shiftMeal?.autoDeduct ?? false) : timecard.employee.ruleSet.autoDeductMeal)
+    : false;
+  const effectiveMealBreakAfterMinutes = shiftMeal?.autoDeduct && shiftFirstMeal
+    ? Math.round(shiftFirstMeal.workAtLeastHours * 60)
+    : (timecard?.employee.ruleSet.mealBreakAfterMinutes ?? 0);
+  const hasMealPremiums = timecard?.segments.some(s => s.segmentType === "MEAL_PREMIUM") ?? false;
+  const showMealColumn = effectiveAutoDeductMeal || hasMealPremiums;
+
   // Column count for colSpan on expanded rows
   // Base: chevron + date + notes-icon + in + out + reg + ot + dt + total = 9
   // +1 if pay codes column exists, +1 if reason codes column exists, +1 if delete column shown
-  const colCount = 9 + (payCodes.length > 0 ? 1 : 0) + (reasonCodes.length > 0 ? 1 : 0) + (timecard?.employee.ruleSet.autoDeductMeal ? 1 : 0) + (canDeleteManual ? 1 : 0);
+  const colCount = 9 + (payCodes.length > 0 ? 1 : 0) + (reasonCodes.length > 0 ? 1 : 0) + (showMealColumn ? 1 : 0) + (canDeleteManual ? 1 : 0);
 
 
   const canApprove =
@@ -1804,7 +1863,7 @@ export function TimecardViewer({
     const sel = sortedPeriods[currentIndex];
     if (!sel) return "No pay period";
     const s = parseUtcDate(sel.startDate);
-    const e = addDays(parseUtcDate(sel.endDate), -1);
+    const e = lastDayOf(sel.endDate);
     return `${format(s, "MMM d")} – ${format(e, "MMM d, yyyy")}`;
   })();
 
@@ -2154,7 +2213,7 @@ export function TimecardViewer({
                           </div>
                           <div className="flex items-center justify-between gap-2">
                             <span className="min-w-0 truncate" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-                              {emp.employeeCode} · {emp.department}
+                              {emp.wmsId ?? emp.employeeCode} · {emp.department}
                             </span>
                             {emp.status && (
                               <span className="flex-none">
@@ -2228,7 +2287,7 @@ export function TimecardViewer({
               {(() => {
                 const listEmp = employees.find((e) => e.employeeId === selectedEmployeeId);
                 const displayName = timecard?.employee.user?.name ?? listEmp?.name ?? selectedEmployeeId;
-                const displayCode = timecard?.employee.employeeCode ?? listEmp?.employeeCode ?? "";
+                const displayCode = timecard?.employee.wmsId ?? timecard?.employee.employeeCode ?? listEmp?.wmsId ?? listEmp?.employeeCode ?? "";
                 const displayDept = timecard?.employee.department.name ?? listEmp?.department ?? "";
                 const displayPayType = timecard?.employee.payType ?? null;
                 return (
@@ -2485,7 +2544,7 @@ export function TimecardViewer({
                       <TH numeric style={GRID_HEAD}>Overtime</TH>
                       <TH numeric style={GRID_HEAD}>Double</TH>
                       <TH numeric style={{ ...GRID_HEAD, paddingRight: 32 }}>Total</TH>
-                      {timecard?.employee.ruleSet.autoDeductMeal && <TH style={GRID_HEAD}>Meal break</TH>}
+                      {showMealColumn && <TH style={GRID_HEAD}>Meal break</TH>}
                       {payCodes.length > 0 && <TH style={{ ...GRID_HEAD, paddingLeft: 8, paddingRight: 8 }}>Pay code</TH>}
                       {reasonCodes.length > 0 && <TH style={{ ...GRID_HEAD, paddingLeft: 8, paddingRight: 8 }}>Reason</TH>}
                       <TH align="center" style={{ ...GRID_HEAD, width: 28, paddingLeft: 4, paddingRight: 4 }}>Notes</TH>
@@ -2503,7 +2562,7 @@ export function TimecardViewer({
                       // the summary's Week view adds up. Labelled only when
                       // there is more than one, so a weekly card has none.
                       const periodEntryForWeeks = timecard ? timecard.payPeriod : sortedPeriods.find((p) => p.id === selectedPeriodId);
-                      const lastPeriodDay = periodEntryForWeeks ? addDays(parseUtcDate(periodEntryForWeeks.endDate), -1) : days[days.length - 1];
+                      const lastPeriodDay = periodEntryForWeeks ? lastDayOf(periodEntryForWeeks.endDate) : days[days.length - 1];
                       const firstDay = days[0];
                       const dayIndex = (d: Date) => Math.round((d.getTime() - firstDay.getTime()) / 86_400_000);
                       const multiWeek = !!firstDay && dayIndex(lastPeriodDay) >= 7;
@@ -2524,8 +2583,8 @@ export function TimecardViewer({
                         const eb = (seg.payBucketOverride && !["REG", "OT", "DT"].includes(seg.payBucketOverride))
                           ? seg.payBucketOverride
                           : seg.payBucket;
-                        // Holiday and leave credits display under the REG column
-                        const displayBucket = (seg.segmentType === "HOLIDAY" || seg.segmentType === "LEAVE") ? "REG" : eb;
+                        // Holiday, leave, and meal premiums all credit under the REG column
+                        const displayBucket = (seg.segmentType === "HOLIDAY" || seg.segmentType === "LEAVE" || seg.segmentType === "MEAL_PREMIUM") ? "REG" : eb;
                         buckets[displayBucket] = (buckets[displayBucket] ?? 0) + seg.durationMinutes;
                       }
 
@@ -2933,8 +2992,15 @@ export function TimecardViewer({
                               {isAbsent ? "0.00" : hasMissingPunch ? "—" : (dailyTotal > 0 || isSalaryVirtualDay) ? minutesToHoursDecimal(dailyTotal || SALARY_VIRTUAL_MINS) : "—"}
                             </td>
 
-                            {/* Meal waiver cell */}
-                            {timecard?.employee.ruleSet.autoDeductMeal && (() => {
+                            {/* Meal cell: the auto deduct waiver when the shift (or, with no
+                                shift, the rule set) deducts meals. A meal premium is waived
+                                on its own line below instead, so the day row stays quiet. */}
+                            {showMealColumn && !effectiveAutoDeductMeal && (
+                              <td className="px-3 py-1 text-left">
+                                <span style={{ font: "var(--type-body2)", color: "var(--text-disabled)" }}>—</span>
+                              </td>
+                            )}
+                            {showMealColumn && effectiveAutoDeductMeal && (() => {
                               const rawWorkMins = daySegments.filter((s) => s.segmentType === "WORK").reduce((a, s) => a + s.durationMinutes, 0);
                               const mealSeg = daySegments.find((s) => s.segmentType === "MEAL");
                               const totalWorkForThreshold = rawWorkMins + (mealSeg?.durationMinutes ?? 0);
@@ -2943,7 +3009,7 @@ export function TimecardViewer({
                               const effectiveHasWaiver = waiverToggled ? !dbWaiver : !!dbWaiver;
                               return (
                                 <td className="px-3 py-1 text-left" onClick={(e) => e.stopPropagation()}>
-                                  {totalWorkForThreshold <= (timecard?.employee.ruleSet.mealBreakAfterMinutes ?? 0) ? (
+                                  {totalWorkForThreshold <= effectiveMealBreakAfterMinutes ? (
                                     <span style={{ font: "var(--type-body2)", color: "var(--text-disabled)" }}>—</span>
                                   ) : effectiveHasWaiver ? (
                                     <div className="flex items-center gap-1.5">
@@ -3123,7 +3189,7 @@ export function TimecardViewer({
                                   return canEdit ? (
                                     <select
                                       value={workSegPending ? (pendingPayCodes.get(workSeg.id) ?? "") : (workSeg.payCode?.id ?? "")}
-                                      onChange={(e) => handlePayCodeChange(workSeg.id, e.target.value)}
+                                      onChange={(e) => handlePayCodeChange(workSeg.id, e.target.value, dayKey)}
                                       className={`ta-field ${grid.ghostSelect}`}
                                       style={gridSelectStyle(workSegPending, 168)}
                                     >
@@ -3261,7 +3327,9 @@ export function TimecardViewer({
                             const pairWorkSeg = daySegments.find((s) => {
                               if (s.segmentType !== "WORK") return false;
                               const sStart = new Date(s.startTime).getTime();
-                              const inMs = pairIn ? new Date(pairIn.roundedTime).getTime() : 0;
+                              // truncate to minute — computeSegments uses truncToMin on roundedTime,
+                              // so sStart may be up to 59s earlier than the raw roundedTime
+                              const inMs = pairIn ? Math.floor(new Date(pairIn.roundedTime).getTime() / 60_000) * 60_000 : 0;
                               const outMs = pairOut ? new Date(pairOut.roundedTime).getTime() : Infinity;
                               return sStart >= inMs && sStart < outMs;
                             }) ?? null;
@@ -3354,6 +3422,23 @@ export function TimecardViewer({
                                         <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === pairIdx && p.punchType === "CLOCK_OUT")))} className="rounded bg-transparent p-0.5 ta-hoverable" style={{ border: 0, cursor: "pointer", color: "var(--icon-error)" }} title="Remove pending"><X className="h-2.5 w-2.5" /></button>
                                       </div>
                                     );
+                                    // A later pair left open reads as missing too, as the
+                                    // first pair does, and adding it starts from that pair's in.
+                                    if (hasMissingPunch) {
+                                      return canEdit ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => startAddingPunch(dayKey, pairIdx, "CLOCK_OUT", day, pairIn ? parseISO(pairIn.roundedTime) : null)}
+                                          className={gridCellButtonClass}
+                                          style={{ ...punchCellStyle(true, true), fontWeight: "var(--weight-medium)" }}
+                                          title="Click to add the missing punch"
+                                        >
+                                          Missing
+                                        </button>
+                                      ) : (
+                                        <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>Missing</span>
+                                      );
+                                    }
                                     return canEdit ? (
                                       <button type="button" onClick={() => startAddingPunch(dayKey, pairIdx, "CLOCK_OUT", day)} className={gridCellButtonClass}
                                     style={{ ...punchCellStyle(false, true), color: "var(--text-disabled)" }}>—</button>
@@ -3372,14 +3457,14 @@ export function TimecardViewer({
                                 <td className="px-3 py-1.5 text-right" style={{ font: "var(--type-body1)", color: "var(--text-disabled)" }}>—</td>
                                 <td className="px-3 py-1.5 text-right" style={{ font: "var(--type-body1)", color: "var(--text-disabled)" }}>—</td>
                                 <td className="py-1.5 pl-3 pr-8 text-right" style={{ font: "var(--type-body1)", color: "var(--text-disabled)" }}>—</td>
-                                {timecard?.employee.ruleSet.autoDeductMeal && <td />}
+                                {showMealColumn && <td />}
                                 {/* Pay code DB cell */}
                                 {payCodes.length > 0 && (
                                   <td className="px-2 py-1.5"  onClick={(e) => e.stopPropagation()}>
                                     {pairWorkSeg && canEdit ? (
                                       <select
                                         value={pendingPayCodes.has(pairWorkSeg.id) ? (pendingPayCodes.get(pairWorkSeg.id) ?? "") : (pairWorkSeg.payCode?.id ?? "")}
-                                        onChange={(e) => handlePayCodeChange(pairWorkSeg.id, e.target.value)}
+                                        onChange={(e) => handlePayCodeChange(pairWorkSeg.id, e.target.value, dayKey)}
                                         className={`ta-field ${grid.ghostSelect}`}
                                         style={gridSelectStyle(pendingPayCodes.has(pairWorkSeg.id), 168)}
                                       >
@@ -3526,7 +3611,7 @@ export function TimecardViewer({
                               >
                                 {minutesToHoursDecimal(seg.durationMinutes)}
                               </td>
-                              {timecard?.employee.ruleSet.autoDeductMeal && <td />}
+                              {showMealColumn && <td />}
                               {payCodes.length > 0 && (() => {
                                 const leavePayCode = seg.payCode ?? seg.leaveRequest?.leaveType.payCode ?? null;
                                 return (
@@ -3546,6 +3631,90 @@ export function TimecardViewer({
                               {canDeleteManual && <td className="w-8 px-1" />}
                             </tr>
                           ))}
+
+                          {/* Meal premium lines: one per premium, always shown (not only
+                              when the day is open), since each is extra pay somebody may
+                              need to waive. The waiver sits in the Meal column. */}
+                          {daySegments.filter((seg) => seg.segmentType === "MEAL_PREMIUM").map((seg) => {
+                            const segStart = seg.startTime;
+                            const dbWaived = timecard?.mealPremiumWaivers.some((w) => w.segmentStart === segStart) ?? false;
+                            const toggled = pendingPremiumWaiverToggles.has(segStart);
+                            const waived = toggled ? !dbWaived : dbWaived;
+                            const dim = { font: "var(--type-body1)", color: "var(--text-disabled)" } as const;
+                            return (
+                              <tr
+                                key={`${dayKey}-premium-${seg.id}`}
+                                style={{ borderBottom: "1px solid var(--stroke-divider)", background: "var(--surface-secondary)" }}
+                              >
+                                <td className="w-7 pl-2 pr-0 py-1.5" />
+                                <td className="px-3 py-1 text-left">
+                                  <Badge tone="warning" size="sm">Meal premium</Badge>
+                                </td>
+                                <td className="px-2 py-1" style={dim}>—</td>
+                                <td className="px-2 py-1" style={dim}>—</td>
+                                <td
+                                  className="tabular px-3 py-1.5 text-right"
+                                  style={{
+                                    font: "var(--type-body1)",
+                                    fontWeight: "var(--weight-medium)",
+                                    color: "var(--text-primary)",
+                                  }}
+                                >
+                                  {minutesToHoursDecimal(seg.durationMinutes)}
+                                </td>
+                                <td className="px-3 py-1.5 text-right" style={dim}>—</td>
+                                <td className="px-3 py-1.5 text-right" style={dim}>—</td>
+                                <td
+                                  className="tabular py-1.5 pl-3 pr-8 text-right"
+                                  style={{
+                                    font: "var(--type-body1)",
+                                    fontWeight: "var(--weight-bold)",
+                                    color: "var(--text-primary)",
+                                  }}
+                                >
+                                  {minutesToHoursDecimal(seg.durationMinutes)}
+                                </td>
+                                {showMealColumn && (
+                                  <td className="px-3 py-1 text-left" onClick={(e) => e.stopPropagation()}>
+                                    {effectiveAutoDeductMeal ? null : canEdit ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleTogglePremiumWaiver(segStart, dayKey)}
+                                        title={waived ? "Click to remove waiver" : undefined}
+                                        className="inline-flex items-center rounded-full px-2 py-0.5 transition-colors"
+                                        style={{
+                                          font: "var(--type-body2)",
+                                          fontWeight: waived ? "var(--weight-medium)" : undefined,
+                                          background: waived || toggled ? "var(--surface-warning)" : "var(--fill-hover)",
+                                          color: waived || toggled ? "var(--text-warning)" : "var(--text-secondary)",
+                                          border: `1px solid ${toggled ? "var(--stroke-warning)" : "transparent"}`,
+                                          cursor: "pointer",
+                                        }}
+                                      >
+                                        {waived ? (toggled ? "Waived*" : "Waived") : toggled ? "Waive*" : "Waive"}
+                                      </button>
+                                    ) : waived ? (
+                                      <Badge tone="warning" size="sm">Waived</Badge>
+                                    ) : (
+                                      <span style={{ font: "var(--type-body2)", color: "var(--text-disabled)" }}>—</span>
+                                    )}
+                                  </td>
+                                )}
+                                {payCodes.length > 0 && (
+                                  <td className="px-2 py-1">
+                                    {seg.payCode ? (
+                                      <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{payCodeName(seg.payCode)}</span>
+                                    ) : (
+                                      <span style={{ font: "var(--type-body2)", color: "var(--text-disabled)" }}>—</span>
+                                    )}
+                                  </td>
+                                )}
+                                {reasonCodes.length > 0 && <td className="px-2 py-1.5" />}
+                                <td className="w-7 px-1 py-1.5" />
+                                {canDeleteManual && <td className="w-8 px-1" />}
+                              </tr>
+                            );
+                          })}
 
                           {/* Add entry form row */}
                           {addEntryDay === format(day, "yyyy-MM-dd") && (
@@ -3760,7 +3929,7 @@ export function TimecardViewer({
                             const periodEntry = timecard ? timecard.payPeriod : sortedPeriods.find((p) => p.id === selectedPeriodId);
                             if (!periodEntry) return null;
                             const ppStart = parseUtcDate(periodEntry.startDate);
-                            const ppEnd = addDays(parseUtcDate(periodEntry.endDate), -1);
+                            const ppEnd = lastDayOf(periodEntry.endDate);
                             const weeks: {
                               label: string;
                               start: Date;

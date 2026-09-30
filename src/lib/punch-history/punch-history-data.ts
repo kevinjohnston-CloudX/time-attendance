@@ -59,6 +59,8 @@ export type PunchHistoryEmployee = {
   id: string;
   name: string;
   employeeCode: string;
+  /** The WMS badge ID people know them by, or the employee code without one. */
+  badgeId: string;
   department: string;
   /** A signed link to the time clock tablet's photo, or null for initials. */
   photoUrl: string | null;
@@ -134,6 +136,7 @@ export type PunchHistoryData = {
     id: string;
     name: string;
     employeeCode: string;
+    badgeId: string;
     department: string;
     photoUrl: string | null;
     site: string | null;
@@ -258,6 +261,7 @@ async function resolveScope(viewer: Viewer, params: PunchHistoryParams) {
         OR: [
           { user: { name: { contains: search, mode: "insensitive" } } },
           { employeeCode: { contains: search, mode: "insensitive" } },
+          { wmsId: { contains: search, mode: "insensitive" } },
           { department: { name: { contains: search, mode: "insensitive" } } },
         ],
       }
@@ -438,6 +442,7 @@ export async function loadTeamPunchHistory(
     id: e.id,
     name: e.user?.name ?? e.employeeCode,
     employeeCode: e.employeeCode,
+    badgeId: e.wmsId ?? e.employeeCode,
     department: e.department?.name ?? "No department",
     photoUrl: photos.get(e.id) ?? null,
   });
@@ -606,7 +611,8 @@ export const EXPORT_ROW_CAP = 50_000;
 
 export type PunchExportRow = {
   employee: string;
-  employeeCode: string;
+  /** The WMS badge ID, or the employee code without one. */
+  badgeId: string;
   department: string;
   site: string;
   date: string;
@@ -686,6 +692,7 @@ export async function loadPunchExport(viewer: Viewer, params: PunchHistoryParams
       select: {
         id: true,
         employeeCode: true,
+        wmsId: true,
         user: { select: { name: true } },
         department: { select: { name: true } },
         site: { select: { name: true, timezone: true } },
@@ -725,7 +732,7 @@ export async function loadPunchExport(viewer: Viewer, params: PunchHistoryParams
     if (date < startDate || date > endDate) continue;
     rows.push({
       employee: e.user?.name ?? e.employeeCode,
-      employeeCode: e.employeeCode,
+      badgeId: e.wmsId ?? e.employeeCode,
       department: e.department?.name ?? "",
       site: e.site?.name ?? "",
       date,
@@ -738,6 +745,6 @@ export async function loadPunchExport(viewer: Viewer, params: PunchHistoryParams
     });
   }
   // By person, then in the order they happened, which is how payroll reads it.
-  rows.sort((a, b) => a.employee.localeCompare(b.employee) || a.employeeCode.localeCompare(b.employeeCode));
+  rows.sort((a, b) => a.employee.localeCompare(b.employee) || a.badgeId.localeCompare(b.badgeId));
   return { ok: true, startDate, endDate, rows };
 }

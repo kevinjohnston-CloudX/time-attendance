@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
+import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import { format } from "date-fns";
 import { AccrualsEmployeeList } from "@/components/admin/accruals-employee-list";
 import { LinkButton, PageHeader } from "@/components/ui";
@@ -61,11 +62,16 @@ export default async function AccrualsPage({
    *
    * <p>Scoped by tenant as well as by supervisor. It was previously scoped by
    * supervisor alone, so an unrestricted viewer read the employee table
-   * across tenants.
+   * across tenants. A supervisor sees everyone under them in the org tree,
+   * not only direct reports, and themselves.
    */
+  const teamIds =
+    canViewAny || !session.user.employeeId
+      ? null
+      : [...(await getSubordinateIds(session.user.employeeId, session.user.tenantId ?? null)), session.user.employeeId];
   const employeeScope = {
     tenantId: session.user.tenantId ?? undefined,
-    ...(canViewAny ? {} : { supervisorId: session.user.employeeId ?? undefined }),
+    ...(teamIds ? { id: { in: teamIds } } : {}),
   };
 
   /**
@@ -88,6 +94,7 @@ export default async function AccrualsPage({
           OR: [
             { user:       { name: { contains: needle, mode: "insensitive" as const } } },
             { employeeCode:       { contains: needle, mode: "insensitive" as const } },
+            { wmsId:              { contains: needle, mode: "insensitive" as const } },
             { department: { name: { contains: needle, mode: "insensitive" as const } } },
           ],
         }
@@ -100,6 +107,7 @@ export default async function AccrualsPage({
       select: {
         id: true,
         employeeCode: true,
+        wmsId: true,
         isActive: true,
         hireDate: true,
         user:        { select: { name: true } },
@@ -133,6 +141,7 @@ export default async function AccrualsPage({
     id: emp.id,
     name: emp.user?.name ?? emp.id,
     employeeCode: emp.employeeCode,
+    wmsId: emp.wmsId ?? null,
     department: emp.department.name,
     siteId: emp.site.id,
     site: emp.site.name,

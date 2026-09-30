@@ -21,6 +21,8 @@ export default async function EditEmployeePage({
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
 
+  const canManageRules = await userHasPermission(session.user, "RULES_MANAGE");
+
   const [empResult, refResult, logsResult, siteAccessResult] = await Promise.all([
     getEmployeeById({ employeeId: id }),
     getAdminRefData(),
@@ -35,7 +37,7 @@ export default async function EditEmployeePage({
   const employee = empResult.data;
   const hrSiteAccess = siteAccessResult.success ? siteAccessResult.data : [];
   const actorRole = session.user.role;
-  const { sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes } = refResult.data;
+  const { sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies } = refResult.data;
 
   // The time clock tablet's photo, found and signed the way Live Attendance
   // does it. Only for the one record this viewer was already allowed to open
@@ -64,9 +66,12 @@ export default async function EditEmployeePage({
         holidayRules={holidayRules}
         payCategories={payCategories ?? []}
         payTypes={payTypes ?? []}
+        jobTitles={jobTitles ?? []}
+        agencies={agencies ?? []}
         logs={logs}
         hrSiteAccess={hrSiteAccess}
         actorRole={actorRole ?? "EMPLOYEE"}
+        canManageRules={canManageRules}
       />
     </div>
   );

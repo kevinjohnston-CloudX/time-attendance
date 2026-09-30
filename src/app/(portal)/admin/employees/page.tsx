@@ -73,7 +73,7 @@ export default async function EmployeesPage({
   if (!employeesResult.success || !refDataResult.success) redirect("/admin");
 
   const { employees, total, pageSize } = employeesResult.data;
-  const { sites, departments, ruleSets, employees: allEmps, customRoles, shifts, holidayRules, payCategories, payTypes } = refDataResult.data;
+  const { sites, departments, ruleSets, employees: allEmps, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies } = refDataResult.data;
 
   return (
     <div className="flex flex-col gap-4">
@@ -111,6 +111,8 @@ export default async function EmployeesPage({
                   holidayRules={holidayRules}
                   payCategories={payCategories ?? []}
                   payTypes={payTypes ?? []}
+                  jobTitles={jobTitles ?? []}
+                  agencies={agencies ?? []}
                 />
               </>
         }

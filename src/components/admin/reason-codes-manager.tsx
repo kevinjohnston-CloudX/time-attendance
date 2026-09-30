@@ -16,6 +16,7 @@ import {
   matches,
   saveError,
   useStatusView,
+  useOpenFromLink,
 } from "./setup/setup-ui";
 
 /**
@@ -95,6 +96,8 @@ export function ReasonCodesManager({ reasonCodes }: { reasonCodes: ReasonCodeIte
     setEditing(rc);
     setError(null);
   }
+  // A link from elsewhere (an employee record, a classic address) opens its record.
+  useOpenFromLink(reasonCodes, open);
   function close() {
     setEditing(null);
     setError(null);

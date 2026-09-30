@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ElementType } from "react";
-import { Building2, CalendarDays, FolderOpen, Layers, MessageSquare, Palmtree, Receipt, Tag } from "lucide-react";
+import { Briefcase, Building2, CalendarDays, FolderOpen, Layers, MessageSquare, Palmtree, Receipt, Tag, Users } from "lucide-react";
 import { SetupShell } from "@/components/admin/setup/setup-shell";
 import { SitesManager } from "@/components/admin/sites-manager";
 import { DepartmentsManager } from "@/components/admin/departments-manager";
@@ -11,6 +11,8 @@ import { PayCodesManager } from "@/components/admin/pay-codes-manager";
 import { ReasonCodesManager } from "@/components/admin/reason-codes-manager";
 import { PayCategoriesManager } from "@/components/admin/pay-categories-manager";
 import { PayTypesManager } from "@/components/admin/pay-types-manager";
+import { JobTitlesManager } from "@/components/admin/job-titles-manager";
+import { AgenciesManager } from "@/components/admin/agencies-manager";
 import type { Site, Department } from "@prisma/client";
 
 /**
@@ -23,7 +25,7 @@ import type { Site, Department } from "@prisma/client";
 
 type DepartmentWithSites = Department & { sites: { site: Site }[] };
 
-type Tab = "sites" | "departments" | "holidays" | "leave-types" | "pay-codes" | "reason-codes" | "pay-categories" | "pay-types";
+type Tab = "sites" | "departments" | "holidays" | "leave-types" | "pay-codes" | "reason-codes" | "pay-categories" | "pay-types" | "job-titles" | "agencies";
 
 interface AreaDef {
   id: Tab;
@@ -38,6 +40,8 @@ const GROUPS: { title: string; areas: AreaDef[] }[] = [
     areas: [
       { id: "sites", label: "Sites", icon: Building2, requires: "site" },
       { id: "departments", label: "Departments", icon: FolderOpen, requires: "site" },
+      { id: "job-titles", label: "Job titles", icon: Briefcase, requires: "rules" },
+      { id: "agencies", label: "Agencies", icon: Users, requires: "rules" },
     ],
   },
   {
@@ -70,6 +74,8 @@ interface Props {
   holidayRules: any[];
   payCategories: any[];
   payTypes: any[];
+  jobTitles: any[];
+  agencies: any[];
   /* eslint-enable @typescript-eslint/no-explicit-any */
   hasSiteManage: boolean;
   hasRulesManage: boolean;
@@ -91,6 +97,9 @@ export function SiteSettingsClient(props: Props) {
     "pay-types": props.payTypes.filter((x) => x.isActive).length,
     "pay-codes": props.payCodes.filter((x) => x.isActive).length,
     "reason-codes": props.reasonCodes.filter((x) => x.isActive).length,
+    "job-titles": props.jobTitles.filter((x) => x.isActive).length,
+    // An agency is active until its inactive date.
+    agencies: props.agencies.filter((x) => !x.inactiveOn || new Date(x.inactiveOn) > new Date()).length,
   };
 
   const groups = GROUPS.map((g) => ({
@@ -106,7 +115,7 @@ export function SiteSettingsClient(props: Props) {
   return (
     <SetupShell
       title="Company Setup"
-      subtitle="Sites, departments, holidays and the codes payroll uses"
+      subtitle="Your organization, time off and the codes payroll uses"
       path="/admin/site-settings"
       groups={groups}
       active={active}
@@ -135,5 +144,9 @@ function AreaBody({ tab, ...p }: Props & { tab: Tab }) {
       return <PayCodesManager payCodes={p.payCodes} />;
     case "reason-codes":
       return <ReasonCodesManager reasonCodes={p.reasonCodes} />;
+    case "job-titles":
+      return <JobTitlesManager jobTitles={p.jobTitles} />;
+    case "agencies":
+      return <AgenciesManager agencies={p.agencies} />;
   }
 }

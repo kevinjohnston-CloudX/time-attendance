@@ -282,7 +282,7 @@ export function ExceptionCard({
     },
     {
       label: "Pay period",
-      value: `${format(row.payPeriod.startDate, "MMM d")} to ${format(row.payPeriod.endDate, "MMM d")}`,
+      value: row.payPeriod.label,
       color: "var(--text-primary)",
     },
   ];

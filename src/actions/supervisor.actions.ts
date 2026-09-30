@@ -27,6 +27,11 @@ import type { PunchState, PunchType } from "@prisma/client";
 
 const PAYROLL_ROLES: Role[] = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"];
 
+/** Pay periods are stored at UTC midnight, so one day is that whole UTC day. */
+function dayRange(day: string) {
+  return { gte: new Date(`${day}T00:00:00.000Z`), lt: new Date(`${day}T23:59:59.999Z`) };
+}
+
 // ─── Team timesheets ──────────────────────────────────────────────────────────
 
 /**
@@ -119,12 +124,14 @@ export const getTimesheetForReview = withRBAC(
 export const getTeamExceptions = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
   async ({ employeeId, role, tenantId }, input: unknown) => {
-    const { siteId, departmentId, shiftId, exceptionType, payPeriodId } = z.object({
+    const { siteId, departmentId, shiftId, exceptionType, payPeriodStart } = z.object({
       siteId: z.string().optional(),
       departmentId: z.string().optional(),
       shiftId: z.string().optional(),
       exceptionType: z.nativeEnum(ExceptionType).optional(),
-      payPeriodId: z.string().optional(),
+      // A day (YYYY-MM-DD): every rule set's period that starts on it, since
+      // one company runs a period per rule set over the same dates.
+      payPeriodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     }).parse(input ?? {});
 
     const isPayroll = PAYROLL_ROLES.includes(role);
@@ -150,7 +157,7 @@ export const getTeamExceptions = withRBAC(
         exceptionType: { in: Object.values(ExceptionType) },
         ...(exceptionType ? { exceptionType } : {}),
         timesheet: {
-          ...(payPeriodId ? { payPeriodId } : {}),
+          ...(payPeriodStart ? { payPeriod: { startDate: dayRange(payPeriodStart) } } : {}),
           employee: employeeFilter,
         },
       },
@@ -171,7 +178,16 @@ export const getTeamExceptions = withRBAC(
                 department: { select: { name: true } },
               },
             },
-            payPeriod: { select: { id: true, startDate: true, endDate: true } },
+            payPeriod: {
+              select: {
+                id: true,
+                startDate: true,
+                endDate: true,
+                // Which end date convention the period uses (see pay-period-display).
+                ruleSet: { select: { payFrequency: true } },
+                tenant: { select: { payFrequency: true } },
+              },
+            },
             _count: { select: { punches: { where: { isApproved: true, correctedById: null } } } },
           },
         },
@@ -277,11 +293,11 @@ export const getTeamExceptions = withRBAC(
 export const getExceptionTypeCounts = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
   async ({ employeeId, role, tenantId }, input: unknown) => {
-    const { siteId, departmentId, shiftId, payPeriodId } = z.object({
+    const { siteId, departmentId, shiftId, payPeriodStart } = z.object({
       siteId: z.string().optional(),
       departmentId: z.string().optional(),
       shiftId: z.string().optional(),
-      payPeriodId: z.string().optional(),
+      payPeriodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     }).parse(input ?? {});
 
     const isPayroll = PAYROLL_ROLES.includes(role);
@@ -298,7 +314,7 @@ export const getExceptionTypeCounts = withRBAC(
       where: {
         resolvedAt: null,
         timesheet: {
-          ...(payPeriodId ? { payPeriodId } : {}),
+          ...(payPeriodStart ? { payPeriod: { startDate: dayRange(payPeriodStart) } } : {}),
           employee: {
             tenantId: tenantId ?? undefined,
             ...idFilter,
@@ -354,6 +370,29 @@ export const getExceptionPunches = withRBAC(
       where: { timesheetId, isApproved: true, correctedById: null },
       orderBy: { roundedTime: "asc" },
       select: { id: true, punchType: true, roundedTime: true },
+    });
+  }
+);
+
+/** Punches for a single timesheet — loaded lazily when the action panel opens. */
+export const getPunchesForTimesheet = withRBAC(
+  "TIMESHEET_APPROVE_TEAM",
+  async ({ employeeId, role, tenantId }, input: unknown) => {
+    const { timesheetId } = z.object({ timesheetId: z.string() }).parse(input ?? {});
+    const isPayroll = PAYROLL_ROLES.includes(role);
+    const t = tenantId ?? undefined;
+    const subordinateIds = isPayroll ? null : await getSubordinateIds(employeeId, tenantId);
+    if (!isPayroll && (!subordinateIds || subordinateIds.length === 0)) return [];
+
+    return db.punch.findMany({
+      where: {
+        timesheetId,
+        isApproved: true,
+        correctedById: null,
+        ...(subordinateIds ? { timesheet: { employee: { id: { in: subordinateIds }, tenantId: t } } } : {}),
+      },
+      select: { id: true, punchType: true, roundedTime: true },
+      orderBy: { roundedTime: "asc" },
     });
   }
 );
