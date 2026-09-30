@@ -47,6 +47,23 @@ async function assertAssignable(
   }
 }
 
+/**
+ * A job title or agency picked for an employee must be the company's own.
+ * Linked by id alone, another company's record could be attached.
+ */
+async function assertOwnAssignments(
+  tenantId: string,
+  jobTitleId: string | null | undefined,
+  agencyId: string | null | undefined,
+): Promise<void> {
+  const [jobTitle, agency] = await Promise.all([
+    jobTitleId ? db.jobTitle.findFirst({ where: { id: jobTitleId, tenantId }, select: { id: true } }) : true,
+    agencyId ? db.agency.findFirst({ where: { id: agencyId, tenantId }, select: { id: true } }) : true,
+  ]);
+  if (!jobTitle) throw new Error("That job title does not exist");
+  if (!agency) throw new Error("That agency does not exist");
+}
+
 const SYSTEM_ROLE_NAME_TO_ENUM: Record<string, string> = {
   "Employee": "EMPLOYEE",
   "Supervisor": "SUPERVISOR",
@@ -307,6 +324,7 @@ export const createEmployee = withRBAC(
     if (!tenantId) throw new Error("Tenant context required");
     const parsed = createEmployeeSchema.parse(input);
     await assertAssignable(await currentIdentity(), tenantId, parsed.role, parsed.customRoleId);
+    await assertOwnAssignments(tenantId, parsed.jobTitleId, parsed.agencyId);
 
     // Auto-assign the system custom role when only a role enum is provided
     let resolvedCustomRoleId = parsed.customRoleId ?? null;
@@ -400,6 +418,7 @@ export const updateEmployee = withRBAC(
       where: { id: employeeId, tenantId },
       include: { user: true },
     });
+    await assertOwnAssignments(tenantId, jobTitleId, agencyId);
     if (!current) throw new Error("Employee not found");
 
     // Who may change what. Nobody changes their own role, status, pay or
