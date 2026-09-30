@@ -343,6 +343,79 @@ textarea {
   outline-offset: 1px;
 }
 
+/* The tools bar from the Live Attendance handoff, shared by every list screen:
+   search, a hairline divider, the filters, then the count pushed right, in one
+   white bar. Inside it the search loses its box and the filter pills become
+   34px flat triggers; an applied filter keeps its tint and an accent hairline,
+   so it still reads as applied. */
+.ta-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 48px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 6px 6px 6px 14px;
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-toolbar-shadow);
+}
+.ta-tools-divider {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+  background: var(--ta-ring-strong);
+}
+.ta-tools-count {
+  padding: 0 10px;
+  white-space: nowrap;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}
+.ta-tools .ta-search {
+  height: 34px;
+  min-width: 180px;
+  padding-left: 0;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none;
+  transition: border-color 120ms ease, padding 120ms ease;
+}
+.ta-tools .ta-search svg {
+  width: 18px;
+  height: 18px;
+  color: var(--icon-secondary) !important;
+}
+.ta-tools .ta-search:focus-within {
+  padding-left: 8px;
+  border-color: var(--stroke-accent-focus) !important;
+  box-shadow: var(--focus-ring-tight);
+}
+.ta-tools .ta-chip {
+  height: 34px !important;
+  border-radius: 10px !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  font: var(--weight-medium) 13px/1 var(--font-sans) !important;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.ta-tools .ta-chip:not([data-applied]):hover,
+.ta-tools .ta-chip:not([data-applied]):focus-within {
+  background: var(--fill-hover) !important;
+  color: var(--text-primary) !important;
+}
+.ta-tools .ta-chip[data-applied="true"] {
+  background: var(--surface-info) !important;
+  box-shadow: inset 0 0 0 1px var(--stroke-accent);
+  color: var(--text-accent) !important;
+}
+.ta-tools .ta-chip:focus-within {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 1px;
+}
+
 /* A small square icon button that lightens on hover (copy, close). */
 .ta-icon-btn {
   display: grid;

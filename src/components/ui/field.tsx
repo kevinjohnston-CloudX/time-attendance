@@ -50,7 +50,7 @@ export function SearchInput({
   const searchId = `search-${useId().replace(/:/g, "")}`;
   return (
     <label
-      className="ta-field flex h-8 items-center gap-2 rounded-md px-2.5"
+      className="ta-field ta-search flex h-8 items-center gap-2 rounded-md px-2.5"
       style={{
         border: "1px solid var(--stroke-default)",
         background: "var(--surface-card)",

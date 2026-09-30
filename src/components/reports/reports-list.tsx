@@ -15,6 +15,8 @@ import {
   PinnedBar,
   SearchInput,
   SegmentedLinks,
+  ToolsBar,
+  ToolsCount,
 } from "@/components/ui";
 import { STANDARD_REPORTS, dataSourceDescription, dataSourceLabel } from "./data-source-label";
 import { FolderTree, type FolderNode } from "./report-list/folder-tree";
@@ -229,38 +231,42 @@ export function ReportsList({
                 count: v.keep ? rows.filter((r) => r.access === v.keep).length : rows.length,
               }))}
             />
-            <SearchInput value={query} onValueChange={setQuery} placeholder="Report name or owner" width={260} />
-            {typeOptions.length > 1 && (
-              <FilterSelectChip
-                label="Type"
-                allLabel="Every type"
-                value={type}
-                options={typeOptions}
-                onChange={(v) => router.replace(listHref({ type: v }), { scroll: false })}
-              />
-            )}
-            {yearOptions.length > 1 && (
-              <FilterSelectChip
-                label="Updated"
-                allLabel="Any year"
-                value={year}
-                options={yearOptions}
-                onChange={(v) => router.replace(listHref({ year: v }), { scroll: false })}
-              />
-            )}
-            {narrowed && (
-              <Button hierarchy="link" size="sm" onClick={clearAll}>
-                Clear all
-              </Button>
-            )}
-            <span
-              className="tabular ml-auto whitespace-nowrap"
-              style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+            <ToolsBar
+              search={<SearchInput value={query} onValueChange={setQuery} placeholder="Report name or owner" width={300} />}
+              end={
+                <>
+                  {narrowed && (
+                    <Button hierarchy="link" size="sm" onClick={clearAll}>
+                      Clear all
+                    </Button>
+                  )}
+                  <ToolsCount>
+                    {narrowed
+                      ? `${filtered.length.toLocaleString()} of ${rows.length.toLocaleString()} reports`
+                      : `${rows.length.toLocaleString()} ${rows.length === 1 ? "report" : "reports"}`}
+                  </ToolsCount>
+                </>
+              }
             >
-              {narrowed
-                ? `${filtered.length.toLocaleString()} of ${rows.length.toLocaleString()} reports`
-                : `${rows.length.toLocaleString()} ${rows.length === 1 ? "report" : "reports"}`}
-            </span>
+              {typeOptions.length > 1 && (
+                <FilterSelectChip
+                  label="Type"
+                  allLabel="Every type"
+                  value={type}
+                  options={typeOptions}
+                  onChange={(v) => router.replace(listHref({ type: v }), { scroll: false })}
+                />
+              )}
+              {yearOptions.length > 1 && (
+                <FilterSelectChip
+                  label="Updated"
+                  allLabel="Any year"
+                  value={year}
+                  options={yearOptions}
+                  onChange={(v) => router.replace(listHref({ year: v }), { scroll: false })}
+                />
+              )}
+            </ToolsBar>
           </div>
         )}
       </PinnedBar>
