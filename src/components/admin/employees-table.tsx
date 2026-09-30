@@ -12,6 +12,8 @@ import {
   SearchInput,
   PageHeader,
   PinnedBar,
+  ToolsBar,
+  ToolsCount,
 } from "@/components/ui";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Users } from "lucide-react";
 import { Face } from "@/components/presence/face";
@@ -160,84 +162,85 @@ export function EmployeesTable({
       <span ref={markerRef} aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-px w-px" />
       <PinnedBar barRef={barRef}>
         <PageHeader title={title} subtitle={subtitle} actions={actions} condensed={condensed} />
-        {/* One row, as on Live Attendance: search first, then the filters as
-            pills that show and clear their own value, the sort and count on the right. */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          <SearchInput
-            value={searchValue}
-            onValueChange={onSearchChange}
-            placeholder="Name, employee ID or badge"
-            width={320}
-          />
-          <FilterSelectChip
-            label="Site"
-            value={currentFilters.site}
-            options={sites.map((s) => ({ id: s, name: s }))}
-            onChange={(v) => onFilterChange("site", v)}
-          />
-          <FilterSelectChip
-            label="Department"
-            value={currentFilters.dept}
-            options={departments.map((d) => ({ id: d, name: d }))}
-            onChange={(v) => onFilterChange("dept", v)}
-          />
-          <FilterSelectChip
-            label="Role"
-            value={currentFilters.role}
-            options={Object.entries(ROLE_LABEL).map(([id, name]) => ({ id, name }))}
-            onChange={(v) => onFilterChange("role", v)}
-          />
-          <FilterSelectChip
-            label="Status"
-            allLabel="All statuses"
-            value={currentFilters.status}
-            options={STATUS_OPTIONS}
-            onChange={(v) => onFilterChange("status", v)}
-          />
-          <FilterSelectChip
-            label="Shift"
-            value={currentFilters.shift}
-            options={shiftOptions}
-            onChange={(v) => onFilterChange("shift", v)}
-          />
-          <FilterSelectChip
-            label="Pay method"
-            value={currentFilters.pay}
-            options={PAY_OPTIONS}
-            onChange={(v) => onFilterChange("pay", v)}
-          />
-          <FilterSelectChip
-            label="Missing"
-            allLabel="Any record"
-            value={currentFilters.missing}
-            options={MISSING_OPTIONS}
-            onChange={(v) => onFilterChange("missing", v)}
-          />
-          {isFiltered && (
-            <Button
-              hierarchy="link"
-              size="sm"
-              onClick={clearAll}
-            >
-              Clear all
-            </Button>
-          )}
-          {/* The sort and the count travel together on the right, so on a
-              narrower window the row wraps as filters then order, not mid pill. */}
-          <span className="ml-auto flex items-center gap-2.5">
-            <SortSelectChip
-              value={currentFilters.sort}
-              options={SORT_OPTIONS}
-              onChange={(v) => onFilterChange("sort", v)}
+        {/* The shared tools bar, as on Live Attendance: search first, then the
+            filters as flat triggers that show and clear their own value, the
+            count and sort on the right. */}
+        <ToolsBar
+          search={
+            <SearchInput
+              value={searchValue}
+              onValueChange={onSearchChange}
+              placeholder="Name, employee ID or badge"
+              width={250}
             />
-            <span
-              className="tabular whitespace-nowrap"
-              style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
-            >
-              {total.toLocaleString()} {total === 1 ? "employee" : "employees"}
-            </span>
-          </span>
-        </div>
+          }
+          end={
+            <>
+              {isFiltered && (
+                <Button hierarchy="link" size="sm" onClick={clearAll}>
+                  Clear all
+                </Button>
+              )}
+              {/* The count and the sort travel together on the right, so on a
+                  narrower window the bar wraps as filters then order, not mid pill. */}
+              <span className="flex items-center">
+                <ToolsCount>
+                  {total.toLocaleString()} {total === 1 ? "employee" : "employees"}
+                </ToolsCount>
+                <SortSelectChip
+                  value={currentFilters.sort}
+                  options={SORT_OPTIONS}
+                  onChange={(v) => onFilterChange("sort", v)}
+                />
+              </span>
+            </>
+          }
+        >
+            <FilterSelectChip
+              label="Site"
+              value={currentFilters.site}
+              options={sites.map((s) => ({ id: s, name: s }))}
+              onChange={(v) => onFilterChange("site", v)}
+            />
+            <FilterSelectChip
+              label="Department"
+              value={currentFilters.dept}
+              options={departments.map((d) => ({ id: d, name: d }))}
+              onChange={(v) => onFilterChange("dept", v)}
+            />
+            <FilterSelectChip
+              label="Role"
+              value={currentFilters.role}
+              options={Object.entries(ROLE_LABEL).map(([id, name]) => ({ id, name }))}
+              onChange={(v) => onFilterChange("role", v)}
+            />
+            <FilterSelectChip
+              label="Status"
+              allLabel="All statuses"
+              value={currentFilters.status}
+              options={STATUS_OPTIONS}
+              onChange={(v) => onFilterChange("status", v)}
+            />
+            <FilterSelectChip
+              label="Shift"
+              value={currentFilters.shift}
+              options={shiftOptions}
+              onChange={(v) => onFilterChange("shift", v)}
+            />
+            <FilterSelectChip
+              label="Pay method"
+              value={currentFilters.pay}
+              options={PAY_OPTIONS}
+              onChange={(v) => onFilterChange("pay", v)}
+            />
+            <FilterSelectChip
+              label="Missing"
+              allLabel="Any record"
+              value={currentFilters.missing}
+              options={MISSING_OPTIONS}
+              onChange={(v) => onFilterChange("missing", v)}
+            />
+        </ToolsBar>
       </PinnedBar>
 
       <section className={styles.panel} aria-label="Employees">
