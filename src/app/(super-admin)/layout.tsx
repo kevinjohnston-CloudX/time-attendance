@@ -1,3 +1,6 @@
+// The new design's styles, loaded by its own layouts rather than the shared
+// root, so the classic design never gets them.
+import "@/app/globals.css";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
 import Link from "next/link";

@@ -1,0 +1,770 @@
+"use client";
+
+import { useState, useRef, useEffect, Fragment } from "react";
+import { useRouter } from "next/navigation";
+import {
+  format,
+  eachDayOfInterval,
+  isToday,
+  parseISO,
+  addDays,
+} from "date-fns";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
+  CalendarCheck,
+} from "lucide-react";
+
+import { parseUtcDate } from "@/lib/utils/date";
+import { formatMinutes, minutesToHoursDecimal } from "@/lib/utils/duration";
+import { TIMESHEET_STATUS_LABEL, PUNCH_TYPE_LABEL } from "@/classic/lib/labels";
+import { SegmentTimeline } from "@/classic/components/time/segment-timeline";
+import { SubmitTimesheetButton } from "@/classic/components/time/submit-timesheet-button";
+import type { WorkSegment } from "@prisma/client";
+
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+// ── Types ───────────────────────────────────────────────────────────────────
+
+interface PayPeriodOption {
+  id: string;
+  startDate: string;
+  endDate: string;
+}
+
+export interface TimesheetListItem {
+  timesheetId: string;
+  payPeriodId: string;
+  payPeriod: PayPeriodOption;
+  status: string;
+  totalMinutes: number;
+}
+
+export interface TimesheetDetailData {
+  timesheetId: string;
+  status: string;
+  payPeriod: PayPeriodOption;
+  punches: { id: string; punchType: string; roundedTime: string }[];
+  segments: {
+    id: string;
+    segmentType: string;
+    segmentDate: string;
+    startTime: string;
+    endTime: string;
+    durationMinutes: number;
+    payBucket: string;
+    payBucketOverride: string | null;
+    isPaid: boolean;
+    leaveTypeName: string | null;
+    payCode: { code: number; label: string } | null;
+  }[];
+  dayReasons: {
+    segmentDate: string;
+    reasonCode: { code: string; label: string };
+  }[];
+  overtimeBuckets: { bucket: string; totalMinutes: number }[];
+  exceptionCount: number;
+}
+
+export interface TimesheetViewerProps {
+  timesheets: TimesheetListItem[];
+  selectedPayPeriodId: string | null;
+  detail: TimesheetDetailData | null;
+}
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const STATUS_BADGE: Record<string, string> = {
+  OPEN:             "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+  SUBMITTED:        "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  SUP_APPROVED:     "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  PAYROLL_APPROVED: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+  LOCKED:           "bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400",
+};
+
+const SUMMARY_BUCKETS = [
+  { key: "REG",         label: "Regular",     color: "text-zinc-900 dark:text-white" },
+  { key: "OT",          label: "Overtime",    color: "text-amber-600 dark:text-amber-400" },
+  { key: "DT",          label: "Double Time", color: "text-red-600 dark:text-red-400" },
+  { key: "PTO",         label: "PTO",         color: "text-blue-600 dark:text-blue-400" },
+  { key: "SICK",        label: "Sick",        color: "text-purple-600 dark:text-purple-400" },
+  { key: "HOLIDAY",     label: "Holiday",     color: "text-green-600 dark:text-green-400" },
+  { key: "FMLA",        label: "FMLA",        color: "text-zinc-500 dark:text-zinc-400" },
+  { key: "BEREAVEMENT", label: "Bereavement", color: "text-zinc-500 dark:text-zinc-400" },
+  { key: "JURY_DUTY",   label: "Jury Duty",   color: "text-zinc-500 dark:text-zinc-400" },
+  { key: "MILITARY",    label: "Military",    color: "text-zinc-500 dark:text-zinc-400" },
+  { key: "UNPAID",      label: "Unpaid",      color: "text-zinc-400 dark:text-zinc-500" },
+];
+
+// ── Summary Row Helper ───────────────────────────────────────────────────────
+
+function SummaryRow({
+  label, reg, ot, dt, total, isBold, className,
+}: {
+  label: string; reg: number; ot: number; dt: number; total: number;
+  isBold?: boolean; className?: string;
+}) {
+  const fmt = minutesToHoursDecimal;
+  const base = isBold ? "border-t-2 border-zinc-300 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900" : "";
+  const text = isBold ? "font-bold text-zinc-900 dark:text-white" : className ?? "text-zinc-700 dark:text-zinc-300";
+  return (
+    <tr className={base}>
+      <td className={`px-4 py-1 ${text}`}>{label}</td>
+      <td className={`px-3 py-1 text-right tabular-nums ${text}`}>{reg > 0 ? fmt(reg) : "—"}</td>
+      <td className={`px-3 py-1 text-right tabular-nums ${ot > 0 ? "font-semibold text-amber-600 dark:text-amber-400" : text}`}>{ot > 0 ? fmt(ot) : "—"}</td>
+      <td className={`px-3 py-1 text-right tabular-nums ${dt > 0 ? "font-semibold text-red-600 dark:text-red-400" : text}`}>{dt > 0 ? fmt(dt) : "—"}</td>
+      <td className={`px-3 py-1 text-right tabular-nums ${isBold ? text : "font-semibold text-zinc-900 dark:text-white"}`}>{total > 0 ? fmt(total) : "—"}</td>
+    </tr>
+  );
+}
+
+// ── Component ────────────────────────────────────────────────────────────────
+
+export function TimesheetViewer({
+  timesheets,
+  selectedPayPeriodId,
+  detail,
+}: TimesheetViewerProps) {
+  const router = useRouter();
+
+  // Pay period navigation
+  const sortedTimesheets = [...timesheets].sort(
+    (a, b) =>
+      new Date(a.payPeriod.startDate).getTime() -
+      new Date(b.payPeriod.startDate).getTime()
+  );
+  const currentIndex = sortedTimesheets.findIndex(
+    (ts) => ts.payPeriodId === selectedPayPeriodId
+  );
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex < sortedTimesheets.length - 1;
+
+  const todayMidnight = new Date();
+  todayMidnight.setHours(0, 0, 0, 0);
+
+  const currentPeriodTs = sortedTimesheets.find((ts) => {
+    const s = parseUtcDate(ts.payPeriod.startDate);
+    const e = parseUtcDate(ts.payPeriod.endDate);
+    return s <= todayMidnight && todayMidnight <= e;
+  });
+
+  const allMonthKeys = Array.from(new Set(
+    sortedTimesheets.map(ts => format(parseUtcDate(ts.payPeriod.startDate), "yyyy-MM"))
+  )).sort();
+  const monthsWithPeriods = new Set(allMonthKeys);
+  const selectedTs = sortedTimesheets.find(ts => ts.payPeriodId === selectedPayPeriodId);
+  const selectedMonthYear = selectedTs
+    ? format(parseUtcDate(selectedTs.payPeriod.startDate), "yyyy-MM")
+    : null;
+  const visibleTimesheets = selectedMonthYear
+    ? sortedTimesheets.filter(ts =>
+        format(parseUtcDate(ts.payPeriod.startDate), "yyyy-MM") === selectedMonthYear
+      )
+    : sortedTimesheets;
+
+  // Picker state
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [pickerYear, setPickerYear] = useState(() => {
+    const ts = sortedTimesheets.find(t => t.payPeriodId === selectedPayPeriodId);
+    return ts ? parseUtcDate(ts.payPeriod.startDate).getFullYear() : new Date().getFullYear();
+  });
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
+  const [summaryGroupBy, setSummaryGroupBy] = useState<"total" | "week">("total");
+  const calendarRef = useRef<HTMLDivElement>(null);
+
+  function toggleDay(key: string) {
+    setExpandedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (calendarRef.current && !calendarRef.current.contains(e.target as Node)) {
+        setShowCalendar(false);
+      }
+    }
+    if (showCalendar) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showCalendar]);
+
+  function navigate(payPeriodId: string) {
+    router.push(`/time/timesheet?payPeriodId=${payPeriodId}`);
+  }
+
+  function handleMonthSelect(monthIdx: number) {
+    const monthKey = allMonthKeys[monthIdx];
+    const firstTs = sortedTimesheets.find(ts =>
+      format(parseUtcDate(ts.payPeriod.startDate), "yyyy-MM") === monthKey
+    );
+    if (firstTs) navigate(firstTs.payPeriodId);
+    setShowCalendar(false);
+  }
+
+  // Detail computations
+  const days =
+    detail
+      ? eachDayOfInterval({
+          start: parseUtcDate(detail.payPeriod.startDate),
+          end: addDays(parseUtcDate(detail.payPeriod.endDate), -1),
+        })
+      : [];
+
+  function segmentsForDay(day: Date) {
+    return (detail?.segments ?? []).filter(
+      (s) =>
+        format(parseUtcDate(s.segmentDate), "yyyy-MM-dd") ===
+        format(day, "yyyy-MM-dd")
+    );
+  }
+
+  function punchesForDay(day: Date) {
+    return (detail?.punches ?? []).filter(
+      (p) =>
+        format(parseISO(p.roundedTime), "yyyy-MM-dd") ===
+        format(day, "yyyy-MM-dd")
+    );
+  }
+
+  const bucketMap = Object.fromEntries(
+    (detail?.overtimeBuckets ?? []).map((b) => [b.bucket, b.totalMinutes])
+  );
+  const visibleBuckets = SUMMARY_BUCKETS.filter(
+    (b) => b.key === "REG" || (bucketMap[b.key] ?? 0) > 0
+  );
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  return (
+    <>
+    <h1 className="mb-3 text-xl font-bold text-zinc-900 dark:text-white">My Timesheets</h1>
+    <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
+      {/* ── Split pane ───────────────────────────────────────────────────── */}
+      <div className="grid h-[calc(100vh-6.5rem)] grid-cols-[260px_1fr]">
+
+        {/* ── Left: filters + pay period list ──────────────────────────── */}
+        <div className="flex min-h-0 flex-col border-r-2 border-zinc-300 dark:border-zinc-600">
+
+          {/* Filter controls */}
+          <div className="relative shrink-0 space-y-1.5 border-b border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-800 dark:bg-zinc-900">
+            {/* Prev / Next + jump-to-current + month picker */}
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                disabled={!hasPrev}
+                onClick={() => hasPrev && navigate(sortedTimesheets[currentIndex - 1].payPeriodId)}
+                className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                title="Previous pay period"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <span className="flex-1 text-center text-xs font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
+                {(() => {
+                  const ts = sortedTimesheets[currentIndex];
+                  if (!ts) return "—";
+                  const s = parseUtcDate(ts.payPeriod.startDate);
+                  const e = addDays(parseUtcDate(ts.payPeriod.endDate), -1);
+                  return `${format(s, "MMM d")} – ${format(e, "MMM d, yyyy")}`;
+                })()}
+              </span>
+              <button
+                type="button"
+                disabled={!hasNext}
+                onClick={() => hasNext && navigate(sortedTimesheets[currentIndex + 1].payPeriodId)}
+                className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                title="Next pay period"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+
+              {/* Jump to current pay period */}
+              <button
+                type="button"
+                onClick={() => currentPeriodTs && navigate(currentPeriodTs.payPeriodId)}
+                disabled={!currentPeriodTs || selectedPayPeriodId === currentPeriodTs.payPeriodId}
+                title="Jump to current pay period"
+                className="rounded p-1.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 disabled:cursor-default disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+              >
+                <CalendarCheck className="h-3.5 w-3.5" />
+              </button>
+
+              {/* Month/year picker */}
+              <div className="relative" ref={calendarRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!showCalendar && selectedTs) {
+                      setPickerYear(parseUtcDate(selectedTs.payPeriod.startDate).getFullYear());
+                    }
+                    setShowCalendar((v) => !v);
+                  }}
+                  className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                  title="Pick a month"
+                >
+                  <Calendar className="h-3.5 w-3.5" />
+                </button>
+
+                {showCalendar && (
+                  <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-lg border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+                    <div className="mb-2 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setPickerYear((y) => y - 1)}
+                        className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                        {pickerYear}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPickerYear((y) => y + 1)}
+                        className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                      {MONTHS.map((m, i) => {
+                        const key = `${pickerYear}-${String(i + 1).padStart(2, "0")}`;
+                        const hasPeriods = monthsWithPeriods.has(key);
+                        const isSelected = key === selectedMonthYear;
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            disabled={!hasPeriods}
+                            onClick={() => {
+                              const idx = allMonthKeys.indexOf(key);
+                              if (idx >= 0) handleMonthSelect(idx);
+                            }}
+                            className={`rounded px-1 py-1.5 text-xs font-medium transition-colors ${
+                              isSelected
+                                ? "bg-blue-600 text-white"
+                                : hasPeriods
+                                ? "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                                : "cursor-default text-zinc-300 dark:text-zinc-600"
+                            }`}
+                          >
+                            {m}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-400">
+              {visibleTimesheets.length} pay period{visibleTimesheets.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+
+          {/* Scrollable list */}
+          <div className="flex-1 overflow-y-auto">
+            {visibleTimesheets.length === 0 && (
+              <p className="p-4 text-center text-sm text-zinc-400">
+                {timesheets.length === 0 ? "No timesheets yet." : "No timesheets for this filter."}
+              </p>
+            )}
+            {[...visibleTimesheets].reverse().map((ts) => {
+              const isSelected = ts.payPeriodId === selectedPayPeriodId;
+              const s = parseUtcDate(ts.payPeriod.startDate);
+              const e = addDays(parseUtcDate(ts.payPeriod.endDate), -1);
+              return (
+                <button
+                  key={ts.payPeriodId}
+                  type="button"
+                  onClick={() => navigate(ts.payPeriodId)}
+                  className={`flex w-full flex-col border-b border-zinc-100 px-3 py-2 text-left transition-colors dark:border-zinc-800/60 ${
+                    isSelected
+                      ? "bg-blue-50 dark:bg-blue-950/30"
+                      : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className={`truncate text-sm font-semibold ${isSelected ? "text-zinc-900 dark:text-white" : "text-zinc-700 dark:text-zinc-300"}`}>
+                      {format(s, "MMM d")} – {format(e, "MMM d, yyyy")}
+                    </p>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[ts.status] ?? STATUS_BADGE.OPEN}`}>
+                      {(TIMESHEET_STATUS_LABEL as Record<string, string>)[ts.status] ?? ts.status}
+                    </span>
+                    <span className="text-xs tabular-nums text-zinc-400">
+                      {formatMinutes(ts.totalMinutes)}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── Right: detail ─────────────────────────────────────────────── */}
+        <div className="flex flex-col min-h-0 bg-white dark:bg-zinc-950">
+        {!detail ? (
+          <div className="flex flex-1 items-center justify-center">
+            <p className="text-sm text-zinc-400">
+              {timesheets.length === 0
+                ? "No timesheets yet. Timesheets are created automatically when you punch in."
+                : "No timesheet found for this pay period."}
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Header strip */}
+            <div className="shrink-0 flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+              <div className="flex items-center gap-3">
+                <div>
+                  <h2 className="text-base font-bold text-zinc-900 dark:text-white">
+                    {format(parseUtcDate(detail.payPeriod.startDate), "MMM d")} –{" "}
+                    {format(addDays(parseUtcDate(detail.payPeriod.endDate), -1), "MMM d, yyyy")}
+                  </h2>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-zinc-500">
+                    {visibleBuckets.map((b) => (
+                      <span key={b.key}>
+                        {b.label}:{" "}
+                        <span className={`font-semibold tabular-nums ${b.color}`}>
+                          {formatMinutes(bucketMap[b.key] ?? 0)}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[detail.status] ?? STATUS_BADGE.OPEN}`}>
+                  {(TIMESHEET_STATUS_LABEL as Record<string, string>)[detail.status] ?? detail.status}
+                </span>
+                {detail.exceptionCount > 0 && (
+                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                    {detail.exceptionCount} exception{detail.exceptionCount !== 1 ? "s" : ""}
+                  </span>
+                )}
+              </div>
+              {detail.status === "OPEN" && (
+                <SubmitTimesheetButton timesheetId={detail.timesheetId} />
+              )}
+            </div>
+
+            {/* Scrollable table + legend + summary */}
+            <div className="flex-1 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 border-b-2 border-zinc-400 bg-zinc-300 dark:border-zinc-500 dark:bg-zinc-700">
+                  <tr>
+                    <th className="w-7 pl-2 pr-0 py-1.5" />
+                    <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Date</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Code</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Reason</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">In</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Out</th>
+                    <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Reg</th>
+                    <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">OT</th>
+                    <th className="px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">DT</th>
+                    <th className="pl-3 pr-8 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-200">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {days.map((day) => {
+                    const dayKey = day.toISOString();
+                    const dayPunches = punchesForDay(day);
+                    const daySegments = segmentsForDay(day);
+                    const isWeekend = [0, 6].includes(day.getDay());
+                    const isExpanded = expandedDays.has(dayKey);
+                    const isTodayRow = isToday(day);
+                    const isMonday = day.getDay() === 1;
+                    const isFirstDay = days[0].toISOString() === dayKey;
+                    const showWeekSeparator = isMonday && !isFirstDay;
+
+                    const buckets: Record<string, number> = {};
+                    for (const seg of daySegments) {
+                      const eb = seg.payBucketOverride ?? seg.payBucket;
+                      // Holiday credits display under the REG column (pay code identifies them as holiday)
+                      const displayBucket = (seg.segmentType === "HOLIDAY") ? "REG" : eb;
+                      buckets[displayBucket] = (buckets[displayBucket] ?? 0) + seg.durationMinutes;
+                    }
+                    const reg = buckets["REG"] ?? 0;
+                    const ot = buckets["OT"] ?? 0;
+                    const dt = buckets["DT"] ?? 0;
+                    const dailyTotal = daySegments
+                      .filter((s) => s.isPaid)
+                      .reduce((a, s) => a + s.durationMinutes, 0);
+
+                    const firstIn = dayPunches.find((p) => p.punchType === "CLOCK_IN");
+                    const lastOut = [...dayPunches].reverse().find((p) => p.punchType === "CLOCK_OUT");
+                    const leaveSegments = daySegments.filter((s) => s.segmentType === "LEAVE");
+                    const hasActivity = dayPunches.length > 0 || daySegments.length > 0;
+
+                    const isPast = day < todayMidnight;
+                    const isAbsent =
+                      !isWeekend &&
+                      !isTodayRow &&
+                      isPast &&
+                      dayPunches.length === 0 &&
+                      leaveSegments.length === 0 &&
+                      daySegments.length === 0;
+
+                    return (
+                      <Fragment key={dayKey}>
+                        {showWeekSeparator && (
+                          <tr aria-hidden>
+                            <td colSpan={10} className="h-0 border-t-2 border-zinc-300 p-0 dark:border-zinc-600" />
+                          </tr>
+                        )}
+                        <tr
+                          className={`border-b border-zinc-200 transition-colors dark:border-zinc-700 ${
+                            isAbsent
+                              ? "bg-red-100 dark:bg-red-950/40"
+                              : isTodayRow
+                              ? "bg-blue-50/60 dark:bg-blue-950/20"
+                              : isWeekend
+                              ? "bg-zinc-50/70 dark:bg-zinc-900/40"
+                              : hasActivity
+                              ? "hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                              : "hover:bg-zinc-50/50 dark:hover:bg-zinc-900/20"
+                          } ${hasActivity ? "cursor-pointer" : ""}`}
+                          onClick={hasActivity ? () => toggleDay(dayKey) : undefined}
+                        >
+                          <td className="w-7 pl-2 pr-0 text-center">
+                            {hasActivity ? (
+                              <ChevronRight
+                                className={`inline h-3.5 w-3.5 text-zinc-400 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                              />
+                            ) : isTodayRow ? (
+                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-400" />
+                            ) : null}
+                          </td>
+                          <td className={`px-3 py-1.5 text-sm tabular-nums ${
+                            isAbsent ? "text-red-800 dark:text-red-300"
+                            : isTodayRow ? "text-blue-700 dark:text-blue-400"
+                            : isWeekend ? "text-zinc-400 dark:text-zinc-500"
+                            : "text-zinc-700 dark:text-zinc-300"
+                          }`}>
+                            <span className={`mr-0.5 ${isWeekend ? "" : "font-semibold"}`}>{format(day, "EEE")}</span>
+                            {format(day, "MM/dd/yyyy")}
+                          </td>
+                          {/* Code */}
+                          <td className="px-3 py-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                            {(() => {
+                              const workSeg = daySegments.find((s) => s.segmentType === "WORK" && s.payCode);
+                              return workSeg?.payCode
+                                ? <span>{workSeg.payCode.code}[{workSeg.payCode.label}]</span>
+                                : null;
+                            })()}
+                          </td>
+                          {/* Reason */}
+                          <td className="px-3 py-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                            {(() => {
+                              const dayStr = format(day, "yyyy-MM-dd");
+                              const dr = detail.dayReasons.find((r) => r.segmentDate.startsWith(dayStr));
+                              return dr ? <span>{dr.reasonCode.code}[{dr.reasonCode.label}]</span> : null;
+                            })()}
+                          </td>
+                          <td className={`px-3 py-1.5 font-mono text-sm ${
+                            isAbsent ? "text-red-700 dark:text-red-400" : "text-zinc-700 dark:text-zinc-300"
+                          }`}>
+                            {isAbsent ? (
+                              <span className="font-sans text-xs font-semibold">Absent</span>
+                            ) : firstIn ? (
+                              format(parseISO(firstIn.roundedTime), "h:mm a")
+                            ) : leaveSegments.length > 0 ? (
+                              <span className="-ml-2 rounded-full bg-violet-100 px-2 py-0.5 font-sans text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+                                {leaveSegments[0].leaveTypeName ?? "Leave"}
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="px-3 py-1.5 font-mono text-sm text-zinc-700 dark:text-zinc-300">
+                            {lastOut ? format(parseISO(lastOut.roundedTime), "h:mm a") : null}
+                          </td>
+                          <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
+                            isAbsent ? "text-red-400 dark:text-red-700"
+                            : reg > 0 ? "text-zinc-700 dark:text-zinc-300"
+                            : "text-zinc-300 dark:text-zinc-700"
+                          }`}>
+                            {isAbsent ? "0.00" : reg > 0 ? minutesToHoursDecimal(reg) : "—"}
+                          </td>
+                          <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
+                            isAbsent ? "text-red-400 dark:text-red-700"
+                            : ot > 0 ? "font-semibold text-amber-600 dark:text-amber-400"
+                            : "text-zinc-300 dark:text-zinc-700"
+                          }`}>
+                            {ot > 0 ? minutesToHoursDecimal(ot) : "—"}
+                          </td>
+                          <td className={`px-3 py-1.5 text-right tabular-nums text-sm ${
+                            isAbsent ? "text-red-400 dark:text-red-700"
+                            : dt > 0 ? "font-semibold text-red-600 dark:text-red-400"
+                            : "text-zinc-300 dark:text-zinc-700"
+                          }`}>
+                            {dt > 0 ? minutesToHoursDecimal(dt) : "—"}
+                          </td>
+                          <td className={`pl-3 pr-8 py-1.5 text-right tabular-nums text-sm ${
+                            isAbsent ? "font-bold text-red-800 dark:text-red-300"
+                            : dailyTotal > 0 ? "font-bold text-zinc-900 dark:text-white"
+                            : "text-zinc-300 dark:text-zinc-700"
+                          }`}>
+                            {isAbsent ? "0.00" : dailyTotal > 0 ? minutesToHoursDecimal(dailyTotal) : "—"}
+                          </td>
+                        </tr>
+                        {isExpanded && hasActivity && (
+                          <tr className="border-b border-zinc-200 bg-zinc-50/80 dark:border-zinc-700 dark:bg-zinc-900/40">
+                            <td colSpan={10} className="px-5 py-2">
+                              {daySegments.length > 0 && (
+                                <div className="mb-2">
+                                  <SegmentTimeline
+                                    segments={daySegments.map((s) => ({
+                                      ...s,
+                                      startTime: parseISO(s.startTime),
+                                      endTime: parseISO(s.endTime),
+                                      segmentDate: parseISO(s.segmentDate),
+                                    })) as unknown as WorkSegment[]}
+                                    date={day}
+                                  />
+                                </div>
+                              )}
+                              <div className="flex flex-wrap items-start gap-2">
+                                {dayPunches.map((p) => (
+                                  <span
+                                    key={p.id}
+                                    className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                                  >
+                                    {(PUNCH_TYPE_LABEL as Record<string, string>)[p.punchType]}{" "}
+                                    {format(parseISO(p.roundedTime), "h:mm a")}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>{/* end flex-1 overflow-y-auto */}
+
+            {/* ── Color Legend ───────────────────────────────────────── */}
+            <div className="shrink-0 flex flex-wrap items-center gap-4 border-t-4 border-zinc-400 bg-zinc-200 px-4 py-2 dark:border-zinc-500 dark:bg-zinc-800/80">
+              <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">Legend:</span>
+              <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                <span className="inline-block h-3 w-3 rounded border border-red-500 bg-red-300 dark:border-red-800 dark:bg-red-950/40" />
+                Absent
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                <span className="inline-block h-3 w-3 rounded border border-blue-500 bg-blue-200 dark:border-blue-700 dark:bg-blue-950/20" />
+                Today
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                <span className="inline-block h-3 w-3 rounded border border-zinc-500 bg-zinc-300 dark:border-zinc-700 dark:bg-zinc-900/40" />
+                Weekend
+              </span>
+            </div>
+
+            {/* ── Summary ────────────────────────────────────────────── */}
+            <div className="border-t border-zinc-200 dark:border-zinc-800">
+              <div className="flex items-center justify-between bg-zinc-50 px-4 py-1 dark:bg-zinc-900">
+                <span className="text-xs font-medium text-zinc-500">Timesheet Summary</span>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-zinc-400">Group By</label>
+                  <select
+                    value={summaryGroupBy}
+                    onChange={(e) => setSummaryGroupBy(e.target.value as "total" | "week")}
+                    className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
+                  >
+                    <option value="total">Total</option>
+                    <option value="week">Week</option>
+                  </select>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="border-b border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/50">
+                    <tr>
+                      <th className="px-4 py-1 text-left text-xs font-medium text-zinc-500">
+                        {summaryGroupBy === "week" ? "Week" : "Category"}
+                      </th>
+                      <th className="px-3 py-1 text-right text-xs font-medium text-zinc-500">Reg Hrs</th>
+                      <th className="px-3 py-1 text-right text-xs font-medium text-zinc-500">OT</th>
+                      <th className="px-3 py-1 text-right text-xs font-medium text-zinc-500">DT</th>
+                      <th className="px-3 py-1 text-right text-xs font-medium text-zinc-500">Total Hrs</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    {(() => {
+                      const bucketMap: Record<string, number> = Object.fromEntries(
+                        detail.overtimeBuckets.map((b) => [b.bucket, b.totalMinutes])
+                      );
+
+                      if (summaryGroupBy === "total") {
+                        const reg = bucketMap["REG"] ?? 0;
+                        const ot = bucketMap["OT"] ?? 0;
+                        const dt = bucketMap["DT"] ?? 0;
+                        const total = Object.values(bucketMap).reduce((a, b) => a + b, 0);
+                        const otherBuckets = SUMMARY_BUCKETS.filter(
+                          (b) => !["REG", "OT", "DT"].includes(b.key) && (bucketMap[b.key] ?? 0) > 0
+                        );
+                        return (
+                          <>
+                            {otherBuckets.map((b) => (
+                              <SummaryRow key={b.key} label={b.label} reg={0} ot={0} dt={0} total={bucketMap[b.key] ?? 0} className={b.color} />
+                            ))}
+                            <SummaryRow label="Totals" reg={reg} ot={ot} dt={dt} total={total} isBold />
+                          </>
+                        );
+                      }
+
+                      // Week grouping
+                      const ppStart = parseUtcDate(detail.payPeriod.startDate);
+                      const ppEnd = addDays(parseUtcDate(detail.payPeriod.endDate), -1);
+                      const weeks: { label: string; start: Date; end: Date }[] = [];
+                      let wStart = ppStart;
+                      while (wStart <= ppEnd) {
+                        const wEnd = new Date(Math.min(wStart.getTime() + 6 * 86400000, ppEnd.getTime()));
+                        weeks.push({
+                          label: `${format(wStart, "MM/dd/yyyy")} – ${format(wEnd, "MM/dd/yyyy")}`,
+                          start: wStart,
+                          end: wEnd,
+                        });
+                        wStart = new Date(wEnd.getTime() + 86400000);
+                      }
+                      let grandReg = 0, grandOt = 0, grandDt = 0, grandTotal = 0;
+                      return (
+                        <>
+                          {weeks.map((week) => {
+                            const weekSegs = detail.segments.filter((s) => {
+                              const sd = parseUtcDate(s.segmentDate);
+                              return sd >= week.start && sd <= week.end;
+                            });
+                            const wb: Record<string, number> = {};
+                            for (const s of weekSegs) {
+                              if (s.isPaid) {
+                                const eb = s.payBucketOverride ?? s.payBucket;
+                                wb[eb] = (wb[eb] ?? 0) + s.durationMinutes;
+                              }
+                            }
+                            const reg = wb["REG"] ?? 0;
+                            const ot = wb["OT"] ?? 0;
+                            const dt = wb["DT"] ?? 0;
+                            const total = Object.values(wb).reduce((a, b) => a + b, 0);
+                            grandReg += reg; grandOt += ot; grandDt += dt; grandTotal += total;
+                            return <SummaryRow key={week.label} label={week.label} reg={reg} ot={ot} dt={dt} total={total} />;
+                          })}
+                          <SummaryRow label="Totals" reg={grandReg} ot={grandOt} dt={grandDt} total={grandTotal} isBold />
+                        </>
+                      );
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+        </div>
+      </div>
+    </div>
+    </>
+  );
+}

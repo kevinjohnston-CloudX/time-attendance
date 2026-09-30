@@ -34,14 +34,14 @@ import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
 export function TopBar({
   reachableHrefs,
   waiting,
-  classicUrl = null,
+  classicOffered = false,
   classicUntil = null,
   signInId,
 }: {
   reachableHrefs: string[];
   waiting: WaitingItem[];
-  /** The classic design's address; null draws no design switch. */
-  classicUrl?: string | null;
+  /** Whether this person can pick Classic; false draws no design switch. */
+  classicOffered?: boolean;
   /** The classic design's last day, as words; null for no end date. */
   classicUntil?: string | null;
   signInId?: string;
@@ -140,9 +140,9 @@ export function TopBar({
 
       <div className="flex-1" />
 
-      {classicUrl && (
+      {classicOffered && (
         <Suspense fallback={null}>
-          <DesignSwitch classicUrl={classicUrl} classicUntil={classicUntil} signInId={signInId} />
+          <DesignSwitch classicUntil={classicUntil} signInId={signInId} />
         </Suspense>
       )}
 

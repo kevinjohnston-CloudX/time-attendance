@@ -1,4 +1,8 @@
 @import "tailwindcss";
+/* The classic design has its own style sheet (src/classic/classic.css); its
+   classes are left out of this one. */
+@source not "./classic";
+@source not "../classic";
 
 /* ------------------------------------------------------------------
    CloudX WMS design system.

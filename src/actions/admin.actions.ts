@@ -265,6 +265,8 @@ export const getEmployees = withRBAC(
           isActive: true,
           onLeave: true,
           shiftId: true,
+          // The classic design's list shows it.
+          hireDate: true,
           user:       { select: { name: true, email: true } },
           site:       { select: { name: true } },
           department: { select: { name: true } },

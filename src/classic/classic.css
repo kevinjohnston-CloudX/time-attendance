@@ -1,0 +1,36 @@
+/*
+ * The classic design's styles: prod's globals.css as it was, loaded only by
+ * the classic layout, so the new design's tokens and resets never reach a
+ * classic page and classic's never reach a new one. Tailwind builds from the
+ * classic folders alone (source(none) plus the two @source lines), so neither
+ * design's style sheet carries the other's classes.
+ */
+@import "tailwindcss" source(none);
+@source "./";
+@source "../app/classic";
+
+/* Switch dark mode from media query to class strategy for next-themes */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}

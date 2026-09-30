@@ -1,29 +1,46 @@
 /**
- * The design switch: the classic design and this one run as two sites on one
- * database, and the switch opens the page you are on in the other one.
+ * The design switch: Classic or New, in one app over one database.
  *
- * <p>The other site's address is a setting, CLASSIC_DESIGN_URL, read on the
- * server on every request, so it can be set or changed on the host without a
- * rebuild. Unset, the switch is not drawn at all.
+ * <p>Both designs answer the same addresses. The classic screens live under
+ * src/app/classic, and the proxy serves them at the ordinary address to
+ * anyone whose design is Classic, so the address bar never shows which design
+ * a page came from and a link works in either. Nothing lists pages: a page
+ * only one design has is handled where it is missing (see the not found
+ * screen), so pages added later need no change here.
  *
- * <p>It carries the path and the query unchanged, since both sites have the
- * same pages over the same records. When the other site has no such page, the
- * marker below tells its not found screen to step up to the nearest page it
- * does have, so a page added to one design later never strands anyone.
+ * <p>The choice belongs to the person (users.designPreference) and is
+ * mirrored in a cookie, which is what the proxy reads, since it cannot reach
+ * the database. The cookie is written when somebody flips the switch and
+ * again at sign in, from their saved choice, so a new browser or a different
+ * person signing in gets their own design. Nobody saved yet means Classic.
+ *
+ * <p>This module is edge safe (the proxy imports it): no database, no Node.
+ */
+
+export type Design = "classic" | "new";
+
+/** Read by the proxy on every request; written by the switch and at sign in. */
+export const DESIGN_COOKIE = "ct-design";
+
+/** A year: the choice is the person's, so it outlives any one sign in. */
+export const DESIGN_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+
+/** Everyone starts on Classic until they pick New. */
+export const DEFAULT_DESIGN: Design = "classic";
+
+/** The folder the classic screens are served from, never shown in the address bar. */
+export const CLASSIC_PREFIX = "/classic";
+
+/**
+ * Marks a visit that arrived by flipping the switch. On the not found screen
+ * it means the design just picked has no such page, so it steps up to the
+ * nearest one it does have instead of switching back.
  */
 export const DESIGN_SWITCH_PARAM = "via";
 export const DESIGN_SWITCH_VALUE = "design-switch";
 
-/** The classic site's origin, or null when the switch is off. */
-export function classicDesignUrl(): string | null {
-  const raw = process.env.CLASSIC_DESIGN_URL?.trim();
-  if (!raw) return null;
-  try {
-    const url = new URL(raw);
-    return url.protocol === "https:" || url.protocol === "http:" ? url.origin : null;
-  } catch {
-    return null;
-  }
+export function parseDesign(value: string | null | undefined): Design | null {
+  return value === "classic" || value === "new" ? value : null;
 }
 
 /**
@@ -47,9 +64,37 @@ export function classicDesignEnded(until: { day: string } | null, now = new Date
   return today > until.day;
 }
 
-/** The same page on the other site, marked as arriving by the switch. */
-export function switchedHref(origin: string, pathname: string, search: string): string {
-  const params = new URLSearchParams(search);
-  params.set(DESIGN_SWITCH_PARAM, DESIGN_SWITCH_VALUE);
-  return `${origin}${pathname}?${params.toString()}`;
+/** Whether Classic can still be picked at all. After its last day everyone is on New. */
+export function classicOffered(now = new Date()): boolean {
+  return !classicDesignEnded(classicDesignUntil(), now);
+}
+
+/** The design a request is served in, from the cookie alone. */
+export function designFromCookie(value: string | null | undefined): Design {
+  if (!classicOffered()) return "new";
+  return parseDesign(value) ?? DEFAULT_DESIGN;
+}
+
+/**
+ * Where to send somebody once a design is set: a path on this site only.
+ * Anything else (another host, "//host", a scheme) falls back to the
+ * dashboard, so the switch can never be turned into an open redirect.
+ */
+export function safeNext(next: string | null | undefined): string {
+  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) return "/dashboard";
+  // Never land on the hidden folder itself; the proxy serves it at the plain address.
+  if (next === CLASSIC_PREFIX || next.startsWith(`${CLASSIC_PREFIX}/`)) return next.slice(CLASSIC_PREFIX.length) || "/dashboard";
+  return next;
+}
+
+/** The address that sets a design and continues to `next`, for plain links. */
+export function switchHref(to: Design, next: string, opts: { viaSwitch?: boolean } = {}): string {
+  const params = new URLSearchParams({ to, next });
+  if (opts.viaSwitch) params.set(DESIGN_SWITCH_PARAM, DESIGN_SWITCH_VALUE);
+  return `/api/design?${params.toString()}`;
+}
+
+/** After sign in: set this browser to the person's saved design, then continue. */
+export function syncHref(next: string): string {
+  return `/api/design?${new URLSearchParams({ sync: "1", next }).toString()}`;
 }

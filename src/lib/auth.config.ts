@@ -1,6 +1,7 @@
 import type { NextAuthConfig } from "next-auth";
 import { NextResponse } from "next/server";
 import { REQUEST_PATH_HEADER } from "@/lib/constants";
+import { CLASSIC_PREFIX, DESIGN_COOKIE, designFromCookie, safeNext } from "@/lib/design-switch";
 
 /**
  * Edge-safe auth config — no Prisma, no bcrypt, no Node.js-only modules.
@@ -29,6 +30,30 @@ const localCookies =
         nonce: localCookie("nonce"),
       };
 
+/**
+ * Which addresses the classic design answers. Everything a person opens as a
+ * page, except the API, the super admin area (the classic design has none)
+ * and "/", which only redirects.
+ */
+function classicServes(pathname: string): boolean {
+  return pathname !== "/" && !pathname.startsWith("/api/") && !pathname.startsWith("/super-admin");
+}
+
+/**
+ * The response for a request that is allowed through: served from the
+ * classic folder when this browser's design is Classic, at the same address,
+ * else passed on. `headers` carries the portal's request path header.
+ */
+function serve(request: Request & { nextUrl: URL; cookies: { get(name: string): { value: string } | undefined } }, headers?: Headers) {
+  const { nextUrl } = request;
+  const init = headers ? { request: { headers } } : undefined;
+  if (classicServes(nextUrl.pathname) && designFromCookie(request.cookies.get(DESIGN_COOKIE)?.value) === "classic") {
+    const url = new URL(`${CLASSIC_PREFIX}${nextUrl.pathname}${nextUrl.search}`, nextUrl);
+    return NextResponse.rewrite(url, init);
+  }
+  return headers ? NextResponse.next(init) : true;
+}
+
 export const authConfig = {
   pages: {
     signIn: "/login",
@@ -50,6 +75,12 @@ export const authConfig = {
     },
     authorized({ auth, request }) {
       const { nextUrl } = request;
+
+      // The classic folder is never opened by its own address: it is served
+      // at the plain one (see serve above), so a typed /classic/... goes there.
+      if (nextUrl.pathname === CLASSIC_PREFIX || nextUrl.pathname.startsWith(`${CLASSIC_PREFIX}/`)) {
+        return Response.redirect(new URL(`${safeNext(nextUrl.pathname)}${nextUrl.search}`, nextUrl));
+      }
       const isLoggedIn = !!auth?.user;
       const isSuperAdmin = auth?.user?.role === "SUPER_ADMIN";
       const isOnSuperAdmin = nextUrl.pathname.startsWith("/super-admin");
@@ -83,7 +114,7 @@ export const authConfig = {
         // browser sent under the same name.
         const headers = new Headers(request.headers);
         headers.set(REQUEST_PATH_HEADER, nextUrl.pathname);
-        return NextResponse.next({ request: { headers } });
+        return serve(request, headers);
       } else if (isLoggedIn && (
         nextUrl.pathname === "/login" ||
         nextUrl.pathname === "/forgot-password"
@@ -91,7 +122,8 @@ export const authConfig = {
         const target = isSuperAdmin ? "/super-admin" : "/dashboard";
         return Response.redirect(new URL(target, nextUrl));
       }
-      return true;
+      // Sign in and the password screens follow this browser's last design.
+      return serve(request);
     },
   },
   providers: [],

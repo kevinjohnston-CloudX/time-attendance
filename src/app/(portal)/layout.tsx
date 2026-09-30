@@ -1,3 +1,6 @@
+// The new design's styles, loaded by its own layouts rather than the shared
+// root, so the classic design never gets them.
+import "@/app/globals.css";
 import { redirect } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { cookies, headers } from "next/headers";
@@ -18,7 +21,7 @@ import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { getLegacyPermissions, isLiveAttendanceOnly } from "@/lib/rbac/permission-resolver";
 import { getWaitingOnYou } from "@/lib/dashboard/dashboard-data";
 import { photoUrls } from "@/lib/presence/photos";
-import { classicDesignEnded, classicDesignUntil, classicDesignUrl } from "@/lib/design-switch";
+import { classicDesignEnded, classicDesignUntil } from "@/lib/design-switch";
 
 const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
@@ -286,7 +289,7 @@ export default async function PortalLayout({
           <TopBar
             reachableHrefs={destinations.map((d) => d.href)}
             waiting={waiting}
-            classicUrl={liveAttendanceOnly || classicDesignEnded(classicUntil) ? null : classicDesignUrl()}
+            classicOffered={!liveAttendanceOnly && !classicDesignEnded(classicUntil)}
             classicUntil={classicUntil?.label ?? null}
             signInId={session.user.signInId}
           />

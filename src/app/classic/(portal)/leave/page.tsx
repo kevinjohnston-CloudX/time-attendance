@@ -1,0 +1,170 @@
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
+import { userHasPermission } from "@/lib/rbac/check-permission";
+import { getMyLeaveRequests, getMyLeaveBalances, getLeaveTypes } from "@/actions/leave.actions";
+import { db } from "@/lib/db";
+import {
+  LEAVE_STATUS_LABEL,
+  LEAVE_STATUS_BADGE,
+} from "@/classic/lib/labels";
+import { formatMinutes } from "@/lib/utils/duration";
+import { format, parseISO } from "date-fns";
+
+// @db.Date fields come back as UTC midnight — extract YYYY-MM-DD and parse as local midnight.
+function fmtDate(d: Date | string, fmt: string) {
+  const iso = (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
+  return format(parseISO(iso), fmt);
+}
+import { LeaveCalendar } from "@/classic/components/leave/leave-calendar";
+import { RequestLeaveModal } from "@/classic/components/leave/request-leave-modal";
+import { CancelLeaveButton } from "@/classic/components/leave/cancel-leave-button";
+
+export default async function MyLeavePage() {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  if (!await userHasPermission(session.user, "LEAVE_REQUEST_OWN")) redirect("/dashboard");
+
+  const [requestsResult, balancesResult, leaveTypesResult, employee] = await Promise.all([
+    getMyLeaveRequests(),
+    getMyLeaveBalances(),
+    getLeaveTypes(),
+    db.employee.findFirst({
+      where: { userId: session.user.id },
+      select: {
+        shift: { select: { startTime: true, endTime: true, workDays: true } },
+        ruleSet: { select: { mealBreakMinutes: true, mealBreakAfterMinutes: true } },
+      },
+    }),
+  ]);
+
+  if (!requestsResult.success || !balancesResult.success) redirect("/dashboard");
+
+  const requests = requestsResult.data;
+  const balances = balancesResult.data;
+  const leaveTypes = leaveTypesResult.success
+    ? leaveTypesResult.data.map((lt) => ({ id: lt.id, name: lt.name }))
+    : [];
+
+  // Pre-compute approved/pending minutes per leave type
+  const approvedByType: Record<string, number> = {};
+  const pendingByType: Record<string, number> = {};
+  for (const r of requests) {
+    if (r.status === "APPROVED") {
+      approvedByType[r.leaveTypeId] = (approvedByType[r.leaveTypeId] ?? 0) + r.durationMinutes;
+    } else if (r.status === "PENDING") {
+      pendingByType[r.leaveTypeId] = (pendingByType[r.leaveTypeId] ?? 0) + r.durationMinutes;
+    }
+  }
+
+  // Serialize dates for client component — send as YYYY-MM-DD so the client
+  // can parse them as local midnight (avoids UTC-offset day shift).
+  const calendarRequests = requests.map((r) => ({
+    id: r.id,
+    status: r.status,
+    startDate: (r.startDate instanceof Date ? r.startDate.toISOString() : String(r.startDate)).slice(0, 10),
+    endDate:   (r.endDate   instanceof Date ? r.endDate.toISOString()   : String(r.endDate)).slice(0, 10),
+    leaveType: { name: r.leaveType.name },
+    durationMinutes: r.durationMinutes,
+  }));
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">My Leave</h1>
+        <RequestLeaveModal leaveTypes={leaveTypes} shift={employee?.shift ? { ...employee.shift, ...employee.ruleSet } : null} />
+      </div>
+
+      {/* Balances */}
+      {balances.length > 0 && (
+        <div className="mt-6">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+            Current Balances
+          </p>
+          <div className="mt-2 grid grid-flow-col auto-cols-fr gap-2">
+            {balances.map((b) => {
+              const totalMinutes     = b.balanceMinutes + b.usedMinutes;
+              const approvedMinutes  = approvedByType[b.leaveTypeId] ?? 0;
+              const pendingMinutes   = pendingByType[b.leaveTypeId] ?? 0;
+              const remainingMinutes = Math.max(0, totalMinutes - b.usedMinutes - approvedMinutes);
+              return (
+                <div
+                  key={b.id}
+                  className="rounded-xl border border-zinc-200 bg-white p-2.5 dark:border-zinc-800 dark:bg-zinc-900"
+                >
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Remaining {b.leaveType.name}
+                  </p>
+                  <p className="mt-0.5 text-lg font-bold text-zinc-900 dark:text-white">
+                    {formatMinutes(remainingMinutes)}
+                  </p>
+                  <div className="mt-1.5 flex flex-col gap-0.5 border-t border-zinc-100 pt-1.5 dark:border-zinc-800">
+                    <p className="text-xs text-zinc-400">
+                      Approved: <span className="font-medium text-zinc-600 dark:text-zinc-300">{formatMinutes(approvedMinutes)}</span>
+                    </p>
+                    {pendingMinutes > 0 && (
+                      <p className="text-xs text-zinc-400">
+                        Pending: <span className="font-medium text-amber-600 dark:text-amber-400">{formatMinutes(pendingMinutes)}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Two-column layout */}
+      <div className="mt-6 flex items-stretch gap-5">
+        {/* Left — request list */}
+        <div className="w-72 shrink-0">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+            Leave Requests
+          </p>
+          <div className="mt-2 flex flex-col gap-2 overflow-y-auto" style={{ maxHeight: "520px" }}>
+            {requests.length === 0 && (
+              <p className="py-8 text-center text-sm text-zinc-400">
+                No leave requests yet.
+              </p>
+            )}
+            {requests.filter((req) => req.status !== "CANCELLED").map((req) => (
+              <div
+                key={req.id}
+                className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-medium text-zinc-900 dark:text-white">
+                    {req.leaveType.name}
+                  </p>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${LEAVE_STATUS_BADGE[req.status]}`}
+                  >
+                    {LEAVE_STATUS_LABEL[req.status]}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  {fmtDate(req.startDate, "MMM d")} – {fmtDate(req.endDate, "MMM d, yyyy")}
+                </p>
+                <p className="text-xs text-zinc-400">{formatMinutes(req.durationMinutes)}</p>
+                {req.reviewNote && (
+                  <p className="mt-1 text-xs text-zinc-400 italic">{req.reviewNote}</p>
+                )}
+                {req.status === "PENDING" && (
+                  <div className="mt-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+                    <CancelLeaveButton leaveRequestId={req.id} />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Right — calendar */}
+        <div className="flex flex-1 flex-col">
+          <LeaveCalendar requests={calendarRequests} className="flex-1" />
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,3 +1,6 @@
+// The new design's styles, loaded by its own layouts rather than the shared
+// root, so the classic design never gets them.
+import "@/app/globals.css";
 import { LinkButton } from "@/components/ui";
 import { BrandLockup } from "@/components/layout/brand-mark";
 import { DesignSwitchFallback } from "@/components/layout/design-switch-fallback";

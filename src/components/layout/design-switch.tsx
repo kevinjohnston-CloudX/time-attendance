@@ -4,12 +4,13 @@ import { useEffect, useId, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { TriangleAlert, X } from "lucide-react";
 import { SegmentedControl } from "@/components/ui";
-import { switchedHref } from "@/lib/design-switch";
+import { switchHref } from "@/lib/design-switch";
 
 /**
  * Classic or New, beside the navigation layout control: both are how the
- * product looks, not what it does. Picking Classic opens this same page in the
- * classic design; this site is always New. See lib/design-switch.
+ * product looks, not what it does. Picking Classic saves it for this person
+ * and reloads this same page in the classic design (one app, same address).
+ * See lib/design-switch.
  *
  * <p>Drawn the way the Layout handoff draws the Nav switch beside it: a small
  * caps label and a small segmented control. The handoff has no design switch,
@@ -41,11 +42,9 @@ function rememberClosed(signInId: string) {
 }
 
 export function DesignSwitch({
-  classicUrl,
   classicUntil = null,
   signInId = "session",
 }: {
-  classicUrl: string;
   /** "November 1, 2026", or null for no end date and no notice. */
   classicUntil?: string | null;
   signInId?: string;
@@ -89,7 +88,11 @@ export function DesignSwitch({
         ariaLabel="Design"
         value="new"
         onChange={(next) => {
-          if (next === "classic") window.location.assign(switchedHref(classicUrl, pathname, search.toString()));
+          if (next !== "classic") return;
+          const here = `${pathname}${search.size ? `?${search.toString()}` : ""}`;
+          // A full load: the two designs have their own styles, and one
+          // design's must not linger on the other's pages.
+          window.location.assign(switchHref("classic", here, { viaSwitch: true }));
         }}
         items={[
           { value: "classic", label: "Classic" },
