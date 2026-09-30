@@ -2,8 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
-import { db } from "@/lib/db";
-import { getSitePtoPolicies, getPtoPolicies } from "@/actions/pto-policy.actions";
+import { getSitePolicySetup } from "@/actions/pto-policy.actions";
 import { SitePtoPoliciesPanel } from "@/classic/components/admin/site-pto-policies-panel";
 
 export default async function SiteDetailPage({
@@ -16,25 +15,12 @@ export default async function SiteDetailPage({
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "SITE_MANAGE")) redirect("/admin");
 
-  const [site, leaveTypes, ptoPoliciesResult, siteAssignmentsResult] = await Promise.all([
-    db.site.findUnique({ where: { id } }),
-    db.leaveType.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, category: true } }),
-    getPtoPolicies(),
-    getSitePtoPolicies({ siteId: id }),
-  ]);
-
-  if (!site) notFound();
-
-  const ptoPolicies = ptoPoliciesResult.success
-    ? ptoPoliciesResult.data.filter((p) => p.isActive).map((p) => ({ id: p.id, name: p.name }))
-    : [];
-
-  const siteAssignments = siteAssignmentsResult.success
-    ? siteAssignmentsResult.data.map((a) => ({
-        leaveTypeId: a.leaveTypeId,
-        ptoPolicyId: a.ptoPolicyId,
-      }))
-    : [];
+  // Changed from prod, which read the site by id alone and every company's
+  // leave types: the shared lookup scopes all of it to this company, and a
+  // site that is not theirs is not found.
+  const setup = await getSitePolicySetup({ siteId: id });
+  if (!setup.success) notFound();
+  const { site, leaveTypes, policies: ptoPolicies, assignments: siteAssignments } = setup.data;
 
   return (
     <div className="max-w-2xl">
