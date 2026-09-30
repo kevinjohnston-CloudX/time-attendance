@@ -6,10 +6,34 @@ import { REQUEST_PATH_HEADER } from "@/lib/constants";
  * Edge-safe auth config — no Prisma, no bcrypt, no Node.js-only modules.
  * Used by middleware for route protection.
  */
+/**
+ * Local only: CloudTime's own cookie names. The ticketing app runs on this
+ * machine too, on another port of localhost, and uses the same auth library
+ * with the same default names. Browsers share cookies across ports, so each
+ * sign-in overwrote the other's and both kept signing the user out. Production
+ * keeps the defaults, so a deploy signs nobody out.
+ */
+const localCookie = (name: string, httpOnly = true) => ({
+  name: `cloudtime.${name}`,
+  options: { httpOnly, sameSite: "lax" as const, path: "/", secure: false },
+});
+const localCookies =
+  process.env.NODE_ENV === "production"
+    ? undefined
+    : {
+        sessionToken: localCookie("session-token"),
+        callbackUrl: localCookie("callback-url"),
+        csrfToken: localCookie("csrf-token"),
+        pkceCodeVerifier: localCookie("pkce.code_verifier"),
+        state: localCookie("state"),
+        nonce: localCookie("nonce"),
+      };
+
 export const authConfig = {
   pages: {
     signIn: "/login",
   },
+  cookies: localCookies,
   callbacks: {
     // The proxy builds its session from THIS config alone, so without a
     // session callback here `auth.user.role` is undefined in `authorized`
