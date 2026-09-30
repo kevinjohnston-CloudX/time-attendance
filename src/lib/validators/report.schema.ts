@@ -55,6 +55,8 @@ export const dateRangeSchema = z.discriminatedUnion("type", [
     type: z.literal("relative"),
     relativeDays: z.number().int().min(1).max(365),
   }),
+  z.object({ type: z.literal("today") }),
+  z.object({ type: z.literal("yesterday") }),
 ]);
 
 // ─── Report config (stored as JSON in DB) ───────────────────────────────────

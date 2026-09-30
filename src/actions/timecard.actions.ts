@@ -44,6 +44,7 @@ export const getActiveEmployeesForTimecards = withRBAC(
       select: {
         id: true,
         employeeCode: true,
+        wmsId: true,
         isActive: true,
         payType: true,
         user: { select: { name: true } },
@@ -77,6 +78,7 @@ export const getActiveEmployeesForTimecards = withRBAC(
         employeeId: emp.id,
         name: emp.user?.name ?? emp.id,
         employeeCode: emp.employeeCode,
+        wmsId: emp.wmsId ?? null,
         department: emp.department.name,
         siteId: emp.site?.id ?? null,
         siteName: emp.site?.name ?? null,
@@ -111,6 +113,7 @@ export const getTeamEmployeesForTimecards = withRBAC(
       employeeId: emp.id,
       name: emp.user?.name ?? emp.id,
       employeeCode: emp.employeeCode,
+      wmsId: emp.wmsId ?? null,
       department: emp.department.name,
       siteId: emp.site?.id ?? null,
       siteName: emp.site?.name ?? null,

@@ -5,7 +5,7 @@ import type { ReportConfig } from "@/lib/validators/report.schema";
 
 const fieldMap: FieldMap = {
   employeeName: { prismaPath: "employee.user.name",       type: "string" },
-  employeeCode: { prismaPath: "employee.employeeCode",    type: "string" },
+  employeeCode: { prismaPath: "employee.wmsId",           type: "string" },
   department:   { prismaPath: "employee.department.name",  type: "string" },
   departmentId: { prismaPath: "employee.departmentId",     type: "string" },
   siteId:       { prismaPath: "employee.siteId",           type: "string" },
@@ -21,7 +21,7 @@ export const leaveBalanceSource: DataSourceDefinition = {
   icon: "Wallet",
   columns: [
     { id: "employeeName",   label: "Employee",       type: "string",  defaultVisible: true },
-    { id: "employeeCode",   label: "Employee code",       type: "string",  defaultVisible: false },
+    { id: "employeeCode",   label: "Badge ID",       type: "string",  defaultVisible: false },
     { id: "department",     label: "Department",      type: "string",  defaultVisible: true },
     { id: "leaveType",      label: "Time off type",      type: "string",  defaultVisible: true },
     { id: "accrualYear",    label: "Year",            type: "number",  defaultVisible: true },
@@ -34,6 +34,7 @@ export const leaveBalanceSource: DataSourceDefinition = {
     { id: "departmentId", label: "Department", type: "string", operators: ["eq", "in"] },
     { id: "siteId", label: "Site", type: "string", operators: ["eq", "in"] },
     { id: "leaveTypeId", label: "Time off type", type: "string", operators: ["eq", "in"] },
+    { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
     { id: "accrualYear", label: "Year", type: "number", operators: ["eq"] },
   ],
   groupableFields: ["department", "leaveType"],
@@ -70,7 +71,7 @@ export const leaveBalanceSource: DataSourceDefinition = {
 
     const rows = balances.map((b) => ({
       employeeName: b.employee.user?.name ?? b.employee.employeeCode,
-      employeeCode: b.employee.employeeCode,
+      employeeCode: b.employee.wmsId ?? b.employee.employeeCode,
       department: b.employee.department.name,
       leaveType: b.leaveType.name,
       accrualYear: b.accrualYear,

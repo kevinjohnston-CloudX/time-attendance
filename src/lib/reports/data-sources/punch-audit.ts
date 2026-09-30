@@ -8,7 +8,7 @@ import { format } from "date-fns";
 
 const fieldMap: FieldMap = {
   employeeName: { prismaPath: "employee.user.name",       type: "string" },
-  employeeCode: { prismaPath: "employee.employeeCode",    type: "string" },
+  employeeCode: { prismaPath: "employee.wmsId",           type: "string" },
   department:   { prismaPath: "employee.department.name",  type: "string" },
   departmentId: { prismaPath: "employee.departmentId",     type: "string" },
   siteId:       { prismaPath: "employee.siteId",           type: "string" },
@@ -25,7 +25,7 @@ export const punchAuditSource: DataSourceDefinition = {
   icon: "FileSearch",
   columns: [
     { id: "employeeName",  label: "Employee",       type: "string",  defaultVisible: true },
-    { id: "employeeCode",  label: "Employee code",       type: "string",  defaultVisible: false },
+    { id: "employeeCode",  label: "Badge ID",       type: "string",  defaultVisible: false },
     { id: "department",    label: "Department",      type: "string",  defaultVisible: true },
     { id: "punchType",     label: "Punch",      type: "string",  defaultVisible: true },
     { id: "punchTime",     label: "Time",      type: "string",  defaultVisible: true },
@@ -59,6 +59,7 @@ export const punchAuditSource: DataSourceDefinition = {
         { value: "SYSTEM", label: "System" },
       ] },
     { id: "isApproved", label: "Approved", type: "boolean", operators: ["eq"] },
+    { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
   ],
   groupableFields: ["department", "punchType", "source"],
   fieldMap,
@@ -92,7 +93,7 @@ export const punchAuditSource: DataSourceDefinition = {
 
     const rows = punches.map((p) => ({
       employeeName: p.employee.user?.name ?? p.employee.employeeCode,
-      employeeCode: p.employee.employeeCode,
+      employeeCode: p.employee.wmsId ?? p.employee.employeeCode,
       department: p.employee.department.name,
       punchType: readable("punchType", p.punchType),
       punchTime: format(p.punchTime, "yyyy-MM-dd h:mm:ss a"),
@@ -141,6 +142,22 @@ async function resolveDateFilter(
       const start = new Date(now);
       start.setDate(start.getDate() - dateRange.relativeDays);
       return { punchTime: { gte: start, lte: now } };
+    }
+    case "today": {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setHours(23, 59, 59, 999);
+      return { punchTime: { gte: start, lte: end } };
+    }
+    case "yesterday": {
+      const start = new Date();
+      start.setDate(start.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setDate(end.getDate() - 1);
+      end.setHours(23, 59, 59, 999);
+      return { punchTime: { gte: start, lte: end } };
     }
   }
 }

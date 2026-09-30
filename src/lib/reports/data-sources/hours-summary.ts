@@ -7,7 +7,7 @@ import type { ReportConfig } from "@/lib/validators/report.schema";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "employee.user.name",       type: "string" },
-  employeeCode:  { prismaPath: "employee.employeeCode",    type: "string" },
+  employeeCode:  { prismaPath: "employee.wmsId",           type: "string" },
   department:    { prismaPath: "employee.department.name",  type: "string" },
   departmentId:  { prismaPath: "employee.departmentId",     type: "string" },
   site:          { prismaPath: "employee.site.name",        type: "string" },
@@ -23,7 +23,7 @@ export const hoursSummarySource: DataSourceDefinition = {
   icon: "Clock",
   columns: [
     { id: "employeeName",  label: "Employee",   type: "string",  defaultVisible: true },
-    { id: "employeeCode",  label: "Employee code",   type: "string",  defaultVisible: false },
+    { id: "employeeCode",  label: "Badge ID",   type: "string",  defaultVisible: false },
     { id: "department",    label: "Department",  type: "string",  defaultVisible: true },
     { id: "site",          label: "Site",        type: "string",  defaultVisible: true },
     { id: "regMinutes",    label: "Regular",         type: "number",  defaultVisible: true },
@@ -37,6 +37,7 @@ export const hoursSummarySource: DataSourceDefinition = {
   ],
   filters: [
     { id: "employeeName", label: "Employee name", type: "string", operators: ["contains", "eq"] },
+    { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
     { id: "departmentId", label: "Department", type: "string", operators: ["eq", "in"] },
     { id: "siteId", label: "Site", type: "string", operators: ["eq", "in"] },
     { id: "status", label: "Timesheet status", type: "string", operators: ["eq", "in"],
@@ -118,7 +119,7 @@ export const hoursSummarySource: DataSourceDefinition = {
 
       return {
         employeeName: ts.employee.user?.name ?? ts.employeeId,
-        employeeCode: ts.employee.employeeCode,
+        employeeCode: ts.employee.wmsId ?? ts.employee.employeeCode,
         department: ts.employee.department.name,
         site: ts.employee.site.name,
         regMinutes: reg,
@@ -180,6 +181,22 @@ async function resolveDateRange(
           endDate: { lte: now },
         },
       };
+    }
+    case "today": {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setHours(23, 59, 59, 999);
+      return { payPeriod: { tenantId, startDate: { gte: start }, endDate: { lte: end } } };
+    }
+    case "yesterday": {
+      const start = new Date();
+      start.setDate(start.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setDate(end.getDate() - 1);
+      end.setHours(23, 59, 59, 999);
+      return { payPeriod: { tenantId, startDate: { gte: start }, endDate: { lte: end } } };
     }
   }
 }

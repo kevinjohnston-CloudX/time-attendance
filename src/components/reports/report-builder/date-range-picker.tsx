@@ -154,6 +154,8 @@ function optionText(p: { startDate: string | Date; endDate: string | Date; statu
 export function describeRange(range: DateRange | undefined, payPeriods: PayPeriodOption[]): string {
   if (!range) return "Not set";
   if (range.type === "relative") return `The last ${range.relativeDays} days`;
+  if (range.type === "today") return "Today";
+  if (range.type === "yesterday") return "Yesterday";
   if (range.type === "custom") {
     if (!range.startDate || !range.endDate) return "Dates not picked yet";
     return `${day(range.startDate, false)} to ${day(range.endDate, true)}`;

@@ -8,7 +8,7 @@ import { format } from "date-fns";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "timesheet.employee.user.name",       type: "string" },
-  employeeCode:  { prismaPath: "timesheet.employee.employeeCode",    type: "string" },
+  employeeCode:  { prismaPath: "timesheet.employee.wmsId",           type: "string" },
   department:    { prismaPath: "timesheet.employee.department.name",  type: "string" },
   departmentId:  { prismaPath: "timesheet.employee.departmentId",     type: "string" },
   siteId:        { prismaPath: "timesheet.employee.siteId",           type: "string" },
@@ -24,7 +24,7 @@ export const exceptionReportSource: DataSourceDefinition = {
   icon: "AlertCircle",
   columns: [
     { id: "employeeName",  label: "Employee",       type: "string",  defaultVisible: true },
-    { id: "employeeCode",  label: "Employee code",       type: "string",  defaultVisible: false },
+    { id: "employeeCode",  label: "Badge ID",       type: "string",  defaultVisible: false },
     { id: "department",    label: "Department",      type: "string",  defaultVisible: true },
     { id: "exceptionType", label: "Exception",  type: "string",  defaultVisible: true },
     { id: "description",   label: "Description",     type: "string",  defaultVisible: true },
@@ -37,6 +37,7 @@ export const exceptionReportSource: DataSourceDefinition = {
     { id: "employeeName", label: "Employee name", type: "string", operators: ["contains", "eq"] },
     { id: "departmentId", label: "Department", type: "string", operators: ["eq", "in"] },
     { id: "siteId", label: "Site", type: "string", operators: ["eq", "in"] },
+    { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
     { id: "exceptionType", label: "Exception", type: "string", operators: ["eq", "in"],
       options: [
         { value: "MISSING_PUNCH", label: "Missing punch" },
@@ -90,7 +91,7 @@ export const exceptionReportSource: DataSourceDefinition = {
 
     const rows = exceptions.map((e) => ({
       employeeName: e.timesheet.employee.user?.name ?? e.timesheet.employee.employeeCode,
-      employeeCode: e.timesheet.employee.employeeCode,
+      employeeCode: e.timesheet.employee.wmsId ?? e.timesheet.employee.employeeCode,
       department: e.timesheet.employee.department.name,
       exceptionType: readable("exceptionType", e.exceptionType),
       description: e.description,
@@ -136,6 +137,22 @@ async function resolveDateFilter(
       const start = new Date(now);
       start.setDate(start.getDate() - dateRange.relativeDays);
       return { occurredAt: { gte: start, lte: now } };
+    }
+    case "today": {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setHours(23, 59, 59, 999);
+      return { occurredAt: { gte: start, lte: end } };
+    }
+    case "yesterday": {
+      const start = new Date();
+      start.setDate(start.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setDate(end.getDate() - 1);
+      end.setHours(23, 59, 59, 999);
+      return { occurredAt: { gte: start, lte: end } };
     }
   }
 }

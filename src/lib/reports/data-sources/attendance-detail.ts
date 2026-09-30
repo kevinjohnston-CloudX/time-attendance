@@ -9,7 +9,7 @@ import { format } from "date-fns";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "timesheet.employee.user.name",       type: "string" },
-  employeeCode:  { prismaPath: "timesheet.employee.employeeCode",    type: "string" },
+  employeeCode:  { prismaPath: "timesheet.employee.wmsId",           type: "string" },
   department:    { prismaPath: "timesheet.employee.department.name",  type: "string" },
   departmentId:  { prismaPath: "timesheet.employee.departmentId",     type: "string" },
   site:          { prismaPath: "timesheet.employee.site.name",        type: "string" },
@@ -26,7 +26,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
   icon: "CalendarDays",
   columns: [
     { id: "employeeName",    label: "Employee",      type: "string",  defaultVisible: true },
-    { id: "employeeCode",    label: "Employee code",      type: "string",  defaultVisible: false },
+    { id: "employeeCode",    label: "Badge ID",      type: "string",  defaultVisible: false },
     { id: "department",      label: "Department",     type: "string",  defaultVisible: true },
     { id: "site",            label: "Site",           type: "string",  defaultVisible: false },
     { id: "date",            label: "Date",           type: "date",    defaultVisible: true },
@@ -54,7 +54,22 @@ export const attendanceDetailSource: DataSourceDefinition = {
         { value: "BREAK", label: "Break" },
         { value: "LEAVE", label: "Leave" },
       ] },
-    { id: "payBucket", label: "Hours type", type: "string", operators: ["eq", "in"] },
+    { id: "payBucket", label: "Hours type", type: "string", operators: ["eq", "in"],
+      options: [
+        { value: "REG",          label: "Regular" },
+        { value: "OT",           label: "Overtime" },
+        { value: "DT",           label: "Double Time" },
+        { value: "MEAL_PENALTY", label: "Meal Penalty" },
+        { value: "HOLIDAY",      label: "Holiday" },
+        { value: "PTO",          label: "PTO" },
+        { value: "SICK",         label: "Sick" },
+        { value: "FMLA",         label: "FMLA" },
+        { value: "BEREAVEMENT",  label: "Bereavement" },
+        { value: "JURY_DUTY",    label: "Jury Duty" },
+        { value: "MILITARY",     label: "Military" },
+        { value: "UNPAID",       label: "Unpaid" },
+      ] },
+    { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
   ],
   groupableFields: ["department", "site", "segmentType"],
   fieldMap,
@@ -113,7 +128,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
       );
       return {
         employeeName: seg.timesheet.employee.user?.name ?? seg.timesheet.employee.employeeCode,
-        employeeCode: seg.timesheet.employee.employeeCode,
+        employeeCode: seg.timesheet.employee.wmsId ?? seg.timesheet.employee.employeeCode,
         department: seg.timesheet.employee.department.name,
         site: seg.timesheet.employee.site.name,
         date: seg.segmentDate.toISOString().slice(0, 10),
@@ -167,6 +182,22 @@ async function resolveDateFilter(
       start.setUTCDate(start.getUTCDate() - dateRange.relativeDays);
       start.setUTCHours(0, 0, 0, 0);
       return { segmentDate: { gte: start, lte: now } };
+    }
+    case "today": {
+      const start = new Date();
+      start.setUTCHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setUTCHours(23, 59, 59, 999);
+      return { segmentDate: { gte: start, lte: end } };
+    }
+    case "yesterday": {
+      const start = new Date();
+      start.setUTCDate(start.getUTCDate() - 1);
+      start.setUTCHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setUTCDate(end.getUTCDate() - 1);
+      end.setUTCHours(23, 59, 59, 999);
+      return { segmentDate: { gte: start, lte: end } };
     }
   }
 }

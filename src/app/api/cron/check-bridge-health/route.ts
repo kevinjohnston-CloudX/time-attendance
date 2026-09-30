@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import type { SyncKind } from "@prisma/client";
 import { BRIDGE_AGENT, BRIDGE_JOB_KINDS } from "@/lib/services/bridge.service";
 
 /**
@@ -39,6 +40,16 @@ const JOB_STUCK_MINUTES = 90;
 
 /** A kind that has not completed in a day is stale however healthy it looks. */
 const SYNC_STALE_HOURS = 24;
+
+/** Runs every 5 minutes, so six failures in a row is half an hour of nothing. */
+const CONSECUTIVE_FAILURES = 6;
+
+/** Tomorrow's schedules are judged in the zone most sites run in. */
+const SCHEDULE_ZONE = "America/New_York";
+/** Oracle writes tomorrow around 21:00 ET; from 22:00 it should be there. */
+const SCHEDULE_CHECK_FROM_HOUR = 22;
+/** Tomorrow with under half of today's rows is a sync that has stopped. */
+const SCHEDULE_MIN_SHARE = 0.5;
 
 type Finding = { check: string; detail: string };
 
@@ -114,7 +125,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const lastGoodByKind = new Map(lastGood.map((r) => [r.kind as string, r._max.startedAt]));
 
   // Job kinds are dotted ("roster.sync"); SyncRun kinds are the enum (ROSTER).
-  const KIND_TO_SYNC: Record<string, string> = {
+  const KIND_TO_SYNC: Record<string, SyncKind> = {
     "roster.sync": "ROSTER",
     "schedule.pull": "SCHEDULE_PULL",
     "gatestate.pull": "GATE_STATE",
@@ -131,6 +142,59 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       findings.push({
         check: "sync-stale",
         detail: `${syncKind} last completed ${hrs}h ago (${at.toISOString()}), threshold ${SYNC_STALE_HOURS}h.`,
+      });
+    }
+  }
+
+  /* ---- 4. Is one kind failing on every run right now? ---- */
+  // Check 3 waits a whole day. On 2026-09-29 the schedule pull failed on every
+  // run from 09:25 ET, and check 3 would only have spoken at 09:20 the next
+  // morning, after the gates had already refused the morning shift. Six failed
+  // runs in a row (half an hour at the 5-minute cadence) is not a blip.
+  for (const syncKind of Object.values(KIND_TO_SYNC)) {
+    const recent = await db.syncRun.findMany({
+      where: { kind: syncKind },
+      orderBy: { startedAt: "desc" },
+      take: CONSECUTIVE_FAILURES,
+      select: { status: true, startedAt: true, error: true },
+    });
+    if (recent.length === CONSECUTIVE_FAILURES && recent.every((r) => r.status === "FAILED")) {
+      const lastLine =
+        (recent[0].error ?? "").trim().split("\n").filter(Boolean).pop() ?? "no error text";
+      findings.push({
+        check: "sync-failing",
+        detail:
+          `${syncKind}: the last ${CONSECUTIVE_FAILURES} runs all FAILED ` +
+          `(latest ${recent[0].startedAt.toISOString()}): ${lastLine.slice(0, 200)}`,
+      });
+    }
+  }
+
+  /* ---- 5. Will the gates have schedules tomorrow morning? ---- */
+  // The gate refuses anyone without a schedule_days row for the day, so a
+  // missing tomorrow is an outage at the first shift even when every sync
+  // "succeeded". Oracle writes day D's rows around 21:00 ET on D-1 and the
+  // row count is steady (about 750, weekends included), so late in the
+  // evening tomorrow should look like today.
+  const etHour = Number(
+    new Intl.DateTimeFormat("en-US", { timeZone: SCHEDULE_ZONE, hour: "2-digit", hourCycle: "h23" })
+      .format(new Date(now)),
+  );
+  if (etHour >= SCHEDULE_CHECK_FROM_HOUR) {
+    const todayIso = new Intl.DateTimeFormat("en-CA", { timeZone: SCHEDULE_ZONE }).format(new Date(now));
+    const today = new Date(`${todayIso}T00:00:00.000Z`);
+    const tomorrow = new Date(today.getTime() + 86_400_000);
+    const [todayRows, tomorrowRows] = await Promise.all([
+      db.scheduleDay.count({ where: { workDate: today } }),
+      db.scheduleDay.count({ where: { workDate: tomorrow } }),
+    ]);
+    if (todayRows > 0 && tomorrowRows < todayRows * SCHEDULE_MIN_SHARE) {
+      findings.push({
+        check: "schedule-tomorrow",
+        detail:
+          `Only ${tomorrowRows} schedule rows for ${tomorrow.toISOString().slice(0, 10)} ` +
+          `against ${todayRows} for today. Without them the gates refuse people ` +
+          `tomorrow morning. Check the latest SCHEDULE_PULL runs in sync_runs.`,
       });
     }
   }

@@ -8,7 +8,7 @@ import { format } from "date-fns";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "employee.user.name",       type: "string" },
-  employeeCode:  { prismaPath: "employee.employeeCode",    type: "string" },
+  employeeCode:  { prismaPath: "employee.wmsId",           type: "string" },
   department:    { prismaPath: "employee.department.name",  type: "string" },
   departmentId:  { prismaPath: "employee.departmentId",     type: "string" },
   siteId:        { prismaPath: "employee.siteId",           type: "string" },
@@ -25,7 +25,7 @@ export const leaveSummarySource: DataSourceDefinition = {
   icon: "CalendarDays",
   columns: [
     { id: "employeeName",    label: "Employee",       type: "string",  defaultVisible: true },
-    { id: "employeeCode",    label: "Employee code",       type: "string",  defaultVisible: false },
+    { id: "employeeCode",    label: "Badge ID",       type: "string",  defaultVisible: false },
     { id: "department",      label: "Department",      type: "string",  defaultVisible: true },
     { id: "leaveType",       label: "Time off type",      type: "string",  defaultVisible: true },
     { id: "status",          label: "Status",          type: "string",  defaultVisible: true },
@@ -42,6 +42,7 @@ export const leaveSummarySource: DataSourceDefinition = {
     { id: "departmentId", label: "Department", type: "string", operators: ["eq", "in"] },
     { id: "siteId", label: "Site", type: "string", operators: ["eq", "in"] },
     { id: "leaveTypeId", label: "Time off type", type: "string", operators: ["eq", "in"] },
+    { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
     { id: "status", label: "Status", type: "string", operators: ["eq", "in"],
       options: [
         { value: "DRAFT", label: "Draft" },
@@ -85,7 +86,7 @@ export const leaveSummarySource: DataSourceDefinition = {
 
     const rows = requests.map((r) => ({
       employeeName: r.employee.user?.name ?? r.employee.employeeCode,
-      employeeCode: r.employee.employeeCode,
+      employeeCode: r.employee.wmsId ?? r.employee.employeeCode,
       department: r.employee.department.name,
       leaveType: r.leaveType.name,
       status: readable("leaveStatus", r.status),
@@ -140,6 +141,22 @@ async function resolveDateFilter(
         startDate: { lte: now },
         endDate: { gte: start },
       };
+    }
+    case "today": {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setHours(23, 59, 59, 999);
+      return { startDate: { lte: end }, endDate: { gte: start } };
+    }
+    case "yesterday": {
+      const start = new Date();
+      start.setDate(start.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setDate(end.getDate() - 1);
+      end.setHours(23, 59, 59, 999);
+      return { startDate: { lte: end }, endDate: { gte: start } };
     }
   }
 }

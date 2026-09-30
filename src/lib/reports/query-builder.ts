@@ -28,9 +28,7 @@ export function buildWhereClause(
 
   for (const filter of filters) {
     const entry = fieldMap[filter.field];
-    if (!entry) {
-      throw new Error(`Unknown filter field: ${filter.field}`);
-    }
+    if (!entry) continue; // computed field — handled by filterRowsInMemory after query
 
     const prismaCondition = buildSingleCondition(filter, entry);
     conditions.push(prismaCondition);
@@ -137,6 +135,42 @@ export function buildOrderBy(
     orders.push(nestPath(parts, sort.direction));
   }
   return orders;
+}
+
+/**
+ * In-memory filter for computed fields not in the fieldMap.
+ * Call this after building rows to apply filters on derived columns.
+ */
+export function filterRowsInMemory(
+  rows: Record<string, unknown>[],
+  filters: FilterDef[],
+  fieldMap: FieldMap
+): Record<string, unknown>[] {
+  const computedFilters = filters.filter((f) => !fieldMap[f.field]);
+  if (computedFilters.length === 0) return rows;
+
+  return rows.filter((row) =>
+    computedFilters.every((filter) => {
+      const raw = row[filter.field];
+      const val = typeof filter.value === "string" ? Number(filter.value) : Number(filter.value);
+      const rowVal = raw == null ? null : Number(raw);
+      if (rowVal == null) return false;
+      switch (filter.operator) {
+        case "eq":  return rowVal === val;
+        case "neq": return rowVal !== val;
+        case "gt":  return rowVal > val;
+        case "gte": return rowVal >= val;
+        case "lt":  return rowVal < val;
+        case "lte": return rowVal <= val;
+        case "between": {
+          const val2 = filter.value2 == null ? val : Number(filter.value2);
+          return rowVal >= val && rowVal <= val2;
+        }
+        case "contains": return String(raw).toLowerCase().includes(String(filter.value).toLowerCase());
+        default: return true;
+      }
+    })
+  );
 }
 
 /**
