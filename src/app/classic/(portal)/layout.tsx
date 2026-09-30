@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Sidebar } from "@/classic/components/layout/sidebar";
+import { ClassicDesignSwitch } from "@/classic/components/layout/design-toggle";
 import { InactiveRouteGuard } from "@/classic/components/layout/inactive-route-guard";
 import { exitTenant } from "@/actions/super-admin.actions";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
@@ -152,12 +153,21 @@ export default async function PortalLayout({
           canViewAs={canUseViewAs && isEmployeeActive}
           viewAsOptions={viewAsOptions.map((r) => ({ id: r.id, name: r.name }))}
           isInactive={!isEmployeeActive}
-          classicUntil={classicDesignUntil()?.label ?? null}
         />
-        <main className="flex-1 overflow-y-auto">
-          <InactiveRouteGuard isInactive={!isEmployeeActive} />
-          <div className="px-6 py-8">{children}</div>
-        </main>
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {/* Added after prod: a slim bar across the top, the new design's
+              height, holding the design switch in the same place as there.
+              It stays put while the page scrolls under it, and the page's top
+              padding is shorter by about the bar's height. The 12px above it
+              is the new design's, so the switch does not move when you flip. */}
+          <header className="mt-3 flex h-9 flex-none items-center justify-end px-3">
+            <ClassicDesignSwitch classicUntil={classicDesignUntil()?.label ?? null} />
+          </header>
+          <main className="flex-1 overflow-y-auto">
+            <InactiveRouteGuard isInactive={!isEmployeeActive} />
+            <div className="px-6 pb-8 pt-1">{children}</div>
+          </main>
+        </div>
       </div>
     </div>
   );

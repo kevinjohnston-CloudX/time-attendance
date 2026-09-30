@@ -32,7 +32,6 @@ import {
 } from "lucide-react";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { ThemeToggle } from "./theme-toggle";
-import { NewDesignButton } from "./design-toggle";
 import { switchHref } from "@/lib/design-switch";
 import { LIVE_ATTENDANCE_HREF } from "@/lib/constants";
 
@@ -41,8 +40,6 @@ type NavItem = {
   href: string;
   icon: React.ElementType;
   permission?: string | string[];
-  /** Only the new design has this page: opening it switches to New. */
-  newDesign?: boolean;
 };
 
 const navItems: NavItem[] = [
@@ -60,10 +57,6 @@ const navItems: NavItem[] = [
 
 const supervisorItems: NavItem[] = [
   { label: "Team Overview", href: "/supervisor", icon: Users, permission: "PUNCH_VIEW_TEAM" },
-  // Live Attendance exists only in the new design, so it opens there: the
-  // same people who have it in New (PRESENCE_VIEW_ANY), and the page checks
-  // that again on the server.
-  { label: "Live Attendance", href: LIVE_ATTENDANCE_HREF, icon: DoorOpen, permission: "PRESENCE_VIEW_ANY", newDesign: true },
   { label: "Timesheets", href: "/supervisor/timesheets", icon: ClipboardList, permission: "PUNCH_VIEW_TEAM" },
   { label: "Exceptions", href: "/supervisor/exceptions", icon: AlertCircle, permission: "PUNCH_VIEW_TEAM" },
   { label: "Leave Requests", href: "/supervisor/leave", icon: CalendarDays, permission: "PUNCH_VIEW_TEAM" },
@@ -98,11 +91,9 @@ interface SidebarProps {
   canViewAs?: boolean;
   viewAsOptions?: { id: string; name: string }[];
   isInactive?: boolean;
-  /** Classic's last day, as words, or null for no end date. */
-  classicUntil?: string | null;
 }
 
-export function Sidebar({ role, userName, permissions, realRole, viewAsRole, canViewAs = false, viewAsOptions = [], isInactive = false, classicUntil = null }: SidebarProps) {
+export function Sidebar({ role, userName, permissions, realRole, viewAsRole, canViewAs = false, viewAsOptions = [], isInactive = false }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -294,8 +285,7 @@ export function Sidebar({ role, userName, permissions, realRole, viewAsRole, can
                 <div
                   ref={teamPopupRef}
                   style={{ top: teamPopupTop, left: popupLeft }}
-                  // Wider than prod's w-52, so Live Attendance and its pill sit on one line.
-                  className="fixed z-50 w-60 rounded-xl border border-zinc-200 bg-white py-1.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 max-h-[calc(100vh-1rem)] overflow-y-auto"
+                  className="fixed z-50 w-52 rounded-xl border border-zinc-200 bg-white py-1.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 max-h-[calc(100vh-1rem)] overflow-y-auto"
                 >
                   <p className="px-3 pb-1.5 pt-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
                     My Team
@@ -306,28 +296,47 @@ export function Sidebar({ role, userName, permissions, realRole, viewAsRole, can
                       type="button"
                       onClick={() => {
                         setShowTeamPopup(false);
-                        // A full load into the new design, which keeps it: the
-                        // person asked for a page only New has.
-                        if (item.newDesign) window.location.assign(switchHref("new", item.href));
-                        else router.push(item.href);
+                        router.push(item.href);
                       }}
-                      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+                      className={`flex w-full items-center gap-2.5 px-3 py-2 text-sm transition-colors ${
                         pathname === item.href || (item.href !== "/supervisor" && pathname.startsWith(item.href))
                           ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-white"
                           : "text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
                       }`}
                     >
                       <item.icon className="h-4 w-4 shrink-0 text-zinc-400" />
-                      <span className="whitespace-nowrap">{item.label}</span>
-                      {item.newDesign && (
-                        <span className="ml-auto whitespace-nowrap rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                          New design
-                        </span>
-                      )}
+                      {item.label}
                     </button>
                   ))}
                 </div>
               )}
+            </li>
+          )}
+
+          {/* Added after prod: Live Attendance, a page only the new design has.
+              A plain link through the design switch, so it is a full load into
+              New, which is saved for this person, and a new tab works too. The
+              same people see it as in New (PRESENCE_VIEW_ANY), and the page
+              checks that again on the server. */}
+          {!isInactive && hasPermission("PRESENCE_VIEW_ANY") && (
+            <li>
+              <a
+                href={switchHref("new", LIVE_ATTENDANCE_HREF)}
+                title={collapsed ? "Live Attendance (opens in the new design)" : "Opens in the new design"}
+                className={linkClass(false)}
+              >
+                <DoorOpen className="h-4 w-4 shrink-0" />
+                {/* Label and pill share a tighter gap than the row's, so both
+                    fit on one line even with the menu's scrollbar showing. */}
+                {!collapsed && (
+                  <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <span className="min-w-0 truncate whitespace-nowrap">Live Attendance</span>
+                    <span className="flex-none whitespace-nowrap rounded-full bg-blue-100 px-1 py-0.5 text-[10px] font-medium leading-none text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                      New
+                    </span>
+                  </span>
+                )}
+              </a>
             </li>
           )}
 
@@ -452,7 +461,6 @@ export function Sidebar({ role, userName, permissions, realRole, viewAsRole, can
               className="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white">
               <ChevronsRight className="h-4 w-4" />
             </button>
-            <NewDesignButton iconOnly />
             <ThemeToggle iconOnly />
             <button title="Sign out" onClick={() => signOut({ callbackUrl: "/login" })}
               className="rounded-lg p-2 text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white">
@@ -542,7 +550,6 @@ export function Sidebar({ role, userName, permissions, realRole, viewAsRole, can
               )}
             </div>
 
-            <NewDesignButton classicUntil={classicUntil} />
             <ThemeToggle />
             <button onClick={() => signOut({ callbackUrl: "/login" })}
               className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white">
