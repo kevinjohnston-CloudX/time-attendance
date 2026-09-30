@@ -18,15 +18,27 @@ const authProxy = auth as unknown as NextMiddleware;
  * would fetch that host as an outside site instead of serving the page. A
  * rewrite always means this server, so it is pointed back at the address the
  * request actually came to.
+ *
+ * <p>A redirect within this site goes out as a plain path. Next writes
+ * 127.0.0.1 as "localhost" whenever it builds a full address, so a full one
+ * sent a browser on 127.0.0.1 to localhost, where it is not signed in. A path
+ * keeps the browser on the name it used. A redirect to another site, such as
+ * AUTH_URL's canonical host, is left alone.
  */
 export default async function proxy(request: NextRequest, event: NextFetchEvent) {
   const res = await authProxy(request, event);
-  const rewrite = res?.headers.get("x-middleware-rewrite");
-  if (res && rewrite) {
+  if (!res) return res;
+  const rewrite = res.headers.get("x-middleware-rewrite");
+  if (rewrite) {
     const to = new URL(rewrite);
     if (to.origin !== request.nextUrl.origin) {
       res.headers.set("x-middleware-rewrite", new URL(`${to.pathname}${to.search}`, request.nextUrl).href);
     }
+  }
+  const location = res.headers.get("location");
+  if (location && res.status >= 300 && res.status < 400) {
+    const to = new URL(location, request.nextUrl);
+    if (to.origin === request.nextUrl.origin) res.headers.set("location", `${to.pathname}${to.search}${to.hash}`);
   }
   return res;
 }

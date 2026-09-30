@@ -33,6 +33,15 @@ import {
 
 const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
+/**
+ * A redirect to a path on this site, sent as the path alone. Next writes
+ * 127.0.0.1 as "localhost" in a full address, which moved a browser on
+ * 127.0.0.1 to localhost, where it is not signed in.
+ */
+function goTo(path: string): NextResponse {
+  return new NextResponse(null, { status: 307, headers: { Location: path } });
+}
+
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const next = safeNext(params.get("next"));
@@ -47,11 +56,11 @@ export async function GET(req: NextRequest) {
 
   let design: Design;
   if (params.get("sync") === "1") {
-    if (!userId) return NextResponse.redirect(new URL(next, req.nextUrl));
+    if (!userId) return goTo(next);
     design = canClassic ? ((await savedDesign(userId)) ?? DEFAULT_DESIGN) : "new";
   } else {
     const wanted = parseDesign(params.get("to"));
-    if (!wanted) return NextResponse.redirect(new URL(next, req.nextUrl));
+    if (!wanted) return goTo(next);
     design = wanted === "classic" && !canClassic ? "new" : wanted;
     if (userId && params.get("remember") !== "0") await saveDesign(userId, design);
   }
@@ -62,7 +71,7 @@ export async function GET(req: NextRequest) {
   if (params.get(DESIGN_SWITCH_PARAM) === DESIGN_SWITCH_VALUE) {
     target.searchParams.set(DESIGN_SWITCH_PARAM, DESIGN_SWITCH_VALUE);
   }
-  const res = NextResponse.redirect(target);
+  const res = goTo(`${target.pathname}${target.search}`);
   res.cookies.set(DESIGN_COOKIE, design, {
     path: "/",
     sameSite: "lax",
