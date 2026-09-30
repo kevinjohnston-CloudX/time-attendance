@@ -6,12 +6,13 @@ import { parseUtcDate } from "@/lib/utils/date";
 /**
  * How a stored pay period reads on screen.
  *
- * <p>The stored end date follows two conventions (see pay-period-math):
- * weekly and bi-weekly periods end on the next period's first day, semi-monthly
- * and monthly ones on their own last day. Taking a day off every end date, as
- * Pay Periods used to, showed every monthly period a day short ("Sep 1 to
- * Sep 29"). The period's frequency decides which convention it uses: its rule
- * set's, or the company's for a company period.
+ * <p>The stored end date follows two conventions (see lastDayOf in
+ * pay-period-math): the next period's first day, for every period made now,
+ * or the last day itself, for semi-monthly and monthly periods made before
+ * September 30, 2026. Taking a day off every end date, as Pay Periods used
+ * to, showed those older monthly periods a day short ("Sep 1 to Sep 29").
+ * The frequency to pass is the period's rule set's, or the company's for a
+ * company period.
  */
 
 export const FREQ_LABEL: Record<PayFrequency, string> = {

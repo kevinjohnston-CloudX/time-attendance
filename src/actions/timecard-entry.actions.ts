@@ -1,6 +1,6 @@
 "use server";
 
-import { employeeScope, NotFoundError, timesheetInScope } from "@/lib/rbac/scope";
+import { assertEditable, employeeScope, NotFoundError, timesheetInScope } from "@/lib/rbac/scope";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
@@ -496,7 +496,7 @@ export const addManualHoursEntry = withRBAC(
     const { timesheetId, date, hours, payCodeId, note } = z.object({
       timesheetId: z.string(),
       date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-      hours: z.number().min(0.25).max(24),
+      hours: z.number().min(0).max(24),
       payCodeId: z.string().optional(),
       note: z.string().optional(),
     }).parse(input);
@@ -505,7 +505,55 @@ export const addManualHoursEntry = withRBAC(
     const sheet = await timesheetInScope(ctx, timesheetId, "PAY_PERIOD_MANAGE");
     if (sheet.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
 
+    // Before either path below, the 0 hour one included: a locked or payroll
+    // approved timecard takes no new entries.
+    assertEditable(sheet.status);
+
     const minutes = Math.round(hours * 60);
+
+    // 0-hour entry: create a 0-duration absent-day marker so the pay code
+    // appears on the timecard row without contributing any hours.
+    // The normal punch/leave-request paths can't handle 0 duration.
+    if (minutes === 0) {
+      const [ny, nm, nd] = date.split("-").map(Number);
+      const segDate = new Date(Date.UTC(ny, nm - 1, nd));
+
+      const existing = await db.workSegment.findFirst({
+        where: { timesheetId, segmentDate: segDate, durationMinutes: 0, segmentType: "LEAVE" },
+      });
+      if (existing) {
+        await db.workSegment.update({
+          where: { id: existing.id },
+          data: { payCodeId: payCodeId ?? null },
+        });
+      } else {
+        await db.workSegment.create({
+          data: {
+            timesheetId,
+            segmentType: "LEAVE",
+            startTime: segDate,
+            endTime: segDate,
+            durationMinutes: 0,
+            segmentDate: segDate,
+            isPaid: false,
+            payBucket: "REG",
+            payCodeId: payCodeId ?? null,
+          },
+        });
+      }
+
+      await writeAuditLog({
+        tenantId: tenantId!,
+        actorId,
+        action: "MANUAL_PUNCH_ADDED",
+        entityType: "TIMESHEET",
+        entityId: timesheetId,
+        changes: { after: { date, hours: 0, payCodeId: payCodeId ?? null, source: "MANUAL_HOURS_PAY_CODE_ONLY" } },
+      });
+
+      revalidatePath("/payroll/timecards");
+      return;
+    }
 
     const ts = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
@@ -573,6 +621,15 @@ export const addManualHoursEntry = withRBAC(
       });
 
       await syncLeaveSegments(leaveRequest.id);
+
+      // If the caller chose a specific pay code (e.g. PTO CARRYOVER vs PTO),
+      // override what the policy resolver picked for the resulting LEAVE segments.
+      if (payCodeId) {
+        await db.workSegment.updateMany({
+          where: { leaveRequestId: leaveRequest.id },
+          data: { payCodeId },
+        });
+      }
     } else {
       // Non-leave pay code: create a synthetic punch pair at local midnight.
       const tz = ts.employee.site?.timezone ?? "UTC";

@@ -1052,8 +1052,9 @@ export function TimecardViewer({
     if (!timecard && (!selectedEmployeeId || !selectedPeriodId)) return;
     setNewEntryError(null);
     const hours = parseFloat(newEntryHours);
-    if (isNaN(hours) || hours < 0.25 || hours > 24) {
-      setNewEntryError("Enter hours between 0.25 and 24");
+    // 0 is allowed (prod's 0 hour entry): it marks the day with the pay code.
+    if (isNaN(hours) || hours < 0 || hours > 24) {
+      setNewEntryError("Enter hours between 0 and 24");
       return;
     }
     startTransition(async () => {
@@ -3559,7 +3560,7 @@ export function TimecardViewer({
                     <div className="flex items-center gap-2">
                       <input
                         type="number"
-                        min="0.25"
+                        min="0"
                         max="24"
                         step="0.25"
                         value={newEntryHours}

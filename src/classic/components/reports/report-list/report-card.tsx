@@ -13,6 +13,7 @@ import {
 const SOURCE_ICONS: Record<string, React.ElementType> = {
   HOURS_SUMMARY: Clock,
   ATTENDANCE_DETAIL: CalendarDays,
+  DAILY_HOURS: CalendarDays,
   LEAVE_SUMMARY: CalendarDays,
   LEAVE_BALANCE: Wallet,
   PUNCH_AUDIT: FileSearch,
@@ -22,6 +23,7 @@ const SOURCE_ICONS: Record<string, React.ElementType> = {
 const SOURCE_LABELS: Record<string, string> = {
   HOURS_SUMMARY: "Hours Summary",
   ATTENDANCE_DETAIL: "Attendance Detail",
+  DAILY_HOURS: "Daily Hours",
   LEAVE_SUMMARY: "Leave Summary",
   LEAVE_BALANCE: "Leave Balances",
   PUNCH_AUDIT: "Punch Audit",

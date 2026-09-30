@@ -31,9 +31,9 @@ import { PayPeriodsRail, type RailPeriod, type RailScope, type RailStatus } from
  * stay anyway, drawn in its language. They are the answer to "can I close this
  * period, and if not, who am I waiting on", which is what this screen is for.
  *
- * <p>Every date here goes through periodLastDay: weekly and biweekly periods
- * store the day after their last day, monthly and semi-monthly periods their
- * last day itself.
+ * <p>Every date here goes through periodLastDay, since a stored end date is
+ * either the day after the last day or, for older monthly and semi-monthly
+ * periods, the last day itself.
  */
 
 const COMPANY_NAME = "Company default";

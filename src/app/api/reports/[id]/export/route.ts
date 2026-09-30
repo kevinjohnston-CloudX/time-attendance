@@ -46,7 +46,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const safeName = name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "report";
 
   if (format === "csv") {
-    return new NextResponse(generateCsv(result), {
+    // Encoded explicitly (generateCsv leads with a byte order mark), so Excel
+    // reads accented names as UTF-8 rather than guessing.
+    return new NextResponse(new TextEncoder().encode(generateCsv(result)), {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="${safeName}.csv"`,

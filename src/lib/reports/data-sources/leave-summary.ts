@@ -102,9 +102,8 @@ export const leaveSummarySource: DataSourceDefinition = {
     // In-memory sort for computed columns (endDate, durationMinutes, etc.)
     const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
 
-    const visibleColumns = leaveSummarySource.columns.filter((c) =>
-      config.columns.includes(c.id)
-    );
+    const colById = Object.fromEntries(leaveSummarySource.columns.map((c) => [c.id, c]));
+    const visibleColumns = config.columns.map((id) => colById[id]).filter(Boolean);
 
     return {
       columns: visibleColumns.map((c) => ({ id: c.id, label: c.label, type: c.type })),

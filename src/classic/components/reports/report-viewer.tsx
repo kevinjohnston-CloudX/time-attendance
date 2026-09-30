@@ -23,6 +23,7 @@ import Link from "next/link";
 const SOURCE_LABELS: Record<string, string> = {
   HOURS_SUMMARY: "Hours Summary",
   ATTENDANCE_DETAIL: "Attendance Detail",
+  DAILY_HOURS: "Daily Hours",
   LEAVE_SUMMARY: "Leave Summary",
   LEAVE_BALANCE: "Leave Balances",
   PUNCH_AUDIT: "Punch Audit",

@@ -1,3 +1,4 @@
+import { addDays } from "date-fns";
 import { db } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit/logger";
 import type { PayFrequency } from "@prisma/client";
@@ -65,8 +66,19 @@ export async function generatePeriodsForTenant(
       orderBy: { endDate: "desc" },
     });
 
-    const referenceDate = last ? last.endDate : today;
-    const { startDate, endDate } = getPeriodContaining(tenant.payFrequency, anchor, referenceDate);
+    // Advance one day past last.endDate so getPeriodContaining lands in the NEXT period,
+    // regardless of whether last.endDate used the old inclusive or new exclusive convention.
+    const referenceDate = last ? addDays(last.endDate, 1) : today;
+    const period = getPeriodContaining(tenant.payFrequency, anchor, referenceDate);
+    const endDate = period.endDate;
+    let startDate = period.startDate;
+
+    // On a frequency/anchor change the calendar-based startDate may fall before the last
+    // period's end (e.g. weekly → biweekly). Pin startDate forward to avoid overlap and
+    // prevent double-paying periods that are already closed.
+    if (last && startDate < last.endDate) {
+      startDate = last.endDate;
+    }
 
     const existing = await db.payPeriod.findFirst({
       where: { tenantId, startDate, endDate },
@@ -128,8 +140,14 @@ export async function generatePeriodsForRuleSet(
       orderBy: { endDate: "desc" },
     });
 
-    const referenceDate = last ? last.endDate : today;
-    const { startDate, endDate } = getPeriodContaining(ruleSet.payFrequency, anchor, referenceDate);
+    const referenceDate = last ? addDays(last.endDate, 1) : today;
+    const period = getPeriodContaining(ruleSet.payFrequency, anchor, referenceDate);
+    const endDate = period.endDate;
+    let startDate = period.startDate;
+
+    if (last && startDate < last.endDate) {
+      startDate = last.endDate;
+    }
 
     const existing = await db.payPeriod.findFirst({
       where: { ruleSetId, startDate, endDate },

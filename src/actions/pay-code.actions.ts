@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
+import { assertEditable, timesheetInScope } from "@/lib/rbac/scope";
 import { reconcileLeaveDeductions, reconcileSalarySegmentDeduction } from "@/lib/engines/leave-deduction";
 import { z } from "zod";
 
@@ -333,8 +334,12 @@ const setAbsentDayPayCodeSchema = z.object({
 
 export const setAbsentDayPayCode = withRBAC(
   "PAY_PERIOD_MANAGE",
-  async (_ctx, input: z.infer<typeof setAbsentDayPayCodeSchema>) => {
+  async (ctx, input: z.infer<typeof setAbsentDayPayCodeSchema>) => {
     const { timesheetId, segmentDate, payCodeId } = setAbsentDayPayCodeSchema.parse(input);
+    // Only a timecard in the caller's company, and not one payroll has
+    // approved or locked: the day's leave hours change pay code below.
+    const sheet = await timesheetInScope(ctx, timesheetId, "PAY_PERIOD_MANAGE");
+    assertEditable(sheet.status);
     const date = new Date(segmentDate + "T00:00:00.000Z");
 
     const existing = await db.workSegment.findFirst({
@@ -387,6 +392,13 @@ export const setAbsentDayPayCode = withRBAC(
         },
       });
     }
+
+    // Also update any non-zero LEAVE segments on this day (e.g. created by leave requests)
+    // so the pay code change is reflected on the actual hours, not just the 0-duration marker.
+    await db.workSegment.updateMany({
+      where: { timesheetId, segmentDate: date, durationMinutes: { gt: 0 }, segmentType: "LEAVE" },
+      data: { payCodeId },
+    });
 
     // Also propagate to any existing CLOCK_IN on this day that hasn't been paired yet
     // (handles the case where In time was entered before the pay code was set)

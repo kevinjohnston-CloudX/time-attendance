@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type ReactNode, type SelectHTMLAttributes } from "react";
+import { useRef, useState, useTransition, type ReactNode, type SelectHTMLAttributes } from "react";
 import { useRouter } from "next/navigation";
 import { createEmployee } from "@/actions/admin.actions";
 import type { Site, Department, RuleSet } from "@prisma/client";
@@ -146,7 +146,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
       const result = await createEmployee({
         name: fd.get("name") as string,
         email: fd.get("email") as string,
-        employeeCode: fd.get("employeeCode") as string,
+        employeeCode: (fd.get("employeeCode") as string) || "",
         role,
         customRoleId,
         siteId: fd.get("siteId") as string,
@@ -205,6 +205,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
    * stay in the DOM either way: `display: none` fields are still submitted, and
    * dropping them would create employees with no pay category.
    */
+  const invalidShown = useRef(false);
   const panelStyle = (tab: Tab): React.CSSProperties => ({
     ...FIELD_GRID,
     display: activeTab === tab ? "grid" : "none",
@@ -245,7 +246,24 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
             </div>
 
             {/* Single form — the tabs only hide fields, they never unmount them */}
-            <form onSubmit={handleSubmit} className="flex min-h-0 flex-col">
+            <form
+              onSubmit={handleSubmit}
+              // Saved with a required field empty on a tab that is not open,
+              // the browser refuses without showing why. Open that tab, then
+              // let the browser point at the field.
+              onInvalidCapture={(e) => {
+                const field = e.target as HTMLInputElement;
+                if (invalidShown.current) return;
+                invalidShown.current = true;
+                const tab = field.closest<HTMLElement>("[data-tab]")?.dataset.tab as Tab | undefined;
+                if (tab) setActiveTab(tab);
+                requestAnimationFrame(() => {
+                  invalidShown.current = false;
+                  field.reportValidity();
+                });
+              }}
+              className="flex min-h-0 flex-col"
+            >
               <div className="flex flex-col gap-4 overflow-y-auto px-6 py-5">
                 <SegmentedControl
                   ariaLabel="Employee details"
@@ -257,7 +275,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                 {error && <Banner tone="error" body={error} />}
 
                 {/* ── General ───────────────────────────────────────────── */}
-                <div style={panelStyle("general")}>
+                <div data-tab="general" style={panelStyle("general")}>
                   <Input label="Full Name" name="name" required />
                   <Input label="Email (Google login)" name="email" type="email" required />
                   <Input label="Employee Code" name="employeeCode" hint="Optional. Left blank, the Badge ID is used." />
@@ -314,12 +332,12 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                       </option>
                     ))}
                   </SelectField>
-                  <Input label="Badge ID (WMS)" name="wmsId" placeholder="QR code badge ID" />
+                  <Input label="Badge ID (WMS)" name="wmsId" placeholder="QR code badge ID" required />
                   <Input label="ADP Worker ID" name="adpWorkerId" placeholder="ADP Workforce Now ID" />
                 </div>
 
                 {/* ── Personal ──────────────────────────────────────────── */}
-                <div style={panelStyle("personal")}>
+                <div data-tab="personal" style={panelStyle("personal")}>
                   <Input label="Gender" name="gender" />
 
                   <SelectField label="Marital Status" name="maritalStatus">
@@ -356,7 +374,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                 </div>
 
                 {/* ── Pay ───────────────────────────────────────────────── */}
-                <div style={panelStyle("pay")}>
+                <div data-tab="pay" style={panelStyle("pay")}>
                   <SelectField label="Rule Set" name="ruleSetId" required>
                     {ruleSets.map((rs) => (
                       <option key={rs.id} value={rs.id}>{rs.name}</option>

@@ -1315,8 +1315,9 @@ export function TimecardViewer({
     if (!timecard && (!selectedEmployeeId || !selectedPeriodId)) return;
     setNewEntryError(null);
     const hours = parseFloat(newEntryHours);
-    if (isNaN(hours) || hours < 0.25 || hours > 24) {
-      setNewEntryError("Enter hours between 0.25 and 24");
+    // 0 is allowed: it marks the day with the pay code and adds no hours.
+    if (isNaN(hours) || hours < 0 || hours > 24) {
+      setNewEntryError("Enter hours between 0 and 24");
       return;
     }
     startTransition(async () => {
@@ -4388,14 +4389,14 @@ export function TimecardViewer({
                     <Input
                       label="Regular hours"
                       type="number"
-                      min="0.25"
+                      min="0"
                       max="24"
                       step="0.25"
                       value={newEntryHours}
                       onChange={(e) => setNewEntryHours(e.target.value)}
                       placeholder="8.00"
                       required
-                      hint="For example 8 or 7.5. Between 0.25 and 24."
+                      hint="For example 8 or 7.5, up to 24. Enter 0 with a pay code to mark the day without adding hours."
                     />
                   </div>
                 )}

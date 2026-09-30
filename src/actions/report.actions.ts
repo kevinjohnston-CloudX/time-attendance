@@ -604,7 +604,7 @@ export const getFilterOptions = withRBAC(
   async ({ tenantId }) => {
     if (!tenantId) throw new Error("Tenant context required");
 
-    const [sites, departments, payPeriods, leaveTypes] = await Promise.all([
+    const [sites, departments, payPeriods, leaveTypes, payCodes] = await Promise.all([
       db.site.findMany({
         where: { tenantId, isActive: true },
         select: { id: true, name: true },
@@ -639,6 +639,11 @@ export const getFilterOptions = withRBAC(
         select: { id: true, name: true },
         orderBy: { name: "asc" },
       }),
+      db.payCode.findMany({
+        where: { tenantId, isActive: true },
+        select: { code: true, label: true },
+        orderBy: { label: "asc" },
+      }),
     ]);
 
     return {
@@ -647,13 +652,13 @@ export const getFilterOptions = withRBAC(
       payPeriods: payPeriods.map(({ ruleSet, tenant, _count, ...pp }) => ({
         ...pp,
         groupName: ruleSet?.name ?? null,
-        // The last day worked, by the period's own frequency: monthly and
-        // semi-monthly periods store it as their end, weekly and biweekly
-        // ones store the day after (see periodLastDay).
+        // The last day worked, whichever way the end date is stored (see
+        // lastDayOf in pay-period-math).
         lastDay: dayKey(periodLastDay(pp.endDate, ruleSet?.payFrequency ?? tenant.payFrequency)),
         people: _count.timesheets,
       })),
       leaveTypes,
+      payCodes,
     };
   }
 );

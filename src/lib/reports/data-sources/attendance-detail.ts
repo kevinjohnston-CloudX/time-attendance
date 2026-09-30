@@ -16,6 +16,7 @@ const fieldMap: FieldMap = {
   siteId:        { prismaPath: "timesheet.employee.siteId",           type: "string" },
   segmentType:   { prismaPath: "segmentType",                         type: "string" },
   payBucket:     { prismaPath: "payBucket",                           type: "string" },
+  payCodeLabel:  { prismaPath: "payCode.label",                       type: "string" },
   segmentDate:   { prismaPath: "segmentDate",                         type: "date" },
 };
 
@@ -38,9 +39,9 @@ export const attendanceDetailSource: DataSourceDefinition = {
     { id: "payCode",           label: "Pay Code",        type: "string",  defaultVisible: true },
     { id: "payCodeLabel",      label: "Pay Code Label",  type: "string",  defaultVisible: false },
     { id: "reasonCode",        label: "Reason Code",     type: "string",  defaultVisible: false },
-    { id: "regularMinutes",    label: "REG (min)",       type: "number",  defaultVisible: false },
-    { id: "overtimeMinutes",   label: "OT (min)",        type: "number",  defaultVisible: false },
-    { id: "doubletimeMinutes", label: "DT (min)",        type: "number",  defaultVisible: false },
+    { id: "regularMinutes",    label: "Regular",       type: "number",  defaultVisible: false },
+    { id: "overtimeMinutes",   label: "Overtime",        type: "number",  defaultVisible: false },
+    { id: "doubletimeMinutes", label: "Double time",        type: "number",  defaultVisible: false },
     { id: "isPaid",          label: "Paid",           type: "boolean", defaultVisible: false },
   ],
   filters: [
@@ -70,6 +71,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
         { value: "UNPAID",       label: "Unpaid" },
       ] },
     { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
+    { id: "payCodeLabel", label: "Pay code", type: "string", operators: ["eq", "neq"] },
   ],
   groupableFields: ["department", "site", "segmentType"],
   fieldMap,
@@ -150,9 +152,8 @@ export const attendanceDetailSource: DataSourceDefinition = {
     // In-memory sort for computed columns (date, startTime, endTime, etc.)
     const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
 
-    const visibleColumns = attendanceDetailSource.columns.filter((c) =>
-      config.columns.includes(c.id)
-    );
+    const colById = Object.fromEntries(attendanceDetailSource.columns.map((c) => [c.id, c]));
+    const visibleColumns = config.columns.map((id) => colById[id]).filter(Boolean);
 
     return {
       columns: visibleColumns.map((c) => ({ id: c.id, label: c.label, type: c.type })),

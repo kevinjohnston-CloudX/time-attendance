@@ -46,6 +46,7 @@ interface FilterOptions {
   departments: { id: string; name: string }[];
   payPeriods: { id: string; startDate: string | Date; endDate: string | Date; status: string }[];
   leaveTypes: { id: string; name: string }[];
+  payCodes: { code: number; label: string }[];
 }
 
 /** A preview stops here; the report only counts the rows it returned, so a
@@ -312,7 +313,7 @@ export function ReportBuilder({
                 />
               </RailSection>
 
-              <RailSection title="Columns" hint="What shows in the report, in this order.">
+              <RailSection title="Columns" hint="What shows in the report, and in what order.">
                 <ColumnPicker columns={currentSource.columns} selected={selectedColumns} onChange={setSelectedColumns} />
               </RailSection>
 

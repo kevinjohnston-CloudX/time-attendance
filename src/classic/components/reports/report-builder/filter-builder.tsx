@@ -14,6 +14,7 @@ interface FilterFieldDef {
 interface FilterOption {
   sites: { id: string; name: string }[];
   departments: { id: string; name: string }[];
+  payCodes: { code: number; label: string }[];
 }
 
 const OPERATOR_LABELS: Record<string, string> = {
@@ -82,6 +83,9 @@ export function FilterBuilder({
     }
     if (fieldId === "departmentId" && filterOptions?.departments) {
       return filterOptions.departments.map((d) => ({ value: d.id, label: d.name }));
+    }
+    if (fieldId === "payCodeLabel" && filterOptions?.payCodes) {
+      return filterOptions.payCodes.map((p) => ({ value: p.label, label: `${p.label} (${p.code})` }));
     }
 
     return null;

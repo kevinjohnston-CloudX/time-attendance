@@ -1,5 +1,6 @@
 import {
   CalendarClock,
+  CalendarDays,
   CalendarRange,
   Clock,
   FileText,
@@ -25,6 +26,7 @@ import type { ElementType } from "react";
 const LABELS: Record<string, string> = {
   HOURS_SUMMARY:     "Hours summary",
   ATTENDANCE_DETAIL: "Daily attendance",
+  DAILY_HOURS:       "Daily hours",
   EXCEPTION_REPORT:  "Exceptions",
   PUNCH_AUDIT:       "Punch audit",
   LEAVE_SUMMARY:     "Time off requests",
@@ -35,6 +37,7 @@ const LABELS: Record<string, string> = {
 const DESCRIPTIONS: Record<string, string> = {
   HOURS_SUMMARY:     "Regular, overtime and double time hours for each employee, with their PTO balance.",
   ATTENDANCE_DETAIL: "Each day's clock in and clock out times, meals and hours worked.",
+  DAILY_HOURS:       "One line per employee per day, with regular, overtime and double time hours, time off and pay codes.",
   EXCEPTION_REPORT:  "Missed punches, absences and other rule breaks, and whether they were fixed.",
   PUNCH_AUDIT:       "Every punch, where it came from, and any corrections or approvals.",
   LEAVE_SUMMARY:     "Time off requests with their type, dates, length and status.",
@@ -44,6 +47,7 @@ const DESCRIPTIONS: Record<string, string> = {
 const ICONS: Record<string, ElementType> = {
   HOURS_SUMMARY:     Clock,
   ATTENDANCE_DETAIL: CalendarClock,
+  DAILY_HOURS:       CalendarDays,
   EXCEPTION_REPORT:  TriangleAlert,
   PUNCH_AUDIT:       History,
   LEAVE_SUMMARY:     CalendarRange,
@@ -54,6 +58,7 @@ const ICONS: Record<string, ElementType> = {
 export const STANDARD_REPORTS = [
   "HOURS_SUMMARY",
   "ATTENDANCE_DETAIL",
+  "DAILY_HOURS",
   "EXCEPTION_REPORT",
   "PUNCH_AUDIT",
   "LEAVE_SUMMARY",
@@ -103,6 +108,7 @@ export function dataSourceOptions(): { value: string; label: string }[] {
 const TONES: Record<string, { bg: string; fg: string }> = {
   HOURS_SUMMARY:     { bg: "var(--surface-info)", fg: "var(--icon-accent)" },
   ATTENDANCE_DETAIL: { bg: "var(--surface-info)", fg: "var(--icon-accent)" },
+  DAILY_HOURS:       { bg: "var(--surface-info)", fg: "var(--icon-accent)" },
   EXCEPTION_REPORT:  { bg: "var(--surface-warning)", fg: "var(--icon-warning)" },
   PUNCH_AUDIT:       { bg: "var(--surface-tertiary)", fg: "var(--icon-secondary)" },
   LEAVE_SUMMARY:     { bg: "var(--surface-success)", fg: "var(--icon-success)" },
@@ -115,6 +121,6 @@ export function dataSourceTone(id: string): { bg: string; fg: string } {
 
 /** The standard reports in the two groups the picker draws them under. */
 export const REPORT_GROUPS: { title: string; ids: readonly string[] }[] = [
-  { title: "Hours and attendance", ids: ["HOURS_SUMMARY", "ATTENDANCE_DETAIL", "EXCEPTION_REPORT", "PUNCH_AUDIT"] },
+  { title: "Hours and attendance", ids: ["HOURS_SUMMARY", "ATTENDANCE_DETAIL", "DAILY_HOURS", "EXCEPTION_REPORT", "PUNCH_AUDIT"] },
   { title: "Time off", ids: ["LEAVE_SUMMARY", "LEAVE_BALANCE"] },
 ];

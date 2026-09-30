@@ -1,14 +1,14 @@
-import { addDays, differenceInCalendarDays, differenceInDays, startOfMonth, endOfMonth } from "date-fns";
+import { addDays, differenceInCalendarDays, differenceInDays, startOfMonth } from "date-fns";
 import type { PayFrequency } from "@prisma/client";
 
 /**
  * Pay period arithmetic with no database, so the settings screen can preview
  * exactly the periods the server will create from the same numbers.
  *
- * <p>The stored end date follows two conventions, kept as they are because
- * existing periods already use them: weekly and bi-weekly end on the next
- * period's first day, semi-monthly and monthly on their own last day.
- * lastDayOf turns either into the day a person would call the last one.
+ * <p>Every period made now stores its end as the next period's first day at
+ * midnight. Semi-monthly and monthly periods made before September 30, 2026
+ * stored their own last day instead, and they are kept as they are. lastDayOf
+ * turns either into the day a person would call the last one.
  */
 
 /**
@@ -32,19 +32,21 @@ export function getPeriodContaining(
       return { startDate: start, endDate: addDays(start, 14) };
     }
     case "SEMIMONTHLY": {
+      // The end is the next period's first day at midnight, as weekly and
+      // biweekly periods store theirs.
       if (date.getDate() <= 15) {
         return {
           startDate: new Date(date.getFullYear(), date.getMonth(), 1),
-          endDate: new Date(date.getFullYear(), date.getMonth(), 15),
+          endDate: new Date(date.getFullYear(), date.getMonth(), 16),
         };
       }
       return {
         startDate: new Date(date.getFullYear(), date.getMonth(), 16),
-        endDate: endOfMonth(date),
+        endDate: new Date(date.getFullYear(), date.getMonth() + 1, 1),
       };
     }
     case "MONTHLY":
-      return { startDate: startOfMonth(date), endDate: endOfMonth(date) };
+      return { startDate: startOfMonth(date), endDate: new Date(date.getFullYear(), date.getMonth() + 1, 1) };
   }
 }
 
@@ -68,9 +70,18 @@ export function periodAfter(
   return next;
 }
 
-/** The last day inside the period, whichever end date convention it uses. */
+/**
+ * The last day inside the period, whichever end date convention it uses.
+ *
+ * <p>A semi-monthly or monthly period is told apart by its end's day of the
+ * month rather than its time: an old one ends on the 15th or the month's last
+ * day, a new one on the 1st or the 16th, and those never overlap. The time of
+ * day would not do, because an old first half period also ended at midnight.
+ */
 export function lastDayOf(frequency: PayFrequency, endDate: Date): Date {
-  return frequency === "WEEKLY" || frequency === "BIWEEKLY" ? addDays(endDate, -1) : endDate;
+  if (frequency === "WEEKLY" || frequency === "BIWEEKLY") return addDays(endDate, -1);
+  const day = endDate.getDate();
+  return day === 1 || day === 16 ? addDays(endDate, -1) : endDate;
 }
 
 /** How many days the period covers, counting both ends. */

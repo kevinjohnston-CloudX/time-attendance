@@ -16,6 +16,7 @@ interface FilterOption {
   sites: { id: string; name: string }[];
   departments: { id: string; name: string }[];
   leaveTypes?: { id: string; name: string }[];
+  payCodes?: { code: number; label: string }[];
 }
 
 /**
@@ -105,6 +106,9 @@ export function FilterBuilder({
     // Time off types were a free text box asking for an internal id.
     if (fieldId === "leaveTypeId" && filterOptions?.leaveTypes) {
       return filterOptions.leaveTypes.map((t) => ({ value: t.id, label: t.name }));
+    }
+    if (fieldId === "payCodeLabel" && filterOptions?.payCodes) {
+      return filterOptions.payCodes.map((p) => ({ value: p.label, label: `${p.label} (${p.code})` }));
     }
 
     return null;

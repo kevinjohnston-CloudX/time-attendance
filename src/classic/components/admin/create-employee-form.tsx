@@ -78,7 +78,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
       const result = await createEmployee({
         name: fd.get("name") as string,
         email: fd.get("email") as string,
-        employeeCode: fd.get("employeeCode") as string,
+        employeeCode: (fd.get("employeeCode") as string) || "",
         role,
         customRoleId,
         siteId: fd.get("siteId") as string,
