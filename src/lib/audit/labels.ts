@@ -135,3 +135,12 @@ export function actionsMatching(q: string): string[] {
     .filter(([, label]) => label.toLowerCase().includes(s))
     .map(([code]) => code);
 }
+
+/**
+ * Whether a company settings entry is the gate alert switch, which is filed
+ * as a company settings change but lives on Live Attendance.
+ */
+export function isGateAlertSwitch(changes: unknown): boolean {
+  const after = (changes as { after?: unknown } | null)?.after;
+  return typeof after === "object" && after !== null && "gateAlerts" in after;
+}

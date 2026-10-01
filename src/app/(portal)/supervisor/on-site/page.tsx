@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getOnSiteBoard, getOnSiteSites } from "@/actions/presence.actions";
+import { getGateAlertsSetting } from "@/actions/gate-refusals.actions";
 import { OnSiteBoard } from "@/components/presence/on-site-board";
 import { gateReadsCloudTimeSchedule } from "@/lib/presence/gate-schedule";
 import { isLiveAttendanceOnly } from "@/lib/rbac/permission-resolver";
@@ -52,11 +53,13 @@ export default async function OnSitePage({
   const siteId = sites.some((s) => s.id === params.site) ? params.site! : defaultSiteId;
 
   const boardResult = siteId ? await getOnSiteBoard({ siteId }) : null;
-  const [canEditPhotos, canManageEmployees, gateAlerts, limited] = await Promise.all([
+  const [canEditPhotos, canManageEmployees, gateAlerts, limited, gateSwitch] = await Promise.all([
     userHasPermission(session.user, "PRESENCE_PHOTO_EDIT"),
     userHasPermission(session.user, "EMPLOYEE_MANAGE"),
     userHasPermission(session.user, "PRESENCE_SCHEDULE_ADD"),
     isLiveAttendanceOnly(session.user.customRoleId),
+    // System Admins only: anybody else is refused, and gets no switch.
+    getGateAlertsSetting(),
   ]);
   const canSchedule = canManageEmployees || gateAlerts;
   // A failure here is a real fault, not an empty building: the error boundary
@@ -72,6 +75,7 @@ export default async function OnSitePage({
       canExport={!limited}
       scheduling={canSchedule ? { live: gateReadsCloudTimeSchedule() } : null}
       gateAlerts={gateAlerts}
+      gateSwitch={gateSwitch.success ? gateSwitch.data : null}
       initialFilters={{
         status: params.status ?? null,
         dept: params.dept ?? null,

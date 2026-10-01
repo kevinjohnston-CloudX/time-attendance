@@ -1,4 +1,4 @@
--- The Live Attendance gate alert switch, one per company (Company Settings).
+-- The Live Attendance gate alert switch, one per company (Live Attendance header, System Admins).
 -- Starts OFF: the alert was not reliable when this shipped, so it stays hidden
 -- until a System Admin turns it on. No default, so existing and new companies
 -- alike start off.

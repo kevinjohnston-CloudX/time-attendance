@@ -13,7 +13,7 @@ import { badgeWhere } from "@/lib/utils/badge-lookup";
 import { looksLikeBadge } from "@/lib/presence/people-search.service";
 import { MISSING_OPTIONS, PAY_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
 import { writeAuditLog } from "@/lib/audit/logger";
-import { ENTITY_TYPES, actionsMatching } from "@/lib/audit/labels";
+import { ENTITY_TYPES, actionsMatching, isGateAlertSwitch } from "@/lib/audit/labels";
 import { startOfDayInTz } from "@/lib/utils/date";
 import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
 import { currentIdentity } from "@/lib/rbac/current";
@@ -1566,7 +1566,9 @@ export const getAuditLogs = withRBAC(
           return `/admin/employees/${id}`;
         case "PAY_PERIOD":
           // Company settings changes are filed here with the company as the record.
-          return r.action === "SETTINGS_UPDATE" ? "/admin/settings" : `/payroll/pay-periods?id=${id}`;
+          // The gate alert switch is one of them, and lives on Live Attendance.
+          if (r.action === "SETTINGS_UPDATE") return isGateAlertSwitch(r.changes) ? "/supervisor/on-site" : "/admin/settings";
+          return `/payroll/pay-periods?id=${id}`;
         case "RULE_SET":
           return r.action === "RULE_SET_DELETED" ? null : `/admin/rules-setup/rule-sets/${id}`;
         case "PTO_POLICY":

@@ -7,7 +7,7 @@ import { ArrowLeft, ArrowRight, Bot, Check, ChevronDown, ChevronRight, ChevronUp
 import type { AuditEntityType } from "@prisma/client";
 import { Badge, Button, LinkButton, PageHeader, PinnedBar, SegmentedControl } from "@/components/ui";
 import { useCondensingBar } from "@/components/layout/use-condensing-bar";
-import { ENTITY_LABEL, ENTITY_TYPES, actionLabel } from "@/lib/audit/labels";
+import { ENTITY_LABEL, ENTITY_TYPES, actionLabel, isGateAlertSwitch } from "@/lib/audit/labels";
 
 /**
  * The Audit Log, from the Audit Log handoff: search and three filters in one
@@ -698,7 +698,8 @@ function EntryPanel({
 }
 
 function openLabel(row: AuditRow): string {
-  if (row.entityType === "PAY_PERIOD" && row.action === "SETTINGS_UPDATE") return "Open company settings";
+  if (row.entityType === "PAY_PERIOD" && row.action === "SETTINGS_UPDATE")
+    return isGateAlertSwitch(row.changes) ? "Open Live Attendance" : "Open company settings";
   const map: Partial<Record<AuditEntityType, string>> = {
     TIMESHEET: "Open timecard",
     EMPLOYEE: "Open employee",

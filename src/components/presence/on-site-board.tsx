@@ -51,6 +51,7 @@ import {
 } from "./presence-meta";
 import { PersonPanel } from "./person-panel";
 import { GateRefusalAlert } from "./gate-refusal-alert";
+import { GateAlertsSwitch } from "./gate-alerts-switch";
 import { useOnPulseChange, useSitePulse } from "./use-site-pulse";
 import { PhotoSwaps, PhotoViewer } from "./face";
 import { PeopleSearch, pickedLabel } from "./people-search";
@@ -142,6 +143,7 @@ export function OnSiteBoard({
   canExport = true,
   scheduling = null,
   gateAlerts = false,
+  gateSwitch = null,
 }: {
   sites: { id: string; name: string }[];
   initialSiteId: string | null;
@@ -182,6 +184,8 @@ export function OnSiteBoard({
    * that again on the server.
    */
   gateAlerts?: boolean;
+  /** The company wide gate alert switch, for System Admins only; null leaves it out. */
+  gateSwitch?: { onSince: string | null } | null;
 }) {
   const [siteId, setSiteId] = useState(initialSiteId);
   // Photos saved here, drawn at once on every face until the server's own
@@ -725,7 +729,7 @@ export function OnSiteBoard({
 
   // The page's controls, one height: which view (it changes the whole page,
   // so it sits with the title rather than among the filters), the building
-  // it shows, Export, and full screen.
+  // it shows, the gate alert switch for System Admins, Export, and full screen.
   const actions = (
     <>
       <SegmentedControl
@@ -754,6 +758,12 @@ export function OnSiteBoard({
             ))}
           </select>
         </span>
+      )}
+      {gateSwitch && (
+        <GateAlertsSwitch
+          onSince={gateSwitch.onSince}
+          onChanged={(on) => toast.flash(on ? "Gate alerts turned on" : "Gate alerts turned off")}
+        />
       )}
       {canExport && (
       <Button

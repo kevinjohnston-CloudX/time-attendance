@@ -10,7 +10,6 @@ import {
   updateTenantSettings,
   generateNextPayPeriod,
 } from "@/actions/pay-period.actions";
-import { getGateAlertsSetting, setGateAlerts } from "@/actions/gate-refusals.actions";
 import type { PayFrequency } from "@prisma/client";
 
 const FREQ_LABELS: Record<PayFrequency, string> = {
@@ -25,10 +24,8 @@ export default async function CompanySettingsPage() {
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "PAY_PERIOD_MANAGE")) redirect("/admin");
 
-  const [result, gateResult] = await Promise.all([getTenantSettings(), getGateAlertsSetting()]);
+  const result = await getTenantSettings();
   if (!result.success) redirect("/admin");
-  // System Admins only; anybody else gets no section, since the switch would refuse them.
-  const gate = gateResult.success ? gateResult.data : null;
   const { payFrequency, payPeriodAnchorDate, name } = result.data;
 
   const anchorStr = payPeriodAnchorDate
@@ -49,12 +46,6 @@ export default async function CompanySettingsPage() {
       payFrequency: formData.get("payFrequency") as PayFrequency,
       payPeriodAnchorDate: formData.get("payPeriodAnchorDate") as string,
     });
-  }
-
-  async function handleGateAlerts(formData: FormData) {
-    "use server";
-    const result = await setGateAlerts({ on: formData.get("on") === "1" });
-    if (!result.success) throw new Error(result.error);
   }
 
   async function handleGenerate() {
@@ -169,28 +160,6 @@ export default async function CompanySettingsPage() {
           View all pay periods →
         </Link>
       </div>
-
-      {gate && (
-        <section className="mt-8 rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-white">Live Attendance</h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            Gate alerts pop up on Live Attendance when the security gate turns away somebody with no
-            shift today. Applies to every building in the company.
-          </p>
-          <form action={handleGateAlerts} className="mt-4 flex flex-wrap items-center gap-3">
-            <input type="hidden" name="on" value={gate.onSince ? "0" : "1"} />
-            <span className={`text-sm font-medium ${gate.onSince ? "text-zinc-900 dark:text-white" : "text-amber-600 dark:text-amber-400"}`}>
-              {gate.onSince ? "Gate alerts are on." : "Gate alerts are off. Refusals are still recorded, but nobody gets the pop up."}
-            </span>
-            <button
-              type="submit"
-              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold whitespace-nowrap text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"
-            >
-              {gate.onSince ? "Turn off gate alerts" : "Turn on gate alerts"}
-            </button>
-          </form>
-        </section>
-      )}
     </div>
   );
 }

@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { getViewableSites } from "@/lib/presence/on-site.service";
@@ -86,7 +85,7 @@ export const dismissOnSiteGateRefusals = withRBAC(
 );
 
 /**
- * The company wide switch for the gate alert, in Company Settings.
+ * The company wide switch for the gate alert, in the Live Attendance header.
  *
  * <p>System Admins only (a super admin too, inside the company they are
  * working in), checked on the role in effect, so an admin viewing the app as
@@ -99,7 +98,7 @@ export const dismissOnSiteGateRefusals = withRBAC(
 const ADMIN_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
 export const getGateAlertsSetting = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  "PRESENCE_VIEW_ANY",
   async ({ tenantId, role }, _input: void) => {
     if (!tenantId || !ADMIN_ROLES.includes(role)) throw new Error("FORBIDDEN");
     const onSince = await gateAlertsOnSince(tenantId);
@@ -108,7 +107,7 @@ export const getGateAlertsSetting = withRBAC(
 );
 
 export const setGateAlerts = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  "PRESENCE_VIEW_ANY",
   async ({ tenantId, employeeId, role }, input: { on: boolean }) => {
     if (!tenantId || !ADMIN_ROLES.includes(role)) throw new Error("FORBIDDEN");
     const on = input?.on === true;
@@ -129,7 +128,6 @@ export const setGateAlerts = withRBAC(
       changes: { before: { gateAlerts: before ? "On" : "Off" }, after: { gateAlerts: on ? "On" : "Off" } },
     });
     gateLog("switched", { on, by: employeeId, tenant: tenantId });
-    revalidatePath("/admin/settings");
     return { onSince: updated.gateAlertsOnSince?.toISOString() ?? null };
   },
 );
