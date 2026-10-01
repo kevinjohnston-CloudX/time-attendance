@@ -95,6 +95,9 @@ export const updateEmployeeSchema = z.object({
   payType: z.enum(["HOURLY", "SALARY"]).nullable().optional(),
   payTypeId: nullableStr,
   payRate: z.number().positive().nullable().optional(),
+  // Informational only, nothing calculates from them
+  chargeRate: z.number().min(0).nullable().optional(),
+  holidayRate: z.number().min(0).nullable().optional(),
   // Personal
   phone: nullableStr,
   phone2: nullableStr,

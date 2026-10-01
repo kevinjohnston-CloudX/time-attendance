@@ -180,6 +180,16 @@ export default async function TimecardsPage({
   const payCodes = payCodesResult.success ? payCodesResult.data : [];
   const reasonCodes = reasonCodesResult.success ? reasonCodesResult.data : [];
 
+  // The pay rate in effect during this period, from the pay rate history.
+  const periodRateRow = timecard
+    ? await db.employeePayRate.findFirst({
+        where: { employeeId: timecard.employeeId, effectiveDate: { lt: timecard.payPeriod.endDate } },
+        orderBy: { effectiveDate: "desc" },
+        select: { rate1: true },
+      })
+    : null;
+  const periodRate = periodRateRow ? Number(periodRateRow.rate1) : null;
+
   // Serialize timecard for client component
   const serializedTimecard = timecard
     ? {
@@ -204,9 +214,7 @@ export default async function TimecardsPage({
           department: { name: timecard.employee.department.name },
           employeeCode: timecard.employee.employeeCode,
           wmsId: timecard.employee.wmsId ?? null,
-          payRate: timecard.employee.payRate
-            ? Number(timecard.employee.payRate)
-            : null,
+          payRate: periodRate != null ? periodRate : timecard.employee.payRate ? Number(timecard.employee.payRate) : null,
           payType: timecard.employee.payType,
           shift: timecard.employee.shift
             ? { mealConfig: timecard.employee.shift.mealConfig as { autoDeduct?: boolean; meals?: { workAtLeastHours: number; deductMinutes: number }[] } | null }

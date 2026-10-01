@@ -7,19 +7,23 @@ import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 import { updateEmployee, updateHrSiteAccess } from "@/actions/admin.actions";
 import { setTemporaryPassword } from "@/actions/password.actions";
+import type { PayRateRow } from "@/actions/pay-rate.actions";
+import { PayRatesTable } from "@/classic/components/admin/pay-rates-table";
 import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
 
 // The user row arrives without its password fields (the shared action only
 // sends id, name and email), which is all this form reads.
 type SafeUser = Pick<User, "id" | "name" | "email">;
 
-type EmployeeWithRelations = Omit<Employee, "payRate"> & {
-  payRate: number | null;
+type MoneyCols = "payRate" | "chargeRate" | "holidayRate";
+type Money = { payRate: number | null; chargeRate: number | null; holidayRate: number | null };
+
+type EmployeeWithRelations = Omit<Employee, MoneyCols> & Money & {
   user: SafeUser;
   site: Site;
   department: Department;
   ruleSet: RuleSet;
-  supervisor: (Omit<Employee, "payRate"> & { payRate: number | null; user: SafeUser }) | null;
+  supervisor: (Omit<Employee, MoneyCols> & Money & { user: SafeUser }) | null;
 };
 
 interface Props {
@@ -45,6 +49,7 @@ interface Props {
   hrSiteAccess: string[];
   actorRole: string;
   canManageRules?: boolean;
+  payRates: PayRateRow[];
 }
 
 function fmtTime(hhmm: string): string {
@@ -59,7 +64,7 @@ const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-
 
 type Tab = "general" | "personal" | "pay" | "logs" | "site-access";
 
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, logs, hrSiteAccess, actorRole, canManageRules = false }: Props) {
+export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, logs, hrSiteAccess, actorRole, canManageRules = false, payRates }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -173,8 +178,12 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
     save("personal", personalFields(new FormData(e.currentTarget)));
   }
 
+  // Pay rate is saved from the Pay rates table, never from this form.
   function payFields(fd: FormData): Record<string, unknown> {
-    const rateStr = fd.get("payRate") as string;
+    const money = (name: string) => {
+      const v = fd.get(name) as string;
+      return v ? parseFloat(v) : null;
+    };
     return {
       ruleSetId: fd.get("ruleSetId") as string,
       shiftId: (fd.get("shiftId") as string) || null,
@@ -182,7 +191,8 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       payCategoryId: (fd.get("payCategoryId") as string) || null,
       payTypeId: (fd.get("payTypeId") as string) || null,
       payType: fd.get("payType") as string,
-      payRate: rateStr ? parseFloat(rateStr) : null,
+      chargeRate: money("chargeRate"),
+      holidayRate: money("holidayRate"),
     };
   }
 
@@ -651,22 +661,21 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
               </select>
             </div>
 
+          </div>
+
+          <div className="mt-6">
+            <PayRatesTable employeeId={employee.id} initial={payRates} salary={payType === "SALARY"} />
+          </div>
+
+          {/* For reference only: nothing calculates from these */}
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelCls}>
-                Pay Rate{" "}
-                <span className="font-normal text-zinc-400">
-                  {payType === "HOURLY" ? "($/hr)" : "($/yr)"}
-                </span>
-              </label>
-              <input
-                name="payRate"
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={employee.payRate != null ? Number(employee.payRate) : ""}
-                placeholder="0.00"
-                className={inputCls}
-              />
+              <label className={labelCls}>Charge Rate</label>
+              <input type="number" name="chargeRate" min="0" step="0.01" placeholder="0.00" defaultValue={employee.chargeRate ?? ""} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Holiday Rate</label>
+              <input type="number" name="holidayRate" min="0" step="0.01" placeholder="0.00" defaultValue={employee.holidayRate ?? ""} className={inputCls} />
             </div>
           </div>
 

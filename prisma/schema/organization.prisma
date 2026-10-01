@@ -170,6 +170,9 @@ model Employee {
   payType        String?          // "HOURLY" | "SALARY" — compensation method
   payTypeId      String?          // FK → PayType (FLSA classification)
   payRate        Decimal?  @db.Decimal(10, 4)
+  /// Informational only, as NovaTime's Miscellaneous Rate: nothing calculates with these.
+  chargeRate     Decimal?  @db.Decimal(10, 4)
+  holidayRate    Decimal?  @db.Decimal(10, 4)
   holidayRuleId  String?
   payCategoryId  String?
 
@@ -223,6 +226,7 @@ model Employee {
   siteAccess         HrSiteAccess[]
   ruleSetHistory     EmployeeRuleSetHistory[]
   ruleSetHistoryCreated EmployeeRuleSetHistory[] @relation("RuleSetHistoryCreator")
+  payRates           EmployeePayRate[]
 
   @@unique([tenantId, employeeCode])
   // The roster, the team scopes and the admin filters. Every one of these
@@ -377,6 +381,27 @@ model EmployeeRuleSetHistory {
 
   @@index([employeeId, effectiveDate])
   @@map("employee_ruleset_history")
+}
+
+/// An employee's pay rates from an effective date, as NovaTime's Pay Rates
+/// table. Rate 1 is the pay rate (Employee.payRate mirrors the one in effect
+/// today); Rate 2 and Rate 3 are kept for reference only.
+model EmployeePayRate {
+  id            String   @id @default(cuid())
+  employeeId    String
+  effectiveDate DateTime @db.Date
+  rate1         Decimal  @db.Decimal(10, 4)
+  rate2         Decimal? @db.Decimal(10, 4)
+  rate3         Decimal? @db.Decimal(10, 4)
+  note          String?
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, effectiveDate])
+  @@map("employee_pay_rates")
 }
 
 model Agency {

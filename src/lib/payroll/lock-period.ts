@@ -7,10 +7,14 @@ import { postAccruals, postLeaveUsage } from "@/lib/engines/accrual-engine";
  * Locks a pay period and every timecard in it, then posts the period's
  * accruals and its approved leave. Shared by the Pay Periods Lock button and
  * Run Payroll, so both lock the same way. The caller checks the permission.
+ * `keepOpen` timecards stay unlocked inside the locked period, as an unlocked
+ * timecard does: Run Payroll uses it for the people it left out for a missed
+ * punch, so they can be corrected, locked and run later.
  */
 export async function lockPeriod(
   payPeriodId: string,
   actor: { tenantId: string | null; employeeId: string | null },
+  keepOpen: string[] = [],
 ): Promise<void> {
   if (!actor.tenantId) throw new Error("Pay period not found");
   const payPeriod = await db.payPeriod.findFirst({ where: { id: payPeriodId, tenantId: actor.tenantId } });
@@ -22,7 +26,7 @@ export async function lockPeriod(
   await db.$transaction([
     db.payPeriod.update({ where: { id: payPeriodId }, data: { status: transition.newStatus } }),
     db.timesheet.updateMany({
-      where: { payPeriodId, status: { not: "LOCKED" } },
+      where: { payPeriodId, status: { not: "LOCKED" }, ...(keepOpen.length ? { id: { notIn: keepOpen } } : {}) },
       data: { status: "LOCKED", lockedAt: new Date() },
     }),
   ]);
@@ -33,7 +37,10 @@ export async function lockPeriod(
     entityType: "PAY_PERIOD",
     entityId: payPeriodId,
     action: "LOCK",
-    changes: { before: payPeriod.status, after: transition.newStatus },
+    changes: {
+      before: payPeriod.status,
+      after: keepOpen.length ? { status: transition.newStatus, timecardsLeftOpen: keepOpen.length } : transition.newStatus,
+    },
   });
 
   await postAccruals(payPeriodId);

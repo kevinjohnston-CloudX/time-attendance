@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import type { PayBucket, Prisma } from "@prisma/client";
+import type { ExceptionType, PayBucket, Prisma } from "@prisma/client";
 
 /**
  * The ADP Workforce Now EPI batch import file for one pay period's dates.
@@ -13,6 +13,10 @@ import type { PayBucket, Prisma } from "@prisma/client";
  *   Reg Hours, O/T Hours, or the double time code by the segment's bucket;
  * - unpaid time (unpaid meals, unpaid time off) is left out.
  * File # is the employee's Badge ID. A person with no Badge ID is skipped.
+ *
+ * <p>Open exceptions never keep anyone out on their own; they are counted for
+ * the preview. Only `excludeMissedPunches` leaves out a timecard with an open
+ * missed punch, for a run that pays everyone else first.
  */
 
 /** Each list narrows the run to those values; an empty list means all. */
@@ -23,6 +27,32 @@ export type EpiFilters = {
   siteIds?: string[];
   departmentIds?: string[];
   agencyIds?: string[];
+  excludeMissedPunches?: boolean;
+};
+
+const EXCEPTION_LABEL: Record<ExceptionType, string> = {
+  MISSING_PUNCH: "Missed punch",
+  LONG_SHIFT: "Long shift",
+  SHORT_BREAK: "Short break",
+  MISSED_MEAL: "Missed meal",
+  UNSCHEDULED_OT: "Unscheduled overtime",
+  CONSECUTIVE_DAYS: "Consecutive days",
+  ABSENT: "Absent",
+  LATE_IN: "Late in",
+  EARLY_OUT: "Early out",
+  SCAN_DISCREPANCY: "Scan discrepancy",
+};
+
+/** One timecard in the run with open missed punches. */
+export type MissedPunchCard = {
+  name: string;
+  file: string;
+  employeeId: string;
+  payPeriodId: string;
+  timesheetId: string;
+  count: number;
+  /** Left out of the file by the missed punch filter. */
+  excluded: boolean;
 };
 
 export type EpiCodes = {
@@ -43,6 +73,10 @@ export type EpiSummary = {
   unlockedLeftOut: number;
   needsDoubleTimeCode: boolean;
   needsMealPenaltyCode: boolean;
+  /** Open exceptions on the timecards in the run, by type, most first. */
+  openExceptions: { type: ExceptionType; label: string; count: number; people: number }[];
+  /** Timecards with open missed punches, by name. */
+  missedPunches: MissedPunchCard[];
 };
 
 const HEADERS = [
@@ -111,9 +145,13 @@ export async function buildAdpEpi(opts: {
     db.timesheet.findMany({
       where: { payPeriodId: { in: payPeriodIds }, employee: employeeWhere(tenantId, filters) },
       select: {
+        id: true,
+        employeeId: true,
+        payPeriodId: true,
         status: true,
         payPeriod: { select: { status: true } },
         employee: { select: { wmsId: true, user: { select: { name: true } } } },
+        exceptions: { where: { resolvedAt: null }, select: { exceptionType: true } },
         segments: {
           where: { isPaid: true, durationMinutes: { gt: 0 } },
           select: { durationMinutes: true, payBucket: true, payBucketOverride: true, segmentType: true, payCodeId: true },
@@ -137,14 +175,36 @@ export async function buildAdpEpi(opts: {
   let unlockedLeftOut = 0;
   let dtMinutes = 0;
   let mpMinutes = 0;
+  const exceptionCounts = new Map<ExceptionType, { count: number; people: Set<string> }>();
+  const missedPunches: MissedPunchCard[] = [];
 
   for (const ts of timesheets) {
-    if (ts.segments.length === 0) continue;
     const exported = ts.status === "LOCKED" || (mode === "preview" && ts.payPeriod.status !== "LOCKED");
-    if (!exported) { unlockedLeftOut++; continue; }
+    if (!exported) {
+      if (ts.segments.length > 0) unlockedLeftOut++;
+      continue;
+    }
 
     const name = ts.employee.user?.name ?? "Unknown";
     const file = ts.employee.wmsId?.trim();
+
+    // Counted only for people who can be in the file at all, and before the
+    // hours check: a missed punch can leave a timecard with no paid hours.
+    if (file) {
+      for (const e of ts.exceptions) {
+        const c = exceptionCounts.get(e.exceptionType) ?? { count: 0, people: new Set<string>() };
+        c.count++;
+        c.people.add(file);
+        exceptionCounts.set(e.exceptionType, c);
+      }
+      const missed = ts.exceptions.filter((e) => e.exceptionType === "MISSING_PUNCH").length;
+      if (missed > 0) {
+        const excluded = Boolean(filters.excludeMissedPunches);
+        missedPunches.push({ name, file, employeeId: ts.employeeId, payPeriodId: ts.payPeriodId, timesheetId: ts.id, count: missed, excluded });
+        if (excluded) continue;
+      }
+    }
+    if (ts.segments.length === 0) continue;
     const person: Person = file
       ? people.get(file) ?? { file, reg: 0, ot: 0, codes: new Map() }
       : { file: "", reg: 0, ot: 0, codes: new Map() };
@@ -169,7 +229,7 @@ export async function buildAdpEpi(opts: {
       if (pc && pc.payBucket && pc.payBucket !== "REG") {
         if (pc.payBucket === "UNPAID") continue;
         if (pc.expressCode) addCode(pc.expressCode, m);
-        else leave(`${pc.label} (pay code ${pc.code} has no export code)`, m);
+        else leave(`${pc.label} (pay code ${pc.code} has no Express code)`, m);
         continue;
       }
       if (bucket === "REG") person.reg += m;
@@ -239,6 +299,10 @@ export async function buildAdpEpi(opts: {
       unlockedLeftOut,
       needsDoubleTimeCode: dtMinutes > 0 && !codes.doubleTimeCode.trim(),
       needsMealPenaltyCode: mpMinutes > 0 && !codes.mealPenaltyCode.trim(),
+      openExceptions: [...exceptionCounts.entries()]
+        .map(([type, v]) => ({ type, label: EXCEPTION_LABEL[type], count: v.count, people: v.people.size }))
+        .sort((a, b) => b.count - a.count),
+      missedPunches: missedPunches.sort((a, b) => a.name.localeCompare(b.name)),
     },
   };
 }

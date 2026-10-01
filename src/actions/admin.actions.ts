@@ -19,6 +19,7 @@ import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
 import { currentIdentity } from "@/lib/rbac/current";
 import { employeeRank, forgetIdentity, type LiveIdentity } from "@/lib/rbac/identity";
 import { ROLE_RANK, isValidRole } from "@/lib/rbac/roles";
+import { todayKey } from "@/lib/pay-rates";
 
 // Maps system custom role names to their legacy enum values
 /**
@@ -105,9 +106,13 @@ const BUILT_IN_ROLES = new Set<string>(ROLES.map((r) => r.toUpperCase()));
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function serializePayRate<T extends { payRate: unknown }>(emp: T): Omit<T, "payRate"> & { payRate: number | null } {
-  const { payRate, ...rest } = emp;
-  return { ...rest, payRate: payRate != null ? Number(payRate) : null };
+/** Decimal money columns as plain numbers, so the record can reach a client component. */
+function serializePayRate<T extends { payRate: unknown; chargeRate?: unknown; holidayRate?: unknown }>(
+  emp: T,
+): Omit<T, "payRate" | "chargeRate" | "holidayRate"> & { payRate: number | null; chargeRate: number | null; holidayRate: number | null } {
+  const { payRate, chargeRate, holidayRate, ...rest } = emp;
+  const num = (v: unknown) => (v != null ? Number(v) : null);
+  return { ...rest, payRate: num(payRate), chargeRate: num(chargeRate), holidayRate: num(holidayRate) };
 }
 
 // ─── Reference data (used by forms) ──────────────────────────────────────────
@@ -377,6 +382,9 @@ export const createEmployee = withRBAC(
           wmsId: parsed.wmsId ?? null,
           payType: parsed.payType ?? null,
           payRate: parsed.payRate ?? null,
+          ...(parsed.payRate
+            ? { payRates: { create: { effectiveDate: new Date(`${parsed.hireDate}T00:00:00.000Z`), rate1: parsed.payRate, createdById: actorId || null } } }
+            : {}),
           jobTitle: parsed.jobTitle ?? null,
           jobTitleId: parsed.jobTitleId ?? null,
           agencyId: parsed.agencyId ?? null,
@@ -409,7 +417,7 @@ export const updateEmployee = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: UpdateEmployeeInput) => {
     const {
       employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, payTypeId, isActive, onLeave, wmsId, barcode, adpWorkerId,
-      adjustedHireDate, jobTitle, jobTitleId, agencyId, terminationReason, payType, payRate,
+      adjustedHireDate, jobTitle, jobTitleId, agencyId, terminationReason, payType, payRate, chargeRate, holidayRate,
       phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
       address1, address2, city, state, country, zipCode,
@@ -432,11 +440,16 @@ export const updateEmployee = withRBAC(
     const roleChanges =
       (role !== undefined && role !== current.role) ||
       (customRoleId !== undefined && (customRoleId ?? null) !== current.customRoleId);
+    const moneyChanges = (next: number | null | undefined, cur: unknown) =>
+      next !== undefined && (next ?? null) !== (cur == null ? null : Number(cur));
     const sensitive =
       roleChanges ||
       (isActive !== undefined && isActive !== current.isActive) ||
       (payType !== undefined && payType !== current.payType) ||
-      (payRate !== undefined && (payRate ?? null) !== (current.payRate === null ? null : Number(current.payRate)));
+      moneyChanges(payRate, current.payRate) ||
+      // Informational, but still pay: the same people may change them
+      moneyChanges(chargeRate, current.chargeRate) ||
+      moneyChanges(holidayRate, current.holidayRate);
     if (!me.isSuperAdmin) {
       if (me.employeeId === employeeId) {
         if (sensitive || (supervisorId !== undefined && (supervisorId ?? null) !== current.supervisorId)) {
@@ -505,6 +518,8 @@ export const updateEmployee = withRBAC(
           ...(terminationReason !== undefined && { terminationReason }),
           ...(payType !== undefined && { payType }),
           ...(payRate !== undefined && { payRate }),
+          ...(chargeRate !== undefined && { chargeRate }),
+          ...(holidayRate !== undefined && { holidayRate }),
           ...(encPii.phone !== undefined && { phone: encPii.phone }),
           ...(encPii.phone2 !== undefined && { phone2: encPii.phone2 }),
           ...(encPii.gender !== undefined && { gender: encPii.gender }),
@@ -521,6 +536,18 @@ export const updateEmployee = withRBAC(
         },
       });
     });
+
+    // A rate set here (rather than in the pay rates table) is recorded as of today.
+    const newRate = payRate ?? null;
+    const oldRate = current.payRate === null ? null : Number(current.payRate);
+    if (payRate !== undefined && newRate !== null && newRate !== oldRate) {
+      const today = new Date(`${todayKey()}T00:00:00.000Z`);
+      await db.employeePayRate.upsert({
+        where: { employeeId_effectiveDate: { employeeId, effectiveDate: today } },
+        create: { employeeId, effectiveDate: today, rate1: newRate, createdById: actorId || null },
+        update: { rate1: newRate },
+      });
+    }
 
     // When the rule set changes, write a history record (for split-segment logic) and
     // migrate the open timesheet to the new rule set's pay period.
@@ -578,6 +605,9 @@ export const updateEmployee = withRBAC(
       const cur = current.payRate != null ? parseFloat(String(current.payRate)) : null;
       if (cur !== payRate) diff("Pay Rate", cur != null ? `$${cur.toFixed(2)}` : null, payRate != null ? `$${payRate.toFixed(2)}` : null);
     }
+    const usd = (v: unknown) => (v != null ? `$${Number(v).toFixed(2)}` : null);
+    if (moneyChanges(chargeRate, current.chargeRate)) diff("Charge Rate", usd(current.chargeRate), usd(chargeRate));
+    if (moneyChanges(holidayRate, current.holidayRate)) diff("Holiday Rate", usd(current.holidayRate), usd(holidayRate));
     if (phone !== undefined) diff("Phone 1", decCurrent.phone, phone);
     if (phone2 !== undefined) diff("Phone 2", decCurrent.phone2, phone2);
     if (gender !== undefined) diff("Gender", decCurrent.gender, gender);
@@ -1831,6 +1861,9 @@ export const bulkCreateEmployees = withRBAC(
               wmsId: r.wmsId ?? null,
               payType: r.payType ?? null,
               payRate: r.payRate ?? null,
+              ...(r.payRate
+                ? { payRates: { create: { effectiveDate: new Date(`${r.hireDate}T00:00:00.000Z`), rate1: r.payRate } } }
+                : {}),
             },
           });
           } catch (empErr: unknown) {

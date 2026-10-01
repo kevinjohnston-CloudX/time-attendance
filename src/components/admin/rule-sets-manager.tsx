@@ -61,15 +61,6 @@ function overtime(rs: RuleSet): { main: string; note?: string } {
   return { main: ot.length ? `After ${ot.join(" or ")}` : "Premium days only", note: notes.join(" · ") || undefined };
 }
 
-function meal(rs: RuleSet): { main: string; note: string } {
-  // Auto deduct takes the meal off the clock whether or not it was punched,
-  // so it is the half of this setting someone reading the list needs.
-  return {
-    main: `${rs.mealBreakMinutes} min after ${hoursText(rs.mealBreakAfterMinutes)}`,
-    note: rs.autoDeductMeal ? "Deducted automatically" : "Punched",
-  };
-}
-
 /** One cell line with an optional quiet line under it. */
 function TwoLine({ main, note, width }: { main: string; note?: string; width?: number }) {
   // A width lets a long note wrap; the kit's table otherwise sizes every
@@ -94,7 +85,6 @@ export function RuleSetsManager({ ruleSets, initialView }: { ruleSets: RuleSetRo
     { key: "people", label: "Employees", note: "On these rule sets", value: kept.reduce((n, r) => n + (r._count?.employees ?? 0), 0) },
     { key: "daily", label: "Daily overtime", note: "Overtime after hours in a day", match: (rs) => rs.dailyOtMinutes < DAY_OFF },
     { key: "none", label: "No overtime", note: "Straight time only", match: (rs) => overtime(rs).main === "No overtime" },
-    { key: "meal", label: "Meals deducted", note: "Taken off the clock automatically", match: (rs) => rs.autoDeductMeal },
     { key: "unused", label: "No employees", note: "Not used by anyone", match: (rs) => !(rs._count?.employees ?? 0) },
   ]);
   const shown = facts.kept.filter((rs) => matches(query, rs.name, rs.number));
@@ -108,7 +98,7 @@ export function RuleSetsManager({ ruleSets, initialView }: { ruleSets: RuleSetRo
   return (
     <AreaPanel
       title="Rule sets"
-      hint="The overtime, rounding and meal rules a pay period is calculated with. Each employee is on one."
+      hint="The overtime, rounding and pay rules a pay period is calculated with. Each employee is on one; meals come from their shift."
       action={addButton}
       summary={ruleSets.length ? <FactTiles tiles={facts.tiles} onToggle={facts.toggle} /> : undefined}
       status={{ view, onChange: setView, counts }}
@@ -119,7 +109,7 @@ export function RuleSetsManager({ ruleSets, initialView }: { ruleSets: RuleSetRo
         <EmptyState
           icon={<SlidersHorizontal className="h-8 w-8" />}
           title="No rule sets yet"
-          body="Nothing is calculated until one exists. Add the first one to set overtime, rounding and meals."
+          body="Nothing is calculated until one exists. Add the first one to set overtime, rounding and pay rules."
           action={addButton}
         />
       ) : shown.length === 0 ? (
@@ -145,7 +135,6 @@ export function RuleSetsManager({ ruleSets, initialView }: { ruleSets: RuleSetRo
               <TH>Rule set</TH>
               <TH>Pay cycle</TH>
               <TH>Overtime</TH>
-              <TH>Meal</TH>
               <TH>Status</TH>
             </TR>
           </THead>
@@ -183,9 +172,6 @@ export function RuleSetsManager({ ruleSets, initialView }: { ruleSets: RuleSetRo
                   </TD>
                   <TD>
                     <TwoLine {...overtime(rs)} width={208} />
-                  </TD>
-                  <TD>
-                    <TwoLine {...meal(rs)} />
                   </TD>
                   <TD>
                     <StatusBadge active={rs.isActive} />

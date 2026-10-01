@@ -41,6 +41,8 @@ import { useBreadcrumbLeaf } from "@/components/layout/breadcrumb-leaf";
 import { PhotoViewer, ZoomableFace } from "@/components/presence/face";
 import { PhotoEditor } from "@/components/presence/photo-editor";
 import styles from "./employee-record.module.css";
+import { PayRatesTable } from "./pay-rates-table";
+import type { PayRateRow } from "@/actions/pay-rate.actions";
 
 /**
  * The employee record. It opens to read: every section shows its values as
@@ -65,13 +67,15 @@ import styles from "./employee-record.module.css";
  */
 type UserSummary = { id: string; name: string | null; email: string | null };
 
-type EmployeeWithRelations = Omit<Employee, "payRate"> & {
-  payRate: number | null;
+type MoneyCols = "payRate" | "chargeRate" | "holidayRate";
+type Money = { payRate: number | null; chargeRate: number | null; holidayRate: number | null };
+
+type EmployeeWithRelations = Omit<Employee, MoneyCols> & Money & {
   user: UserSummary;
   site: Site;
   department: Department;
   ruleSet: RuleSet;
-  supervisor: (Omit<Employee, "payRate"> & { payRate: number | null; user: UserSummary }) | null;
+  supervisor: (Omit<Employee, MoneyCols> & Money & { user: UserSummary }) | null;
 };
 
 interface Props {
@@ -101,6 +105,7 @@ interface Props {
   hrSiteAccess: string[];
   actorRole: string;
   canManageRules?: boolean;
+  payRates: PayRateRow[];
 }
 
 const SYSTEM_ROLE_NAME: Record<string, string> = {
@@ -139,6 +144,8 @@ type Values = {
   payTypeId: string;
   payType: string;
   payRate: string;
+  chargeRate: string;
+  holidayRate: string;
   gender: string;
   maritalStatus: string;
   phone: string;
@@ -304,6 +311,7 @@ export function EditEmployeeForm({
   hrSiteAccess,
   actorRole,
   canManageRules = false,
+  payRates,
 }: Props) {
   const router = useRouter();
   const toast = useToast();
@@ -361,6 +369,8 @@ export function EditEmployeeForm({
       payTypeId: employee.payTypeId ?? "",
       payType: employee.payType ?? "HOURLY",
       payRate: employee.payRate != null ? String(Number(employee.payRate)) : "",
+      chargeRate: employee.chargeRate != null ? String(employee.chargeRate) : "",
+      holidayRate: employee.holidayRate != null ? String(employee.holidayRate) : "",
       gender: employee.gender ?? "",
       maritalStatus: employee.maritalStatus ?? "",
       phone: employee.phone ?? "",
@@ -495,7 +505,9 @@ export function EditEmployeeForm({
           out.onLeave = val === "on-leave";
           break;
         case "payRate":
-          out.payRate = val ? parseFloat(val) : null;
+        case "chargeRate":
+        case "holidayRate":
+          out[k] = val ? parseFloat(val as string) : null;
           break;
         case "customRoleId":
         case "supervisorId":
@@ -587,12 +599,6 @@ export function EditEmployeeForm({
   const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === v.siteId));
   const tone = v.status === "inactive" ? "inactive" : v.status === "on-leave" ? "leave" : "active";
   const statusWord = v.status === "inactive" ? "Inactive" : v.status === "on-leave" ? "On leave" : "Active";
-
-  const payRateText = v.payRate
-    ? `$${Number(v.payRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${
-        v.payType === "SALARY" ? "per year" : "per hour"
-      }`
-    : "";
 
   const cityLine = [v.city, [v.state, v.zipCode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   const addressText = [v.address1, v.address2, cityLine, v.country].filter(Boolean).join("\n");
@@ -1078,21 +1084,16 @@ export function EditEmployeeForm({
                   )}
                 </Field>
 
-                <Field
-                  label={v.payType === "SALARY" ? "Pay rate (per year)" : "Pay rate (per hour)"}
-                  htmlFor="f-payRate"
-                  read={
-                    v.payRate ? (
-                      <span className={styles.amount}>
-                        {payRateText.split(" per ")[0]}
-                        <span className={styles.amountUnit}> per {payRateText.split(" per ")[1]}</span>
-                      </span>
-                    ) : (
-                      ""
-                    )
-                  }
-                >
-                  {text("payRate", { type: "number", min: "0.01", step: "0.01", placeholder: "0.00", leadingIcon: <span style={{ color: "var(--text-tertiary)" }}>$</span> })}
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <PayRatesTable employeeId={employee.id} initial={payRates} salary={v.payType === "SALARY"} />
+                </div>
+
+                {/* For reference only: nothing calculates from these */}
+                <Field label="Charge rate" htmlFor="f-chargeRate" read={v.chargeRate ? `$${Number(v.chargeRate).toFixed(2)}` : null}>
+                  {text("chargeRate", { type: "number", min: 0, step: "0.01", inputMode: "decimal", placeholder: "0.00" })}
+                </Field>
+                <Field label="Holiday rate" htmlFor="f-holidayRate" read={v.holidayRate ? `$${Number(v.holidayRate).toFixed(2)}` : null}>
+                  {text("holidayRate", { type: "number", min: 0, step: "0.01", inputMode: "decimal", placeholder: "0.00" })}
                 </Field>
               </div>
             </Section>

@@ -313,7 +313,7 @@ export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow |
     {
       title: "Time",
       areas: [
-        { id: "meals", label: "Meals and breaks" },
+        { id: "long-shifts", label: "Long shifts" },
         { id: "shift-rounding", label: "Shift rounding", count: shiftRoundOn ? "On" : "Off" },
         { id: "punch-rounding", label: "Punch rounding", count: punchInOn || punchOutOn ? "On" : "Off" },
         { id: "pair-rounding", label: "Worked time rounding", count: pairOn ? "On" : "Off" },
@@ -547,31 +547,16 @@ export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow |
           </Row>
         </Section>
 
-        {/* ── Meals and breaks ── */}
-        <Section id="meals" title="Meals and breaks" hint="How long meals are, when one is due, and how it comes off the day.">
-          <Row label="Meal length">
-            <Num name="mealBreakMinutes" min={0} defaultValue={rs?.mealBreakMinutes ?? 30} unit="min" aria-label="Meal length" />
-          </Row>
-          <Row label="A meal is due after">
-            <Num name="mealBreakAfterHours" min={0} step={0.25} defaultValue={hrs(rs?.mealBreakAfterMinutes, 5)} unit="hours of work" aria-label="A meal is due after" />
-          </Row>
-          <Row label="How meals come off" hint="Deducted automatically takes the meal off whether or not it was punched.">
-            <ChoiceField
-              label=""
-              name="autoDeductMeal"
-              defaultValue={rs?.autoDeductMeal ? "true" : "false"}
-              options={[
-                { value: "false", label: "Punched by the employee" },
-                { value: "true", label: "Deducted automatically" },
-              ]}
-            />
-          </Row>
-          <Row label="Short break length" unused>
-            <Num name="shortBreakMinutes" min={0} defaultValue={rs?.shortBreakMinutes ?? 15} unit="min" aria-label="Short break length" />
-          </Row>
-          <Row label="Short breaks a day" unused>
-            <Num name="shortBreaksPerDay" min={0} defaultValue={rs?.shortBreaksPerDay ?? 2} aria-label="Short breaks a day" />
-          </Row>
+        {/* Meals and breaks are set on the shift, which overrides these for anyone
+            with one. Kept as they are on save, as the classic editor does. */}
+        <input type="hidden" name="mealBreakMinutes" value={rs?.mealBreakMinutes ?? 30} />
+        <input type="hidden" name="mealBreakAfterHours" value={(rs?.mealBreakAfterMinutes ?? 300) / 60} />
+        <input type="hidden" name="autoDeductMeal" value={rs?.autoDeductMeal ? "true" : "false"} />
+        <input type="hidden" name="shortBreakMinutes" value={rs?.shortBreakMinutes ?? 15} />
+        <input type="hidden" name="shortBreaksPerDay" value={rs?.shortBreaksPerDay ?? 2} />
+
+        {/* ── Long shifts ── */}
+        <Section id="long-shifts" title="Long shifts" hint="Meal length and deduction are set on each shift.">
           <Row label="Flag a shift as long after" unused>
             <Num name="longShiftHours" min={1} step={0.25} defaultValue={hrs(rs?.longShiftMinutes, 12)} unit="hours" aria-label="Flag a shift as long after" />
           </Row>
