@@ -75,8 +75,16 @@ function localToUtc(dateStr, timeStr, tz) {
   const utcH = parseInt(parts.hour, 10);
   const utcMin = parseInt(parts.minute, 10);
   const wantH = h, wantMin = min;
-  const offsetMin = (wantH * 60 + wantMin) - (utcH * 60 + utcMin);
-  return new Date(naive.getTime() - offsetMin * 60 * 1000);
+  let offsetMin = (wantH * 60 + wantMin) - (utcH * 60 + utcMin);
+  // The zone's clock can be on the other side of midnight (a time before 4 AM
+  // Eastern): fold the difference back into one day.
+  if (offsetMin > 720) offsetMin -= 1440;
+  if (offsetMin < -720) offsetMin += 1440;
+  // Add, not subtract: the zone shows `naive` offsetMin minutes behind the
+  // wanted local time, so the real instant is that much later. Subtracting
+  // here saved every punch of the 2026-09-17 run 8 hours early (Eastern),
+  // corrected on 2026-10-01.
+  return new Date(naive.getTime() + offsetMin * 60 * 1000);
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
