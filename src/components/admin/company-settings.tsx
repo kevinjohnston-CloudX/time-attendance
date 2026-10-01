@@ -3,11 +3,12 @@
 import { useState, useTransition, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
-import { ArrowRight, BookOpen, CalendarCog, CalendarPlus, CalendarSync, CircleAlert } from "lucide-react";
+import { ArrowRight, BellRing, BookOpen, CalendarCog, CalendarPlus, CalendarSync, CircleAlert } from "lucide-react";
 import type { PayFrequency } from "@prisma/client";
-import { Badge, Banner, Button, Input, LinkButton, Toast, useToast } from "@/components/ui";
+import { Badge, Banner, Button, Input, LinkButton, Switch, Toast, useToast } from "@/components/ui";
 import { SetupDialog } from "@/components/admin/setup/setup-ui";
 import { generateNextPayPeriod, updateTenantSettings } from "@/actions/pay-period.actions";
+import { setGateAlerts } from "@/actions/gate-refusals.actions";
 import { getPeriodContaining, lastDayOf, periodAfter, periodDays } from "@/lib/pay-period-math";
 
 /**
@@ -17,6 +18,10 @@ import { getPeriodContaining, lastDayOf, periodAfter, periodDays } from "@/lib/p
  * <p>The preview and Generate both run the server's own period arithmetic
  * (pay-period-math), so the dates on screen are the dates that get created.
  * Nothing is written until Save or a confirmed Generate.
+ *
+ * <p>Below them, for System Admins only, the Live Attendance switch for the
+ * gate alert. It is a single company wide setting, so it sits here rather than
+ * on a tab of its own, and it saves the moment it is flipped.
  */
 
 const FREQS: { value: PayFrequency; label: string; detail: string }[] = [
@@ -95,18 +100,91 @@ function PanelHead({ icon, title, subtitle }: { icon: ReactNode; title: string; 
   );
 }
 
+/**
+ * The gate alert switch. Saves on the flip, since there is nothing else to fill
+ * in, and says in a sentence what each position means for loss prevention.
+ */
+function GateAlertsPanel({ onSince: stored, flash }: { onSince: string | null; flash: (message: string) => void }) {
+  const router = useRouter();
+  const [onSince, setOnSince] = useState(stored);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const on = onSince !== null;
+
+  // A refresh brings the stored value back in, including a change made elsewhere.
+  const [seen, setSeen] = useState(stored);
+  if (seen !== stored) {
+    setSeen(stored);
+    setOnSince(stored);
+  }
+
+  const flip = (next: boolean) => {
+    setError(null);
+    start(async () => {
+      const result = await setGateAlerts({ on: next });
+      if (!result.success) {
+        setError(result.error === "FORBIDDEN" ? "Only System Admins can change gate alerts." : result.error);
+        return;
+      }
+      setOnSince(result.data.onSince);
+      flash(next ? "Gate alerts turned on" : "Gate alerts turned off");
+      router.refresh();
+    });
+  };
+
+  return (
+    <section style={{ ...PANEL, padding: "18px 20px 20px" }}>
+      <PanelHead
+        icon={<BellRing className="h-[18px] w-[18px]" />}
+        title="Live Attendance"
+        subtitle="Applies to every building in the company."
+      />
+      <div className="flex items-start gap-4 px-4 py-3.5" style={WELL}>
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <label
+            htmlFor="gate-alerts-switch"
+            style={{ font: "var(--weight-semibold) 14px/20px var(--font-sans)", color: "var(--text-primary)", cursor: "pointer" }}
+          >
+            Gate alerts
+          </label>
+          <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" }}>
+            A pop up on Live Attendance when the security gate turns away somebody with no shift today.
+          </span>
+          {/* The time is in the reader's own zone, which the server cannot know. */}
+          <span suppressHydrationWarning style={{ font: "var(--type-body2)", color: on ? "var(--text-primary)" : "var(--text-warning)", textWrap: "pretty" }}>
+            {onSince
+              ? `On since ${format(new Date(onSince), "MMM d, h:mm a")}, for roles with Live Attendance Execute.`
+              : "Off. The gate keeps checking people and CloudTime keeps a record of each refusal, but nobody gets the pop up."}
+          </span>
+        </span>
+        <span className="flex-none pt-0.5">
+          <Switch id="gate-alerts-switch" checked={on} disabled={pending} onChange={flip} />
+        </span>
+      </div>
+      {error && (
+        <div className="mt-3">
+          <Banner tone="error" title="Not changed" body={error} />
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function CompanySettings({
   frequency,
   anchor,
   next,
   defaultRuleSets,
   canOpenRules,
+  gateAlerts = null,
 }: {
   frequency: PayFrequency;
   anchor: string;
   next: { startDate: string; endDate: string; frequency: PayFrequency } | null;
   defaultRuleSets: string[];
   canOpenRules: boolean;
+  /** The gate alert switch, for System Admins only; null leaves the panel out. */
+  gateAlerts?: { onSince: string | null } | null;
 }) {
   const router = useRouter();
   const { message, flash } = useToast();
@@ -401,6 +479,8 @@ export function CompanySettings({
           </section>
         </aside>
       </div>
+
+      {gateAlerts && <GateAlertsPanel onSince={gateAlerts.onSince} flash={flash} />}
 
       {confirming && next && (
         <SetupDialog

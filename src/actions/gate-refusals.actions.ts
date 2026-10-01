@@ -1,8 +1,10 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { getViewableSites } from "@/lib/presence/on-site.service";
-import { dismissGateRefusals, getOpenGateRefusals } from "@/lib/presence/gate-refusals.service";
+import { dismissGateRefusals, gateAlertsOnSince, getOpenGateRefusals } from "@/lib/presence/gate-refusals.service";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 
@@ -80,5 +82,54 @@ export const dismissOnSiteGateRefusals = withRBAC(
       gateLog("failed", { at: "dismiss", viewer: employeeId, site: input?.siteId, error: errorCode(err) }, "warn");
       throw err;
     }
+  },
+);
+
+/**
+ * The company wide switch for the gate alert, in Company Settings.
+ *
+ * <p>System Admins only (a super admin too, inside the company they are
+ * working in), checked on the role in effect, so an admin viewing the app as
+ * another role is refused like that role. Turning it off hides every card on
+ * every Live Attendance screen within seconds; the gate and the record of each
+ * refusal carry on as before. Turning it on shows only tries made from then
+ * on. Every change goes in the audit log as a company settings change, which
+ * is where the existing pay schedule changes are filed too.
+ */
+const ADMIN_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
+
+export const getGateAlertsSetting = withRBAC(
+  "PAY_PERIOD_MANAGE",
+  async ({ tenantId, role }, _input: void) => {
+    if (!tenantId || !ADMIN_ROLES.includes(role)) throw new Error("FORBIDDEN");
+    const onSince = await gateAlertsOnSince(tenantId);
+    return { onSince: onSince?.toISOString() ?? null };
+  },
+);
+
+export const setGateAlerts = withRBAC(
+  "PAY_PERIOD_MANAGE",
+  async ({ tenantId, employeeId, role }, input: { on: boolean }) => {
+    if (!tenantId || !ADMIN_ROLES.includes(role)) throw new Error("FORBIDDEN");
+    const on = input?.on === true;
+    const before = await gateAlertsOnSince(tenantId);
+    // Already where it was asked to be: nothing to write, and "on since" keeps its time.
+    if (on === (before !== null)) return { onSince: before?.toISOString() ?? null };
+    const updated = await db.tenant.update({
+      where: { id: tenantId },
+      data: { gateAlertsOnSince: on ? new Date() : null },
+      select: { gateAlertsOnSince: true },
+    });
+    await writeAuditLog({
+      tenantId,
+      actorId: employeeId || null,
+      entityType: "PAY_PERIOD",
+      entityId: tenantId,
+      action: "SETTINGS_UPDATE",
+      changes: { before: { gateAlerts: before ? "On" : "Off" }, after: { gateAlerts: on ? "On" : "Off" } },
+    });
+    gateLog("switched", { on, by: employeeId, tenant: tenantId });
+    revalidatePath("/admin/settings");
+    return { onSince: updated.gateAlertsOnSince?.toISOString() ?? null };
   },
 );

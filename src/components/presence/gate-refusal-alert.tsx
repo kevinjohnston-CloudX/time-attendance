@@ -39,6 +39,10 @@ import styles from "./on-site.module.css";
  * and the next one tries again: this sits over the page, and an error box
  * appearing on its own would be louder than the thing it failed to show.
  *
+ * <p>Shows nothing while a System Admin has gate alerts off in Company
+ * Settings: the server answers an empty list, and a card already on screen
+ * goes at the next check.
+ *
  * <p>Drawn at the top of the page rather than inside the board, so nothing in
  * the header or the full screen board can end up on top of it.
  *

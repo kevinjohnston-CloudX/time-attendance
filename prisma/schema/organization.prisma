@@ -8,6 +8,13 @@ model Tenant {
   payFrequency        PayFrequency @default(BIWEEKLY)
   payPeriodAnchorDate DateTime?    // A known pay-period start date; all periods calculated from this
 
+  /// When the Live Attendance gate alert was last turned on, or null while it
+  /// is off. A System Admin switches it in Company Settings. A time rather
+  /// than a flag, so turning it back on shows only people turned away since
+  /// then, never a morning's worth of refusals at once. Refusals are recorded
+  /// either way.
+  gateAlertsOnSince DateTime? @default(now())
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

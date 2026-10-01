@@ -23,7 +23,7 @@ import { siteScope, scansHereSql, type SiteScope } from "@/lib/presence/site-sco
 export interface SitePulse {
   /** ISO time the newest scan here was recorded, or null for none today. */
   scans: string | null;
-  /** ISO time today's gate refusals here last changed, or null (also when not asked for). */
+  /** ISO time today's gate refusals here last changed, or null (also when not asked for, or switched off). */
   refusals: string | null;
 }
 
@@ -65,9 +65,13 @@ export async function getSitePulse(tenantId: string, siteId: string, withRefusal
   // Today's refusals by work date, and a building's today is never more than
   // a day behind the server's, so yesterday's date is a safe lower bound.
   const fromDay = new Date(`${since.toISOString().slice(0, 10)}T00:00:00.000Z`);
+  // Null while the alert is switched off, so switching it off on one screen
+  // clears the card on every other within seconds.
   const refusals = withRefusals
     ? Prisma.sql`(SELECT max(g."updatedAt") FROM "gate_refusals" g
-                  WHERE g."tenantId" = ${tenantId} AND g."siteId" = ${siteId} AND g."workDate" >= ${fromDay})`
+                  JOIN "tenants" t ON t.id = g."tenantId"
+                  WHERE g."tenantId" = ${tenantId} AND g."siteId" = ${siteId} AND g."workDate" >= ${fromDay}
+                    AND t."gateAlertsOnSince" IS NOT NULL AND g."lastAt" >= t."gateAlertsOnSince")`
     : Prisma.sql`NULL::timestamp`;
   const [row] = await db.$queryRaw<{ scans: Date | null; refusals: Date | null }[]>`
     SELECT

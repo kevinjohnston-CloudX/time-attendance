@@ -5,8 +5,8 @@
  *
  * <p>Steps, in the order they happen: `check` (the gate asked CloudTime),
  * `noted` (a refusal was kept), `unplaced` (a refusal with no building to put
- * it in), `dismissed`, `scheduled`, and `failed` for anything that went
- * wrong along the way. Values are ids, codes and times, never names.
+ * it in), `dismissed`, `scheduled`, `switched` (a System Admin turned the
+ * alert on or off), and `failed` for anything that went wrong along the way. Values are ids, codes and times, never names.
  */
 export function gateLog(
   step: string,

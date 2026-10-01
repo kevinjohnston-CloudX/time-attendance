@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { LinkButton, PageHeader } from "@/components/ui";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getTenantSettings } from "@/actions/pay-period.actions";
+import { getGateAlertsSetting } from "@/actions/gate-refusals.actions";
 import { CompanySettings } from "@/components/admin/company-settings";
 
 /**
@@ -14,15 +15,20 @@ import { CompanySettings } from "@/components/admin/company-settings";
  * <p>Both settings decide where pay periods start and end, which is why the
  * page opens with the note on when a change takes effect. The screen itself
  * is CompanySettings; this only gates it and loads the stored values.
+ *
+ * <p>System Admins also get the Live Attendance gate alert switch here. Its
+ * action refuses anybody else, so the panel is left out for them rather than
+ * shown and failing.
  */
 export default async function CompanySettingsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "PAY_PERIOD_MANAGE")) redirect("/admin");
 
-  const [result, canOpenRules] = await Promise.all([
+  const [result, canOpenRules, gate] = await Promise.all([
     getTenantSettings(),
     userHasPermission(session.user, "RULES_MANAGE"),
+    getGateAlertsSetting(),
   ]);
   if (!result.success) redirect("/admin");
   const { payFrequency, payPeriodAnchorDate, name, nextPeriod, defaultRuleSets } = result.data;
@@ -49,6 +55,7 @@ export default async function CompanySettingsPage() {
         }
         defaultRuleSets={defaultRuleSets}
         canOpenRules={canOpenRules}
+        gateAlerts={gate.success ? gate.data : null}
       />
     </div>
   );

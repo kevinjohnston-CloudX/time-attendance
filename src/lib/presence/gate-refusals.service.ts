@@ -13,6 +13,9 @@ import { gateLog } from "@/lib/presence/gate-alert-log";
  * has answered the tablet. Live Attendance then shows loss prevention one card
  * per person with their photo and details, and they either dismiss it for the
  * day or add the person to today's schedule, so the next try lets them in.
+ *
+ * <p>A System Admin can switch the alert off for the whole company in Company
+ * Settings. Refusals are still recorded while it is off; nobody is shown them.
  */
 
 /** Why the gate check said no, as it answers the tablet. */
@@ -193,18 +196,31 @@ export async function recordGateRefusal(input: {
 }
 
 /**
+ * When the gate alert was last turned on for this company, or null while a
+ * System Admin has it off (Company Settings).
+ */
+export async function gateAlertsOnSince(tenantId: string): Promise<Date | null> {
+  const tenant = await db.tenant.findUnique({ where: { id: tenantId }, select: { gateAlertsOnSince: true } });
+  return tenant?.gateAlertsOnSince ?? null;
+}
+
+/**
  * Today's refusals at one building that nobody has settled, oldest first, so
  * the card on screen stays put while others arrive. A person who has since
  * been scheduled (by WMS or anybody here) or has left the company drops out on
  * their own. The caller checks the viewer may see this building.
  */
 export async function getOpenGateRefusals(tenantId: string, siteId: string): Promise<GateRefusalQueue | null> {
-  const day = await siteDay(tenantId, siteId);
+  const [day, onSince] = await Promise.all([siteDay(tenantId, siteId), gateAlertsOnSince(tenantId)]);
   if (!day) return null;
+  // Switched off in Company Settings: still recorded, shown to nobody.
+  if (!onSince) return { today: day.today, cards: [], total: 0 };
   const where: Prisma.GateRefusalWhereInput = {
     tenantId,
     siteId,
     workDate: day.workDate,
+    // Only tries since the alert was last turned on.
+    lastAt: { gte: onSince },
     dismissedAt: null,
     scheduledAt: null,
     employee: {
