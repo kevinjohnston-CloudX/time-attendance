@@ -2,6 +2,13 @@ import { db } from "@/lib/db";
 import { periodContains } from "@/lib/pay-period-days";
 import type { PunchSource, PunchState, PunchType } from "@prisma/client";
 
+/**
+ * The time clock's answer to a repeat scan inside the minimum gap. Shared so the
+ * scan discrepancy job can recognise it: a refused repeat is the rule working,
+ * not a timecard problem, and raises no exception.
+ */
+export const TOO_SOON_REJECTION = "Scanned again too quickly, please wait to prevent duplicates";
+
 export async function getCurrentPunchState(employeeId: string): Promise<PunchState> {
   const [lastApproved, lastSystemReset] = await Promise.all([
     db.punch.findFirst({

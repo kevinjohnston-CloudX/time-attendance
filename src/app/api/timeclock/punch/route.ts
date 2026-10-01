@@ -4,7 +4,7 @@ import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { computeRoundedTime, computeShiftExpiry } from "@/lib/utils/date";
-import { getCurrentPunchState, findOpenPayPeriod, saveRejectedPunch } from "@/lib/utils/punch-helpers";
+import { getCurrentPunchState, findOpenPayPeriod, saveRejectedPunch, TOO_SOON_REJECTION } from "@/lib/utils/punch-helpers";
 import { validateTransition } from "@/lib/state-machines/punch-state";
 import { timeclockScanSchema } from "@/lib/validators/punch.schema";
 import { recordScanEvent, resolveScanOutcome } from "@/lib/services/scan-event.service";
@@ -238,7 +238,7 @@ export async function POST(req: NextRequest) {
     select: { punchTime: true },
   });
   if (tooSoon) {
-    const error = "Scanned again too quickly, please wait to prevent duplicates";
+    const error = TOO_SOON_REJECTION;
     await settle("PUNCH_REJECTED", { rejectionReason: error });
     // 200, not 409, and this is not cosmetic. The kiosk queue marks a row
     // synced on HTTP success and on any error deliberately leaves it in the

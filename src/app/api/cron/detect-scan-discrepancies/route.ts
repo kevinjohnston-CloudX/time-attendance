@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { findScanDiscrepancies } from "@/lib/services/scan-event.service";
-import { findOpenPayPeriod } from "@/lib/utils/punch-helpers";
+import { findOpenPayPeriod, TOO_SOON_REJECTION } from "@/lib/utils/punch-helpers";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 
 /**
@@ -39,6 +39,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let raised = 0;
   let alreadyKnown = 0;
   let unattributable = 0;
+  let repeats = 0;
   const errors: string[] = [];
 
   for (const d of discrepancies) {
@@ -47,6 +48,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // cannot enter the supervisor workflow, which is keyed on timesheets.
     if (!d.employeeId) {
       unattributable += 1;
+      continue;
+    }
+
+    // A repeat scan the clock refused for coming too soon after the last one is
+    // the duplicate rule doing its job: the punch it repeats is on the
+    // timecard. It stays in the Scan Discrepancies report, but raises no
+    // exception for HR to clear.
+    if (d.kind === "REJECTED" && d.rejectionReason === TOO_SOON_REJECTION) {
+      repeats += 1;
       continue;
     }
 
@@ -116,6 +126,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     raised,
     alreadyKnown,
     unattributable,
+    skippedRepeatScans: repeats,
     errors: errors.slice(0, 20),
   });
 }
