@@ -8,6 +8,7 @@ function toLocalDay(d: Date): Date {
 }
 import { db } from "@/lib/db";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
+import { periodDayRange } from "@/lib/pay-period-days";
 import type { LeaveCategory, PayBucket } from "@prisma/client";
 import type { TxClient } from "@/types/prisma";
 
@@ -133,13 +134,27 @@ export async function syncLeaveSegments(
     // 3. Find pay periods that overlap the leave date range, preferring ones
     //    where the employee already has a timesheet (avoids spurious cross-schedule
     //    segment placement when multiple pay period schedules overlap).
-    const allOverlapping = await tx.payPeriod.findMany({
+    // Overlap is decided on calendar days (see pay-period-days): a period stored
+    // as starting at 1 PM on a Sunday still owns that Sunday, and its stored end
+    // is the next period's first day, not its own. Candidates come from a window
+    // a day wider each way, then the day ranges decide.
+    const candidates = await tx.payPeriod.findMany({
       where: {
         tenantId: employee.tenantId,
-        startDate: { lte: request.endDate },
-        endDate: { gte: request.startDate },
+        startDate: { lte: new Date(request.endDate.getTime() + 86_400_000) },
+        endDate: { gte: new Date(request.startDate.getTime() - 86_400_000) },
       },
+      include: { ruleSet: { select: { payFrequency: true } }, tenant: { select: { payFrequency: true } } },
       orderBy: { startDate: "asc" },
+    });
+    const leaveFirst = request.startDate.toISOString().slice(0, 10);
+    const leaveLast = request.endDate.toISOString().slice(0, 10);
+    const dayRanges = new Map(
+      candidates.map((p) => [p.id, periodDayRange(p, p.ruleSet?.payFrequency ?? p.tenant.payFrequency)]),
+    );
+    const allOverlapping = candidates.filter((p) => {
+      const r = dayRanges.get(p.id)!;
+      return r.firstDay <= leaveLast && r.lastDay >= leaveFirst;
     });
     if (allOverlapping.length === 0) return;
 
@@ -169,8 +184,9 @@ export async function syncLeaveSegments(
     const timesheetsByDate = new Map<string, string>();
 
     for (const pp of payPeriods) {
-      const overlapStart = max([toLocalDay(pp.startDate), toLocalDay(request.startDate)]);
-      const overlapEnd = min([toLocalDay(pp.endDate), toLocalDay(request.endDate)]);
+      const range = dayRanges.get(pp.id)!;
+      const overlapStart = max([parseISO(range.firstDay), toLocalDay(request.startDate)]);
+      const overlapEnd = min([parseISO(range.lastDay), toLocalDay(request.endDate)]);
       const overlapDays = eachDayOfInterval({
         start: overlapStart,
         end: overlapEnd,

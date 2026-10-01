@@ -53,14 +53,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     try {
       const employee = await db.employee.findUnique({
         where: { id: d.employeeId },
-        select: { id: true, tenantId: true, ruleSetId: true },
+        select: { id: true, tenantId: true, ruleSetId: true, site: { select: { timezone: true } } },
       });
       if (!employee) {
         unattributable += 1;
         continue;
       }
 
-      const payPeriod = await findOpenPayPeriod(employee.tenantId, employee.ruleSetId);
+      // The period holding the scan's day, not today's: the sweep looks back.
+      const payPeriod = await findOpenPayPeriod(employee.tenantId, employee.ruleSetId, {
+        at: d.scanTime,
+        timezone: employee.site?.timezone,
+      });
       if (!payPeriod) {
         unattributable += 1;
         continue;

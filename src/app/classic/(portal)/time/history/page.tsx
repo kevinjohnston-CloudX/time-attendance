@@ -15,11 +15,11 @@ export default async function PunchHistoryPage() {
   // Resolve the employee's rule set so we find the right pay period
   const employee = await db.employee.findUnique({
     where: { id: employeeId },
-    select: { ruleSetId: true, tenantId: true },
+    select: { ruleSetId: true, tenantId: true, site: { select: { timezone: true } } },
   });
 
   const payPeriod = employee
-    ? await findOpenPayPeriod(employee.tenantId, employee.ruleSetId)
+    ? await findOpenPayPeriod(employee.tenantId, employee.ruleSetId, { timezone: employee.site?.timezone })
     : null;
 
   const punches = payPeriod

@@ -7,11 +7,11 @@ import {
   addDays,
   eachDayOfInterval,
   parseISO,
-  isToday,
+  isSameDay,
 } from "date-fns";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-import { parseUtcDate } from "@/lib/utils/date";
+import { fromSiteClock, parseUtcDate, timeZoneAbbrev, toSiteClock } from "@/lib/utils/date";
 import { periodLastDay } from "@/lib/pay-period-display";
 import type { PayFrequency } from "@prisma/client";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
@@ -260,6 +260,11 @@ interface TimecardViewerProps {
   subtitle?: string;
   /** Page actions drawn at the end of the title row, after the pay period. */
   headerActions?: React.ReactNode;
+  /**
+   * The selected employee's site time zone. Every time on the sheet is shown,
+   * and every typed time read, in it, whoever is looking.
+   */
+  siteTimezone?: string | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -698,8 +703,18 @@ export function TimecardViewer({
   canLockTimecards = false,
   subtitle,
   headerActions,
+  siteTimezone,
 }: TimecardViewerProps) {
   const router = useRouter();
+  // Times are the employee's site time, as the clock showed them, not the
+  // viewer's: a 7:30 AM clock-in in California reads 7:30 AM in New Jersey.
+  // atSite turns a stored moment into that wall clock time for showing and
+  // editing; toMoment turns an edited wall clock time back before saving.
+  const siteTz = siteTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const atSite = (iso: string) => toSiteClock(parseISO(iso), siteTz);
+  const toMoment = (clock: Date) => fromSiteClock(clock, siteTz);
+  const viewerTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const zoneNote = `Times in ${timeZoneAbbrev(siteTz)}${siteTz !== viewerTz ? " (site time)" : ""}`;
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [exceptionFilter, setExceptionFilter] = useState("ALL");
@@ -731,8 +746,8 @@ export function TimecardViewer({
   // off every end date dropped the last day of every monthly period.
   const lastDayOf = (endDate: string) => periodLastDay(endDate, payFrequency as PayFrequency);
 
-  // Find "current" pay period (the one containing today)
-  const today = new Date();
+  // Find "current" pay period (the one containing today, at the site)
+  const today = toSiteClock(new Date(), siteTz);
   today.setHours(0, 0, 0, 0);
   const currentPeriod = sortedPeriods.find((pp) => {
     const start = parseUtcDate(pp.startDate);
@@ -825,7 +840,7 @@ export function TimecardViewer({
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
 
   // New entry row (always-visible blank row at table bottom)
-  const [newEntryDate, setNewEntryDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [newEntryDate, setNewEntryDate] = useState(() => format(toSiteClock(new Date(), siteTz), "yyyy-MM-dd"));
   const [newEntryMode, setNewEntryMode] = useState<"time" | "hours">("time");
   const [newInTimeStr, setNewInTimeStr] = useState("");
   const [newInAmPm, setNewInAmPm] = useState<"AM" | "PM">("AM");
@@ -879,7 +894,7 @@ export function TimecardViewer({
   const missedPunchDays = new Set(
     (timecard?.exceptions ?? [])
       .filter((e) => e.exceptionType === "MISSING_PUNCH")
-      .map((e) => format(parseISO(e.occurredAt), "yyyy-MM-dd"))
+      .map((e) => format(atSite(e.occurredAt), "yyyy-MM-dd"))
   );
   const periodTotals = (() => {
     const byBucket: Record<string, number> = {};
@@ -1030,16 +1045,19 @@ export function TimecardViewer({
     // Guard: if period hasn't started yet, nothing to show
     if (effectiveEnd < periodStart) return [];
     const baseDays = eachDayOfInterval({ start: periodStart, end: effectiveEnd });
-    // Append any future dates beyond effectiveEnd that have segments (e.g. late entries)
-    if (timecard && effectiveEnd < periodEnd) {
+    // Append dates beyond effectiveEnd that have segments: late entries inside the
+    // period, and the morning after its last day, where an overnight shift that
+    // started on the last day ends (the shift stays whole on this timecard).
+    const extraLimit = format(customEndDate ? periodEnd : addDays(periodEnd, 1), "yyyy-MM-dd");
+    if (timecard) {
       const baseDayStrs = new Set(baseDays.map((d) => format(d, "yyyy-MM-dd")));
       const futureDayStrs = new Set(
         timecard.segments
           .map((s) => format(parseUtcDate(s.segmentDate), "yyyy-MM-dd"))
-          .filter((ds) => !baseDayStrs.has(ds) && ds > format(effectiveEnd, "yyyy-MM-dd") && ds <= format(periodEnd, "yyyy-MM-dd"))
+          .filter((ds) => !baseDayStrs.has(ds) && ds > format(effectiveEnd, "yyyy-MM-dd") && ds <= extraLimit)
       );
       const futureDays = Array.from(futureDayStrs).sort().map((ds) => parseISO(ds));
-      return [...baseDays, ...futureDays];
+      if (futureDays.length > 0) return [...baseDays, ...futureDays];
     }
     return baseDays;
   })();
@@ -1056,7 +1074,7 @@ export function TimecardViewer({
     if (!timecard) return [];
     const dayStr = format(day, "yyyy-MM-dd");
     return timecard.punches.filter(
-      (p) => format(parseISO(p.roundedTime), "yyyy-MM-dd") === dayStr
+      (p) => format(atSite(p.roundedTime), "yyyy-MM-dd") === dayStr
     );
   }
 
@@ -1076,7 +1094,7 @@ export function TimecardViewer({
 
   function startEditing(punch: TimecardPunch) {
     if (!canEdit) return;
-    const d = pendingPunchEdits.get(punch.id) ?? parseISO(punch.roundedTime);
+    const d = pendingPunchEdits.get(punch.id) ?? atSite(punch.roundedTime);
     const h24 = d.getHours();
     const minutes = d.getMinutes();
     const ampm: "AM" | "PM" = h24 >= 12 ? "PM" : "AM";
@@ -1204,17 +1222,17 @@ export function TimecardViewer({
     // Client-side overlap check against existing punch pairs for this date
     if (timecard) {
       const dayPunches = timecard.punches
-        .filter((p) => format(parseISO(p.roundedTime), "yyyy-MM-dd") === newEntryDate)
-        .sort((a, b) => parseISO(a.roundedTime).getTime() - parseISO(b.roundedTime).getTime());
+        .filter((p) => format(atSite(p.roundedTime), "yyyy-MM-dd") === newEntryDate)
+        .sort((a, b) => atSite(a.roundedTime).getTime() - atSite(b.roundedTime).getTime());
       for (let i = 0; i < dayPunches.length; i++) {
         if (dayPunches[i].punchType !== "CLOCK_IN") continue;
         const nextOut = dayPunches.slice(i + 1).find((p) => p.punchType === "CLOCK_OUT");
         if (!nextOut) continue;
-        const existIn = parseISO(dayPunches[i].roundedTime).getTime();
-        const existOut = parseISO(nextOut.roundedTime).getTime();
+        const existIn = atSite(dayPunches[i].roundedTime).getTime();
+        const existOut = atSite(nextOut.roundedTime).getTime();
         if (inDate.getTime() < existOut && outDate.getTime() > existIn) {
-          const s = format(parseISO(dayPunches[i].roundedTime), "h:mm a");
-          const en = format(parseISO(nextOut.roundedTime), "h:mm a");
+          const s = format(atSite(dayPunches[i].roundedTime), "h:mm a");
+          const en = format(atSite(nextOut.roundedTime), "h:mm a");
           setNewEntryError(`This overlaps the time already there, ${s} to ${en}.`);
           return;
         }
@@ -1234,8 +1252,8 @@ export function TimecardViewer({
       const result = await addManualPunchPair({
         timesheetId,
         date: newEntryDate,
-        inTime: inDate.toISOString(),
-        outTime: outDate.toISOString(),
+        inTime: toMoment(inDate).toISOString(),
+        outTime: toMoment(outDate).toISOString(),
         reason: "Manual entry",
         payCodeId: newEntryPayCodeId || undefined,
       });
@@ -1550,9 +1568,9 @@ export function TimecardViewer({
         for (const [punchId, newDate] of pendingPunchEdits.entries()) {
           const punch = timecard?.punches.find((p) => p.id === punchId);
           if (punch) {
-            const dayKey = format(parseISO(punch.roundedTime), "yyyy-MM-dd");
+            const dayKey = format(atSite(punch.roundedTime), "yyyy-MM-dd");
             const typeLabel = PUNCH_TYPE_LABEL[punch.punchType as PunchTypeValue] ?? punch.punchType;
-            const oldTime = format(parseISO(punch.roundedTime), "h:mm a");
+            const oldTime = format(atSite(punch.roundedTime), "h:mm a");
             const newTime = format(newDate, "h:mm a");
             addChange(dayKey, `${typeLabel} corrected: ${oldTime} → ${newTime}`);
           }
@@ -1592,10 +1610,10 @@ export function TimecardViewer({
           ops.push(setDayReasonCode({ timesheetId, segmentDate, reasonCodeId: reasonCodeId || null }));
         }
         for (const [punchId, newDate] of pendingPunchEdits.entries()) {
-          ops.push(correctPunch({ originalPunchId: punchId, newPunchTime: newDate.toISOString() }));
+          ops.push(correctPunch({ originalPunchId: punchId, newPunchTime: toMoment(newDate).toISOString() }));
         }
         for (const { punchType, punchDate } of pendingNewPunches) {
-          ops.push(addSingleManualPunch({ timesheetId, punchType, punchTime: punchDate.toISOString() }));
+          ops.push(addSingleManualPunch({ timesheetId, punchType, punchTime: toMoment(punchDate).toISOString() }));
         }
         for (const segmentDate of pendingWaiverToggles) {
           ops.push(toggleMealWaiver({ timesheetId, segmentDate }));
@@ -2235,6 +2253,13 @@ export function TimecardViewer({
                         </a>
                       </>
                     )}
+                    {/* Named on every sheet, and called out as site time when it
+                        is not the viewer's own zone, so a California sheet read
+                        in New Jersey is not taken for Eastern. */}
+                    <span aria-hidden="true">·</span>
+                    <span title={`Clock times are shown, and typed times read, in the employee's site time zone (${siteTz}).`}>
+                      {zoneNote}
+                    </span>
                   </p>
                   {/* The period at a glance, so nobody scrolls to the Summary
                       to learn whether this person needs a look. */}
@@ -2296,7 +2321,7 @@ export function TimecardViewer({
                         size="sm"
                         leadingIcon={<Plus className="h-3.5 w-3.5" />}
                         onClick={() => {
-                          setNewEntryDate(format(new Date(), "yyyy-MM-dd"));
+                          setNewEntryDate(format(toSiteClock(new Date(), siteTz), "yyyy-MM-dd"));
                           setNewInTimeStr("");
                           setNewOutTimeStr("");
                           setNewInAmPm("AM");
@@ -2408,7 +2433,7 @@ export function TimecardViewer({
                       const daySegments = segmentsForDay(day);
                       const isWeekend = [0, 6].includes(day.getDay());
                       const isExpanded = expandedDays.has(dayKey);
-                      const isTodayRow = isToday(day);
+                      const isTodayRow = isSameDay(day, today);
                       const offset = dayIndex(day);
                       const startsWeek = multiWeek && offset % 7 === 0;
                       const weekEnd = new Date(Math.min(addDays(day, 6).getTime(), lastPeriodDay.getTime()));
@@ -2448,7 +2473,7 @@ export function TimecardViewer({
                         ? timecard.exceptions.filter(
                             (e) =>
                               format(
-                                parseISO(e.occurredAt),
+                                atSite(e.occurredAt),
                                 "yyyy-MM-dd"
                               ) === dayStr
                           )
@@ -2607,7 +2632,7 @@ export function TimecardViewer({
                                   disabled={!canEdit}
                                   className={canEdit ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(firstIn.id), canEdit)}
                                 >
-                                  {pendingPunchEdits.has(firstIn.id) ? format(pendingPunchEdits.get(firstIn.id)!, "h:mm a") : format(parseISO(firstIn.roundedTime), "h:mm a")}
+                                  {pendingPunchEdits.has(firstIn.id) ? format(pendingPunchEdits.get(firstIn.id)!, "h:mm a") : format(atSite(firstIn.roundedTime), "h:mm a")}
                                 </button>
                               ) : (() => {
                                 const pendingNewIn = pendingNewPunches.find((p) => p.dayKey === dayKey && p.pairIndex === 0 && p.punchType === "CLOCK_IN");
@@ -2620,7 +2645,7 @@ export function TimecardViewer({
                                 return hasMissingPunch && canEdit ? (
                                   <button
                                     type="button"
-                                    onClick={() => startAddingPunch(dayKey, 0, "CLOCK_IN", day, lastOut ? parseISO(lastOut.roundedTime) : null)}
+                                    onClick={() => startAddingPunch(dayKey, 0, "CLOCK_IN", day, lastOut ? atSite(lastOut.roundedTime) : null)}
                                     className={gridCellButtonClass}
                                     style={{ ...punchCellStyle(true, true), fontWeight: "var(--weight-medium)" }}
                                     title="Click to add the missing punch"
@@ -2674,7 +2699,7 @@ export function TimecardViewer({
                                   disabled={!canEdit}
                                   className={canEdit ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(lastOut.id), canEdit)}
                                 >
-                                  {pendingPunchEdits.has(lastOut.id) ? format(pendingPunchEdits.get(lastOut.id)!, "h:mm a") : format(parseISO(lastOut.roundedTime), "h:mm a")}
+                                  {pendingPunchEdits.has(lastOut.id) ? format(pendingPunchEdits.get(lastOut.id)!, "h:mm a") : format(atSite(lastOut.roundedTime), "h:mm a")}
                                 </button>
                               ) : (() => {
                                 const pendingNewOut = pendingNewPunches.find((p) => p.dayKey === dayKey && p.pairIndex === 0 && p.punchType === "CLOCK_OUT");
@@ -2687,7 +2712,7 @@ export function TimecardViewer({
                                 return hasMissingPunch && canEdit ? (
                                   <button
                                     type="button"
-                                    onClick={() => startAddingPunch(dayKey, 0, "CLOCK_OUT", day, firstIn ? parseISO(firstIn.roundedTime) : null)}
+                                    onClick={() => startAddingPunch(dayKey, 0, "CLOCK_OUT", day, firstIn ? atSite(firstIn.roundedTime) : null)}
                                     className={gridCellButtonClass}
                                     style={{ ...punchCellStyle(true, true), fontWeight: "var(--weight-medium)" }}
                                     title="Click to add the missing punch"
@@ -3129,8 +3154,8 @@ export function TimecardViewer({
                             {canDeleteManual && (() => {
                               const isManualPair = firstIn?.source === "MANUAL" && lastOut?.source === "MANUAL";
                               const punchIds = [firstIn?.id, lastOut?.id].filter(Boolean) as string[];
-                              const inTime = firstIn ? format(parseISO(firstIn.roundedTime), "h:mm a") : null;
-                              const outTime = lastOut ? format(parseISO(lastOut.roundedTime), "h:mm a") : null;
+                              const inTime = firstIn ? format(atSite(firstIn.roundedTime), "h:mm a") : null;
+                              const outTime = lastOut ? format(atSite(lastOut.roundedTime), "h:mm a") : null;
                               const isPendingDelete = pendingDeletions.some((d) => d.punchIds.join(",") === punchIds.join(","));
                               return (
                                 <td className="w-8 px-1 text-center" onClick={(e) => e.stopPropagation()}>
@@ -3208,7 +3233,7 @@ export function TimecardViewer({
                                       onDelete={() => deletePunchDirect(pairIn.id)}
                                     />
                                   ) : pairIn ? (
-                                    <button type="button" onClick={() => startEditing(pairIn)} disabled={!canEdit} className={canEdit ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(pairIn.id), canEdit)}>{pendingPunchEdits.has(pairIn.id) ? format(pendingPunchEdits.get(pairIn.id)!, "h:mm a") : format(parseISO(pairIn.roundedTime), "h:mm a")}</button>
+                                    <button type="button" onClick={() => startEditing(pairIn)} disabled={!canEdit} className={canEdit ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(pairIn.id), canEdit)}>{pendingPunchEdits.has(pairIn.id) ? format(pendingPunchEdits.get(pairIn.id)!, "h:mm a") : format(atSite(pairIn.roundedTime), "h:mm a")}</button>
                                   ) : (() => {
                                     const pendingNewPairIn = pendingNewPunches.find((p) => p.dayKey === dayKey && p.pairIndex === pairIdx && p.punchType === "CLOCK_IN");
                                     if (pendingNewPairIn) return (
@@ -3249,7 +3274,7 @@ export function TimecardViewer({
                                       onDelete={() => deletePunchDirect(pairOut.id)}
                                     />
                                   ) : pairOut ? (
-                                    <button type="button" onClick={() => startEditing(pairOut)} disabled={!canEdit} className={canEdit ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(pairOut.id), canEdit)}>{pendingPunchEdits.has(pairOut.id) ? format(pendingPunchEdits.get(pairOut.id)!, "h:mm a") : format(parseISO(pairOut.roundedTime), "h:mm a")}</button>
+                                    <button type="button" onClick={() => startEditing(pairOut)} disabled={!canEdit} className={canEdit ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(pairOut.id), canEdit)}>{pendingPunchEdits.has(pairOut.id) ? format(pendingPunchEdits.get(pairOut.id)!, "h:mm a") : format(atSite(pairOut.roundedTime), "h:mm a")}</button>
                                   ) : (() => {
                                     const pendingNewPairOut = pendingNewPunches.find((p) => p.dayKey === dayKey && p.pairIndex === pairIdx && p.punchType === "CLOCK_OUT");
                                     if (pendingNewPairOut) return (
@@ -3264,7 +3289,7 @@ export function TimecardViewer({
                                       return canEdit ? (
                                         <button
                                           type="button"
-                                          onClick={() => startAddingPunch(dayKey, pairIdx, "CLOCK_OUT", day, pairIn ? parseISO(pairIn.roundedTime) : null)}
+                                          onClick={() => startAddingPunch(dayKey, pairIdx, "CLOCK_OUT", day, pairIn ? atSite(pairIn.roundedTime) : null)}
                                           className={gridCellButtonClass}
                                           style={{ ...punchCellStyle(true, true), fontWeight: "var(--weight-medium)" }}
                                           title="Click to add the missing punch"
@@ -3367,8 +3392,8 @@ export function TimecardViewer({
                                 {canDeleteManual && (() => {
                                   const isManualPair = pairIn?.source === "MANUAL" && pairOut?.source === "MANUAL";
                                   const punchIds = [pairIn?.id, pairOut?.id].filter(Boolean) as string[];
-                                  const inTime = pairIn ? format(parseISO(pairIn.roundedTime), "h:mm a") : null;
-                                  const outTime = pairOut ? format(parseISO(pairOut.roundedTime), "h:mm a") : null;
+                                  const inTime = pairIn ? format(atSite(pairIn.roundedTime), "h:mm a") : null;
+                                  const outTime = pairOut ? format(atSite(pairOut.roundedTime), "h:mm a") : null;
                                   const isPendingDelete = pendingDeletions.some((d) => d.punchIds.join(",") === punchIds.join(","));
                                   return (
                                     <td className="w-8 px-1 text-center" onClick={(e) => e.stopPropagation()}>
@@ -3560,6 +3585,7 @@ export function TimecardViewer({
                                   timesheetId={timecard?.timesheetId ?? ""}
                                   date={format(day, "yyyy-MM-dd")}
                                   leaveTypes={leaveTypes}
+                                  timezone={siteTz}
                                   onClose={() => setAddEntryDay(null)}
                                   onSuccess={() => {
                                     setAddEntryDay(null);
@@ -3635,7 +3661,7 @@ export function TimecardViewer({
                                           }}
                                         >
                                           {PUNCH_TYPE_LABEL[punch.punchType as PunchTypeValue] ?? punch.punchType}{" "}
-                                          {pendingPunchEdits.has(punch.id) ? format(pendingPunchEdits.get(punch.id)!, "h:mm a") : format(parseISO(punch.roundedTime), "h:mm a")}
+                                          {pendingPunchEdits.has(punch.id) ? format(pendingPunchEdits.get(punch.id)!, "h:mm a") : format(atSite(punch.roundedTime), "h:mm a")}
                                           {canEdit && <Pencil className="h-2.5 w-2.5" />}
                                         </button>
                                       )
@@ -4056,7 +4082,7 @@ export function TimecardViewer({
                           </span>
                           <span>·</span>
                           <span className="tabular">
-                            {format(parseISO(n.createdAt), "MM/dd/yyyy h:mm a")}
+                            {format(atSite(n.createdAt), "MM/dd/yyyy h:mm a")}
                           </span>
                         </div>
                         <p

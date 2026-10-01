@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { applyOvertime } from "@/lib/engines/overtime-engine";
 import { reconcileLeaveDeductions } from "@/lib/engines/leave-deduction";
 import { startOfDayInTz, nextMidnightInTz, endOfDayInTz, roundDurationMinutes } from "@/lib/utils/date";
+import { periodBoundsInZone, periodDateBounds } from "@/lib/pay-period-days";
 import type { Punch, RuleSet, PayBucket, SegmentType, HolidayCreditMethod } from "@prisma/client";
 import type { MealConfig } from "@/actions/shift.actions";
 
@@ -867,12 +868,21 @@ export async function rebuildSegments(
           },
         },
       },
-      payPeriod: { select: { startDate: true, endDate: true } },
+      payPeriod: { select: { startDate: true, endDate: true, ruleSet: { select: { payFrequency: true } }, tenant: { select: { payFrequency: true } } } },
     },
   });
   const timezone = timesheet.employee.site?.timezone ?? "UTC";
   const tenantId = timesheet.employee.tenantId;
   const isSalary = timesheet.employee.payType === "SALARY";
+
+  // The period as whole calendar days at the site (see pay-period-days): its
+  // stored dates are read for their day only, so a Sunday morning belongs to
+  // the period that starts that Sunday. `bounds` are moments, for punches and
+  // segments; `dates` are date-only values, for the code that walks the days.
+  const frequency = timesheet.payPeriod.ruleSet?.payFrequency ?? timesheet.payPeriod.tenant.payFrequency;
+  const bounds = periodBoundsInZone(timesheet.payPeriod, frequency, timezone);
+  const dates = periodDateBounds(timesheet.payPeriod, frequency);
+  const lastDayDate = new Date(bounds.lastDay + "T00:00:00Z");
 
   // When this rule set became active mid-period (employee promotion/transfer),
   // autopay credits should only apply from that date forward; days before it
@@ -896,15 +906,30 @@ export async function rebuildSegments(
   });
 
   // If the first approved punch in this period has stateBefore !== OUT, the employee
-  // clocked in during a previous period. Seed computeSegments with the period's own
-  // startDate so only hours earned here are credited.
+  // clocked in during a previous period. Seed computeSegments with this period's
+  // start so only hours earned here are credited, and never before the end of what
+  // the previous timecard already credited for that shift: a timecard calculated
+  // under the old 1 PM boundary paid the morning up to 1 PM, and must not be paid
+  // again here.
   const firstPunch = punches[0];
-  const carryIn =
-    firstPunch && firstPunch.stateBefore !== "OUT"
-      ? { openStart: timesheet.payPeriod.startDate, openState: firstPunch.stateBefore as ActiveState }
-      : undefined;
+  let carryIn: { openStart: Date; openState: ActiveState } | undefined;
+  if (firstPunch && firstPunch.stateBefore !== "OUT") {
+    let openStart = bounds.start;
+    const credited = await db.workSegment.findFirst({
+      where: {
+        timesheet: { employeeId: timesheet.employee.id },
+        timesheetId: { not: timesheetId },
+        segmentType: "WORK",
+        endTime: { gt: new Date(bounds.start.getTime() - 86_400_000), lte: firstPunch.roundedTime },
+      },
+      orderBy: { endTime: "desc" },
+      select: { endTime: true },
+    });
+    if (credited && credited.endTime > openStart) openStart = credited.endTime;
+    carryIn = { openStart, openState: firstPunch.stateBefore as ActiveState };
+  }
 
-  const rawSegments = computeSegments(timesheetId, punches, timezone, timesheet.payPeriod.startDate, carryIn);
+  const rawSegments = computeSegments(timesheetId, punches, timezone, bounds.start, carryIn);
 
   // Merge shift-level meal config on top of rule set defaults.
   // When a shift is assigned, the shift's mealConfig is authoritative:
@@ -1103,8 +1128,8 @@ export async function rebuildSegments(
   if (ruleSet.autoPayEnabled && isSalary) {
     await applyAutoPayCredits(
       timesheetId,
-      timesheet.payPeriod.startDate,
-      timesheet.payPeriod.endDate,
+      dates.start,
+      dates.endExclusive,
       ruleSet,
       timesheet.employee.shift ?? null,
       autoPayCreditsFrom,
@@ -1112,8 +1137,8 @@ export async function rebuildSegments(
   } else if (isSalary) {
     await ensureSalarySegments(
       timesheetId,
-      timesheet.payPeriod.startDate,
-      timesheet.payPeriod.endDate,
+      dates.start,
+      dates.endExclusive,
       ruleSet.defaultPayCodeId,
       autoPayCreditsFrom,
     );
@@ -1126,11 +1151,12 @@ export async function rebuildSegments(
   await db.overtimeBucket.deleteMany({ where: { timesheetId, bucket: "HOLIDAY" } });
   if (timesheet.employee.holidayRule && tenantId) {
     const _hr = timesheet.employee.holidayRule;
+    // First and last day, both inclusive, as the holiday code reads them.
     await syncHolidayCredits(
       timesheetId,
       timezone,
-      timesheet.payPeriod.startDate,
-      timesheet.payPeriod.endDate,
+      dates.start,
+      lastDayDate,
       punches,
       {
         ..._hr,
@@ -1185,8 +1211,8 @@ export async function rebuildSegments(
   await syncAbsentExceptions(
     timesheetId,
     timezone,
-    timesheet.payPeriod.startDate,
-    timesheet.payPeriod.endDate,
+    bounds.firstDay,
+    bounds.lastDay,
     punches,
     timesheet.employee.shift?.workDays
   );
@@ -1195,8 +1221,8 @@ export async function rebuildSegments(
   await syncMissingPunchExceptions(
     timesheetId,
     timezone,
-    timesheet.payPeriod.startDate,
-    timesheet.payPeriod.endDate,
+    bounds.firstDay,
+    bounds.lastDay,
     punches
   );
 
@@ -1210,17 +1236,13 @@ export async function rebuildSegments(
 async function syncAbsentExceptions(
   timesheetId: string,
   timezone: string,
-  payPeriodStart: Date,
-  payPeriodEnd: Date,
+  // The period's first and last calendar day, both inclusive ("yyyy-MM-dd").
+  periodStartStr: string,
+  periodEndStr: string,
   punches: Punch[],
   shiftWorkDays?: number[]
 ): Promise<void> {
-  // Calendar date strings (YYYY-MM-DD) for the period bounds and today in site timezone.
-  const periodStartStr = format(payPeriodStart, "yyyy-MM-dd");
-  // Normalize to the last inclusive calendar day so the loop covers the full period
-  // regardless of whether endDate uses the exclusive-midnight or end-of-day convention.
-  const isExclusiveEndAbs = payPeriodEnd.getUTCHours() === 0 && payPeriodEnd.getUTCMinutes() === 0 && payPeriodEnd.getUTCSeconds() === 0;
-  const periodEndStr = format(isExclusiveEndAbs ? addDays(payPeriodEnd, -1) : payPeriodEnd, "yyyy-MM-dd");
+  // Today in the site timezone.
   const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
 
   // Build set of days that have at least one approved punch (local timezone).
@@ -1314,15 +1336,13 @@ async function syncAbsentExceptions(
 async function syncMissingPunchExceptions(
   timesheetId: string,
   timezone: string,
-  payPeriodStart: Date,
-  payPeriodEnd: Date,
+  // The period's first and last calendar day, both inclusive ("yyyy-MM-dd").
+  periodStartStr: string,
+  periodEndStr: string,
   punches: Punch[]
 ): Promise<void> {
   if (punches.length === 0) return;
 
-  const periodStartStr = format(payPeriodStart, "yyyy-MM-dd");
-  const isExclusiveEndMp = payPeriodEnd.getUTCHours() === 0 && payPeriodEnd.getUTCMinutes() === 0 && payPeriodEnd.getUTCSeconds() === 0;
-  const periodEndStr = format(isExclusiveEndMp ? addDays(payPeriodEnd, -1) : payPeriodEnd, "yyyy-MM-dd");
   const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
   const localDateOf = (d: Date) =>
     new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(d);

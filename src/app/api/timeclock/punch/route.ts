@@ -265,8 +265,12 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // 6. Find open pay period
-  const payPeriod = await findOpenPayPeriod(employee.tenantId, employee.ruleSetId);
+  // 6. Find open pay period: the one holding the scan's own day at the site,
+  //    not the moment it reached us (a tablet may flush its queue late).
+  const payPeriod = await findOpenPayPeriod(employee.tenantId, employee.ruleSetId, {
+    at: punchTime,
+    timezone: employee.site.timezone,
+  });
   if (!payPeriod) {
     await saveRejectedPunch({ employeeId: employee.id, timesheetId: null, punchType: "CLOCK_IN", source: "KIOSK", stateBefore: "OUT", rejectionReason: "No active pay period" });
     await settle("PUNCH_REJECTED", { rejectionReason: "No active pay period" });

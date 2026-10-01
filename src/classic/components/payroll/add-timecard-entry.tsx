@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { addManualPunchPair, addPayrollLeaveEntry } from "@/actions/timecard-entry.actions";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
+import { fromSiteClock } from "@/lib/utils/date";
 
 type LeaveTypeOption = {
   id: string;
@@ -17,6 +18,8 @@ interface AddTimecardEntryProps {
   leaveTypes: LeaveTypeOption[];
   onClose: () => void;
   onSuccess: () => void;
+  /** The employee's site time zone: the times typed are that site's clock. */
+  timezone: string;
 }
 
 export function AddTimecardEntry({
@@ -25,6 +28,7 @@ export function AddTimecardEntry({
   leaveTypes,
   onClose,
   onSuccess,
+  timezone,
 }: AddTimecardEntryProps) {
   const [tab, setTab] = useState<"time" | "leave">("time");
   const [isPending, startTransition] = useTransition();
@@ -47,8 +51,8 @@ export function AddTimecardEntry({
       const result = await addManualPunchPair({
         timesheetId,
         date,
-        inTime: new Date(inTime).toISOString(),
-        outTime: new Date(outTime).toISOString(),
+        inTime: fromSiteClock(new Date(inTime), timezone).toISOString(),
+        outTime: fromSiteClock(new Date(outTime), timezone).toISOString(),
         reason,
       });
       if (!result.success) {

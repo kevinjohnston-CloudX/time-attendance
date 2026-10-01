@@ -118,10 +118,12 @@ export default async function TimecardsPage({
     }
   }
 
-  // Fetch pay codes and reason codes
-  const [payCodesResult, reasonCodesResult] = await Promise.all([
+  // Fetch pay codes and reason codes, and the employee's site time zone: the
+  // sheet shows and reads every time in it, whoever is looking.
+  const [payCodesResult, reasonCodesResult, siteOfEmployee] = await Promise.all([
     getPayCodes({}),
     getReasonCodes(),
+    db.employee.findUnique({ where: { id: selectedEmployeeId }, select: { site: { select: { timezone: true } } } }),
   ]);
   const payCodes = payCodesResult.success ? payCodesResult.data : [];
   const reasonCodes = reasonCodesResult.success ? reasonCodesResult.data : [];
@@ -234,6 +236,7 @@ export default async function TimecardsPage({
         employees={employees}
         selectedEmployeeId={selectedEmployeeId}
         timecard={serializedTimecard}
+        siteTimezone={siteOfEmployee?.site?.timezone ?? null}
         payFrequency={payFrequency}
         userRole={session.user.role ?? "EMPLOYEE"}
         readOnly={!canEdit}

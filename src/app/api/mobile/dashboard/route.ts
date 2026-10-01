@@ -19,13 +19,13 @@ export async function GET(req: NextRequest) {
 
     const employee = await db.employee.findUnique({
       where: { id: actor.employeeId },
-      select: { ruleSetId: true },
+      select: { ruleSetId: true, site: { select: { timezone: true } } },
     });
 
     const [punchState, payPeriod, lastPunch, leaveBalances] = await Promise.all(
       [
         getCurrentPunchState(actor.employeeId),
-        findOpenPayPeriod(actor.tenantId, employee?.ruleSetId),
+        findOpenPayPeriod(actor.tenantId, employee?.ruleSetId, { timezone: employee?.site?.timezone }),
         db.punch.findFirst({
           where: {
             employeeId: actor.employeeId,

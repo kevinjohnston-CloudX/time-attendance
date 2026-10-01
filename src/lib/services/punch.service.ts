@@ -34,7 +34,7 @@ export async function recordPunchCore(
     },
   });
 
-  const payPeriod = await findOpenPayPeriod(tenantId, employee.ruleSetId);
+  const payPeriod = await findOpenPayPeriod(tenantId, employee.ruleSetId, { timezone: employee.site?.timezone });
   if (!payPeriod) {
     await saveRejectedPunch({ employeeId, timesheetId: null, punchType, source, stateBefore: "OUT", rejectionReason: "No active pay period" });
     throw new Error("No active pay period. Contact payroll.");

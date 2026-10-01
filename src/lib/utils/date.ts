@@ -288,6 +288,52 @@ export function nextMidnightInTz(utcDate: Date, timezone: string): Date {
 }
 
 /**
+ * A moment as the site's wall clock read it, held as a Date whose own local
+ * fields (getHours, date-fns format) show that wall time in any browser.
+ *
+ * <p>Punch times are shown in the employee's site time, not the viewer's: a
+ * 7:30 AM clock-in in California reads 7:30 AM to an HR admin in New Jersey,
+ * as it did on the clock and does in NovaTime. Use the result only to show or
+ * edit a time; turn an edited one back with {@link fromSiteClock} before it is
+ * saved.
+ */
+export function toSiteClock(instant: Date, timezone: string): Date {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  }).formatToParts(instant);
+  const get = (type: string) => parseInt(parts.find((p) => p.type === type)?.value ?? "0", 10);
+  let hours = get("hour");
+  if (hours === 24) hours = 0;
+  return new Date(get("year"), get("month") - 1, get("day"), hours, get("minute"), get("second"), instant.getMilliseconds());
+}
+
+/** The real moment for a site wall clock time held as {@link toSiteClock} holds it. */
+export function fromSiteClock(clock: Date, timezone: string): Date {
+  const asIfUtc = new Date(Date.UTC(
+    clock.getFullYear(), clock.getMonth(), clock.getDate(),
+    clock.getHours(), clock.getMinutes(), clock.getSeconds(), clock.getMilliseconds(),
+  ));
+  const shown = toSiteClock(asIfUtc, timezone);
+  const shownMs = Date.UTC(
+    shown.getFullYear(), shown.getMonth(), shown.getDate(),
+    shown.getHours(), shown.getMinutes(), shown.getSeconds(), shown.getMilliseconds(),
+  );
+  return new Date(2 * asIfUtc.getTime() - shownMs);
+}
+
+/** "PDT", "EST": the zone's short name at that moment, for labelling site times. */
+export function timeZoneAbbrev(timezone: string, at: Date = new Date()): string {
+  return (
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "short" })
+      .formatToParts(at)
+      .find((p) => p.type === "timeZoneName")?.value ?? timezone
+  );
+}
+
+/**
  * An "HH:mm" stored time, written the way every screen in this product writes
  * times: on a 12 hour clock, with AM or PM.
  *

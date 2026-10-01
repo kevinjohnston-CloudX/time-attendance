@@ -510,10 +510,12 @@ export async function applyOvertime(
   shift?: { startTime: string; endTime: string } | null,
   timezone?: string
 ): Promise<OvertimeResult> {
-  const [segments, punchesWithCode, missingPunchExceptions] = await Promise.all([
+  const [segments, clockPunches, missingPunchExceptions] = await Promise.all([
     db.workSegment.findMany({ where: { timesheetId } }),
+    // Every clock punch, not only the coded ones: the clock-out that ends a coded
+    // pair usually carries no pay code of its own.
     db.punch.findMany({
-      where: { timesheetId, isApproved: true, correctedById: null, payCodeId: { not: null } },
+      where: { timesheetId, isApproved: true, correctedById: null, punchType: { in: ["CLOCK_IN", "CLOCK_OUT"] } },
       orderBy: { roundedTime: "asc" },
       select: { punchType: true, roundedTime: true, payCodeId: true },
     }),
@@ -529,21 +531,26 @@ export async function applyOvertime(
     missingPunchExceptions.map((e) => format(e.occurredAt, "yyyy-MM-dd"))
   );
 
-  // Build exempt time ranges from punches whose pay code excludes OT counting
+  // Build exempt time ranges from punch pairs whose clock-in pay code excludes
+  // OT counting. Each range runs from that clock-in to the next clock-out, coded
+  // or not; only a pair still open at the end of the sheet runs on.
   const exemptRanges: Array<{ start: Date; end: Date | null }> = [];
-  if (punchesWithCode.length > 0) {
-    const uniqueIds = [...new Set(punchesWithCode.map((p) => p.payCodeId!))];
+  const codedIds = [...new Set(clockPunches.map((p) => p.payCodeId).filter((id): id is string => !!id))];
+  if (codedIds.length > 0) {
     const exemptCodes = await db.payCode.findMany({
-      where: { id: { in: uniqueIds }, countsTowardOt: false },
+      where: { id: { in: codedIds }, countsTowardOt: false },
       select: { id: true },
     });
     const exemptIdSet = new Set(exemptCodes.map((c) => c.id));
     if (exemptIdSet.size > 0) {
-      for (let i = 0; i < punchesWithCode.length; i++) {
-        const p = punchesWithCode[i];
+      for (let i = 0; i < clockPunches.length; i++) {
+        const p = clockPunches[i];
         if (p.punchType !== "CLOCK_IN" || !p.payCodeId || !exemptIdSet.has(p.payCodeId)) continue;
-        const clockOut = punchesWithCode.slice(i + 1).find((pp) => pp.punchType === "CLOCK_OUT") ?? null;
-        exemptRanges.push({ start: p.roundedTime, end: clockOut?.roundedTime ?? null });
+        const clockOut = clockPunches.slice(i + 1).find((pp) => pp.punchType === "CLOCK_OUT") ?? null;
+        // Segments start on the whole minute (computeSegments truncates), so the
+        // range does too, or the pair's first segment would fall just before it.
+        const start = new Date(Math.floor(p.roundedTime.getTime() / 60_000) * 60_000);
+        exemptRanges.push({ start, end: clockOut?.roundedTime ?? null });
       }
     }
   }

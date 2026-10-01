@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { periodContains } from "@/lib/pay-period-days";
 import type { PunchSource, PunchState, PunchType } from "@prisma/client";
 
 export async function getCurrentPunchState(employeeId: string): Promise<PunchState> {
@@ -52,45 +53,56 @@ export async function saveRejectedPunch(params: {
 }
 
 /**
- * Resolves the open pay period for an employee.
+ * Resolves the open pay period for an employee at a moment (now by default).
  * When the employee's rule set has its own pay period schedule, that period is
  * returned first. If none is found (e.g. the rule set has no schedule configured
  * yet), falls back to the tenant-level period (ruleSetId = null).
+ *
+ * <p>A period is matched by calendar day at the employee's site, not by its
+ * stored instants (see pay-period-days): a punch at 7 AM on the Sunday a period
+ * starts belongs to that period, though the period was stored as starting at
+ * 1 PM. Pass the punch's own time, not the moment it arrived: a tablet flushing
+ * its offline queue after midnight must not move yesterday's punch along.
  */
 export async function findOpenPayPeriod(
   tenantId: string | null,
-  ruleSetId?: string | null
+  ruleSetId?: string | null,
+  opts: { at?: Date; timezone?: string | null } = {},
 ) {
-  const now = new Date();
-  // Use start-of-today (UTC) for the endDate comparison so that periods whose endDate is
-  // stored as midnight of the last day (semi-monthly period 1 legacy convention) are still
-  // matched on that day. orderBy startDate desc ensures the newest matching period wins
-  // when two consecutive periods both satisfy the query on a period boundary.
-  const todayUTCStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const at = opts.at ?? new Date();
+  const timezone = opts.timezone || "America/New_York";
+  // Candidates generously around the moment; the day check below decides.
+  const near = { startDate: { lte: new Date(at.getTime() + 2 * 86_400_000) }, endDate: { gte: new Date(at.getTime() - 2 * 86_400_000) } };
+
+  const tenantFrequency = async () =>
+    tenantId
+      ? (await db.tenant.findUnique({ where: { id: tenantId }, select: { payFrequency: true } }))?.payFrequency ?? "BIWEEKLY"
+      : "BIWEEKLY";
 
   // Try rule-set-specific period first when ruleSetId is provided
   if (ruleSetId) {
-    const rsPeriod = await db.payPeriod.findFirst({
-      where: {
-        ruleSetId,
-        startDate: { lte: now },
-        endDate: { gte: todayUTCStart },
-        status: "OPEN",
-      },
+    const rsPeriods = await db.payPeriod.findMany({
+      where: { ruleSetId, status: "OPEN", ...near },
+      include: { ruleSet: { select: { payFrequency: true } } },
       orderBy: { startDate: "desc" },
     });
-    if (rsPeriod) return rsPeriod;
+    if (rsPeriods.length > 0) {
+      const freq = rsPeriods[0].ruleSet?.payFrequency ?? (await tenantFrequency());
+      const match = rsPeriods.find((p) => periodContains(p, freq, at, timezone));
+      if (match) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { ruleSet: _rs, ...period } = match;
+        return period;
+      }
+    }
   }
 
   // Fall back to tenant-level period (legacy / no rule-set schedule configured)
-  return db.payPeriod.findFirst({
-    where: {
-      ...(tenantId && { tenantId }),
-      ruleSetId: null,
-      startDate: { lte: now },
-      endDate: { gte: todayUTCStart },
-      status: "OPEN",
-    },
+  const tenantPeriods = await db.payPeriod.findMany({
+    where: { ...(tenantId && { tenantId }), ruleSetId: null, status: "OPEN", ...near },
     orderBy: { startDate: "desc" },
   });
+  if (tenantPeriods.length === 0) return null;
+  const freq = await tenantFrequency();
+  return tenantPeriods.find((p) => periodContains(p, freq, at, timezone)) ?? null;
 }

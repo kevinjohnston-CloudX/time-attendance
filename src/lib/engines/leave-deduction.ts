@@ -347,12 +347,17 @@ export async function reconcileLeaveDeductions(
       const effectiveBucket: PayBucket | null = leaveType
         ? categoryToPayBucket(leaveType.category)
         : (payCode?.payBucket ?? null);
+      // A regular-type code (Regular Hours, Salary) leaves the overtime engine's
+      // REG / OT / DT split alone: forcing it to REG would erase the overtime
+      // the pair earned. Only a code of another kind (PTO, sick, unpaid...)
+      // moves its hours into that bucket.
+      const overrideBucket = effectiveBucket && effectiveBucket !== "REG" ? effectiveBucket : null;
 
       await db.workSegment.updateMany({
         where: { id: { in: segs.map((s) => s.id) } },
         data: {
           payCodeId: clockIn.payCodeId,
-          ...(effectiveBucket ? { payBucketOverride: effectiveBucket } : {}),
+          ...(overrideBucket ? { payBucketOverride: overrideBucket } : {}),
         },
       });
     }
