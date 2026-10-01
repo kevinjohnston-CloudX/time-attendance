@@ -47,11 +47,12 @@ export default async function TimecardsPage({
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const [canViewTeam, canViewAll, canEditTeam, canEditAll] = await Promise.all([
+  const [canViewTeam, canViewAll, canEditTeam, canEditAll, canRunPayroll] = await Promise.all([
     userHasPermission(session.user, "TIMECARD_VIEW_TEAM"),
     userHasPermission(session.user, "TIMECARD_VIEW_ANY"),
     userHasPermission(session.user, "TIMECARD_EDIT_TEAM"),
     userHasPermission(session.user, "TIMECARD_EDIT_ANY"),
+    userHasPermission(session.user, "PAYROLL_RUN"),
   ]);
   if (!canViewTeam && !canViewAll && !canEditTeam && !canEditAll) redirect("/dashboard");
 
@@ -194,6 +195,7 @@ export default async function TimecardsPage({
         payPeriod: {
           startDate: timecard.payPeriod.startDate.toISOString(),
           endDate: timecard.payPeriod.endDate.toISOString(),
+          status: timecard.payPeriod.status,
         },
         employee: {
           user: timecard.employee.user
@@ -286,6 +288,7 @@ export default async function TimecardsPage({
         payFrequency={payFrequency}
         userRole={session.user.role ?? "EMPLOYEE"}
         readOnly={!canEdit}
+        canLockTimecards={canRunPayroll}
         customStart={sp.customStart ?? null}
         customEnd={sp.customEnd ?? null}
         payCodes={payCodes.map((pc) => ({

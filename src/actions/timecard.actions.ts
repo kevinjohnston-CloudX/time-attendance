@@ -131,7 +131,7 @@ export const getEmployeePeriods = withRBAC(
   ["TIMECARD_VIEW_TEAM", "TIMECARD_VIEW_ANY", "TIMECARD_EDIT_TEAM", "TIMECARD_EDIT_ANY"],
   async (ctx, input: { employeeId: string }) => {
     const { employeeId } = z.object({ employeeId: z.string() }).parse(input);
-    await assertEmployeeInScope(ctx, employeeId, ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"]);
+    await assertEmployeeInScope(ctx, employeeId, ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"], { forChange: false });
 
     const employee = await db.employee.findUniqueOrThrow({
       where: { id: employeeId },
@@ -207,7 +207,7 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
       periodId: z.string(),
     }).parse(input);
     // A supervisor opens their own team's timecards only.
-    await assertEmployeeInScope(ctx, employeeId, ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"]);
+    await assertEmployeeInScope(ctx, employeeId, ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"], { forChange: false });
 
     const ts = await db.timesheet.findUnique({
       where: { employeeId_payPeriodId: { employeeId, payPeriodId: periodId } },
@@ -383,7 +383,7 @@ export const getTimecardDetail = withRBAC(
     const { timesheetId } = z
       .object({ timesheetId: z.string() })
       .parse(input);
-    await timesheetInScope(ctx, timesheetId, ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"]);
+    await timesheetInScope(ctx, timesheetId, ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"], { forChange: false });
 
     const ts = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },

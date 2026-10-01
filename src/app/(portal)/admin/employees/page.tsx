@@ -3,8 +3,9 @@ import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { LinkButton } from "@/components/ui";
 import { userHasPermission } from "@/lib/rbac/check-permission";
-import { getEmployees, getAdminRefData } from "@/actions/admin.actions";
+import { getEmployees, getAdminRefData, getEmployeeById } from "@/actions/admin.actions";
 import { CreateEmployeeForm } from "@/components/admin/create-employee-form";
+import { toCopyFromEmployee } from "@/lib/employee-copy";
 import { CsvUploadForm } from "@/components/admin/csv-upload-form";
 import { EmployeesTable } from "@/components/admin/employees-table";
 import { LIST_COOKIE } from "@/components/admin/employees-list-cookie";
@@ -28,7 +29,7 @@ import { ArrowLeft, RefreshCw } from "lucide-react";
 export default async function EmployeesPage({
   searchParams,
 }: {
-  searchParams?: Promise<Partial<Record<(typeof LIST_KEYS)[number], string>>>;
+  searchParams?: Promise<Partial<Record<(typeof LIST_KEYS)[number] | "copyFrom", string>>>;
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -62,18 +63,23 @@ export default async function EmployeesPage({
   const missing = pick(MISSING_OPTIONS, sp?.missing);
   const sort = pick(SORT_OPTIONS, sp?.sort);
 
-  const [employeesResult, refDataResult] = await Promise.all([
+  const copyFromId = sp?.copyFrom ?? "";
+
+  const [employeesResult, refDataResult, copySourceResult] = await Promise.all([
     getEmployees({
       page, q: q || undefined, site: site || undefined, dept: dept || undefined, role: role || undefined,
       status, shift: shift || undefined, pay, missing, sort,
     }),
     getAdminRefData(),
+    copyFromId ? getEmployeeById({ employeeId: copyFromId }) : Promise.resolve(null),
   ]);
 
   if (!employeesResult.success || !refDataResult.success) redirect("/admin");
 
   const { employees, total, pageSize } = employeesResult.data;
   const { sites, departments, ruleSets, employees: allEmps, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies } = refDataResult.data;
+
+  const copyFrom = toCopyFromEmployee(copySourceResult?.success ? copySourceResult.data : null, sites, customRoles);
 
   return (
     <div className="flex flex-col gap-4">
@@ -113,6 +119,8 @@ export default async function EmployeesPage({
                   payTypes={payTypes ?? []}
                   jobTitles={jobTitles ?? []}
                   agencies={agencies ?? []}
+                  copyFrom={copyFrom}
+                  key={copyFrom ? `copy-${copyFromId}` : "new"}
                 />
               </>
         }

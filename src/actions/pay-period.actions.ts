@@ -10,8 +10,8 @@ import {
   reopenPayPeriodSchema,
 } from "@/lib/validators/pay-period.schema";
 import { writeAuditLog } from "@/lib/audit/logger";
-import { postAccruals, postLeaveUsage } from "@/lib/engines/accrual-engine";
 import { nextTenantPeriod } from "@/lib/pay-period-utils";
+import { lockPeriod } from "@/lib/payroll/lock-period";
 import type { PayFrequency } from "@prisma/client";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
@@ -75,8 +75,7 @@ export const getPayPeriodDetail = withRBAC(
 /**
  * The period, only if it belongs to the caller's company. Every write below
  * starts here: looked up by id alone, a period id from another company (they
- * appear in links and the audit log) would be marked ready, locked, reopened
- * or bulk approved from this one.
+ * appear in links and the audit log) would be locked or reopened from this one.
  */
 async function findPeriodInScope(payPeriodId: string, tenantId: string | null) {
   if (!tenantId) throw new Error("Pay period not found");
@@ -86,92 +85,15 @@ async function findPeriodInScope(payPeriodId: string, tenantId: string | null) {
 }
 
 /**
- * OPEN → READY.
- * Requires all timesheets to be PAYROLL_APPROVED with no unresolved exceptions.
- */
-export const markPayPeriodReady = withRBAC(
-  "PAY_PERIOD_MANAGE",
-  async (actor, input: { payPeriodId: string }) => {
-    const { payPeriodId } = payPeriodIdSchema.parse(input);
-
-    // Scoped to the caller's company: an id from another company is not found.
-    const payPeriod = await findPeriodInScope(payPeriodId, actor.tenantId);
-
-    const transition = validatePayPeriodTransition(payPeriod.status, "MARK_READY");
-    if (!transition.valid) throw new Error(transition.error);
-
-    const validation = await validatePayPeriod(payPeriodId);
-    if (!validation.isReady) {
-      const count = validation.issues.length;
-      throw new Error(
-        `This pay period has ${count} open issue${count === 1 ? "" : "s"}. Resolve ${count === 1 ? "it" : "them"} before marking the period ready.`
-      );
-    }
-
-    const updated = await db.payPeriod.update({
-      where: { id: payPeriodId },
-      data: { status: transition.newStatus },
-    });
-
-    await writeAuditLog({
-      tenantId: actor.tenantId,
-      actorId: actor.employeeId,
-      entityType: "PAY_PERIOD",
-      entityId: payPeriodId,
-      action: "MARK_READY",
-      changes: { before: payPeriod.status, after: transition.newStatus },
-    });
-
-    revalidatePath("/payroll/pay-periods");
-    revalidatePath(`/payroll/pay-periods/${payPeriodId}`);
-    return updated;
-  }
-);
-
-/**
- * READY → LOCKED.
- * Also transitions all PAYROLL_APPROVED timesheets to LOCKED,
- * posts per-period accruals, and auto-posts any APPROVED leave requests
- * that overlap this pay period.
+ * OPEN → LOCKED. There are no approval steps: every timecard in the period is
+ * open until this locks it. Also posts per-period accruals and auto-posts any
+ * APPROVED leave requests that overlap this pay period.
  */
 export const lockPayPeriod = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  "PAYROLL_RUN",
   async (actor, input: { payPeriodId: string }) => {
     const { payPeriodId } = payPeriodIdSchema.parse(input);
-
-    const payPeriod = await findPeriodInScope(payPeriodId, actor.tenantId);
-
-    const transition = validatePayPeriodTransition(payPeriod.status, "LOCK");
-    if (!transition.valid) throw new Error(transition.error);
-
-    await db.$transaction([
-      db.payPeriod.update({
-        where: { id: payPeriodId },
-        data: { status: transition.newStatus },
-      }),
-      db.timesheet.updateMany({
-        where: { payPeriodId, status: "PAYROLL_APPROVED" },
-        data: { status: "LOCKED", lockedAt: new Date() },
-      }),
-    ]);
-
-    await writeAuditLog({
-      tenantId: actor.tenantId,
-      actorId: actor.employeeId,
-      entityType: "PAY_PERIOD",
-      entityId: payPeriodId,
-      action: "LOCK",
-      changes: { before: payPeriod.status, after: transition.newStatus },
-    });
-
-    // Post per-pay-period accruals for all active employees.
-    await postAccruals(payPeriodId);
-
-    // Auto-post all APPROVED leave requests that overlap this period.
-    await autoPostApprovedLeave(
-      { id: payPeriodId, startDate: payPeriod.startDate, endDate: payPeriod.endDate, tenantId: payPeriod.tenantId },
-      actor.employeeId ?? null
-    );
+    await lockPeriod(payPeriodId, actor);
 
     revalidatePath("/payroll/pay-periods");
     revalidatePath(`/payroll/pay-periods/${payPeriodId}`);
@@ -180,10 +102,10 @@ export const lockPayPeriod = withRBAC(
 );
 
 /**
- * READY → OPEN (undo mark-ready).
+ * LOCKED → OPEN. Its timecards go back to Open and can be edited again.
  */
 export const reopenPayPeriod = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  "PAYROLL_RUN",
   async (actor, input: { payPeriodId: string; reason: string }) => {
     const { payPeriodId, reason } = reopenPayPeriodSchema.parse(input);
 
@@ -192,11 +114,10 @@ export const reopenPayPeriod = withRBAC(
     const transition = validatePayPeriodTransition(payPeriod.status, "REOPEN");
     if (!transition.valid) throw new Error(transition.error);
 
-    // If reopening from LOCKED, also unlock all LOCKED timesheets
     if (payPeriod.status === "LOCKED") {
       await db.timesheet.updateMany({
         where: { payPeriodId, status: "LOCKED" },
-        data: { status: "PAYROLL_APPROVED", lockedAt: null },
+        data: { status: "OPEN", lockedAt: null },
       });
     }
 
@@ -283,49 +204,6 @@ export const updateTenantSettings = withRBAC(
   }
 );
 
-export const submitOpenTimesheets = withRBAC(
-  "PAY_PERIOD_MANAGE",
-  async ({ tenantId, employeeId }, input: { payPeriodId: string }) => {
-    const { payPeriodId } = payPeriodIdSchema.parse(input);
-
-    const payPeriod = await findPeriodInScope(payPeriodId, tenantId);
-
-    if (payPeriod.endDate >= new Date()) {
-      throw new Error("Can only bulk-approve timesheets for past pay periods");
-    }
-
-    const pending = await db.timesheet.findMany({
-      where: { payPeriodId, status: { in: ["OPEN", "SUBMITTED"] } },
-      select: { id: true },
-    });
-
-    if (pending.length === 0) return { submitted: 0 };
-
-    const now = new Date();
-    await db.timesheet.updateMany({
-      where: { payPeriodId, status: { in: ["OPEN", "SUBMITTED"] } },
-      data: {
-        status: "SUP_APPROVED",
-        submittedAt: now,
-        supApprovedAt: now,
-        supApprovedById: employeeId ?? null,
-      },
-    });
-
-    await writeAuditLog({
-      tenantId,
-      actorId: employeeId,
-      entityType: "PAY_PERIOD",
-      entityId: payPeriodId,
-      action: "BULK_SUP_APPROVE",
-      changes: { after: { count: pending.length, source: "MANUAL_BULK" } },
-    });
-
-    revalidatePath("/payroll/pay-periods");
-    return { submitted: pending.length };
-  }
-);
-
 /**
  * Adds the company level period after the latest one: the one the settings
  * page showed. The caller passes the start date it showed, and a different
@@ -367,42 +245,3 @@ export const generateNextPayPeriod = withRBAC(
     return { startDate: next.startDate, endDate: next.endDate, frequency: next.frequency };
   }
 );
-
-// ─── Internal helpers ─────────────────────────────────────────────────────────
-
-/**
- * Auto-post all APPROVED leave requests that overlap the given pay period.
- * Called when a pay period is locked.
- */
-async function autoPostApprovedLeave(
-  payPeriod: { id: string; startDate: Date; endDate: Date; tenantId: string },
-  actorId: string | null
-) {
-  const requests = await db.leaveRequest.findMany({
-    where: {
-      status: "APPROVED",
-      employee: { tenantId: payPeriod.tenantId },
-      startDate: { lte: payPeriod.endDate },
-      endDate: { gte: payPeriod.startDate },
-    },
-    select: { id: true },
-  });
-
-  for (const req of requests) {
-    await db.leaveRequest.update({
-      where: { id: req.id },
-      data: { status: "POSTED", postedAt: new Date() },
-    });
-
-    await postLeaveUsage(req.id);
-
-    await writeAuditLog({
-      tenantId: payPeriod.tenantId,
-      actorId,
-      entityType: "LEAVE_REQUEST",
-      entityId: req.id,
-      action: "POSTED",
-      changes: { before: "APPROVED", after: { status: "POSTED", source: "AUTO_LOCK", payPeriodId: payPeriod.id } },
-    });
-  }
-}

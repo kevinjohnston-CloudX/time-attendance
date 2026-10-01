@@ -1,9 +1,10 @@
 "use server";
 
-import { assertEditable, employeeScope, NotFoundError, timesheetInScope } from "@/lib/rbac/scope";
+import { assertEditable, assertNotSenior, employeeScope, NotFoundError, timesheetInScope } from "@/lib/rbac/scope";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
+import { TIMECARD_EDITORS, TIMECARD_EDITORS_COMPANY } from "@/lib/rbac/permissions";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
@@ -19,7 +20,7 @@ import type { LeaveType } from "@prisma/client";
 // ─── Get leave types for timecard entry modal ─────────────────────────────────
 
 export const getLeaveTypesForTimecard = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  TIMECARD_EDITORS,
   async ({ tenantId }): Promise<LeaveType[]> => {
     return db.leaveType.findMany({
       where: { tenantId: tenantId!, isActive: true },
@@ -33,13 +34,13 @@ export const getLeaveTypesForTimecard = withRBAC(
 export const addManualPunchPair = withRBAC(
   // Supervisors too, for their own team's timecards: the scope check in
   // each action keeps them to their direct reports and off their own.
-  ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_TEAM"],
+  TIMECARD_EDITORS,
   async (ctx, input: unknown) => {
     const { timesheetId, date: entryDate, inTime, outTime, reason, payCodeId } =
       manualPunchPairSchema.parse(input);
     const { employeeId: actorId, tenantId } = ctx;
     // Only a timecard in the caller's company, and never their own.
-    const sheet = await timesheetInScope(ctx, timesheetId, "PAY_PERIOD_MANAGE");
+    const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
     if (sheet.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
 
     const inDate = new Date(inTime);
@@ -170,13 +171,13 @@ export const addManualPunchPair = withRBAC(
 export const addSingleManualPunch = withRBAC(
   // Supervisors too, for their own team's timecards: the scope check in
   // each action keeps them to their direct reports and off their own.
-  ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_TEAM"],
+  TIMECARD_EDITORS,
   async (ctx, input: unknown) => {
     const { timesheetId, punchType, punchTime, reason } =
       singleManualPunchSchema.parse(input);
     const { employeeId: actorId, tenantId } = ctx;
     // Only a timecard in the caller's company, and never their own.
-    const sheet = await timesheetInScope(ctx, timesheetId, "PAY_PERIOD_MANAGE");
+    const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
     if (sheet.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
 
     const punchDate = new Date(punchTime);
@@ -265,13 +266,13 @@ export const addSingleManualPunch = withRBAC(
 // ─── Add a payroll-entered leave entry to a timesheet day ────────────────────
 
 export const addPayrollLeaveEntry = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  TIMECARD_EDITORS,
   async (ctx, input: unknown) => {
     const { timesheetId, date, leaveTypeId, durationMinutes, note } =
       payrollLeaveEntrySchema.parse(input);
     const { employeeId: actorId, tenantId } = ctx;
     // Only a timecard in the caller's company, and never their own.
-    const sheet = await timesheetInScope(ctx, timesheetId, "PAY_PERIOD_MANAGE");
+    const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
     if (sheet.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
 
     // Verify timesheet is editable
@@ -323,7 +324,7 @@ export const addPayrollLeaveEntry = withRBAC(
 // ─── Remove a payroll-entered leave entry ────────────────────────────────────
 
 export const removePayrollLeaveEntry = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  TIMECARD_EDITORS,
   async (ctx, input: unknown) => {
     const { employeeId: actorId, tenantId } = ctx;
     const { leaveRequestId } = (input as { leaveRequestId: string });
@@ -331,11 +332,12 @@ export const removePayrollLeaveEntry = withRBAC(
     if (!leaveRequestId) throw new Error("leaveRequestId is required.");
     // Only leave of someone in the caller's company, and never their own.
     const inScope = await db.leaveRequest.findFirst({
-      where: { id: leaveRequestId, employee: await employeeScope(ctx, "PAY_PERIOD_MANAGE") },
+      where: { id: leaveRequestId, employee: await employeeScope(ctx, TIMECARD_EDITORS_COMPANY) },
       select: { employeeId: true },
     });
     if (!inScope) throw new NotFoundError("Leave request not found");
     if (inScope.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
+    await assertNotSenior(ctx, inScope.employeeId);
 
     // Find the leave request and verify the timesheet is editable
     const request = await db.leaveRequest.findUniqueOrThrow({
@@ -383,13 +385,14 @@ export const deleteManualPunchPair = withRBAC(
 
     // Only punches in the caller's company, all on one timecard, never their own.
     const punches = await db.punch.findMany({
-      where: { id: { in: punchIds }, employee: await employeeScope(ctx, "PAY_PERIOD_MANAGE") },
+      where: { id: { in: punchIds }, employee: await employeeScope(ctx, TIMECARD_EDITORS_COMPANY) },
       include: { employee: { include: { ruleSet: true } } },
     });
 
     if (punches.length !== new Set(punchIds).size) throw new NotFoundError("Punches not found.");
     if (new Set(punches.map((p) => p.timesheetId)).size !== 1) throw new Error("Punches must be on one timecard.");
     if (punches[0].employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
+    await assertNotSenior(ctx, punches[0].employeeId);
     const timesheetId = punches[0].timesheetId!;
 
     const ts = await db.timesheet.findUniqueOrThrow({ where: { id: timesheetId } });
@@ -455,11 +458,11 @@ const saveTimesheetNoteSchema = z.object({
 });
 
 export const saveTimesheetNote = withRBAC(
-  ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_TEAM", "TIMECARD_EDIT_TEAM"],
+  TIMECARD_EDITORS,
   async (ctx, input: z.infer<typeof saveTimesheetNoteSchema>) => {
     const { timesheetId, noteDate, note } = saveTimesheetNoteSchema.parse(input);
     if (!note.trim()) return;
-    await timesheetInScope(ctx, timesheetId, "PAY_PERIOD_MANAGE");
+    await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
 
     const createdById = ctx.employeeId;
 
@@ -491,7 +494,7 @@ const LEAVE_BUCKETS = new Set(["PTO", "SICK", "FMLA", "BEREAVEMENT", "JURY_DUTY"
 export const addManualHoursEntry = withRBAC(
   // Supervisors too, for their own team's timecards: the scope check in
   // each action keeps them to their direct reports and off their own.
-  ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_TEAM"],
+  TIMECARD_EDITORS,
   async (ctx, input: unknown) => {
     const { timesheetId, date, hours, payCodeId, note } = z.object({
       timesheetId: z.string(),
@@ -502,7 +505,7 @@ export const addManualHoursEntry = withRBAC(
     }).parse(input);
     const { employeeId: actorId, tenantId } = ctx;
     // Only a timecard in the caller's company, and never their own.
-    const sheet = await timesheetInScope(ctx, timesheetId, "PAY_PERIOD_MANAGE");
+    const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
     if (sheet.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
 
     // Before either path below, the 0 hour one included: a locked or payroll

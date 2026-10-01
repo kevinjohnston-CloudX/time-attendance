@@ -56,7 +56,6 @@ const ICONS: Record<string, React.ReactNode> = {
   "/admin/api-keys": <Plug className="h-[18px] w-[18px]" />,
   "/admin/adp": <RefreshCw className="h-[18px] w-[18px]" />,
   "/admin/wms-sync": <DatabaseZap className="h-[18px] w-[18px]" />,
-  "/admin/settings": <Settings className="h-[18px] w-[18px]" />,
 };
 
 /**

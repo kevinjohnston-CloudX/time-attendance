@@ -8,9 +8,6 @@ import { TIMESHEET_STATUS_LABEL } from "@/classic/lib/labels";
 
 const TS_BADGE: Record<string, string> = {
   OPEN:             "bg-zinc-100 text-zinc-600",
-  SUBMITTED:        "bg-blue-100 text-blue-700",
-  SUP_APPROVED:     "bg-purple-100 text-purple-700",
-  PAYROLL_APPROVED: "bg-green-100 text-green-700",
   LOCKED:           "bg-zinc-200 text-zinc-500",
 };
 
@@ -39,7 +36,7 @@ function TimesheetCard({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const isApproved = ts.status === "PAYROLL_APPROVED" || ts.status === "LOCKED";
+  const isLocked = ts.status === "LOCKED";
   const hasIssues = ts.issues.length > 0;
 
   return (
@@ -55,7 +52,7 @@ function TimesheetCard({
           href={`/payroll/timecards?payPeriodId=${payPeriodId}&employeeId=${ts.employeeId}`}
           className="flex flex-1 min-w-0 items-center gap-3 transition-opacity hover:opacity-80"
         >
-          {isApproved && !ts.hasExceptions ? (
+          {isLocked && !ts.hasExceptions ? (
             <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
           ) : ts.hasExceptions ? (
             <AlertCircle className="h-4 w-4 shrink-0 text-red-500" />

@@ -22,7 +22,7 @@ import { Button, FilterSelectChip } from "@/components/ui";
  */
 
 type FilterValue = "all" | "current" | "ytd";
-type StatusFilter = "all" | "open" | "ready" | "locked";
+type StatusFilter = "all" | "open" | "locked";
 
 interface PayPeriodItem {
   id: string;
@@ -51,7 +51,6 @@ const SCOPE_OPTIONS = [
 
 const STATUS_OPTIONS = [
   { id: "open", name: "Open" },
-  { id: "ready", name: "Ready" },
   { id: "locked", name: "Locked" },
 ];
 
@@ -197,7 +196,6 @@ export function PayPeriodsFilter({
       ) return false;
     }
     if (statusFilter === "open") return pp.status === "OPEN";
-    if (statusFilter === "ready") return pp.status === "READY";
     if (statusFilter === "locked") return pp.status === "LOCKED";
     return true;
   });

@@ -53,12 +53,20 @@ export default async function EditEmployeePage({
             {format(employee.hireDate, "MMM d, yyyy")}
           </p>
         </div>
-        <Link
-          href={`/admin/accruals/${id}`}
-          className="text-sm text-blue-600 hover:underline dark:text-blue-400"
-        >
-          View Accruals
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            href={`/admin/employees?copyFrom=${id}`}
+            className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+          >
+            Copy to new employee
+          </Link>
+          <Link
+            href={`/admin/accruals/${id}`}
+            className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+          >
+            View Accruals
+          </Link>
+        </div>
       </div>
 
       <EditEmployeeForm

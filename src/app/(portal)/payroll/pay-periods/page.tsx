@@ -9,13 +9,11 @@ import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import { getPayPeriods, getPayPeriodDetail } from "@/actions/pay-period.actions";
 import { getAdpConfig } from "@/lib/integrations/adp/client";
-import { TIMESHEET_STATUS_LABEL, type TimesheetStatusValue } from "@/lib/state-machines/labels";
 import { dayKey, FREQ_LABEL, periodLastDay, periodRange } from "@/lib/pay-period-display";
 import { parseUtcDate } from "@/lib/utils/date";
 import { Badge, LinkButton, type BadgeTone } from "@/components/ui";
 import { PayPeriodActions } from "@/components/payroll/pay-period-actions";
 import { PayPeriodDownload } from "@/components/payroll/pay-period-download";
-import { PayPeriodExport } from "@/components/payroll/pay-period-export";
 import { PayPeriodTimesheets, type TimesheetRow } from "@/components/payroll/pay-period-timesheets";
 import { matchesShow, parseShow, type TimesheetShow } from "@/components/payroll/pay-period-show";
 import { PayPeriodsShell } from "@/components/payroll/pay-periods-shell";
@@ -24,12 +22,13 @@ import { PayPeriodsRail, type RailPeriod, type RailScope, type RailStatus } from
 /**
  * Pay Periods, from the page handoff: the period list on the left, grouped by
  * rule set, and on the right the period itself. Its title and close actions
- * pinned at the top, then three counts and the hours, what is still in the way
- * of the close, and every timesheet.
+ * pinned at the top, then three counts and the hours, where the close stands,
+ * and every timesheet.
  *
- * <p>The close checklist and the hours are not in the handoff's picture and
- * stay anyway, drawn in its language. They are the answer to "can I close this
- * period, and if not, who am I waiting on", which is what this screen is for.
+ * <p>The close summary and the hours are not in the handoff's picture and stay
+ * anyway, drawn in its language. There are no approval steps: a timesheet is
+ * open until the period is locked, and unresolved exceptions are something to
+ * review before locking, not something that stops it.
  *
  * <p>Every date here goes through periodLastDay, since a stored end date is
  * either the day after the last day or, for older monthly and semi-monthly
@@ -41,18 +40,9 @@ const STATUS_LABEL = { OPEN: "Open", READY: "Ready for Lock", LOCKED: "Locked" }
 const STATUS_TONE: Record<keyof typeof STATUS_LABEL, BadgeTone> = { OPEN: "info", READY: "warning", LOCKED: "success" };
 const PANEL: CSSProperties = { background: "var(--surface-card)", borderRadius: 18, boxShadow: "var(--ta-shell-shadow)" };
 
-/**
- * Where a timesheet sits and whose move it is, in the order they happen,
- * named by role: the supervisor of record lives on the employee, and a role
- * tells a payroll clerk which list to chase.
- */
-const STAGES: { status: TimesheetStatusValue; owner: string; color: string }[] = [
-  { status: "OPEN", owner: "Waiting on the employee", color: "var(--icon-tertiary)" },
-  { status: "REJECTED", owner: "Sent back to the employee", color: "var(--fill-error)" },
-  { status: "SUBMITTED", owner: "Waiting on the supervisor", color: "var(--fill-warning)" },
-  { status: "SUP_APPROVED", owner: "Waiting on payroll", color: "var(--fill-accent)" },
-  { status: "PAYROLL_APPROVED", owner: "Ready to lock", color: "var(--fill-success)" },
-  { status: "LOCKED", owner: "Closed", color: "var(--icon-success)" },
+const STAGES: { key: "open" | "locked"; label: string; owner: string; color: string }[] = [
+  { key: "open", label: "Open", owner: "Editable until the period is locked", color: "var(--fill-accent)" },
+  { key: "locked", label: "Locked", owner: "Final", color: "var(--icon-success)" },
 ];
 
 const n = (v: number) => v.toLocaleString("en-US");
@@ -66,12 +56,13 @@ export default async function PayPeriodsPage({
   const { id: selectedId, filter, status, month, siteId, departmentId, show: showParam } = await searchParams;
   const show = parseShow(showParam);
   const scope: RailScope = filter === "current" || filter === "ytd" ? filter : "all";
-  const statusFilter: RailStatus = status === "open" || status === "ready" || status === "locked" ? status : "all";
+  const statusFilter: RailStatus = status === "open" || status === "locked" ? status : "all";
   const monthParam = /^\d{4}-\d{2}$/.test(month ?? "") ? month! : null;
 
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "PAY_PERIOD_MANAGE")) redirect("/dashboard");
+  const canRunPayroll = await userHasPermission(session.user, "PAYROLL_RUN");
 
   const result = await getPayPeriods();
   if (!result.success) redirect("/dashboard");
@@ -99,7 +90,6 @@ export default async function PayPeriodsPage({
       groupName: pp.ruleSet?.name ?? COMPANY_NAME,
       freqLabel: FREQ_LABEL[freqOf(pp)],
       total: pp.timesheets.length,
-      approved: pp.timesheets.filter((ts) => ts.status === "PAYROLL_APPROVED" || ts.status === "LOCKED").length,
     };
   });
 
@@ -144,7 +134,7 @@ export default async function PayPeriodsPage({
             {selectedId ? "That pay period was not found" : "No pay period open"}
           </span>
           <span style={{ maxWidth: 380, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
-            Pick one on the left to see its hours, what is blocking its close and every timesheet in it.
+            Pick one on the left to see its hours, what is left to review before its close and every timesheet in it.
           </span>
         </section>
       </PayPeriodsShell>
@@ -192,16 +182,12 @@ export default async function PayPeriodsPage({
           payPeriodId={payPeriod.id}
           label={label}
           status={payPeriod.status}
-          isReady={validation.isReady}
           isPast={isPast}
+          canRunPayroll={canRunPayroll}
+          exceptions={validation.unresolvedExceptions}
           adpConfigured={getAdpConfig() !== null}
           payrollRun={payrollRun}
-          leading={
-            <>
-              <PayPeriodExport payPeriodId={payPeriod.id} label={label} sites={sites} />
-              <PayPeriodDownload payPeriodId={payPeriod.id} label={label} />
-            </>
-          }
+          leading={<PayPeriodDownload payPeriodId={payPeriod.id} label={label} />}
         />
       </div>
     </div>
@@ -294,22 +280,13 @@ function PeriodBody({
   const sheets = payPeriod.timesheets;
   const T = sheets.length;
 
-  // ── The approval chain, counted once ─────────────────────────────────────
-  const byStage = new Map<string, number>();
-  for (const ts of sheets) byStage.set(ts.status, (byStage.get(ts.status) ?? 0) + 1);
-  const stageCount = (s: TimesheetStatusValue) => byStage.get(s) ?? 0;
-  const withEmployee = stageCount("OPEN") + stageCount("REJECTED");
-  const withSupervisor = stageCount("SUBMITTED");
-  const withPayroll = stageCount("SUP_APPROVED");
+  // ── Open and locked, counted once ─────────────────────────────────────────
+  const locked = sheets.filter((ts) => ts.status === "LOCKED").length;
+  const open = T - locked;
+  const stageCount = (key: "open" | "locked") => (key === "locked" ? locked : open);
   const sheetsWithExceptions = sheets.filter((ts) => ts.exceptions.length > 0).length;
-  // A stage only clears when nothing is still sitting behind it: counting
-  // SUBMITTED alone marked supervisors done on a period where every sheet
-  // was still open.
-  const awaitingSupervisor = withEmployee + withSupervisor;
-  const awaitingPayroll = awaitingSupervisor + withPayroll;
-  const approved = stageCount("PAYROLL_APPROVED") + stageCount("LOCKED");
-  const pending = T - approved;
   const exceptions = validation.unresolvedExceptions;
+  const isLocked = payPeriod.status === "LOCKED";
 
   // ── Hours, from the buckets the overtime engine wrote ─────────────────────
   let regMin = 0, otMin = 0, dtMin = 0, allMin = 0;
@@ -324,7 +301,7 @@ function PeriodBody({
   /** PTO, holiday and anything else the rules engine bucketed by pay code. */
   const otherMin = allMin - regMin - otMin - dtMin;
 
-  // ── Links the checklist hands you to ─────────────────────────────────────
+  // ── Links the summary hands you to ───────────────────────────────────────
   const base = new URLSearchParams({ id: payPeriod.id });
   if (monthParam) base.set("month", monthParam);
   else if (scope !== "all") base.set("filter", scope);
@@ -340,7 +317,9 @@ function PeriodBody({
   const exceptionsHref = `/supervisor/exceptions?payPeriodId=${encodeURIComponent(payPeriod.id)}`;
   const see = (v: TimesheetShow, count: number) => ({ href: showHref(v), text: `See ${count === 1 ? "this timesheet" : `these ${n(count)} timesheets`}` });
 
-  // ── The close, as five steps, from the timesheets loaded above ───────────
+  // ── The close, as three steps, from the timesheets loaded above ──────────
+  // Only Locked is required; the other two are what to check before it.
+  const exceptionsDetail = `${n(exceptions)} ${exceptions === 1 ? "problem" : "problems"}, like a missed punch, still ${exceptions === 1 ? "needs" : "need"} a look on ${n(sheetsWithExceptions)} ${sheetsWithExceptions === 1 ? "timesheet" : "timesheets"}.`;
   const steps: { label: string; caption: string; detail: string; done: boolean; action?: { href: string; text: string } }[] = [
     {
       label: "Period ended",
@@ -349,53 +328,40 @@ function PeriodBody({
       done: isPast,
     },
     {
-      label: "Submitted",
-      caption: withEmployee === 0 ? "Done" : `${n(withEmployee)} not submitted`,
-      detail: `${n(withEmployee)} ${withEmployee === 1 ? "timesheet has" : "timesheets have"} not been submitted by the employee yet.`,
-      done: withEmployee === 0,
-      action: withEmployee > 0 ? see("employee", withEmployee) : undefined,
-    },
-    {
-      label: "Supervisor approved",
-      caption: awaitingSupervisor === 0 ? "Done" : `${n(awaitingSupervisor)} waiting`,
-      detail: `${n(awaitingSupervisor)} ${awaitingSupervisor === 1 ? "timesheet still needs" : "timesheets still need"} a supervisor to approve ${awaitingSupervisor === 1 ? "it" : "them"}.`,
-      done: awaitingSupervisor === 0,
-      action: withSupervisor > 0 ? see("supervisor", withSupervisor) : undefined,
-    },
-    {
-      label: "Payroll approved",
-      caption: awaitingPayroll === 0 ? "Done" : `${n(awaitingPayroll)} waiting`,
-      detail: `${n(awaitingPayroll)} ${awaitingPayroll === 1 ? "timesheet still needs" : "timesheets still need"} payroll to approve ${awaitingPayroll === 1 ? "it" : "them"}. ${n(approved)} of ${n(T)} are approved.`,
-      done: awaitingPayroll === 0,
-      action: withPayroll > 0 ? see("payroll", withPayroll) : undefined,
-    },
-    {
-      label: "Exceptions resolved",
-      caption: exceptions === 0 ? "Done" : `${n(exceptions)} to fix`,
-      detail: `${n(exceptions)} ${exceptions === 1 ? "problem" : "problems"}, like a missed punch, still ${exceptions === 1 ? "needs" : "need"} fixing on ${n(sheetsWithExceptions)} ${sheetsWithExceptions === 1 ? "timesheet" : "timesheets"}.`,
+      label: "Exceptions reviewed",
+      caption: exceptions === 0 ? "Done" : `${n(exceptions)} to review`,
+      detail: exceptionsDetail,
       done: exceptions === 0,
-      action: exceptions > 0 ? { href: exceptionsHref, text: "Fix exceptions" } : undefined,
+      action: exceptions > 0 ? { href: exceptionsHref, text: "Review exceptions" } : undefined,
+    },
+    {
+      label: "Locked",
+      caption: isLocked ? "Done" : `${n(open)} open`,
+      detail: isLocked
+        ? "Every timesheet in the period is locked."
+        : `${n(open)} ${open === 1 ? "timesheet is" : "timesheets are"} still open. Locking the period locks every one of them.`,
+      done: isLocked,
+      action: !isLocked && open > 0 ? see("open", open) : undefined,
     },
   ];
-  const blocking = steps.filter((s) => !s.done);
-  // The next thing to do: the first open step somebody can act on from
+  // The next thing to look at: the first open step somebody can act on from
   // here, else the first open one (the period not having ended).
-  const next = blocking.find((s) => s.action) ?? blocking[0] ?? null;
-  const standing: { tone: "success" | "warning" | "info"; title: string; text: string } =
-    payPeriod.status === "LOCKED"
-      ? { tone: "success", title: "Locked", text: "This period is closed. Its hours, time off balances and approved leave are final." }
-      : payPeriod.status === "READY"
-        ? { tone: "info", title: "Ready to lock", text: "Everything is approved. Lock the period to make its hours final and post time off, then export it to ADP." }
-        : !next
-          ? { tone: "success", title: "Everything is done", text: "Click Mark Ready at the top to get this period ready for payroll." }
-          : { tone: "warning", title: "This period cannot be closed yet", text: `Next step: ${next.detail}` };
+  const pendingSteps = steps.filter((s) => !s.done);
+  const next = pendingSteps.find((s) => s.action) ?? pendingSteps[0] ?? null;
+  const standing: { tone: "success" | "warning" | "info"; title: string; text: string } = isLocked
+    ? { tone: "success", title: "Locked", text: "This period is closed. Its hours, time off balances and approved leave are final." }
+    : exceptions > 0
+      ? { tone: "warning", title: "Exceptions to review", text: `${exceptionsDetail} Locking does not wait for them.` }
+      : !isPast
+        ? { tone: "info", title: "Still taking punches", text: `The last day is ${lastDayText}. Lock the period at the top once it has ended.` }
+        : { tone: "success", title: "Ready to lock", text: "Nothing is left to review. Lock the period at the top to make its hours final and post time off, then export it to ADP." };
   const standTile =
     standing.tone === "warning"
       ? { bg: "var(--surface-warning)", fg: "var(--icon-warning)" }
       : standing.tone === "success"
         ? { bg: "var(--surface-success)", fg: "var(--icon-success)" }
         : { bg: "var(--surface-info)", fg: "var(--icon-accent)" };
-  const liveStages = STAGES.filter((st) => stageCount(st.status) > 0);
+  const liveStages = STAGES.filter((st) => stageCount(st.key) > 0);
 
   // ── The timesheets, narrowed the way the link asks ────────────────────────
   const rows: TimesheetRow[] = sheets
@@ -414,7 +380,6 @@ function PeriodBody({
       siteName: ts.employee.site?.name ?? null,
     }));
 
-  const issues = pending + exceptions;
   const hoursBar = allMin
     ? [
         { min: regMin, color: "var(--fill-accent)" },
@@ -437,21 +402,21 @@ function PeriodBody({
         />
         <Kpi
           icon={<CircleCheck className="h-4 w-4" aria-hidden />}
-          label="Approved"
+          label="Locked"
           tile={{ bg: "var(--surface-success)", fg: "var(--icon-success)" }}
-          value={n(approved)}
-          valueColor={approved ? "var(--text-success)" : undefined}
-          sub={T ? `${Math.round((approved / T) * 100)}% of timesheets` : "no timesheets"}
-          bar={<span className="block h-full rounded-full" style={{ width: `${T ? (approved / T) * 100 : 0}%`, background: "var(--fill-success)" }} />}
+          value={n(locked)}
+          valueColor={locked ? "var(--text-success)" : undefined}
+          sub={T ? `${n(open)} open` : "no timesheets"}
+          bar={<span className="block h-full rounded-full" style={{ width: `${T ? (locked / T) * 100 : 0}%`, background: "var(--fill-success)" }} />}
         />
         <Kpi
           icon={<CircleAlert className="h-4 w-4" aria-hidden />}
-          label="Pending / Issues"
-          tile={issues ? { bg: "var(--surface-error)", fg: "var(--icon-error)" } : { bg: "var(--ta-well)", fg: "var(--icon-tertiary)" }}
-          value={n(issues)}
-          valueColor={issues ? "var(--text-error)" : undefined}
-          sub={`${n(pending)} pending · ${n(exceptions)} ${exceptions === 1 ? "exception" : "exceptions"}`}
-          bar={<span className="block h-full rounded-full" style={{ width: `${T ? Math.min(100, (issues / T) * 100) : 0}%`, background: "var(--fill-error)" }} />}
+          label="Exceptions"
+          tile={exceptions ? { bg: "var(--surface-warning)", fg: "var(--icon-warning)" } : { bg: "var(--ta-well)", fg: "var(--icon-tertiary)" }}
+          value={n(exceptions)}
+          valueColor={exceptions ? "var(--text-warning)" : undefined}
+          sub={`on ${n(sheetsWithExceptions)} ${sheetsWithExceptions === 1 ? "timesheet" : "timesheets"}`}
+          bar={<span className="block h-full rounded-full" style={{ width: `${T ? Math.min(100, (sheetsWithExceptions / T) * 100) : 0}%`, background: "var(--fill-warning)" }} />}
         />
         <Kpi
           icon={<Clock className="h-4 w-4" aria-hidden />}
@@ -474,10 +439,10 @@ function PeriodBody({
         </Kpi>
       </div>
 
-      {/* What is still in the way of the close: where the period stands in one
-          sentence with the way to its next step, then the five steps, each
-          open one linking to where it is cleared. */}
-      <section className="overflow-hidden" style={PANEL} aria-label="Close checklist">
+      {/* Where the close stands in one sentence with the way to what to look
+          at next, then the three steps, each open one linking to where it is
+          dealt with, then open against locked. */}
+      <section className="overflow-hidden" style={PANEL} aria-label="Close summary">
         <div className="flex flex-wrap items-start gap-x-3.5 gap-y-2.5 px-5 py-4">
           <span className="grid h-[38px] w-[38px] flex-none place-items-center" style={{ borderRadius: 11, background: standTile.bg, color: standTile.fg }}>
             {standing.tone === "warning" ? <CircleAlert className="h-[18px] w-[18px]" aria-hidden /> : <CircleCheck className="h-[18px] w-[18px]" aria-hidden />}
@@ -486,7 +451,7 @@ function PeriodBody({
             <span style={{ font: "var(--weight-semibold) 15px/20px var(--font-sans)", color: "var(--text-primary)" }}>{standing.title}</span>
             <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" }}>{standing.text}</span>
           </span>
-          {next?.action && payPeriod.status === "OPEN" && (
+          {next?.action && !isLocked && (
             <LinkButton href={next.action.href} hierarchy="secondary" size="sm">
               {next.action.text}
             </LinkButton>
@@ -547,19 +512,19 @@ function PeriodBody({
               className="flex h-2 w-full overflow-hidden rounded-full"
               style={{ background: "var(--ta-track)", gap: 2 }}
               role="img"
-              aria-label={liveStages.map((st) => `${TIMESHEET_STATUS_LABEL[st.status]} ${stageCount(st.status)}`).join(", ")}
+              aria-label={liveStages.map((st) => `${st.label} ${stageCount(st.key)}`).join(", ")}
             >
               {liveStages.map((st) => (
-                <span key={st.status} className="block h-full" style={{ width: `${(stageCount(st.status) / T) * 100}%`, background: st.color }} />
+                <span key={st.key} className="block h-full" style={{ width: `${(stageCount(st.key) / T) * 100}%`, background: st.color }} />
               ))}
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
               {liveStages.map((st) => (
-                <span key={st.status} className="inline-flex items-center gap-1.5 whitespace-nowrap" title={st.owner}>
+                <span key={st.key} className="inline-flex items-center gap-1.5 whitespace-nowrap" title={st.owner}>
                   <span className="h-2 w-2 flex-none rounded-full" style={{ background: st.color }} aria-hidden />
-                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{TIMESHEET_STATUS_LABEL[st.status]}</span>
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{st.label}</span>
                   <span className="tabular" style={{ font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
-                    {n(stageCount(st.status))}
+                    {n(stageCount(st.key))}
                   </span>
                   <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{st.owner.toLowerCase()}</span>
                 </span>

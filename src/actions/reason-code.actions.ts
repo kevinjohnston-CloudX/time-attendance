@@ -2,10 +2,12 @@
 
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
+import { editableTimesheetInScope } from "@/lib/rbac/scope";
+import { TIMECARD_EDITORS } from "@/lib/rbac/permissions";
 import { z } from "zod";
 
 export const getReasonCodes = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  ["PAY_PERIOD_MANAGE", "TIMECARD_VIEW_TEAM"],
   async (ctx, _input: void) => {
     const tenantId = ctx.tenantId;
     if (!tenantId) return [];
@@ -106,9 +108,14 @@ const setDayReasonCodeSchema = z.object({
 });
 
 export const setDayReasonCode = withRBAC(
-  "PAY_PERIOD_MANAGE",
-  async (_ctx, input: z.infer<typeof setDayReasonCodeSchema>) => {
+  TIMECARD_EDITORS,
+  async (ctx, input: z.infer<typeof setDayReasonCodeSchema>) => {
     const { timesheetId, segmentDate, reasonCodeId } = setDayReasonCodeSchema.parse(input);
+    await editableTimesheetInScope(ctx, timesheetId);
+    if (reasonCodeId) {
+      const own = await db.reasonCode.findFirst({ where: { id: reasonCodeId, tenantId: ctx.tenantId ?? "" }, select: { id: true } });
+      if (!own) throw new Error("That reason code does not exist");
+    }
     const date = new Date(segmentDate + "T00:00:00.000Z");
 
     if (!reasonCodeId) {

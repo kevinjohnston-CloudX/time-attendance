@@ -61,7 +61,6 @@ export interface TimesheetListItem {
 export interface TimesheetDetailData {
   timesheetId: string;
   status: string;
-  rejectionNote: string | null;
   payPeriod: PayPeriodOption;
   punches: { id: string; punchType: string; roundedTime: string }[];
   segments: {
@@ -284,9 +283,9 @@ function buildWeeks(start: Date, end: Date) {
 /**
  * What the banner at the top of the sheet says.
  *
- * <p>Ordered by what stops you: a sheet sent back needs reading before
- * anything else, then a punch that is actually missing, then the rule breaks a
- * supervisor will ask about, and only then the plain state.
+ * <p>Ordered by what stops you: a locked sheet can no longer change, then a
+ * punch that is actually missing, then the rule breaks a supervisor will ask
+ * about, and only then the plain state.
  */
 function sheetBanner(
   detail: TimesheetDetailData,
@@ -294,22 +293,22 @@ function sheetBanner(
 ): { tone: BannerTone; title: string; body: string; meta?: string } {
   const exc = detail.exceptionCount;
   // The old header carried an exception pill in every state. It rides along as
-  // the banner's meta line rather than inside the body, so it survives the
-  // branches whose body is somebody else's words — and so that a sheet with a
-  // missing punch does not hide the other things it will be sent back for.
+  // the banner's meta line rather than inside the body, so that a sheet with a
+  // missing punch or a locked period does not hide the other things wrong with
+  // it.
   const meta =
     exc > 0 ? `${exc} unresolved exception${exc === 1 ? "" : "s"} on this period` : undefined;
 
-  if (detail.rejectionNote && (detail.status === "OPEN" || detail.status === "REJECTED")) {
+  if (detail.status === "LOCKED" || detail.status === "PAYROLL_APPROVED") {
     return {
-      tone: "error",
-      title: "Returned by your supervisor",
-      body: detail.rejectionNote,
+      tone: "info",
+      title: "This period is locked",
+      body: "The hours have gone to payroll. A change now needs an adjustment on a later period.",
       meta,
     };
   }
 
-  if (detail.status === "OPEN" && missingDays.length > 0) {
+  if (missingDays.length > 0) {
     const named = missingDays.slice(0, 2).map((d) => format(d.date, "EEEE d MMM")).join(" and ");
     const rest = missingDays.length > 2 ? ` and ${missingDays.length - 2} more` : "";
     return {
@@ -320,62 +319,17 @@ function sheetBanner(
     };
   }
 
-  if (detail.status === "OPEN") {
-    return exc > 0
-      ? {
-          tone: "warning",
-          title: `${exc} unresolved exception${exc === 1 ? "" : "s"} on this timesheet`,
-          body: "Your supervisor sees these when they review it. Fix what you can before you submit.",
-        }
-      : {
-          tone: "info",
-          title: "This period is open",
-          body: "Check the hours below and submit the timesheet when you are done.",
-        };
-  }
-
-  if (detail.status === "SUBMITTED") {
-    return {
-      tone: "info",
-      title: "Waiting on your supervisor",
-      body: "You cannot change it while it is with them. They can send it back if it needs edits.",
-      meta,
-    };
-  }
-
-  if (detail.status === "REJECTED") {
-    return {
-      tone: "error",
-      title: "Returned for edit",
-      body: "Your supervisor sent this timesheet back. Correct it and submit it again.",
-      meta,
-    };
-  }
-
-  if (detail.status === "SUP_APPROVED") {
-    return {
-      tone: "info",
-      title: "Approved by your supervisor",
-      body: "Payroll reviews it next. Nothing else is needed from you.",
-      meta,
-    };
-  }
-
-  if (detail.status === "LOCKED") {
-    return {
-      tone: "info",
-      title: "This period is locked",
-      body: "The hours have gone to payroll. A change now needs an adjustment on a later period.",
-      meta,
-    };
-  }
-
-  return {
-    tone: "success",
-    title: "Approved by payroll",
-    body: "These hours are the ones that were paid.",
-    meta,
-  };
+  return exc > 0
+    ? {
+        tone: "warning",
+        title: `${exc} unresolved exception${exc === 1 ? "" : "s"} on this timesheet`,
+        body: "Your supervisor sees these too. Report what you can so it is fixed before payroll locks the period.",
+      }
+    : {
+        tone: "info",
+        title: "This period is open",
+        body: "Check the hours below. They can still change until payroll locks the period.",
+      };
 }
 
 // ── Component ────────────────────────────────────────────────────────────────

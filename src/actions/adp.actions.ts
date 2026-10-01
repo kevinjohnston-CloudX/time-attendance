@@ -328,7 +328,7 @@ interface PayrollPushResult {
 
 /** Push locked pay period hours to ADP Payroll Data Input API. */
 export const pushPayrollToAdp = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  "PAYROLL_RUN",
   async ({ employeeId: actorId, tenantId }, input: { payPeriodId: string }) => {
     if (!tenantId) throw new Error("NOT_FOUND");
     const config = getAdpConfig();

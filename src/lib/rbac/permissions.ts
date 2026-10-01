@@ -28,6 +28,8 @@ export const PERMISSIONS = [
   "ACCRUAL_ADJUST_ANY",
   // Payroll & admin
   "PAY_PERIOD_MANAGE",
+  // Run payroll: lock and unlock pay periods and single timecards, push to ADP
+  "PAYROLL_RUN",
   "EMPLOYEE_MANAGE",
   "RULES_MANAGE",
   "AUDIT_VIEW",
@@ -51,6 +53,11 @@ export const PERMISSIONS = [
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
+
+/** Who may change an open timecard, so every edit on the Timecards screen checks the same thing. */
+export const TIMECARD_EDITORS: Permission[] = ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_TEAM", "TIMECARD_EDIT_TEAM"];
+/** Of those, who reaches the whole company rather than their own team. */
+export const TIMECARD_EDITORS_COMPANY: Permission[] = ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_ANY", "TIMECARD_EDIT_ANY"];
 
 const rolePermissions: Record<Role, Permission[]> = {
   EMPLOYEE: ["PUNCH_OWN", "TIMESHEET_SUBMIT_OWN", "LEAVE_REQUEST_OWN", "DOCUMENT_VIEW_OWN", "ACCRUAL_VIEW_OWN"],
@@ -113,6 +120,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "TIMECARD_EDIT_TEAM",
     "TIMECARD_EDIT_ANY",
     "PAY_PERIOD_MANAGE",
+    "PAYROLL_RUN",
     "EMPLOYEE_MANAGE",
     "RULES_MANAGE",
     "AUDIT_VIEW",

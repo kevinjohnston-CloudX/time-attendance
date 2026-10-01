@@ -7,7 +7,7 @@ import {
   FileText,
   Hourglass,
   Users,
-  ClipboardCheck,
+  FileOutput,
   AlertTriangle,
   CalendarClock,
   CalendarRange,
@@ -20,7 +20,6 @@ import {
   RefreshCw,
   KeyRound,
   ScrollText,
-  SlidersHorizontal,
   CircleUser,
   Banknote,
   Cog,
@@ -115,7 +114,6 @@ export const SECTIONS: NavSection[] = [
     items: [
       { label: "Team Overview", href: "/supervisor", icon: Users, permission: "PUNCH_VIEW_TEAM" },
       { label: "Live Attendance", href: "/supervisor/on-site", icon: DoorOpen, permission: "PRESENCE_VIEW_ANY" },
-      { label: "Timesheets", href: "/supervisor/timesheets", icon: ClipboardCheck, permission: "PUNCH_VIEW_TEAM" },
       { label: "Exceptions", href: "/supervisor/exceptions", icon: AlertTriangle, permission: "PUNCH_VIEW_TEAM" },
       { label: "Leave Requests", href: "/supervisor/leave", icon: CalendarClock, permission: "PUNCH_VIEW_TEAM" },
       { label: "Team Punch History", href: "/supervisor/punch-history", icon: History, permission: "PUNCH_VIEW_TEAM" },
@@ -129,6 +127,7 @@ export const SECTIONS: NavSection[] = [
     prefixes: ["/payroll", "/reports"],
     items: [
       { label: "Pay Periods", href: "/payroll", icon: CalendarRange, permission: "PAY_PERIOD_MANAGE" },
+      { label: "Run Payroll", href: "/payroll/run", icon: FileOutput, permission: "PAYROLL_RUN" },
       {
         label: "Timecards",
         href: "/payroll/timecards",
@@ -158,7 +157,6 @@ export const SECTIONS: NavSection[] = [
       { label: "ADP Sync", href: "/admin/adp", icon: RefreshCw, permission: "EMPLOYEE_MANAGE" },
       { label: "Integrations", href: "/admin/api-keys", icon: KeyRound, permission: "SITE_MANAGE" },
       { label: "Audit Log", href: "/admin/audit", icon: ScrollText, permission: "AUDIT_VIEW" },
-      { label: "Company Settings", href: "/admin/settings", icon: SlidersHorizontal, permission: "PAY_PERIOD_MANAGE" },
     ],
   },
 ];
@@ -225,7 +223,6 @@ export const ADMIN_GROUPS: {
       { label: "Integrations", detail: "Keys used by timeclocks and exports", href: "/admin/api-keys", permission: "SITE_MANAGE" },
       { label: "ADP Sync", detail: "Sync employee data from ADP Workforce Now", href: "/admin/adp", permission: "EMPLOYEE_MANAGE" },
       { label: "WMS Sync", detail: "Employee, schedule and gate data from the warehouse", href: "/admin/wms-sync", permission: "EMPLOYEE_MANAGE" },
-      { label: "Company Settings", detail: "Defaults applied to every site unless overridden", href: "/admin/settings", permission: "PAY_PERIOD_MANAGE" },
     ],
   },
 ];

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { markPayPeriodReady, lockPayPeriod, reopenPayPeriod, submitOpenTimesheets } from "@/actions/pay-period.actions";
+import { lockPayPeriod, reopenPayPeriod } from "@/actions/pay-period.actions";
 import { pushPayrollToAdp } from "@/actions/adp.actions";
 
 interface PayrollRun {
@@ -15,16 +15,14 @@ interface PayrollRun {
 interface Props {
   payPeriodId: string;
   status: "OPEN" | "READY" | "LOCKED";
-  isReady: boolean;
-  isPast: boolean;
+  unresolvedExceptions?: number;
   adpConfigured?: boolean;
   payrollRun?: PayrollRun | null;
 }
 
-export function PayPeriodActions({ payPeriodId, status, isReady, isPast, adpConfigured, payrollRun }: Props) {
+export function PayPeriodActions({ payPeriodId, status, unresolvedExceptions = 0, adpConfigured, payrollRun }: Props) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [submitResult, setSubmitResult] = useState<{ submitted: number } | null>(null);
   const [pushResult, setPushResult] = useState<{
     pushed: number;
     skipped: number;
@@ -32,16 +30,11 @@ export function PayPeriodActions({ payPeriodId, status, isReady, isPast, adpConf
   } | null>(null);
   const [pushError, setPushError] = useState<string | null>(null);
 
-  function handleMarkReady() {
-    setError(null);
-    startTransition(async () => {
-      const result = await markPayPeriodReady({ payPeriodId });
-      if (!result.success) setError(result.error);
-    });
-  }
-
   function handleLock() {
-    if (!confirm("Lock this pay period? All approved timesheets will be locked.")) return;
+    const warning = unresolvedExceptions > 0
+      ? `\n\n${unresolvedExceptions} unresolved exception${unresolvedExceptions !== 1 ? "s" : ""} still to review.`
+      : "";
+    if (!confirm(`Lock this pay period? All timecards in it will be locked.${warning}`)) return;
     setError(null);
     startTransition(async () => {
       const result = await lockPayPeriod({ payPeriodId });
@@ -56,20 +49,6 @@ export function PayPeriodActions({ payPeriodId, status, isReady, isPast, adpConf
     startTransition(async () => {
       const result = await reopenPayPeriod({ payPeriodId, reason });
       if (!result.success) setError(result.error);
-    });
-  }
-
-  function handleSubmitOpen() {
-    if (!confirm("Move all open and submitted timesheets to Supervisor Approved for this pay period?")) return;
-    setError(null);
-    setSubmitResult(null);
-    startTransition(async () => {
-      const result = await submitOpenTimesheets({ payPeriodId });
-      if (!result.success) {
-        setError(result.error);
-        return;
-      }
-      setSubmitResult(result.data);
     });
   }
 
@@ -155,50 +134,23 @@ export function PayPeriodActions({ payPeriodId, status, isReady, isPast, adpConf
   return (
     <div className="flex flex-col items-end gap-2">
       {error && <p className="text-sm text-red-500">{error}</p>}
-      {submitResult && (
-        <p className="text-sm text-green-600 dark:text-green-400">
-          {submitResult.submitted === 0
-            ? "No open timesheets found."
-            : `${submitResult.submitted} timesheet${submitResult.submitted !== 1 ? "s" : ""} moved to pending.`}
-        </p>
-      )}
       <div className="flex items-center gap-3">
-      {status === "OPEN" && isPast && (
+      {status === "READY" && (
         <button
-          onClick={handleSubmitOpen}
+          onClick={handleReopen}
           disabled={isPending}
           className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
         >
-          {isPending ? "Approving…" : "Approve Open Timesheets"}
+          Reopen
         </button>
       )}
-      {status === "OPEN" && (
-        <button
-          onClick={handleMarkReady}
-          disabled={isPending || !isReady}
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isPending ? "Saving…" : "Mark Ready"}
-        </button>
-      )}
-      {status === "READY" && (
-        <>
-          <button
-            onClick={handleReopen}
-            disabled={isPending}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
-            Reopen
-          </button>
-          <button
-            onClick={handleLock}
-            disabled={isPending}
-            className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
-          >
-            {isPending ? "Locking…" : "Lock Pay Period"}
-          </button>
-        </>
-      )}
+      <button
+        onClick={handleLock}
+        disabled={isPending}
+        className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
+      >
+        {isPending ? "Locking…" : "Lock Pay Period"}
+      </button>
       </div>
     </div>
   );

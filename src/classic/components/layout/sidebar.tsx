@@ -11,12 +11,12 @@ import {
   FileText,
   Users,
   DollarSign,
+  FileOutput,
   Settings,
   LogOut,
   ClipboardList,
   AlertCircle,
   RefreshCw,
-  SlidersHorizontal,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
@@ -51,13 +51,13 @@ const navItems: NavItem[] = [
   { label: "Documents", href: "/documents", icon: FileText },
   { label: "Accruals", href: "/accruals", icon: Hourglass, permission: ["ACCRUAL_VIEW_OWN", "ACCRUAL_VIEW_TEAM", "ACCRUAL_VIEW_ANY"] },
   { label: "Payroll", href: "/payroll", icon: DollarSign, permission: "PAY_PERIOD_MANAGE" },
+  { label: "Run Payroll", href: "/payroll/run", icon: FileOutput, permission: "PAYROLL_RUN" },
   { label: "Timecards", href: "/payroll/timecards", icon: ClipboardList, permission: ["TIMECARD_VIEW_TEAM", "TIMECARD_VIEW_ANY", "TIMECARD_EDIT_TEAM", "TIMECARD_EDIT_ANY"] },
   { label: "Reports", href: "/reports", icon: FileText, permission: "REPORT_MANAGE" },
 ];
 
 const supervisorItems: NavItem[] = [
   { label: "Team Overview", href: "/supervisor", icon: Users, permission: "PUNCH_VIEW_TEAM" },
-  { label: "Timesheets", href: "/supervisor/timesheets", icon: ClipboardList, permission: "PUNCH_VIEW_TEAM" },
   { label: "Exceptions", href: "/supervisor/exceptions", icon: AlertCircle, permission: "PUNCH_VIEW_TEAM" },
   { label: "Leave Requests", href: "/supervisor/leave", icon: CalendarDays, permission: "PUNCH_VIEW_TEAM" },
   { label: "Team Punch History", href: "/supervisor/punch-history", icon: History, permission: "PUNCH_VIEW_TEAM" },
@@ -68,7 +68,6 @@ const adminItems: NavItem[] = [
   { label: "Roles", href: "/admin/roles", icon: ShieldCheck, permission: "ROLE_MANAGE" },
   { label: "ADP Sync", href: "/admin/adp", icon: RefreshCw, permission: "EMPLOYEE_MANAGE" },
   { label: "Audit Log", href: "/admin/audit", icon: FileText, permission: "AUDIT_VIEW" },
-  { label: "Company Settings", href: "/admin/settings", icon: SlidersHorizontal, permission: "PAY_PERIOD_MANAGE" },
 ];
 
 const ROLE_LABEL: Record<string, string> = {

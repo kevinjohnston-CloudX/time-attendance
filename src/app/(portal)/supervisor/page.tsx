@@ -6,7 +6,6 @@ import {
   CalendarDays,
   Check,
   ChevronRight,
-  ClipboardCheck,
   TriangleAlert,
   UserCheck,
 } from "lucide-react";
@@ -14,7 +13,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { parseUtcDate } from "@/lib/utils/date";
-import { getApprovalQueue, getPresence } from "@/lib/dashboard/dashboard-data";
+import { getPresence } from "@/lib/dashboard/dashboard-data";
 import { getExceptionTypes, getTeamQueues, getTimeOffAhead } from "@/lib/team/team-overview";
 import { EXCEPTION_TYPE_LABEL } from "@/lib/state-machines/labels";
 import { Badge, Card, LinkButton, exceptionTone } from "@/components/ui";
@@ -25,12 +24,12 @@ import { Badge, Card, LinkButton, exceptionTone } from "@/components/ui";
  * <p>Answers the three things a supervisor or payroll opens it for, in that
  * order: what is waiting on me, who is here today, and what is coming. The
  * work queue leads, drawn like the Administration rows, one row per queue with
- * its count and where it goes. Under it, four panels that each answer one
+ * its count and where it goes. Under it, three panels that each answer one
  * question and link to the page that owns it.
  *
- * <p>It replaces a warning banner and five count cards. Every count and every
- * link they carried is still here: the four queues are the rows, and upcoming
- * leave is the Time Off Ahead panel.
+ * <p>There are no timesheet approvals to queue: a timecard stays open until
+ * payroll locks the period, so the queues are exceptions and leave, and
+ * upcoming leave is the Time Off Ahead panel.
  *
  * <p>Who sees what: supervisors see their direct reports, payroll and HR see
  * the whole tenant. Both are enforced in the where clause of every query, not
@@ -78,12 +77,11 @@ export default async function TeamOverviewPage() {
   const isPayroll = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"].includes(session.user.role);
   const now = new Date();
 
-  const [queues, exceptionTypes, timeOff, presence, approvals, payPeriod, me, canSeeOnSite] = await Promise.all([
+  const [queues, exceptionTypes, timeOff, presence, payPeriod, me, canSeeOnSite] = await Promise.all([
     getTeamQueues(tenantId, employeeId, isPayroll, now),
     getExceptionTypes(tenantId, employeeId, isPayroll),
     getTimeOffAhead(tenantId, employeeId, isPayroll, now),
     getPresence(tenantId, isPayroll ? null : employeeId),
-    getApprovalQueue(employeeId, tenantId, isPayroll, 5),
     db.payPeriod.findFirst({
       where: { tenantId, ruleSetId: { not: null }, startDate: { lte: now }, endDate: { gt: now }, status: "OPEN" },
       select: { startDate: true, endDate: true },
@@ -131,18 +129,6 @@ export default async function TeamOverviewPage() {
   // supervisor cannot decide leave that is already with HR, so for them that
   // row is information and its count stays grey.
   const queueRows = [
-    {
-      key: "timesheets",
-      icon: <ClipboardCheck className="h-[17px] w-[17px]" />,
-      label: isPayroll ? "Timesheets for payroll sign off" : "Timesheets to approve",
-      detail: isPayroll
-        ? "Approved by supervisors and waiting on the payroll approval"
-        : "Submitted by your team and waiting on your approval",
-      count: queues.timesheets,
-      href: "/supervisor/timesheets",
-      actionable: true,
-      tone: "warning" as const,
-    },
     {
       key: "exceptions",
       icon: <TriangleAlert className="h-[17px] w-[17px]" />,
@@ -199,16 +185,13 @@ export default async function TeamOverviewPage() {
             {periodLabel ? ` · Pay period ${periodLabel}` : ""}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {canSeeOnSite && (
+        {canSeeOnSite && (
+          <div className="flex items-center gap-2">
             <LinkButton href="/supervisor/on-site" hierarchy="secondary">
               Live Attendance
             </LinkButton>
-          )}
-          <LinkButton href="/supervisor/timesheets" hierarchy="primary">
-            Review Timesheets
-          </LinkButton>
-        </div>
+          </div>
+        )}
       </div>
 
       {/* ── Work queue ───────────────────────────────────────────────────── */}
@@ -380,98 +363,55 @@ export default async function TeamOverviewPage() {
       </div>
 
       {/* ── What to work down ────────────────────────────────────────────── */}
-      <div className={GRID}>
-        <Card
-          title="Waiting Longest"
-          subtitle={isPayroll ? "Oldest timesheets waiting on payroll" : "Oldest timesheets waiting on your approval"}
-          actions={
-            <LinkButton href="/supervisor/timesheets" hierarchy="tertiary" size="sm">
-              Review All
-            </LinkButton>
-          }
-        >
-          {approvals.rows.length === 0 ? (
-            <Quiet icon>Every submitted timesheet has been approved.</Quiet>
-          ) : (
-            <div className="flex flex-col">
-              {approvals.rows.map((r, i) => (
-                <div
-                  key={r.id}
-                  className={ROW}
-                  style={{ borderTop: i === 0 ? undefined : "1px solid var(--stroke-divider)" }}
-                >
-                  <Avatar name={r.name} />
-                  <span className="min-w-0 flex-1 truncate" style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)" }}>
-                    {r.name}
-                  </span>
-                  <span className="tabular whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                    {r.hours} h
-                  </span>
-                  {r.tone ? (
-                    <Badge tone="warning" size="sm">
-                      {r.kind}
-                    </Badge>
-                  ) : (
-                    <Badge tone="success" size="sm">
-                      No exceptions
-                    </Badge>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        <Card
-          title="Exceptions by Type"
-          subtitle={queues.exceptions === 0 ? "Open exceptions" : `${plural(queues.exceptions, "open exception")}, largest first`}
-          actions={
-            <LinkButton href="/supervisor/exceptions" hierarchy="tertiary" size="sm">
-              Open Exceptions
-            </LinkButton>
-          }
-        >
-          {exceptionTypes.length === 0 ? (
-            <Quiet icon>Every timecard is clean. There is nothing to resolve.</Quiet>
-          ) : (
-            <div className="flex flex-col">
-              {exceptionTypes.slice(0, 6).map((t, i) => (
-                <Link
-                  key={t.type}
-                  href={`/supervisor/exceptions?exceptionType=${t.type}`}
-                  className="ta-hoverable grid min-h-[48px] items-center gap-3 py-2 [grid-template-columns:140px_minmax(0,1fr)_56px_14px]"
-                  style={{
-                    color: "var(--text-primary)",
-                    textDecoration: "none",
-                    borderTop: i === 0 ? undefined : "1px solid var(--stroke-divider)",
-                  }}
-                >
-                  <span className="min-w-0">
-                    <Badge tone={exceptionTone(t.type)} size="sm">
-                      {EXCEPTION_TYPE_LABEL[t.type] ?? t.type}
-                    </Badge>
-                  </span>
-                  <span className="flex h-1.5 overflow-hidden rounded-full" style={{ background: "var(--ta-track)" }}>
-                    <span
-                      className="rounded-full"
-                      style={{ width: `${exceptionMax ? (t.count / exceptionMax) * 100 : 0}%`, background: "var(--stroke-hover)" }}
-                    />
-                  </span>
-                  <span className="tabular text-right" style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)" }}>
-                    {t.count.toLocaleString()}
-                  </span>
-                  <ChevronRight className="h-3.5 w-3.5" style={{ color: "var(--icon-tertiary)" }} />
-                </Link>
-              ))}
-              {exceptionTypes.length > 6 && (
-                <span className="pt-2.5" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                  {plural(exceptionTypes.length - 6, "more type")} on the Exceptions screen
+      <Card
+        title="Exceptions by Type"
+        subtitle={queues.exceptions === 0 ? "Open exceptions" : `${plural(queues.exceptions, "open exception")}, largest first`}
+        actions={
+          <LinkButton href="/supervisor/exceptions" hierarchy="tertiary" size="sm">
+            Open Exceptions
+          </LinkButton>
+        }
+      >
+        {exceptionTypes.length === 0 ? (
+          <Quiet icon>Every timecard is clean. There is nothing to resolve.</Quiet>
+        ) : (
+          <div className="flex flex-col">
+            {exceptionTypes.slice(0, 6).map((t, i) => (
+              <Link
+                key={t.type}
+                href={`/supervisor/exceptions?exceptionType=${t.type}`}
+                className="ta-hoverable grid min-h-[48px] items-center gap-3 py-2 [grid-template-columns:140px_minmax(0,1fr)_56px_14px]"
+                style={{
+                  color: "var(--text-primary)",
+                  textDecoration: "none",
+                  borderTop: i === 0 ? undefined : "1px solid var(--stroke-divider)",
+                }}
+              >
+                <span className="min-w-0">
+                  <Badge tone={exceptionTone(t.type)} size="sm">
+                    {EXCEPTION_TYPE_LABEL[t.type] ?? t.type}
+                  </Badge>
                 </span>
-              )}
-            </div>
-          )}
-        </Card>
-      </div>
+                <span className="flex h-1.5 overflow-hidden rounded-full" style={{ background: "var(--ta-track)" }}>
+                  <span
+                    className="rounded-full"
+                    style={{ width: `${exceptionMax ? (t.count / exceptionMax) * 100 : 0}%`, background: "var(--stroke-hover)" }}
+                  />
+                </span>
+                <span className="tabular text-right" style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)" }}>
+                  {t.count.toLocaleString()}
+                </span>
+                <ChevronRight className="h-3.5 w-3.5" style={{ color: "var(--icon-tertiary)" }} />
+              </Link>
+            ))}
+            {exceptionTypes.length > 6 && (
+              <span className="pt-2.5" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                {plural(exceptionTypes.length - 6, "more type")} on the Exceptions screen
+              </span>
+            )}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

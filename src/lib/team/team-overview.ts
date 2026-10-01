@@ -14,7 +14,6 @@ import { db } from "@/lib/db";
  */
 
 export interface TeamQueues {
-  timesheets: number;
   exceptions: number;
   leavePending: number;
   leaveWithHr: number;
@@ -56,10 +55,7 @@ export async function getTeamQueues(
   const employee = scopeOf(tenantId, employeeId, isPayroll);
   const today = utcToday(now);
 
-  const [timesheets, exceptions, leavePending, leaveWithHr, upcomingLeave] = await Promise.all([
-    db.timesheet.count({
-      where: { status: isPayroll ? "SUP_APPROVED" : "SUBMITTED", employee },
-    }),
+  const [exceptions, leavePending, leaveWithHr, upcomingLeave] = await Promise.all([
     db.exception.count({ where: { resolvedAt: null, timesheet: { employee } } }),
     db.leaveRequest.count({ where: { status: "PENDING", employee } }),
     db.leaveRequest.count({ where: { status: "PENDING_HR", employee } }),
@@ -68,7 +64,7 @@ export async function getTeamQueues(
     }),
   ]);
 
-  return { timesheets, exceptions, leavePending, leaveWithHr, upcomingLeave };
+  return { exceptions, leavePending, leaveWithHr, upcomingLeave };
 }
 
 /** Open exceptions per type, largest first. Counted in SQL, not in a loop. */

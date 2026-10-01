@@ -1,22 +1,14 @@
 "use server";
 
-import { assertEditable, reachesCompany, timesheetInScope } from "@/lib/rbac/scope";
+import { assertEditable, timesheetInScope } from "@/lib/rbac/scope";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
+import { TIMECARD_EDITORS, TIMECARD_EDITORS_COMPANY } from "@/lib/rbac/permissions";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
-import {
-  validateTimesheetTransition,
-} from "@/lib/state-machines/timesheet-state";
-import {
-  timesheetIdSchema,
-  rejectTimesheetSchema,
-  type TimesheetIdInput,
-  type RejectTimesheetInput,
-} from "@/lib/validators/timesheet.schema";
+import { timesheetIdSchema, type TimesheetIdInput } from "@/lib/validators/timesheet.schema";
 import { z } from "zod";
-import type { Timesheet } from "@prisma/client";
 
 // ─── recalculateSegments ──────────────────────────────────────────────────────
 
@@ -41,10 +33,10 @@ export const recalculateSegments = withRBAC(
 // ─── recalculateSegmentsAdmin ─────────────────────────────────────────────────
 
 export const recalculateSegmentsAdmin = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  TIMECARD_EDITORS,
   async (ctx, input: TimesheetIdInput): Promise<void> => {
     const { timesheetId } = timesheetIdSchema.parse(input);
-    await timesheetInScope(ctx, timesheetId, "PAY_PERIOD_MANAGE");
+    await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
@@ -56,191 +48,73 @@ export const recalculateSegmentsAdmin = withRBAC(
   }
 );
 
-// ─── submitTimesheet ──────────────────────────────────────────────────────────
+// ─── unlockTimesheet / lockTimesheet ─────────────────────────────────────────
+// One person's timecard, while its pay period stays locked: unlock to correct
+// it, lock again when done. Unlocking the whole period is reopenPayPeriod.
 
-export const submitTimesheet = withRBAC(
-  "TIMESHEET_SUBMIT_OWN",
-  async ({ employeeId, tenantId }, input: TimesheetIdInput): Promise<Timesheet> => {
-    const { timesheetId } = timesheetIdSchema.parse(input);
+const unlockTimesheetSchema = z.object({
+  timesheetId: z.string().cuid(),
+  reason: z.string().trim().min(1, "Give a reason for unlocking this timecard").max(500),
+});
 
-    const timesheet = await db.timesheet.findUniqueOrThrow({
-      where: { id: timesheetId },
-    });
+export const unlockTimesheet = withRBAC(
+  "PAYROLL_RUN",
+  async (ctx, input: unknown): Promise<{ success: true }> => {
+    const { timesheetId, reason } = unlockTimesheetSchema.parse(input);
+    const sheet = await timesheetInScope(ctx, timesheetId, "PAYROLL_RUN");
+    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't unlock your own timecard");
+    if (sheet.status !== "LOCKED") throw new Error("This timecard is not locked.");
 
-    if (timesheet.employeeId !== employeeId)
-      throw new Error("Cannot submit another employee's timesheet.");
-
-    const transition = validateTimesheetTransition(timesheet.status, "SUBMIT");
-    if (!transition.valid) throw new Error(transition.error);
-
-    const unresolvedExceptions = await db.exception.count({
-      where: { timesheetId: timesheet.id, resolvedAt: null },
-    });
-    if (unresolvedExceptions > 0)
-      throw new Error(
-        `Cannot submit: ${unresolvedExceptions} unresolved exception(s) remain.`
-      );
-
-    const updated = await db.$transaction(async (tx) => {
-      const t = await tx.timesheet.update({
-        where: { id: timesheet.id },
-        data: { status: transition.newStatus, submittedAt: new Date() },
-      });
+    await db.$transaction(async (tx) => {
+      await tx.timesheet.update({ where: { id: timesheetId }, data: { status: "OPEN", lockedAt: null } });
       await writeAuditLog({
-        tenantId,
-        actorId: employeeId,
-        action: "TIMESHEET_SUBMITTED",
+        tenantId: ctx.tenantId,
+        actorId: ctx.employeeId,
+        action: "TIMESHEET_UNLOCKED",
         entityType: "TIMESHEET",
-        entityId: t.id,
-        changes: { before: { status: timesheet.status }, after: { status: t.status } },
+        entityId: timesheetId,
+        changes: { before: { status: "LOCKED" }, after: { status: "OPEN", reason } },
       });
-      return t;
     });
 
-    revalidatePath("/time/timesheet");
-    revalidatePath(`/time/timesheet/${timesheet.id}`);
-    return updated;
-  }
-);
-
-// ─── approveTimesheet (supervisor) ───────────────────────────────────────────
-
-export const approveTimesheet = withRBAC(
-  "TIMESHEET_APPROVE_TEAM",
-  async (ctx, input: TimesheetIdInput): Promise<Timesheet> => {
-    const { employeeId: supervisorId, tenantId } = ctx;
-    const { timesheetId } = timesheetIdSchema.parse(input);
-    // Only a timesheet of someone the caller manages, and never their own.
-    const sheet = await timesheetInScope(ctx, timesheetId, "TIMESHEET_APPROVE_ANY");
-    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timesheet");
-
-    const timesheet = await db.timesheet.findUniqueOrThrow({
-      where: { id: timesheetId },
-    });
-
-    const transition = validateTimesheetTransition(timesheet.status, "SUP_APPROVE");
-    if (!transition.valid) throw new Error(transition.error);
-
-    const updated = await db.$transaction(async (tx) => {
-      const t = await tx.timesheet.update({
-        where: { id: timesheet.id },
-        data: {
-          status: transition.newStatus,
-          supApprovedAt: new Date(),
-          supApprovedById: supervisorId,
-        },
-      });
-      await writeAuditLog({
-        tenantId,
-        actorId: supervisorId,
-        action: "TIMESHEET_SUP_APPROVED",
-        entityType: "TIMESHEET",
-        entityId: t.id,
-        changes: { before: { status: timesheet.status }, after: { status: t.status } },
-      });
-      return t;
-    });
-
-    revalidatePath("/supervisor/timesheets");
     revalidatePath("/payroll/timecards");
-    revalidatePath(`/time/timesheet/${timesheet.id}`);
-    return updated;
+    revalidatePath("/payroll/pay-periods");
+    return { success: true };
   }
 );
 
-// ─── rejectTimesheet (supervisor or payroll) ──────────────────────────────────
+export const lockTimesheet = withRBAC(
+  "PAYROLL_RUN",
+  async (ctx, input: TimesheetIdInput): Promise<{ success: true }> => {
+    const { timesheetId } = timesheetIdSchema.parse(input);
+    const sheet = await timesheetInScope(ctx, timesheetId, "PAYROLL_RUN");
+    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't lock your own timecard");
+    if (sheet.status === "LOCKED") throw new Error("This timecard is already locked.");
 
-export const rejectTimesheet = withRBAC(
-  "TIMESHEET_APPROVE_TEAM",
-  async (ctx, input: RejectTimesheetInput): Promise<Timesheet> => {
-    const { employeeId: reviewerId, tenantId } = ctx;
-    const { timesheetId, note } = rejectTimesheetSchema.parse(input);
-    const sheet = await timesheetInScope(ctx, timesheetId, "TIMESHEET_APPROVE_ANY");
-    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timesheet");
-    // Sending back a timesheet a supervisor already approved is payroll's step.
-    if (sheet.status !== "SUBMITTED" && !(await reachesCompany(ctx, "TIMESHEET_APPROVE_ANY"))) {
-      throw new Error("Only payroll can send back an approved timesheet");
+    // Only to re-lock a card inside a locked period; an open period is locked as a whole.
+    const { payPeriod } = await db.timesheet.findUniqueOrThrow({
+      where: { id: timesheetId },
+      select: { payPeriod: { select: { status: true } } },
+    });
+    if (payPeriod.status !== "LOCKED") {
+      throw new Error("Lock the pay period to lock its timecards. Single timecards are only locked again inside a locked pay period.");
     }
 
-    const timesheet = await db.timesheet.findUniqueOrThrow({
-      where: { id: timesheetId },
-    });
-
-    // Supervisor rejects SUBMITTED; Payroll rejects SUP_APPROVED
-    const event =
-      timesheet.status === "SUBMITTED" ? "SUP_REJECT" : "PAYROLL_REJECT";
-    const transition = validateTimesheetTransition(timesheet.status, event);
-    if (!transition.valid) throw new Error(transition.error);
-
-    const updated = await db.$transaction(async (tx) => {
-      const t = await tx.timesheet.update({
-        where: { id: timesheet.id },
-        data: {
-          status: transition.newStatus,
-          rejectedAt: new Date(),
-          rejectedById: reviewerId,
-          rejectionNote: note,
-        },
-      });
+    await db.$transaction(async (tx) => {
+      await tx.timesheet.update({ where: { id: timesheetId }, data: { status: "LOCKED", lockedAt: new Date() } });
       await writeAuditLog({
-        tenantId,
-        actorId: reviewerId,
-        action: "TIMESHEET_REJECTED",
+        tenantId: ctx.tenantId,
+        actorId: ctx.employeeId,
+        action: "TIMESHEET_LOCKED",
         entityType: "TIMESHEET",
-        entityId: t.id,
-        changes: { before: { status: timesheet.status }, after: { status: t.status, note } },
+        entityId: timesheetId,
+        changes: { before: { status: sheet.status }, after: { status: "LOCKED" } },
       });
-      return t;
     });
 
-    revalidatePath("/supervisor/timesheets");
     revalidatePath("/payroll/timecards");
-    revalidatePath(`/time/timesheet/${timesheet.id}`);
-    return updated;
-  }
-);
-
-// ─── payrollApproveTimesheet ──────────────────────────────────────────────────
-
-export const payrollApproveTimesheet = withRBAC(
-  "TIMESHEET_APPROVE_ANY",
-  async (ctx, input: TimesheetIdInput): Promise<Timesheet> => {
-    const { employeeId: payrollId, tenantId } = ctx;
-    const { timesheetId } = timesheetIdSchema.parse(input);
-    const sheet = await timesheetInScope(ctx, timesheetId, "TIMESHEET_APPROVE_ANY");
-    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timesheet");
-
-    const timesheet = await db.timesheet.findUniqueOrThrow({
-      where: { id: timesheetId },
-    });
-
-    const transition = validateTimesheetTransition(timesheet.status, "PAYROLL_APPROVE");
-    if (!transition.valid) throw new Error(transition.error);
-
-    const updated = await db.$transaction(async (tx) => {
-      const t = await tx.timesheet.update({
-        where: { id: timesheet.id },
-        data: {
-          status: transition.newStatus,
-          payrollApprovedAt: new Date(),
-          payrollApprovedById: payrollId,
-        },
-      });
-      await writeAuditLog({
-        tenantId,
-        actorId: payrollId,
-        action: "TIMESHEET_PAYROLL_APPROVED",
-        entityType: "TIMESHEET",
-        entityId: t.id,
-        changes: { before: { status: timesheet.status }, after: { status: t.status } },
-      });
-      return t;
-    });
-
-    revalidatePath("/payroll");
-    revalidatePath("/payroll/timecards");
-    revalidatePath(`/time/timesheet/${timesheet.id}`);
-    return updated;
+    revalidatePath("/payroll/pay-periods");
+    return { success: true };
   }
 );
 
@@ -252,11 +126,11 @@ const mealWaiverSchema = z.object({
 });
 
 export const toggleMealWaiver = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  TIMECARD_EDITORS,
   async (ctx, input: unknown): Promise<{ success: boolean; waived: boolean }> => {
     const { employeeId: actorId, tenantId } = ctx;
     const { timesheetId, segmentDate } = mealWaiverSchema.parse(input);
-    const sheet = await timesheetInScope(ctx, timesheetId, "PAY_PERIOD_MANAGE");
+    const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
     if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timesheet");
     assertEditable(sheet.status);
 
@@ -314,11 +188,11 @@ const mealPremiumWaiverSchema = z.object({
 });
 
 export const toggleMealPremiumWaiver = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  TIMECARD_EDITORS,
   async (ctx, input: unknown): Promise<{ success: boolean; waived: boolean }> => {
     const { employeeId: actorId, tenantId } = ctx;
     const { timesheetId, segmentDate, segmentStart } = mealPremiumWaiverSchema.parse(input);
-    const sheet = await timesheetInScope(ctx, timesheetId, "PAY_PERIOD_MANAGE");
+    const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
     if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timesheet");
     assertEditable(sheet.status);
 
@@ -393,7 +267,6 @@ export const authorizeTimecardOt = withRBAC(
       });
     });
 
-    revalidatePath("/supervisor/timesheets");
     revalidatePath("/payroll/timecards");
 
     return { success: true };

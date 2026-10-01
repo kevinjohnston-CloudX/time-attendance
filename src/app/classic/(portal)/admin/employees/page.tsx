@@ -2,13 +2,14 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
-import { getEmployees, getAdminRefData } from "@/actions/admin.actions";
+import { getEmployees, getAdminRefData, getEmployeeById } from "@/actions/admin.actions";
 import { CreateEmployeeForm } from "@/classic/components/admin/create-employee-form";
+import { toCopyFromEmployee } from "@/lib/employee-copy";
 import { CsvUploadForm } from "@/classic/components/admin/csv-upload-form";
 import { EmployeesTable } from "@/classic/components/admin/employees-table";
 
 interface Props {
-  searchParams?: Promise<{ page?: string; q?: string; site?: string; dept?: string; role?: string; inactive?: string }>;
+  searchParams?: Promise<{ page?: string; q?: string; site?: string; dept?: string; role?: string; inactive?: string; copyFrom?: string }>;
 }
 
 export default async function EmployeesPage({ searchParams }: Props) {
@@ -23,17 +24,20 @@ export default async function EmployeesPage({ searchParams }: Props) {
   const dept         = sp?.dept ?? "";
   const role         = sp?.role ?? "";
   const showInactive = sp?.inactive === "1";
+  const copyFromId   = sp?.copyFrom ?? "";
 
-  const [employeesResult, refDataResult] = await Promise.all([
+  const [employeesResult, refDataResult, copySourceResult] = await Promise.all([
     // The shared list opens on current employees; "Show inactive" asks it for everyone.
     getEmployees({ page, q: q || undefined, site: site || undefined, dept: dept || undefined, role: role || undefined, status: showInactive ? "all" : undefined }),
     getAdminRefData(),
+    copyFromId ? getEmployeeById({ employeeId: copyFromId }) : Promise.resolve(null),
   ]);
 
   if (!employeesResult.success || !refDataResult.success) redirect("/admin");
 
   const { employees, total, pageSize } = employeesResult.data;
   const { sites, departments, ruleSets, employees: allEmps, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies } = refDataResult.data;
+  const copyFrom = toCopyFromEmployee(copySourceResult?.success ? copySourceResult.data : null, sites, customRoles);
 
   return (
     <div>
@@ -64,6 +68,8 @@ export default async function EmployeesPage({ searchParams }: Props) {
             payTypes={payTypes ?? []}
             jobTitles={jobTitles ?? []}
             agencies={agencies ?? []}
+            copyFrom={copyFrom}
+            key={copyFrom ? `copy-${copyFromId}` : "new"}
           />
         </div>
       </div>

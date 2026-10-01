@@ -6,7 +6,6 @@ import { formatMinutes } from "@/lib/utils/duration";
 import { parseUtcDate } from "@/lib/utils/date";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { OverviewPeriodFilter } from "@/classic/components/dashboard/overview-period-filter";
-import { SubmitTimesheetButton } from "@/classic/components/time/submit-timesheet-button";
 import {
   TIMESHEET_STATUS_LABEL,
   type TimesheetStatusValue,
@@ -14,9 +13,6 @@ import {
 
 const STATUS_BADGE: Record<string, string> = {
   OPEN:             "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
-  SUBMITTED:        "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  SUP_APPROVED:     "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-  PAYROLL_APPROVED: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
   LOCKED:           "bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400",
 };
 
@@ -342,23 +338,12 @@ export default async function DashboardPage({
                   {TIMESHEET_STATUS_LABEL[currentTimesheet.status as TimesheetStatusValue]}
                 </span>
 
-                {currentTimesheet.status === "OPEN" && currentTimesheet.rejectionNote && (
-                  <p className="text-xs text-red-500 dark:text-red-400">
-                    Returned: {currentTimesheet.rejectionNote}
-                  </p>
-                )}
-
-                <div className="flex items-center justify-between">
-                  <Link
-                    href={`/time/timesheet/${currentTimesheet.id}`}
-                    className="text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
-                  >
-                    View →
-                  </Link>
-                  {currentTimesheet.status === "OPEN" && (
-                    <SubmitTimesheetButton timesheetId={currentTimesheet.id} />
-                  )}
-                </div>
+                <Link
+                  href={`/time/timesheet/${currentTimesheet.id}`}
+                  className="self-start text-xs text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+                >
+                  View →
+                </Link>
               </div>
             ) : (
               <p className="mt-2 text-sm text-zinc-400">

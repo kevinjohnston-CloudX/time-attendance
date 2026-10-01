@@ -20,7 +20,6 @@ import { parseUtcDate } from "@/lib/utils/date";
 import { formatMinutes, minutesToHoursDecimal } from "@/lib/utils/duration";
 import { TIMESHEET_STATUS_LABEL, PUNCH_TYPE_LABEL } from "@/classic/lib/labels";
 import { SegmentTimeline } from "@/classic/components/time/segment-timeline";
-import { SubmitTimesheetButton } from "@/classic/components/time/submit-timesheet-button";
 import type { WorkSegment } from "@prisma/client";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -77,9 +76,6 @@ export interface TimesheetViewerProps {
 
 const STATUS_BADGE: Record<string, string> = {
   OPEN:             "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
-  SUBMITTED:        "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  SUP_APPROVED:     "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-  PAYROLL_APPROVED: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
   LOCKED:           "bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400",
 };
 
@@ -446,9 +442,6 @@ export function TimesheetViewer({
                   </span>
                 )}
               </div>
-              {detail.status === "OPEN" && (
-                <SubmitTimesheetButton timesheetId={detail.timesheetId} />
-              )}
             </div>
 
             {/* Scrollable table + legend + summary */}

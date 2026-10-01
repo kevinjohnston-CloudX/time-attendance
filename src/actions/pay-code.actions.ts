@@ -2,7 +2,8 @@
 
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
-import { assertEditable, timesheetInScope } from "@/lib/rbac/scope";
+import { editableTimesheetInScope } from "@/lib/rbac/scope";
+import { TIMECARD_EDITORS } from "@/lib/rbac/permissions";
 import { reconcileLeaveDeductions, reconcileSalarySegmentDeduction } from "@/lib/engines/leave-deduction";
 import { z } from "zod";
 
@@ -188,6 +189,11 @@ export const reorderPayCodes = withRBAC(
   }
 );
 
+async function assertOwnPayCode(payCodeId: string, tenantId: string | null) {
+  const found = await db.payCode.findFirst({ where: { id: payCodeId, tenantId: tenantId ?? "" }, select: { id: true } });
+  if (!found) throw new Error("That pay code does not exist");
+}
+
 // ─── Set pay code on a work segment ─────────────────────────────────────────
 
 const setSegmentPayCodeSchema = z.object({
@@ -196,9 +202,12 @@ const setSegmentPayCodeSchema = z.object({
 });
 
 export const setSegmentPayCode = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  TIMECARD_EDITORS,
   async (ctx, input: z.infer<typeof setSegmentPayCodeSchema>) => {
     const { segmentId, payCodeId } = setSegmentPayCodeSchema.parse(input);
+    const { timesheetId } = await db.workSegment.findUniqueOrThrow({ where: { id: segmentId }, select: { timesheetId: true } });
+    await editableTimesheetInScope(ctx, timesheetId);
+    if (payCodeId) await assertOwnPayCode(payCodeId, ctx.tenantId);
 
     // Update the segment immediately so the UI reflects the change
     const segment = await db.workSegment.update({
@@ -257,9 +266,11 @@ const setSegmentPayBucketSchema = z.object({
 });
 
 export const setSegmentPayBucket = withRBAC(
-  "PAY_PERIOD_MANAGE",
-  async (_ctx, input: z.infer<typeof setSegmentPayBucketSchema>) => {
+  TIMECARD_EDITORS,
+  async (ctx, input: z.infer<typeof setSegmentPayBucketSchema>) => {
     const { segmentId, payBucket } = setSegmentPayBucketSchema.parse(input);
+    const { timesheetId } = await db.workSegment.findUniqueOrThrow({ where: { id: segmentId }, select: { timesheetId: true } });
+    await editableTimesheetInScope(ctx, timesheetId);
 
     await db.workSegment.update({
       where: { id: segmentId },
@@ -280,10 +291,11 @@ const setAbsentDayPayBucketSchema = z.object({
 });
 
 export const setAbsentDayPayBucket = withRBAC(
-  "PAY_PERIOD_MANAGE",
-  async (_ctx, input: z.infer<typeof setAbsentDayPayBucketSchema>) => {
+  TIMECARD_EDITORS,
+  async (ctx, input: z.infer<typeof setAbsentDayPayBucketSchema>) => {
     const { timesheetId, segmentDate, payBucket } =
       setAbsentDayPayBucketSchema.parse(input);
+    await editableTimesheetInScope(ctx, timesheetId);
 
     const date = new Date(segmentDate + "T00:00:00.000Z");
 
@@ -333,13 +345,11 @@ const setAbsentDayPayCodeSchema = z.object({
 });
 
 export const setAbsentDayPayCode = withRBAC(
-  "PAY_PERIOD_MANAGE",
+  TIMECARD_EDITORS,
   async (ctx, input: z.infer<typeof setAbsentDayPayCodeSchema>) => {
     const { timesheetId, segmentDate, payCodeId } = setAbsentDayPayCodeSchema.parse(input);
-    // Only a timecard in the caller's company, and not one payroll has
-    // approved or locked: the day's leave hours change pay code below.
-    const sheet = await timesheetInScope(ctx, timesheetId, "PAY_PERIOD_MANAGE");
-    assertEditable(sheet.status);
+    await editableTimesheetInScope(ctx, timesheetId);
+    if (payCodeId) await assertOwnPayCode(payCodeId, ctx.tenantId);
     const date = new Date(segmentDate + "T00:00:00.000Z");
 
     const existing = await db.workSegment.findFirst({

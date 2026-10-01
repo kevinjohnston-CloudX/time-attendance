@@ -89,6 +89,7 @@ const SYSTEM_ROLES: {
       { resource: "leave", action: "write", scope: "own" },
       { resource: "leave", action: "execute", scope: "all" },
       { resource: "payroll", action: "write", scope: "all" },
+      { resource: "payroll", action: "execute", scope: "all" },
       { resource: "employee", action: "write", scope: "all" },
       { resource: "employee", action: "read", scope: "all" },
       { resource: "rules", action: "write", scope: "all" },
