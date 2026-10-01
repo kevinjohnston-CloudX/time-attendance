@@ -12,8 +12,9 @@ model Tenant {
   /// is off. A System Admin switches it in Company Settings. A time rather
   /// than a flag, so turning it back on shows only people turned away since
   /// then, never a morning's worth of refusals at once. Refusals are recorded
-  /// either way.
-  gateAlertsOnSince DateTime? @default(now())
+  /// either way. Starts off (no default), because the alert shipped before
+  /// the gate tablets said which building they are in.
+  gateAlertsOnSince DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
