@@ -803,6 +803,7 @@ export async function rebuildSegments(
         select: {
           id: true,
           tenantId: true,
+          isActive: true,
           payType: true,
           hireDate: true,
           adjustedHireDate: true,
@@ -1208,13 +1209,17 @@ export async function rebuildSegments(
   }
 
   // Sync ABSENT exceptions for past days in the pay period with no activity.
+  // An inactive employee raises no new absences: the record keeps no
+  // termination date, so every scheduled day after they left would read as
+  // absent. Open ones still auto-resolve when a day gets activity.
   await syncAbsentExceptions(
     timesheetId,
     timezone,
     bounds.firstDay,
     bounds.lastDay,
     punches,
-    timesheet.employee.shift?.workDays
+    timesheet.employee.shift?.workDays,
+    timesheet.employee.isActive,
   );
 
   // Sync MISSING_PUNCH exceptions for past days where the shift was left open.
@@ -1240,7 +1245,8 @@ async function syncAbsentExceptions(
   periodStartStr: string,
   periodEndStr: string,
   punches: Punch[],
-  shiftWorkDays?: number[]
+  shiftWorkDays?: number[],
+  raiseNew = true,
 ): Promise<void> {
   // Today in the site timezone.
   const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
@@ -1291,7 +1297,7 @@ async function syncAbsentExceptions(
 
   // Create an exception for each absent day that has no open exception yet.
   for (const ds of absentDays) {
-    if (!openByDate.has(ds)) {
+    if (raiseNew && !openByDate.has(ds)) {
       // Use noon UTC so the date displays correctly in any timezone (UTC midnight
       // would appear as the previous evening in negative-offset timezones like EDT).
       const occurredAt = new Date(ds + "T12:00:00.000Z");

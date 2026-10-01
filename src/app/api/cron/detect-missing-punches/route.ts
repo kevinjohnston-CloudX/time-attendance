@@ -15,10 +15,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // Include timesheets with ANY non-corrected punch — not just approved ones.
   // Requiring isApproved:true caused night-shift workers with unapproved KIOSK
   // punches to be skipped, leaving their state stuck as WORK across pay period boundaries.
+  // Active employees only: an inactive one can no longer punch, so nothing on
+  // their timecard changes overnight, and recalculating it only marked every
+  // scheduled day since they left absent. An edit HR makes still recalculates
+  // it straight away.
   const timesheets = await db.timesheet.findMany({
     where: {
       payPeriod: { status: "OPEN" },
       status: { notIn: ["LOCKED", "PAYROLL_APPROVED"] },
+      employee: { isActive: true },
       punches: {
         some: {
           correctedById: null,
