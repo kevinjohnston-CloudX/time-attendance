@@ -89,6 +89,7 @@ model Site {
   ptoPolicies SitePtoPolicy[]
   hrAccess    HrSiteAccess[]
   gateRefusals GateRefusal[]
+  devices     Device[]
 
   @@unique([tenantId, name])
   @@map("sites")
