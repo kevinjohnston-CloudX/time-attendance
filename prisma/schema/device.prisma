@@ -1,0 +1,107 @@
+/// A tablet, as its own check-ins describe it (/api/timeclock/device-checkin,
+/// sent by build 163 and later every five minutes).
+///
+/// One row per physical tablet, kept across renames, reinstalls and factory
+/// resets: a check-in is matched to its row by the strongest id it carries
+/// (install id, then hardware serial, Wi-Fi MAC, Android id, asset tag; see
+/// src/lib/devices/check-in.ts), so a reset tablet that comes back with a new
+/// install id but the same serial or sticker keeps its row and its history.
+///
+/// The columns are the latest report, flattened for lists and alerts;
+/// `lastReport` is that report whole. Earlier reports, trimmed to the numbers
+/// worth charting, are in device_check_ins.
+model Device {
+  id       String  @id @default(cuid())
+  /// From the site the tablet's warehouse number belongs to, when it has one.
+  tenantId String?
+  siteId   String?
+
+  // Identity, each as last reported. Any of them can match a check-in.
+  installId      String? @unique
+  androidId      String?
+  hardwareSerial String?
+  wifiMac        String?
+  assetTag       String?
+
+  // Setup and build.
+  deviceName     String?
+  /// The warehouse number the tablet is configured with (sites.wmsWarehouseId).
+  warehouse      Int?
+  /// TIME_CLOCK or SECURITY.
+  stream         String?
+  manufacturer   String?
+  model          String?
+  androidVersion String?
+  appVersion     String?
+  gitSha         String?
+  gitDirty       Boolean?
+  isDeviceOwner  Boolean?
+
+  // Latest status.
+  batteryPct       Int?
+  charging         Boolean?
+  /// AC, USB, WIRELESS or NONE.
+  plugged          String?
+  networkType      String?
+  wifiRssi         Int?
+  queuePending     Int?
+  queueFailed      Int?
+  oldestPendingSec Int?
+  dataFreeMb       Int?
+  cameraPermission Boolean?
+  autoTime         Boolean?
+  /// The screen in front (MainActivity is the home screen), or BACKGROUND.
+  screen           String?
+  /// The tablet's clock minus this server's, in seconds, at the last check-in.
+  clockSkewSec     Int?
+  lastReport       Json?
+
+  /// Times this tablet came back under a new install id (a reinstall, cleared
+  /// data or a factory reset), and the one before the current.
+  installChanges    Int       @default(0)
+  previousInstallId String?
+  installChangedAt  DateTime?
+
+  checkIns    Int      @default(0)
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  site    Site?           @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  history DeviceCheckIn[]
+
+  @@index([hardwareSerial])
+  @@index([wifiMac])
+  @@index([androidId])
+  @@index([assetTag])
+  /// A building's tablets, newest first.
+  @@index([siteId, lastSeenAt])
+  @@map("devices")
+}
+
+/// One check-in, trimmed to what is worth charting over time. Kept 30 days.
+model DeviceCheckIn {
+  id               String   @id @default(cuid())
+  deviceId         String
+  receivedAt       DateTime @default(now())
+  installId        String?
+  appVersion       String?
+  batteryPct       Int?
+  charging         Boolean?
+  plugged          String?
+  networkType      String?
+  wifiRssi         Int?
+  queuePending     Int?
+  queueFailed      Int?
+  oldestPendingSec Int?
+  dataFreeMb       Int?
+  screen           String?
+  clockSkewSec     Int?
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, receivedAt])
+  @@map("device_check_ins")
+}
