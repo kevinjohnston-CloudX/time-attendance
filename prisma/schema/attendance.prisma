@@ -262,11 +262,117 @@ model GateRefusal {
 
   site     Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  tries    GateRefusalTry[]
+  views    GateRefusalView[]
 
   @@unique([employeeId, siteId, workDate])
   /// What Live Attendance polls: a building's day.
   @@index([tenantId, siteId, workDate])
   @@map("gate_refusals")
+}
+
+/// Diagnostics for the gate alert: one row per time the gate turned somebody
+/// away and CloudTime noted it, with what the tablet sent and how the building
+/// was chosen. The refusal row only keeps the first and last try; this keeps
+/// every one, so a missed pop up can be lined up against the exact second.
+/// Written by the gate check, read only by support scripts.
+model GateRefusalTry {
+  id          String   @id @default(cuid())
+  tenantId    String
+  refusalId   String
+  /// When the gate check arrived.
+  at          DateTime
+  /// When the refusal was written, after the tablet had its answer.
+  recordedAt  DateTime @default(now())
+  deviceName  String?
+  /// The warehouse number exactly as the tablet sent it, or null.
+  warehouse   String?
+  /// How the building was chosen: tablet, last scan or home site.
+  placedBy    String
+  /// The parameter names the tablet sent (names only, never values).
+  params      String?
+  /// Whether the alert was on at that building at that moment.
+  alertsOn    Boolean
+  /// Already dismissed today, so no card could show for this try.
+  dismissed   Boolean
+  attempt     Int
+
+  refusal GateRefusal @relation(fields: [refusalId], references: [id], onDelete: Cascade)
+
+  @@index([refusalId])
+  @@index([tenantId, at])
+  @@map("gate_refusal_tries")
+}
+
+/// Diagnostics for the gate alert: one row each time a card appeared on a
+/// Live Attendance screen, whose screen, and how it went away (dismissed,
+/// added to the schedule, closed on its own, a newer try, or the page left).
+/// Times are the server's, not the browser's.
+model GateRefusalView {
+  id            String    @id
+  tenantId      String
+  refusalId     String
+  siteId        String
+  /// The viewer, as the employee behind the session.
+  employeeId    String?
+  /// The page load it appeared on (see LiveAttendanceWatch.screenId).
+  screenId      String
+  /// The try it was showing, and how many tries there had been.
+  refusalLastAt DateTime
+  attempts      Int
+  shownAt       DateTime  @default(now())
+  /// Whether the tab was in front when it appeared.
+  visible       Boolean
+  closedAt      DateTime?
+  /// DISMISSED, ADDED, AUTO (closed on its own), NEWER_TRY, GONE (settled on
+  /// another screen or the alert switched off), or LEFT (page closed, building
+  /// changed).
+  closedHow     String?
+
+  refusal GateRefusal @relation(fields: [refusalId], references: [id], onDelete: Cascade)
+
+  @@index([refusalId])
+  @@index([tenantId, siteId, shownAt])
+  @@map("gate_refusal_views")
+}
+
+/// Diagnostics for the gate alert: which building each open Live Attendance
+/// page was on, minute by minute, and whether it was in front. One row per
+/// stretch of a page load on one building in one state (in front or behind);
+/// a change of building or of state starts a new row. The page reports every
+/// 30 seconds, so a stretch is accurate to about that. Also carries how its 2
+/// second checks and its alert checks went, and which deploy it was running,
+/// since a tab opened before a deploy keeps running the old code.
+model LiveAttendanceWatch {
+  /// Chosen by the page for each stretch.
+  id                  String    @id
+  tenantId            String
+  screenId            String
+  employeeId          String?
+  siteId              String
+  /// Whether the viewer gets the gate alert (Live Attendance, Execute), as the server sees it.
+  alerts              Boolean
+  /// In front (the tab visible) for the whole stretch, or behind.
+  visible             Boolean
+  /// The window had the keyboard at the last report.
+  focused             Boolean
+  /// The deploy the page was loaded from.
+  deployId            String?
+  startedAt           DateTime  @default(now())
+  lastBeatAt          DateTime  @default(now())
+  /// 2 second checks that answered, and those that failed, over the stretch.
+  pulsesOk            Int       @default(0)
+  pulsesFailed        Int       @default(0)
+  lastPulseOkAt       DateTime?
+  lastPulseError      String?
+  /// The last alert check: when it answered, how many cards it got, or why it failed.
+  lastAlertCheckAt    DateTime?
+  alertCards          Int?
+  lastAlertCheckError String?
+
+  @@index([tenantId, siteId, lastBeatAt])
+  @@index([screenId])
+  @@map("live_attendance_watches")
 }
 
 model WorkSegment {

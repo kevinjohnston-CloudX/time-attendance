@@ -54,6 +54,7 @@ import { GateRefusalAlert } from "./gate-refusal-alert";
 import { GateAlertsSwitch } from "./gate-alerts-switch";
 import type { GateAlertsSetting } from "@/actions/gate-refusals.actions";
 import { useOnPulseChange, useSitePulse } from "./use-site-pulse";
+import { useScreenWatch } from "./screen-watch";
 import { PhotoSwaps, PhotoViewer } from "./face";
 import { PeopleSearch, pickedLabel } from "./people-search";
 import { useCondensingBar } from "@/components/layout/use-condensing-bar";
@@ -384,6 +385,8 @@ export function OnSiteBoard({
   // The pulse says when the newest scan here was recorded; each new one
   // reloads the board, the log or the movements on screen within seconds.
   const pulse = useSitePulse(siteId, gateAlerts);
+  // Which building this page is on, and whether it is in front, for the gate alert diagnostics.
+  useScreenWatch(siteId);
   useOnPulseChange(pulse?.scans, !!siteId, () => {
     if (siteId) void refresh(siteId);
   });

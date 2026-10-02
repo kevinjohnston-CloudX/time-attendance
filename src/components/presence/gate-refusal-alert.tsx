@@ -12,6 +12,7 @@ import { Face } from "./face";
 import { fmtTime, initialsOf } from "./presence-meta";
 import { ScheduleDayDialog } from "./schedule-day-dialog";
 import { useOnPulseChange } from "./use-site-pulse";
+import { newWatchId, noteAlertCheck, screenId, sendWatch } from "./screen-watch";
 import styles from "./on-site.module.css";
 
 /**
@@ -90,6 +91,10 @@ export function GateRefusalAlert({
   const cardRef = useRef<HTMLDivElement>(null);
   const bumpedAt = useRef(0);
   const failing = useRef<string | null>(null);
+  // The card on screen as the diagnostics know it, and why cards went away,
+  // so each appearance is reported with how it ended (see screen-watch.ts).
+  const view = useRef<{ id: string; refusalId: string; siteId: string } | null>(null);
+  const closing = useRef(new Map<string, string>());
 
   useEffect(() => {
     let dead = false;
@@ -99,12 +104,14 @@ export function GateRefusalAlert({
       const failed = (error: string) => {
         if (failing.current !== error) gateLog("failed", { at: "check for alerts", site: siteId, error }, "warn");
         failing.current = error;
+        noteAlertCheck(null, error);
       };
       try {
         const r = await getOnSiteGateRefusals({ siteId });
         if (dead) return;
         if (r.success) {
           failing.current = null;
+          noteAlertCheck(r.data.cards.length);
           setQueue({ siteId, cards: r.data.cards, total: r.data.total });
         } else failed(r.error);
       } catch {
@@ -143,9 +150,50 @@ export function GateRefusalAlert({
 
   useEffect(() => {
     if (clockKey) gateLog("showing", { refusal: clockKey.split("|")[0], lastTry: clockKey.split("|")[1], waiting: open });
+    // Reported to the server too: the last card ends, with how, and this one starts.
+    const prev = view.current;
+    if (prev) {
+      const how =
+        closing.current.get(prev.refusalId) ??
+        (prev.siteId !== siteId ? "LEFT" : card?.id === prev.refusalId ? "NEWER_TRY" : "GONE");
+      closing.current.delete(prev.refusalId);
+      sendWatch([{ kind: "closed", viewId: prev.id, how }]);
+      view.current = null;
+    }
+    if (card) {
+      const id = newWatchId();
+      view.current = { id, refusalId: card.id, siteId };
+      sendWatch([
+        {
+          kind: "shown",
+          viewId: id,
+          screenId,
+          siteId,
+          refusalId: card.id,
+          refusalLastAt: card.lastAt,
+          attempts: card.attempts,
+          visible: document.visibilityState === "visible",
+        },
+      ]);
+    }
     // Once per card and try, not on every change to the count.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clockKey]);
+
+  // Leaving the page with a card up ends it there.
+  useEffect(() => {
+    const leave = () => {
+      const v = view.current;
+      if (!v) return;
+      sendWatch([{ kind: "closed", viewId: v.id, how: "LEFT" }], true);
+      view.current = null;
+    };
+    window.addEventListener("pagehide", leave);
+    return () => {
+      window.removeEventListener("pagehide", leave);
+      leave();
+    };
+  }, []);
 
   // The idle clock: a full 45 seconds for each card, and again after anybody
   // touches it, comes back from the form, or returns to the tab.
@@ -168,6 +216,7 @@ export function GateRefusalAlert({
   useEffect(() => {
     if (card && !paused && running && now >= running.until) {
       gateLog("closed on its own", { refusal: card.id, after: `${IDLE_MS / 1000}s` });
+      closing.current.set(card.id, "AUTO");
       setTimedOut((m) => new Map(m).set(card.id, card.lastAt));
     }
   }, [card, paused, running, now]);
@@ -195,6 +244,7 @@ export function GateRefusalAlert({
       const r = await dismissOnSiteGateRefusals({ siteId, refusalIds: ids });
       // NOT_FOUND is somebody else having settled it first: gone either way.
       if (r.success || r.error === "NOT_FOUND") {
+        for (const id of ids) closing.current.set(id, r.success ? "DISMISSED" : "GONE");
         settle(ids);
         setConfirmingAll(false);
       } else {
@@ -224,6 +274,7 @@ export function GateRefusalAlert({
         onClose={() => setAdding(false)}
         onSaved={() => {
           setAdding(false);
+          closing.current.set(card.id, "ADDED");
           settle([card.id]);
           onScheduled(card.name);
         }}

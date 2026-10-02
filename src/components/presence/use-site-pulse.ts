@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { notePulse } from "./screen-watch";
 
 /**
  * How often an open Live Attendance page asks whether anything happened at
@@ -37,9 +38,14 @@ export function useSitePulse(siteId: string | null, alerts: boolean): SitePulse 
           cache: "no-store",
           signal: controller.signal,
         });
-        if (!res.ok || stopped) return;
+        if (stopped) return;
+        if (!res.ok) {
+          notePulse(false, `HTTP ${res.status}`);
+          return;
+        }
         const value = (await res.json()) as SitePulse;
         if (stopped) return;
+        notePulse(true);
         setPulse((p) =>
           p && p.siteId === siteId && p.value.scans === value.scans && p.value.refusals === value.refusals
             ? p
@@ -48,6 +54,7 @@ export function useSitePulse(siteId: string | null, alerts: boolean): SitePulse 
       } catch {
         // A missed ask is made up by the next one, and the views keep their
         // own slower refresh underneath.
+        if (!stopped) notePulse(false, "UNREACHABLE");
       } finally {
         inFlight = false;
       }

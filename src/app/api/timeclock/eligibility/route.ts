@@ -199,6 +199,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       homeSiteId: employee.siteId,
       warehouse: from.warehouse,
       device: from.device,
+      params: from.params ?? null,
       reason: reason as "NO_SCHEDULE" | "NOT_A_WORKDAY",
       at: new Date(),
     };

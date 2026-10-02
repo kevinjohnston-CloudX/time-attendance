@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { localDateString } from "@/lib/presence/on-site.service";
 import { SHIFT_HOURS_SELECT, shiftHoursOn } from "@/lib/presence/expected-hours";
 import { photoUrls } from "@/lib/presence/photos";
-import { gateLog } from "@/lib/presence/gate-alert-log";
+import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 
 /**
  * People CloudTime's gate check turned away for having no shift today, for
@@ -140,6 +140,8 @@ export async function recordGateRefusal(input: {
   homeSiteId: string | null;
   warehouse: string | null;
   device: string | null;
+  /** The parameter names the tablet sent, for the try's diagnostics row. */
+  params?: string | null;
   reason: GateRefusalReason;
   at: Date;
 }): Promise<void> {
@@ -186,15 +188,37 @@ export async function recordGateRefusal(input: {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") row = await write();
     else throw err;
   }
+  const onSince = await gateAlertsOnSince(input.tenantId, site.id);
   gateLog("noted", {
     refusal: row.id,
     employee: input.employeeId,
     site: site.id,
     placedBy,
     attempts: row.attempts,
+    alertsOn: onSince !== null,
     // Dismissed earlier today: counted, but no card shows again today.
     dismissedToday: row.dismissedAt ? true : undefined,
   });
+  // Every try, for tracing a pop up that did not appear (see GateRefusalTry).
+  // Its own write, so a failure here never loses the refusal itself.
+  try {
+    await db.gateRefusalTry.create({
+      data: {
+        tenantId: input.tenantId,
+        refusalId: row.id,
+        at: input.at,
+        deviceName: input.device,
+        warehouse: input.warehouse,
+        placedBy,
+        params: input.params ?? null,
+        alertsOn: onSince !== null,
+        dismissed: row.dismissedAt !== null,
+        attempt: row.attempts,
+      },
+    });
+  } catch (err) {
+    gateLog("failed", { at: "noting try", refusal: row.id, error: errorCode(err) }, "warn");
+  }
 }
 
 /**
