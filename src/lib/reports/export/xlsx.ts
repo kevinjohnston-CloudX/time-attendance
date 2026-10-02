@@ -15,7 +15,7 @@ export async function generateXlsx(
   // Header row
   // Hours as real numbers with two decimals, so a column can be summed.
   sheet.columns = result.columns.map((col) => ({
-    header: col.label,
+    header: col.exportLabel ?? col.label,
     key: col.id,
     width: col.type === "number" ? 12 : 20,
     ...(isHoursColumn(col) ? { style: { numFmt: "0.00" } } : {}),

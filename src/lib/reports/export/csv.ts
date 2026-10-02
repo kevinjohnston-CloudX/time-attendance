@@ -2,7 +2,8 @@ import type { ReportResult } from "../data-sources";
 import { cellText } from "../cell";
 
 export function generateCsv(result: ReportResult): string {
-  const headers = result.columns.map((c) => escapeCsvField(c.label));
+  // A column can carry its own heading for a file (the old report's), apart from the screen's.
+  const headers = result.columns.map((c) => escapeCsvField(c.exportLabel ?? c.label));
   const rows = result.rows.map((row) =>
     result.columns.map((col) => {
       return escapeCsvField(cellText(row[col.id], col));

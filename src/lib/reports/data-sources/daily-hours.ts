@@ -206,6 +206,9 @@ export const dailyHoursSource: DataSourceDefinition = {
 
 function resolveDateFilter(dateRange: ReportConfig["dateRange"]): Record<string, unknown> {
   switch (dateRange.type) {
+    case "calendar":
+      // Turned into plain dates before any report runs (see data-sources/index).
+      throw new Error("A calendar period reached a report that reads dates.");
     case "payPeriod":
       return { timesheet: { payPeriodId: dateRange.payPeriodId } };
     case "custom":

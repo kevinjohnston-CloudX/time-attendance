@@ -3,6 +3,7 @@ import { getReportForExport } from "@/actions/report.actions";
 import { generateCsv } from "@/lib/reports/export/csv";
 import { generatePdf } from "@/lib/reports/export/pdf";
 import { generateXlsx } from "@/lib/reports/export/xlsx";
+import { reportFileStem } from "@/lib/reports/file-name";
 
 /**
  * A saved report as a file: CSV, Excel or PDF.
@@ -42,8 +43,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return new NextResponse("Report not found", { status: 404 });
   }
 
-  const { name, result } = res.data;
-  const safeName = name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "report";
+  const { name, brand, result } = res.data;
+  const safeName = reportFileStem(name, result, brand);
 
   if (format === "csv") {
     // Encoded explicitly (generateCsv leads with a byte order mark), so Excel

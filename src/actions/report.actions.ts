@@ -18,6 +18,7 @@ import {
 } from "@/lib/validators/report.schema";
 import type { ReportResult } from "@/lib/reports/data-sources";
 import { dayKey, periodLastDay } from "@/lib/pay-period-display";
+import { nextRun } from "@/lib/reports/schedule-time";
 
 // ─── Data Sources (metadata only, no execution) ────────────────────────────
 
@@ -328,7 +329,7 @@ export const runReport = withRBAC(
  */
 export const getReportForExport = withRBAC(
   "REPORT_MANAGE",
-  async ({ tenantId }, input: { id: string; dateRange?: unknown }): Promise<{ name: string; result: ReportResult }> => {
+  async ({ tenantId }, input: { id: string; dateRange?: unknown }): Promise<{ name: string; brand: string | null; result: ReportResult }> => {
     if (!tenantId) throw new Error("Tenant context required");
     const session = await getSessionUserId();
 
@@ -340,8 +341,9 @@ export const getReportForExport = withRBAC(
       const { dateRangeSchema } = await import("@/lib/validators/report.schema");
       config = { ...config, dateRange: dateRangeSchema.parse(input.dateRange) };
     }
-    const result = await getDataSource(report.dataSource as DataSourceId).execute(config, tenantId);
-    return { name: report.name, result };
+    const source = getDataSource(report.dataSource as DataSourceId);
+    const result = await source.execute(config, tenantId);
+    return { name: report.name, brand: source.brand ?? null, result };
   }
 );
 
@@ -503,8 +505,8 @@ export const createSchedule = withRBAC(
       where: { id: parsed.reportId, ...editableWhere(tenantId, session) },
     });
 
-    // Calculate first nextRunAt
-    const nextRunAt = calculateNextRun(parsed.cronExpr);
+    // Calculate first nextRunAt, in the schedule's own time zone
+    const nextRunAt = nextSend(parsed.cronExpr, parsed.timezone);
 
     const schedule = await db.reportSchedule.create({
       data: {
@@ -533,7 +535,7 @@ export const updateSchedule = withRBAC(
       where: { id: input.id, report: editableWhere(tenantId, session) },
     });
 
-    const nextRunAt = calculateNextRun(parsed.cronExpr);
+    const nextRunAt = nextSend(parsed.cronExpr, parsed.timezone);
 
     return db.reportSchedule.update({
       where: { id: input.id },
@@ -569,13 +571,19 @@ export const toggleSchedule = withRBAC(
     if (!tenantId) throw new Error("Tenant context required");
 
     const session = await getSessionUserId();
-    await db.reportSchedule.findFirstOrThrow({
+    const schedule = await db.reportSchedule.findFirstOrThrow({
       where: { id: input.id, report: editableWhere(tenantId, session) },
     });
 
     return db.reportSchedule.update({
       where: { id: input.id },
-      data: { isActive: input.isActive },
+      data: {
+        isActive: input.isActive,
+        // Switched back on, the next send is the next one from now. Left as it
+        // was, a schedule paused for a month would send straight away, once for
+        // every month it missed.
+        ...(input.isActive ? { nextRunAt: nextSend(schedule.cronExpr, schedule.timezone) } : {}),
+      },
     });
   }
 );
@@ -704,41 +712,9 @@ function validateColumnsAgainstSource(
   }
 }
 
-function calculateNextRun(cronExpr: string): Date {
-  const [minPart, hourPart, dayPart, monthPart, dowPart] = cronExpr.split(" ");
-  const now = new Date();
-
-  for (let offset = 1; offset <= 1440 * 31; offset++) {
-    const candidate = new Date(now.getTime() + offset * 60_000);
-    if (
-      matchesCronField(minPart, candidate.getUTCMinutes()) &&
-      matchesCronField(hourPart, candidate.getUTCHours()) &&
-      matchesCronField(dayPart, candidate.getUTCDate()) &&
-      matchesCronField(monthPart, candidate.getUTCMonth() + 1) &&
-      matchesCronField(dowPart, candidate.getUTCDay())
-    ) {
-      return candidate;
-    }
-  }
-
-  return new Date(now.getTime() + 24 * 60 * 60 * 1000);
-}
-
-function matchesCronField(field: string, value: number): boolean {
-  if (field === "*") return true;
-
-  for (const part of field.split(",")) {
-    if (part.includes("/")) {
-      const [range, step] = part.split("/");
-      const stepNum = parseInt(step, 10);
-      if (range === "*" && value % stepNum === 0) return true;
-    } else if (part.includes("-")) {
-      const [start, end] = part.split("-").map(Number);
-      if (value >= start && value <= end) return true;
-    } else {
-      if (parseInt(part, 10) === value) return true;
-    }
-  }
-
-  return false;
+/** The next send of a schedule, or a plain refusal when it can never happen. */
+function nextSend(cronExpr: string, timezone: string): Date {
+  const at = nextRun(cronExpr, timezone);
+  if (!at) throw new Error("That schedule never comes round. Check the day and month.");
+  return at;
 }

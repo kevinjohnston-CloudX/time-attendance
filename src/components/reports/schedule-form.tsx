@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
 import { Mail, Plus, Trash2, X } from "lucide-react";
 import {
@@ -18,6 +18,8 @@ import {
   deleteSchedule,
   checkEmailConfigured,
 } from "@/actions/report.actions";
+import { nextRun } from "@/lib/reports/schedule-time";
+import { MONTH_NAMES, timezoneAbbr } from "@/lib/reports/schedule-words";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -33,11 +35,13 @@ interface ScheduleFormProps {
     recipients: string[];
     isActive: boolean;
   };
+  /** The dates the report covers, in words, and whether they move on by themselves. */
+  coverage?: { text: string; moves: boolean };
   onClose: () => void;
   onSaved: () => void;
 }
 
-type PresetType = "daily" | "weekly" | "biweekly" | "monthly" | "custom";
+type PresetType = "daily" | "weekly" | "biweekly" | "monthly" | "first" | "last" | "yearly" | "custom";
 
 const DAYS_OF_WEEK = [
   { value: "0", label: "Sunday" },
@@ -78,6 +82,7 @@ function buildCron(
   dayOfWeek: string,
   dayOfMonth: string,
   customCron: string,
+  month: string,
 ): string {
   const h = parseInt(hour, 10);
   const m = parseInt(minute, 10);
@@ -92,6 +97,13 @@ function buildCron(
       return `${m} ${h} 1,15 * *`;
     case "monthly":
       return `${m} ${h} ${parseInt(dayOfMonth, 10)} * *`;
+    case "first":
+      return `${m} ${h} 1 * *`;
+    case "last":
+      // L is the last day of the month, whatever its length.
+      return `${m} ${h} L * *`;
+    case "yearly":
+      return `${m} ${h} ${parseInt(dayOfMonth, 10)} ${parseInt(month, 10)} *`;
     case "custom":
       return customCron;
     default:
@@ -106,6 +118,7 @@ function parseCron(expr: string): {
   minute: string;
   dayOfWeek: string;
   dayOfMonth: string;
+  month: string;
   customCron: string;
 } {
   const parts = expr.trim().split(/\s+/);
@@ -116,18 +129,34 @@ function parseCron(expr: string): {
       minute: "0",
       dayOfWeek: "1",
       dayOfMonth: "1",
+      month: "1",
       customCron: expr,
     };
   }
 
-  const [min, hr, dom, , dow] = parts;
+  const [min, hr, dom, mon, dow] = parts;
   const base = {
     hour: hr,
     minute: min,
     dayOfWeek: dow === "*" ? "1" : dow,
-    dayOfMonth: dom === "*" ? "1" : dom.split(",")[0],
+    dayOfMonth: dom === "*" || dom === "L" ? "1" : dom.split(",")[0],
+    month: mon === "*" ? "1" : mon,
     customCron: expr,
   };
+
+  // yearly: m h <dom> <month> *
+  if (mon !== "*" && /^\d+$/.test(dom) && /^\d+$/.test(mon) && dow === "*") {
+    return { ...base, preset: "yearly" };
+  }
+  if (mon !== "*") return { ...base, preset: "custom" };
+  // last day of the month: m h L * *
+  if (dom === "L" && dow === "*") {
+    return { ...base, preset: "last" };
+  }
+  // first day of the month: m h 1 * *
+  if (dom === "1" && dow === "*") {
+    return { ...base, preset: "first" };
+  }
 
   // daily: m h * * *
   if (dom === "*" && dow === "*") {
@@ -165,6 +194,7 @@ function parseCron(expr: string): {
 export function ScheduleForm({
   reportId,
   existingSchedule,
+  coverage,
   onClose,
   onSaved,
 }: ScheduleFormProps) {
@@ -178,6 +208,7 @@ export function ScheduleForm({
   const [minute, setMinute] = useState(parsed?.minute ?? "0");
   const [dayOfWeek, setDayOfWeek] = useState(parsed?.dayOfWeek ?? "1");
   const [dayOfMonth, setDayOfMonth] = useState(parsed?.dayOfMonth ?? "1");
+  const [month, setMonth] = useState(parsed?.month ?? "1");
   const [customCron, setCustomCron] = useState(parsed?.customCron ?? "0 8 * * *");
 
   const [timezone, setTimezone] = useState(
@@ -232,7 +263,7 @@ export function ScheduleForm({
       return;
     }
 
-    const cronExpr = buildCron(preset, hour, minute, dayOfWeek, dayOfMonth, customCron);
+    const cronExpr = buildCron(preset, hour, minute, dayOfWeek, dayOfMonth, customCron, month);
 
     startTransition(async () => {
       try {
@@ -305,6 +336,29 @@ export function ScheduleForm({
   const hourOptions = Array.from({ length: 12 }, (_, i) => i + 1);
   const minuteOptions = [0, 15, 30, 45];
   const dayOfMonthOptions = Array.from({ length: 28 }, (_, i) => i + 1);
+  // A yearly send picks its own month, so its days run to that month's length
+  // (29 February is allowed: it goes out on the years that have one).
+  const yearlyDays = Array.from({ length: [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][(parseInt(month, 10) || 1) - 1] }, (_, i) => i + 1);
+
+  // The next send, worked out by the same code the server uses to decide it,
+  // so what is written here is when the email goes.
+  const nextSendText = useMemo(() => {
+    try {
+      const at = nextRun(buildCron(preset, hour, minute, dayOfWeek, dayOfMonth, customCron, month), timezone);
+      if (!at) return null;
+      const when = at.toLocaleString("en-US", {
+        timeZone: timezone,
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+      return `${when} ${timezoneAbbr(timezone, at)}`.trim();
+    } catch {
+      return null;
+    }
+  }, [preset, hour, minute, dayOfWeek, dayOfMonth, customCron, month, timezone]);
 
   /* ---- Render ---- */
 
@@ -370,6 +424,9 @@ export function ScheduleForm({
               <option value="weekly">Weekly</option>
               <option value="biweekly">Twice a month (1st and 15th)</option>
               <option value="monthly">Monthly</option>
+              <option value="first">First day of the month</option>
+              <option value="last">Last day of the month</option>
+              <option value="yearly">Yearly</option>
               <option value="custom">Custom (advanced)</option>
             </Select>
           </Field>
@@ -414,6 +471,47 @@ export function ScheduleForm({
                     </Select>
                   </Field>
                 </div>
+              )}
+
+              {preset === "yearly" && (
+                <>
+                  <div className="min-w-[140px] flex-1">
+                    <Field label="Month" htmlFor="sched-month">
+                      <Select
+                        id="sched-month"
+                        value={month}
+                        onChange={(e) => {
+                          setMonth(e.target.value);
+                          const longest = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][parseInt(e.target.value, 10) - 1];
+                          if (parseInt(dayOfMonth, 10) > longest) setDayOfMonth(String(longest));
+                        }}
+                        style={{ width: "100%" }}
+                      >
+                        {MONTH_NAMES.map((name, i) => (
+                          <option key={name} value={String(i + 1)}>
+                            {name}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                  </div>
+                  <div className="min-w-[96px]">
+                    <Field label="Day" htmlFor="sched-year-day">
+                      <Select
+                        id="sched-year-day"
+                        value={dayOfMonth}
+                        onChange={(e) => setDayOfMonth(e.target.value)}
+                        style={{ width: "100%" }}
+                      >
+                        {yearlyDays.map((d) => (
+                          <option key={d} value={String(d)}>
+                            {d}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                  </div>
+                </>
               )}
 
               <Field label="Time" htmlFor="sched-hour">
@@ -481,6 +579,19 @@ export function ScheduleForm({
               ))}
             </Select>
           </Field>
+
+          {/* Two quiet lines say what will happen: when the next email goes and
+              which days it holds. They sit with the settings that decide them. */}
+          <div className="flex flex-col gap-1" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+            {nextSendText && <span>Next email: {nextSendText}</span>}
+            {coverage && (
+              <span>
+                {coverage.moves
+                  ? `Each email covers ${coverage.text}.`
+                  : `Each email covers ${coverage.text}. These dates do not move, so every email repeats them. Change the dates on the report to send new days each time.`}
+              </span>
+            )}
+          </div>
 
           <Field label="Send as">
             <SegmentedControl

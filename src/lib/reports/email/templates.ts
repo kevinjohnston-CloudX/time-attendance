@@ -3,10 +3,16 @@ interface ReportEmailParams {
   rowCount: number;
   format: string;
   generatedAt: Date;
+  periodLabel?: string;
+}
+
+/** A report's name is typed by a person, so it is escaped before it goes into HTML. */
+function esc(v: string): string {
+  return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 export function generateReportEmailHtml(params: ReportEmailParams): string {
-  const { reportName, rowCount, format, generatedAt } = params;
+  const { reportName, rowCount, format, generatedAt, periodLabel } = params;
   const dateStr = generatedAt.toLocaleString("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -26,8 +32,12 @@ export function generateReportEmailHtml(params: ReportEmailParams): string {
             <table style="width: 100%; font-size: 14px; color: #3f3f46;">
               <tr>
                 <td style="padding: 4px 0; font-weight: 600;">Report</td>
-                <td style="padding: 4px 0; text-align: right;">${reportName}</td>
-              </tr>
+                <td style="padding: 4px 0; text-align: right;">${esc(reportName)}</td>
+              </tr>${periodLabel ? `
+              <tr>
+                <td style="padding: 4px 0; font-weight: 600;">Period</td>
+                <td style="padding: 4px 0; text-align: right;">${esc(periodLabel)}</td>
+              </tr>` : ""}
               <tr>
                 <td style="padding: 4px 0; font-weight: 600;">Rows</td>
                 <td style="padding: 4px 0; text-align: right;">${rowCount.toLocaleString()}</td>

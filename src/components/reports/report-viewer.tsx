@@ -9,7 +9,8 @@ import { ResultsTable } from "./report-results/results-table";
 import { DateRangePicker, defaultPayPeriodRange, describeRange, type PayPeriodOption } from "./report-builder/date-range-picker";
 import { ShareDialog } from "./report-list/share-dialog";
 import { ScheduleForm } from "./schedule-form";
-import { dataSourceIcon, dataSourceLabel } from "./data-source-label";
+import { describeSchedule } from "@/lib/reports/schedule-words";
+import { dataSourceIcon, dataSourceLabel, isScanReport } from "./data-source-label";
 import { runReport, deleteReport, duplicateReport, toggleSchedule } from "@/actions/report.actions";
 import type { ReportResult } from "@/lib/reports/data-sources";
 import type { DateRange, FilterDef } from "@/lib/validators/report.schema";
@@ -91,46 +92,10 @@ const OPERATOR_WORDS: Record<string, string> = {
   contains: "contains",
 };
 
-const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const FORMAT_NAME: Record<string, string> = { xlsx: "Excel", csv: "CSV", pdf: "PDF" };
 
 function savedConfig(config: unknown): { dateRange?: DateRange; filters?: FilterDef[]; columns?: string[]; groupBy?: string[] } {
   return config && typeof config === "object" ? (config as Record<string, never>) : {};
-}
-
-/**
- * A schedule as a sentence, on a 12 hour clock. Only the shapes the schedule
- * form builds are put in words; a hand written one is shown as it is, since
- * a wrong sentence about when a payroll report goes out is worse than none.
- */
-function describeCron(expr: string, timezone: string): string {
-  const parts = expr.trim().split(/\s+/);
-  if (parts.length !== 5) return expr;
-  const [min, hr, dom, , dow] = parts;
-  const h = Number(hr);
-  const m = Number(min);
-  if (!Number.isInteger(h) || !Number.isInteger(m)) return expr;
-  const at = `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
-  const zone = timezoneAbbr(timezone);
-  const time = `${at}${zone ? ` ${zone}` : ""}`;
-
-  if (dom === "*" && dow === "*") return `Every day at ${time}`;
-  if (dom === "*" && DAY_NAMES[Number(dow)]) return `Every ${DAY_NAMES[Number(dow)]} at ${time}`;
-  if (dom === "1,15" && dow === "*") return `On the 1st and 15th at ${time}`;
-  if (dow === "*" && Number.isInteger(Number(dom))) return `On day ${Number(dom)} of each month at ${time}`;
-  return expr;
-}
-
-function timezoneAbbr(timezone: string): string {
-  try {
-    return (
-      new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "short" })
-        .formatToParts(new Date())
-        .find((p) => p.type === "timeZoneName")?.value ?? ""
-    );
-  } catch {
-    return "";
-  }
 }
 
 export function ReportViewer({
@@ -267,7 +232,7 @@ export function ReportViewer({
         title="Dates"
         subtitle="Run report and the downloads use these dates. The report keeps its saved dates for next time."
       >
-        <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={payPeriods} />
+        <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={payPeriods} scan={isScanReport(report.dataSource)} />
       </Panel>
 
       {/* ── Results ─────────────────────────────────────────────────── */}
@@ -368,7 +333,7 @@ export function ReportViewer({
             <div className="flex h-full flex-col gap-3">
               <div className="flex flex-col gap-1">
                 <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
-                  {describeCron(schedule.cronExpr, schedule.timezone)}
+                  {describeSchedule(schedule.cronExpr, schedule.timezone)}
                 </span>
                 <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                   Sent as {FORMAT_NAME[schedule.format] ?? schedule.format} to {recipients.length}{" "}
@@ -487,6 +452,14 @@ export function ReportViewer({
       {dialog === "schedule" && (
         <ScheduleForm
           reportId={report.id}
+          coverage={
+            cfg.dateRange
+              ? {
+                  text: describeRange(cfg.dateRange, filterOptions?.payPeriods ?? []),
+                  moves: ["today", "yesterday", "relative", "calendar"].includes(cfg.dateRange.type),
+                }
+              : undefined
+          }
           existingSchedule={
             schedule
               ? {

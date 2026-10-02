@@ -11,7 +11,7 @@ import { FilterBuilder } from "./filter-builder";
 import { DateRangePicker, defaultPayPeriodRange, describeRange } from "./date-range-picker";
 import { GroupSortConfig } from "./group-sort-config";
 import { ResultsTable } from "../report-results/results-table";
-import { dataSourceDescription, dataSourceLabel } from "../data-source-label";
+import { dataSourceDescription, dataSourceLabel, isScanReport } from "../data-source-label";
 import { runReport, createReport } from "@/actions/report.actions";
 import type { DataSourceId, FilterDef, SortDef, DateRange } from "@/lib/validators/report.schema";
 import type { ReportResult } from "@/lib/reports/data-sources";
@@ -78,9 +78,7 @@ export function ReportBuilder({
   const [changingSource, setChangingSource] = useState(false);
   const [selectedColumns, setSelectedColumns] = useState<string[]>(() => defaultsFor(initialSource));
   const [filters, setFilters] = useState<FilterDef[]>([]);
-  const [dateRange, setDateRange] = useState<DateRange>(
-    () => defaultPayPeriodRange(filterOptions.payPeriods) ?? { type: "relative", relativeDays: 14 }
-  );
+  const [dateRange, setDateRange] = useState<DateRange>(() => defaultRangeFor(initialSource));
   const [groupBy, setGroupBy] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortDef[]>([]);
   const [showMore, setShowMore] = useState(false);
@@ -100,6 +98,15 @@ export function ReportBuilder({
 
   const currentSource = dataSources.find((ds) => ds.id === dataSource);
 
+  /**
+   * Where a report opens its dates. The scan reports are daily files, so they
+   * open on yesterday; the rest on the current pay period.
+   */
+  function defaultRangeFor(id: DataSourceId): DateRange {
+    if (isScanReport(id)) return { type: "yesterday" };
+    return defaultPayPeriodRange(filterOptions.payPeriods) ?? { type: "relative", relativeDays: 14 };
+  }
+
   function handleDataSourceChange(id: DataSourceId) {
     setChangingSource(false);
     if (id === dataSource) return;
@@ -111,6 +118,10 @@ export function ReportBuilder({
     setFilters([]);
     setGroupBy([]);
     setSortBy([]);
+    // Pay periods are for the pay period reports and calendar periods for the
+    // scan reports, so moving between the two puts the dates somewhere that
+    // the new report can read them.
+    if (isScanReport(id) !== isScanReport(dataSource)) setDateRange(defaultRangeFor(id));
     setPreviewResult(null);
     setPreviewedWith(null);
     if (!nameTouched) setReportName(dataSourceLabel(id));
@@ -298,7 +309,7 @@ export function ReportBuilder({
           {currentSource && (
             <div className="ta-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
               <RailSection title="Dates" hint="You can pick other dates each time you run it.">
-                <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={filterOptions.payPeriods} stacked />
+                <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={filterOptions.payPeriods} scan={isScanReport(dataSource)} stacked />
               </RailSection>
 
               <RailSection

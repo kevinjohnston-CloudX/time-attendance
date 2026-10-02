@@ -2,6 +2,7 @@
 
 import { Input, SegmentedControl, Select } from "@/components/ui";
 import type { DateRange } from "@/lib/validators/report.schema";
+import { daysOf, describeSpan } from "@/lib/reports/period";
 
 /**
  * The days a report covers: a pay period, two dates, or the last few days.
@@ -19,6 +20,32 @@ const RANGE_KINDS = [
   { value: "custom", label: "Pick dates" },
   { value: "relative", label: "Recent days" },
 ];
+
+/**
+ * The scan reports count calendar days, so they have no pay period, and add a
+ * choice for a whole week, month or year that moves on by itself: a report
+ * saved as "Last month" is always the month just gone, whenever it is run.
+ */
+const SCAN_RANGE_KINDS = [
+  { value: "custom", label: "Pick dates" },
+  { value: "relative", label: "Recent days" },
+  { value: "calendar", label: "Week, month or year" },
+];
+
+type Calendar = Extract<DateRange, { type: "calendar" }>;
+
+const CALENDAR_CHOICES: { value: string; label: string; range: Calendar }[] = (
+  [
+    ["this", "week", "This week"],
+    ["last", "week", "Last week"],
+    ["this", "month", "This month"],
+    ["last", "month", "Last month"],
+    ["this", "year", "This year"],
+    ["last", "year", "Last year"],
+  ] as const
+).map(([which, unit, label]) => ({ value: `${which}-${unit}`, label, range: { type: "calendar", unit, which } }));
+
+const calendarValue = (r: Calendar) => `${r.which}-${r.unit}`;
 
 const RELATIVE_DAYS = [7, 14, 30, 60, 90];
 
@@ -184,6 +211,10 @@ function optionText(p: { startDate: string | Date; endDate: string | Date; lastD
 /** The dates in words: "Sep 13 to Sep 26, 2026 · All pay groups". */
 export function describeRange(range: DateRange | undefined, payPeriods: PayPeriodOption[]): string {
   if (!range) return "Not set";
+  if (range.type === "calendar") {
+    const label = CALENDAR_CHOICES.find((c) => c.value === calendarValue(range))?.label ?? "A calendar period";
+    return `${label} · ${describeSpan(daysOf(range))}`;
+  }
   if (range.type === "relative") return `The last ${range.relativeDays} days`;
   if (range.type === "today") return "Today";
   if (range.type === "yesterday") return "Yesterday";
@@ -209,10 +240,13 @@ export function DateRangePicker({
   onChange,
   payPeriods,
   stacked = false,
+  scan = false,
 }: {
   value: DateRange;
   onChange: (range: DateRange) => void;
   payPeriods: PayPeriodOption[];
+  /** A scan report: calendar days, no pay periods, and whole weeks, months and years. */
+  scan?: boolean;
   /** Every control the full width of a narrow column, as in the builder's side rail. */
   stacked?: boolean;
 }) {
@@ -223,6 +257,10 @@ export function DateRangePicker({
       onChange({ type: "payPeriod", payPeriodId: current.id, allGroups: true });
     } else if (kind === "custom") {
       onChange({ type: "custom", startDate: "", endDate: "" });
+    } else if (kind === "calendar") {
+      onChange({ type: "calendar", unit: "month", which: "last" });
+    } else if (scan) {
+      onChange({ type: "yesterday" });
     } else {
       onChange({ type: "relative", relativeDays: 14 });
     }
@@ -231,7 +269,7 @@ export function DateRangePicker({
   return (
     <div className="flex flex-col gap-3">
       <SegmentedControl
-        items={payPeriods.length ? RANGE_KINDS : RANGE_KINDS.filter((k) => k.value !== "payPeriod")}
+        items={scan ? SCAN_RANGE_KINDS : payPeriods.length ? RANGE_KINDS : RANGE_KINDS.filter((k) => k.value !== "payPeriod")}
         value={value.type === "today" || value.type === "yesterday" ? "relative" : value.type}
         onChange={pickKind}
         ariaLabel="How to pick the dates"
@@ -263,6 +301,30 @@ export function DateRangePicker({
             onChange={(e) => onChange({ ...value, endDate: e.target.value })}
           />
         </div>
+      )}
+
+      {value.type === "calendar" && (
+        <Select
+          value={calendarValue(value)}
+          onChange={(e) => {
+            const pick = CALENDAR_CHOICES.find((c) => c.value === e.target.value);
+            if (pick) onChange(pick.range);
+          }}
+          aria-label="Which period"
+          style={stacked ? undefined : { maxWidth: 260 }}
+        >
+          {CALENDAR_CHOICES.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </Select>
+      )}
+
+      {value.type === "calendar" && (
+        <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+          {describeSpan(daysOf(value))}{value.unit === "week" ? ". Weeks run Monday to Sunday." : ""}
+        </span>
       )}
 
       {/* Seven choices do not fit a narrow column side by side. */}

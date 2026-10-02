@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isKnownTimeZone, parseSchedule } from "@/lib/reports/schedule-time";
 
 // ─── Filter definition ──────────────────────────────────────────────────────
 
@@ -57,6 +58,15 @@ export const dateRangeSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("today") }),
   z.object({ type: z.literal("yesterday") }),
+  // A whole calendar week (Monday to Sunday), month or year, this one or the
+  // last one. Only the scan reports offer it: they read it themselves, in
+  // the time zone of the schedule, so the dates are worked out when the
+  // report runs and a saved report keeps meaning "last month" every month.
+  z.object({
+    type: z.literal("calendar"),
+    unit: z.enum(["week", "month", "year"]),
+    which: z.enum(["this", "last"]),
+  }),
 ]);
 
 // ─── Report config (stored as JSON in DB) ───────────────────────────────────
@@ -67,7 +77,7 @@ export const reportConfigSchema = z.object({
   groupBy: z.array(z.string()).default([]),
   sortBy: z.array(sortDefSchema).default([]),
   dateRange: dateRangeSchema,
-  limit: z.number().int().min(1).max(10000).default(5000),
+  limit: z.number().int().min(1).max(50000).default(5000),
 });
 
 export type ReportConfig = z.infer<typeof reportConfigSchema>;
@@ -85,6 +95,8 @@ export const DATA_SOURCES = [
   "LEAVE_BALANCE",
   "PUNCH_AUDIT",
   "EXCEPTION_REPORT",
+  "SECURITY_SCAN",
+  "TIME_CLOCK_SCAN",
 ] as const;
 
 export type DataSourceId = (typeof DATA_SOURCES)[number];
@@ -125,13 +137,23 @@ export const renameFolderSchema = z.object({
 
 export const reportScheduleSchema = z.object({
   reportId: z.string().min(1),
+  // Five values. The day of the month may also be L, the last day of the
+  // month, which plain cron cannot say.
   cronExpr: z
     .string()
     .regex(
-      /^(\*|[0-9,\-\/]+)\s+(\*|[0-9,\-\/]+)\s+(\*|[0-9,\-\/]+)\s+(\*|[0-9,\-\/]+)\s+(\*|[0-9,\-\/]+)$/,
+      /^(\*|[0-9,\-\/]+)\s+(\*|[0-9,\-\/]+)\s+(\*|[0-9,\-\/]+|[0-9,L\-\/]*L[0-9,L\-\/]*)\s+(\*|[0-9,\-\/]+)\s+(\*|[0-9,\-\/]+)$/,
       "Invalid cron expression"
-    ),
-  timezone: z.string().default("America/New_York"),
+    )
+    .refine((v) => {
+      try {
+        parseSchedule(v);
+        return true;
+      } catch {
+        return false;
+      }
+    }, "Invalid cron expression"),
+  timezone: z.string().refine(isKnownTimeZone, "Unknown time zone").default("America/New_York"),
   format: z.enum(["CSV", "PDF", "XLSX"]).default("CSV"),
   recipients: z.array(z.string().email()).min(1).max(20),
 });
