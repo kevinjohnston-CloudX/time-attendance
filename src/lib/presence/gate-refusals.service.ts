@@ -198,12 +198,12 @@ export async function recordGateRefusal(input: {
 }
 
 /**
- * When the gate alert was last turned on for this company, or null while a
- * System Admin has it off (the switch in the Live Attendance header).
+ * When the gate alert was last turned on at this building, or null while a
+ * System Admin has it off there (the switch in the Live Attendance header).
  */
-export async function gateAlertsOnSince(tenantId: string): Promise<Date | null> {
-  const tenant = await db.tenant.findUnique({ where: { id: tenantId }, select: { gateAlertsOnSince: true } });
-  return tenant?.gateAlertsOnSince ?? null;
+export async function gateAlertsOnSince(tenantId: string, siteId: string): Promise<Date | null> {
+  const site = await db.site.findFirst({ where: { id: siteId, tenantId }, select: { gateAlertsOnSince: true } });
+  return site?.gateAlertsOnSince ?? null;
 }
 
 /**
@@ -213,7 +213,7 @@ export async function gateAlertsOnSince(tenantId: string): Promise<Date | null> 
  * their own. The caller checks the viewer may see this building.
  */
 export async function getOpenGateRefusals(tenantId: string, siteId: string): Promise<GateRefusalQueue | null> {
-  const [day, onSince] = await Promise.all([siteDay(tenantId, siteId), gateAlertsOnSince(tenantId)]);
+  const [day, onSince] = await Promise.all([siteDay(tenantId, siteId), gateAlertsOnSince(tenantId, siteId)]);
   if (!day) return null;
   // Switched off: still recorded, shown to nobody.
   if (!onSince) return { today: day.today, cards: [], total: 0 };

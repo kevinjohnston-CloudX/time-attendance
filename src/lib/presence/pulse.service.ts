@@ -65,13 +65,13 @@ export async function getSitePulse(tenantId: string, siteId: string, withRefusal
   // Today's refusals by work date, and a building's today is never more than
   // a day behind the server's, so yesterday's date is a safe lower bound.
   const fromDay = new Date(`${since.toISOString().slice(0, 10)}T00:00:00.000Z`);
-  // Null while the alert is switched off, so switching it off on one screen
-  // clears the card on every other within seconds.
+  // Null while the alert is switched off at this building, so switching it
+  // off on one screen clears the card on every other within seconds.
   const refusals = withRefusals
     ? Prisma.sql`(SELECT max(g."updatedAt") FROM "gate_refusals" g
-                  JOIN "tenants" t ON t.id = g."tenantId"
+                  JOIN "sites" st ON st.id = g."siteId"
                   WHERE g."tenantId" = ${tenantId} AND g."siteId" = ${siteId} AND g."workDate" >= ${fromDay}
-                    AND t."gateAlertsOnSince" IS NOT NULL AND g."lastAt" >= t."gateAlertsOnSince")`
+                    AND st."gateAlertsOnSince" IS NOT NULL AND g."lastAt" >= st."gateAlertsOnSince")`
     : Prisma.sql`NULL::timestamp`;
   const [row] = await db.$queryRaw<{ scans: Date | null; refusals: Date | null }[]>`
     SELECT

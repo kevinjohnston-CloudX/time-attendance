@@ -58,7 +58,7 @@ export default async function OnSitePage({
     userHasPermission(session.user, "EMPLOYEE_MANAGE"),
     userHasPermission(session.user, "PRESENCE_SCHEDULE_ADD"),
     isLiveAttendanceOnly(session.user.customRoleId),
-    // System Admins only: anybody else is refused, and gets no switch.
+    // System Admins only: anybody else is refused, and gets no switch. One per building.
     getGateAlertsSetting(),
   ]);
   const canSchedule = canManageEmployees || gateAlerts;

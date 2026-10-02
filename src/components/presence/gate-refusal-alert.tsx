@@ -39,7 +39,7 @@ import styles from "./on-site.module.css";
  * and the next one tries again: this sits over the page, and an error box
  * appearing on its own would be louder than the thing it failed to show.
  *
- * <p>Shows nothing while a System Admin has gate alerts off (the switch in
+ * <p>Shows nothing while a System Admin has gate alerts off in this building (the switch in
  * the page header): the server answers an empty list, and a card already on
  * screen goes at the next check.
  *

@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { getViewableSites } from "@/lib/presence/on-site.service";
-import { dismissGateRefusals, gateAlertsOnSince, getOpenGateRefusals } from "@/lib/presence/gate-refusals.service";
+import { dismissGateRefusals, getOpenGateRefusals } from "@/lib/presence/gate-refusals.service";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 
@@ -85,49 +85,67 @@ export const dismissOnSiteGateRefusals = withRBAC(
 );
 
 /**
- * The company wide switch for the gate alert, in the Live Attendance header.
+ * The gate alert switch, one per building, in the Live Attendance header.
  *
  * <p>System Admins only (a super admin too, inside the company they are
  * working in), checked on the role in effect, so an admin viewing the app as
- * another role is refused like that role. Turning it off hides every card on
- * every Live Attendance screen within seconds; the gate and the record of each
- * refusal carry on as before. Turning it on shows only tries made from then
- * on. Every change goes in the audit log as a company settings change, which
- * is where the existing pay schedule changes are filed too.
+ * another role is refused like that role. The building is checked against the
+ * admin's own list and the write is scoped by company and building, so an id
+ * from anywhere else answers NOT_FOUND and changes nothing. Turning it off
+ * hides every card for that building on every Live Attendance screen within
+ * seconds; the gate and the record of each refusal carry on as before.
+ * Turning it on shows only tries made from then on. Every change goes in the
+ * audit log as a company settings change, which is where the existing pay
+ * schedule changes are filed too.
  */
 const ADMIN_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
+export type GateAlertsSetting = { sites: { id: string; name: string; onSince: string | null }[] };
+
 export const getGateAlertsSetting = withRBAC(
   "PRESENCE_VIEW_ANY",
-  async ({ tenantId, role }, _input: void) => {
+  async ({ tenantId, employeeId, role }, _input: void): Promise<GateAlertsSetting> => {
     if (!tenantId || !ADMIN_ROLES.includes(role)) throw new Error("FORBIDDEN");
-    const onSince = await gateAlertsOnSince(tenantId);
-    return { onSince: onSince?.toISOString() ?? null };
+    const viewable = await getViewableSites(tenantId, { employeeId, role });
+    const rows = await db.site.findMany({
+      where: { tenantId, id: { in: viewable.map((s) => s.id) } },
+      select: { id: true, name: true, gateAlertsOnSince: true },
+      orderBy: { name: "asc" },
+    });
+    return { sites: rows.map((r) => ({ id: r.id, name: r.name, onSince: r.gateAlertsOnSince?.toISOString() ?? null })) };
   },
 );
 
 export const setGateAlerts = withRBAC(
   "PRESENCE_VIEW_ANY",
-  async ({ tenantId, employeeId, role }, input: { on: boolean }) => {
+  async ({ tenantId, employeeId, role }, input: { siteId: string; on: boolean }) => {
     if (!tenantId || !ADMIN_ROLES.includes(role)) throw new Error("FORBIDDEN");
     const on = input?.on === true;
-    const before = await gateAlertsOnSince(tenantId);
+    const siteId = typeof input?.siteId === "string" ? input.siteId : "";
+    const viewable = await getViewableSites(tenantId, { employeeId, role });
+    if (!viewable.some((s) => s.id === siteId)) throw new Error("NOT_FOUND");
+    const site = await db.site.findFirst({
+      where: { id: siteId, tenantId },
+      select: { name: true, gateAlertsOnSince: true },
+    });
+    if (!site) throw new Error("NOT_FOUND");
+    const before = site.gateAlertsOnSince;
     // Already where it was asked to be: nothing to write, and "on since" keeps its time.
     if (on === (before !== null)) return { onSince: before?.toISOString() ?? null };
-    const updated = await db.tenant.update({
-      where: { id: tenantId },
-      data: { gateAlertsOnSince: on ? new Date() : null },
-      select: { gateAlertsOnSince: true },
-    });
+    const onSince = on ? new Date() : null;
+    await db.site.updateMany({ where: { id: siteId, tenantId }, data: { gateAlertsOnSince: onSince } });
     await writeAuditLog({
       tenantId,
       actorId: employeeId || null,
       entityType: "PAY_PERIOD",
-      entityId: tenantId,
+      entityId: siteId,
       action: "SETTINGS_UPDATE",
-      changes: { before: { gateAlerts: before ? "On" : "Off" }, after: { gateAlerts: on ? "On" : "Off" } },
+      changes: {
+        before: { gateAlerts: `${before ? "On" : "Off"} at ${site.name}` },
+        after: { gateAlerts: `${on ? "On" : "Off"} at ${site.name}` },
+      },
     });
-    gateLog("switched", { on, by: employeeId, tenant: tenantId });
-    return { onSince: updated.gateAlertsOnSince?.toISOString() ?? null };
+    gateLog("switched", { on, by: employeeId, site: siteId });
+    return { onSince: onSince?.toISOString() ?? null };
   },
 );

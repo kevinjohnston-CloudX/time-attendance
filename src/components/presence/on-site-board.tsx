@@ -52,6 +52,7 @@ import {
 import { PersonPanel } from "./person-panel";
 import { GateRefusalAlert } from "./gate-refusal-alert";
 import { GateAlertsSwitch } from "./gate-alerts-switch";
+import type { GateAlertsSetting } from "@/actions/gate-refusals.actions";
 import { useOnPulseChange, useSitePulse } from "./use-site-pulse";
 import { PhotoSwaps, PhotoViewer } from "./face";
 import { PeopleSearch, pickedLabel } from "./people-search";
@@ -184,10 +185,14 @@ export function OnSiteBoard({
    * that again on the server.
    */
   gateAlerts?: boolean;
-  /** The company wide gate alert switch, for System Admins only; null leaves it out. */
-  gateSwitch?: { onSince: string | null } | null;
+  /** The gate alert switch for each building, for System Admins only; null leaves it out. */
+  gateSwitch?: GateAlertsSetting | null;
 }) {
   const [siteId, setSiteId] = useState(initialSiteId);
+  // Each building's switch, kept here so moving between buildings shows the
+  // state just saved rather than the one the page loaded with.
+  const [gateSites, setGateSites] = useState(gateSwitch?.sites ?? null);
+  const gateSite = gateSites?.find((s) => s.id === siteId) ?? null;
   // Photos saved here, drawn at once on every face until the server's own
   // links carry them.
   const [photoSwaps, setPhotoSwaps] = useState<ReadonlyMap<string, string>>(new Map());
@@ -759,10 +764,15 @@ export function OnSiteBoard({
           </select>
         </span>
       )}
-      {gateSwitch && (
+      {gateSites && gateSite && (
         <GateAlertsSwitch
-          onSince={gateSwitch.onSince}
-          onChanged={(on) => toast.flash(on ? "Gate alerts turned on" : "Gate alerts turned off")}
+          key={gateSite.id}
+          site={gateSite}
+          onElsewhere={gateSites.filter((s) => s.id !== gateSite.id && s.onSince !== null).map((s) => s.name)}
+          onChanged={(onSince) => {
+            setGateSites((all) => all?.map((s) => (s.id === gateSite.id ? { ...s, onSince } : s)) ?? all);
+            toast.flash(`Gate alerts turned ${onSince ? "on" : "off"} at ${gateSite.name}`);
+          }}
         />
       )}
       {canExport && (

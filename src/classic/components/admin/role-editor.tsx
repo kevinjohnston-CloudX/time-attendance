@@ -142,7 +142,7 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
     cells: {
       "read:all": "See everyone at a site on Live Attendance, with their gate and time clock scans.",
       "write:all": "Update an employee's photo from Live Attendance. The photo it replaces is kept.",
-      "execute:all": "Get an alert on Live Attendance when the gate turns away somebody with no shift today, and add them to today's schedule. Only while an admin has gate alerts turned on in Live Attendance.",
+      "execute:all": "Get an alert on Live Attendance when the gate turns away somebody with no shift today, and add them to today's schedule. Only in buildings where an admin has turned gate alerts on in Live Attendance.",
     },
   },
   role: {

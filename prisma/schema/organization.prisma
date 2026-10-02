@@ -8,12 +8,9 @@ model Tenant {
   payFrequency        PayFrequency @default(BIWEEKLY)
   payPeriodAnchorDate DateTime?    // A known pay-period start date; all periods calculated from this
 
-  /// When the Live Attendance gate alert was last turned on, or null while it
-  /// is off. A System Admin switches it in the Live Attendance header. A time rather
-  /// than a flag, so turning it back on shows only people turned away since
-  /// then, never a morning's worth of refusals at once. Refusals are recorded
-  /// either way. Starts off (no default), because the alert shipped before
-  /// the gate tablets said which building they are in.
+  /// Retired: the company wide gate alert switch, replaced by one per building
+  /// (Site.gateAlertsOnSince). Nothing reads it now. Kept so a deploy cannot
+  /// land between the migration and the code that reads the new column.
   gateAlertsOnSince DateTime?
 
   createdAt DateTime @default(now())
@@ -80,6 +77,14 @@ model Site {
   /// plausible ids and putting somebody in the wrong building is worse than
   /// leaving the queue exactly as useful as it is today.
   wmsWarehouseId Int? @unique
+  /// When the Live Attendance gate alert was last turned on in this building,
+  /// or null while it is off. A System Admin switches it in the Live
+  /// Attendance header, one building at a time, so it can run where the gate
+  /// tablets say which building they are in and stay off where they do not
+  /// yet. A time rather than a flag, so turning it back on shows only people
+  /// turned away since then, never a morning's worth at once. Refusals are
+  /// recorded either way. Starts off (no default).
+  gateAlertsOnSince DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
