@@ -3,7 +3,7 @@
 import { createElement, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { format } from "date-fns";
-import { ArrowLeft, Copy, Download, Mail, Pause, Play, Share2, Trash2, X } from "lucide-react";
+import { ArrowLeft, Copy, Download, Mail, Pause, Pencil, Play, Share2, Trash2, X } from "lucide-react";
 import { Badge, Banner, Button, EmptyState, Input, LinkButton, PageHeader } from "@/components/ui";
 import { ResultsTable } from "./report-results/results-table";
 import { DateRangePicker, defaultPayPeriodRange, describeRange, type PayPeriodOption } from "./report-builder/date-range-picker";
@@ -24,8 +24,9 @@ import type { DateRange, FilterDef } from "@/lib/validators/report.schema";
  * picked, which the page had to warn about.
  *
  * <p>What this person may change comes from the server (`access`): only the
- * owner, or someone it is shared with for editing, sees Share, the schedule
- * controls and Delete. The actions check the same rule again.
+ * owner, or someone it is shared with for editing, sees Share and the
+ * schedule controls; only the owner sees Edit and Delete. The actions check
+ * the same rule again.
  */
 
 interface ReportData {
@@ -241,6 +242,11 @@ export function ReportViewer({
             <LinkButton href="/reports" hierarchy="tertiary" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
               Reports
             </LinkButton>
+            {isOwner && !report.isTemplate && (
+              <LinkButton href={`/reports/${report.id}/edit`} hierarchy="secondary" leadingIcon={<Pencil className="h-4 w-4" />}>
+                Edit report
+              </LinkButton>
+            )}
             {canEdit && (
               <Button hierarchy="secondary" onClick={() => setDialog("share")} leadingIcon={<Share2 className="h-4 w-4" />}>
                 Share

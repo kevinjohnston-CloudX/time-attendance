@@ -82,12 +82,28 @@ export const updateReport = withRBAC(
     const parsed = updateReportSchema.parse(input.data);
     const session = await getSessionUserId();
 
+    // What the report is and what it shows is changed by its creator alone.
+    // Someone it is shared with for editing may still share it, schedule it
+    // and set who can open it, which is all the rest of this update carries.
+    const changesReport =
+      parsed.name !== undefined ||
+      parsed.description !== undefined ||
+      parsed.dataSource !== undefined ||
+      parsed.config !== undefined;
+
     const existing = await db.reportDefinition.findFirstOrThrow({
-      where: { id: input.id, ...editableWhere(tenantId, session) },
+      where: changesReport
+        ? { id: input.id, tenantId, ownerId: session, isTemplate: false }
+        : { id: input.id, ...editableWhere(tenantId, session) },
     });
 
+    // A new type needs columns of its own, so it only comes with a config.
+    if (parsed.dataSource && parsed.dataSource !== existing.dataSource && !parsed.config) {
+      throw new Error("Pick the columns for the new report type");
+    }
+    const dataSource = parsed.dataSource ?? (existing.dataSource as DataSourceId);
     if (parsed.config) {
-      const source = getDataSource(existing.dataSource as DataSourceId);
+      const source = getDataSource(dataSource);
       validateColumnsAgainstSource(parsed.config.columns, source.columns.map((c) => c.id));
     }
 
@@ -95,12 +111,26 @@ export const updateReport = withRBAC(
       where: { id: input.id },
       data: {
         name: parsed.name,
-        description: parsed.description,
+        description: parsed.description === undefined ? undefined : parsed.description.trim() || null,
+        dataSource: parsed.dataSource,
         config: parsed.config as unknown as Prisma.InputJsonValue | undefined,
         folderId: parsed.folderId,
         visibility: parsed.visibility,
       },
     });
+
+    if (changesReport) {
+      await writeAuditLog({
+        tenantId,
+        action: "REPORT_UPDATED",
+        entityType: "REPORT",
+        entityId: report.id,
+        changes: {
+          before: { name: existing.name, dataSource: existing.dataSource },
+          after: { name: report.name, dataSource: report.dataSource },
+        },
+      });
+    }
 
     return report;
   }

@@ -104,7 +104,9 @@ export const createReportSchema = z.object({
 
 export const updateReportSchema = z.object({
   name: z.string().min(1).max(100).optional(),
+  /** An empty string clears it. */
   description: z.string().max(500).optional(),
+  dataSource: dataSourceSchema.optional(),
   config: reportConfigSchema.optional(),
   folderId: z.string().nullable().optional(),
   visibility: z.enum(["PRIVATE", "SHARED", "TENANT"]).optional(),

@@ -285,9 +285,14 @@ export function ShareDialog({
                       checked={share.canEdit}
                       disabled={isPending}
                       onChange={(next) => handleToggleEdit(share.user.id, next)}
+                      // Editing the report itself stays with its creator; this
+                      // lets them share it on and change its email schedule.
                       label={
-                        <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                          Can edit
+                        <span
+                          style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                          title="They can share it with others and change its email schedule. Only you can edit the report."
+                        >
+                          Can share and schedule
                         </span>
                       }
                     />

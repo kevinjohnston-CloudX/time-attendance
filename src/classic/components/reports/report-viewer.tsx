@@ -17,6 +17,7 @@ import {
   ArrowLeft,
   Share2,
   Clock,
+  Pencil,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -231,8 +232,18 @@ export function ReportViewer({
                 </a>
               </>
             )}
-            {/* Share and Schedule need edit rights, Delete needs the owner:
-                the server refuses anyone else, so the buttons are not drawn. */}
+            {/* Edit and Delete need the owner, Share and Schedule need edit
+                rights: the server refuses anyone else, so the buttons are not drawn. */}
+            {report.access?.isOwner && !report.isTemplate && (
+              <Link
+                href={`/reports/${report.id}/edit`}
+                className={btnSecondary + " flex items-center gap-1.5"}
+                title="Edit report"
+              >
+                <Pencil className="h-4 w-4" />
+                Edit
+              </Link>
+            )}
             {report.access?.canEdit && (
               <>
                 <button

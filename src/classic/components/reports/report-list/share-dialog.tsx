@@ -228,14 +228,18 @@ export function ShareDialog({
                         handleToggleEdit(share.user.id, !share.canEdit)
                       }
                       disabled={isPending}
-                      title={share.canEdit ? "Can edit — click to make view-only" : "View only — click to allow editing"}
+                      title={
+                        share.canEdit
+                          ? "Can share it and change its email schedule. Only you can edit the report. Click to make view-only"
+                          : "View only. Click to let them share it and change its email schedule"
+                      }
                       className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
                         share.canEdit
                           ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50"
                           : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
                       }`}
                     >
-                      {share.canEdit ? "Can edit" : "View only"}
+                      {share.canEdit ? "Can share & schedule" : "View only"}
                     </button>
 
                     <button

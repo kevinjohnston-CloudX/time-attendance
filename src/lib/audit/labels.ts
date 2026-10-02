@@ -94,6 +94,7 @@ const NAMED: Record<string, string> = {
   DOCUMENT_UPLOADED: "Document uploaded",
   DOCUMENT_DELETED: "Document deleted",
   REPORT_CREATED: "Report added",
+  REPORT_UPDATED: "Report edited",
   REPORT_DELETED: "Report deleted",
   ADP_SYNC_COMPLETED: "ADP sync completed",
   ADP_PAYROLL_PUSHED: "Payroll sent to ADP",

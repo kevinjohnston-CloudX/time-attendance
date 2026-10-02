@@ -8,12 +8,13 @@ import { FilterBuilder } from "./filter-builder";
 import { DateRangePicker } from "./date-range-picker";
 import { GroupSortConfig } from "./group-sort-config";
 import { ResultsTable } from "../report-results/results-table";
-import { runReport, createReport } from "@/actions/report.actions";
+import { runReport, createReport, updateReport } from "@/actions/report.actions";
 import type {
   DataSourceId,
   FilterDef,
   SortDef,
   DateRange,
+  ReportConfig,
 } from "@/lib/validators/report.schema";
 import type { ReportResult } from "@/lib/reports/data-sources";
 import { Save, Play } from "lucide-react";
@@ -44,22 +45,40 @@ const btnPrimary =
 const btnSecondary =
   "rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800";
 
+/** A saved report opened for editing: the builder starts from it and Save changes it in place. */
+export interface EditingReport {
+  id: string;
+  name: string;
+  description: string | null;
+  dataSource: DataSourceId;
+  config: Partial<ReportConfig>;
+}
+
 export function ReportBuilder({
   dataSources,
   filterOptions,
+  editing,
 }: {
   dataSources: DataSourceMeta[];
   filterOptions: FilterOptions;
+  /** The saved report being edited. Only its creator gets here. */
+  editing?: EditingReport;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const saved = editing?.config;
 
   // Builder state
-  const [activeTab, setActiveTab] = useState<Tab>("Source");
-  const [dataSource, setDataSource] = useState<DataSourceId | null>(null);
-  const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
-  const [filters, setFilters] = useState<FilterDef[]>([]);
+  const [activeTab, setActiveTab] = useState<Tab>(editing ? "Columns" : "Source");
+  const [dataSource, setDataSource] = useState<DataSourceId | null>(editing?.dataSource ?? null);
+  // A saved column the report no longer has is dropped, or saving would be refused.
+  const [selectedColumns, setSelectedColumns] = useState<string[]>(() => {
+    const known = new Set(dataSources.find((ds) => ds.id === editing?.dataSource)?.columns.map((c) => c.id) ?? []);
+    return saved?.columns?.filter((id) => known.has(id)) ?? [];
+  });
+  const [filters, setFilters] = useState<FilterDef[]>(saved?.filters ?? []);
   const [dateRange, setDateRange] = useState<DateRange>(() => {
+    if (saved?.dateRange) return saved.dateRange;
     const today = new Date();
     const pp =
       filterOptions.payPeriods.find(
@@ -74,8 +93,8 @@ export function ReportBuilder({
       ? { type: "payPeriod" as const, payPeriodId: pp.id }
       : { type: "relative" as const, relativeDays: 30 };
   });
-  const [groupBy, setGroupBy] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<SortDef[]>([]);
+  const [groupBy, setGroupBy] = useState<string[]>(saved?.groupBy ?? []);
+  const [sortBy, setSortBy] = useState<SortDef[]>(saved?.sortBy ?? []);
 
   // Preview state
   const [previewResult, setPreviewResult] = useState<ReportResult | null>(null);
@@ -83,8 +102,8 @@ export function ReportBuilder({
   const [isRunning, setIsRunning] = useState(false);
 
   // Save state
-  const [reportName, setReportName] = useState("");
-  const [reportDesc, setReportDesc] = useState("");
+  const [reportName, setReportName] = useState(editing?.name ?? "");
+  const [reportDesc, setReportDesc] = useState(editing?.description ?? "");
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const currentSource = dataSources.find((ds) => ds.id === dataSource);
@@ -134,23 +153,30 @@ export function ReportBuilder({
     setSaveError(null);
 
     startTransition(async () => {
-      const result = await createReport({
-        name: reportName.trim(),
-        description: reportDesc.trim() || undefined,
-        dataSource,
-        config: {
-          columns: selectedColumns,
-          filters,
-          dateRange,
-          groupBy,
-          sortBy,
-          limit: 5000,
-        },
-        visibility: "PRIVATE",
-      });
+      const config = {
+        columns: selectedColumns,
+        filters,
+        dateRange,
+        groupBy,
+        sortBy,
+        limit: saved?.limit ?? 5000,
+      };
+      const result = editing
+        ? await updateReport({
+            id: editing.id,
+            data: { name: reportName.trim(), description: reportDesc.trim(), dataSource, config },
+          })
+        : await createReport({
+            name: reportName.trim(),
+            description: reportDesc.trim() || undefined,
+            dataSource,
+            config,
+            visibility: "PRIVATE",
+          });
 
       if (result.success) {
         router.push(`/reports/${result.data.id}`);
+        router.refresh();
       } else {
         setSaveError(result.error);
       }
@@ -282,7 +308,7 @@ export function ReportBuilder({
             {/* Save section */}
             <div className="mt-6 border-t border-zinc-200 pt-6 dark:border-zinc-700">
               <h3 className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Save this report
+                {editing ? "Save your changes" : "Save this report"}
               </h3>
               <div className="flex flex-col gap-3 sm:max-w-md">
                 <input
@@ -310,11 +336,11 @@ export function ReportBuilder({
                     className={btnPrimary + " flex items-center gap-2"}
                   >
                     <Save className="h-4 w-4" />
-                    {isPending ? "Saving..." : "Save Report"}
+                    {isPending ? "Saving..." : editing ? "Save Changes" : "Save Report"}
                   </button>
                   <button
                     type="button"
-                    onClick={() => router.push("/reports")}
+                    onClick={() => router.push(editing ? `/reports/${editing.id}` : "/reports")}
                     className={btnSecondary}
                   >
                     Cancel
