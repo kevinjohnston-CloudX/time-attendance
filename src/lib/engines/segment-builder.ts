@@ -927,6 +927,23 @@ export async function rebuildSegments(
       select: { endTime: true },
     });
     if (credited && credited.endTime > openStart) openStart = credited.endTime;
+    // And never before the clock in that opened the shift. Under the old 1 PM
+    // boundary a Sunday morning clock in was filed on the previous timecard and
+    // its clock out on this one; starting at midnight credited the hours from
+    // midnight to the clock in, which nobody worked.
+    const opened = await db.punch.findFirst({
+      where: {
+        employeeId: timesheet.employee.id,
+        timesheetId: { not: timesheetId },
+        punchType: "CLOCK_IN",
+        isApproved: true,
+        correctedById: null,
+        roundedTime: { gt: new Date(bounds.start.getTime() - 86_400_000), lte: firstPunch.roundedTime },
+      },
+      orderBy: { roundedTime: "desc" },
+      select: { roundedTime: true },
+    });
+    if (opened && opened.roundedTime > openStart) openStart = opened.roundedTime;
     carryIn = { openStart, openState: firstPunch.stateBefore as ActiveState };
   }
 
