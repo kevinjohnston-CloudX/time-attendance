@@ -11,6 +11,8 @@ interface SendReportParams {
   format: string;
   fileBuffer: Buffer;
   rowCount: number;
+  /** Rows actually in the file, when fewer than the report found. */
+  shownRows?: number;
   /** The file's name without its extension. Falls back to the report's name. */
   fileStem?: string;
   /** The days the report covers, in words, for the subject and the message. */
@@ -34,6 +36,7 @@ export async function sendReportEmail({
   format,
   fileBuffer,
   rowCount,
+  shownRows,
   fileStem,
   periodLabel,
   brand,
@@ -57,7 +60,7 @@ export async function sendReportEmail({
     to: recipients,
     from: fromEmail,
     subject,
-    html: generateReportEmailHtml({ reportName, rowCount, format, generatedAt: new Date(), periodLabel }),
+    html: generateReportEmailHtml({ reportName, rowCount, shownRows, format, generatedAt: new Date(), periodLabel }),
     attachments: [
       {
         content: fileBuffer.toString("base64"),

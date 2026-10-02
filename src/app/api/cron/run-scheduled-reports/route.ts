@@ -90,6 +90,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         format: schedule.format,
         fileBuffer,
         rowCount: result.totalRows,
+        shownRows: result.rows.length,
         fileStem: reportFileStem(schedule.report.name, result, source.brand),
         periodLabel: result.period?.label,
         brand: source.brand,

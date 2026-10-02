@@ -2,7 +2,8 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { DataSourceDefinition, ExecuteContext, ReportResult } from "./index";
 import type { ReportConfig, FilterDef } from "@/lib/validators/report.schema";
-import { daysOf, dayCount, describeSpan, REPORT_ZONE } from "../period";
+import { daysOf, dayCount, describeSpan, REPORT_ZONE, type DaySpan } from "../period";
+import { dayKey, periodLastDay } from "@/lib/pay-period-display";
 
 /**
  * The two daily scan reports HR has always been sent: who came in and went
@@ -140,8 +141,24 @@ function utcStamp(day: string, plusDays: number): string {
   return new Date(Date.UTC(y, m - 1, d + plusDays)).toISOString().slice(0, 19).replace("T", " ");
 }
 
+/**
+ * The days a report covers. A pay period is read as its first and last day,
+ * whichever pay group it belongs to: the scans are everyone's, so the group
+ * does not narrow them. The picker for these reports does not offer pay
+ * periods, but a report saved from the older design can carry one.
+ */
+async function spanFor(range: ReportConfig["dateRange"], tenantId: string, ctx?: ExecuteContext): Promise<DaySpan> {
+  if (range.type !== "payPeriod") return daysOf(range, ctx?.timezone ?? REPORT_ZONE, ctx?.now);
+  const pp = await db.payPeriod.findFirst({
+    where: { id: range.payPeriodId, tenantId },
+    select: { startDate: true, endDate: true, ruleSet: { select: { payFrequency: true } }, tenant: { select: { payFrequency: true } } },
+  });
+  if (!pp) throw new Error("That pay period is no longer on file. Pick dates instead.");
+  return { start: dayKey(pp.startDate), end: dayKey(periodLastDay(pp.endDate, pp.ruleSet?.payFrequency ?? pp.tenant.payFrequency)) };
+}
+
 async function execute(stream: Stream, config: ReportConfig, tenantId: string, ctx?: ExecuteContext): Promise<ReportResult> {
-  const span = daysOf(config.dateRange, ctx?.timezone ?? REPORT_ZONE, ctx?.now);
+  const span = await spanFor(config.dateRange, tenantId, ctx);
   if (!span.start || !span.end || span.end < span.start) throw new Error("Pick the first and last day.");
   if (dayCount(span) > MAX_DAYS) throw new Error("Pick a period of one year or less.");
 

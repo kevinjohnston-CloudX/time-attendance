@@ -53,6 +53,13 @@ interface FilterOptions {
  *  full preview cannot say how many more there are. */
 const PREVIEW_ROWS = 100;
 
+/**
+ * How many rows a saved report returns. The scan reports hold a row per person
+ * per day, so a month of two buildings is several thousand and a year is far
+ * more; the usual 5,000 would quietly cut a monthly email short.
+ */
+const savedLimit = (id: string) => (isScanReport(id) ? 50000 : 5000);
+
 /** Where the rail and the preview sit side by side, the same test the pinned bar uses. */
 const SIDE_BY_SIDE = "(min-width: 1024px) and (min-height: 600px)";
 
@@ -216,7 +223,7 @@ export function ReportBuilder({
         name: reportName.trim(),
         description: reportDesc.trim() || undefined,
         dataSource,
-        config: { ...config, limit: 5000 },
+        config: { ...config, limit: savedLimit(dataSource) },
         visibility: "PRIVATE",
       });
 
@@ -246,7 +253,7 @@ export function ReportBuilder({
       ? "The settings changed since this preview."
       : previewResult
         ? previewResult.rows.length >= PREVIEW_ROWS
-          ? `The first ${PREVIEW_ROWS} rows. The saved report returns up to 5,000.`
+          ? `The first ${PREVIEW_ROWS} rows. The saved report returns up to ${savedLimit(dataSource).toLocaleString("en-US")}.`
           : "Every row these settings return."
         : `The first ${PREVIEW_ROWS} rows these settings return.`;
 

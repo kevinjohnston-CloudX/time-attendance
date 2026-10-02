@@ -1,6 +1,8 @@
 interface ReportEmailParams {
   reportName: string;
   rowCount: number;
+  /** Rows in the file, when the report had more than it could hold. */
+  shownRows?: number;
   format: string;
   generatedAt: Date;
   periodLabel?: string;
@@ -12,7 +14,8 @@ function esc(v: string): string {
 }
 
 export function generateReportEmailHtml(params: ReportEmailParams): string {
-  const { reportName, rowCount, format, generatedAt, periodLabel } = params;
+  const { reportName, rowCount, shownRows, format, generatedAt, periodLabel } = params;
+  const cut = shownRows !== undefined && shownRows < rowCount;
   const dateStr = generatedAt.toLocaleString("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -40,7 +43,7 @@ export function generateReportEmailHtml(params: ReportEmailParams): string {
               </tr>` : ""}
               <tr>
                 <td style="padding: 4px 0; font-weight: 600;">Rows</td>
-                <td style="padding: 4px 0; text-align: right;">${rowCount.toLocaleString()}</td>
+                <td style="padding: 4px 0; text-align: right;">${cut ? `${shownRows!.toLocaleString("en-US")} of ${rowCount.toLocaleString("en-US")}` : rowCount.toLocaleString("en-US")}</td>
               </tr>
               <tr>
                 <td style="padding: 4px 0; font-weight: 600;">Format</td>
@@ -53,6 +56,7 @@ export function generateReportEmailHtml(params: ReportEmailParams): string {
             </table>
           </div>
 
+          ${cut ? `<p style="margin: 0 0 16px; font-size: 13px; color: #b45309;">This file holds the first ${shownRows!.toLocaleString("en-US")} of ${rowCount.toLocaleString("en-US")} rows. Open the report in CloudTime and raise its row limit to get the rest.</p>` : ""}
           <p style="margin: 0; font-size: 12px; color: #a1a1aa;">This is an automated email from CloudTime. Please do not reply.</p>
         </div>
       </div>

@@ -108,7 +108,7 @@ function parseCron(expr: string): {
     };
   }
 
-  const [min, hr, dom, , dow] = parts;
+  const [min, hr, dom, mon, dow] = parts;
   const base = {
     hour: hr,
     minute: min,
@@ -117,6 +117,12 @@ function parseCron(expr: string): {
     customCron: expr,
   };
 
+  // A schedule made in the new design can be yearly or on the last day of the
+  // month, which these presets cannot show. Kept as the raw expression, so
+  // saving it here does not quietly turn it into something else.
+  if (mon !== "*" || dom.includes("L")) {
+    return { ...base, preset: "custom" };
+  }
   // daily: m h * * *
   if (dom === "*" && dow === "*") {
     return { ...base, preset: "daily" };
