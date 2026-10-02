@@ -14,6 +14,13 @@ interface ReclassifiedSegment {
   isPaid: boolean;
   payBucket: PayBucket;
   isSplit: boolean;
+  /**
+   * Carried through from the segment being reclassified. Dropping it put every
+   * autopay credit on Regular Hours instead of the rule set's autopay code
+   * (Salary), since a credit has no punch to take its code back from.
+   */
+  payCodeId?: string | null;
+  leaveRequestId?: string | null;
 }
 
 // ─── OT window key ───────────────────────────────────────────────────────────
@@ -337,6 +344,8 @@ function splitSegmentAtThresholds(
       isPaid: true,
       payBucket: bucket,
       isSplit: seg.isSplit || minutesInBucket < seg.durationMinutes,
+      payCodeId: seg.payCodeId ?? null,
+      leaveRequestId: seg.leaveRequestId ?? null,
     });
 
     currentTime = endTime;
@@ -585,6 +594,8 @@ export async function applyOvertime(
     isPaid: seg.isPaid,
     payBucket: "REG" as PayBucket,
     isSplit: seg.isSplit,
+    payCodeId: seg.payCodeId ?? null,
+    leaveRequestId: seg.leaveRequestId ?? null,
   }));
 
   const exemptMinutes = workExempt.reduce((s, seg) => s + seg.durationMinutes, 0);
