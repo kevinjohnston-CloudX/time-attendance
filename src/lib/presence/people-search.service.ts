@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { shownNameOrNull } from "@/lib/utils/shown-name";
 import { addDays, DAYS_BACK } from "./days";
 import { photoUrls } from "./photos";
 import { localDateString } from "./on-site.service";
@@ -57,11 +58,21 @@ const SELECT = {
   wmsId: true,
   isActive: true,
   terminatedAt: true,
+  wmsName: true,
   user: { select: { name: true } },
   department: { select: { name: true } },
 } satisfies Prisma.EmployeeSelect;
 
 type Row = Prisma.EmployeeGetPayload<{ select: typeof SELECT }>;
+
+/**
+ * Both names a person can be looked up by, lower-cased: the WMS name the floor
+ * knows them by and the legal name, each when there is one. A search matches
+ * either; the person is shown by the first (shown-name.ts).
+ */
+function namesOf(r: Row): string[] {
+  return [r.wmsName, r.user?.name].map((n) => (n ?? "").trim().toLowerCase()).filter(Boolean);
+}
 
 /**
  * Name, employee code, or a badge number. A badge only ever matches whole,
@@ -74,6 +85,7 @@ function textWhere(text: string): Prisma.EmployeeWhereInput {
     OR: [
       { employeeCode: { contains: text, mode: "insensitive" } },
       { user: { name: { contains: text, mode: "insensitive" } } },
+      { wmsName: { contains: text, mode: "insensitive" } },
       ...(looksLikeBadge(text) ? [badgeWhere(text)] : []),
     ],
   };
@@ -84,7 +96,7 @@ export function looksLikeBadge(text: string): boolean {
 }
 
 function nameOrCodeMatches(r: Row, low: string): boolean {
-  return r.employeeCode.toLowerCase().includes(low) || (r.user?.name ?? "").toLowerCase().includes(low);
+  return r.employeeCode.toLowerCase().includes(low) || namesOf(r).some((n) => n.includes(low));
 }
 
 async function shape(tenantId: string, rows: Row[], withPhotos: boolean, typed?: string): Promise<PickablePerson[]> {
@@ -92,7 +104,7 @@ async function shape(tenantId: string, rows: Row[], withPhotos: boolean, typed?:
   const low = typed?.trim().toLowerCase() ?? "";
   return rows.map((r) => ({
     id: r.id,
-    name: r.user?.name ?? r.employeeCode,
+    name: shownNameOrNull(r) ?? r.employeeCode,
     employeeCode: r.employeeCode,
     department: r.department?.name ?? null,
     inactive: !r.isActive || !!r.terminatedAt,
@@ -121,14 +133,15 @@ export async function suggestPeople(tenantId: string, siteId: string, q: string,
   // Names that start with what was typed come first, then the rest.
   const low = text.toLowerCase();
   const rank = (r: Row) => {
-    const name = (r.user?.name ?? "").toLowerCase();
+    const names = namesOf(r);
     // A whole badge number is as exact as a match gets.
-    if (r.employeeCode.toLowerCase() === low || name === low || !nameOrCodeMatches(r, low)) return 0;
-    if (name.startsWith(low) || name.split(/\s+/).some((w) => w.startsWith(low))) return 1;
+    if (r.employeeCode.toLowerCase() === low || names.includes(low) || !nameOrCodeMatches(r, low)) return 0;
+    if (names.some((name) => name.startsWith(low) || name.split(/\s+/).some((w) => w.startsWith(low)))) return 1;
     return 2;
   };
+  const shown = (r: Row) => shownNameOrNull(r) ?? "";
   const best = rows
-    .sort((a, b) => rank(a) - rank(b) || (a.user?.name ?? "").localeCompare(b.user?.name ?? ""))
+    .sort((a, b) => rank(a) - rank(b) || shown(a).localeCompare(shown(b)))
     .slice(0, SUGGESTIONS);
   return shape(tenantId, best, true, text);
 }
@@ -177,7 +190,7 @@ export async function resolveNames(tenantId: string, siteId: string, names: stri
     });
     const low = text.toLowerCase();
     const exact = rows.filter(
-      (r) => r.employeeCode.toLowerCase() === low || (r.user?.name ?? "").toLowerCase() === low || !nameOrCodeMatches(r, low),
+      (r) => r.employeeCode.toLowerCase() === low || namesOf(r).includes(low) || !nameOrCodeMatches(r, low),
     );
     const take = exact.length ? exact : rows.length === 1 ? rows : [];
     if (exact.length > 1) several.push({ text, count: exact.length });

@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { findEmployeeIdentityByBadge } from "@/lib/utils/badge-lookup";
+import { shownNameOrNull } from "@/lib/utils/shown-name";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { toTabletVerdict } from "@/lib/services/tablet-verdict";
 import type {
@@ -226,7 +227,9 @@ export async function recordScanEvent(input: RecordScanInput): Promise<RecordedS
   // Matches either badge form — see badge-lookup for why both exist.
   const employee = await findEmployeeIdentityByBadge(input.badgeCode);
 
-  const employeeName = employee?.user?.name?.trim() || null;
+  // What the tablet shows the person: the WMS name, else the legal name
+  // (shown-name.ts). Only ever sent back to the tablet, never stored.
+  const employeeName = employee ? shownNameOrNull(employee) : null;
 
   const existing = await db.scanEvent.findUnique({
     where: {

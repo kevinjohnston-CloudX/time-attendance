@@ -80,6 +80,7 @@ export async function findEmployeeIdentityByBadge(code: string) {
     select: {
       id: true,
       tenantId: true,
+      wmsName: true,
       site: { select: { timezone: true } },
       user: { select: { name: true } },
     },

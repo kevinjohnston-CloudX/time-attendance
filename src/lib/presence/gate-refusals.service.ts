@@ -1,3 +1,4 @@
+import { shownName } from "@/lib/utils/shown-name";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { localDateString } from "@/lib/presence/on-site.service";
@@ -250,6 +251,7 @@ export async function getOpenGateRefusals(tenantId: string, siteId: string): Pro
             barcode: true,
             wmsId: true,
             siteId: true,
+            wmsName: true,
             user: { select: { name: true } },
             department: { select: { name: true } },
             supervisor: { select: { user: { select: { name: true } } } },
@@ -276,7 +278,7 @@ export async function getOpenGateRefusals(tenantId: string, siteId: string): Pro
     return {
       id: r.id,
       employeeId: e.id,
-      name: e.user?.name?.trim() || `Employee ${e.employeeCode}`,
+      name: shownName(e),
       employeeCode: e.employeeCode,
       jobTitle: e.jobTitle,
       department: e.department?.name ?? null,

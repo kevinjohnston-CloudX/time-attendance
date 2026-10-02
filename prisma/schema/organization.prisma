@@ -128,6 +128,12 @@ model Employee {
   employeeCode String
   adpWorkerId  String?  @unique  /// ADP Workforce Now worker ID for sync
   wmsId        String?  @unique  /// Warehouse Management System badge ID (QR code)
+  /// The name WMS (Oracle) holds for this person, kept current by the roster
+  /// sync. Shown on the tablets and in Live Attendance, where people know each
+  /// other by it. Never the person's name of record: that is users.name, the
+  /// legal name from ADP and HR, which the sync never writes. Null until the
+  /// sync has seen them; anything showing it falls back to the legal name.
+  wmsName      String?
 
   /// The value physically encoded on the badge, when it differs from wmsId.
   ///

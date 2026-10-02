@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { db } from "@/lib/db";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
+import { shownNameOrNull } from "@/lib/utils/shown-name";
 import { recordGateRefusal } from "@/lib/presence/gate-refusals.service";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 
@@ -97,6 +98,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       isActive: true,
       terminatedAt: true,
       siteId: true,
+      wmsName: true,
       user: { select: { name: true } },
       department: { select: { name: true } },
       site: { select: { timezone: true, gateScanMode: true } },
@@ -209,7 +211,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     });
   }
 
-  const name = employee.user?.name?.trim() ?? "";
+  // The tablet greets people by the name the floor knows them by: the WMS name
+  // when the roster sync has one, else the legal name (see shown-name.ts).
+  const name = shownNameOrNull(employee) ?? "";
   const space = name.indexOf(" ");
 
   return NextResponse.json({

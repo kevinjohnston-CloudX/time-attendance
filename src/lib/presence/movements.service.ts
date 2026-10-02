@@ -1,3 +1,4 @@
+import { shownName } from "@/lib/utils/shown-name";
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { addDays, clampDay } from "./days";
@@ -250,6 +251,7 @@ export async function getSiteDay(
           wmsId: true,
           isActive: true,
           terminatedAt: true,
+          wmsName: true,
           user: { select: { name: true } },
           jobTitle: true,
           payType: true,
@@ -266,7 +268,7 @@ export async function getSiteDay(
     const schedule = expectedHours(shiftById.get(e.id), scheduleById.get(e.id), day);
     return {
       id: e.id,
-      name: e.user?.name?.trim() || `Employee ${e.employeeCode}`,
+      name: shownName(e),
       employeeCode: e.employeeCode,
       departmentId: e.department?.id ?? null,
       department: e.department?.name ?? null,

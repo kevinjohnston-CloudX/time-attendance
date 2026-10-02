@@ -1,3 +1,4 @@
+import { shownName } from "@/lib/utils/shown-name";
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { DAYS_BACK, addDays, clampDay } from "./days";
@@ -259,6 +260,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
           wmsId: true,
           isActive: true,
           terminatedAt: true,
+          wmsName: true,
           user: { select: { name: true } },
           jobTitle: true,
           payType: true,
@@ -344,7 +346,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
 
     people.push({
       id: emp.id,
-      name: emp.user?.name?.trim() || `Employee ${emp.employeeCode}`,
+      name: shownName(emp),
       employeeCode: emp.employeeCode,
       departmentId: emp.department?.id ?? null,
       department: emp.department?.name ?? null,
@@ -455,6 +457,7 @@ export async function getPresenceDetail(
       wmsId: true,
       isActive: true,
       terminatedAt: true,
+      wmsName: true,
       user: { select: { name: true } },
       department: { select: { name: true } },
       shift: { select: { name: true, ...SHIFT_HOURS_SELECT } },
@@ -553,7 +556,7 @@ export async function getPresenceDetail(
 
   return {
     id: emp.id,
-    name: emp.user?.name?.trim() || `Employee ${emp.employeeCode}`,
+    name: shownName(emp),
     employeeCode: emp.employeeCode,
     jobTitle: emp.jobTitle,
     department: emp.department?.name ?? null,

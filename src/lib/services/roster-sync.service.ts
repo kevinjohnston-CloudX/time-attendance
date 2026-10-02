@@ -14,8 +14,10 @@ import { SyncTally } from "@/lib/services/sync-run.service";
  *
  * <p><b>Nor does it rename them.</b> CloudTime holds each person's legal name,
  * which payroll and HR need; WMS can hold a different one (a nickname, a short
- * form, a different spelling or case). Oracle's name is only used for the
- * RosterCandidate rows below, where CloudTime has no name of its own yet.
+ * form, a different spelling or case). Oracle's name is kept beside it in
+ * employees.wmsName, which the tablets and Live Attendance show (see
+ * src/lib/utils/shown-name.ts), and used for the RosterCandidate rows below,
+ * where CloudTime has no name of its own yet.
  *
  * <p><b>And it does not flip isActive.</b> Deactivating someone stops them
  * clocking in, which costs them pay and is discovered at the gate; activating
@@ -147,6 +149,7 @@ export async function applyRosterBatch(
       barcode: true,
       barcodeOverride: true,
       isActive: true,
+      wmsName: true,
     },
   });
 
@@ -308,7 +311,15 @@ export async function applyRosterBatch(
       }
     }
 
-    /* The name is never taken from Oracle: see the note above. */
+    /* ---- the WMS name: kept beside the legal name, never over it ---- */
+    // users.name is never taken from Oracle (see the note above). Oracle's name
+    // goes to employees.wmsName, which the tablets and Live Attendance show. A
+    // blank one leaves the stored name as it is.
+    const wmsName = (row.name ?? "").trim().slice(0, 200);
+    if (wmsName && wmsName !== employee.wmsName) {
+      changes.wmsName = wmsName;
+      employee.wmsName = wmsName;
+    }
 
     const substantive = Object.keys(changes).filter((k) => k !== "barcodeSyncedAt");
 

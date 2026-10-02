@@ -1,3 +1,4 @@
+import { shownName } from "@/lib/utils/shown-name";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
@@ -206,6 +207,7 @@ export async function getScanLog(
             employeeCode: true,
             barcode: true,
             wmsId: true,
+            wmsName: true,
             user: { select: { name: true } },
             jobTitle: true,
             department: { select: { name: true } },
@@ -254,7 +256,7 @@ export async function getScanLog(
             photoUrl: null,
             person: {
               id: s.employee.id,
-              name: s.employee.user?.name?.trim() || `Employee ${s.employee.employeeCode}`,
+              name: shownName(s.employee),
               employeeCode: s.employee.employeeCode,
               department: s.employee.department?.name ?? null,
               jobTitle: s.employee.jobTitle?.trim() || null,

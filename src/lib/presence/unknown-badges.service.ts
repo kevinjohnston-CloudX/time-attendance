@@ -1,3 +1,4 @@
+import { shownName } from "@/lib/utils/shown-name";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
@@ -165,6 +166,7 @@ export async function getUnknownBadges(
         wmsId: true,
         employeeCode: true,
         createdAt: true,
+        wmsName: true,
         user: { select: { name: true } },
         badges: { select: { barcode: true } },
       },
@@ -239,7 +241,7 @@ export async function getUnknownBadges(
       gateScans: s.gate,
       refusedPunches: s.clock,
       addedAs: h
-        ? { id: h.id, name: h.user?.name?.trim() || `Employee ${h.employeeCode}`, ...addedBy(h.id, h.createdAt, s.first) }
+        ? { id: h.id, name: shownName(h), ...addedBy(h.id, h.createdAt, s.first) }
         : null,
       reviewStatus: c?.status ?? null,
     };
