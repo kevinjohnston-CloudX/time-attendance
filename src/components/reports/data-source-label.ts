@@ -37,7 +37,7 @@ const LABELS: Record<string, string> = {
 const DESCRIPTIONS: Record<string, string> = {
   HOURS_SUMMARY:     "Regular, overtime and double time hours for each employee, with their PTO balance.",
   ATTENDANCE_DETAIL: "Each day's clock in and clock out times, meals and hours worked.",
-  DAILY_HOURS:       "One line per employee per day, with regular, overtime and double time hours, time off and pay codes.",
+  DAILY_HOURS:       "One line per employee per day, with regular, overtime and double time hours and pay codes, as on the timecard.",
   EXCEPTION_REPORT:  "Missed punches, absences and other rule breaks, and whether they were fixed.",
   PUNCH_AUDIT:       "Every punch, where it came from, and any corrections or approvals.",
   LEAVE_SUMMARY:     "Time off requests with their type, dates, length and status.",
