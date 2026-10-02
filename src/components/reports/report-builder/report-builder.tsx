@@ -12,8 +12,8 @@ import { DateRangePicker, defaultPayPeriodRange, describeRange } from "./date-ra
 import { GroupSortConfig } from "./group-sort-config";
 import { ResultsTable } from "../report-results/results-table";
 import { dataSourceDescription, dataSourceLabel, isScanReport } from "../data-source-label";
-import { runReport, createReport } from "@/actions/report.actions";
-import type { DataSourceId, FilterDef, SortDef, DateRange } from "@/lib/validators/report.schema";
+import { runReport, createReport, updateReport } from "@/actions/report.actions";
+import type { DataSourceId, FilterDef, SortDef, DateRange, ReportConfig } from "@/lib/validators/report.schema";
 import type { ReportResult } from "@/lib/reports/data-sources";
 
 /**
@@ -29,7 +29,19 @@ import type { ReportResult } from "@/lib/reports/data-sources";
  * <p>Save asks for a name in a small window, filled in from the type, and
  * opens the saved report. Group and sort are folded away, since most reports
  * never need them.
+ *
+ * <p>Given a saved report (`editing`), the same page edits it: everything
+ * starts from what was saved, and Save changes that report in place rather
+ * than adding another. Only the person who made it gets here.
  */
+
+/** A saved report opened for editing. */
+export interface EditingReport {
+  id: string;
+  name: string;
+  description: string | null;
+  config: Partial<ReportConfig>;
+}
 
 interface DataSourceMeta {
   id: DataSourceId;
@@ -67,11 +79,14 @@ export function ReportBuilder({
   dataSources,
   filterOptions,
   initialSource,
+  editing,
 }: {
   dataSources: DataSourceMeta[];
   filterOptions: FilterOptions;
-  /** The type picked in the New report window. */
+  /** The type picked in the New report window, or the saved report's type. */
   initialSource: DataSourceId;
+  /** The saved report being edited. Absent for a new report. */
+  editing?: EditingReport;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -80,15 +95,21 @@ export function ReportBuilder({
 
   const defaultsFor = (id: DataSourceId) =>
     dataSources.find((ds) => ds.id === id)?.columns.filter((c) => c.defaultVisible).map((c) => c.id) ?? [];
+  const saved = editing?.config;
 
   const [dataSource, setDataSource] = useState<DataSourceId>(initialSource);
   const [changingSource, setChangingSource] = useState(false);
-  const [selectedColumns, setSelectedColumns] = useState<string[]>(() => defaultsFor(initialSource));
-  const [filters, setFilters] = useState<FilterDef[]>([]);
-  const [dateRange, setDateRange] = useState<DateRange>(() => defaultRangeFor(initialSource));
-  const [groupBy, setGroupBy] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<SortDef[]>([]);
-  const [showMore, setShowMore] = useState(false);
+  // A saved column the report no longer has is dropped, or saving would be refused.
+  const [selectedColumns, setSelectedColumns] = useState<string[]>(() => {
+    const known = new Set(dataSources.find((ds) => ds.id === initialSource)?.columns.map((c) => c.id) ?? []);
+    const kept = saved?.columns?.filter((id) => known.has(id)) ?? [];
+    return kept.length ? kept : defaultsFor(initialSource);
+  });
+  const [filters, setFilters] = useState<FilterDef[]>(() => saved?.filters ?? []);
+  const [dateRange, setDateRange] = useState<DateRange>(() => saved?.dateRange ?? defaultRangeFor(initialSource));
+  const [groupBy, setGroupBy] = useState<string[]>(() => saved?.groupBy ?? []);
+  const [sortBy, setSortBy] = useState<SortDef[]>(() => saved?.sortBy ?? []);
+  const [showMore, setShowMore] = useState(() => Boolean(saved?.groupBy?.length || saved?.sortBy?.length));
 
   const [previewResult, setPreviewResult] = useState<ReportResult | null>(null);
   const [previewedWith, setPreviewedWith] = useState<string | null>(null);
@@ -98,9 +119,9 @@ export function ReportBuilder({
   // A name is filled in from the report picked, and follows it when the
   // report changes, until somebody types their own.
   const [saving, setSaving] = useState(false);
-  const [reportName, setReportName] = useState(() => dataSourceLabel(initialSource));
-  const [nameTouched, setNameTouched] = useState(false);
-  const [reportDesc, setReportDesc] = useState("");
+  const [reportName, setReportName] = useState(() => editing?.name ?? dataSourceLabel(initialSource));
+  const [nameTouched, setNameTouched] = useState(Boolean(editing));
+  const [reportDesc, setReportDesc] = useState(editing?.description ?? "");
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const currentSource = dataSources.find((ds) => ds.id === dataSource);
@@ -119,8 +140,9 @@ export function ReportBuilder({
     if (id === dataSource) return;
     setDataSource(id);
     // The link follows, so a reload opens on the type now showing. Without a
-    // navigation: nothing on the server needs to answer for it.
-    window.history.replaceState(window.history.state, "", `/reports/new?source=${id}`);
+    // navigation: nothing on the server needs to answer for it. An edit keeps
+    // its own link; the new type is only kept once it is saved.
+    if (!editing) window.history.replaceState(window.history.state, "", `/reports/new?source=${id}`);
     setSelectedColumns(defaultsFor(id));
     setFilters([]);
     setGroupBy([]);
@@ -219,16 +241,27 @@ export function ReportBuilder({
     setSaveError(null);
 
     startTransition(async () => {
-      const result = await createReport({
-        name: reportName.trim(),
-        description: reportDesc.trim() || undefined,
-        dataSource,
-        config: { ...config, limit: savedLimit(dataSource) },
-        visibility: "PRIVATE",
-      });
+      const result = editing
+        ? await updateReport({
+            id: editing.id,
+            data: {
+              name: reportName.trim(),
+              description: reportDesc.trim(),
+              dataSource,
+              config: { ...config, limit: isScanReport(dataSource) ? savedLimit(dataSource) : saved?.limit ?? 5000 },
+            },
+          })
+        : await createReport({
+            name: reportName.trim(),
+            description: reportDesc.trim() || undefined,
+            dataSource,
+            config: { ...config, limit: savedLimit(dataSource) },
+            visibility: "PRIVATE",
+          });
 
       if (result.success) {
         router.push(`/reports/${result.data.id}`);
+        router.refresh();
       } else {
         setSaveError(result.error);
       }
@@ -261,13 +294,19 @@ export function ReportBuilder({
     <div className="flex flex-col gap-4">
       <PageHeader
         pinned
-        title="New report"
+        title={editing ? `Edit ${editing.name}` : "New report"}
         subtitle={summary}
         actions={
           <>
-            <LinkButton href="/reports" hierarchy="tertiary" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
-              Reports
-            </LinkButton>
+            {editing ? (
+              <LinkButton href={`/reports/${editing.id}`} hierarchy="tertiary" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
+                Cancel
+              </LinkButton>
+            ) : (
+              <LinkButton href="/reports" hierarchy="tertiary" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
+                Reports
+              </LinkButton>
+            )}
             <Button
               hierarchy="primary"
               disabled={selectedColumns.length === 0}
@@ -275,7 +314,7 @@ export function ReportBuilder({
               onClick={() => setSaving(true)}
               leadingIcon={<Save className="h-4 w-4" />}
             >
-              Save report
+              {editing ? "Save changes" : "Save report"}
             </Button>
           </>
         }
@@ -466,6 +505,7 @@ export function ReportBuilder({
 
       {saving && (
         <SaveDialog
+          editing={Boolean(editing)}
           name={reportName}
           description={reportDesc}
           error={saveError}
@@ -534,6 +574,7 @@ function RailSection({
  * Escape, Cancel and the scrim close it and keep everything on the page.
  */
 function SaveDialog({
+  editing,
   name,
   description,
   error,
@@ -543,6 +584,8 @@ function SaveDialog({
   onSave,
   onClose,
 }: {
+  /** Saving over a saved report rather than adding one. */
+  editing: boolean;
   name: string;
   description: string;
   error: string | null;
@@ -591,7 +634,7 @@ function SaveDialog({
       >
         <header className="flex items-center gap-3 px-5 py-3.5" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
           <h2 id="save-report-title" className="min-w-0 flex-1" style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
-            Save report
+            {editing ? "Save changes" : "Save report"}
           </h2>
           <Button hierarchy="tertiary" iconOnly onClick={onClose} disabled={pending} aria-label="Close" title="Close">
             <X className="h-4 w-4" />
@@ -612,18 +655,22 @@ function SaveDialog({
             onChange={(e) => onDescription(e.target.value)}
             placeholder="Optional. What it is for, so others know"
           />
-          {error && <Banner tone="error" title="The report was not saved" body={error} />}
+          {error && (
+            <Banner tone="error" title={editing ? "The changes were not saved" : "The report was not saved"} body={error} />
+          )}
           <button type="submit" hidden />
         </form>
         <footer className="flex items-center gap-2 px-5 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
           <span className="min-w-0 flex-1" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-            Only you can see it until you share it.
+            {editing
+              ? "Everyone it is shared with, and its emails, get the changes."
+              : "Only you can see it until you share it."}
           </span>
           <Button hierarchy="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
           <Button hierarchy="primary" onClick={onSave} disabled={!name.trim() || pending} leadingIcon={<Save className="h-4 w-4" />}>
-            {pending ? "Saving" : "Save report"}
+            {pending ? "Saving" : editing ? "Save changes" : "Save report"}
           </Button>
         </footer>
       </div>

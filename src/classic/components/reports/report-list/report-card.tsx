@@ -8,6 +8,8 @@ import {
   FileSearch,
   AlertCircle,
   FileText,
+  ShieldCheck,
+  Timer,
 } from "lucide-react";
 
 const SOURCE_ICONS: Record<string, React.ElementType> = {
@@ -18,6 +20,8 @@ const SOURCE_ICONS: Record<string, React.ElementType> = {
   LEAVE_BALANCE: Wallet,
   PUNCH_AUDIT: FileSearch,
   EXCEPTION_REPORT: AlertCircle,
+  SECURITY_SCAN: ShieldCheck,
+  TIME_CLOCK_SCAN: Timer,
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -28,6 +32,8 @@ const SOURCE_LABELS: Record<string, string> = {
   LEAVE_BALANCE: "Leave Balances",
   PUNCH_AUDIT: "Punch Audit",
   EXCEPTION_REPORT: "Exception Report",
+  SECURITY_SCAN: "Security Scan Report",
+  TIME_CLOCK_SCAN: "Time Clock Report",
 };
 
 interface ReportCardProps {
