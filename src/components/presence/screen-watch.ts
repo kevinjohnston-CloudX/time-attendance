@@ -11,6 +11,14 @@ import { useEffect } from "react";
 
 const BEAT_MS = 30_000;
 
+/**
+ * The build this page was loaded from: the commit on Vercel, else the deploy
+ * id. Both are written in at build time. Not read from the page's own
+ * data-dpl-id, because Next.js deletes that attribute as soon as it loads.
+ */
+const BUILD =
+  process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || process.env.NEXT_DEPLOYMENT_ID || null;
+
 function randomId(): string {
   const bytes = new Uint8Array(12);
   crypto.getRandomValues(bytes);
@@ -80,7 +88,7 @@ function beat(segmentId: string, siteId: string, visible: boolean): Event {
     siteId,
     visible,
     focused: document.hasFocus(),
-    deployId: document.documentElement.dataset.dplId ?? null,
+    deployId: BUILD,
     pulsesOk: tally.pulsesOk,
     pulsesFailed: tally.pulsesFailed,
     pulseOkAgoMs: tally.pulseOkAt === null ? null : now - tally.pulseOkAt,

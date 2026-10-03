@@ -356,7 +356,7 @@ model LiveAttendanceWatch {
   visible             Boolean
   /// The window had the keyboard at the last report.
   focused             Boolean
-  /// The deploy the page was loaded from.
+  /// The build the page was loaded from: the commit (7 characters) on Vercel, else the deploy id.
   deployId            String?
   startedAt           DateTime  @default(now())
   lastBeatAt          DateTime  @default(now())
