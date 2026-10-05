@@ -1475,7 +1475,9 @@ export function OnSiteBoard({
       )}
 
       {tabletsOpen && siteId && (
-        <TabletsWindow key={siteId} siteId={siteId} siteName={siteName} onClose={() => setTabletsOpen(false)} />
+        // Its own key: the gate alert beside it is keyed by the building too,
+        // and two siblings sharing a key are torn down and rebuilt on every render.
+        <TabletsWindow key={`tablets|${siteId}`} siteId={siteId} siteName={siteName} onClose={() => setTabletsOpen(false)} />
       )}
 
       {gateAlerts && siteId && (

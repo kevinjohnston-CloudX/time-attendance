@@ -97,7 +97,7 @@ export function TabletsWindow({ siteId, siteName, onClose }: { siteId: string; s
       subtitle={subtitle}
       icon={<TabletIcon className="h-[18px] w-[18px]" />}
       width={920}
-      foot="Tablets on app 163 or later check in every five minutes. Older ones are found from their scans and need the update to report battery and connection."
+      foot="Tablets on app 163 or later report every five minutes. Older ones are listed from their scans of the last 7 days."
       onClose={onClose}
     >
       {error && (
@@ -132,7 +132,7 @@ export function TabletsWindow({ siteId, siteName, onClose }: { siteId: string; s
       {tablets.length > 0 && (
         <>
           <div className={styles.summary}>
-            <Badge tone="success" dot>
+            <Badge tone={online > 0 ? "success" : "neutral"} dot>
               {online} online
             </Badge>
             {offline > 0 && (
@@ -203,9 +203,12 @@ function TabletRow({
 }) {
   const reporting = t.status !== "NOT_REPORTING";
   const flags = t.alerts.map((a) => ALERT_LABEL[a]).filter((l): l is string => Boolean(l));
+  // Under the name: what it is. Whether it is well goes in the status column.
   const sub = reporting
     ? [t.model, t.android ? `Android ${t.android}` : null].filter(Boolean).join(" · ") || "Model not reported"
-    : "Not reporting, needs app update";
+    : t.lastScanAt
+      ? `Last scan ${whenLabel(t.lastScanAt, tz, now)}`
+      : "No scans lately";
 
   return (
     <div className={styles.tablet}>
@@ -223,7 +226,7 @@ function TabletRow({
         </span>
         <span className={styles.cell}>
           <span className={styles.cellLabel}>App</span>
-          <span className={styles.cellValue} data-tone={t.appVersion && !t.sendsBuilding ? "warning" : undefined}>
+          <span className={styles.cellValue}>
             {t.appVersion ? `Build ${t.appVersion}` : <span className={styles.muted}>Unknown</span>}
           </span>
         </span>
@@ -265,11 +268,18 @@ function StatusBadge({ t }: { t: Tablet }) {
 function statusWhen(t: Tablet, tz: string, now: number): string {
   if (t.status === "ONLINE") return `Checked in ${agoLabel(t.lastSeenAt, now)}`;
   if (t.status === "OFFLINE") return `Last check in ${whenLabel(t.lastSeenAt, tz, now)}`;
-  return t.lastScanAt ? `Last scan ${whenLabel(t.lastScanAt, tz, now)}` : "";
+  return "Update to app 163 to report";
 }
 
+/** An empty figure: a lone dash, so a column of them reads as "nothing here" rather than as text. */
+const Blank = () => (
+  <span className={`${styles.cellValue} ${styles.muted}`} aria-label="Not reported">
+    –
+  </span>
+);
+
 function Battery({ t }: { t: Tablet }) {
-  if (t.batteryPct === null) return <span className={`${styles.cellValue} ${styles.muted}`}>Not reported</span>;
+  if (t.batteryPct === null) return <Blank />;
   const pct = t.batteryPct;
   const Icon = t.charging ? BatteryCharging : pct >= 70 ? BatteryFull : pct >= 30 ? BatteryMedium : BatteryLow;
   const tone = !t.charging && pct < 20 ? "error" : !t.charging && pct < 40 ? "warning" : "success";
@@ -298,7 +308,7 @@ function signalWord(rssi: number | null): { word: string; tone?: string; Icon: t
 }
 
 function Signal({ t }: { t: Tablet }) {
-  if (t.status === "NOT_REPORTING") return <span className={`${styles.cellValue} ${styles.muted}`}>Not reported</span>;
+  if (t.status === "NOT_REPORTING") return <Blank />;
   if (t.status === "OFFLINE") {
     return (
       <span className={styles.cellValue} data-tone="error">

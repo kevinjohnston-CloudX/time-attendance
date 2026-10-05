@@ -35,50 +35,66 @@ export function PageScroller({ children }: { children: ReactNode }) {
     if (!main || !rail || !thumb) return;
 
     let hideTimer = 0;
+    let frame = 0;
+    let lastMove = 0;
     let dragging: { pointerId: number; startY: number; startTop: number } | null = null;
     let overThumb = false;
+    // What is on screen now, so a frame with nothing new writes nothing.
+    let drawn = { size: -1, top: -1, scrollable: "", shown: "" };
 
-    const measure = () => {
+    const geometry = () => {
       const view = main.clientHeight;
       const full = main.scrollHeight;
-      if (full <= view + 1) {
-        rail.dataset.scrollable = "false";
-        return null;
-      }
-      rail.dataset.scrollable = "true";
+      if (full <= view + 1) return null;
       const size = Math.max(MIN_THUMB, Math.round((view * view) / full));
       const room = view - size;
-      const top = room * (main.scrollTop / (full - view));
-      thumb.style.height = `${size}px`;
-      thumb.style.transform = `translateY(${Math.round(top)}px)`;
-      return { view, full, size, room };
+      return { view, full, size, room, top: Math.round(room * (main.scrollTop / (full - view))) };
+    };
+
+    // One read and at most one write per frame, however many events asked.
+    const draw = () => {
+      frame = 0;
+      const g = geometry();
+      const scrollable = g ? "true" : "false";
+      if (scrollable !== drawn.scrollable) rail.dataset.scrollable = scrollable;
+      if (g && g.size !== drawn.size) thumb.style.height = `${g.size}px`;
+      if (g && g.top !== drawn.top) thumb.style.transform = `translateY(${g.top}px)`;
+      drawn = { ...drawn, scrollable, size: g?.size ?? -1, top: g?.top ?? -1 };
+    };
+    const measure = () => {
+      if (!frame) frame = window.requestAnimationFrame(draw);
+    };
+    const setShown = (v: boolean) => {
+      const next = v ? "true" : "false";
+      if (next === drawn.shown) return;
+      drawn.shown = next;
+      rail.dataset.shown = next;
     };
 
     const hideLater = () => {
       window.clearTimeout(hideTimer);
       hideTimer = window.setTimeout(() => {
-        if (!dragging && !overThumb) rail.dataset.shown = "false";
+        if (!dragging && !overThumb) setShown(false);
       }, IDLE_MS);
     };
 
     const show = () => {
-      if (!measure()) return;
-      rail.dataset.shown = "true";
+      measure();
+      setShown(true);
       hideLater();
     };
 
     const onPointerDown = (e: PointerEvent) => {
-      const m = measure();
-      if (!m) return;
+      if (!geometry()) return;
       e.preventDefault();
       thumb.setPointerCapture(e.pointerId);
       dragging = { pointerId: e.pointerId, startY: e.clientY, startTop: main.scrollTop };
       rail.dataset.dragging = "true";
-      rail.dataset.shown = "true";
+      setShown(true);
     };
     const onPointerMove = (e: PointerEvent) => {
       if (!dragging || e.pointerId !== dragging.pointerId) return;
-      const m = measure();
+      const m = geometry();
       if (!m || m.room <= 0) return;
       main.scrollTop = dragging.startTop + ((e.clientY - dragging.startY) * (m.full - m.view)) / m.room;
     };
@@ -98,8 +114,13 @@ export function PageScroller({ children }: { children: ReactNode }) {
     };
 
     // Only the mouse brings it up; a finger already scrolls with the page.
+    // At most every 100 ms: a moving mouse sends far more events than that.
     const onMove = (e: PointerEvent) => {
-      if (e.pointerType === "mouse" || e.pointerType === "pen") show();
+      if (e.pointerType !== "mouse" && e.pointerType !== "pen") return;
+      const at = e.timeStamp;
+      if (at - lastMove < 100) return;
+      lastMove = at;
+      show();
     };
 
     measure();
@@ -120,6 +141,7 @@ export function PageScroller({ children }: { children: ReactNode }) {
 
     return () => {
       window.clearTimeout(hideTimer);
+      if (frame) window.cancelAnimationFrame(frame);
       main.removeEventListener("scroll", show);
       window.removeEventListener("pointermove", onMove);
       thumb.removeEventListener("pointerdown", onPointerDown);
