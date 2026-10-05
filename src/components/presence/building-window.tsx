@@ -21,6 +21,7 @@ export function BuildingWindow({
   icon,
   width,
   foot,
+  flush = false,
   onClose,
   children,
 }: {
@@ -30,6 +31,8 @@ export function BuildingWindow({
   width: number;
   /** One quiet line along the bottom. */
   foot?: ReactNode;
+  /** The body draws its own panes edge to edge, at a fixed height, with no padding or scroll of its own. */
+  flush?: boolean;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -79,7 +82,7 @@ export function BuildingWindow({
             <X className="h-4 w-4" />
           </Button>
         </header>
-        <div className={`ta-scroll ${styles.body}`}>{children}</div>
+        {flush ? <div className={styles.flushBody}>{children}</div> : <div className={`ta-scroll ${styles.body}`}>{children}</div>}
         {foot && <footer className={styles.foot}>{foot}</footer>}
       </div>
     </div>,

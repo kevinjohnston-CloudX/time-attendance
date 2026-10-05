@@ -1,0 +1,354 @@
+/* The Tablets window: a list of the building's tablets on the left, grouped
+   by what needs doing, and the chosen tablet's whole picture on the right,
+   always open. The one memorable thing is the strip of three readings, drawn
+   like the tablet's own status bar: a battery that fills, Wi-Fi bars, and
+   scans today. Everything around it stays quiet. */
+
+.panes {
+  display: grid;
+  grid-template-columns: 272px minmax(0, 1fr);
+  width: 100%;
+  min-height: 0;
+}
+
+/* ---- The list ---- */
+
+.list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 10px 16px;
+  border-right: 1px solid var(--stroke-divider);
+  background: var(--surface-secondary);
+}
+.group + .group {
+  margin-top: 14px;
+}
+.groupHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 4px 10px 6px;
+  font: var(--weight-medium) 13px/18px var(--font-sans);
+  color: var(--text-secondary);
+}
+.groupCount {
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pick {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.pick:hover {
+  background: var(--fill-hover);
+}
+.pick[aria-selected="true"] {
+  background: var(--surface-card);
+  box-shadow: 0 0 0 1px var(--stroke-divider), var(--shadow-card);
+}
+.pick:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 1px;
+}
+.pickName {
+  overflow: hidden;
+  font: var(--weight-medium) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pickLine {
+  grid-column: 2;
+  overflow: hidden;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.light {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+.light[data-health="WORKING"] {
+  background: var(--fill-success);
+}
+.light[data-health="ATTENTION"] {
+  background: var(--fill-error);
+}
+.light[data-health="UPDATE"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--stroke-hover);
+}
+
+/* ---- The chosen tablet ---- */
+
+.detail {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  padding: 22px 24px 24px;
+}
+.name {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font: var(--weight-semibold) 20px/28px var(--font-sans);
+  color: var(--text-primary);
+}
+.state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font: var(--type-body1);
+  color: var(--text-secondary);
+}
+.state strong {
+  font-weight: var(--weight-medium);
+}
+.state[data-health="WORKING"] strong {
+  color: var(--text-success);
+}
+.state[data-health="ATTENTION"] strong {
+  color: var(--text-error);
+}
+.state[data-health="UPDATE"] strong {
+  color: var(--text-primary);
+}
+
+/* What to do, when there is something to do. */
+.todo {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font: var(--type-body1);
+  color: var(--text-primary);
+  text-wrap: pretty;
+}
+.todo[data-tone="error"] {
+  background: var(--surface-error);
+  box-shadow: inset 0 0 0 1px var(--stroke-error);
+}
+.todo[data-tone="warning"] {
+  background: var(--surface-warning);
+  box-shadow: inset 0 0 0 1px var(--stroke-warning);
+}
+.todo[data-tone="neutral"] {
+  background: var(--surface-secondary);
+  box-shadow: inset 0 0 0 1px var(--stroke-divider);
+}
+
+/* The three readings. */
+.readings {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--stroke-divider);
+  border-radius: 12px;
+}
+.readings[data-stale="true"] {
+  opacity: 0.6;
+}
+.reading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+}
+.reading + .reading {
+  border-left: 1px solid var(--stroke-divider);
+}
+.readingLabel {
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}
+.readingMain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: var(--weight-semibold) 22px/28px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.readingSub {
+  overflow: hidden;
+  font: var(--type-body2);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A battery drawn as one: an outline, a fill to the level, the nub. */
+.battery {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 18px;
+  padding: 2px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1.5px var(--icon-secondary);
+}
+.battery::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: -4px;
+  width: 3px;
+  height: 8px;
+  border-radius: 0 2px 2px 0;
+  background: var(--icon-secondary);
+}
+.batteryFill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--fill-success);
+}
+.batteryFill[data-level="mid"] {
+  background: var(--fill-warning);
+}
+.batteryFill[data-level="low"] {
+  background: var(--fill-error);
+}
+
+/* Wi-Fi as four bars, lit to its strength. */
+.bars {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 3px;
+  height: 18px;
+}
+.bars span {
+  width: 5px;
+  border-radius: 2px;
+  background: var(--stroke-divider);
+}
+.bars span:nth-child(1) { height: 30%; }
+.bars span:nth-child(2) { height: 55%; }
+.bars span:nth-child(3) { height: 78%; }
+.bars span:nth-child(4) { height: 100%; }
+.bars span[data-on="true"] {
+  background: var(--fill-success);
+}
+.bars[data-level="weak"] span[data-on="true"] {
+  background: var(--fill-warning);
+}
+
+/* The rest, as plain label and value pairs. */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+  margin: 0;
+}
+.fact {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 11px 0;
+  border-top: 1px solid var(--stroke-divider);
+}
+.fact dt {
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}
+.fact dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font: var(--type-body1);
+  color: var(--text-primary);
+}
+.meter {
+  display: block;
+  height: 4px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: var(--stroke-divider);
+  overflow: hidden;
+}
+.meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--fill-accent);
+}
+
+.footnote {
+  margin: auto 0 0;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}
+
+/* ---- Loading ---- */
+
+.skeleton {
+  border-radius: 10px;
+  background: linear-gradient(90deg, var(--surface-secondary), var(--surface-tertiary), var(--surface-secondary));
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@keyframes shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}
+
+.center {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  padding: 24px;
+}
+
+/* ---- Narrow: the list above, the tablet below, one scroll ---- */
+
+@container (max-width: 640px) {
+  .panes {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    align-content: start;
+    overflow-y: auto;
+  }
+  .list,
+  .detail {
+    min-height: auto;
+  }
+  .list {
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--stroke-divider);
+  }
+  .detail {
+    overflow: visible;
+  }
+  .readings {
+    grid-template-columns: 1fr;
+  }
+  .reading + .reading {
+    border-left: 0;
+    border-top: 1px solid var(--stroke-divider);
+  }
+  .facts {
+    grid-template-columns: 1fr;
+  }
+}
