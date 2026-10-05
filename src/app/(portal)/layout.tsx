@@ -1,6 +1,7 @@
 // The new design's styles, loaded by its own layouts rather than the shared
 // root, so the classic design never gets them.
 import "@/app/globals.css";
+import { PageScrollReveal } from "@/components/layout/page-scroll-reveal";
 import { redirect } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { cookies, headers } from "next/headers";
@@ -293,7 +294,8 @@ export default async function PortalLayout({
             classicUntil={classicUntil?.label ?? null}
             signInId={session.user.signInId}
           />
-          <main className="min-h-0 flex-1 overflow-y-auto">
+          <main className="ta-page-scroll min-h-0 flex-1 overflow-y-auto">
+            <PageScrollReveal />
             <InactiveRouteGuard isInactive={!isEmployeeActive} />
             <EmployeesListForget />
             {/* The page's padding, from the Layout handoff. Pinned headers

@@ -808,6 +808,33 @@ tbody .ta-row:hover {
   .ta-rail { position: sticky; top: var(--ta-rail-top, 0px); }
 }
 
+/* The page's own scroll bar (the <main> in both designs), quiet: thin, with
+   no track, so on a Mac set to always show scroll bars there is no white
+   strip down the right edge, and its handle only shows while the mouse moves
+   or the page scrolls (PageScrollReveal sets data-scrolling). Still the
+   browser's own bar: its lane is always reserved (scrollbar-gutter), so the
+   page's width never changes, and only its colour ever does. Chrome, Edge
+   and Firefox read the two standard properties; Safari reads the webkit ones. */
+.ta-page-scroll {
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  scrollbar-color: transparent transparent;
+}
+.ta-page-scroll[data-scrolling] {
+  scrollbar-color: var(--stroke-hover) transparent;
+}
+.ta-page-scroll::-webkit-scrollbar { width: 8px; }
+.ta-page-scroll::-webkit-scrollbar-track { background: transparent; }
+.ta-page-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.ta-page-scroll[data-scrolling]::-webkit-scrollbar-thumb {
+  background-color: var(--stroke-hover);
+}
+
 /* A quiet scrollbar for the shell's own lists: the sidebar and the command
    palette. The browser's default is a wide grey bar with a track, which is
    what shows on a Mac set to always show scrollbars and on every Windows
