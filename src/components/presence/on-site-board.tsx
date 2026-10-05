@@ -52,7 +52,7 @@ import {
 import { PersonPanel } from "./person-panel";
 import { GateRefusalAlert } from "./gate-refusal-alert";
 import { GateAlertsWindow } from "./gate-alerts-switch";
-import { GateAlertsChip, TabletsChip } from "./building-status-chips";
+import { BuildingMenu } from "./building-menu";
 import { useSiteTablets } from "./use-site-tablets";
 import { TabletsWindow } from "./tablets-window";
 import type { GateAlertsSetting } from "@/actions/gate-refusals.actions";
@@ -723,6 +723,9 @@ export function OnSiteBoard({
         : age === Infinity
           ? "a moment ago"
           : `${Math.round(age / 60_000)} min ago`;
+  // The building button shows when there is a building to switch to, or
+  // this building's tablets or gate alerts to open.
+  const showsBuildingMenu = !!siteId && (sites.length > 1 || canSeeTablets || !!(gateSites && gateSite));
   const liveLine = (
     <span
       className="inline-flex min-w-0 items-center gap-2 whitespace-nowrap"
@@ -730,7 +733,7 @@ export function OnSiteBoard({
     >
       <span className={styles.live} data-state="live" aria-hidden="true" />
       {/* With a site button beside the title, the name is already there. */}
-      {siteName && sites.length <= 1 && (
+      {siteName && !showsBuildingMenu && (
         <span className="truncate" style={{ color: "var(--text-primary)", maxWidth: 200 }}>
           {siteName} ·
         </span>
@@ -747,8 +750,8 @@ export function OnSiteBoard({
 
   // The page's controls, one height: which view (it changes the whole page,
   // so it sits with the title rather than among the filters), the building
-  // it shows, Export, and full screen. The tablets and the gate alert setting
-  // open from their status chips under the title instead.
+  // it shows (a menu that also opens its tablets and gate alerts), Export,
+  // and full screen.
   const actions = (
     <>
       <SegmentedControl
@@ -764,19 +767,18 @@ export function OnSiteBoard({
           setSelectedId(null);
         }}
       />
-      {sites.length > 1 && (
-        <span className={`ta-chip ${styles.siteBtn}`} title="Site">
-          <Building2 className="h-4 w-4 flex-none" style={{ color: "var(--icon-secondary)" }} aria-hidden="true" />
-          <span className="truncate">{siteName}</span>
-          <ChevronDown className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
-          <select aria-label="Site" value={siteId} onChange={(e) => changeSite(e.target.value)} className={styles.pillSelect}>
-            {sites.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </span>
+      {showsBuildingMenu && siteId && (
+        <BuildingMenu
+          sites={sites}
+          siteId={siteId}
+          siteName={siteName}
+          onChangeSite={changeSite}
+          buttonClassName={styles.siteBtn}
+          tablets={canSeeTablets ? tablets.data : undefined}
+          gateOn={gateSites && gateSite ? gateSite.onSince !== null : undefined}
+          onOpenTablets={() => setTabletsOpen(true)}
+          onOpenGate={() => setGateOpen(true)}
+        />
       )}
       {canExport && (
       <Button
@@ -921,17 +923,6 @@ export function OnSiteBoard({
                 </span>
               )}
               {!condensed && liveLine}
-              {/* How this building's tablets and gate alerts stand, in words,
-                  each opening its window. Not while slim: the bar gives up
-                  everything but the essentials there. */}
-              {!condensed && siteId && (canSeeTablets || (gateSites && gateSite)) && (
-                <span className="flex min-w-0 flex-wrap items-center gap-2">
-                  {canSeeTablets && <TabletsChip data={tablets.data} onOpen={() => setTabletsOpen(true)} />}
-                  {gateSites && gateSite && (
-                    <GateAlertsChip on={gateSite.onSince !== null} onOpen={() => setGateOpen(true)} />
-                  )}
-                </span>
-              )}
             </div>
           </div>
           {/* Wraps rather than running off a narrow window, and stays on the

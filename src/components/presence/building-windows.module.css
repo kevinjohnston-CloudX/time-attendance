@@ -1,5 +1,5 @@
 /* The Tablets and Gate alerts windows on Live Attendance, the frame they
-   share, and the two status chips under the page title that open them.
+   share, and the building menu in the page's top bar that opens them.
 
    Drawn from the product's own best screens rather than a template: the
    Dashboard's tinted count tiles and progress tracks, the Leave Requests
@@ -94,38 +94,105 @@
   color: var(--text-tertiary);
 }
 
-/* ---- The status chips under the title ---- */
+/* ---- The building menu ---- */
 
-.chip {
+.alertDot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--fill-error);
+  box-shadow: 0 0 0 2px var(--surface-card);
+}
+
+.menu {
+  position: fixed;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 10px;
+  background: var(--surface-card);
+  box-shadow: var(--shadow-menu);
+}
+.menuLabel {
+  overflow: hidden;
+  padding: 8px 10px 4px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menuSites {
+  display: flex;
+  max-height: 260px;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.menuDivider {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--stroke-divider);
+}
+.menuItem {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  color: var(--text-primary);
+  font: var(--type-body1);
+  cursor: pointer;
+}
+.menuItem:hover,
+.menuItem:focus-visible {
+  background: var(--fill-hover);
+  outline: none;
+}
+.menuItem[aria-checked="true"] {
+  font-weight: var(--weight-medium);
+}
+.menuCheck,
+.menuIcon {
   display: inline-flex;
-  max-width: 320px;
-  height: 28px;
+  width: 16px;
+  flex: none;
+  justify-content: center;
+  color: var(--icon-accent);
+}
+.menuIcon {
+  color: var(--icon-secondary);
+}
+.menuCheck svg,
+.menuIcon svg {
+  width: 16px;
+  height: 16px;
+}
+.menuText {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menuStatus {
+  display: inline-flex;
   flex: none;
   align-items: center;
   gap: 6px;
-  padding: 0 8px 0 10px;
-  border: 1px solid var(--stroke-secondary);
-  border-radius: 999px;
-  background: var(--surface-card);
-  color: var(--text-primary);
-  font: var(--weight-medium) 13px/18px var(--font-sans);
+  font: var(--type-body2);
+  color: var(--text-secondary);
   white-space: nowrap;
-  cursor: pointer;
-  transition: border-color 140ms ease, background 140ms ease;
 }
-.chip:hover {
-  border-color: var(--stroke-hover);
-  background: var(--fill-hover);
-}
-.chip:focus-visible {
-  outline: 2px solid var(--stroke-accent-focus);
-  outline-offset: 2px;
-}
-.chip > svg:first-child {
-  width: 15px;
-  height: 15px;
+.menuChev {
+  width: 14px;
+  height: 14px;
   flex: none;
-  color: var(--icon-secondary);
+  color: var(--icon-tertiary);
 }
 .chipDot {
   width: 7px;
@@ -139,17 +206,6 @@
 }
 .chipDot[data-tone="bad"] {
   background: var(--fill-error);
-}
-.chipText {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.chipChev {
-  width: 14px;
-  height: 14px;
-  flex: none;
-  color: var(--icon-tertiary);
 }
 
 /* ---- Gate alerts ---- */
