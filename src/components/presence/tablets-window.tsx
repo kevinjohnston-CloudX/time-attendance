@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, ArrowUpCircle, Tablet as TabletIcon, WifiOff, Zap } from "lucide-react";
+import { AlertTriangle, ArrowUpCircle, Clock, DoorOpen, Tablet as TabletIcon, WifiOff, Zap } from "lucide-react";
 import { Badge, Banner, Button, EmptyState } from "@/components/ui";
 import type { BuildingTablets, Tablet } from "@/lib/presence/tablets.service";
 import { BuildingWindow } from "./building-window";
@@ -129,8 +129,15 @@ export function TabletsBody({
       a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
   );
   const shown = only ? sorted.filter((t) => healthOf(t) === only) : sorted;
+  // Gates and clocks apart, as Live Attendance shows the two readers, each
+  // group still with the ones that need somebody first.
+  const groups = [
+    { key: "gate", title: "Security gates", Icon: DoorOpen, tablets: shown.filter((t) => t.stream === "SECURITY") },
+    { key: "clock", title: "Time clocks", Icon: Clock, tablets: shown.filter((t) => t.stream !== "SECURITY") },
+  ].filter((g) => g.tablets.length > 0);
+  const ordered = groups.flatMap((g) => g.tablets);
   // The most urgent one is open to start with, and stays chosen across refreshes.
-  const current = shown.find((t) => t.key === chosen) ?? shown[0] ?? null;
+  const current = ordered.find((t) => t.key === chosen) ?? ordered[0] ?? null;
 
   const tile = (h: Health, label: string, tone: string) => (
     <button
@@ -155,24 +162,40 @@ export function TabletsBody({
         {tile("UPDATE", "Waiting for the app update", "neutral")}
       </div>
       <div className={styles.panes}>
-        <div className={`ta-scroll ${styles.list}`} role="listbox" aria-label="Tablets">
-          {shown.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              role="option"
-              aria-selected={current?.key === t.key}
-              className={styles.card}
-              onClick={() => onChoose(t.key)}
-            >
-              <span className={styles.cardName} title={t.name}>
-                {t.name}
-              </span>
-              <span className={styles.cardTop}>
-                <StatusBadge t={t} />
-                <span className={styles.cardLine}>{cardLine(t, tz, now)}</span>
-              </span>
-            </button>
+        <div className={`ta-scroll ${styles.list}`} aria-label="Tablets">
+          {groups.map((g) => (
+            <section key={g.key} className={styles.group} aria-label={g.title}>
+              <h4 className={styles.groupHead}>
+                <g.Icon aria-hidden="true" />
+                <span>{g.title}</span>
+                <span className={styles.groupCount}>{g.tablets.length}</span>
+              </h4>
+              <div role="listbox" aria-label={g.title} className={styles.groupList}>
+                {g.tablets.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    role="option"
+                    aria-selected={current?.key === t.key}
+                    className={styles.card}
+                    onClick={() => onChoose(t.key)}
+                  >
+                    <span className={styles.cardIcon} data-kind={g.key} aria-hidden="true">
+                      <g.Icon />
+                    </span>
+                    <span className={styles.cardBody}>
+                      <span className={styles.cardName} title={t.name}>
+                        {t.name}
+                      </span>
+                      <span className={styles.cardTop}>
+                        <StatusBadge t={t} />
+                        <span className={styles.cardLine}>{cardLine(t, tz, now)}</span>
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
         {current && <TabletDetail key={current.key} t={current} tz={tz} now={now} />}
@@ -189,14 +212,13 @@ function StatusBadge({ t }: { t: Tablet }) {
   return <Badge tone="neutral" size="sm">Needs update</Badge>;
 }
 
-/** Under the name on a card: what it is, and the one thing worth knowing. */
+/** Beside the status on a card: the one thing worth knowing. Its kind is the group it sits in. */
 function cardLine(t: Tablet, tz: string, now: number): string {
-  const gate = t.stream === "SECURITY" ? "Gate" : "Clock";
-  if (t.status === "OFFLINE") return `${gate}, since ${whenLabel(t.lastSeenAt, tz, now)}`;
+  if (t.status === "OFFLINE") return `Since ${whenLabel(t.lastSeenAt, tz, now)}`;
   const issue = issuesOf(t)[0];
-  if (issue) return `${gate}, ${issue.short.toLowerCase()}`;
-  if (t.status === "NOT_REPORTING") return `${gate}, build ${t.appVersion ?? "unknown"}`;
-  return `${gate}, ${t.batteryPct === null ? "checked in" : `battery ${t.batteryPct}%`}`;
+  if (issue) return issue.short;
+  if (t.status === "NOT_REPORTING") return `Build ${t.appVersion ?? "unknown"}`;
+  return t.batteryPct === null ? "Checked in" : `Battery ${t.batteryPct}%`;
 }
 
 function TabletDetail({ t, tz, now }: { t: Tablet; tz: string; now: number }) {

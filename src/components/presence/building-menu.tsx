@@ -61,7 +61,11 @@ export function BuildingMenu({
     put();
     window.addEventListener("resize", put);
     // The page scrolling under an open menu would leave it behind; it closes instead.
-    const close = () => setOpen(false);
+    // Only the page: scrolling the menu's own list of buildings keeps it open.
+    const close = (e: Event) => {
+      if (panel.current && e.target instanceof Node && panel.current.contains(e.target)) return;
+      setOpen(false);
+    };
     window.addEventListener("scroll", close, true);
     return () => {
       window.removeEventListener("resize", put);
