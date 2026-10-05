@@ -141,11 +141,20 @@ export async function recordWatchEvent(
       alertCards: e.alertCards ?? undefined,
       lastAlertCheckError: e.alertCheckError ?? undefined,
     };
-    const updated = await db.liveAttendanceWatch.updateMany({
-      where: { id: e.segmentId, tenantId, employeeId, screenId: e.screenId, siteId: e.siteId },
-      data: { ...latest, pulsesOk: { increment: e.pulsesOk }, pulsesFailed: { increment: e.pulsesFailed } },
-    });
-    if (updated.count > 0) return;
+    const extend = () =>
+      db.liveAttendanceWatch.updateMany({
+        where: { id: e.segmentId, tenantId, employeeId, screenId: e.screenId, siteId: e.siteId },
+        data: { ...latest, pulsesOk: { increment: e.pulsesOk }, pulsesFailed: { increment: e.pulsesFailed } },
+      });
+    if ((await extend()).count > 0) return;
+    // Two reports for a new stretch can arrive together; the second finds the
+    // row the first just made. Checked first so the database never has to
+    // refuse a duplicate, which it logs as an error.
+    const exists = await db.liveAttendanceWatch.findUnique({ where: { id: e.segmentId }, select: { id: true } });
+    if (exists) {
+      await extend();
+      return;
+    }
     try {
       await db.liveAttendanceWatch.create({
         data: {
@@ -163,8 +172,10 @@ export async function recordWatchEvent(
         },
       });
     } catch (err) {
-      // The id belongs to another viewer's row: nothing to write.
+      // Made by a report in the same instant, or the id is another viewer's
+      // row (then extend() matches nothing and writes nothing).
       if (!isDuplicate(err)) throw err;
+      await extend();
     }
     return;
   }
