@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpDown, ArrowDown, ArrowUp, Building2, Check, ChevronDown, Clock, DoorOpen, Download, Maximize2, Minimize2, SearchX, SlidersHorizontal, UserRoundX } from "lucide-react";
+import { ArrowUpDown, ArrowDown, ArrowUp, Building2, Check, ChevronDown, Clock, DoorOpen, Download, Maximize2, Minimize2, SearchX, SlidersHorizontal, Tablet as TabletIcon, UserRoundX } from "lucide-react";
 import {
   Badge,
   Button,
@@ -51,7 +51,8 @@ import {
 } from "./presence-meta";
 import { PersonPanel } from "./person-panel";
 import { GateRefusalAlert } from "./gate-refusal-alert";
-import { GateAlertsSwitch } from "./gate-alerts-switch";
+import { GateAlertsButton } from "./gate-alerts-switch";
+import { TabletsWindow } from "./tablets-window";
 import type { GateAlertsSetting } from "@/actions/gate-refusals.actions";
 import { useOnPulseChange, useSitePulse } from "./use-site-pulse";
 import { useScreenWatch } from "./screen-watch";
@@ -146,6 +147,7 @@ export function OnSiteBoard({
   scheduling = null,
   gateAlerts = false,
   gateSwitch = null,
+  canSeeTablets = false,
 }: {
   sites: { id: string; name: string }[];
   initialSiteId: string | null;
@@ -188,12 +190,15 @@ export function OnSiteBoard({
   gateAlerts?: boolean;
   /** The gate alert switch for each building, for System Admins only; null leaves it out. */
   gateSwitch?: GateAlertsSetting | null;
+  /** The Tablets button, for loss prevention and System Admins; the action checks again. */
+  canSeeTablets?: boolean;
 }) {
   const [siteId, setSiteId] = useState(initialSiteId);
   // Each building's switch, kept here so moving between buildings shows the
   // state just saved rather than the one the page loaded with.
   const [gateSites, setGateSites] = useState(gateSwitch?.sites ?? null);
   const gateSite = gateSites?.find((s) => s.id === siteId) ?? null;
+  const [tabletsOpen, setTabletsOpen] = useState(false);
   // Photos saved here, drawn at once on every face until the server's own
   // links carry them.
   const [photoSwaps, setPhotoSwaps] = useState<ReadonlyMap<string, string>>(new Map());
@@ -737,7 +742,8 @@ export function OnSiteBoard({
 
   // The page's controls, one height: which view (it changes the whole page,
   // so it sits with the title rather than among the filters), the building
-  // it shows, the gate alert switch for System Admins, Export, and full screen.
+  // it shows, its tablets (loss prevention and System Admins), the gate alert
+  // setting (System Admins), Export, and full screen.
   const actions = (
     <>
       <SegmentedControl
@@ -767,14 +773,24 @@ export function OnSiteBoard({
           </select>
         </span>
       )}
-      {gateSites && gateSite && (
-        <GateAlertsSwitch
-          key={gateSite.id}
-          site={gateSite}
-          onElsewhere={gateSites.filter((s) => s.id !== gateSite.id && s.onSince !== null).map((s) => s.name)}
-          onChanged={(onSince) => {
-            setGateSites((all) => all?.map((s) => (s.id === gateSite.id ? { ...s, onSince } : s)) ?? all);
-            toast.flash(`Gate alerts turned ${onSince ? "on" : "off"} at ${gateSite.name}`);
+      {canSeeTablets && siteId && (
+        <Button
+          hierarchy="secondary"
+          iconOnly
+          onClick={() => setTabletsOpen(true)}
+          aria-label={`Tablets at ${siteName}`}
+          title={`Tablets at ${siteName}`}
+        >
+          <TabletIcon className="h-4 w-4" />
+        </Button>
+      )}
+      {gateSites && gateSite && siteId && (
+        <GateAlertsButton
+          sites={gateSites}
+          siteId={siteId}
+          onChanged={(changed, onSince) => {
+            setGateSites((all) => all?.map((s) => (s.id === changed.id ? { ...s, onSince } : s)) ?? all);
+            toast.flash(`Gate alerts turned ${onSince ? "on" : "off"} at ${changed.name}`);
           }}
         />
       )}
@@ -1456,6 +1472,10 @@ export function OnSiteBoard({
             toast.flash("Added to today's schedule");
           }}
         />
+      )}
+
+      {tabletsOpen && siteId && (
+        <TabletsWindow key={siteId} siteId={siteId} siteName={siteName} onClose={() => setTabletsOpen(false)} />
       )}
 
       {gateAlerts && siteId && (

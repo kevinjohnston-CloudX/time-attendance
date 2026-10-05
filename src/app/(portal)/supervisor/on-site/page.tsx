@@ -76,6 +76,8 @@ export default async function OnSitePage({
       scheduling={canSchedule ? { live: gateReadsCloudTimeSchedule() } : null}
       gateAlerts={gateAlerts}
       gateSwitch={gateSwitch.success ? gateSwitch.data : null}
+      // Loss prevention (who answer the gate alert) and System Admins.
+      canSeeTablets={gateAlerts || gateSwitch.success}
       initialFilters={{
         status: params.status ?? null,
         dept: params.dept ?? null,

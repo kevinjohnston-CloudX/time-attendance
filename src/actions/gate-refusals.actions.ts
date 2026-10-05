@@ -5,6 +5,7 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { getViewableSites } from "@/lib/presence/on-site.service";
 import { dismissGateRefusals, getOpenGateRefusals } from "@/lib/presence/gate-refusals.service";
 import { writeAuditLog } from "@/lib/audit/logger";
+import { getGateReadiness } from "@/lib/presence/tablets.service";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 
 /**
@@ -100,7 +101,16 @@ export const dismissOnSiteGateRefusals = withRBAC(
  */
 const ADMIN_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
-export type GateAlertsSetting = { sites: { id: string; name: string; onSince: string | null }[] };
+export type GateAlertsSetting = {
+  sites: {
+    id: string;
+    name: string;
+    onSince: string | null;
+    /** Gate tablets that scanned here in the last two days, and how many send their building. */
+    gates: number;
+    sendingBuilding: number;
+  }[];
+};
 
 export const getGateAlertsSetting = withRBAC(
   "PRESENCE_VIEW_ANY",
@@ -109,10 +119,19 @@ export const getGateAlertsSetting = withRBAC(
     const viewable = await getViewableSites(tenantId, { employeeId, role });
     const rows = await db.site.findMany({
       where: { tenantId, id: { in: viewable.map((s) => s.id) } },
-      select: { id: true, name: true, gateAlertsOnSince: true },
+      select: { id: true, name: true, gateAlertsOnSince: true, wmsWarehouseId: true },
       orderBy: { name: "asc" },
     });
-    return { sites: rows.map((r) => ({ id: r.id, name: r.name, onSince: r.gateAlertsOnSince?.toISOString() ?? null })) };
+    const ready = await getGateReadiness(tenantId, rows);
+    return {
+      sites: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        onSince: r.gateAlertsOnSince?.toISOString() ?? null,
+        gates: ready.get(r.id)?.gates ?? 0,
+        sendingBuilding: ready.get(r.id)?.sendingBuilding ?? 0,
+      })),
+    };
   },
 );
 
