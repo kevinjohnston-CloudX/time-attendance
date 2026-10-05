@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { PageScroller } from "@/components/layout/page-scroller";
 import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -171,10 +170,10 @@ export default async function PortalLayout({
               signInId={session.user.signInId}
             />
           </header>
-          <PageScroller>
+          <main className="flex-1 overflow-y-auto">
             <InactiveRouteGuard isInactive={!isEmployeeActive} />
             <div className="px-6 pb-8 pt-1">{children}</div>
-          </PageScroller>
+          </main>
         </div>
       </div>
     </div>
