@@ -419,6 +419,25 @@
   background: var(--fill-accent);
 }
 
+/* Technical details, folded away: for IT, not needed to know if it works. */
+.more {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.moreSummary {
+  width: fit-content;
+  font: var(--type-h4);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.moreSummary::marker {
+  color: var(--icon-tertiary);
+}
+.more[open] > .moreSummary {
+  margin-bottom: 8px;
+}
+
 /* ---- Loading and empty ---- */
 
 .skeleton {

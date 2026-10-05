@@ -316,18 +316,27 @@ function TabletDetail({ t, tz, now }: { t: Tablet; tz: string; now: number }) {
             <dl className={styles.inset}>
               <Fact label="Last heard from" value={whenLabel(t.lastSeenAt, tz, now)} />
               <Fact
-                label="Waiting to send"
-                value={
-                  t.pending === null
-                    ? "Not reported"
-                    : t.pending === 0
-                      ? "Nothing, all sent"
-                      : `${t.pending} ${t.pending === 1 ? "scan" : "scans"}${t.oldestPendingSec ? `, oldest ${minutesLabel(t.oldestPendingSec)}` : ""}`
-                }
+                label="Newest scan in CloudTime"
+                value={t.newestInCloudTimeAt ? whenLabel(t.newestInCloudTimeAt, tz, now) : "None yet"}
               />
               <Fact
+                label="Not in CloudTime yet"
+                value={
+                  t.notInCloudTime === null
+                    ? "Not reported"
+                    : t.notInCloudTime === 0
+                      ? "None, all received"
+                      : `${t.notInCloudTime} ${t.notInCloudTime === 1 ? "scan" : "scans"}${t.lateToCloudTime ? `, ${t.lateToCloudTime} late` : ""}`
+                }
+              />
+              <Fact label="Waiting to send" value={waitingWords(t)} />
+              <Fact
                 label="Network"
-                value={t.network && t.network !== "WIFI" ? networkWord(t.network) : (t.wifiName ?? "Wi-Fi")}
+                value={
+                  t.network && t.network !== "WIFI"
+                    ? networkWord(t.network)
+                    : `${t.wifiName ?? "Wi-Fi"}${t.wifiBandGhz ? `, ${t.wifiBandGhz} GHz` : ""}`
+                }
               />
             </dl>
           </section>
@@ -345,6 +354,12 @@ function TabletDetail({ t, tz, now }: { t: Tablet; tz: string; now: number }) {
                   [t.model, t.android ? `Android ${t.android}` : null].filter(Boolean).join(", ") || "Not reported"
                 }
               />
+              <Fact label="Battery" value={batteryWords(t)} />
+              <Fact label="Time zone" value={timeZoneWords(t)} />
+              <Fact
+                label="Locked to CloudTime"
+                value={t.kioskLocked === null ? "Not reported" : t.kioskLocked ? "Yes" : "No, not set up as a kiosk"}
+              />
               <Fact
                 label="Storage"
                 value={
@@ -359,6 +374,57 @@ function TabletDetail({ t, tz, now }: { t: Tablet; tz: string; now: number }) {
               {t.assetTag ? <Fact label="Asset tag" value={t.assetTag} /> : null}
             </dl>
           </section>
+          <details className={styles.more}>
+            <summary className={styles.moreSummary}>Technical details</summary>
+            <dl className={styles.inset}>
+              <Fact
+                label="App running for"
+                value={t.appRunningSec === null ? "Not reported" : durationWords(t.appRunningSec)}
+              />
+              <Fact
+                label="Wi-Fi link"
+                value={
+                  t.wifiLinkMbps === null
+                    ? "Not reported"
+                    : `${t.wifiLinkMbps} Mbps${t.wifiRssi !== null ? `, ${t.wifiRssi} dBm` : ""}`
+                }
+              />
+              <Fact
+                label="Storage used by"
+                value={
+                  t.photosMb === null && t.logsMb === null && t.cacheMb === null
+                    ? "Not reported"
+                    : `Photos ${mbWords(t.photosMb)}, logs ${mbWords(t.logsMb)}, cache ${mbWords(t.cacheMb)}`
+                }
+              />
+              <Fact
+                label="Last sync with Oracle"
+                value={t.lastOracleSyncAt ? whenLabel(t.lastOracleSyncAt, tz, now) : "Not reported"}
+              />
+              <Fact
+                label="App build"
+                value={
+                  [
+                    t.appVersion ? `Build ${t.appVersion}` : null,
+                    t.versionCode !== null ? `code ${t.versionCode}` : null,
+                    t.gitSha,
+                    t.builtAt ? `made ${whenLabel(t.builtAt, tz, now)}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || "Not reported"
+                }
+              />
+              <Fact label="Android build" value={t.osBuild ?? "Not reported"} />
+              <Fact
+                label="Check ins"
+                value={`${t.checkIns.toLocaleString("en-US")}${t.firstSeenAt ? `, first ${whenLabel(t.firstSeenAt, tz, now)}` : ""}`}
+              />
+              <Fact
+                label="App reinstalled"
+                value={t.reinstalls === 0 ? "Never" : `${t.reinstalls} ${t.reinstalls === 1 ? "time" : "times"}`}
+              />
+            </dl>
+          </details>
         </>
       ) : (
         <section className={styles.section} aria-label="Device">
@@ -487,6 +553,56 @@ function Fact({ label, value, meter }: { label: string; value: string; meter?: n
     </div>
   );
 }
+
+/** Scans, punches and photos still on the tablet, in one line. */
+function waitingWords(t: Tablet): string {
+  if (t.pending === null && t.photosWaiting === null) return "Not reported";
+  const parts: string[] = [];
+  if (t.pending) {
+    parts.push(
+      `${t.pending} ${t.pending === 1 ? "scan" : "scans"}${t.oldestPendingSec ? `, oldest ${minutesLabel(t.oldestPendingSec)}` : ""}`,
+    );
+  }
+  if (t.photosWaiting) parts.push(`${t.photosWaiting} ${t.photosWaiting === 1 ? "photo" : "photos"}`);
+  return parts.length ? parts.join(" and ") : "Nothing, all sent";
+}
+
+function batteryWords(t: Tablet): string {
+  const health = t.batteryHealth
+    ? t.batteryHealth.toUpperCase() === "GOOD"
+      ? "Healthy"
+      : `Rated ${t.batteryHealth.toLowerCase().replace(/_/g, " ")}`
+    : null;
+  const temp =
+    t.batteryTempC === null ? null : `${Math.round(t.batteryTempC)}°C (${Math.round(t.batteryTempC * 1.8 + 32)}°F)`;
+  return [health, temp].filter(Boolean).join(", ") || "Not reported";
+}
+
+/** "Eastern Time, set automatically", in words rather than America/New_York. */
+function timeZoneWords(t: Tablet): string {
+  if (!t.timeZone) return "Not reported";
+  let name = t.timeZone;
+  try {
+    name =
+      new Intl.DateTimeFormat("en-US", { timeZone: t.timeZone, timeZoneName: "longGeneric" })
+        .formatToParts(new Date())
+        .find((p) => p.type === "timeZoneName")?.value ?? t.timeZone;
+  } catch {
+    // An unknown zone name: show it as the tablet sent it.
+  }
+  const how = t.autoTimeZone === null ? "" : t.autoTimeZone ? ", set automatically" : ", set by hand";
+  return `${name}${how}`;
+}
+
+function durationWords(sec: number): string {
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} min`;
+  const hr = Math.floor(min / 60);
+  if (hr < 48) return `${hr} hr ${min % 60} min`;
+  return `${Math.floor(hr / 24)} days`;
+}
+
+const mbWords = (mb: number | null) => (mb === null ? "unknown" : mb < 1 ? "under 1 MB" : mb >= 1024 ? gb(mb) : `${mb} MB`);
 
 const gb = (mb: number) => (mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`);
 

@@ -1,4 +1,4 @@
-import type { Tablet } from "@/lib/presence/tablets.service";
+import type { Tablet, TabletCheck } from "@/lib/presence/tablets.service";
 import type { DeviceAlert } from "@/lib/devices/check-in";
 
 /**
@@ -29,8 +29,30 @@ export const ALERT_TEXT: Partial<Record<DeviceAlert, { short: string; todo: stri
   DIRTY_BUILD: { short: "Test build", todo: "It is running a test copy of the app. Ask IT to install the regular build." },
 };
 
-export const issuesOf = (t: Tablet) =>
-  t.alerts.map((a) => ALERT_TEXT[a]).filter((x): x is { short: string; todo: string } => Boolean(x));
+/** Problems worked out from the report itself (see TabletCheck), in the same words. */
+export const CHECK_TEXT: Record<TabletCheck, { short: string; todo: string }> = {
+  LATE_TO_CLOUDTIME: {
+    short: "Scans late reaching CloudTime",
+    todo: "Some of its scans are overdue reaching CloudTime, so Live Attendance may be missing them. Check its Wi-Fi.",
+  },
+  RUNNING_HOT: {
+    short: "Running hot",
+    todo: "Its battery is very warm. Move it out of the sun or away from heat, and check its charger.",
+  },
+  BATTERY_WORN: {
+    short: "Battery wearing out",
+    todo: "Android rates its battery as worn. Ask IT to plan a replacement before it stops holding a charge.",
+  },
+  WRONG_TIME_ZONE: {
+    short: "Wrong time zone",
+    todo: "It is set to a different time zone from this building, so the times it shows people may be off. Ask IT to set the building's time zone.",
+  },
+};
+
+export const issuesOf = (t: Tablet) => [
+  ...t.alerts.map((a) => ALERT_TEXT[a]).filter((x): x is { short: string; todo: string } => Boolean(x)),
+  ...(t.checks ?? []).map((c) => CHECK_TEXT[c]),
+];
 
 export function healthOf(t: Tablet): Health {
   if (t.status === "NOT_REPORTING") return "UPDATE";

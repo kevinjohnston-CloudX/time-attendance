@@ -58,7 +58,49 @@ export interface Tablet {
   assetTag: string | null;
   reinstalls: number;
   alerts: DeviceAlert[];
+  /** Problems this window works out from the report itself, beyond John's alerts. */
+  checks: TabletCheck[];
+
+  // Delivery: whether its scans are reaching CloudTime, as the tablet sees it.
+  /** The newest of its scans CloudTime has confirmed receiving. */
+  newestInCloudTimeAt: string | null;
+  /** Scans not yet in CloudTime, and of those, how many are late. */
+  notInCloudTime: number | null;
+  lateToCloudTime: number | null;
+  photosWaiting: number | null;
+  lastOracleSyncAt: string | null;
+
+  // Health and setup.
+  batteryHealth: string | null;
+  /** The time zone the tablet is set to (an IANA name), and whether it sets it itself. */
+  timeZone: string | null;
+  autoTimeZone: boolean | null;
+  /** Locked to CloudTime as the tablet's only app (Android device owner). */
+  kioskLocked: boolean | null;
+
+  // For IT.
+  appRunningSec: number | null;
+  wifiBandGhz: number | null;
+  wifiLinkMbps: number | null;
+  photosMb: number | null;
+  logsMb: number | null;
+  cacheMb: number | null;
+  versionCode: number | null;
+  builtAt: string | null;
+  gitSha: string | null;
+  osBuild: string | null;
+  checkIns: number;
 }
+
+/**
+ * Worked out here from what a tablet reports:
+ * - LATE_TO_CLOUDTIME: the tablet says some of its scans are overdue reaching CloudTime;
+ * - RUNNING_HOT: its battery is at 45°C or more;
+ * - BATTERY_WORN: Android rates its battery anything but good;
+ * - WRONG_TIME_ZONE: it is set to a time zone other than its building's.
+ */
+export type TabletCheck = "LATE_TO_CLOUDTIME" | "RUNNING_HOT" | "BATTERY_WORN" | "WRONG_TIME_ZONE";
+const HOT_C = 45;
 
 export interface BuildingTablets {
   site: { id: string; name: string; timezone: string };
@@ -123,8 +165,26 @@ export async function getBuildingTablets(tenantId: string, siteId: string, now =
     const queue = obj(report.queue);
     const storage = obj(report.storage);
     const health = obj(report.health);
+    const setup = obj(report.setup);
+    const build = obj(report.build);
+    const identity = obj(report.identity);
     const scan = d.deviceName ? lastScan.get(d.deviceName.toLowerCase()) : undefined;
     const totalBytes = num(storage.DataTotalBytes);
+    const mb = (v: unknown) => {
+      const n = num(v);
+      // One decimal, so a few hundred KB reads as under 1 MB rather than 0.
+      return n === null ? null : Math.round((n / 1_048_576) * 10) / 10;
+    };
+    const tempC = num(power.BatteryTempC);
+    const batteryHealth = text(power.BatteryHealth, 30);
+    const timeZone = text(setup.TimeZoneSetting, 60) ?? text(setup.SystemTimeZone, 60);
+    const late = num(queue.CloudTimeOverdue);
+    const freq = num(network.WifiFrequencyMhz);
+    const checks: TabletCheck[] = [];
+    if (late !== null && late > 0) checks.push("LATE_TO_CLOUDTIME");
+    if (tempC !== null && tempC >= HOT_C) checks.push("RUNNING_HOT");
+    if (batteryHealth && batteryHealth.toUpperCase() !== "GOOD") checks.push("BATTERY_WORN");
+    if (timeZone && site.timezone && timeZone !== site.timezone) checks.push("WRONG_TIME_ZONE");
     return {
       key: d.id,
       name: d.deviceName ?? d.assetTag ?? d.model ?? "Unnamed tablet",
@@ -159,6 +219,27 @@ export async function getBuildingTablets(tenantId: string, siteId: string, now =
       assetTag: d.assetTag,
       reinstalls: d.installChanges,
       alerts: deviceAlerts(d, now),
+      checks,
+      newestInCloudTimeAt: isoOrNull(queue.NewestScanInCloudTimeAt),
+      notInCloudTime: num(queue.CloudTimeBacklog),
+      lateToCloudTime: late,
+      photosWaiting: num(queue.PendingCaptures),
+      lastOracleSyncAt: isoOrNull(queue.LastOracleSyncAt),
+      batteryHealth,
+      timeZone,
+      autoTimeZone: typeof health.AutoTimeZone === "boolean" ? health.AutoTimeZone : null,
+      kioskLocked: d.isDeviceOwner,
+      appRunningSec: num(health.AppUptimeSec),
+      wifiBandGhz: freq === null ? null : freq >= 5000 ? 5 : freq >= 2400 ? 2.4 : null,
+      wifiLinkMbps: num(network.WifiLinkMbps),
+      photosMb: mb(storage.PhotosBytes),
+      logsMb: mb(storage.LogsBytes),
+      cacheMb: mb(storage.CacheBytes),
+      versionCode: num(build.VersionCode),
+      builtAt: isoOrNull(build.BuiltAt),
+      gitSha: d.gitSha ? d.gitSha.slice(0, 7) : null,
+      osBuild: text(identity.OsBuild, 80),
+      checkIns: d.checkIns,
     };
   });
 
@@ -199,6 +280,27 @@ export async function getBuildingTablets(tenantId: string, siteId: string, now =
       assetTag: null,
       reinstalls: 0,
       alerts: [],
+      checks: [],
+      newestInCloudTimeAt: null,
+      notInCloudTime: null,
+      lateToCloudTime: null,
+      photosWaiting: null,
+      lastOracleSyncAt: null,
+      batteryHealth: null,
+      timeZone: null,
+      autoTimeZone: null,
+      kioskLocked: null,
+      appRunningSec: null,
+      wifiBandGhz: null,
+      wifiLinkMbps: null,
+      photosMb: null,
+      logsMb: null,
+      cacheMb: null,
+      versionCode: null,
+      builtAt: null,
+      gitSha: null,
+      osBuild: null,
+      checkIns: 0,
     });
   }
 
