@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpDown, ArrowDown, ArrowUp, Building2, Check, ChevronDown, Clock, DoorOpen, Download, Maximize2, Minimize2, SearchX, SlidersHorizontal, Tablet as TabletIcon, UserRoundX } from "lucide-react";
+import { ArrowUpDown, ArrowDown, ArrowUp, Building2, Check, ChevronDown, Clock, DoorOpen, Download, Maximize2, Minimize2, SearchX, SlidersHorizontal, UserRoundX } from "lucide-react";
 import {
   Badge,
   Button,
@@ -51,7 +51,9 @@ import {
 } from "./presence-meta";
 import { PersonPanel } from "./person-panel";
 import { GateRefusalAlert } from "./gate-refusal-alert";
-import { GateAlertsButton } from "./gate-alerts-switch";
+import { GateAlertsWindow } from "./gate-alerts-switch";
+import { GateAlertsChip, TabletsChip } from "./building-status-chips";
+import { useSiteTablets } from "./use-site-tablets";
 import { TabletsWindow } from "./tablets-window";
 import type { GateAlertsSetting } from "@/actions/gate-refusals.actions";
 import { useOnPulseChange, useSitePulse } from "./use-site-pulse";
@@ -199,6 +201,9 @@ export function OnSiteBoard({
   const [gateSites, setGateSites] = useState(gateSwitch?.sites ?? null);
   const gateSite = gateSites?.find((s) => s.id === siteId) ?? null;
   const [tabletsOpen, setTabletsOpen] = useState(false);
+  const [gateOpen, setGateOpen] = useState(false);
+  // The chip under the title and the Tablets window read the same answer.
+  const tablets = useSiteTablets(siteId, canSeeTablets);
   // Photos saved here, drawn at once on every face until the server's own
   // links carry them.
   const [photoSwaps, setPhotoSwaps] = useState<ReadonlyMap<string, string>>(new Map());
@@ -742,8 +747,8 @@ export function OnSiteBoard({
 
   // The page's controls, one height: which view (it changes the whole page,
   // so it sits with the title rather than among the filters), the building
-  // it shows, its tablets (loss prevention and System Admins), the gate alert
-  // setting (System Admins), Export, and full screen.
+  // it shows, Export, and full screen. The tablets and the gate alert setting
+  // open from their status chips under the title instead.
   const actions = (
     <>
       <SegmentedControl
@@ -772,27 +777,6 @@ export function OnSiteBoard({
             ))}
           </select>
         </span>
-      )}
-      {canSeeTablets && siteId && (
-        <Button
-          hierarchy="secondary"
-          iconOnly
-          onClick={() => setTabletsOpen(true)}
-          aria-label={`Tablets at ${siteName}`}
-          title={`Tablets at ${siteName}`}
-        >
-          <TabletIcon className="h-4 w-4" />
-        </Button>
-      )}
-      {gateSites && gateSite && siteId && (
-        <GateAlertsButton
-          sites={gateSites}
-          siteId={siteId}
-          onChanged={(changed, onSince) => {
-            setGateSites((all) => all?.map((s) => (s.id === changed.id ? { ...s, onSince } : s)) ?? all);
-            toast.flash(`Gate alerts turned ${onSince ? "on" : "off"} at ${changed.name}`);
-          }}
-        />
       )}
       {canExport && (
       <Button
@@ -937,6 +921,17 @@ export function OnSiteBoard({
                 </span>
               )}
               {!condensed && liveLine}
+              {/* How this building's tablets and gate alerts stand, in words,
+                  each opening its window. Not while slim: the bar gives up
+                  everything but the essentials there. */}
+              {!condensed && siteId && (canSeeTablets || (gateSites && gateSite)) && (
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  {canSeeTablets && <TabletsChip data={tablets.data} onOpen={() => setTabletsOpen(true)} />}
+                  {gateSites && gateSite && (
+                    <GateAlertsChip on={gateSite.onSince !== null} onOpen={() => setGateOpen(true)} />
+                  )}
+                </span>
+              )}
             </div>
           </div>
           {/* Wraps rather than running off a narrow window, and stays on the
@@ -1477,7 +1472,27 @@ export function OnSiteBoard({
       {tabletsOpen && siteId && (
         // Its own key: the gate alert beside it is keyed by the building too,
         // and two siblings sharing a key are torn down and rebuilt on every render.
-        <TabletsWindow key={`tablets|${siteId}`} siteId={siteId} siteName={siteName} onClose={() => setTabletsOpen(false)} />
+        <TabletsWindow
+          key={`tablets|${siteId}`}
+          siteName={siteName}
+          data={tablets.data}
+          error={tablets.error}
+          onRetry={tablets.retry}
+          onClose={() => setTabletsOpen(false)}
+        />
+      )}
+
+      {gateOpen && gateSites && siteId && (
+        <GateAlertsWindow
+          key={`gate|${siteId}`}
+          sites={gateSites}
+          siteId={siteId}
+          onChanged={(changed, onSince) => {
+            setGateSites((all) => all?.map((x) => (x.id === changed.id ? { ...x, onSince } : x)) ?? all);
+            toast.flash(`Gate alerts turned ${onSince ? "on" : "off"} at ${changed.name}`);
+          }}
+          onClose={() => setGateOpen(false)}
+        />
       )}
 
       {gateAlerts && siteId && (

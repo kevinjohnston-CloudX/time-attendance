@@ -1,7 +1,12 @@
-/* The Tablets and Gate alerts windows on Live Attendance, and the two icon
-   buttons that open them. Built on the same modal shape as the setup dialogs
-   (.ta-modal, a header with the area's glyph in a well), with the rows drawn
-   like the page's own panels: one bordered group, dividers between rows. */
+/* The Tablets and Gate alerts windows on Live Attendance, the frame they
+   share, and the two status chips under the page title that open them.
+
+   Drawn from the product's own best screens rather than a template: the
+   Dashboard's tinted count tiles and progress tracks, the Leave Requests
+   cards (an accent border when chosen, a grey inset holding the facts under
+   small capital labels), and Live Attendance's panels. */
+
+/* ---- The frame ---- */
 
 .scrim {
   position: fixed;
@@ -21,6 +26,7 @@
   max-height: calc(100dvh - 32px);
   border-radius: var(--radius-l);
   container-type: inline-size;
+  overflow: hidden;
 }
 
 .head {
@@ -76,7 +82,8 @@
 .flushBody {
   display: flex;
   min-height: 0;
-  height: min(620px, calc(100dvh - 140px));
+  flex-direction: column;
+  height: min(660px, calc(100dvh - 140px));
 }
 
 .foot {
@@ -87,78 +94,75 @@
   color: var(--text-tertiary);
 }
 
-/* ---- The header buttons ---- */
+/* ---- The status chips under the title ---- */
 
-.iconBtn {
-  position: relative;
-}
-.onDot {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--fill-success);
-  box-shadow: 0 0 0 2px var(--surface-card);
-  pointer-events: none;
-}
-
-/* ---- Groups of rows ---- */
-
-.group {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--stroke-divider);
-  border-radius: var(--radius-m);
-  overflow: hidden;
-  background: var(--surface-card);
-}
-.groupHead {
-  display: flex;
+.chip {
+  display: inline-flex;
+  max-width: 320px;
+  height: 28px;
+  flex: none;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background: var(--surface-secondary);
-  border-bottom: 1px solid var(--stroke-divider);
-  font: var(--type-overline);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-tertiary);
+  gap: 6px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 999px;
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font: var(--weight-medium) 13px/18px var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
 }
-.groupCount {
-  margin-left: auto;
-  font: var(--type-subtitle);
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--text-tertiary);
+.chip:hover {
+  border-color: var(--stroke-hover);
+  background: var(--fill-hover);
+}
+.chip:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 2px;
+}
+.chip > svg:first-child {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--icon-secondary);
+}
+.chipDot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--stroke-hover);
+}
+.chipDot[data-tone="ok"] {
+  background: var(--fill-success);
+}
+.chipDot[data-tone="bad"] {
+  background: var(--fill-error);
+}
+.chipText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chipChev {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--icon-tertiary);
 }
 
 /* ---- Gate alerts ---- */
 
-.name {
-  overflow: hidden;
-  font: var(--weight-medium) 14px/20px var(--font-sans);
-  color: var(--text-primary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sub {
-  overflow: hidden;
-  font: var(--type-subtitle);
-  color: var(--text-tertiary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .hero {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--stroke-divider);
-  border-radius: var(--radius-m);
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 12px;
   background: var(--surface-card);
+  transition: border-color 140ms ease, background 140ms ease;
 }
 .hero[data-on="true"] {
   border-color: var(--stroke-success);
@@ -167,13 +171,27 @@
 .heroTop {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
+}
+.heroText {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
 }
 .heroName {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
   margin: 0;
-  overflow: hidden;
-  font: var(--type-h4);
+  font: var(--weight-semibold) 17px/24px var(--font-sans);
   color: var(--text-primary);
+}
+.heroName > span:first-child {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -181,37 +199,133 @@
   font: var(--type-body2);
   color: var(--text-secondary);
 }
+
+/* "3 of 3 gate tablets send the building", drawn as the Dashboard draws a
+   department: a label, a track, the count. */
 .ready {
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
   gap: 8px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-card);
+  box-shadow: inset 0 0 0 1px var(--stroke-divider);
+}
+.readyTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.readyCount {
+  font: var(--weight-semibold) 13px/18px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.readyNote {
   margin: 0;
   font: var(--type-body2);
   color: var(--text-secondary);
+  text-wrap: pretty;
 }
-.ready svg {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
-}
-.ready[data-tone="success"] svg { color: var(--icon-success); }
-.ready[data-tone="warning"] svg { color: var(--icon-warning); }
-.ready[data-tone="neutral"] svg { color: var(--icon-tertiary); }
-
-.siteRow {
+.track {
   display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ta-track);
+}
+.track > span {
+  height: 100%;
+  background: var(--fill-success);
+}
+.track[data-tone="warning"] > span {
+  background: var(--fill-warning);
+}
+.track[data-size="small"] {
+  width: 72px;
+  height: 6px;
+  flex: none;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 2px 0 -6px;
+}
+.sectionTitle {
+  margin: 0;
+  font: var(--type-h4);
+  color: var(--text-primary);
+}
+.sectionCount {
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}
+
+.sites {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 12px;
+  background: var(--surface-card);
+}
+.siteRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 12px;
-  min-height: 56px;
-  padding: 8px 14px;
+  gap: 16px;
+  min-height: 60px;
+  padding: 10px 16px;
 }
 .siteRow + .siteRow {
   border-top: 1px solid var(--stroke-divider);
 }
-.grow {
+.siteText {
   display: flex;
-  flex: 1;
   min-width: 0;
   flex-direction: column;
+  gap: 2px;
+}
+.siteName {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  font: var(--weight-medium) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+}
+.siteName > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.siteSub {
+  overflow: hidden;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.siteReady {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: var(--type-body2);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+@container (max-width: 520px) {
+  .siteRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .siteReady {
+    display: none;
+  }
 }
