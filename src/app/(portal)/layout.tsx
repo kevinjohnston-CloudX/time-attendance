@@ -22,6 +22,7 @@ import { getLegacyPermissions, isLiveAttendanceOnly } from "@/lib/rbac/permissio
 import { getWaitingOnYou } from "@/lib/dashboard/dashboard-data";
 import { photoUrls } from "@/lib/presence/photos";
 import { classicDesignEnded, classicDesignUntil } from "@/lib/design-switch";
+import { PageScroller } from "@/components/layout/page-scroller";
 
 const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
@@ -293,13 +294,13 @@ export default async function PortalLayout({
             classicUntil={classicUntil?.label ?? null}
             signInId={session.user.signInId}
           />
-          <main className="min-h-0 flex-1 overflow-y-auto">
+          <PageScroller>
             <InactiveRouteGuard isInactive={!isEmployeeActive} />
             <EmployeesListForget />
             {/* The page's padding, from the Layout handoff. Pinned headers
                 read the same two numbers (.ta-pin), so they sit where they pin. */}
             <div style={{ padding: "var(--ta-page-top) var(--ta-page-x) 16px" }}>{children}</div>
-          </main>
+          </PageScroller>
         </div>
       </div>
 

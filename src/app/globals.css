@@ -835,6 +835,53 @@ tbody .ta-row:hover {
   background-color: var(--stroke-hover);
 }
 
+/* The page's floating scroll bar (PageScroller): no track, a thin thumb over
+   the page's right edge that shows while the mouse moves or the page
+   scrolls, and fades out a second after. The thumb is a 12px target holding
+   a 6px bar, 8px and darker under the pointer or while dragged. It takes
+   clicks only while it shows, so a hidden bar never blocks the page. */
+.ta-page-rail {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  right: 0;
+  width: 12px;
+  z-index: 30;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.ta-page-rail[data-shown="true"][data-scrollable="true"] { opacity: 1; }
+.ta-page-thumb {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 12px;
+  cursor: default;
+  touch-action: none;
+}
+.ta-page-rail[data-shown="true"][data-scrollable="true"] .ta-page-thumb { pointer-events: auto; }
+.ta-page-thumb::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 3px;
+  width: 6px;
+  border-radius: 999px;
+  background: var(--stroke-hover);
+  transition: width 120ms ease, background-color 120ms ease;
+}
+.ta-page-thumb:hover::after,
+.ta-page-rail[data-dragging="true"] .ta-page-thumb::after {
+  width: 8px;
+  right: 2px;
+  background: var(--text-tertiary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ta-page-rail, .ta-page-thumb::after { transition: none; }
+}
+
 /* Team Punch History: the people pane and the punch header pin under the
    page's bar, flush with where they already rest, as the handoff does. Only
    side by side. Below the width where both columns fit, the people pane wraps
