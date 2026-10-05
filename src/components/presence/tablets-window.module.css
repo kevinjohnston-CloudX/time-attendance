@@ -277,9 +277,6 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
-.readings[data-stale="true"] {
-  opacity: 0.55;
-}
 .reading {
   display: flex;
   min-width: 0;

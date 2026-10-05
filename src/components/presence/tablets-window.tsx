@@ -206,10 +206,29 @@ export function TabletsBody({
 
 function StatusBadge({ t }: { t: Tablet }) {
   const h = healthOf(t);
-  if (t.status === "OFFLINE") return <Badge tone="error" size="sm">Not responding</Badge>;
-  if (h === "ATTENTION") return <Badge tone="warning" size="sm">Needs attention</Badge>;
-  if (h === "WORKING") return <Badge tone="success" size="sm">Working</Badge>;
-  return <Badge tone="neutral" size="sm">Needs update</Badge>;
+  if (t.status === "OFFLINE")
+    return (
+      <Badge tone="error" size="sm">
+        Not responding
+      </Badge>
+    );
+  if (h === "ATTENTION")
+    return (
+      <Badge tone="warning" size="sm">
+        Needs attention
+      </Badge>
+    );
+  if (h === "WORKING")
+    return (
+      <Badge tone="success" size="sm">
+        Working
+      </Badge>
+    );
+  return (
+    <Badge tone="neutral" size="sm">
+      Needs update
+    </Badge>
+  );
 }
 
 /** Beside the status on a card: the one thing worth knowing. Its kind is the group it sits in. */
@@ -261,8 +280,8 @@ function TabletDetail({ t, tz, now }: { t: Tablet; tz: string; now: number }) {
         <p className={styles.todo} data-tone="info">
           <ArrowUpCircle aria-hidden="true" />
           <span>
-            This tablet runs app build {t.appVersion ?? "unknown"}, which cannot report its battery, Wi-Fi or connection.
-            Ask IT to install build 163 or later, and everything shows here within five minutes.
+            This tablet runs app build {t.appVersion ?? "unknown"}, which cannot report its battery, Wi-Fi or
+            connection. Ask IT to install build 163 or later, and everything shows here within five minutes.
             {t.stream === "SECURITY"
               ? " Until then, somebody this gate turns away may pop up in their home building instead of this one."
               : ""}
@@ -271,14 +290,20 @@ function TabletDetail({ t, tz, now }: { t: Tablet; tz: string; now: number }) {
       )}
 
       {reporting && (
-        <div className={styles.readings} data-stale={t.status === "OFFLINE" || undefined}>
-          <BatteryReading t={t} />
-          <WifiReading t={t} />
+        <div className={styles.readings}>
+          <BatteryReading t={t} asOf={t.status === "OFFLINE" ? whenLabel(t.lastSeenAt, tz, now) : null} />
+          <WifiReading t={t} asOf={t.status === "OFFLINE" ? whenLabel(t.lastSeenAt, tz, now) : null} />
           <div className={styles.reading}>
             <span className="wms-overline">Scans today</span>
-            <span className={styles.readingMain}>{t.scansToday === null ? "None" : t.scansToday.toLocaleString("en-US")}</span>
+            <span className={styles.readingMain}>
+              {t.scansToday === null ? "None" : t.scansToday.toLocaleString("en-US")}
+            </span>
             <span className={styles.readingSub}>
-              {t.lastScanAt ? `Last one ${whenLabel(t.lastScanAt, tz, now)}` : "None in the last 7 days"}
+              {t.status === "OFFLINE"
+                ? `As of ${whenLabel(t.lastSeenAt, tz, now)}`
+                : t.lastScanAt
+                  ? `Last one ${whenLabel(t.lastScanAt, tz, now)}`
+                  : "None in the last 7 days"}
             </span>
           </div>
         </div>
@@ -316,7 +341,9 @@ function TabletDetail({ t, tz, now }: { t: Tablet; tz: string; now: number }) {
               />
               <Fact
                 label="Model"
-                value={[t.model, t.android ? `Android ${t.android}` : null].filter(Boolean).join(", ") || "Not reported"}
+                value={
+                  [t.model, t.android ? `Android ${t.android}` : null].filter(Boolean).join(", ") || "Not reported"
+                }
               />
               <Fact
                 label="Storage"
@@ -339,7 +366,10 @@ function TabletDetail({ t, tz, now }: { t: Tablet; tz: string; now: number }) {
           <dl className={styles.inset}>
             <Fact label="Used as" value={kind(t)} />
             <Fact label="App" value={`Build ${t.appVersion ?? "unknown"}`} />
-            <Fact label="Last scan" value={t.lastScanAt ? whenLabel(t.lastScanAt, tz, now) : "None in the last 7 days"} />
+            <Fact
+              label="Last scan"
+              value={t.lastScanAt ? whenLabel(t.lastScanAt, tz, now) : "None in the last 7 days"}
+            />
           </dl>
         </section>
       )}
@@ -347,11 +377,15 @@ function TabletDetail({ t, tz, now }: { t: Tablet; tz: string; now: number }) {
   );
 }
 
-function BatteryReading({ t }: { t: Tablet }) {
+/**
+ * `asOf` is set for a tablet that has stopped checking in: its readings are
+ * then its last known ones, said so, and drawn without the all-is-well tint.
+ */
+function BatteryReading({ t, asOf }: { t: Tablet; asOf: string | null }) {
   const pct = t.batteryPct;
   const level = pct === null ? "high" : pct < 20 ? "low" : pct < 40 ? "mid" : "high";
-  const tone = pct === null ? undefined : t.charging || pct >= 40 ? "success" : pct >= 20 ? "warning" : "error";
-  const sub =
+  const tone = pct === null || asOf ? undefined : t.charging || pct >= 40 ? "success" : pct >= 20 ? "warning" : "error";
+  const now =
     pct === null
       ? "Not reported"
       : t.charging
@@ -361,6 +395,7 @@ function BatteryReading({ t }: { t: Tablet }) {
         : t.plugged === "NONE"
           ? "Unplugged, on battery"
           : "Plugged in, not charging";
+  const sub = asOf && pct !== null ? `${now} at ${asOf}` : now;
   return (
     <div className={styles.reading} data-tone={tone}>
       <span className="wms-overline">Battery</span>
@@ -386,7 +421,29 @@ function wifiOf(rssi: number | null): { word: string; bars: number } {
 }
 const networkWord = (n: string) => (n === "ETHERNET" ? "Cable" : n === "CELLULAR" ? "Mobile data" : n);
 
-function WifiReading({ t }: { t: Tablet }) {
+function WifiReading({ t, asOf }: { t: Tablet; asOf: string | null }) {
+  // Not heard from: the honest answer now is no contact, whatever the signal
+  // was at its last check in.
+  if (asOf) {
+    const was =
+      t.network && t.network !== "WIFI" ? networkWord(t.network).toLowerCase() : wifiOf(t.wifiRssi).word.toLowerCase();
+    return (
+      <div className={styles.reading} data-tone="error">
+        <span className="wms-overline">Connection</span>
+        <span className={styles.readingMain}>
+          <span className={styles.bars} aria-hidden="true">
+            {[1, 2, 3, 4].map((b) => (
+              <span key={b} data-on={false} />
+            ))}
+          </span>
+          No contact
+        </span>
+        <span className={styles.readingSub}>
+          Was {was} at {asOf}
+        </span>
+      </div>
+    );
+  }
   if (t.network && t.network !== "WIFI") {
     return (
       <div className={styles.reading}>
