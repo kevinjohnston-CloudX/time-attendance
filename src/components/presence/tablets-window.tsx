@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AlertTriangle, ArrowUpCircle, Clock, DoorOpen, Tablet as TabletIcon, WifiOff, Zap } from "lucide-react";
-import { Badge, Banner, Button, EmptyState } from "@/components/ui";
+import { Badge, Banner, Button, EmptyState, SegmentedControl } from "@/components/ui";
 import type { BuildingTablets, Tablet } from "@/lib/presence/tablets.service";
 import { BuildingWindow } from "./building-window";
 import { countHealth, healthOf, issuesOf, statusOf, type Health } from "./tablet-health";
@@ -44,17 +44,41 @@ export function TabletsWindow({
   const [only, setOnly] = useState<Health | null>(null);
   const now = data ? new Date(data.checkedAt).getTime() : 0;
 
-  const subtitle = data
-    ? `${siteName}, ${data.tablets.length} ${data.tablets.length === 1 ? "tablet" : "tablets"}, updated ${whenLabel(data.checkedAt, data.site.timezone, now)}`
-    : siteName;
+  const subtitle = data ? `${siteName}, updated ${whenLabel(data.checkedAt, data.site.timezone, now)}` : siteName;
+  const counts = data ? countHealth(data.tablets) : null;
+  const seg = (h: Health, label: string, tone: string) => ({
+    value: h,
+    label: (
+      <>
+        <span className={styles.dot} data-tone={counts && counts[h] > 0 ? tone : undefined} aria-hidden="true" />
+        {label}
+      </>
+    ),
+    count: counts?.[h] ?? 0,
+  });
 
   return (
     <BuildingWindow
       title="Tablets"
       subtitle={subtitle}
       icon={<TabletIcon className="h-[18px] w-[18px]" />}
-      width={960}
+      width={980}
       flush
+      actions={
+        data && data.tablets.length > 0 ? (
+          <SegmentedControl
+            ariaLabel="Show tablets"
+            value={only ?? "ALL"}
+            onChange={(v) => setOnly(v === "ALL" ? null : (v as Health))}
+            items={[
+              { value: "ALL", label: "All", count: data.tablets.length },
+              seg("ATTENTION", "Need attention", "error"),
+              seg("WORKING", "Working", "success"),
+              seg("OUT_OF_DATE", "Out of date", "neutral"),
+            ]}
+          />
+        ) : undefined
+      }
       onClose={onClose}
     >
       {error && !data ? (
@@ -72,12 +96,7 @@ export function TabletsWindow({
         </div>
       ) : !data ? (
         <>
-          <div className={styles.tiles} aria-label="Loading tablets">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className={styles.skeleton} style={{ height: 72 }} />
-            ))}
-          </div>
-          <div className={styles.panes}>
+          <div className={styles.panes} aria-label="Loading tablets">
             <div className={styles.list}>
               {[0, 1, 2, 3].map((i) => (
                 <div key={i} className={styles.skeleton} style={{ height: 62, flex: "none" }} />
@@ -99,30 +118,30 @@ export function TabletsWindow({
           />
         </div>
       ) : (
-        <TabletsBody data={data} now={now} chosen={chosen} onChoose={setChosen} only={only} onOnly={setOnly} />
+        <TabletsBody data={data} now={now} chosen={chosen} onChoose={setChosen} only={only} />
       )}
     </BuildingWindow>
   );
 }
 
-/** The loaded window: the count tiles and the two panes. Split out so it can be drawn offline too. */
+/**
+ * The loaded window's two panes, narrowed by the filter in its header.
+ * Split out so it can be drawn offline too.
+ */
 export function TabletsBody({
   data,
   now,
   chosen,
   onChoose,
   only,
-  onOnly,
 }: {
   data: BuildingTablets;
   now: number;
   chosen: string | null;
   onChoose: (key: string) => void;
   only: Health | null;
-  onOnly: (h: Health | null) => void;
 }) {
   const tz = data.site.timezone;
-  const counts = countHealth(data.tablets);
   const sorted = [...data.tablets].sort(
     (a, b) =>
       GROUP_ORDER[healthOf(a)] - GROUP_ORDER[healthOf(b)] ||
@@ -139,32 +158,11 @@ export function TabletsBody({
   // The most urgent one is open to start with, and stays chosen across refreshes.
   const current = ordered.find((t) => t.key === chosen) ?? ordered[0] ?? null;
 
-  const tile = (h: Health, label: string, tone: string) => (
-    <button
-      type="button"
-      className={styles.tile}
-      aria-pressed={only === h}
-      disabled={counts[h] === 0}
-      onClick={() => onOnly(only === h ? null : h)}
-      title={only === h ? "Show every tablet" : "Show only these"}
-    >
-      <span className={styles.tileLabel}>
-        <span className={styles.dot} data-tone={counts[h] > 0 ? tone : undefined} aria-hidden="true" />
-        {label}
-      </span>
-      <span className={styles.tileNum}>{counts[h]}</span>
-    </button>
-  );
-
   return (
     <>
-      <div className={styles.tiles}>
-        {tile("WORKING", "Working", "success")}
-        {tile("ATTENTION", "Need attention", "error")}
-        {tile("OUT_OF_DATE", "Out of date", "neutral")}
-      </div>
       <div className={styles.panes}>
         <div className={`ta-scroll ${styles.list}`} aria-label="Tablets">
+          {groups.length === 0 && <p className={styles.listEmpty}>No tablets here right now.</p>}
           {groups.map((g) => (
             <section key={g.key} className={styles.group} aria-label={g.title}>
               <h4 className={styles.groupHead}>
@@ -184,12 +182,12 @@ export function TabletsBody({
                       className={styles.card}
                       onClick={() => onChoose(t.key)}
                     >
-                      <span className={styles.cardName} title={t.name}>
-                        {t.name}
-                      </span>
-                      <span className={styles.cardLine}>
-                        <span className={styles.dot} data-tone={st.tone} aria-hidden="true" />
-                        <span>
+                      <span className={styles.dot} data-tone={st.tone} aria-hidden="true" />
+                      <span className={styles.cardText}>
+                        <span className={styles.cardName} title={t.name}>
+                          {t.name}
+                        </span>
+                        <span className={styles.cardLine}>
                           {t.status === "OFFLINE"
                             ? `Not responding since ${whenLabel(t.lastSeenAt, tz, now)}`
                             : st.line}

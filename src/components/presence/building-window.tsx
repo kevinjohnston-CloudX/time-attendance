@@ -21,6 +21,7 @@ export function BuildingWindow({
   icon,
   width,
   foot,
+  actions,
   flush = false,
   onClose,
   children,
@@ -31,6 +32,8 @@ export function BuildingWindow({
   width: number;
   /** One quiet line along the bottom. */
   foot?: ReactNode;
+  /** Controls for the whole window, beside the title (the Tablets filter). */
+  actions?: ReactNode;
   /** The body draws its own panes edge to edge, at a fixed height, with no padding or scroll of its own. */
   flush?: boolean;
   onClose: () => void;
@@ -78,11 +81,18 @@ export function BuildingWindow({
             </h2>
             {subtitle && <span className={styles.subtitle}>{subtitle}</span>}
           </span>
-          <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
-            <X className="h-4 w-4" />
-          </Button>
+          {actions && <div className={styles.actions}>{actions}</div>}
+          <span className={styles.close}>
+            <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
+              <X className="h-4 w-4" />
+            </Button>
+          </span>
         </header>
-        {flush ? <div className={styles.flushBody}>{children}</div> : <div className={`ta-scroll ${styles.body}`}>{children}</div>}
+        {flush ? (
+          <div className={styles.flushBody}>{children}</div>
+        ) : (
+          <div className={`ta-scroll ${styles.body}`}>{children}</div>
+        )}
         {foot && <footer className={styles.foot}>{foot}</footer>}
       </div>
     </div>,
