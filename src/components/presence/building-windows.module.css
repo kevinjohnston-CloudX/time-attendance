@@ -141,6 +141,9 @@
     flex-basis: 100%;
     margin: 0 0 4px;
   }
+  .foot > :last-child {
+    margin-left: auto;
+  }
 }
 
 /* ---- The building menu ---- */
