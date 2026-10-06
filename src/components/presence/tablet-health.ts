@@ -36,6 +36,10 @@ export const ALERT_TEXT: Partial<Record<DeviceAlert, { short: string; todo: stri
 
 /** Problems worked out from the report itself (see TabletCheck), in the same words. */
 export const CHECK_TEXT: Record<TabletCheck, { short: string; todo: string }> = {
+  APP_NOT_OPEN: {
+    short: "CloudTime not on screen",
+    todo: "CloudTime is running in the background, so the tablet cannot scan badges. Open the CloudTime app on the tablet.",
+  },
   LATE_TO_CLOUDTIME: {
     short: "Scans late reaching CloudTime",
     todo: "Some of its scans are overdue reaching CloudTime, so Live Attendance may be missing them. Check its Wi-Fi.",

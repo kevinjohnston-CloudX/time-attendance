@@ -96,12 +96,14 @@ export interface Tablet {
 
 /**
  * Worked out here from what a tablet reports:
+ * - APP_NOT_OPEN: CloudTime runs but is not on screen, so nobody can scan
+ *   (seen Oct 6 at 5903: after a restart the app came back in the background);
  * - LATE_TO_CLOUDTIME: the tablet says some of its scans are overdue reaching CloudTime;
  * - RUNNING_HOT: its battery is at 45°C or more;
  * - BATTERY_WORN: Android rates its battery anything but good;
  * - WRONG_TIME_ZONE: it is set to a time zone other than its building's.
  */
-export type TabletCheck = "LATE_TO_CLOUDTIME" | "RUNNING_HOT" | "BATTERY_WORN" | "WRONG_TIME_ZONE";
+export type TabletCheck = "APP_NOT_OPEN" | "LATE_TO_CLOUDTIME" | "RUNNING_HOT" | "BATTERY_WORN" | "WRONG_TIME_ZONE";
 const HOT_C = 45;
 
 export interface BuildingTablets {
@@ -208,6 +210,8 @@ export async function getBuildingTablets(
     const late = num(queue.CloudTimeOverdue);
     const freq = num(network.WifiFrequencyMhz);
     const checks: TabletCheck[] = [];
+    // First, since it stops the tablet doing its one job.
+    if (d.screen === "BACKGROUND") checks.push("APP_NOT_OPEN");
     if (late !== null && late > 0) checks.push("LATE_TO_CLOUDTIME");
     if (tempC !== null && tempC >= HOT_C) checks.push("RUNNING_HOT");
     if (batteryHealth && batteryHealth.toUpperCase() !== "GOOD") checks.push("BATTERY_WORN");

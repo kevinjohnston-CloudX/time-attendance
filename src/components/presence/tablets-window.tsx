@@ -500,14 +500,7 @@ function WifiReading({ t, asOf }: { t: Tablet; asOf: string | null }) {
     return (
       <div className={styles.reading} data-tone="error">
         <span className={styles.readingLabel}>Connection</span>
-        <span className={styles.readingMain}>
-          <span className={styles.bars} aria-hidden="true">
-            {[1, 2, 3, 4].map((b) => (
-              <span key={b} data-on={false} />
-            ))}
-          </span>
-          No contact
-        </span>
+        <span className={styles.readingMain}>No contact</span>
         <span className={styles.readingSub}>Was {was}</span>
       </div>
     );
