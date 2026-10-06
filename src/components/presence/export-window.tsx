@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { Download, FileSpreadsheet, FileText, Printer, X } from "lucide-react";
+import { Clock, DoorOpen, Download, FileSpreadsheet, FileText, Footprints, Monitor, Printer, ScanLine, Users, X, type LucideIcon } from "lucide-react";
 import { Banner, Button, Checkbox, SegmentedControl, Select } from "@/components/ui";
 import { getOnSiteMovements, getOnSiteScanLog } from "@/actions/presence.actions";
 import type { PresencePerson } from "@/lib/presence/types";
@@ -188,11 +188,11 @@ export function ExportWindow({
     }
   }
 
-  // ── Wording that follows the choices ──────────────────────────────────
+  // ── Wording and the preview, which follow the choices ─────────────────
   const peopleCount = isPeople ? count(kind as PeopleSet) : null;
   const empty = peopleCount === 0;
   // The button says what it will do, in words that differ from the format
-  // switch above it: "Print list", never a second button just called Print.
+  // switch beside it: "Print list", never a second button just called Print.
   const printNoun = isPeople ? "list" : kind === "movements" ? "movements" : kind === "log" ? "scan log" : "view";
   const action = busy
     ? format === "print"
@@ -201,16 +201,38 @@ export function ExportWindow({
     : format === "print"
       ? `Print ${printNoun}`
       : `Download ${format === "xlsx" ? "Excel" : "CSV"}`;
-  const summary = isPeople
-    ? `${peopleCount!.toLocaleString("en-US")} ${peopleCount === 1 ? "person" : "people"}`
-    : isDay
-      ? dayWords(day, today)
-      : screen.label;
-  const formatHint =
-    format === "print"
+
+  // A people list is made here and now, so its preview is the real thing.
+  const preview = useMemo(
+    () =>
+      isPeople
+        ? peopleTable({
+            people,
+            set: kind as PeopleSet,
+            scope: { departmentId, shiftId, includeBreaks },
+            order,
+            site: site.name,
+            tz,
+            generatedAt,
+            hasGateData: site.hasGateData,
+            filters: [],
+          })
+        : null,
+    [isPeople, people, kind, departmentId, shiftId, includeBreaks, order, site, tz, generatedAt],
+  );
+
+  const sheetTitle = preview?.title ?? (kind === "movements" ? "Movements" : kind === "log" ? "Scan log" : screen.label);
+  const sheetWhen = isPeople ? `${fmtTime(generatedAt, tz)} today` : isDay ? dayWords(day, today) : "As on screen";
+  const fileName = `${preview?.fileStem ?? (isDay ? `${sheetTitle} ${site.name} ${day}` : `${sheetTitle} ${site.name}`)}.${format === "xlsx" ? "xlsx" : "csv"}`;
+
+  const hint = empty
+    ? kind === "clocked" && !includeBreaks
+      ? "No one is working on the time clock right now. Include people on a meal or break, or change the department or shift."
+      : "No one is on this list right now. Change the department or shift to see more people."
+    : format === "print"
       ? kind === "inside" || kind === "clocked"
-        ? "Each person gets a tick box, with a line to sign at the end. To keep a PDF, choose Save as PDF in the print window."
-        : "To keep a PDF, choose Save as PDF in the print window."
+        ? "Each person gets a tick box, with a line to sign at the end. To keep a PDF, choose Save as PDF when printing."
+        : "To keep a PDF, choose Save as PDF when printing."
       : format === "xlsx"
         ? "Opens in Excel or Google Sheets, with a filter on every column."
         : "A plain file any spreadsheet or system can read.";
@@ -222,8 +244,10 @@ export function ExportWindow({
       onClose={onClose}
       foot={
         <>
-          <span className={styles.footSummary}>{summary}</span>
-          <Button hierarchy="secondary" onClick={onClose} disabled={busy}>
+          <span className={styles.footHint} data-tone={empty ? "warning" : undefined} role={empty ? "status" : undefined}>
+            {hint}
+          </span>
+          <Button hierarchy="tertiary" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
           <Button
@@ -237,153 +261,121 @@ export function ExportWindow({
         </>
       }
     >
-      {failure && <Banner tone="error" title="Nothing was exported" body={failure} />}
-
-      <section className={styles.section} aria-labelledby="export-what">
-        <h3 id="export-what" className={styles.overline}>
-          List
-        </h3>
-        <div className={styles.choices} role="radiogroup" aria-labelledby="export-what">
-          {site.hasGateData && (
-            <Choice
-              value="inside"
-              kind={kind}
-              onPick={setKind}
-              title="In the building now"
-              body="Everyone the security gate has inside right now. Print it for a roll call."
-              meta={people.length ? countWords(count("inside")) : undefined}
-            />
-          )}
-          <Choice
-            value="clocked"
-            kind={kind}
-            onPick={setKind}
-            title="Clocked in now"
-            body="Everyone working on the time clock right now."
-            meta={countWords(count("clocked"))}
-          >
-            <Checkbox checked={includeBreaks} onChange={setIncludeBreaks} label="Include people on a meal or break" />
-          </Choice>
-          <Choice
-            value="everyone"
-            kind={kind}
-            onPick={setKind}
-            title="Everyone today"
-            body="Every person on today's board, with what each one is doing."
-            meta={countWords(count("everyone"))}
-          />
-          <Choice
-            value="movements"
-            kind={kind}
-            onPick={setKind}
-            title="Movements for a day"
-            body="Each person's day, stretch by stretch: inside, on the clock, meals and breaks."
-          />
-          <Choice
-            value="log"
-            kind={kind}
-            onPick={setKind}
-            title="Scan log for a day"
-            body="Every scan at the security gate and the time clock, one row per scan."
-          />
-          <Choice
-            value="screen"
-            kind={kind}
-            onPick={setKind}
-            title="What is on screen"
-            body={`${screen.label}, exactly as shown, with your search, filters and order.`}
-          />
-        </div>
-      </section>
-
-      {kind !== "screen" && (
-        <section className={styles.section} aria-labelledby="export-options">
-          <h3 id="export-options" className={styles.overline}>
-            Options
+      <div className={styles.panes}>
+        {/* ── What to export ── */}
+        <section className={styles.card} aria-labelledby="export-what">
+          <h3 id="export-what" className="sr-only">
+            What to export
           </h3>
-          <div className={styles.fields}>
-            {isDay && (
-              <Field label="Day" htmlFor="export-day">
-                <Select id="export-day" value={day} onChange={(e) => setDay(e.target.value)} style={{ width: "100%" }}>
-                  {days.map((d) => (
-                    <option key={d} value={d}>
-                      {dayWords(d, today)}
+          {failure && <Banner tone="error" title="Nothing was exported" body={failure} />}
+          <div role="radiogroup" aria-labelledby="export-what" className={styles.groups}>
+            <Group label="Right now">
+              {site.hasGateData && (
+                <Choice value="inside" kind={kind} onPick={setKind} icon={DoorOpen} title="In the building now" body="Everyone inside, by the security gate" count={count("inside")} />
+              )}
+              <Choice value="clocked" kind={kind} onPick={setKind} icon={Clock} title="Clocked in now" body="Working on the time clock" count={count("clocked")} />
+              <Choice value="everyone" kind={kind} onPick={setKind} icon={Users} title="Everyone today" body="Every person on today's board" count={count("everyone")} />
+            </Group>
+            <Group label="One day">
+              <Choice value="movements" kind={kind} onPick={setKind} icon={Footprints} title="Movements" body="Each person's day, stretch by stretch" />
+              <Choice value="log" kind={kind} onPick={setKind} icon={ScanLine} title="Scan log" body="Every gate and time clock scan" />
+            </Group>
+            <Group label="This page">
+              <Choice value="screen" kind={kind} onPick={setKind} icon={Monitor} title="What is on screen" body={`${screen.label}, with your search, filters and order`} />
+            </Group>
+          </div>
+        </section>
+
+        {/* ── How ── */}
+        <aside className={styles.rail} aria-label="Export settings">
+          <div className={styles.railBlock}>
+            <span className={styles.overline} id="export-format">
+              Format
+            </span>
+            <SegmentedControl items={FORMAT_ITEMS} value={format} onChange={(v) => setFormat(v as Format)} ariaLabel="Format" fullWidth />
+          </div>
+
+          {kind !== "screen" && (
+            <div className={styles.railBlock}>
+              <span className={styles.overline}>{isDay ? "Day and people" : "People"}</span>
+              {isDay && (
+                <Field label="Day" htmlFor="export-day">
+                  <Select id="export-day" value={day} onChange={(e) => setDay(e.target.value)} style={{ width: "100%" }}>
+                    {days.map((d) => (
+                      <option key={d} value={d}>
+                        {dayWords(d, today)}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
+              <Field label="Department" htmlFor="export-dept">
+                <Select id="export-dept" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} style={{ width: "100%" }}>
+                  <option value="">All departments</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
                     </option>
                   ))}
                 </Select>
               </Field>
-            )}
-            <Field label="Department" htmlFor="export-dept">
-              <Select id="export-dept" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} style={{ width: "100%" }}>
-                <option value="">All departments</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Shift" htmlFor="export-shift">
-              <Select id="export-shift" value={shiftId} onChange={(e) => setShiftId(e.target.value)} style={{ width: "100%" }}>
-                <option value="">All shifts</option>
-                {shifts.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            {isPeople && (
-              <Field label="Order" htmlFor="export-order">
-                <Select id="export-order" value={order} onChange={(e) => setOrder(e.target.value as PeopleOrder)} style={{ width: "100%" }}>
-                  {ORDERS.map((o) => (
-                    <option key={o} value={o}>
-                      {ORDER_LABEL[o]}
+              <Field label="Shift" htmlFor="export-shift">
+                <Select id="export-shift" value={shiftId} onChange={(e) => setShiftId(e.target.value)} style={{ width: "100%" }}>
+                  <option value="">All shifts</option>
+                  {shifts.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
                     </option>
                   ))}
                 </Select>
               </Field>
+              {isPeople && (
+                <Field label="Order" htmlFor="export-order">
+                  <Select id="export-order" value={order} onChange={(e) => setOrder(e.target.value as PeopleOrder)} style={{ width: "100%" }}>
+                    {ORDERS.map((o) => (
+                      <option key={o} value={o}>
+                        {ORDER_LABEL[o]}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
+              {kind === "clocked" && <Checkbox checked={includeBreaks} onChange={setIncludeBreaks} label="Include people on a meal or break" />}
+              {isDay && (
+                <p className={styles.railNote}>
+                  The last seven days.
+                  {canOpenReports && (
+                    <>
+                      {" "}
+                      Longer stretches are in{" "}
+                      <Link href="/reports?new=1" className={styles.link}>
+                        Reports
+                      </Link>
+                      .
+                    </>
+                  )}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className={styles.railBlock}>
+            <span className={styles.overline}>Preview</span>
+            {format === "print" ? (
+              <Sheet
+                title={sheetTitle}
+                when={`${site.name} · ${sheetWhen}`}
+                count={preview ? preview.rows.length : null}
+                names={preview ? preview.rows.slice(0, 4).map((r) => r[0]) : null}
+                ticks={!!preview?.rollCall}
+                grouped={isPeople && order === "department"}
+              />
+            ) : (
+              <FileCard format={format} name={fileName} rows={preview ? preview.rows.length : null} columns={preview?.columns.length ?? null} />
             )}
           </div>
-          {isPeople && order === "department" && format === "print" && (
-            <p className={styles.hint}>The printed list is grouped under each department, with how many are in it.</p>
-          )}
-          {isDay && (
-            <p className={styles.hint}>
-              Live Attendance keeps the last seven days.
-              {canOpenReports && (
-                <>
-                  {" "}
-                  For longer, the Security scan and Time clock reports in{" "}
-                  <Link href="/reports?new=1" className={styles.link}>
-                    Reports
-                  </Link>{" "}
-                  cover any dates and can be emailed on a schedule.
-                </>
-              )}
-            </p>
-          )}
-        </section>
-      )}
-
-      <section className={styles.section} aria-labelledby="export-format">
-        <h3 id="export-format" className={styles.overline}>
-          Format
-        </h3>
-        <SegmentedControl items={FORMAT_ITEMS} value={format} onChange={(v) => setFormat(v as Format)} ariaLabel="Format" fullWidth />
-        <p className={styles.hint}>
-          <FormatIcon format={format} />
-          {formatHint}
-        </p>
-      </section>
-
-      {empty && (
-        <p className={styles.empty} role="status">
-          {kind === "clocked" && !includeBreaks
-            ? "No one is working on the time clock right now. Include people on a meal or break, or change the department or shift."
-            : "No one is on this list right now. Change the department or shift to see more people."}
-        </p>
-      )}
+        </aside>
+      </div>
     </Shell>
   );
 }
@@ -398,46 +390,128 @@ function options(people: PresencePerson[], idKey: "departmentId" | "shiftId", na
   return [...seen.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function countWords(n: number): string {
-  return `${n.toLocaleString("en-US")} ${n === 1 ? "person" : "people"}`;
+function Group({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className={styles.group}>
+      <span className={styles.overline}>{label}</span>
+      <div className={styles.choices}>{children}</div>
+    </div>
+  );
 }
 
-function FormatIcon({ format }: { format: Format }) {
-  const Icon = format === "print" ? Printer : format === "xlsx" ? FileSpreadsheet : FileText;
-  return <Icon className={styles.hintIcon} aria-hidden="true" />;
-}
-
-/** One list to pick: a radio, its name and what it holds, and how many people are on it. */
+/** One list to pick: its glyph, name and what it holds, and how many people are on it. */
 function Choice({
   value,
   kind,
   onPick,
+  icon: Icon,
   title,
   body,
-  meta,
-  children,
+  count,
 }: {
   value: Kind;
   kind: Kind;
   onPick: (k: Kind) => void;
+  icon: LucideIcon;
   title: string;
   body: string;
-  meta?: string;
-  /** Settings that belong to this list alone, shown while it is picked. */
-  children?: ReactNode;
+  count?: number;
 }) {
   const on = kind === value;
   return (
-    <div className={styles.choice} data-on={on}>
-      <label className={styles.choiceMain}>
-        <input type="radio" name="export-list" value={value} checked={on} onChange={() => onPick(value)} className={styles.radio} />
-        <span className={styles.choiceText}>
-          <span className={styles.choiceTitle}>{title}</span>
-          <span className={styles.choiceBody}>{body}</span>
+    <label className={styles.choice} data-on={on}>
+      <input type="radio" name="export-list" value={value} checked={on} onChange={() => onPick(value)} className="sr-only" />
+      <span className={styles.choiceIcon} aria-hidden="true">
+        <Icon />
+      </span>
+      <span className={styles.choiceText}>
+        <span className={styles.choiceTitle}>{title}</span>
+        <span className={styles.choiceBody}>{body}</span>
+      </span>
+      {count !== undefined && (
+        <span className={styles.choiceCount} aria-label={`${count} ${count === 1 ? "person" : "people"}`}>
+          {count.toLocaleString("en-US")}
         </span>
-        {meta && <span className={styles.choiceMeta}>{meta}</span>}
-      </label>
-      {on && children && <div className={styles.choiceExtra}>{children}</div>}
+      )}
+    </label>
+  );
+}
+
+/**
+ * The printed page in miniature: its title, the building and time, the
+ * count, and the first names on it with their tick boxes. A day list has
+ * no names until it is loaded, so its lines are drawn as placeholders.
+ */
+function Sheet({
+  title,
+  when,
+  count,
+  names,
+  ticks,
+  grouped,
+}: {
+  title: string;
+  when: string;
+  count: number | null;
+  names: string[] | null;
+  ticks: boolean;
+  grouped: boolean;
+}) {
+  const rest = count !== null && names ? count - names.length : 0;
+  return (
+    <div className={styles.sheet} aria-label="Preview of the printed page">
+      <div className={styles.sheetHead}>
+        <span className={styles.sheetTitles}>
+          <span className={styles.sheetTitle}>{title}</span>
+          <span className={styles.sheetWhen}>{when}</span>
+        </span>
+        {count !== null && (
+          <span className={styles.sheetCount} data-testid="preview-count">
+            {count.toLocaleString("en-US")}
+          </span>
+        )}
+      </div>
+      <div className={styles.sheetRows}>
+        {grouped && names && names.length > 0 && <span className={styles.sheetGroup}>Grouped by department</span>}
+        {(names ?? [null, null, null, null]).map((n, i) => (
+          <span key={i} className={styles.sheetRow}>
+            {ticks && <span className={styles.sheetTick} />}
+            {n ? <span className={styles.sheetName}>{n}</span> : <span className={styles.sheetBar} style={{ width: `${78 - i * 12}%` }} />}
+          </span>
+        ))}
+        {names && names.length === 0 && <span className={styles.sheetEmpty}>No one on this list</span>}
+        {rest > 0 && <span className={styles.sheetMore}>and {rest.toLocaleString("en-US")} more</span>}
+      </div>
+      {ticks && (
+        <div className={styles.sheetSign}>
+          <span>Checked by</span>
+          <span>Time</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A download in miniature: the file's name, and what is in it when that is known. */
+function FileCard({ format, name, rows, columns }: { format: "xlsx" | "csv"; name: string; rows: number | null; columns: number | null }) {
+  const Icon = format === "xlsx" ? FileSpreadsheet : FileText;
+  return (
+    <div className={styles.file}>
+      <span className={styles.fileIcon} data-format={format} aria-hidden="true">
+        <Icon />
+      </span>
+      <span className={styles.fileText}>
+        <span className={styles.fileName} title={name}>
+          {name}
+        </span>
+        <span className={styles.fileMeta} data-testid="preview-count">
+          {rows !== null && columns !== null
+            ? `${rows.toLocaleString("en-US")} ${rows === 1 ? "row" : "rows"} · ${columns} columns`
+            : format === "xlsx"
+              ? "Excel workbook"
+              : "Comma separated values"}
+        </span>
+      </span>
     </div>
   );
 }
@@ -454,8 +528,9 @@ function Field({ label, htmlFor, children }: { label: string; htmlFor: string; c
 }
 
 /**
- * The frame, the same as the Tablets and Gate alerts windows on this page,
- * with buttons along the bottom since this one makes something.
+ * The frame: a grey window holding white cards, the header and the footer
+ * on the grey, so the two panes read as the content and everything else as
+ * the frame around it.
  */
 function Shell({
   title,
@@ -493,10 +568,10 @@ function Shell({
 
   return createPortal(
     <div className={styles.scrim} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="export-window-title" className={`ta-modal ${styles.window}`}>
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="export-window-title" className={styles.window}>
         <header className={styles.head}>
           <span className={styles.glyph} aria-hidden="true">
-            <Download className="h-[18px] w-[18px]" />
+            <Download />
           </span>
           <span className={styles.titles}>
             <h2 id="export-window-title" className={styles.title}>
@@ -515,4 +590,3 @@ function Shell({
     document.body,
   );
 }
-

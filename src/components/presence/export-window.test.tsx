@@ -146,10 +146,12 @@ describe("Export window", () => {
   it("offers the lists with live counts and starts on who is in the building", () => {
     open();
     expect((screen.getByRole("radio", { name: /In the building now/ }) as HTMLInputElement).checked).toBe(true);
-    const pill = (n: string) => screen.getAllByText(n, { selector: "span[class*=choiceMeta]" }).length;
-    expect(pill("4 people")).toBe(1); // in the building
-    expect(pill("2 people")).toBe(1); // clocked in
-    expect(pill("6 people")).toBe(1); // everyone
+    expect(screen.getByLabelText("4 people")).toBeTruthy(); // in the building
+    expect(screen.getByLabelText("2 people")).toBeTruthy(); // clocked in
+    expect(screen.getByLabelText("6 people")).toBeTruthy(); // everyone
+    // The preview is the real list: its count and its first names.
+    expect(screen.getByTestId("preview-count").textContent).toBe("4");
+    expect(screen.getByText("Ana Leal")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Print list" })).toBeTruthy();
   });
 
@@ -163,15 +165,16 @@ describe("Export window", () => {
   it("counts people on a meal or break into Clocked in only when ticked", () => {
     open();
     fireEvent.click(screen.getByRole("radio", { name: /Clocked in now/ }));
-    expect(screen.getByText("2 people", { selector: "span[class*=footSummary]" })).toBeTruthy();
+    expect(screen.getByTestId("preview-count").textContent).toBe("2");
     fireEvent.click(screen.getByLabelText("Include people on a meal or break"));
-    expect(screen.getByText("3 people", { selector: "span[class*=footSummary]" })).toBeTruthy();
+    expect(screen.getByTestId("preview-count").textContent).toBe("3");
   });
 
   it("downloads Excel and CSV with the building and the time in the name", async () => {
     open();
     fireEvent.click(screen.getByRole("radio", { name: /Everyone today/ }));
     fireEvent.click(screen.getByRole("button", { name: "CSV" }));
+    expect(screen.getByText("Everyone today 0299 Rutherford 2026-10-06 941AM.csv")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Download CSV" }));
     await waitFor(() => expect(saved.length).toBe(1));
     expect(saved[0].name).toBe("Everyone today 0299 Rutherford 2026-10-06 941AM.csv");
@@ -188,13 +191,13 @@ describe("Export window", () => {
   it("starts from the filters on screen", () => {
     open({ initialDepartmentId: "d2" });
     expect((screen.getByLabelText("Department") as HTMLSelectElement).value).toBe("d2");
-    expect(screen.getByText("1 person", { selector: "span[class*=footSummary]" })).toBeTruthy();
+    expect(screen.getByTestId("preview-count").textContent).toBe("1");
   });
 
   it("loads the scan log for the day picked, and offers only the last seven days", async () => {
     getOnSiteScanLog.mockResolvedValue({ success: true, data: { rows: [], hasMore: false, day: "2026-10-04", today: "2026-10-06" } });
     open();
-    fireEvent.click(screen.getByRole("radio", { name: /Scan log for a day/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /^Scan log/ }));
     const day = screen.getByLabelText("Day") as HTMLSelectElement;
     expect(day.options.length).toBe(7);
     fireEvent.change(day, { target: { value: "2026-10-04" } });
@@ -208,7 +211,7 @@ describe("Export window", () => {
     getOnSiteMovements.mockResolvedValue({ success: false, error: "INTERNAL" });
     const onClose = vi.fn();
     open({ onClose });
-    fireEvent.click(screen.getByRole("radio", { name: /Movements for a day/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /^Movements/ }));
     fireEvent.click(screen.getByRole("button", { name: "Print movements" }));
     expect(await screen.findByText(/could not be loaded/)).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
