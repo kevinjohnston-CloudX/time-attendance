@@ -6,6 +6,7 @@ import { Badge, Banner, Button, EmptyState, SegmentedControl } from "@/component
 import type { BuildingTablets, Tablet } from "@/lib/presence/tablets.service";
 import { BuildingWindow } from "./building-window";
 import { countHealth, healthOf, issuesOf, statusOf, type Health } from "./tablet-health";
+import bw from "./building-windows.module.css";
 import styles from "./tablets-window.module.css";
 
 /**
@@ -45,44 +46,19 @@ export function TabletsWindow({
   const now = data ? new Date(data.checkedAt).getTime() : 0;
 
   const subtitle = data ? `${siteName}, updated ${whenLabel(data.checkedAt, data.site.timezone, now)}` : siteName;
-  const counts = data ? countHealth(data.tablets) : null;
-  const seg = (h: Health, label: string, tone: string) => ({
-    value: h,
-    label: (
-      <>
-        <span className={styles.dot} data-tone={counts && counts[h] > 0 ? tone : undefined} aria-hidden="true" />
-        {label}
-      </>
-    ),
-    count: counts?.[h] ?? 0,
-  });
 
   return (
     <BuildingWindow
       title="Tablets"
       subtitle={subtitle}
-      icon={<TabletIcon className="h-[18px] w-[18px]" />}
-      width={980}
+      icon={<TabletIcon />}
+      width={960}
       flush
-      actions={
-        data && data.tablets.length > 0 ? (
-          <SegmentedControl
-            ariaLabel="Show tablets"
-            value={only ?? "ALL"}
-            onChange={(v) => setOnly(v === "ALL" ? null : (v as Health))}
-            items={[
-              { value: "ALL", label: "All", count: data.tablets.length },
-              seg("ATTENTION", "Need attention", "error"),
-              seg("WORKING", "Working", "success"),
-              seg("OUT_OF_DATE", "Out of date", "neutral"),
-            ]}
-          />
-        ) : undefined
-      }
+      foot="Refreshes every minute. Tablets on build 163 or later check in every five minutes."
       onClose={onClose}
     >
       {error && !data ? (
-        <div className={styles.center}>
+        <div className={`${bw.card} ${styles.center}`}>
           <Banner
             tone="error"
             title="Not loaded"
@@ -95,22 +71,30 @@ export function TabletsWindow({
           />
         </div>
       ) : !data ? (
-        <>
-          <div className={styles.panes} aria-label="Loading tablets">
+        <div className={styles.panes} aria-label="Loading tablets">
+          <div className={`${bw.card} ${styles.listCard}`}>
+            <div className={bw.block}>
+              <div className={styles.skeleton} style={{ height: 24, width: "80%" }} />
+            </div>
             <div className={styles.list}>
               {[0, 1, 2, 3].map((i) => (
-                <div key={i} className={styles.skeleton} style={{ height: 62, flex: "none" }} />
+                <div key={i} className={styles.skeleton} style={{ height: 56, flex: "none" }} />
               ))}
             </div>
+          </div>
+          <div className={`${bw.card} ${styles.detailCard}`}>
             <div className={styles.detail}>
-              <div className={styles.skeleton} style={{ height: 52, width: "55%" }} />
-              <div className={styles.skeleton} style={{ height: 96 }} />
-              <div className={styles.skeleton} style={{ height: 160 }} />
+              <div className={styles.top}>
+                <div className={styles.skeleton} style={{ height: 52, width: "55%" }} />
+              </div>
+              <div className={styles.top}>
+                <div className={styles.skeleton} style={{ height: 96 }} />
+              </div>
             </div>
           </div>
-        </>
+        </div>
       ) : data.tablets.length === 0 ? (
-        <div className={styles.center}>
+        <div className={`${bw.card} ${styles.center}`}>
           <EmptyState
             icon={<TabletIcon className="h-6 w-6" />}
             title="No tablets at this building"
@@ -118,15 +102,16 @@ export function TabletsWindow({
           />
         </div>
       ) : (
-        <TabletsBody data={data} now={now} chosen={chosen} onChoose={setChosen} only={only} />
+        <TabletsBody data={data} now={now} chosen={chosen} onChoose={setChosen} only={only} onOnly={setOnly} />
       )}
     </BuildingWindow>
   );
 }
 
 /**
- * The loaded window's two panes, narrowed by the filter in its header.
- * Split out so it can be drawn offline too.
+ * The loaded window: two white cards on the frame's grey, as in the Export
+ * window. On the left the filter and the building's tablets as choice rows;
+ * on the right the chosen tablet. Split out so it can be drawn offline too.
  */
 export function TabletsBody({
   data,
@@ -134,14 +119,17 @@ export function TabletsBody({
   chosen,
   onChoose,
   only,
+  onOnly,
 }: {
   data: BuildingTablets;
   now: number;
   chosen: string | null;
   onChoose: (key: string) => void;
   only: Health | null;
+  onOnly: (h: Health | null) => void;
 }) {
   const tz = data.site.timezone;
+  const counts = countHealth(data.tablets);
   const sorted = [...data.tablets].sort(
     (a, b) =>
       GROUP_ORDER[healthOf(a)] - GROUP_ORDER[healthOf(b)] ||
@@ -159,18 +147,30 @@ export function TabletsBody({
   const current = ordered.find((t) => t.key === chosen) ?? ordered[0] ?? null;
 
   return (
-    <>
-      <div className={styles.panes}>
-        <div className={`ta-scroll ${styles.list}`} aria-label="Tablets">
-          {groups.length === 0 && <p className={styles.listEmpty}>No tablets here right now.</p>}
+    <div className={styles.panes}>
+      <section className={`${bw.card} ${styles.listCard}`} aria-label="Tablets">
+        <div className={styles.filter}>
+          <SegmentedControl
+            size="sm"
+            ariaLabel="Show tablets"
+            value={only ?? "ALL"}
+            onChange={(v) => onOnly(v === "ALL" ? null : (v as Health))}
+            items={[
+              { value: "ALL", label: "All", count: data.tablets.length },
+              { value: "ATTENTION", label: "Attention", count: counts.ATTENTION },
+              { value: "WORKING", label: "Working", count: counts.WORKING },
+              { value: "OUT_OF_DATE", label: "Out of date", count: counts.OUT_OF_DATE },
+            ]}
+          />
+        </div>
+        <div className={`ta-scroll ${styles.list}`}>
+          {groups.length === 0 && <p className={styles.listEmpty}>No tablets in this group right now.</p>}
           {groups.map((g) => (
-            <section key={g.key} className={styles.group} aria-label={g.title}>
-              <h4 className={styles.groupHead}>
-                <g.Icon aria-hidden="true" />
-                <span>{g.title}</span>
-                <span className={styles.groupCount}>{g.tablets.length}</span>
-              </h4>
-              <div role="listbox" aria-label={g.title} className={styles.groupList}>
+            <div key={g.key} className={styles.group}>
+              <span id={`tablets-${g.key}`} className={bw.groupLabel}>
+                {g.title}
+              </span>
+              <div role="listbox" aria-labelledby={`tablets-${g.key}`} className={styles.choices}>
                 {g.tablets.map((t) => {
                   const st = statusOf(t, data.newestBuild);
                   return (
@@ -179,15 +179,18 @@ export function TabletsBody({
                       type="button"
                       role="option"
                       aria-selected={current?.key === t.key}
-                      className={styles.card}
+                      className={styles.choice}
                       onClick={() => onChoose(t.key)}
                     >
-                      <span className={styles.dot} data-tone={st.tone} aria-hidden="true" />
-                      <span className={styles.cardText}>
-                        <span className={styles.cardName} title={t.name}>
+                      <span className={styles.choiceIcon} aria-hidden="true">
+                        <g.Icon />
+                        <span className={styles.choiceDot} data-tone={st.tone} />
+                      </span>
+                      <span className={styles.choiceText}>
+                        <span className={styles.choiceTitle} title={t.name}>
                           {t.name}
                         </span>
-                        <span className={styles.cardLine}>
+                        <span className={styles.choiceBody}>
                           {t.status === "OFFLINE"
                             ? `Not responding since ${whenLabel(t.lastSeenAt, tz, now)}`
                             : st.line}
@@ -197,12 +200,12 @@ export function TabletsBody({
                   );
                 })}
               </div>
-            </section>
+            </div>
           ))}
         </div>
-        {current && <TabletDetail key={current.key} t={current} tz={tz} now={now} newest={data.newestBuild} />}
-      </div>
-    </>
+      </section>
+      {current && <TabletDetail key={current.key} t={current} tz={tz} now={now} newest={data.newestBuild} />}
+    </div>
   );
 }
 
@@ -225,213 +228,217 @@ function TabletDetail({ t, tz, now, newest }: { t: Tablet; tz: string; now: numb
         : `${kind(t)}. Checked in ${agoLabel(t.lastSeenAt, now)}.`;
 
   return (
-    <section className={`ta-scroll ${styles.detail}`} aria-label={t.name}>
-      <header className={styles.detailHead}>
-        <div className={styles.nameRow}>
-          <h3 className={styles.name}>{t.name}</h3>
-          <StatusBadge t={t} newest={newest} />
+    <section className={`${bw.card} ${styles.detailCard}`} aria-label={t.name}>
+      <div className={`ta-scroll ${styles.detail}`}>
+        <div className={styles.top}>
+          <header className={styles.detailHead}>
+            <div className={styles.nameRow}>
+              <h3 className={styles.name}>{t.name}</h3>
+              <StatusBadge t={t} newest={newest} />
+            </div>
+            <p className={styles.state}>{state}</p>
+          </header>
+
+          {t.status === "OFFLINE" && (
+            <p className={styles.todo} data-tone="error">
+              <WifiOff aria-hidden="true" />
+              <span>
+                It has not checked in with CloudTime since {whenLabel(t.lastSeenAt, tz, now)}. Check that it is switched
+                on, plugged in and connected to the Wi-Fi, and that the CloudTime app is open. The readings below are
+                from its last check in.
+              </span>
+            </p>
+          )}
+          {t.status === "ONLINE" &&
+            issuesOf(t).map((i) => (
+              <p key={i.short} className={styles.todo} data-tone="warning">
+                <AlertTriangle aria-hidden="true" />
+                <span>{i.todo}</span>
+              </p>
+            ))}
+          {!reporting && t.outOfDate && (
+            <p className={styles.todo} data-tone="info">
+              <ArrowUpCircle aria-hidden="true" />
+              <span>
+                This tablet runs app build {t.appVersion ?? "unknown"}, which cannot report its battery, Wi-Fi or
+                connection. Ask IT to install build {newest}, and everything shows here within five minutes.
+                {t.stream === "SECURITY" && !t.sendsBuilding
+                  ? " Until then, somebody this gate turns away may pop up in their home building instead of this one."
+                  : ""}
+              </span>
+            </p>
+          )}
+          {!reporting && !t.outOfDate && (
+            <p className={styles.todo} data-tone="warning">
+              <AlertTriangle aria-hidden="true" />
+              <span>
+                It scans on build {t.appVersion}, which should report its health every five minutes, but no report has
+                reached CloudTime. Ask IT to check it.
+              </span>
+            </p>
+          )}
+          {reporting && t.outOfDate && t.status === "ONLINE" && (
+            <p className={styles.todo} data-tone="info">
+              <ArrowUpCircle aria-hidden="true" />
+              <span>
+                It runs app build {t.appVersion ?? "unknown"}, and other tablets already run build {newest}. Ask IT to
+                update it.
+              </span>
+            </p>
+          )}
         </div>
-        <p className={styles.state}>{state}</p>
-      </header>
 
-      {t.status === "OFFLINE" && (
-        <p className={styles.todo} data-tone="error">
-          <WifiOff aria-hidden="true" />
-          <span>
-            It has not checked in with CloudTime since {whenLabel(t.lastSeenAt, tz, now)}. Check that it is switched on,
-            plugged in and connected to the Wi-Fi, and that the CloudTime app is open. The readings below are from its
-            last check in.
-          </span>
-        </p>
-      )}
-      {t.status === "ONLINE" &&
-        issuesOf(t).map((i) => (
-          <p key={i.short} className={styles.todo} data-tone="warning">
-            <AlertTriangle aria-hidden="true" />
-            <span>{i.todo}</span>
-          </p>
-        ))}
-      {!reporting && t.outOfDate && (
-        <p className={styles.todo} data-tone="info">
-          <ArrowUpCircle aria-hidden="true" />
-          <span>
-            This tablet runs app build {t.appVersion ?? "unknown"}, which cannot report its battery, Wi-Fi or
-            connection. Ask IT to install build {newest}, and everything shows here within five minutes.
-            {t.stream === "SECURITY" && !t.sendsBuilding
-              ? " Until then, somebody this gate turns away may pop up in their home building instead of this one."
-              : ""}
-          </span>
-        </p>
-      )}
-      {!reporting && !t.outOfDate && (
-        <p className={styles.todo} data-tone="warning">
-          <AlertTriangle aria-hidden="true" />
-          <span>
-            It scans on build {t.appVersion}, which should report its health every five minutes, but no report has
-            reached CloudTime. Ask IT to check it.
-          </span>
-        </p>
-      )}
-      {reporting && t.outOfDate && t.status === "ONLINE" && (
-        <p className={styles.todo} data-tone="info">
-          <ArrowUpCircle aria-hidden="true" />
-          <span>
-            It runs app build {t.appVersion ?? "unknown"}, and other tablets already run build {newest}. Ask IT to
-            update it.
-          </span>
-        </p>
-      )}
-
-      {reporting && (
-        <div className={styles.readings}>
-          <BatteryReading t={t} asOf={t.status === "OFFLINE" ? whenLabel(t.lastSeenAt, tz, now) : null} />
-          <WifiReading t={t} asOf={t.status === "OFFLINE" ? whenLabel(t.lastSeenAt, tz, now) : null} />
-          <div className={styles.reading}>
-            <span className={styles.readingLabel}>Scans today</span>
-            <span className={styles.readingMain}>
-              {t.scansToday === null ? "None" : t.scansToday.toLocaleString("en-US")}
-            </span>
-            <span className={styles.readingSub}>
-              {t.status === "OFFLINE"
-                ? `As of ${whenLabel(t.lastSeenAt, tz, now)}`
-                : t.lastScanAt
-                  ? `Last one ${whenLabel(t.lastScanAt, tz, now)}`
-                  : "None in the last 7 days"}
-            </span>
+        {reporting && (
+          <div className={styles.readings}>
+            <BatteryReading t={t} asOf={t.status === "OFFLINE" ? whenLabel(t.lastSeenAt, tz, now) : null} />
+            <WifiReading t={t} asOf={t.status === "OFFLINE" ? whenLabel(t.lastSeenAt, tz, now) : null} />
+            <div className={styles.reading}>
+              <span className={styles.readingLabel}>Scans today</span>
+              <span className={styles.readingMain}>
+                {t.scansToday === null ? "None" : t.scansToday.toLocaleString("en-US")}
+              </span>
+              <span className={styles.readingSub}>
+                {t.status === "OFFLINE"
+                  ? `As of ${whenLabel(t.lastSeenAt, tz, now)}`
+                  : t.lastScanAt
+                    ? `Last one ${whenLabel(t.lastScanAt, tz, now)}`
+                    : "None in the last 7 days"}
+              </span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {reporting ? (
-        <>
-          <section className={styles.section} aria-label="Connection">
-            <h4 className={styles.sectionTitle}>Connection</h4>
-            <dl className={styles.inset}>
-              <Fact label="Last heard from" value={whenLabel(t.lastSeenAt, tz, now)} />
-              <Fact
-                label="Newest scan in CloudTime"
-                value={t.newestInCloudTimeAt ? whenLabel(t.newestInCloudTimeAt, tz, now) : "None yet"}
-              />
-              <Fact
-                label="Not in CloudTime yet"
-                value={
-                  t.notInCloudTime === null
-                    ? "Not reported"
-                    : t.notInCloudTime === 0
-                      ? "None, all received"
-                      : `${t.notInCloudTime} ${t.notInCloudTime === 1 ? "scan" : "scans"}${t.lateToCloudTime ? `, ${t.lateToCloudTime} late` : ""}`
-                }
-              />
-              <Fact label="Waiting to send" value={waitingWords(t)} />
-              <Fact
-                label="Network"
-                value={
-                  t.network && t.network !== "WIFI"
-                    ? networkWord(t.network)
-                    : `${t.wifiName ?? "Wi-Fi"}${t.wifiBandGhz ? `, ${t.wifiBandGhz} GHz` : ""}`
-                }
-              />
-            </dl>
-          </section>
+        {reporting ? (
+          <>
+            <section className={styles.section} aria-label="Connection">
+              <h4 className={styles.sectionTitle}>Connection</h4>
+              <dl className={styles.inset}>
+                <Fact label="Last heard from" value={whenLabel(t.lastSeenAt, tz, now)} />
+                <Fact
+                  label="Newest scan in CloudTime"
+                  value={t.newestInCloudTimeAt ? whenLabel(t.newestInCloudTimeAt, tz, now) : "None yet"}
+                />
+                <Fact
+                  label="Not in CloudTime yet"
+                  value={
+                    t.notInCloudTime === null
+                      ? "Not reported"
+                      : t.notInCloudTime === 0
+                        ? "None, all received"
+                        : `${t.notInCloudTime} ${t.notInCloudTime === 1 ? "scan" : "scans"}${t.lateToCloudTime ? `, ${t.lateToCloudTime} late` : ""}`
+                  }
+                />
+                <Fact label="Waiting to send" value={waitingWords(t)} />
+                <Fact
+                  label="Network"
+                  value={
+                    t.network && t.network !== "WIFI"
+                      ? networkWord(t.network)
+                      : `${t.wifiName ?? "Wi-Fi"}${t.wifiBandGhz ? `, ${t.wifiBandGhz} GHz` : ""}`
+                  }
+                />
+              </dl>
+            </section>
+            <section className={styles.section} aria-label="Device">
+              <h4 className={styles.sectionTitle}>Device</h4>
+              <dl className={styles.inset}>
+                <Fact label="Used as" value={kind(t)} />
+                <Fact
+                  label="App"
+                  value={`Build ${t.appVersion ?? "unknown"}${t.appOpen === false ? ", in the background" : ""}`}
+                />
+                <Fact
+                  label="Model"
+                  value={
+                    [t.model, t.android ? `Android ${t.android}` : null].filter(Boolean).join(", ") || "Not reported"
+                  }
+                />
+                <Fact label="Battery" value={batteryWords(t)} />
+                <Fact label="Time zone" value={timeZoneWords(t)} />
+                <Fact
+                  label="Locked to CloudTime"
+                  value={t.kioskLocked === null ? "Not reported" : t.kioskLocked ? "Yes" : "No, not set up as a kiosk"}
+                />
+                <Fact
+                  label="Storage"
+                  value={
+                    t.storageFreeMb === null
+                      ? "Not reported"
+                      : `${gb(t.storageFreeMb)} free${t.storageTotalMb ? ` of ${gb(t.storageTotalMb)}` : ""}`
+                  }
+                  meter={t.storageFreeMb !== null && t.storageTotalMb ? 1 - t.storageFreeMb / t.storageTotalMb : null}
+                />
+                <Fact label="Last restart" value={t.bootedAt ? whenLabel(t.bootedAt, tz, now) : "Not reported"} />
+                {t.serial ? <Fact label="Serial number" value={t.serial} /> : null}
+                {t.assetTag ? <Fact label="Asset tag" value={t.assetTag} /> : null}
+              </dl>
+            </section>
+            <details className={styles.more}>
+              <summary className={styles.moreSummary}>Technical details</summary>
+              <dl className={styles.inset}>
+                <Fact
+                  label="App running for"
+                  value={t.appRunningSec === null ? "Not reported" : durationWords(t.appRunningSec)}
+                />
+                <Fact
+                  label="Wi-Fi link"
+                  value={
+                    t.wifiLinkMbps === null
+                      ? "Not reported"
+                      : `${t.wifiLinkMbps} Mbps${t.wifiRssi !== null ? `, ${t.wifiRssi} dBm` : ""}`
+                  }
+                />
+                <Fact
+                  label="Storage used by"
+                  value={
+                    t.photosMb === null && t.logsMb === null && t.cacheMb === null
+                      ? "Not reported"
+                      : `Photos ${mbWords(t.photosMb)}, logs ${mbWords(t.logsMb)}, cache ${mbWords(t.cacheMb)}`
+                  }
+                />
+                <Fact
+                  label="Last sync with Oracle"
+                  value={t.lastOracleSyncAt ? whenLabel(t.lastOracleSyncAt, tz, now) : "Not reported"}
+                />
+                <Fact
+                  label="App build"
+                  value={
+                    [
+                      t.appVersion ? `Build ${t.appVersion}` : null,
+                      t.versionCode !== null ? `code ${t.versionCode}` : null,
+                      t.gitSha,
+                      t.builtAt ? `made ${whenLabel(t.builtAt, tz, now)}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(", ") || "Not reported"
+                  }
+                />
+                <Fact label="Android build" value={t.osBuild ?? "Not reported"} />
+                <Fact
+                  label="Check ins"
+                  value={`${t.checkIns.toLocaleString("en-US")}${t.firstSeenAt ? `, first ${whenLabel(t.firstSeenAt, tz, now)}` : ""}`}
+                />
+                <Fact
+                  label="App reinstalled"
+                  value={t.reinstalls === 0 ? "Never" : `${t.reinstalls} ${t.reinstalls === 1 ? "time" : "times"}`}
+                />
+              </dl>
+            </details>
+          </>
+        ) : (
           <section className={styles.section} aria-label="Device">
             <h4 className={styles.sectionTitle}>Device</h4>
             <dl className={styles.inset}>
               <Fact label="Used as" value={kind(t)} />
+              <Fact label="App" value={`Build ${t.appVersion ?? "unknown"}`} />
               <Fact
-                label="App"
-                value={`Build ${t.appVersion ?? "unknown"}${t.appOpen === false ? ", in the background" : ""}`}
+                label="Last scan"
+                value={t.lastScanAt ? whenLabel(t.lastScanAt, tz, now) : "None in the last 7 days"}
               />
-              <Fact
-                label="Model"
-                value={
-                  [t.model, t.android ? `Android ${t.android}` : null].filter(Boolean).join(", ") || "Not reported"
-                }
-              />
-              <Fact label="Battery" value={batteryWords(t)} />
-              <Fact label="Time zone" value={timeZoneWords(t)} />
-              <Fact
-                label="Locked to CloudTime"
-                value={t.kioskLocked === null ? "Not reported" : t.kioskLocked ? "Yes" : "No, not set up as a kiosk"}
-              />
-              <Fact
-                label="Storage"
-                value={
-                  t.storageFreeMb === null
-                    ? "Not reported"
-                    : `${gb(t.storageFreeMb)} free${t.storageTotalMb ? ` of ${gb(t.storageTotalMb)}` : ""}`
-                }
-                meter={t.storageFreeMb !== null && t.storageTotalMb ? 1 - t.storageFreeMb / t.storageTotalMb : null}
-              />
-              <Fact label="Last restart" value={t.bootedAt ? whenLabel(t.bootedAt, tz, now) : "Not reported"} />
-              {t.serial ? <Fact label="Serial number" value={t.serial} /> : null}
-              {t.assetTag ? <Fact label="Asset tag" value={t.assetTag} /> : null}
             </dl>
           </section>
-          <details className={styles.more}>
-            <summary className={styles.moreSummary}>Technical details</summary>
-            <dl className={styles.inset}>
-              <Fact
-                label="App running for"
-                value={t.appRunningSec === null ? "Not reported" : durationWords(t.appRunningSec)}
-              />
-              <Fact
-                label="Wi-Fi link"
-                value={
-                  t.wifiLinkMbps === null
-                    ? "Not reported"
-                    : `${t.wifiLinkMbps} Mbps${t.wifiRssi !== null ? `, ${t.wifiRssi} dBm` : ""}`
-                }
-              />
-              <Fact
-                label="Storage used by"
-                value={
-                  t.photosMb === null && t.logsMb === null && t.cacheMb === null
-                    ? "Not reported"
-                    : `Photos ${mbWords(t.photosMb)}, logs ${mbWords(t.logsMb)}, cache ${mbWords(t.cacheMb)}`
-                }
-              />
-              <Fact
-                label="Last sync with Oracle"
-                value={t.lastOracleSyncAt ? whenLabel(t.lastOracleSyncAt, tz, now) : "Not reported"}
-              />
-              <Fact
-                label="App build"
-                value={
-                  [
-                    t.appVersion ? `Build ${t.appVersion}` : null,
-                    t.versionCode !== null ? `code ${t.versionCode}` : null,
-                    t.gitSha,
-                    t.builtAt ? `made ${whenLabel(t.builtAt, tz, now)}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(", ") || "Not reported"
-                }
-              />
-              <Fact label="Android build" value={t.osBuild ?? "Not reported"} />
-              <Fact
-                label="Check ins"
-                value={`${t.checkIns.toLocaleString("en-US")}${t.firstSeenAt ? `, first ${whenLabel(t.firstSeenAt, tz, now)}` : ""}`}
-              />
-              <Fact
-                label="App reinstalled"
-                value={t.reinstalls === 0 ? "Never" : `${t.reinstalls} ${t.reinstalls === 1 ? "time" : "times"}`}
-              />
-            </dl>
-          </details>
-        </>
-      ) : (
-        <section className={styles.section} aria-label="Device">
-          <h4 className={styles.sectionTitle}>Device</h4>
-          <dl className={styles.inset}>
-            <Fact label="Used as" value={kind(t)} />
-            <Fact label="App" value={`Build ${t.appVersion ?? "unknown"}`} />
-            <Fact
-              label="Last scan"
-              value={t.lastScanAt ? whenLabel(t.lastScanAt, tz, now) : "None in the last 7 days"}
-            />
-          </dl>
-        </section>
-      )}
+        )}
+      </div>
     </section>
   );
 }

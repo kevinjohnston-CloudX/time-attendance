@@ -8,9 +8,11 @@ import styles from "./building-windows.module.css";
 
 /**
  * A window over Live Attendance about the building on screen: the Tablets
- * list and the Gate alerts settings. The setup dialogs' shape (the area's
- * glyph in a well, a title and one line under it), with no form and no
- * footer buttons, since these show and switch rather than collect.
+ * list and the Gate alerts settings. The Export window's frame, the
+ * reference for every pop up: the header and the footer on a grey frame,
+ * the content in white cards (styles.card) the caller draws, and a footer
+ * with one hint line and a Close button, since these show and switch rather
+ * than collect.
  *
  * <p>Escape, the X and the scrim close it. Drawn straight onto the page's
  * body, so the pinned header and the full screen board never sit on top.
@@ -21,7 +23,6 @@ export function BuildingWindow({
   icon,
   width,
   foot,
-  actions,
   flush = false,
   onClose,
   children,
@@ -30,10 +31,8 @@ export function BuildingWindow({
   subtitle?: ReactNode;
   icon: ReactNode;
   width: number;
-  /** One quiet line along the bottom. */
+  /** One quiet line along the bottom, beside the Close button. */
   foot?: ReactNode;
-  /** Controls for the whole window, beside the title (the Tablets filter). */
-  actions?: ReactNode;
   /** The body draws its own panes edge to edge, at a fixed height, with no padding or scroll of its own. */
   flush?: boolean;
   onClose: () => void;
@@ -68,7 +67,7 @@ export function BuildingWindow({
         role="dialog"
         aria-modal="true"
         aria-labelledby="building-window-title"
-        className={`ta-modal ${styles.window}`}
+        className={styles.window}
         style={{ maxWidth: width, outline: "none" }}
       >
         <header className={styles.head}>
@@ -81,19 +80,21 @@ export function BuildingWindow({
             </h2>
             {subtitle && <span className={styles.subtitle}>{subtitle}</span>}
           </span>
-          {actions && <div className={styles.actions}>{actions}</div>}
-          <span className={styles.close}>
-            <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
-              <X className="h-4 w-4" />
-            </Button>
-          </span>
+          <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
+            <X className="h-4 w-4" />
+          </Button>
         </header>
         {flush ? (
           <div className={styles.flushBody}>{children}</div>
         ) : (
           <div className={`ta-scroll ${styles.body}`}>{children}</div>
         )}
-        {foot && <footer className={styles.foot}>{foot}</footer>}
+        <footer className={styles.foot}>
+          <span className={styles.footHint}>{foot}</span>
+          <Button hierarchy="secondary" onClick={onClose}>
+            Close
+          </Button>
+        </footer>
       </div>
     </div>,
     document.body,

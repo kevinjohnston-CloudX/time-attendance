@@ -64,7 +64,7 @@ export function GateAlertsWindow({
     <BuildingWindow
       title="Gate alerts"
       subtitle="A pop up on Live Attendance when a security gate turns away somebody with no shift today"
-      icon={<Bell className="h-[18px] w-[18px]" />}
+      icon={<Bell />}
       width={640}
       foot="Shown to roles with Live Attendance Execute, such as Loss Prevention. Only people turned away after alerts are turned on show up, and every change is kept in the audit log."
       onClose={onClose}
@@ -97,10 +97,12 @@ export function GateAlertsWindow({
       )}
 
       {others.length > 0 && (
-        <>
-          <div className={styles.sectionHead}>
-            <h4 className={styles.sectionTitle}>Other buildings with a gate</h4>
-            <span className={styles.sectionCount}>
+        <section className={styles.sitesCard} aria-labelledby="gate-others">
+          <div className={styles.sitesHead}>
+            <span id="gate-others" className={styles.groupLabel}>
+              Other buildings with a gate
+            </span>
+            <span className={styles.sitesCount}>
               {others.filter((s) => s.onSince !== null).length} of {others.length} on
             </span>
           </div>
@@ -131,7 +133,7 @@ export function GateAlertsWindow({
               </div>
             ))}
           </div>
-        </>
+        </section>
       )}
     </BuildingWindow>
   );
@@ -165,8 +167,10 @@ function Readiness({ site }: { site: Site }) {
   return (
     <div className={styles.ready}>
       <div className={styles.readyTop}>
-        <span className="wms-overline">Gate tablets ready</span>
-        <span className={styles.readyCount}>{site.gates === 0 ? "None seen" : `${site.sendingBuilding} of ${site.gates}`}</span>
+        <span className={styles.readyLabel}>Gate tablets ready</span>
+        <span className={styles.readyCount}>
+          {site.gates === 0 ? "None seen" : `${site.sendingBuilding} of ${site.gates}`}
+        </span>
       </div>
       <span className={styles.track} data-tone={share < 1 ? "warning" : undefined} aria-hidden="true">
         <span style={{ width: `${Math.round(share * 100)}%` }} />

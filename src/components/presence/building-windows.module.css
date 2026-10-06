@@ -1,10 +1,10 @@
 /* The Tablets and Gate alerts windows on Live Attendance, the frame they
    share, and the building menu in the page's top bar that opens them.
 
-   Drawn from the product's own best screens rather than a template: the
-   Dashboard's tinted count tiles and progress tracks, the Leave Requests
-   cards (an accent border when chosen, a grey inset holding the facts under
-   small capital labels), and Live Attendance's panels. */
+   The frame is the Export window's, which is the reference for every pop up
+   in CloudTime: a grey frame holding white raised cards, with the header and
+   the footer on the grey, so the cards read as the content and the rest as
+   the frame. */
 
 /* ---- The frame ---- */
 
@@ -24,49 +24,40 @@
   flex-direction: column;
   width: 100%;
   max-height: calc(100dvh - 32px);
-  border-radius: var(--radius-l);
-  container-type: inline-size;
   overflow: hidden;
+  border-radius: var(--radius-l);
+  background: var(--ta-canvas);
+  box-shadow: var(--shadow-modal);
+  container-type: inline-size;
 }
 
 .head {
   display: flex;
   flex: none;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 12px 14px;
-  padding: 18px 20px 18px 24px;
-  border-bottom: 1px solid var(--stroke-divider);
-}
-.actions {
-  display: flex;
-  order: 3;
-  margin-left: auto;
-}
-.close {
-  display: flex;
-  order: 4;
-  align-self: flex-start;
+  gap: 12px;
+  padding: 16px 16px 14px 20px;
 }
 .glyph {
   display: grid;
-  order: 1;
   flex: none;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
-  background: var(--ta-well);
-  box-shadow: inset 0 0 0 1px var(--ta-well-ring);
-  color: var(--icon-tertiary);
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+  color: var(--icon-accent);
+}
+.glyph svg {
+  width: 18px;
+  height: 18px;
 }
 .titles {
   display: flex;
-  order: 2;
   flex: 1;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
 }
 .title {
   margin: 0;
@@ -83,12 +74,12 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   overflow-y: auto;
-  padding: 16px 20px 20px;
+  padding: 0 16px;
 }
 /* Its children keep their height and the body scrolls; left to shrink, a
-   panel with overflow hidden would be squeezed and clip its own rows. */
+   card with overflow hidden would be squeezed and clip its own rows. */
 .body > * {
   flex: none;
 }
@@ -96,15 +87,60 @@
   display: flex;
   min-height: 0;
   flex-direction: column;
-  height: min(660px, calc(100dvh - 140px));
+  height: min(640px, calc(100dvh - 160px));
+  padding: 0 16px;
 }
 
 .foot {
+  display: flex;
   flex: none;
-  padding: 12px 20px;
-  border-top: 1px solid var(--stroke-divider);
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 14px 20px;
+}
+.footHint {
+  flex: 1;
+  min-width: 0;
+  margin-right: 8px;
   font: var(--type-body2);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+/* A white raised card on the frame's grey, as the Export window's. */
+.card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+}
+/* A card is split into blocks by full width rules. */
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+.block + .block {
+  border-top: 1px solid var(--stroke-divider);
+}
+/* What a group has in common, in plain words. */
+.groupLabel {
+  padding: 0 4px;
+  font: var(--weight-semibold) 12px/16px var(--font-sans);
   color: var(--text-tertiary);
+}
+
+@media (max-width: 760px) {
+  .foot {
+    flex-wrap: wrap;
+  }
+  .footHint {
+    flex-basis: 100%;
+    margin: 0 0 4px;
+  }
 }
 
 /* ---- The building menu ---- */
@@ -223,21 +259,15 @@
 
 /* ---- Gate alerts ---- */
 
+/* The building on screen: a white card, its switch, and how ready it is. */
 .hero {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 16px 18px;
-  border: 1px solid var(--stroke-secondary);
-  border-radius: 12px;
+  padding: 16px;
+  border-radius: 14px;
   background: var(--surface-card);
-  transition:
-    border-color 140ms ease,
-    background 140ms ease;
-}
-.hero[data-on="true"] {
-  border-color: var(--stroke-success);
-  background: var(--surface-success);
+  box-shadow: var(--ta-raised);
 }
 .heroTop {
   display: flex;
@@ -249,7 +279,7 @@
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 .heroName {
   display: flex;
@@ -257,7 +287,7 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  font: var(--weight-semibold) 17px/24px var(--font-sans);
+  font: var(--weight-semibold) 16px/24px var(--font-sans);
   color: var(--text-primary);
 }
 .heroName > span:first-child {
@@ -269,24 +299,28 @@
 .heroState {
   font: var(--type-body2);
   color: var(--text-secondary);
+  text-wrap: pretty;
 }
 
-/* "3 of 3 gate tablets send the building", drawn as the Dashboard draws a
-   department: a label, a track, the count. */
+/* "3 of 3 gate tablets send the building": a label, a track, the count, in a well. */
 .ready {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: var(--surface-card);
-  box-shadow: inset 0 0 0 1px var(--stroke-divider);
+  background: var(--ta-well);
+  box-shadow: inset 0 0 0 1px var(--ta-well-ring);
 }
 .readyTop {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
+}
+.readyLabel {
+  font: var(--type-button2);
+  color: var(--text-secondary);
 }
 .readyCount {
   font: var(--weight-semibold) 13px/18px var(--font-sans);
@@ -302,7 +336,7 @@
 }
 .track {
   display: flex;
-  height: 8px;
+  height: 6px;
   overflow: hidden;
   border-radius: 999px;
   background: var(--ta-track);
@@ -315,58 +349,59 @@
   background: var(--fill-warning);
 }
 .track[data-size="small"] {
-  width: 72px;
-  height: 6px;
+  width: 64px;
+  height: 5px;
   flex: none;
 }
 
-.sectionHead {
+/* Every other building with a gate: one card, a row each. */
+.sitesCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 8px 8px;
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+}
+.sitesHead {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin: 2px 0 -6px;
+  padding: 0 8px 4px;
 }
-.sectionTitle {
-  margin: 0;
-  font: var(--type-h4);
-  color: var(--text-primary);
-}
-.sectionCount {
+.sitesCount {
   font: var(--type-body2);
   color: var(--text-tertiary);
 }
-
 .sites {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--stroke-secondary);
-  border-radius: 12px;
-  background: var(--surface-card);
+  gap: 2px;
 }
 .siteRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 16px;
-  min-height: 60px;
-  padding: 10px 16px;
+  min-height: 56px;
+  padding: 8px 12px;
+  border-radius: 10px;
 }
-.siteRow + .siteRow {
-  border-top: 1px solid var(--stroke-divider);
+.siteRow:hover {
+  background: var(--ta-row-hover);
 }
 .siteText {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
 }
 .siteName {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 8px;
-  font: var(--weight-medium) 14px/20px var(--font-sans);
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
   color: var(--text-primary);
 }
 .siteName > span:first-child {
@@ -376,11 +411,9 @@
   white-space: nowrap;
 }
 .siteSub {
-  overflow: hidden;
   font: var(--type-body2);
-  color: var(--text-tertiary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--text-secondary);
+  text-wrap: pretty;
 }
 .siteReady {
   display: flex;
@@ -390,16 +423,6 @@
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
   white-space: nowrap;
-}
-
-/* Narrow: the window's controls drop to a row of their own under the title. */
-@container (max-width: 760px) {
-  .actions {
-    order: 5;
-    width: 100%;
-    margin-left: 0;
-    overflow-x: auto;
-  }
 }
 
 @container (max-width: 520px) {

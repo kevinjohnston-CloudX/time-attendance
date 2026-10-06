@@ -1,53 +1,43 @@
-/* The Tablets window. Quiet on purpose: no box around every thing.
-   - the filter sits in the window's header (the shared segmented control);
-   - on the left, the building's tablets as sidebar rows, a status dot beside
-     each name; the chosen one lifts onto white, the way a chosen segment does;
-   - on the right, the chosen tablet read as one page: its name and status,
-     what to do (a soft tint, no border), one strip of readings split by thin
-     rules, then its details as hairline rows under plain section titles. */
+/* The Tablets window, in the Export window's language (the reference for
+   every pop up): two white raised cards on the frame's grey.
+   - the left card: the filter, then the building's tablets as choice rows
+     (an icon in a well, the name, one status line), grouped into security
+     gates and time clocks under quiet labels; a status dot sits on the well;
+   - the right card: the chosen tablet, split into blocks by full width rules:
+     its name, status and what to do; its readings; its details as label and
+     value rows. */
 
-/* The one spot of colour a filter or a tablet carries. */
-.dot {
-  width: 8px;
-  height: 8px;
-  flex: none;
-  border-radius: 999px;
-  background: var(--stroke-hover);
-}
-.dot[data-tone="success"] {
-  background: var(--fill-success);
-}
-.dot[data-tone="warning"] {
-  background: var(--fill-warning);
-}
-.dot[data-tone="error"] {
-  background: var(--fill-error);
-}
-.dot[data-tone="neutral"] {
-  background: var(--icon-disabled);
-}
-
-/* ---- The two panes ---- */
+/* ---- The two cards ---- */
 
 .panes {
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-columns: 296px minmax(0, 1fr);
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.listCard,
+.detailCard {
+  min-height: 0;
+  overflow: hidden;
+}
+/* The filter fits on one line at the card's width. */
+.filter {
+  padding: 14px 12px 10px;
 }
 
 .list {
   display: flex;
   min-height: 0;
+  flex: 1;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
   overflow-y: auto;
-  padding: 16px 12px 24px;
-  border-right: 1px solid var(--stroke-divider);
-  background: var(--surface-secondary);
+  padding: 2px 12px 16px;
 }
 .listEmpty {
-  margin: 8px 12px;
+  margin: 4px;
   font: var(--type-body2);
   color: var(--text-tertiary);
 }
@@ -58,78 +48,113 @@
   flex-direction: column;
   gap: 4px;
 }
-.groupHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 0 12px 2px;
-  font: var(--weight-medium) 12px/16px var(--font-sans);
-  color: var(--text-tertiary);
-}
-.groupHead svg {
-  width: 14px;
-  height: 14px;
-}
-.groupCount {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-}
-.groupList {
+.choices {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.card {
+/* A tablet, as the Export window draws a list to choose. */
+.choice {
   display: flex;
-  flex: none;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
   width: 100%;
-  padding: 9px 12px 10px;
+  min-height: 56px;
+  padding: 9px 12px 9px 8px;
   border: 0;
-  border-radius: var(--radius-m);
+  border-radius: 10px;
   background: transparent;
+  box-shadow: inset 0 0 0 1px transparent;
   text-align: left;
   color: inherit;
   font: inherit;
   cursor: pointer;
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease;
 }
-.card:hover {
-  background: var(--fill-hover);
+.choice:hover {
+  background: var(--ta-row-hover);
 }
-.card[aria-selected="true"] {
-  background: var(--surface-card);
-  box-shadow:
-    var(--shadow-xs),
-    0 0 0 1px var(--stroke-divider);
+.choice[aria-selected="true"] {
+  background: var(--ta-choice-on);
+  box-shadow: inset 0 0 0 1px var(--stroke-accent);
 }
-.card:focus-visible {
+.choice:focus-visible {
   outline: 2px solid var(--stroke-accent-focus);
   outline-offset: 1px;
 }
-/* Sits on the name's first line. */
-.card > .dot {
-  margin-top: 6px;
+
+.choiceIcon {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: var(--ta-well);
+  box-shadow: inset 0 0 0 1px var(--ta-well-ring);
+  color: var(--icon-tertiary);
+  transition:
+    color 120ms ease,
+    background 120ms ease;
 }
-.cardText {
+.choiceIcon svg {
+  width: 17px;
+  height: 17px;
+}
+.choice[aria-selected="true"] .choiceIcon {
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+  color: var(--icon-accent);
+}
+/* How the tablet is doing, on the corner of its well. */
+.choiceDot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: var(--icon-disabled);
+  box-shadow: 0 0 0 2px var(--surface-card);
+}
+.choice:hover .choiceDot {
+  box-shadow: 0 0 0 2px var(--ta-row-hover);
+}
+.choice[aria-selected="true"] .choiceDot {
+  box-shadow: 0 0 0 2px var(--ta-choice-on);
+}
+.choiceDot[data-tone="success"] {
+  background: var(--fill-success);
+}
+.choiceDot[data-tone="warning"] {
+  background: var(--fill-warning);
+}
+.choiceDot[data-tone="error"] {
+  background: var(--fill-error);
+}
+
+.choiceText {
   display: flex;
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 1px;
 }
-.cardName {
-  min-width: 0;
+.choiceTitle {
   overflow: hidden;
   font: var(--weight-semibold) 14px/20px var(--font-sans);
   color: var(--text-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.choice[aria-selected="true"] .choiceTitle {
+  color: var(--text-accent);
+}
 /* Wraps instead of cutting off: the line is the whole point of the row. */
-.cardLine {
+.choiceBody {
   font: var(--type-body2);
   color: var(--text-secondary);
   text-wrap: pretty;
@@ -137,34 +162,43 @@
 
 /* ---- The chosen tablet ---- */
 
+/* Blocks split by full width rules, as the Export window's settings rail. */
 .detail {
   display: flex;
   min-height: 0;
+  flex: 1;
   flex-direction: column;
-  gap: 28px;
   overflow-y: auto;
-  padding: 28px 32px 36px;
 }
 .detail > * {
   flex: none;
+  padding: 18px 20px;
+}
+.detail > * + * {
+  border-top: 1px solid var(--stroke-divider);
+}
+
+.top {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 .detailHead {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 .nameRow {
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 .name {
   margin: 0;
   overflow-wrap: anywhere;
-  font: var(--weight-semibold) 22px/28px var(--font-sans);
-  letter-spacing: -0.01em;
+  font: var(--type-h3);
   color: var(--text-primary);
 }
 .state {
@@ -173,20 +207,17 @@
   color: var(--text-secondary);
 }
 
-/* What to do: a soft tint and an icon in its tone, no border. */
+/* What to do: a soft tint and an icon in its tone. */
 .todo {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  margin: -8px 0 0;
-  padding: 14px 16px;
-  border-radius: var(--radius-m);
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
   font: var(--type-body2);
   color: var(--text-primary);
   text-wrap: pretty;
-}
-.todo + .todo {
-  margin-top: -20px;
 }
 .todo svg {
   width: 16px;
@@ -207,26 +238,23 @@
   color: var(--icon-warning);
 }
 .todo[data-tone="info"] {
-  background: var(--surface-info);
+  background: var(--ta-choice-on);
 }
 .todo[data-tone="info"] svg {
   color: var(--icon-accent);
 }
 
-/* The readings: one strip, three columns split by thin rules. */
+/* The readings: three columns split by thin rules. */
 .readings {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  padding: 18px 0;
-  border-top: 1px solid var(--stroke-divider);
-  border-bottom: 1px solid var(--stroke-divider);
 }
 .reading {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 6px;
-  padding: 0 20px;
+  gap: 4px;
+  padding: 0 16px;
 }
 .reading:first-child {
   padding-left: 0;
@@ -235,15 +263,14 @@
   border-left: 1px solid var(--stroke-divider);
 }
 .readingLabel {
-  font: var(--type-body2);
+  font: var(--type-button2);
   color: var(--text-secondary);
 }
 .readingMain {
   display: flex;
   align-items: center;
   gap: 10px;
-  font: var(--weight-semibold) 24px/32px var(--font-sans);
-  letter-spacing: -0.01em;
+  font: var(--weight-semibold) 22px/30px var(--font-sans);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
   white-space: nowrap;
@@ -325,16 +352,16 @@
   background: var(--fill-warning);
 }
 
-/* Details: a plain title, then a label and its value on each hairline row. */
+/* Details: a quiet label, then a label and its value on each row. */
 .section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 .sectionTitle {
-  margin: 0;
-  font: var(--type-h4);
-  color: var(--text-primary);
+  margin: 0 0 2px;
+  font: var(--weight-semibold) 12px/16px var(--font-sans);
+  color: var(--text-tertiary);
 }
 .inset {
   display: flex;
@@ -343,14 +370,13 @@
 }
 .fact {
   display: grid;
-  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
   align-items: baseline;
   gap: 16px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--stroke-divider);
+  padding: 8px 0;
 }
-.fact:last-child {
-  border-bottom: 0;
+.fact + .fact {
+  border-top: 1px solid var(--stroke-divider);
 }
 .fact dt {
   font: var(--type-body2);
@@ -388,12 +414,10 @@
 .more {
   display: flex;
   flex-direction: column;
-  margin-top: -8px;
 }
 .moreSummary {
   width: fit-content;
-  padding: 4px 0;
-  font: var(--weight-medium) 14px/20px var(--font-sans);
+  font: var(--type-button2);
   color: var(--text-secondary);
   cursor: pointer;
 }
@@ -404,24 +428,20 @@
   color: var(--icon-tertiary);
 }
 .more[open] > .moreSummary {
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   color: var(--text-primary);
 }
 
-/* ---- Loading and empty ---- */
+/* ---- Loading, empty and error ---- */
 
 .skeleton {
-  border-radius: var(--radius-m);
-  background: linear-gradient(90deg, var(--surface-secondary), var(--surface-tertiary), var(--surface-secondary));
-  background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 10px;
+  background: var(--ta-skeleton);
+  animation: pulse 1.4s ease-in-out infinite;
 }
-@keyframes shimmer {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: -100% 0;
+@keyframes pulse {
+  50% {
+    opacity: 0.55;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -437,7 +457,7 @@
   padding: 24px;
 }
 
-/* ---- Narrow: everything in one column, one scroll ---- */
+/* ---- Narrow: the cards stack, one scroll ---- */
 
 @container (max-width: 680px) {
   .panes {
@@ -446,28 +466,26 @@
     align-content: start;
     overflow-y: auto;
   }
+  .listCard,
+  .detailCard {
+    min-height: auto;
+    overflow: visible;
+  }
   .list,
   .detail {
     min-height: auto;
     overflow: visible;
   }
-  .list {
-    border-right: 0;
-    border-bottom: 1px solid var(--stroke-divider);
-  }
-  .detail {
-    padding: 24px 20px 28px;
-  }
   .readings {
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 14px;
   }
   .reading,
   .reading:first-child {
     padding: 0;
   }
   .reading + .reading {
-    padding-top: 16px;
+    padding-top: 14px;
     border-top: 1px solid var(--stroke-divider);
     border-left: 0;
   }
