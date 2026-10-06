@@ -21,8 +21,9 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   // The product is CloudTime; "time & attendance" is what it does, which is
-  // the descriptor the brand lockup carries under the name.
-  title: "CloudTime",
+  // the descriptor the brand lockup carries under the name. The dev server
+  // says "Local" so its tab is never mistaken for the live site.
+  title: process.env.NODE_ENV === "production" ? "CloudTime" : "CloudTime Local",
   description: "Time and attendance for CloudX Systems.",
 };
 
