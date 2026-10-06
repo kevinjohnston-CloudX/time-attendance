@@ -282,11 +282,9 @@ export function ExportWindow({
               <Choice value="movements" kind={kind} onPick={setKind} icon={Footprints} title="Movements" body="When each person came in, took breaks and left" />
               <Choice value="log" kind={kind} onPick={setKind} icon={ScanLine} title="Scan log" body="Every scan at the gate and the time clock" />
             </Group>
-            {/* The old one click export, kept, and set apart at the foot of
-                the list: it is a copy of the page, not a list of its own. */}
-            <div className={styles.screenChoice}>
+            <Group label="From this page">
               <Choice value="screen" kind={kind} onPick={setKind} icon={Monitor} title="What is on screen" body={`${screen.label} exactly as you see it`} />
-            </div>
+            </Group>
           </div>
         </section>
 
