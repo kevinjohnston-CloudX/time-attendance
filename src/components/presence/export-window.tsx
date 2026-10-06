@@ -231,8 +231,10 @@ export function ExportWindow({
       : "No one is on this list right now. Change the department or shift to see more people."
     : format === "print"
       ? kind === "inside" || kind === "clocked"
-        ? "Each person gets a tick box, with a line to sign at the end. To keep a PDF, choose Save as PDF when printing."
-        : "To keep a PDF, choose Save as PDF when printing."
+        ? "Prints with a tick box for each person and a line to sign."
+        : isDay
+          ? `Prints ${dayWords(day, today)}, one row per ${kind === "log" ? "scan" : "stretch of time"}.`
+          : "Prints the list as it is on screen."
       : format === "xlsx"
         ? "Opens in Excel or Google Sheets, with a filter on every column."
         : "A plain file any spreadsheet or system can read.";
@@ -271,33 +273,31 @@ export function ExportWindow({
           <div role="radiogroup" aria-labelledby="export-what" className={styles.groups}>
             <Group label="Right now">
               {site.hasGateData && (
-                <Choice value="inside" kind={kind} onPick={setKind} icon={DoorOpen} title="In the building now" body="Everyone inside, by the security gate" count={count("inside")} />
+                <Choice value="inside" kind={kind} onPick={setKind} icon={DoorOpen} title="In the building now" body="Everyone the security gate shows inside" count={count("inside")} />
               )}
-              <Choice value="clocked" kind={kind} onPick={setKind} icon={Clock} title="Clocked in now" body="Working on the time clock" count={count("clocked")} />
-              <Choice value="everyone" kind={kind} onPick={setKind} icon={Users} title="Everyone today" body="Every person on today's board" count={count("everyone")} />
+              <Choice value="clocked" kind={kind} onPick={setKind} icon={Clock} title="Clocked in now" body="Everyone clocked in and working" count={count("clocked")} />
+              <Choice value="everyone" kind={kind} onPick={setKind} icon={Users} title="Everyone today" body="Everyone scheduled or scanned here today" count={count("everyone")} />
             </Group>
-            <Group label="One day">
-              <Choice value="movements" kind={kind} onPick={setKind} icon={Footprints} title="Movements" body="Each person's day, stretch by stretch" />
-              <Choice value="log" kind={kind} onPick={setKind} icon={ScanLine} title="Scan log" body="Every gate and time clock scan" />
+            <Group label="For one day">
+              <Choice value="movements" kind={kind} onPick={setKind} icon={Footprints} title="Movements" body="When each person came in, took breaks and left" />
+              <Choice value="log" kind={kind} onPick={setKind} icon={ScanLine} title="Scan log" body="Every scan at the gate and the time clock" />
             </Group>
-            <Group label="This page">
-              <Choice value="screen" kind={kind} onPick={setKind} icon={Monitor} title="What is on screen" body={`${screen.label}, with your search, filters and order`} />
-            </Group>
+            {/* The old one click export, kept, and set apart at the foot of
+                the list: it is a copy of the page, not a list of its own. */}
+            <div className={styles.screenChoice}>
+              <Choice value="screen" kind={kind} onPick={setKind} icon={Monitor} title="What is on screen" body={`${screen.label} exactly as you see it`} />
+            </div>
           </div>
         </section>
 
         {/* ── How ── */}
         <aside className={styles.rail} aria-label="Export settings">
           <div className={styles.railBlock}>
-            <span className={styles.overline} id="export-format">
-              Format
-            </span>
             <SegmentedControl items={FORMAT_ITEMS} value={format} onChange={(v) => setFormat(v as Format)} ariaLabel="Format" fullWidth />
           </div>
 
           {kind !== "screen" && (
             <div className={styles.railBlock}>
-              <span className={styles.overline}>{isDay ? "Day and people" : "People"}</span>
               {isDay && (
                 <Field label="Day" htmlFor="export-day">
                   <Select id="export-day" value={day} onChange={(e) => setDay(e.target.value)} style={{ width: "100%" }}>
@@ -359,8 +359,7 @@ export function ExportWindow({
             </div>
           )}
 
-          <div className={styles.railBlock}>
-            <span className={styles.overline}>Preview</span>
+          <div className={`${styles.railBlock} ${styles.previewBlock}`}>
             {format === "print" ? (
               <Sheet
                 title={sheetTitle}
@@ -373,6 +372,7 @@ export function ExportWindow({
             ) : (
               <FileCard format={format} name={fileName} rows={preview ? preview.rows.length : null} columns={preview?.columns.length ?? null} />
             )}
+            {format === "print" && <p className={styles.railNote}>For a PDF, choose Save as PDF in the print window.</p>}
           </div>
         </aside>
       </div>
@@ -393,7 +393,7 @@ function options(people: PresencePerson[], idKey: "departmentId" | "shiftId", na
 function Group({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className={styles.group}>
-      <span className={styles.overline}>{label}</span>
+      <span className={styles.groupLabel}>{label}</span>
       <div className={styles.choices}>{children}</div>
     </div>
   );
