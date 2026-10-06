@@ -159,7 +159,7 @@ export function TabletsBody({
               { value: "ALL", label: "All", count: data.tablets.length },
               { value: "ATTENTION", label: "Attention", count: counts.ATTENTION },
               { value: "WORKING", label: "Working", count: counts.WORKING },
-              { value: "OUT_OF_DATE", label: "Out of date", count: counts.OUT_OF_DATE },
+              { value: "OUT_OF_DATE", label: "Outdated", count: counts.OUT_OF_DATE },
             ]}
           />
         </div>
@@ -172,7 +172,7 @@ export function TabletsBody({
               </span>
               <div role="listbox" aria-labelledby={`tablets-${g.key}`} className={styles.choices}>
                 {g.tablets.map((t) => {
-                  const st = statusOf(t, data.newestBuild);
+                  const st = statusOf(t);
                   return (
                     <button
                       key={t.key}
@@ -187,8 +187,11 @@ export function TabletsBody({
                         <span className={styles.choiceDot} data-tone={st.tone} />
                       </span>
                       <span className={styles.choiceText}>
-                        <span className={styles.choiceTitle} title={t.name}>
-                          {t.name}
+                        <span className={styles.choiceHead}>
+                          <span className={styles.choiceTitle} title={t.name}>
+                            {t.name}
+                          </span>
+                          <span className={styles.choiceBuild}>Build {t.appVersion ?? "unknown"}</span>
                         </span>
                         <span className={styles.choiceBody}>
                           {t.status === "OFFLINE"
@@ -209,8 +212,8 @@ export function TabletsBody({
   );
 }
 
-function StatusBadge({ t, newest }: { t: Tablet; newest: number }) {
-  const st = statusOf(t, newest);
+function StatusBadge({ t }: { t: Tablet }) {
+  const st = statusOf(t);
   return (
     <Badge tone={st.tone} size="sm">
       {st.label}
@@ -234,7 +237,7 @@ function TabletDetail({ t, tz, now, newest }: { t: Tablet; tz: string; now: numb
           <header className={styles.detailHead}>
             <div className={styles.nameRow}>
               <h3 className={styles.name}>{t.name}</h3>
-              <StatusBadge t={t} newest={newest} />
+              <StatusBadge t={t} />
             </div>
             <p className={styles.state}>{state}</p>
           </header>

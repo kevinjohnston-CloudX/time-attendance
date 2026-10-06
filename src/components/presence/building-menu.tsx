@@ -102,7 +102,7 @@ export function BuildingMenu({
       : counts!.ATTENTION > 0
         ? `${counts!.ATTENTION} ${counts!.ATTENTION === 1 ? "needs" : "need"} attention`
         : counts!.OUT_OF_DATE > 0
-          ? `${counts!.OUT_OF_DATE} out of date`
+          ? `${counts!.OUT_OF_DATE} outdated`
           : `All ${n} working`;
 
   const pick = (fn: () => void) => () => {

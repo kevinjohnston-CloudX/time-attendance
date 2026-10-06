@@ -156,7 +156,25 @@
   flex: 1;
   flex-direction: column;
 }
+/* The name, then its app build, so the build is always one glance away. */
+.choiceHead {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+.choiceBuild {
+  flex: none;
+  font: var(--type-body2);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.choice[aria-selected="true"] .choiceBuild {
+  color: var(--text-secondary);
+}
 .choiceTitle {
+  min-width: 0;
   overflow: hidden;
   font: var(--weight-semibold) 14px/20px var(--font-sans);
   color: var(--text-primary);

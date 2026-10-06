@@ -74,7 +74,7 @@ export function healthOf(t: Tablet): Health {
 export type StatusTone = "error" | "warning" | "success" | "neutral";
 
 /** A tablet's state as one badge and one short line, the same in the list and the detail. */
-export function statusOf(t: Tablet, newestBuild: number): { tone: StatusTone; label: string; line: string } {
+export function statusOf(t: Tablet): { tone: StatusTone; label: string; line: string } {
   const h = healthOf(t);
   if (t.status === "OFFLINE") return { tone: "error", label: "Not responding", line: "Not responding" };
   if (h === "ATTENTION") {
@@ -82,11 +82,8 @@ export function statusOf(t: Tablet, newestBuild: number): { tone: StatusTone; la
     return { tone: "warning", label: "Needs attention", line: issue ? issue.short : "Not sending reports" };
   }
   if (h === "OUT_OF_DATE")
-    return {
-      tone: "neutral",
-      label: "Out of date",
-      line: `Build ${t.appVersion ?? "unknown"}, newest is ${newestBuild}`,
-    };
+    // The build itself sits beside the name, so the line only says it.
+    return { tone: "neutral", label: "Outdated", line: "Outdated" };
   return {
     tone: "success",
     label: "Working",
