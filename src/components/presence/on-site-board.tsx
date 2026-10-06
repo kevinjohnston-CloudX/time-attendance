@@ -91,11 +91,13 @@ import {
   ScanLogSkeleton,
   counterQuery,
   parseCounter,
-  scanLogCsv,
+  scanLogLines,
   useScanLog,
   type LogCounter,
 } from "./scan-log";
-import { UnknownBadgesView, unknownBadgesCsv, useUnknownBadges } from "./unknown-badges";
+import { UnknownBadgesView, unknownBadgesLines, useUnknownBadges } from "./unknown-badges";
+import { ExportWindow } from "./export-window";
+import { dayWords, fileStamp, linesTable, movementsLines, stampLine, type ExportTable } from "./export-table";
 import styles from "./on-site.module.css";
 import { Face } from "./face";
 
@@ -146,6 +148,7 @@ export function OnSiteBoard({
   initialFilters,
   canEditPhotos = false,
   canExport = true,
+  canOpenReports = false,
   scheduling = null,
   gateAlerts = false,
   gateSwitch = null,
@@ -178,6 +181,8 @@ export function OnSiteBoard({
    * to the person who took it. What is on screen is still on screen.
    */
   canExport?: boolean;
+  /** Whether the Export window may point at the Reports page for longer date ranges. */
+  canOpenReports?: boolean;
   /**
    * Draws Add to schedule on the employee panel, for viewers allowed to use
    * it; `live` is false while the gates still check Oracle, and the button is
@@ -201,6 +206,7 @@ export function OnSiteBoard({
   const [gateSites, setGateSites] = useState(gateSwitch?.sites ?? null);
   const gateSite = gateSites?.find((s) => s.id === siteId) ?? null;
   const [tabletsOpen, setTabletsOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [gateOpen, setGateOpen] = useState(false);
   // The chip under the title and the Tablets window read the same answer.
   const tablets = useSiteTablets(siteId, canSeeTablets);
@@ -616,85 +622,104 @@ export function OnSiteBoard({
   // ── Live line ───────────────────────────────────────────────────────────
   const age = lastOk ? now - lastOk : Infinity;
 
-  async function exportLog() {
-    if (!board) return;
+  // ── Export: the view on screen as a table ─────────────────────────────
+  // The Export window offers this as "What is on screen": the tab open now,
+  // with its search, filters and order, exactly as the old Export button
+  // downloaded it.
+
+  async function logTable(): Promise<ExportTable | null> {
+    if (!board) return null;
+    const meta = {
+      site: board.site.name,
+      when: logDayShown ? dayWords(logDayShown, today) : stampLine(board.generatedAt, tz),
+      filters: [],
+      rollCall: false,
+    };
+    const stamp = logDayShown || fileStamp(board.generatedAt, tz);
     if (counter === "unknown") {
-      if (!unknown.data) return;
-      const stamp = logDayShown || `${today} ${fmtTime(board.generatedAt, tz).replace(/[: ]/g, "")}`;
-      download(unknownBadgesCsv(unknown.data, csvCell, board.site.name), `Not in CloudTime ${board.site.name} ${stamp}.csv`);
-      return;
+      if (!unknown.data) return null;
+      return linesTable(unknownBadgesLines(unknown.data, board.site.name), {
+        ...meta,
+        title: "Not in CloudTime",
+        fileStem: `Not in CloudTime ${board.site.name} ${stamp}`,
+        unit: { one: "badge", many: "badges" },
+      });
     }
     const all = await log.fetchAll();
-    if (!all) return;
-    const csv = scanLogCsv(all.rows, tz, csvCell, board.site.name);
-    const stamp = logDayShown || `${today} ${fmtTime(board.generatedAt, tz).replace(/[: ]/g, "")}`;
-    download(csv, `Scan log ${board.site.name} ${stamp}.csv`);
+    if (!all) return null;
+    return linesTable(scanLogLines(all.rows, tz, board.site.name), {
+      ...meta,
+      title: "Scan log",
+      fileStem: `Scan log ${board.site.name} ${stamp}`,
+      unit: { one: "scan", many: "scans" },
+      printColumns: [0, 1, 3, 5, 6, 8],
+      note: all.hasMore ? "This view had more than 5,000 scans; the newest 5,000 are here." : undefined,
+    });
   }
 
-  function exportMovements() {
+  function movementsTable(): ExportTable | null {
     const data = siteDay.data;
-    if (!data) return;
-    const tzDay = data.site.timezone;
-    const time = (ms: number | null) => (ms === null ? "" : fmtTime(new Date(ms).toISOString(), tzDay));
-    const header = ["Name", "Employee code", "Department", "Home site", "Scheduled", "Reader", "Activity", "From", "To", "Minutes", "Notes"];
-    const lines: string[][] = [header];
-    for (const v of mvDisplayed) {
-      const base = [v.person.name, v.person.employeeCode, v.person.department ?? "", v.person.homeSite ?? data.site.name, fmtShift(v.person.scheduledStart, v.person.scheduledEnd) ?? ""];
-      if (v.lines.length === 0) {
-        lines.push([...base, "", v.person.onLeave ? "On leave" : "Not seen", "", "", "", ""]);
-        continue;
-      }
-      for (const l of v.lines) {
-        lines.push([
-          ...base,
-          l.reader === "gate" ? "Security gate" : "Time clock",
-          { INSIDE: "Inside the building", WORK: "On the clock", MEAL: "Meal", BREAK: "Break", EXIT_ONLY: "Left, never scanned in" }[l.kind],
-          l.carried ? "Since yesterday" : time(l.start),
-          l.end === null ? (data.day === data.today ? "Still going" : "Never scanned out") : time(l.end),
-          l.kind === "EXIT_ONLY" ? "" : String(l.minutes),
-          l.closedBySystem ? "Closed by the system" : "",
-        ]);
-      }
-    }
-    download(lines.map((r) => r.map(csvCell).join(",")).join("\r\n"), `Movements ${data.site.name} ${data.day}.csv`);
+    if (!data) return null;
+    return linesTable(movementsLines(mvDisplayed, data), {
+      title: "Movements",
+      site: data.site.name,
+      when: dayWords(data.day, data.today),
+      fileStem: `Movements ${data.site.name} ${data.day}`,
+      filters: [],
+      unit: { one: "row", many: "rows" },
+      rollCall: false,
+      printColumns: [0, 2, 5, 6, 7, 8, 9],
+      note: data.truncated ? "This day had more scans than one export carries, so its earliest scans are left out." : undefined,
+    });
   }
 
-  function exportCsv() {
-    if (tab === "movements") return exportMovements();
-    if (tab === "log") return void exportLog();
-    if (!board) return;
-    // The export follows what is on screen, in the order it is on screen.
-    const rows = listRows;
+  function peopleListTable(): ExportTable | null {
+    if (!board) return null;
+    // The list follows what is on screen, in the order it is on screen.
     const gateData = board.site.hasGateData;
-    const header = [
-      "Name",
-      "Employee code",
-      "Department",
-      "Home site",
-      "Shift",
-      "Status",
-      ...(gateData ? ["Security gate"] : []),
-      "Time clock",
-      "Since",
-      "First in today",
-      "Scheduled",
+    const lines = [
+      [
+        "Name",
+        "Employee ID",
+        "Department",
+        "Home site",
+        "Shift",
+        "Status",
+        ...(gateData ? ["Security gate"] : []),
+        "Time clock",
+        "Since",
+        "First in today",
+        "Scheduled",
+      ],
+      ...listRows.map((p) => [
+        p.name,
+        p.employeeCode,
+        p.department ?? "",
+        p.homeSite ?? board.site.name,
+        p.shift ?? "",
+        statusLabel(p),
+        ...readerLines(p, tz, now, gateData).map((l) => l.title.replace(/^[^:]+: /, "")),
+        fmtTime(p.since, tz),
+        fmtTime(p.firstInToday, tz),
+        fmtShift(p.scheduledStart, p.scheduledEnd) ?? "",
+      ]),
     ];
-    const lines = [header, ...rows.map((p) => [
-      p.name,
-      p.employeeCode,
-      p.department ?? "",
-      p.homeSite ?? board.site.name,
-      p.shift ?? "",
-      statusLabel(p),
-      ...readerLines(p, tz, now, gateData).map((l) => l.title.replace(/^[^:]+: /, "")),
-      fmtTime(p.since, tz),
-      fmtTime(p.firstInToday, tz),
-      fmtShift(p.scheduledStart, p.scheduledEnd) ?? "",
-    ])];
-    const csv = lines.map((r) => r.map(csvCell).join(",")).join("\r\n");
-    const stamp = `${siteDate(board.generatedAt, tz)} ${fmtTime(board.generatedAt, tz).replace(/[: ]/g, "")}`;
-    download(csv, `Live Attendance ${board.site.name} ${stamp}.csv`);
+    return linesTable(lines, {
+      title: "Live Attendance",
+      site: board.site.name,
+      when: stampLine(board.generatedAt, tz),
+      fileStem: `Live Attendance ${board.site.name} ${fileStamp(board.generatedAt, tz)}`,
+      filters: [],
+      unit: { one: "person", many: "people" },
+      rollCall: false,
+      printColumns: [0, 1, 2, 5, gateData ? 8 : 7],
+    });
   }
+
+  const screenExport = {
+    label: tab === "movements" ? "The Movements view" : tab === "log" ? (counter === "unknown" ? "The badges not in CloudTime" : "The Scan log") : "The People list",
+    build: async () => (tab === "movements" ? movementsTable() : tab === "log" ? logTable() : peopleListTable()),
+  };
 
   // ── No site at all ──────────────────────────────────────────────────────
   if (!siteId || sites.length === 0) {
@@ -784,11 +809,9 @@ export function OnSiteBoard({
       <Button
         hierarchy="secondary"
         leadingIcon={<Download className="h-4 w-4" aria-hidden="true" />}
-        onClick={exportCsv}
-        disabled={
-          !board ||
-          (tab === "log" ? log.rows.length === 0 : tab === "movements" ? mvRows.length === 0 : matches.length === 0)
-        }
+        onClick={() => setExportOpen(true)}
+        disabled={!board}
+        aria-haspopup="dialog"
       >
         Export
       </Button>
@@ -1457,6 +1480,22 @@ export function OnSiteBoard({
             if (siteId) void refresh(siteId);
             toast.flash("Added to today's schedule");
           }}
+        />
+      )}
+
+      {exportOpen && board && (
+        <ExportWindow
+          key={`export|${board.site.id}`}
+          site={board.site}
+          people={board.people}
+          generatedAt={board.generatedAt}
+          today={today}
+          initialDepartmentId={dept}
+          initialShiftId={shift}
+          initialDay={tab === "people" ? "" : logDayShown}
+          screen={screenExport}
+          canOpenReports={canOpenReports}
+          onClose={() => setExportOpen(false)}
         />
       )}
 
@@ -2286,21 +2325,4 @@ function counterTotal(s: NonNullable<ReturnType<typeof useScanLog>["page"]>["sum
   if (stream === "SECURITY") return direction === "IN" ? s.gateIn : direction === "OUT" ? s.gateOut : s.gateTotal;
   if (stream === "TIME_CLOCK") return direction === "IN" ? s.clockIn : direction === "OUT" ? s.clockOut : s.clockTotal;
   return s.gateTotal + s.clockTotal;
-}
-
-function download(csv: string, name: string) {
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function csvCell(v: string): string {
-  const s = String(v ?? "");
-  // A leading = + - or @ is read as a formula by spreadsheet programs.
-  const safe = /^[=+\-@]/.test(s) ? `'${s}` : s;
-  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }

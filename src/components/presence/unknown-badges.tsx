@@ -306,7 +306,8 @@ function BadgeRow({ b, tz, day }: { b: UnknownBadge; tz: string; day: string }) 
 }
 
 /** The export: both groups, in the order on screen, one row per badge. */
-export function unknownBadgesCsv(data: UnknownBadgeDay, cell: (v: string) => string, site: string): string {
+/** Badges no one in CloudTime carries, as rows of text, heading first. */
+export function unknownBadgesLines(data: UnknownBadgeDay, site: string): string[][] {
   const tz = data.timezone;
   const header = [
     "Site", "Day", "Status", "Name in the WMS", "Now in CloudTime as", "Added by", "Added at", "Badge", "Department",
@@ -329,5 +330,9 @@ export function unknownBadgesCsv(data: UnknownBadgeDay, cell: (v: string) => str
     String(b.gateScans),
     String(b.refusedPunches),
   ]);
-  return [header, ...lines].map((r) => r.map(cell).join(",")).join("\r\n");
+  return [header, ...lines];
+}
+
+export function unknownBadgesCsv(data: UnknownBadgeDay, cell: (v: string) => string, site: string): string {
+  return unknownBadgesLines(data, site).map((r) => r.map(cell).join(",")).join("\r\n");
 }

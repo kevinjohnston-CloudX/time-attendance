@@ -814,7 +814,8 @@ export function ScanLogSkeleton() {
 
 /* ── Export ─────────────────────────────────────────────────────────────── */
 
-export function scanLogCsv(rows: ScanLogRow[], tz: string, cell: (v: string) => string, site: string): string {
+/** The scan log as rows of text, heading first, for a file or a printed sheet. */
+export function scanLogLines(rows: ScanLogRow[], tz: string, site: string): string[][] {
   const header = ["Time", "Name", "Employee code", "Department", "Home site", "Reader", "Scan", "Device", "Accepted", "Notes"];
   const lines = [
     header,
@@ -838,5 +839,9 @@ export function scanLogCsv(rows: ScanLogRow[], tz: string, cell: (v: string) => 
         .join(". "),
     ]),
   ];
-  return lines.map((l) => l.map(cell).join(",")).join("\r\n");
+  return lines;
+}
+
+export function scanLogCsv(rows: ScanLogRow[], tz: string, cell: (v: string) => string, site: string): string {
+  return scanLogLines(rows, tz, site).map((l) => l.map(cell).join(",")).join("\r\n");
 }

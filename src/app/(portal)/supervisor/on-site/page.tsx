@@ -53,13 +53,15 @@ export default async function OnSitePage({
   const siteId = sites.some((s) => s.id === params.site) ? params.site! : defaultSiteId;
 
   const boardResult = siteId ? await getOnSiteBoard({ siteId }) : null;
-  const [canEditPhotos, canManageEmployees, gateAlerts, limited, gateSwitch] = await Promise.all([
+  const [canEditPhotos, canManageEmployees, gateAlerts, limited, gateSwitch, canOpenReports] = await Promise.all([
     userHasPermission(session.user, "PRESENCE_PHOTO_EDIT"),
     userHasPermission(session.user, "EMPLOYEE_MANAGE"),
     userHasPermission(session.user, "PRESENCE_SCHEDULE_ADD"),
     isLiveAttendanceOnly(session.user.customRoleId),
     // System Admins only: anybody else is refused, and gets no switch. One per building.
     getGateAlertsSetting(),
+    // Export points at the scan reports for more than a week, for those who can open them.
+    userHasPermission(session.user, "REPORT_MANAGE"),
   ]);
   const canSchedule = canManageEmployees || gateAlerts;
   // A failure here is a real fault, not an empty building: the error boundary
@@ -73,6 +75,7 @@ export default async function OnSitePage({
       initialBoard={boardResult?.success ? boardResult.data : null}
       canEditPhotos={canEditPhotos}
       canExport={!limited}
+      canOpenReports={canOpenReports}
       scheduling={canSchedule ? { live: gateReadsCloudTimeSchedule() } : null}
       gateAlerts={gateAlerts}
       gateSwitch={gateSwitch.success ? gateSwitch.data : null}

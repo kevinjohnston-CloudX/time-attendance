@@ -1,0 +1,240 @@
+/* The Export window on Live Attendance. The frame is the Tablets and Gate
+   alerts windows' own (building-windows.module.css), with a footer of
+   buttons, since this window makes something. The list choices are drawn as
+   the Leave Requests cards are: a quiet border that turns accent when
+   picked, the facts in plain lines, the count to the right. */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--wms-overlay-modal);
+}
+
+.window {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 600px;
+  max-height: calc(100dvh - 32px);
+  border-radius: var(--radius-l);
+  overflow: hidden;
+  outline: none;
+}
+
+.head {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--stroke-divider);
+}
+.glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: var(--ta-well);
+  box-shadow: inset 0 0 0 1px var(--ta-well-ring);
+  color: var(--icon-tertiary);
+}
+.titles {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.title {
+  margin: 0;
+  font: var(--type-h3);
+  color: var(--text-primary);
+}
+.subtitle {
+  font: var(--type-body2);
+  color: var(--text-secondary);
+}
+
+.body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  padding: 16px 20px 20px;
+}
+.body > * {
+  flex: none;
+}
+
+.foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--stroke-divider);
+}
+.footSummary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--type-body2);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+/* ---- Sections ---- */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.overline {
+  margin: 0;
+  font: var(--type-overline);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font: var(--type-body2);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+.hintIcon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-top: 2px;
+  color: var(--icon-tertiary);
+}
+.link {
+  color: var(--text-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.empty {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-warning);
+  font: var(--type-body2);
+  color: var(--text-primary);
+}
+
+/* ---- The lists to pick from ---- */
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.choice {
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 10px;
+  background: var(--surface-card);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.choice:hover {
+  border-color: var(--stroke-default);
+}
+.choice[data-on="true"] {
+  border-color: var(--stroke-accent);
+  box-shadow: 0 0 0 1px var(--stroke-accent);
+}
+.choiceMain {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+}
+.radio {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--fill-accent);
+  cursor: pointer;
+}
+.radio:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 2px;
+}
+.choiceText {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.choiceTitle {
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+}
+.choiceBody {
+  font: var(--type-body2);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+.choiceMeta {
+  flex: none;
+  margin-top: 1px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--surface-tertiary);
+  font: var(--weight-semibold) 12px/20px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.choice[data-on="true"] .choiceMeta {
+  background: var(--surface-info);
+  color: var(--text-accent);
+}
+.choiceExtra {
+  padding: 0 14px 12px 42px;
+}
+
+/* ---- Options ---- */
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+.fieldLabel {
+  font: var(--type-button2);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 520px) {
+  .foot {
+    flex-wrap: wrap;
+  }
+  .footSummary {
+    flex-basis: 100%;
+  }
+}
