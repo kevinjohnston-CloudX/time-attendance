@@ -5,7 +5,7 @@ import { AlertTriangle, ArrowUpCircle, Clock, DoorOpen, Tablet as TabletIcon, Wi
 import { Badge, Banner, Button, EmptyState } from "@/components/ui";
 import type { BuildingTablets, Tablet } from "@/lib/presence/tablets.service";
 import { BuildingWindow } from "./building-window";
-import { countHealth, healthOf, issuesOf, type Health } from "./tablet-health";
+import { countHealth, healthOf, issuesOf, statusOf, type Health } from "./tablet-health";
 import styles from "./tablets-window.module.css";
 
 /**
@@ -24,7 +24,7 @@ import styles from "./tablets-window.module.css";
  * window always show the same answer.
  */
 
-const GROUP_ORDER: Record<Health, number> = { ATTENTION: 0, WORKING: 1, UPDATE: 2 };
+const GROUP_ORDER: Record<Health, number> = { ATTENTION: 0, WORKING: 1, OUT_OF_DATE: 2 };
 const kind = (t: Tablet) => (t.stream === "SECURITY" ? "Security gate" : "Time clock");
 
 export function TabletsWindow({
@@ -74,13 +74,13 @@ export function TabletsWindow({
         <>
           <div className={styles.tiles} aria-label="Loading tablets">
             {[0, 1, 2].map((i) => (
-              <div key={i} className={styles.skeleton} style={{ height: 66 }} />
+              <div key={i} className={styles.skeleton} style={{ height: 72 }} />
             ))}
           </div>
           <div className={styles.panes}>
             <div className={styles.list}>
               {[0, 1, 2, 3].map((i) => (
-                <div key={i} className={styles.skeleton} style={{ height: 64, flex: "none" }} />
+                <div key={i} className={styles.skeleton} style={{ height: 62, flex: "none" }} />
               ))}
             </div>
             <div className={styles.detail}>
@@ -143,13 +143,15 @@ export function TabletsBody({
     <button
       type="button"
       className={styles.tile}
-      data-tone={counts[h] > 0 ? tone : undefined}
       aria-pressed={only === h}
       disabled={counts[h] === 0}
       onClick={() => onOnly(only === h ? null : h)}
       title={only === h ? "Show every tablet" : "Show only these"}
     >
-      <span className="wms-overline">{label}</span>
+      <span className={styles.tileLabel}>
+        <span className={styles.dot} data-tone={counts[h] > 0 ? tone : undefined} aria-hidden="true" />
+        {label}
+      </span>
       <span className={styles.tileNum}>{counts[h]}</span>
     </button>
   );
@@ -159,7 +161,7 @@ export function TabletsBody({
       <div className={styles.tiles}>
         {tile("WORKING", "Working", "success")}
         {tile("ATTENTION", "Need attention", "error")}
-        {tile("UPDATE", "Waiting for the app update", "neutral")}
+        {tile("OUT_OF_DATE", "Out of date", "neutral")}
       </div>
       <div className={styles.panes}>
         <div className={`ta-scroll ${styles.list}`} aria-label="Tablets">
@@ -171,76 +173,51 @@ export function TabletsBody({
                 <span className={styles.groupCount}>{g.tablets.length}</span>
               </h4>
               <div role="listbox" aria-label={g.title} className={styles.groupList}>
-                {g.tablets.map((t) => (
-                  <button
-                    key={t.key}
-                    type="button"
-                    role="option"
-                    aria-selected={current?.key === t.key}
-                    className={styles.card}
-                    onClick={() => onChoose(t.key)}
-                  >
-                    <span className={styles.cardIcon} data-kind={g.key} aria-hidden="true">
-                      <g.Icon />
-                    </span>
-                    <span className={styles.cardBody}>
+                {g.tablets.map((t) => {
+                  const st = statusOf(t, data.newestBuild);
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      role="option"
+                      aria-selected={current?.key === t.key}
+                      className={styles.card}
+                      onClick={() => onChoose(t.key)}
+                    >
                       <span className={styles.cardName} title={t.name}>
                         {t.name}
                       </span>
-                      <span className={styles.cardTop}>
-                        <StatusBadge t={t} />
-                        <span className={styles.cardLine}>{cardLine(t, tz, now)}</span>
+                      <span className={styles.cardLine}>
+                        <span className={styles.dot} data-tone={st.tone} aria-hidden="true" />
+                        <span>
+                          {t.status === "OFFLINE"
+                            ? `Not responding since ${whenLabel(t.lastSeenAt, tz, now)}`
+                            : st.line}
+                        </span>
                       </span>
-                    </span>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             </section>
           ))}
         </div>
-        {current && <TabletDetail key={current.key} t={current} tz={tz} now={now} />}
+        {current && <TabletDetail key={current.key} t={current} tz={tz} now={now} newest={data.newestBuild} />}
       </div>
     </>
   );
 }
 
-function StatusBadge({ t }: { t: Tablet }) {
-  const h = healthOf(t);
-  if (t.status === "OFFLINE")
-    return (
-      <Badge tone="error" size="sm">
-        Not responding
-      </Badge>
-    );
-  if (h === "ATTENTION")
-    return (
-      <Badge tone="warning" size="sm">
-        Needs attention
-      </Badge>
-    );
-  if (h === "WORKING")
-    return (
-      <Badge tone="success" size="sm">
-        Working
-      </Badge>
-    );
+function StatusBadge({ t, newest }: { t: Tablet; newest: number }) {
+  const st = statusOf(t, newest);
   return (
-    <Badge tone="neutral" size="sm">
-      Needs update
+    <Badge tone={st.tone} size="sm">
+      {st.label}
     </Badge>
   );
 }
 
-/** Beside the status on a card: the one thing worth knowing. Its kind is the group it sits in. */
-function cardLine(t: Tablet, tz: string, now: number): string {
-  if (t.status === "OFFLINE") return `Since ${whenLabel(t.lastSeenAt, tz, now)}`;
-  const issue = issuesOf(t)[0];
-  if (issue) return issue.short;
-  if (t.status === "NOT_REPORTING") return `Build ${t.appVersion ?? "unknown"}`;
-  return t.batteryPct === null ? "Checked in" : `Battery ${t.batteryPct}%`;
-}
-
-function TabletDetail({ t, tz, now }: { t: Tablet; tz: string; now: number }) {
+function TabletDetail({ t, tz, now, newest }: { t: Tablet; tz: string; now: number; newest: number }) {
   const reporting = t.status !== "NOT_REPORTING";
   const state =
     t.status === "OFFLINE"
@@ -254,7 +231,7 @@ function TabletDetail({ t, tz, now }: { t: Tablet; tz: string; now: number }) {
       <header className={styles.detailHead}>
         <div className={styles.nameRow}>
           <h3 className={styles.name}>{t.name}</h3>
-          <StatusBadge t={t} />
+          <StatusBadge t={t} newest={newest} />
         </div>
         <p className={styles.state}>{state}</p>
       </header>
@@ -276,15 +253,33 @@ function TabletDetail({ t, tz, now }: { t: Tablet; tz: string; now: number }) {
             <span>{i.todo}</span>
           </p>
         ))}
-      {!reporting && (
+      {!reporting && t.outOfDate && (
         <p className={styles.todo} data-tone="info">
           <ArrowUpCircle aria-hidden="true" />
           <span>
             This tablet runs app build {t.appVersion ?? "unknown"}, which cannot report its battery, Wi-Fi or
-            connection. Ask IT to install build 163 or later, and everything shows here within five minutes.
-            {t.stream === "SECURITY"
+            connection. Ask IT to install build {newest}, and everything shows here within five minutes.
+            {t.stream === "SECURITY" && !t.sendsBuilding
               ? " Until then, somebody this gate turns away may pop up in their home building instead of this one."
               : ""}
+          </span>
+        </p>
+      )}
+      {!reporting && !t.outOfDate && (
+        <p className={styles.todo} data-tone="warning">
+          <AlertTriangle aria-hidden="true" />
+          <span>
+            It scans on build {t.appVersion}, which should report its health every five minutes, but no report has
+            reached CloudTime. Ask IT to check it.
+          </span>
+        </p>
+      )}
+      {reporting && t.outOfDate && t.status === "ONLINE" && (
+        <p className={styles.todo} data-tone="info">
+          <ArrowUpCircle aria-hidden="true" />
+          <span>
+            It runs app build {t.appVersion ?? "unknown"}, and other tablets already run build {newest}. Ask IT to
+            update it.
           </span>
         </p>
       )}
@@ -294,7 +289,7 @@ function TabletDetail({ t, tz, now }: { t: Tablet; tz: string; now: number }) {
           <BatteryReading t={t} asOf={t.status === "OFFLINE" ? whenLabel(t.lastSeenAt, tz, now) : null} />
           <WifiReading t={t} asOf={t.status === "OFFLINE" ? whenLabel(t.lastSeenAt, tz, now) : null} />
           <div className={styles.reading}>
-            <span className="wms-overline">Scans today</span>
+            <span className={styles.readingLabel}>Scans today</span>
             <span className={styles.readingMain}>
               {t.scansToday === null ? "None" : t.scansToday.toLocaleString("en-US")}
             </span>
@@ -461,10 +456,10 @@ function BatteryReading({ t, asOf }: { t: Tablet; asOf: string | null }) {
         : t.plugged === "NONE"
           ? "Unplugged, on battery"
           : "Plugged in, not charging";
-  const sub = asOf && pct !== null ? `${now} at ${asOf}` : now;
+  const sub = asOf && pct !== null ? `${now}, as of ${asOf}` : now;
   return (
     <div className={styles.reading} data-tone={tone}>
-      <span className="wms-overline">Battery</span>
+      <span className={styles.readingLabel}>Battery</span>
       <span className={styles.readingMain}>
         <span className={styles.battery} aria-hidden="true">
           <span className={styles.batteryFill} data-level={level} style={{ width: `${Math.max(4, pct ?? 0)}%` }} />
@@ -495,7 +490,7 @@ function WifiReading({ t, asOf }: { t: Tablet; asOf: string | null }) {
       t.network && t.network !== "WIFI" ? networkWord(t.network).toLowerCase() : wifiOf(t.wifiRssi).word.toLowerCase();
     return (
       <div className={styles.reading} data-tone="error">
-        <span className="wms-overline">Connection</span>
+        <span className={styles.readingLabel}>Connection</span>
         <span className={styles.readingMain}>
           <span className={styles.bars} aria-hidden="true">
             {[1, 2, 3, 4].map((b) => (
@@ -505,7 +500,7 @@ function WifiReading({ t, asOf }: { t: Tablet; asOf: string | null }) {
           No contact
         </span>
         <span className={styles.readingSub}>
-          Was {was} at {asOf}
+          Was {was}, as of {asOf}
         </span>
       </div>
     );
@@ -513,7 +508,7 @@ function WifiReading({ t, asOf }: { t: Tablet; asOf: string | null }) {
   if (t.network && t.network !== "WIFI") {
     return (
       <div className={styles.reading}>
-        <span className="wms-overline">Connection</span>
+        <span className={styles.readingLabel}>Connection</span>
         <span className={styles.readingMain}>{networkWord(t.network)}</span>
         <span className={styles.readingSub}>Not on Wi-Fi</span>
       </div>
@@ -522,7 +517,7 @@ function WifiReading({ t, asOf }: { t: Tablet; asOf: string | null }) {
   const w = wifiOf(t.wifiRssi);
   return (
     <div className={styles.reading} data-tone={w.bars >= 3 ? "success" : "warning"}>
-      <span className="wms-overline">Wi-Fi</span>
+      <span className={styles.readingLabel}>Wi-Fi</span>
       <span className={styles.readingMain}>
         <span className={styles.bars} data-level={w.bars <= 2 ? "weak" : undefined} aria-hidden="true">
           {[1, 2, 3, 4].map((b) => (
@@ -541,14 +536,14 @@ function WifiReading({ t, asOf }: { t: Tablet; asOf: string | null }) {
 function Fact({ label, value, meter }: { label: string; value: string; meter?: number | null }) {
   return (
     <div className={styles.fact}>
-      <dt className="wms-overline">{label}</dt>
+      <dt>{label}</dt>
       <dd>
-        {value}
         {meter != null && (
           <span className={styles.meter} aria-hidden="true">
             <span style={{ width: `${Math.round(Math.min(1, Math.max(0, meter)) * 100)}%` }} />
           </span>
         )}
+        <span>{value}</span>
       </dd>
     </div>
   );
@@ -602,7 +597,8 @@ function durationWords(sec: number): string {
   return `${Math.floor(hr / 24)} days`;
 }
 
-const mbWords = (mb: number | null) => (mb === null ? "unknown" : mb < 1 ? "under 1 MB" : mb >= 1024 ? gb(mb) : `${mb} MB`);
+const mbWords = (mb: number | null) =>
+  mb === null ? "unknown" : mb < 1 ? "under 1 MB" : mb >= 1024 ? gb(mb) : `${mb} MB`;
 
 const gb = (mb: number) => (mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`);
 

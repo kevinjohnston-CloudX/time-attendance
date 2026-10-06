@@ -93,18 +93,17 @@ export function BuildingMenu({
   const seesTablets = tablets !== undefined;
   const counts = tablets ? countHealth(tablets.tablets) : null;
   const n = tablets?.tablets.length ?? 0;
-  const tabletTone = !counts ? "quiet" : counts.ATTENTION > 0 ? "bad" : counts.WORKING > 0 ? "ok" : "quiet";
+  const tabletTone = !counts ? "quiet" : counts.ATTENTION > 0 ? "bad" : counts.OUT_OF_DATE > 0 ? "quiet" : "ok";
+  // Something wrong first, then anything behind, else all is well.
   const tabletStatus = !tablets
     ? "Loading"
     : n === 0
       ? "None found"
       : counts!.ATTENTION > 0
         ? `${counts!.ATTENTION} ${counts!.ATTENTION === 1 ? "needs" : "need"} attention`
-        : counts!.WORKING === n
-          ? `All ${n} working`
-          : counts!.WORKING > 0
-            ? `${counts!.WORKING} of ${n} working`
-            : `${n} need the update`;
+        : counts!.OUT_OF_DATE > 0
+          ? `${counts!.OUT_OF_DATE} out of date`
+          : `All ${n} working`;
 
   const pick = (fn: () => void) => () => {
     setOpen(false);

@@ -27,6 +27,8 @@ export interface Tablet {
   stream: string | null;
   status: TabletStatus;
   appVersion: string | null;
+  /** On an older build than the newest one in use (BuildingTablets.newestBuild). */
+  outOfDate: boolean;
   /** Whether this build sends its building on every gate check. */
   sendsBuilding: boolean;
   lastScanAt: string | null;
@@ -105,13 +107,21 @@ const HOT_C = 45;
 export interface BuildingTablets {
   site: { id: string; name: string; timezone: string };
   tablets: Tablet[];
+  /**
+   * The newest app build running on the organization's tablets this week,
+   * never below the first build that reports (anything older is out of date
+   * by definition). Test builds do not count, so a tablet on IT's bench
+   * cannot make every other one look behind.
+   */
+  newestBuild: number;
   checkedAt: string;
 }
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : {});
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
-const text = (v: unknown, max = 80): string | null => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+const text = (v: unknown, max = 80): string | null =>
+  typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
 const isoOrNull = (v: unknown): string | null => {
   if (typeof v !== "string" && typeof v !== "number") return null;
   const d = new Date(v);
@@ -146,16 +156,33 @@ async function tabletsInScans(tenantId: string, warehouses: number[], days = LOO
 }
 
 /** The caller has checked the viewer may see this building. */
-export async function getBuildingTablets(tenantId: string, siteId: string, now = new Date()): Promise<BuildingTablets | null> {
+export async function getBuildingTablets(
+  tenantId: string,
+  siteId: string,
+  now = new Date(),
+): Promise<BuildingTablets | null> {
   const site = await db.site.findFirst({
     where: { id: siteId, tenantId },
     select: { id: true, name: true, timezone: true, wmsWarehouseId: true },
   });
   if (!site) return null;
-  const [devices, scanned] = await Promise.all([
+  const [devices, scanned, inUse] = await Promise.all([
     db.device.findMany({ where: { tenantId, siteId } }),
     tabletsInScans(tenantId, site.wmsWarehouseId === null ? [] : [site.wmsWarehouseId]),
+    db.device.findMany({
+      where: {
+        tenantId,
+        appVersion: { not: null },
+        // Not "not true": in SQL that also drops tablets that never said.
+        OR: [{ gitDirty: false }, { gitDirty: null }],
+        lastSeenAt: { gt: new Date(now.getTime() - LOOK_BACK_DAYS * 86_400_000) },
+      },
+      distinct: ["appVersion"],
+      select: { appVersion: true },
+    }),
   ]);
+  const newestBuild = Math.max(SENDS_BUILDING_FROM, ...inUse.map((d) => buildNumber(d.appVersion) ?? 0));
+  const outOfDate = (version: string | null) => (buildNumber(version) ?? 0) < newestBuild;
   const lastScan = new Map(scanned.map((s) => [s.deviceName.toLowerCase(), s]));
 
   const tablets: Tablet[] = devices.map((d) => {
@@ -191,6 +218,7 @@ export async function getBuildingTablets(tenantId: string, siteId: string, now =
       stream: d.stream,
       status: now.getTime() - d.lastSeenAt.getTime() > SILENT_MS ? "OFFLINE" : "ONLINE",
       appVersion: d.appVersion,
+      outOfDate: outOfDate(d.appVersion),
       sendsBuilding: sendsBuilding(d.appVersion),
       lastScanAt: scan?.at.toISOString() ?? null,
       lastSeenAt: d.lastSeenAt.toISOString(),
@@ -252,6 +280,7 @@ export async function getBuildingTablets(tenantId: string, siteId: string, now =
       stream: s.stream,
       status: "NOT_REPORTING",
       appVersion: s.appVersion,
+      outOfDate: outOfDate(s.appVersion),
       sendsBuilding: sendsBuilding(s.appVersion),
       lastScanAt: s.at.toISOString(),
       lastSeenAt: null,
@@ -305,7 +334,12 @@ export async function getBuildingTablets(tenantId: string, siteId: string, now =
   }
 
   tablets.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
-  return { site: { id: site.id, name: site.name, timezone: site.timezone }, tablets, checkedAt: now.toISOString() };
+  return {
+    site: { id: site.id, name: site.name, timezone: site.timezone },
+    tablets,
+    newestBuild,
+    checkedAt: now.toISOString(),
+  };
 }
 
 export interface GateReadiness {

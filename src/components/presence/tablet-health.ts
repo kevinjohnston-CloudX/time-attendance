@@ -2,10 +2,12 @@ import type { Tablet, TabletCheck } from "@/lib/presence/tablets.service";
 import type { DeviceAlert } from "@/lib/devices/check-in";
 
 /**
- * How a tablet is doing, in the three groups the Tablets window and its chip
- * on Live Attendance both use, so the two never disagree.
+ * How a tablet is doing, in the three groups the Tablets window and the
+ * building menu on Live Attendance both use, so the two never disagree.
+ * OUT_OF_DATE is a tablet on an older build than the newest one in use, so it
+ * keeps meaning something after every rollout, not only this one.
  */
-export type Health = "ATTENTION" | "WORKING" | "UPDATE";
+export type Health = "ATTENTION" | "WORKING" | "OUT_OF_DATE";
 
 /** A working tablet's problem, and what to do about it, in words. */
 export const ALERT_TEXT: Partial<Record<DeviceAlert, { short: string; todo: string }>> = {
@@ -26,7 +28,10 @@ export const ALERT_TEXT: Partial<Record<DeviceAlert, { short: string; todo: stri
     short: "Storage almost full",
     todo: "Its storage is almost full. Ask IT to clear it before it stops saving scans.",
   },
-  DIRTY_BUILD: { short: "Test build", todo: "It is running a test copy of the app. Ask IT to install the regular build." },
+  DIRTY_BUILD: {
+    short: "Test build",
+    todo: "It is running a test copy of the app. Ask IT to install the regular build.",
+  },
 };
 
 /** Problems worked out from the report itself (see TabletCheck), in the same words. */
@@ -54,14 +59,43 @@ export const issuesOf = (t: Tablet) => [
   ...(t.checks ?? []).map((c) => CHECK_TEXT[c]),
 ];
 
+/**
+ * A problem outranks being behind: a tablet that is down needs somebody
+ * whatever its build. A tablet too old to report has no health to judge, so
+ * it is simply out of date; one on a current build that still sends no
+ * reports is a problem of its own.
+ */
 export function healthOf(t: Tablet): Health {
-  if (t.status === "NOT_REPORTING") return "UPDATE";
+  if (t.status === "NOT_REPORTING") return t.outOfDate ? "OUT_OF_DATE" : "ATTENTION";
   if (t.status === "OFFLINE" || issuesOf(t).length > 0) return "ATTENTION";
-  return "WORKING";
+  return t.outOfDate ? "OUT_OF_DATE" : "WORKING";
+}
+
+export type StatusTone = "error" | "warning" | "success" | "neutral";
+
+/** A tablet's state as one badge and one short line, the same in the list and the detail. */
+export function statusOf(t: Tablet, newestBuild: number): { tone: StatusTone; label: string; line: string } {
+  const h = healthOf(t);
+  if (t.status === "OFFLINE") return { tone: "error", label: "Not responding", line: "Not responding" };
+  if (h === "ATTENTION") {
+    const issue = issuesOf(t)[0];
+    return { tone: "warning", label: "Needs attention", line: issue ? issue.short : "Not sending reports" };
+  }
+  if (h === "OUT_OF_DATE")
+    return {
+      tone: "neutral",
+      label: "Out of date",
+      line: `Build ${t.appVersion ?? "unknown"}, newest is ${newestBuild}`,
+    };
+  return {
+    tone: "success",
+    label: "Working",
+    line: t.batteryPct === null ? "Working" : `Working, battery ${t.batteryPct}%`,
+  };
 }
 
 export function countHealth(tablets: Tablet[]): Record<Health, number> {
-  const out: Record<Health, number> = { ATTENTION: 0, WORKING: 0, UPDATE: 0 };
+  const out: Record<Health, number> = { ATTENTION: 0, WORKING: 0, OUT_OF_DATE: 0 };
   for (const t of tablets) out[healthOf(t)]++;
   return out;
 }

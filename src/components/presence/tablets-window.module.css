@@ -1,11 +1,11 @@
-/* The Tablets window, in the product's own language:
-   - across the top, the Dashboard's tinted count tiles (working, need
-     attention, waiting for the app update), which also filter the list;
-   - on the left, the building's tablets as Leave Requests cards, the chosen
-     one with an accent border on a blue tint;
+/* The Tablets window. Calm by design: one accent of colour per thing (a dot,
+   a badge), white surfaces, generous spacing, and text that wraps rather
+   than gets cut off.
+   - across the top, three count tiles that also filter the list;
+   - on the left, the building's tablets: a name and one status line each;
    - on the right, the chosen tablet: its name and status, what to do when
-     there is something, three reading tiles (battery, Wi-Fi, scans today) and
-     its details in grey insets under small capital labels. */
+     there is something, three readings, then its details as label and value
+     rows in one panel per section. */
 
 /* ---- Count tiles ---- */
 
@@ -14,31 +14,27 @@
   flex: none;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
-  padding: 16px 20px;
+  padding: 16px 24px 20px;
   border-bottom: 1px solid var(--stroke-divider);
 }
 .tile {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
-  padding: 10px 14px 11px;
-  border: 1px solid var(--stroke-divider);
-  border-radius: 10px;
+  gap: 6px;
+  padding: 12px 16px 14px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 12px;
   background: var(--surface-card);
   text-align: left;
   color: inherit;
   font: inherit;
   cursor: pointer;
-  transition: border-color 140ms ease, box-shadow 140ms ease;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
 }
-.tile[data-tone="success"] {
-  background: var(--surface-success);
-}
-.tile[data-tone="error"] {
-  background: var(--surface-error);
-}
-.tile:hover {
+.tile:hover:not(:disabled) {
   border-color: var(--stroke-hover);
 }
 .tile[aria-pressed="true"] {
@@ -52,16 +48,42 @@
 .tile:disabled {
   cursor: default;
 }
+.tileLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: var(--weight-medium) 13px/18px var(--font-sans);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
 .tileNum {
-  font: var(--weight-semibold) 24px/30px var(--font-sans);
+  font: var(--weight-semibold) 26px/32px var(--font-sans);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
-.tile[data-tone="success"] .tileNum {
-  color: var(--text-success);
+.tile:disabled .tileNum {
+  color: var(--text-tertiary);
 }
-.tile[data-tone="error"] .tileNum {
-  color: var(--text-error);
+
+/* The one spot of colour a tile or a tablet carries. */
+.dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--stroke-hover);
+}
+.dot[data-tone="success"] {
+  background: var(--fill-success);
+}
+.dot[data-tone="warning"] {
+  background: var(--fill-warning);
+}
+.dot[data-tone="error"] {
+  background: var(--fill-error);
+}
+.dot[data-tone="neutral"] {
+  background: var(--icon-disabled);
 }
 
 /* ---- The two panes ---- */
@@ -77,9 +99,9 @@
   display: flex;
   min-height: 0;
   flex-direction: column;
-  gap: 18px;
+  gap: 22px;
   overflow-y: auto;
-  padding: 14px;
+  padding: 18px 14px 24px;
   border-right: 1px solid var(--stroke-divider);
   background: var(--surface-secondary);
 }
@@ -94,16 +116,16 @@
   display: flex;
   flex: none;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .groupHead {
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0;
-  padding: 0 4px;
+  padding: 0 8px;
   font: var(--weight-semibold) 13px/18px var(--font-sans);
-  color: var(--text-primary);
+  color: var(--text-secondary);
 }
 .groupHead svg {
   width: 16px;
@@ -119,67 +141,39 @@
 .groupList {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
 }
 
 .card {
   display: flex;
   flex: none;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 4px;
   width: 100%;
-  padding: 11px 13px;
-  border: 1px solid var(--stroke-secondary);
+  padding: 12px 14px;
+  border: 1px solid transparent;
   border-radius: 10px;
-  background: var(--surface-card);
+  background: transparent;
   text-align: left;
   color: inherit;
   font: inherit;
   cursor: pointer;
-  transition: border-color 140ms ease, background 140ms ease;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
 }
 .card:hover {
-  border-color: var(--stroke-hover);
+  background: var(--surface-card);
+  border-color: var(--stroke-divider);
 }
 .card[aria-selected="true"] {
   border-color: var(--stroke-accent);
-  background: var(--surface-info);
+  background: var(--surface-card);
+  box-shadow: 0 0 0 1px var(--stroke-accent);
 }
 .card:focus-visible {
   outline: 2px solid var(--stroke-accent-focus);
   outline-offset: 2px;
-}
-/* The kind of tablet at a glance: a door for a gate, a clock for a clock. */
-.cardIcon {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  flex: none;
-  place-items: center;
-  border-radius: 9px;
-  background: var(--surface-tertiary);
-  color: var(--icon-secondary);
-}
-.cardIcon svg {
-  width: 18px;
-  height: 18px;
-}
-.card[aria-selected="true"] .cardIcon {
-  background: var(--surface-card);
-  color: var(--icon-accent);
-}
-.cardBody {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 4px;
-}
-.cardTop {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
 }
 .cardName {
   min-width: 0;
@@ -189,13 +183,18 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Wraps instead of cutting off: the line is the whole point of the card. */
 .cardLine {
-  min-width: 0;
-  overflow: hidden;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font: var(--type-body2);
   color: var(--text-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-wrap: pretty;
+}
+.cardLine .dot {
+  position: relative;
+  top: -1px;
 }
 
 /* ---- The chosen tablet ---- */
@@ -204,9 +203,12 @@
   display: flex;
   min-height: 0;
   flex-direction: column;
-  gap: 18px;
+  gap: 24px;
   overflow-y: auto;
-  padding: 20px 24px 24px;
+  padding: 24px 28px 32px;
+}
+.detail > * {
+  flex: none;
 }
 .detailHead {
   display: flex;
@@ -235,10 +237,10 @@
 .todo {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 12px;
   margin: 0;
-  padding: 12px 14px;
-  border-radius: 10px;
+  padding: 14px 16px;
+  border-radius: 12px;
   font: var(--type-body2);
   color: var(--text-primary);
   text-wrap: pretty;
@@ -281,20 +283,15 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px 14px;
-  border: 1px solid var(--stroke-divider);
-  border-radius: 10px;
+  gap: 8px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 12px;
   background: var(--surface-card);
 }
-.reading[data-tone="success"] {
-  background: var(--surface-success);
-}
-.reading[data-tone="warning"] {
-  background: var(--surface-warning);
-}
-.reading[data-tone="error"] {
-  background: var(--surface-error);
+.readingLabel {
+  font: var(--weight-medium) 13px/18px var(--font-sans);
+  color: var(--text-secondary);
 }
 .readingMain {
   display: flex;
@@ -304,12 +301,16 @@
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
+.reading[data-tone="warning"] .readingMain {
+  color: var(--text-warning);
+}
+.reading[data-tone="error"] .readingMain {
+  color: var(--text-error);
+}
 .readingSub {
-  overflow: hidden;
   font: var(--type-body2);
   color: var(--text-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-wrap: pretty;
 }
 
 /* A battery drawn as one: an outline, a fill to the level, the nub. */
@@ -359,10 +360,18 @@
   background: var(--ta-track);
   box-shadow: inset 0 0 0 1px var(--stroke-divider);
 }
-.bars span:nth-child(1) { height: 30%; }
-.bars span:nth-child(2) { height: 55%; }
-.bars span:nth-child(3) { height: 78%; }
-.bars span:nth-child(4) { height: 100%; }
+.bars span:nth-child(1) {
+  height: 30%;
+}
+.bars span:nth-child(2) {
+  height: 55%;
+}
+.bars span:nth-child(3) {
+  height: 78%;
+}
+.bars span:nth-child(4) {
+  height: 100%;
+}
 .bars span[data-on="true"] {
   background: var(--fill-success);
   box-shadow: none;
@@ -375,42 +384,57 @@
 .section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 .sectionTitle {
   margin: 0;
   font: var(--type-h4);
   color: var(--text-primary);
 }
+/* One panel per section, a label and its value on each row. */
 .inset {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px 16px;
+  display: flex;
+  flex-direction: column;
   margin: 0;
-  padding: 12px 14px;
-  border-radius: 10px;
-  background: var(--surface-tertiary);
+  padding: 0 16px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 12px;
+  background: var(--surface-card);
 }
 .fact {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 16px;
+  padding: 11px 0;
+}
+.fact + .fact {
+  border-top: 1px solid var(--stroke-divider);
+}
+.fact dt {
+  font: var(--type-body2);
+  color: var(--text-secondary);
 }
 .fact dd {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
   margin: 0;
   overflow-wrap: anywhere;
+  text-align: right;
   font: var(--type-body2);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-medium);
   color: var(--text-primary);
 }
 .meter {
   display: block;
-  height: 5px;
-  margin-top: 6px;
+  width: 64px;
+  height: 6px;
+  flex: none;
   overflow: hidden;
   border-radius: 999px;
-  background: var(--surface-card);
+  background: var(--ta-track);
 }
 .meter span {
   display: block;
@@ -435,7 +459,7 @@
   color: var(--icon-tertiary);
 }
 .more[open] > .moreSummary {
-  margin-bottom: 8px;
+  margin-bottom: 2px;
 }
 
 /* ---- Loading and empty ---- */
@@ -447,11 +471,17 @@
   animation: shimmer 1.4s ease-in-out infinite;
 }
 @keyframes shimmer {
-  from { background-position: 100% 0; }
-  to { background-position: -100% 0; }
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .skeleton { animation: none; }
+  .skeleton {
+    animation: none;
+  }
 }
 
 .center {
@@ -482,8 +512,15 @@
     border-right: 0;
     border-bottom: 1px solid var(--stroke-divider);
   }
-  .readings,
-  .inset {
+  .readings {
     grid-template-columns: 1fr;
+  }
+  .fact {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .fact dd {
+    justify-content: flex-start;
+    text-align: left;
   }
 }
