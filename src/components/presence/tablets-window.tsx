@@ -167,7 +167,7 @@ export function TabletsBody({
           {groups.length === 0 && <p className={styles.listEmpty}>No tablets in this group right now.</p>}
           {groups.map((g) => (
             <div key={g.key} className={styles.group}>
-              <span id={`tablets-${g.key}`} className={bw.groupLabel}>
+              <span id={`tablets-${g.key}`} className={`${bw.groupLabel} ${styles.groupLabel}`}>
                 {g.title}
               </span>
               <div role="listbox" aria-labelledby={`tablets-${g.key}`} className={styles.choices}>
@@ -299,9 +299,9 @@ function TabletDetail({ t, tz, now, newest }: { t: Tablet; tz: string; now: numb
               </span>
               <span className={styles.readingSub}>
                 {t.status === "OFFLINE"
-                  ? `As of ${whenLabel(t.lastSeenAt, tz, now)}`
+                  ? "At its last check in"
                   : t.lastScanAt
-                    ? `Last one ${whenLabel(t.lastScanAt, tz, now)}`
+                    ? `Last one ${dayOrTime(t.lastScanAt, tz, now)}`
                     : "None in the last 7 days"}
               </span>
             </div>
@@ -461,7 +461,8 @@ function BatteryReading({ t, asOf }: { t: Tablet; asOf: string | null }) {
         : t.plugged === "NONE"
           ? "Unplugged, on battery"
           : "Plugged in, not charging";
-  const sub = asOf && pct !== null ? `${now}, as of ${asOf}` : now;
+  // The time it was last heard from is said once, above the readings.
+  const sub = now;
   return (
     <div className={styles.reading} data-tone={tone}>
       <span className={styles.readingLabel}>Battery</span>
@@ -504,9 +505,7 @@ function WifiReading({ t, asOf }: { t: Tablet; asOf: string | null }) {
           </span>
           No contact
         </span>
-        <span className={styles.readingSub}>
-          Was {was}, as of {asOf}
-        </span>
+        <span className={styles.readingSub}>Was {was}</span>
       </div>
     );
   }
@@ -619,6 +618,12 @@ function agoLabel(iso: string | null, now: number): string {
   const sec = Math.max(0, (now - new Date(iso).getTime()) / 1000);
   if (sec < 60) return "just now";
   return `${minutesLabel(sec)} ago`;
+}
+
+/** Short enough for one line under a reading: "2:34 PM" today, else "yesterday" or "Oct 1". */
+function dayOrTime(iso: string, tz: string, now: number): string {
+  const label = whenLabel(iso, tz, now);
+  return /^\d/.test(label) ? label : label.replace(/,? \d{1,2}:\d{2} [AP]M$/, "");
 }
 
 /** "2:34 PM" today, "yesterday 2:34 PM", else "Oct 1, 2:34 PM", in the building's time. */
