@@ -6,6 +6,7 @@ import { getEmployeeById, getAdminRefData, getEmployeeAuditLogs, getHrSiteAccess
 import { EditEmployeeForm } from "@/classic/components/admin/edit-employee-form";
 import { getPayRates } from "@/actions/pay-rate.actions";
 import { format } from "date-fns";
+import { parseUtcDate } from "@/lib/utils/date";
 
 export default async function EditEmployeePage({
   params,
@@ -52,7 +53,7 @@ export default async function EditEmployeePage({
           </h1>
           <p className="mt-0.5 text-sm text-zinc-500">
             {employee.user.email} · Badge ID: {employee.wmsId ?? employee.employeeCode} · Hired{" "}
-            {format(employee.hireDate, "MMM d, yyyy")}
+            {format(parseUtcDate(employee.hireDate), "MMM d, yyyy")}
           </p>
         </div>
         <div className="flex items-center gap-4">

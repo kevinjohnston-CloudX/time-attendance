@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
+import { parseUtcDate } from "@/lib/utils/date";
 import Link from "next/link";
 import { updateEmployee, updateHrSiteAccess } from "@/actions/admin.actions";
 import { setTemporaryPassword } from "@/actions/password.actions";
@@ -67,8 +68,8 @@ import type { PayRateRow } from "@/actions/pay-rate.actions";
  */
 type UserSummary = { id: string; name: string | null; email: string | null };
 
-type MoneyCols = "payRate" | "chargeRate" | "holidayRate";
-type Money = { payRate: number | null; chargeRate: number | null; holidayRate: number | null };
+type MoneyCols = "payRate" | "chargeRate" | "holidayRate" | "overtimeRate";
+type Money = { payRate: number | null; chargeRate: number | null; holidayRate: number | null; overtimeRate: number | null };
 
 type EmployeeWithRelations = Omit<Employee, MoneyCols> & Money & {
   user: UserSummary;
@@ -133,6 +134,7 @@ type Values = {
   supervisorId: string;
   status: "active" | "on-leave" | "inactive";
   terminationReason: string;
+  terminatedAt: string;
   adjustedHireDate: string;
   wmsId: string;
   barcode: string;
@@ -146,6 +148,7 @@ type Values = {
   payRate: string;
   chargeRate: string;
   holidayRate: string;
+  overtimeRate: string;
   gender: string;
   maritalStatus: string;
   phone: string;
@@ -358,7 +361,9 @@ export function EditEmployeeForm({
       supervisorId: employee.supervisorId ?? "",
       status: !employee.isActive ? "inactive" : employee.onLeave ? "on-leave" : "active",
       terminationReason: employee.terminationReason ?? "",
-      adjustedHireDate: employee.adjustedHireDate ? format(employee.adjustedHireDate, "yyyy-MM-dd") : "",
+      // Stored as the day at midnight UTC; read as that day, not the viewer's clock.
+      terminatedAt: employee.terminatedAt ? new Date(employee.terminatedAt).toISOString().slice(0, 10) : "",
+      adjustedHireDate: employee.adjustedHireDate ? format(parseUtcDate(employee.adjustedHireDate), "yyyy-MM-dd") : "",
       wmsId: employee.wmsId ?? "",
       barcode: employee.barcode ?? "",
       adpWorkerId: employee.adpWorkerId ?? "",
@@ -371,6 +376,7 @@ export function EditEmployeeForm({
       payRate: employee.payRate != null ? String(Number(employee.payRate)) : "",
       chargeRate: employee.chargeRate != null ? String(employee.chargeRate) : "",
       holidayRate: employee.holidayRate != null ? String(employee.holidayRate) : "",
+      overtimeRate: employee.overtimeRate != null ? String(employee.overtimeRate) : "",
       gender: employee.gender ?? "",
       maritalStatus: employee.maritalStatus ?? "",
       phone: employee.phone ?? "",
@@ -507,6 +513,7 @@ export function EditEmployeeForm({
         case "payRate":
         case "chargeRate":
         case "holidayRate":
+        case "overtimeRate":
           out[k] = val ? parseFloat(val as string) : null;
           break;
         case "customRoleId":
@@ -518,6 +525,7 @@ export function EditEmployeeForm({
         case "jobTitleId":
         case "agencyId":
         case "adjustedHireDate":
+        case "terminatedAt":
           out[k] = val || null;
           break;
         default:
@@ -770,14 +778,14 @@ export function EditEmployeeForm({
                 </div>
                 <div className={styles.fact}>
                   <dt>Hire date</dt>
-                  <dd>{format(employee.hireDate, "MMM d, yyyy")}</dd>
+                  <dd>{format(parseUtcDate(employee.hireDate), "MMM d, yyyy")}</dd>
                 </div>
                 {/* The date leave tiers are actually measured from: the override
                     when one is set, the hire date otherwise. */}
                 <div className={styles.fact}>
                   <dt>Seniority date</dt>
                   <dd>
-                    {format(employee.adjustedHireDate ?? employee.hireDate, "MMM d, yyyy")}
+                    {format(parseUtcDate(employee.adjustedHireDate ?? employee.hireDate), "MMM d, yyyy")}
                     {employee.adjustedHireDate && <span className={styles.factNote}>Adjusted</span>}
                   </dd>
                 </div>
@@ -943,9 +951,19 @@ export function EditEmployeeForm({
                   </Field>
                 )}
                 {v.status === "inactive" ? (
-                  <Field label="Termination reason" htmlFor="f-terminationReason" read={v.terminationReason}>
-                    {text("terminationReason")}
-                  </Field>
+                  <>
+                    <Field
+                      label="Termination date"
+                      htmlFor="f-terminatedAt"
+                      read={v.terminatedAt ? format(new Date(`${v.terminatedAt}T12:00:00`), "MMM d, yyyy") : null}
+                      hint="Their last day. Left blank, it is today. Made active again, it is cleared."
+                    >
+                      {text("terminatedAt", { type: "date" })}
+                    </Field>
+                    <Field label="Termination reason" htmlFor="f-terminationReason" read={v.terminationReason}>
+                      {text("terminationReason")}
+                    </Field>
+                  </>
                 ) : null}
 
                 <Field
@@ -1094,6 +1112,9 @@ export function EditEmployeeForm({
                 </Field>
                 <Field label="Holiday rate" htmlFor="f-holidayRate" read={v.holidayRate ? `$${Number(v.holidayRate).toFixed(2)}` : null}>
                   {text("holidayRate", { type: "number", min: 0, step: "0.01", inputMode: "decimal", placeholder: "0.00" })}
+                </Field>
+                <Field label="Overtime rate" htmlFor="f-overtimeRate" read={v.overtimeRate ? `$${Number(v.overtimeRate).toFixed(2)}` : null}>
+                  {text("overtimeRate", { type: "number", min: 0, step: "0.01", inputMode: "decimal", placeholder: "0.00" })}
                 </Field>
               </div>
             </Section>

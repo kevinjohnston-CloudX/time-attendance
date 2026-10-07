@@ -3,6 +3,7 @@
 import { useRef, useTransition, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
+import { parseUtcDate } from "@/lib/utils/date";
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 import { updateEmployee, updateHrSiteAccess } from "@/actions/admin.actions";
@@ -15,8 +16,8 @@ import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
 // sends id, name and email), which is all this form reads.
 type SafeUser = Pick<User, "id" | "name" | "email">;
 
-type MoneyCols = "payRate" | "chargeRate" | "holidayRate";
-type Money = { payRate: number | null; chargeRate: number | null; holidayRate: number | null };
+type MoneyCols = "payRate" | "chargeRate" | "holidayRate" | "overtimeRate";
+type Money = { payRate: number | null; chargeRate: number | null; holidayRate: number | null; overtimeRate: number | null };
 
 type EmployeeWithRelations = Omit<Employee, MoneyCols> & Money & {
   user: SafeUser;
@@ -146,6 +147,8 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       jobTitleId: (fd.get("jobTitleId") as string) || null,
       agencyId: (fd.get("agencyId") as string) || null,
       terminationReason: fd.get("terminationReason") as string,
+      // Only on the form for someone inactive; blank means today (see updateEmployee).
+      terminatedAt: fd.has("terminatedAt") ? ((fd.get("terminatedAt") as string) || null) : undefined,
       adjustedHireDate: (fd.get("adjustedHireDate") as string) || null,
     };
   }
@@ -193,6 +196,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       payType: fd.get("payType") as string,
       chargeRate: money("chargeRate"),
       holidayRate: money("holidayRate"),
+      overtimeRate: money("overtimeRate"),
     };
   }
 
@@ -358,7 +362,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
             <div>
               <label className={labelCls}>Hire Date</label>
               <input
-                value={format(employee.hireDate, "MMM d, yyyy")}
+                value={format(parseUtcDate(employee.hireDate), "MMM d, yyyy")}
                 readOnly
                 className={`${inputCls} cursor-default bg-zinc-50 dark:bg-zinc-900`}
               />
@@ -369,7 +373,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
               <input
                 type="date"
                 name="adjustedHireDate"
-                defaultValue={employee.adjustedHireDate ? format(employee.adjustedHireDate, "yyyy-MM-dd") : ""}
+                defaultValue={employee.adjustedHireDate ? format(parseUtcDate(employee.adjustedHireDate), "yyyy-MM-dd") : ""}
                 className={inputCls}
               />
               <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
@@ -420,10 +424,22 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
             </div>
 
             {status === "inactive" && (
-              <div>
-                <label className={labelCls}>Termination Reason</label>
-                <input name="terminationReason" defaultValue={employee.terminationReason ?? ""} className={inputCls} />
-              </div>
+              <>
+                <div>
+                  <label className={labelCls}>Termination Date</label>
+                  <input
+                    type="date"
+                    name="terminatedAt"
+                    defaultValue={employee.terminatedAt ? new Date(employee.terminatedAt).toISOString().slice(0, 10) : ""}
+                    className={inputCls}
+                  />
+                  <p className="mt-1 text-xs text-zinc-500">Their last day. Left blank, it is today.</p>
+                </div>
+                <div>
+                  <label className={labelCls}>Termination Reason</label>
+                  <input name="terminationReason" defaultValue={employee.terminationReason ?? ""} className={inputCls} />
+                </div>
+              </>
             )}
           </div>
 
@@ -676,6 +692,10 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
             <div>
               <label className={labelCls}>Holiday Rate</label>
               <input type="number" name="holidayRate" min="0" step="0.01" placeholder="0.00" defaultValue={employee.holidayRate ?? ""} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Overtime Rate</label>
+              <input type="number" name="overtimeRate" min="0" step="0.01" placeholder="0.00" defaultValue={employee.overtimeRate ?? ""} className={inputCls} />
             </div>
           </div>
 
