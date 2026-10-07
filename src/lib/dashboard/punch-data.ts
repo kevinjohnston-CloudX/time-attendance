@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { formatTimeOfDay, toSiteClock } from "@/lib/utils/date";
 
 /**
  * The week and the schedule behind the portal design's Punch Clock screen.
@@ -105,9 +106,13 @@ export async function getWeek(
   employeeId: string,
   now: Date,
   todayLiveMinutes: number,
+  timezone: string,
 ): Promise<WeekCard> {
+  // The site's calendar, not the server's: the server runs on UTC in
+  // production, which moved the week and "today" a day ahead every evening.
+  const clock = toSiteClock(now, timezone);
   // Week starts Sunday, matching the 0-indexed workDays on Shift.
-  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
+  const weekStart = new Date(clock.getFullYear(), clock.getMonth(), clock.getDate() - clock.getDay());
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 7);
 
@@ -137,7 +142,7 @@ export async function getWeek(
     workedByDate.set(key, (workedByDate.get(key) ?? 0) + s.durationMinutes);
   }
 
-  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const todayKey = `${clock.getFullYear()}-${String(clock.getMonth() + 1).padStart(2, "0")}-${String(clock.getDate()).padStart(2, "0")}`;
 
   const days: WeekDay[] = Array.from({ length: 7 }, (_, i) => {
     const date = new Date(weekStart);
@@ -151,7 +156,7 @@ export async function getWeek(
       workedMinutes: isToday ? Math.max(todayLiveMinutes, workedByDate.get(key) ?? 0) : workedByDate.get(key) ?? 0,
       scheduledMinutes: scheduledFor(schedule?.[date.getDay()]),
       isToday,
-      isFuture: date > now && !isToday,
+      isFuture: date > clock && !isToday,
     };
   });
 
@@ -169,7 +174,7 @@ export async function getWeek(
  * someone on a three-day week would otherwise see one or two rows and assume
  * the rest of their schedule was missing.
  */
-export async function getUpcomingShifts(employeeId: string, now: Date): Promise<UpcomingShift[]> {
+export async function getUpcomingShifts(employeeId: string, now: Date, timezone: string): Promise<UpcomingShift[]> {
   const employee = await db.employee.findUnique({
     where: { id: employeeId },
     select: { shift: { select: { startTime: true, endTime: true, workDays: true, daySchedule: true } } },
@@ -178,9 +183,11 @@ export async function getUpcomingShifts(employeeId: string, now: Date): Promise<
   const schedule = readSchedule(employee?.shift ?? null);
   if (!schedule) return [];
 
+  // Tomorrow on the site's calendar, not the server's (UTC in production).
+  const clock = toSiteClock(now, timezone);
   const out: UpcomingShift[] = [];
   for (let offset = 1; offset <= 21 && out.length < 5; offset++) {
-    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
+    const date = new Date(clock.getFullYear(), clock.getMonth(), clock.getDate() + offset);
     const row = schedule[date.getDay()];
     const minutes = scheduledFor(row);
     if (minutes === 0) continue;
@@ -188,7 +195,7 @@ export async function getUpcomingShifts(employeeId: string, now: Date): Promise<
     out.push({
       key: date.toISOString().slice(0, 10),
       day: date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
-      shift: `${row.startTime} – ${row.endTime}${row.mealMinutes ? ` · ${row.mealMinutes}m meal` : ""}`,
+      shift: `${formatTimeOfDay(row.startTime)} – ${formatTimeOfDay(row.endTime)}${row.mealMinutes ? ` · ${row.mealMinutes}m meal` : ""}`,
       hours: (minutes / 60).toFixed(2),
       note: offset === 1 ? "Tomorrow" : "Scheduled",
       tone: offset === 1 ? "info" : "neutral",

@@ -7,7 +7,7 @@ import { PunchHero } from "@/components/time/punch-hero";
 import { PunchHistoryTable } from "@/components/time/punch-history-table";
 import { getToday } from "@/lib/dashboard/dashboard-data";
 import { getUpcomingShifts, getWeek } from "@/lib/dashboard/punch-data";
-import { parseUtcDate } from "@/lib/utils/date";
+import { formatTimeOfDay, parseUtcDate, startOfDayInTz, toSiteClock } from "@/lib/utils/date";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { CalendarPlus, ClipboardList, FileClock, Plane } from "lucide-react";
 import type { PunchStateValue } from "@/lib/state-machines/labels";
@@ -30,11 +30,10 @@ export default async function PunchPage() {
   const tenantId = (session.user as { tenantId?: string }).tenantId;
   const now = new Date();
 
-  const [today, employee, payPeriod] = await Promise.all([
-    getToday(employeeId, now),
+  const [employee, payPeriod] = await Promise.all([
     db.employee.findUnique({
       where: { id: employeeId },
-      select: { site: { select: { name: true } }, shift: { select: { name: true } } },
+      select: { site: { select: { name: true, timezone: true } }, shift: { select: { name: true } } },
     }),
     tenantId
       ? db.payPeriod.findFirst({
@@ -50,33 +49,40 @@ export default async function PunchPage() {
       : null,
   ]);
 
-  const [week, upcomingShifts, periodSheet] = await Promise.all([
-    getWeek(employeeId, now, today.workedMinutes),
-    getUpcomingShifts(employeeId, now),
+  // Today, this week and what is next all follow the clock where this person
+  // works. The server's own clock is UTC in production, which started the
+  // next day at 8 PM Eastern. Same zone and fallback as the Dashboard.
+  const siteZone = employee?.site?.timezone || "America/New_York";
+
+  const [today, upcomingShifts, periodSheet, todayPunchRecords] = await Promise.all([
+    getToday(employeeId, now, siteZone),
+    getUpcomingShifts(employeeId, now, siteZone),
     payPeriod
       ? db.timesheet.findFirst({
           where: { employeeId, payPeriodId: payPeriod.id },
           select: { overtimeBuckets: { select: { bucket: true, totalMinutes: true } } },
         })
       : null,
+    db.punch.findMany({
+      where: {
+        employeeId,
+        isRejected: false,
+        punchTime: { gte: startOfDayInTz(now, siteZone) },
+      },
+      orderBy: { punchTime: "asc" },
+    }),
   ]);
 
-  const todayPunchRecords = await db.punch.findMany({
-    where: {
-      employeeId,
-      isRejected: false,
-      punchTime: { gte: new Date(now.getFullYear(), now.getMonth(), now.getDate()) },
-    },
-    orderBy: { punchTime: "asc" },
-  });
+  // The week needs today's live total, so it comes after.
+  const week = await getWeek(employeeId, now, today.workedMinutes, siteZone);
 
   const periodMinutes = (periodSheet?.overtimeBuckets ?? []).reduce((n, b) => n + b.totalMinutes, 0);
   const periodOt = (periodSheet?.overtimeBuckets ?? []).find((b) => b.bucket === "OT")?.totalMinutes ?? 0;
 
   const context = [
-    format(now, "EEEE, d MMMM yyyy"),
+    format(toSiteClock(now, siteZone), "EEEE, d MMMM yyyy"),
     employee?.site?.name,
-    today.shift && `Shift ${today.shift.start} – ${today.shift.end}`,
+    today.shift && `Shift ${formatTimeOfDay(today.shift.start)} – ${formatTimeOfDay(today.shift.end)}`,
   ]
     .filter(Boolean)
     .join(" · ");

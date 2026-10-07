@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { parseUtcDate } from "@/lib/utils/date";
+import { parseUtcDate, startOfDayInTz, toSiteClock } from "@/lib/utils/date";
 import type { BadgeTone } from "@/components/ui";
 
 /**
@@ -50,8 +50,9 @@ const SOURCE_LABEL: Record<string, string> = {
   SYSTEM: "System",
 };
 
-function fmtClock(d: Date): string {
-  return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+/** A punch time on the site's clock, whatever clock the server runs on (UTC in production). */
+function fmtClock(d: Date, timezone: string): string {
+  return d.toLocaleTimeString("en-US", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: true });
 }
 
 /**
@@ -62,9 +63,10 @@ function fmtClock(d: Date): string {
  * shift the segment table is one interval behind, and a dashboard that reads
  * "6.20 hours" at 14:00 and still reads it at 15:00 is worse than no number.
  */
-export async function getToday(employeeId: string, now: Date): Promise<TodayCard> {
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
+export async function getToday(employeeId: string, now: Date, timezone: string): Promise<TodayCard> {
+  // Midnight where the person works. The server's own midnight is UTC in
+  // production, which emptied the day at 8 PM Eastern.
+  const start = startOfDayInTz(now, timezone);
 
   const [punches, employee] = await Promise.all([
     db.punch.findMany({
@@ -102,13 +104,13 @@ export async function getToday(employeeId: string, now: Date): Promise<TodayCard
   const last = punches.at(-1);
   const since =
     state === "WORK" && firstIn
-      ? `On the clock since ${fmtClock(firstIn)} · ${mealTaken ? "meal taken" : "meal not taken"}`
+      ? `On the clock since ${fmtClock(firstIn, timezone)} · ${mealTaken ? "meal taken" : "meal not taken"}`
       : state === "MEAL" && last
-        ? `Meal started ${fmtClock(last.punchTime)}`
+        ? `Meal started ${fmtClock(last.punchTime, timezone)}`
         : state === "BREAK" && last
-          ? `Break started ${fmtClock(last.punchTime)}`
+          ? `Break started ${fmtClock(last.punchTime, timezone)}`
           : last
-            ? `Last punch ${fmtClock(last.punchTime)}`
+            ? `Last punch ${fmtClock(last.punchTime, timezone)}`
             : "Nothing punched today";
 
   return {
@@ -308,12 +310,15 @@ export async function getUpcoming(
   tenantId: string,
   now: Date,
   payPeriodEnd: Date | null,
+  timezone: string,
 ): Promise<UpcomingRow[]> {
   // From the start of today, not from this moment. startDate and the holiday
   // date are @db.Date at UTC midnight, so comparing them against a mid-afternoon
   // timestamp drops anything happening today — which is exactly the row someone
   // opening the dashboard at 2pm most needs to see.
-  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  // Today is the site's today: the UTC date runs ahead of it every evening.
+  const siteToday = toSiteClock(now, timezone);
+  const from = new Date(Date.UTC(siteToday.getFullYear(), siteToday.getMonth(), siteToday.getDate()));
   const horizon = new Date(from);
   horizon.setUTCDate(horizon.getUTCDate() + 30);
 

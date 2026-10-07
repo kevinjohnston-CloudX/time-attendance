@@ -14,7 +14,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { formatMinutes } from "@/lib/utils/duration";
-import { parseUtcDate } from "@/lib/utils/date";
+import { formatTimeOfDay, parseUtcDate, toSiteClock } from "@/lib/utils/date";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { OverviewPeriodFilter } from "@/components/dashboard/overview-period-filter";
 import { TodayPunchActions } from "@/components/dashboard/today-punch-actions";
@@ -113,7 +113,7 @@ export default async function DashboardPage({
     employeeId
       ? db.employee.findUnique({
           where: { id: employeeId },
-          select: { site: { select: { name: true } } },
+          select: { site: { select: { name: true, timezone: true } } },
         })
       : null,
 
@@ -121,6 +121,13 @@ export default async function DashboardPage({
     session?.user ? userHasPermission(session.user, "PAY_PERIOD_MANAGE") : false,
     session?.user ? userHasPermission(session.user, "TIMESHEET_APPROVE_TEAM") : false,
   ]);
+
+  // The building's own clock, for the dates and times this page prints. The
+  // server's clock is UTC in production, so formatting the instant directly showed
+  // the Live time four or five hours ahead and the next day's date after 8 PM.
+  // Same zone and fallback as Team Overview.
+  const siteZone = me?.site?.timezone || "America/New_York";
+  const siteNow = toSiteClock(now, siteZone);
 
   // ── The cards, and the periods either side of this one ────────────────────
   const [currentTimesheet, today, exceptionsFeed, presence, upcoming, prevPP, nextPP] = await Promise.all([
@@ -130,7 +137,7 @@ export default async function DashboardPage({
           include: { overtimeBuckets: true },
         })
       : null,
-    employeeId ? getToday(employeeId, now) : null,
+    employeeId ? getToday(employeeId, now, siteZone) : null,
     canApproveTeam && tenantId
       ? getExceptionsFeed(employeeId, tenantId, hasPayrollAccess, payPeriod?.id ?? null)
       : null,
@@ -138,7 +145,7 @@ export default async function DashboardPage({
       ? getPresence(tenantId, hasPayrollAccess ? null : employeeId)
       : null,
     tenantId
-      ? getUpcoming(employeeId, tenantId, now, payPeriod ? parseUtcDate(payPeriod.endDate) : null)
+      ? getUpcoming(employeeId, tenantId, now, payPeriod ? parseUtcDate(payPeriod.endDate) : null, siteZone)
       : [],
     hasPayrollAccess && tenantId && payPeriod
       ? db.payPeriod.findFirst({
@@ -299,7 +306,7 @@ export default async function DashboardPage({
     : 0;
 
   const subtitle = [
-    format(now, "EEEE, d MMMM yyyy"),
+    format(siteNow, "EEEE, d MMMM yyyy"),
     me?.site?.name,
     periodLabel && `Pay period ${periodLabel}`,
   ]
@@ -350,8 +357,8 @@ export default async function DashboardPage({
             title="Today"
             subtitle={
               today.shift
-                ? `${format(now, "EEE d MMM")} · Shift ${today.shift.start} – ${today.shift.end}`
-                : format(now, "EEE d MMM")
+                ? `${format(siteNow, "EEE d MMM")} · Shift ${formatTimeOfDay(today.shift.start)} – ${formatTimeOfDay(today.shift.end)}`
+                : format(siteNow, "EEE d MMM")
             }
           >
             <div className="flex flex-col gap-3.5">
@@ -565,7 +572,7 @@ export default async function DashboardPage({
         {presence && (
           <Card
             title="Team Presence"
-            subtitle={`Live · ${format(now, "MMM d, h:mm a")}${me?.site?.name ? ` · ${me.site.name}` : ""}`}
+            subtitle={`Live · ${format(siteNow, "MMM d, h:mm a")}${me?.site?.name ? ` · ${me.site.name}` : ""}`}
           >
             <div className="flex flex-col gap-3">
               <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(126px,1fr))]">
