@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import { format } from "date-fns";
+import { parseUtcDate } from "@/lib/utils/date";
 import { TeamPunchHistoryViewer } from "@/classic/components/supervisor/team-punch-history-viewer";
 
 export default async function TeamPunchHistoryPage({
@@ -39,8 +40,8 @@ export default async function TeamPunchHistoryPage({
       where: { startDate: { lte: today }, endDate: { gt: today } },
     });
     if (currentPP) {
-      startDate = format(currentPP.startDate, "yyyy-MM-dd");
-      endDate = format(currentPP.endDate, "yyyy-MM-dd");
+      startDate = format(parseUtcDate(currentPP.startDate), "yyyy-MM-dd");
+      endDate = format(parseUtcDate(currentPP.endDate), "yyyy-MM-dd");
     } else {
       const twoWeeksAgo = new Date(today);
       twoWeeksAgo.setDate(today.getDate() - 13);

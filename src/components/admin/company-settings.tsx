@@ -9,6 +9,7 @@ import { Badge, Banner, Button, Input, LinkButton, Toast, useToast } from "@/com
 import { SetupDialog } from "@/components/admin/setup/setup-ui";
 import { generateNextPayPeriod, updateTenantSettings } from "@/actions/pay-period.actions";
 import { getPeriodContaining, lastDayOf, periodAfter, periodDays } from "@/lib/pay-period-math";
+import { parseUtcDate } from "@/lib/utils/date";
 
 /**
  * Company Settings, from the Company Settings handoff: the pay schedule on the
@@ -138,7 +139,9 @@ export function CompanySettings({
     for (let i = 0; i < 2; i++) upcoming.push(periodAfter(current.freq, anchorDay, upcoming[i].endDate));
   }
 
-  const nextPeriod = next ? { startDate: new Date(next.startDate), endDate: new Date(next.endDate) } : null;
+  // Calendar days sent as UTC timestamps: read for their day, not on this clock,
+  // which put the start (and a weekly or biweekly end) a day early.
+  const nextPeriod = next ? { startDate: parseUtcDate(next.startDate), endDate: parseUtcDate(next.endDate) } : null;
   const nextRange = next && nextPeriod ? rangeText(next.frequency, nextPeriod) : "";
 
   const edit = (patch: Partial<Schedule>) => {

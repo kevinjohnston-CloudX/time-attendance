@@ -8,6 +8,7 @@ import { LeaveBalancesPanel } from "@/components/admin/leave-balances-panel";
 import { Card, LinkButton, PageHeader } from "@/components/ui";
 import { db } from "@/lib/db";
 import { format, differenceInMonths, differenceInDays, addMonths } from "date-fns";
+import { parseUtcDate } from "@/lib/utils/date";
 
 /**
  * One employee's accruals, on the design's doc template: the policies that
@@ -572,7 +573,7 @@ export default async function EmployeeAccrualsPage({
     <div className="flex flex-col gap-4">
       <PageHeader pinned
         title={employee.user.name}
-        subtitle={`${employee.wmsId ?? employee.employeeCode} · Hired ${format(employee.hireDate, "MMM d, yyyy")} · ${year} accrual year`}
+        subtitle={`${employee.wmsId ?? employee.employeeCode} · Hired ${format(parseUtcDate(employee.hireDate), "MMM d, yyyy")} · ${year} accrual year`}
         actions={
           <>
             {/* Somebody with own-scope only is redirected off the list page

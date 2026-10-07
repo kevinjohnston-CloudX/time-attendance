@@ -7,6 +7,7 @@ import { getEmployeeById } from "@/actions/admin.actions";
 import { LeaveBalancesPanel } from "@/classic/components/admin/leave-balances-panel";
 import { db } from "@/lib/db";
 import { format, differenceInMonths, differenceInDays, addMonths } from "date-fns";
+import { parseUtcDate } from "@/lib/utils/date";
 
 export default async function EmployeeAccrualsPage({
   params,
@@ -523,7 +524,7 @@ export default async function EmployeeAccrualsPage({
             {employee.user.name}
           </h1>
           <p className="mt-0.5 text-sm text-zinc-500">
-            {employee.wmsId ?? employee.employeeCode} · Hired {format(employee.hireDate, "MMM d, yyyy")}
+            {employee.wmsId ?? employee.employeeCode} · Hired {format(parseUtcDate(employee.hireDate), "MMM d, yyyy")}
           </p>
         </div>
         {canManageEmployee && (
