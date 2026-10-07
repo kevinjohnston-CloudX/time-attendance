@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronRight, Clock, DoorOpen, ScanLine, SearchX } from "lucide-react";
 import { Badge, Button, EmptyState } from "@/components/ui";
-import { getOnSiteScanLog } from "@/actions/presence.actions";
+import { getOnSiteScanLog } from "@/lib/presence/reads";
 import type { ScanLogPage, ScanLogQuery, ScanLogRow, ScanLogSummary, ScanStream } from "@/lib/presence/types";
 import { describeOriginal, describeScan, fmtDuration, fmtTime, initialsOf } from "./presence-meta";
 import { iconFor } from "./person-panel";

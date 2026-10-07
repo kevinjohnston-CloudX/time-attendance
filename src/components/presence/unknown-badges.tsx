@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { BadgeHelp } from "lucide-react";
 import { Badge, Button, Card, EmptyState } from "@/components/ui";
-import { getOnSiteUnknownBadges } from "@/actions/unknown-badges.actions";
+import { getOnSiteUnknownBadges } from "@/lib/presence/reads";
 import type { UnknownBadge, UnknownBadgeDay } from "@/lib/presence/unknown-badges.service";
 import { fmtTime } from "./presence-meta";
 import styles from "./on-site.module.css";

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowUp, ChevronDown, ChevronRight, UserRoundX } from "lucide-react";
 import { Badge, Button, EmptyState } from "@/components/ui";
-import { getOnSiteMovements } from "@/actions/presence.actions";
+import { getOnSiteMovements } from "@/lib/presence/reads";
 import type { PresenceStatus, SiteDay } from "@/lib/presence/types";
 import {
   GAP_MIN,

@@ -21,7 +21,8 @@ import {
   ToolsBar,
   useToast,
 } from "@/components/ui";
-import { findOnSitePeople, getOnSiteBoard } from "@/actions/presence.actions";
+import { findOnSitePeople } from "@/actions/presence.actions";
+import { getOnSiteBoard } from "@/lib/presence/reads";
 import type { PickablePerson } from "@/lib/presence/people-search.service";
 import { MAX_PICKED } from "@/lib/presence/search-limits";
 import type { PresenceBoard, PresencePerson, PresenceStatus } from "@/lib/presence/types";

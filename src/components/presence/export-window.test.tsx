@@ -9,7 +9,9 @@ const { getOnSiteMovements, getOnSiteScanLog, saved, printed } = vi.hoisted(() =
   saved: [] as { name: string; blob: Blob }[],
   printed: [] as string[],
 }));
-vi.mock("@/actions/presence.actions", () => ({ getOnSiteMovements, getOnSiteScanLog }));
+vi.mock("@/lib/presence/reads", () => ({ getOnSiteMovements, getOnSiteScanLog }));
+// The profile card's action file signs in through next-auth, which a unit test cannot load.
+vi.mock("@/actions/presence.actions", () => ({}));
 vi.mock("./export-table", async (orig) => {
   const real = await orig<typeof import("./export-table")>();
   return {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getSiteTablets } from "@/actions/tablets.actions";
+import { getSiteTablets } from "@/lib/presence/reads";
 import type { BuildingTablets } from "@/lib/presence/tablets.service";
 
 const REFRESH_MS = 60_000;
