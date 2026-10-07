@@ -41,6 +41,8 @@ interface SegmentInput {
   payBucket: PayBucket;
   isSplit: boolean;
   payCodeId?: string | null;
+  /** On a meal premium: the premium row that produced it, for a waiver to name. */
+  premiumRow?: number | null;
 }
 
 /**
@@ -629,18 +631,47 @@ async function ensureSalarySegments(
  *
  * Returns MEAL_PREMIUM SegmentInputs appended after the shift, one per triggered row per day.
  */
+/**
+ * Which meal premium a waiver is for: its day and the premium row (the first
+ * or second meal rule) that produced it. A premium's start time is not its
+ * identity: it sits at the end of the day's last work, so any later change to
+ * that day's punches moved it, and a waiver matched on the start time stopped
+ * matching and the premium came back without anyone being told.
+ */
+type PremiumWaiverKey = { id: string; segmentDate: Date; rowIndex: number | null; segmentStart: Date };
+
+/**
+ * Whether a premium is waived: by day and row, or, for a waiver saved before
+ * rows were recorded, by its start time. A waiver found by its start time has
+ * its row put in `learned`, for the caller to save, so it holds from then on.
+ */
+function premiumWaivedTest(waivers: PremiumWaiverKey[], learned: Map<string, number>) {
+  const byRow = new Set(waivers.filter((w) => w.rowIndex != null).map((w) => `${w.segmentDate.toISOString().slice(0, 10)}|${w.rowIndex}`));
+  const byStart = new Map(waivers.filter((w) => w.rowIndex == null).map((w) => [w.segmentStart.toISOString(), w.id]));
+  return (dayKey: string, rowIndex: number, start: Date) => {
+    if (byRow.has(`${dayKey}|${rowIndex}`)) return true;
+    const legacy = byStart.get(start.toISOString());
+    if (legacy) learned.set(legacy, rowIndex);
+    return Boolean(legacy);
+  };
+}
+
 function computeMealPremiums(
   timesheetId: string,
   segments: SegmentInput[],
   punches: Punch[],
   ruleSet: RuleSet,
   timezone: string,
-  premiumWaivedStarts: Set<string> = new Set(),
+  isWaived: (dayKey: string, rowIndex: number, start: Date) => boolean = () => false,
 ): SegmentInput[] {
   if (!ruleSet.mealBreakPremiumEnabled) return [];
 
   const rows = (ruleSet.mealPremiumRows as MealPremiumRowCfg[] | null) ?? [];
-  const activeRows = rows.filter(r => r.payMinutes > 0 && r.payCodeId);
+  // Each row keeps its place in the rule set's list: that place is the
+  // premium's identity for a waiver.
+  const activeRows = rows
+    .map((row, rowIndex) => ({ ...row, rowIndex }))
+    .filter(r => r.payMinutes > 0 && r.payCodeId);
   if (activeRows.length === 0) return [];
 
   const premiums: SegmentInput[] = [];
@@ -691,6 +722,13 @@ function computeMealPremiums(
       .sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime());
     const hasMissingClockOut = sortedClockPunches.length > 0 &&
       sortedClockPunches[sortedClockPunches.length - 1].punchType === "CLOCK_IN";
+    // An open shift may simply still be going: it has lasted until now so far,
+    // and no longer. Treating it as longer than every window put a premium on
+    // everyone mid-shift (a second-meal premium for someone back from a proper
+    // lunch, a first-meal one for someone not yet due a lunch). A shift that
+    // really is missing its clock out gets the premium once enough time has
+    // passed, at the next recalculation.
+    const openSpanMins = (Date.now() - shiftStartMs) / 60_000;
 
     let premiumsThisDay = 0;
     let accumulatedPremiumMins = 0; // offset so each row gets a distinct startTime
@@ -699,9 +737,9 @@ function computeMealPremiums(
       if (premiumsThisDay >= ruleSet.mealBreakPremiumMaxPerDay) break;
 
       // Trigger: shift must extend past the end of the required meal window.
-      // If the employee has a missing clock-out, the true shift end is unknown —
-      // skip this check and award the premium until the discrepancy is corrected.
-      if (!hasMissingClockOut && shiftSpanMins < row.applyToMinutes) continue;
+      // With no clock out, the shift's true end is unknown; it counts for as
+      // long as it has lasted so far.
+      if ((hasMissingClockOut ? openSpanMins : shiftSpanMins) < row.applyToMinutes) continue;
 
       // unlessHoursExceed: suppress when total worked exceeds threshold
       if (row.unlessHoursExceed && totalWorkedMins > row.unlessHoursExceedMinutes) continue;
@@ -765,10 +803,10 @@ function computeMealPremiums(
       if (premiumMins <= 0) continue;
 
       // Each row gets a distinct startTime, offset by prior rows' payMinutes, so
-      // per-premium waivers have stable unique keys even when multiple rows fire.
+      // the lines do not sit on top of each other. A waiver goes by the day and
+      // the row (premiumRow), not by this time, which moves with the day's punches.
       const premStart = new Date(lastWorkSeg.endTime.getTime() + accumulatedPremiumMins * 60_000);
-
-      if (!premiumWaivedStarts.has(premStart.toISOString())) {
+      if (!isWaived(dayKey, row.rowIndex, premStart)) {
         premiums.push({
           timesheetId,
           segmentType: "MEAL_PREMIUM",
@@ -779,6 +817,7 @@ function computeMealPremiums(
           isPaid: true,
           payBucket: "REG",
           payCodeId: row.payCodeId,
+          premiumRow: row.rowIndex,
           isSplit: false,
         });
       }
@@ -993,9 +1032,17 @@ export async function rebuildSegments(
   // Meal break premiums: detect days where no qualifying meal was taken and credit
   // the configured penalty pay code. Runs after all deduction logic is settled.
   if (ruleSet.mealBreakPremiumEnabled) {
-    const premiumWaivers = await db.mealPremiumWaiver.findMany({ where: { timesheetId } });
-    const premiumWaivedStarts = new Set(premiumWaivers.map((w) => w.segmentStart.toISOString()));
-    const premiumSegs = computeMealPremiums(timesheetId, segments, punches, ruleSet, timezone, premiumWaivedStarts);
+    const premiumWaivers = await db.mealPremiumWaiver.findMany({
+      where: { timesheetId },
+      select: { id: true, segmentDate: true, rowIndex: true, segmentStart: true },
+    });
+    const learned = new Map<string, number>();
+    const premiumSegs = computeMealPremiums(timesheetId, segments, punches, ruleSet, timezone, premiumWaivedTest(premiumWaivers, learned));
+    // Waivers saved before rows were recorded, matched by their start time this
+    // once: keep their row, so a later change to the day cannot undo them.
+    for (const [id, rowIndex] of learned) {
+      await db.mealPremiumWaiver.update({ where: { id }, data: { rowIndex } });
+    }
     segments = [...segments, ...premiumSegs];
   }
 

@@ -1388,7 +1388,10 @@ export function TimecardViewer({
   const effectiveMealBreakAfterMinutes = shiftMeal?.autoDeduct && shiftFirstMeal
     ? Math.round(shiftFirstMeal.workAtLeastHours * 60)
     : (timecard?.employee.ruleSet.mealBreakAfterMinutes ?? 0);
-  const hasMealPremiums = timecard?.segments.some(s => s.segmentType === "MEAL_PREMIUM") ?? false;
+  // Waived premiums count: their lines carry the Waived control in the Meal column.
+  const hasMealPremiums =
+    (timecard?.segments.some(s => s.segmentType === "MEAL_PREMIUM") ?? false) ||
+    (timecard?.mealPremiumWaivers.length ?? 0) > 0;
   const showMealColumn = effectiveAutoDeductMeal || hasMealPremiums;
 
   // Column count for colSpan on expanded rows
@@ -1604,6 +1607,7 @@ export function TimecardViewer({
               <option value="ABSENT">Absent</option>
               <option value="LATE_IN">Late In</option>
               <option value="EARLY_OUT">Early Out</option>
+              <option value="SCAN_DISCREPANCY">Scan Discrepancy</option>
             </select>
             {/* Active only toggle */}
             <label className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
@@ -2800,8 +2804,16 @@ export function TimecardViewer({
                             </tr>
                           ))}
 
-                          {/* Meal premium rows — one per MEAL_PREMIUM segment, always visible as a standalone row */}
-                          {daySegments.filter(s => s.segmentType === "MEAL_PREMIUM").map((seg) => (
+                          {/* Meal premium rows — one per MEAL_PREMIUM segment, always visible as a standalone row,
+                              and one per waived premium, which has no hours but stays on its day to be seen and undone */}
+                          {[
+                            ...daySegments
+                              .filter(s => s.segmentType === "MEAL_PREMIUM")
+                              .map((s) => ({ id: s.id, startTime: s.startTime, durationMinutes: s.durationMinutes, payCode: s.payCode, waivedLine: false })),
+                            ...(timecard?.mealPremiumWaivers ?? [])
+                              .filter((w) => w.segmentDate === dayKey)
+                              .map((w) => ({ id: `waiver-${w.id}`, startTime: w.segmentStart, durationMinutes: 0, payCode: null, waivedLine: true })),
+                          ].map((seg) => (
                             <tr key={`${dayKey}-premium-${seg.id}`} className="border-b border-zinc-100 bg-amber-50/40 dark:border-zinc-800 dark:bg-amber-950/10">
                               <td className="w-7 pl-2 pr-0 py-1.5" />
                               <td className="px-3 py-1 text-left">
@@ -2823,16 +2835,16 @@ export function TimecardViewer({
                               <td className="px-2 py-1 font-mono text-sm text-zinc-300 dark:text-zinc-700">—</td>
                               <td className="px-2 py-1 font-mono text-sm text-zinc-300 dark:text-zinc-700">—</td>
                               <td className="px-3 py-1.5 text-right tabular-nums text-sm font-medium text-amber-700 dark:text-amber-300">
-                                {minutesToHoursDecimal(seg.durationMinutes)}
+                                {seg.waivedLine ? "—" : minutesToHoursDecimal(seg.durationMinutes)}
                               </td>
                               <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
                               <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
                               <td className="pl-3 pr-8 py-1.5 text-right tabular-nums text-sm font-bold text-amber-700 dark:text-amber-300">
-                                {minutesToHoursDecimal(seg.durationMinutes)}
+                                {seg.waivedLine ? "—" : minutesToHoursDecimal(seg.durationMinutes)}
                               </td>
                               {showMealColumn && (() => {
                                 const segStart = seg.startTime;
-                                const premiumDbWaived = timecard?.mealPremiumWaivers.some(w => w.segmentStart === segStart) ?? false;
+                                const premiumDbWaived = seg.waivedLine || (timecard?.mealPremiumWaivers.some(w => w.segmentStart === segStart) ?? false);
                                 const premiumToggled = pendingPremiumWaiverToggles.has(segStart);
                                 const premiumEffectiveWaived = premiumToggled ? !premiumDbWaived : premiumDbWaived;
                                 if (effectiveAutoDeductMeal) return <td />;

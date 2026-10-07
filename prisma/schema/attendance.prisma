@@ -389,6 +389,9 @@ model WorkSegment {
   isSplit           Boolean     @default(false)
   leaveRequestId    String?
   payCodeId         String?
+  /// On a MEAL_PREMIUM line: the rule set's premium row that produced it
+  /// (0 = the first). A waiver names the premium by its day and this row.
+  premiumRow        Int?
   createdAt       DateTime    @default(now())
 
   timesheet    Timesheet     @relation(fields: [timesheetId], references: [id])
@@ -422,6 +425,10 @@ model MealPremiumWaiver {
   timesheetId  String
   segmentDate  DateTime @db.Date
   segmentStart DateTime // UTC start time of the specific MEAL_PREMIUM segment
+  /// Which premium row of the rule set this waives (0 = the first). With
+  /// segmentDate it is the waiver's identity; segmentStart moves whenever the
+  /// day's punches change. Null on waivers saved before it was recorded.
+  rowIndex     Int?
   createdById  String?
   createdAt    DateTime @default(now())
 

@@ -453,6 +453,7 @@ const EXCEPTION_FILTER_OPTIONS = [
   { id: "ABSENT", name: "Absent" },
   { id: "LATE_IN", name: "Late" },
   { id: "EARLY_OUT", name: "Left early" },
+  { id: "SCAN_DISCREPANCY", name: "Scan discrepancy" },
 ];
 
 // ─── Recalculate button ──────────────────────────────────────────────────────
@@ -1716,7 +1717,10 @@ export function TimecardViewer({
   const effectiveMealBreakAfterMinutes = shiftMeal?.autoDeduct && shiftFirstMeal
     ? Math.round(shiftFirstMeal.workAtLeastHours * 60)
     : (timecard?.employee.ruleSet.mealBreakAfterMinutes ?? 0);
-  const hasMealPremiums = timecard?.segments.some(s => s.segmentType === "MEAL_PREMIUM") ?? false;
+  // Waived premiums count: their lines carry the Waived control in the Meal column.
+  const hasMealPremiums =
+    (timecard?.segments.some(s => s.segmentType === "MEAL_PREMIUM") ?? false) ||
+    (timecard?.mealPremiumWaivers.length ?? 0) > 0;
   const showMealColumn = effectiveAutoDeductMeal || hasMealPremiums;
 
   // Column count for colSpan on expanded rows
@@ -3496,9 +3500,19 @@ export function TimecardViewer({
                           {/* Meal premium lines: one per premium, always shown (not only
                               when the day is open), since each is extra pay somebody may
                               need to waive. The waiver sits in the Meal column. */}
-                          {daySegments.filter((seg) => seg.segmentType === "MEAL_PREMIUM").map((seg) => {
+                          {[
+                            ...daySegments
+                              .filter((seg) => seg.segmentType === "MEAL_PREMIUM")
+                              .map((seg) => ({ id: seg.id, startTime: seg.startTime, durationMinutes: seg.durationMinutes, payCode: seg.payCode, waivedLine: false })),
+                            // A waived premium is not paid, so it has no line in the hours.
+                            // It is shown on its day all the same, marked Waived, so the day
+                            // says what happened and the waiver can be taken back.
+                            ...(timecard?.mealPremiumWaivers ?? [])
+                              .filter((w) => w.segmentDate === dayKey)
+                              .map((w) => ({ id: `waiver-${w.id}`, startTime: w.segmentStart, durationMinutes: 0, payCode: null, waivedLine: true })),
+                          ].map((seg) => {
                             const segStart = seg.startTime;
-                            const dbWaived = timecard?.mealPremiumWaivers.some((w) => w.segmentStart === segStart) ?? false;
+                            const dbWaived = seg.waivedLine || (timecard?.mealPremiumWaivers.some((w) => w.segmentStart === segStart) ?? false);
                             const toggled = pendingPremiumWaiverToggles.has(segStart);
                             const waived = toggled ? !dbWaived : dbWaived;
                             const dim = { font: "var(--type-body1)", color: "var(--text-disabled)" } as const;
@@ -3521,7 +3535,7 @@ export function TimecardViewer({
                                     color: "var(--text-primary)",
                                   }}
                                 >
-                                  {minutesToHoursDecimal(seg.durationMinutes)}
+                                  {seg.waivedLine ? <span style={dim}>—</span> : minutesToHoursDecimal(seg.durationMinutes)}
                                 </td>
                                 <td className="px-3 py-1.5 text-right" style={dim}>—</td>
                                 <td className="px-3 py-1.5 text-right" style={dim}>—</td>
@@ -3533,7 +3547,7 @@ export function TimecardViewer({
                                     color: "var(--text-primary)",
                                   }}
                                 >
-                                  {minutesToHoursDecimal(seg.durationMinutes)}
+                                  {seg.waivedLine ? <span style={dim}>—</span> : minutesToHoursDecimal(seg.durationMinutes)}
                                 </td>
                                 {showMealColumn && (
                                   <td className="px-3 py-1 text-left" onClick={(e) => e.stopPropagation()}>
