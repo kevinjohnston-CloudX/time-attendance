@@ -470,7 +470,7 @@ function RecalculateButton({ timesheetId }: { timesheetId: string }) {
         setError((result as { success: false; error: string }).error);
         return;
       }
-      router.refresh();
+      // The save above already redraws this page (revalidatePath), so a refresh here only asked for it twice.
     });
   }
 
@@ -1166,7 +1166,7 @@ export function TimecardViewer({
       const result = await deletePunch({ punchId, reason: "Removed by payroll" });
       if (!result.success) { setEditError(result.error); return; }
       setEditingPunchId(null);
-      router.refresh();
+      // The save above already redraws this page (revalidatePath), so a refresh here only asked for it twice.
     });
   }
 
@@ -1298,7 +1298,7 @@ export function TimecardViewer({
       setNewEntryNote("");
       setNewEntryError(null);
       setShowAddEntryModal(false);
-      router.refresh();
+      // The save above already redraws this page (revalidatePath), so a refresh here only asked for it twice.
     });
   }
 
@@ -1357,7 +1357,7 @@ export function TimecardViewer({
   function handleRemoveLeave(leaveRequestId: string) {
     startTransition(async () => {
       await removePayrollLeaveEntry({ leaveRequestId });
-      router.refresh();
+      // The save above already redraws this page (revalidatePath), so a refresh here only asked for it twice.
     });
   }
 
@@ -1370,7 +1370,7 @@ export function TimecardViewer({
         return;
       }
       setEditingPunchId(null);
-      router.refresh();
+      // The save above already redraws this page (revalidatePath), so a refresh here only asked for it twice.
     });
   }
 
@@ -1703,7 +1703,7 @@ export function TimecardViewer({
       });
       setNoteText("");
       setNoteSaving(false);
-      router.refresh();
+      // The save above already redraws this page (revalidatePath), so a refresh here only asked for it twice.
     });
   }
 
