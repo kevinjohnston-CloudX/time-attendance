@@ -48,10 +48,19 @@ export function useSiteTablets(siteId: string | null, enabled: boolean) {
       }
     };
     void load();
-    const t = window.setInterval(() => void load(), REFRESH_MS);
+    // A hidden tab skips its minute and asks again the moment it is looked
+    // at, the way the gate alert check does.
+    const t = window.setInterval(() => {
+      if (!document.hidden) void load();
+    }, REFRESH_MS);
+    const onVisible = () => {
+      if (!document.hidden) void load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       dead = true;
       window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [siteId, enabled, attempt]);
 

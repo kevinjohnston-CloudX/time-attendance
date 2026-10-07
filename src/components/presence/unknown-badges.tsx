@@ -42,11 +42,23 @@ export function useUnknownBadges({ siteId, day, active }: { siteId: string; day:
       setState((s) => (r.success ? { key, data: r.data, failed: false } : { ...s, key, failed: true }));
     };
     void load();
-    // A past day cannot change, so only today keeps asking.
-    const t = day ? null : setInterval(() => void load(), POLL_MS);
+    // A past day cannot change, so only today keeps asking, and a hidden tab
+    // skips its minute and asks again the moment it is looked at.
+    const t = day
+      ? null
+      : setInterval(() => {
+          if (!document.hidden) void load();
+        }, POLL_MS);
+    const onVisible = () => {
+      if (!document.hidden) void load();
+    };
+    if (t) document.addEventListener("visibilitychange", onVisible);
     return () => {
       dead = true;
-      if (t) clearInterval(t);
+      if (t) {
+        clearInterval(t);
+        document.removeEventListener("visibilitychange", onVisible);
+      }
     };
   }, [siteId, day, active, key, attempt]);
 
