@@ -132,7 +132,6 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
   useEffect(() => {
     if (!open || employees || loadedSupervisors) return;
     let dead = false;
-    setSupervisorsFailed(false);
     getSupervisorOptions()
       .then((r) => {
         if (dead) return;
@@ -156,6 +155,8 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
   function handleClose() {
     setOpen(false);
+    // A list that failed to load is asked for again on the next open.
+    setSupervisorsFailed(false);
     setActiveTab("general");
     setError(null);
     if (copy) {
