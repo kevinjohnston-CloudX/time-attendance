@@ -107,7 +107,7 @@ export async function applyScheduleBatch(
      last error is raised and the run is recorded as FAILED, not PARTIAL. */
   let errors = 0;
   let lastError: unknown = null;
-  for (const row of rows) {
+  const applyOne = async (row: OracleScheduleRow) => {
     try {
       await applyScheduleRow(tenantId, row, tally);
     } catch (err) {
@@ -118,10 +118,156 @@ export async function applyScheduleBatch(
       const lastLine = msg.trim().split("\n").filter(Boolean).pop() ?? "unknown error";
       tally.note("ROW_ERROR", (row.empId ?? "").trim() || "-", `${row.workDate}: ${lastLine.slice(0, 200)}`);
     }
+  };
+
+  /* Most of a pull is Oracle sending the same days again, and badges with no
+     CloudTime employee: on 2026-10-07 about half and half of ~3,600 rows every
+     five minutes, at three and one round trips each. So everybody and every
+     day the batch names are read up front in a few queries, a badge with
+     nobody is noted from that, and a day that only needs marking as checked
+     is marked together with the rest at the end. Everything else (a new day,
+     a change, a conflict, a day named twice in one batch) still goes through
+     applyScheduleRow one at a time, in batch order, reading fresh. Notes come
+     out in the same order as before, because only the checked days are moved
+     and they never write one. If the reading up front fails, the batch runs
+     the old way, row by row, so a failure is reported exactly as it was. */
+  let known: Known;
+  try {
+    known = await readKnown(tenantId, rows);
+  } catch {
+    for (const row of rows) await applyOne(row);
+    if (errors > 0 && errors === rows.length) throw lastError;
+    return tally;
   }
+
+  const checked: { id: string; row: OracleScheduleRow }[] = [];
+  for (const row of rows) {
+    const empId = (row.empId ?? "").trim();
+    const workDate = toWorkDate(row.workDate ?? "");
+    if (!empId || !workDate) {
+      await applyOne(row);
+      continue;
+    }
+    const employeeId = known.employees.get(empId);
+    if (!employeeId) {
+      tally.rejected++;
+      tally.note("NO_EMPLOYEE", empId, "No CloudTime employee for this Oracle empId");
+      continue;
+    }
+    const key = dayKey(employeeId, workDate);
+    const existing = known.days.get(key);
+    if (existing && !known.repeated.has(key) && onlyNeedsCheck(existing, schedulingOf(row))) {
+      checked.push({ id: existing.id, row });
+      continue;
+    }
+    await applyOne(row);
+  }
+
+  if (checked.length) {
+    try {
+      const oracleSyncedAt = new Date();
+      for (let i = 0; i < checked.length; i += CHUNK) {
+        await db.scheduleDay.updateMany({
+          where: { id: { in: checked.slice(i, i + CHUNK).map((c) => c.id) } },
+          data: { oracleSyncedAt },
+        });
+      }
+      tally.skipped += checked.length;
+    } catch {
+      // Marking them together failed: each goes the old way and reports its own error.
+      for (const c of checked) await applyOne(c.row);
+    }
+  }
+
   if (errors > 0 && errors === rows.length) throw lastError;
 
   return tally;
+}
+
+/** How many ids go in one `IN (...)` list. */
+const CHUNK = 1_000;
+
+type KnownDay = Scheduling & { id: string; syncState: string; oracleFingerprint: string | null };
+type Known = {
+  /** Oracle empId -> CloudTime employee id, for this company. */
+  employees: Map<string, string>;
+  /** Every schedule day this batch names that already exists, by dayKey. */
+  days: Map<string, KnownDay>;
+  /** Days the batch names more than once: an earlier row can change what a later one finds. */
+  repeated: Set<string>;
+};
+
+function dayKey(employeeId: string, workDate: Date): string {
+  return `${employeeId}|${workDate.toISOString().slice(0, 10)}`;
+}
+
+/** Everybody and every existing day the batch names, in a few queries instead of two per row. */
+async function readKnown(tenantId: string, rows: OracleScheduleRow[]): Promise<Known> {
+  const empIds = [...new Set(rows.map((r) => (r.empId ?? "").trim()).filter(Boolean))];
+  const employees = new Map<string, string>();
+  for (let i = 0; i < empIds.length; i += CHUNK) {
+    const found = await db.employee.findMany({
+      where: { tenantId, wmsId: { in: empIds.slice(i, i + CHUNK) } },
+      select: { id: true, wmsId: true },
+    });
+    for (const e of found) if (e.wmsId) employees.set(e.wmsId, e.id);
+  }
+
+  const wanted = new Map<string, number>();
+  const dates = new Set<string>();
+  for (const r of rows) {
+    const employeeId = employees.get((r.empId ?? "").trim());
+    const workDate = toWorkDate(r.workDate ?? "");
+    if (!employeeId || !workDate) continue;
+    const key = dayKey(employeeId, workDate);
+    wanted.set(key, (wanted.get(key) ?? 0) + 1);
+    dates.add(workDate.toISOString().slice(0, 10));
+  }
+  const repeated = new Set([...wanted].filter(([, n]) => n > 1).map(([k]) => k));
+
+  const days = new Map<string, KnownDay>();
+  const ids = [...new Set([...wanted.keys()].map((k) => k.split("|")[0]))];
+  const workDates = [...dates].map((d) => new Date(`${d}T00:00:00.000Z`));
+  for (let i = 0; i < ids.length && workDates.length; i += CHUNK) {
+    const found = await db.scheduleDay.findMany({
+      where: { employeeId: { in: ids.slice(i, i + CHUNK) }, workDate: { in: workDates } },
+      select: {
+        id: true,
+        employeeId: true,
+        workDate: true,
+        syncState: true,
+        oracleFingerprint: true,
+        isWorkday: true,
+        startTime: true,
+        endTime: true,
+        mealMinutes: true,
+      },
+    });
+    for (const d of found) {
+      const key = dayKey(d.employeeId, d.workDate);
+      if (wanted.has(key)) days.set(key, d);
+    }
+  }
+  return { employees, days, repeated };
+}
+
+/**
+ * Whether applyScheduleRow would only mark this day as checked: Oracle sent
+ * it again unchanged, over a day CloudTime edited (LOCAL_EDIT) or one it holds
+ * as Oracle's (any other state but CONFLICT). The same two tests, word for
+ * word, as the two `oracleSyncedAt` only branches there; keep them together.
+ */
+function onlyNeedsCheck(existing: KnownDay, incoming: Scheduling): boolean {
+  if (existing.syncState === "CONFLICT") return false;
+  const incomingPrint = fingerprint(incoming);
+  if (existing.syncState === "LOCAL_EDIT") return existing.oracleFingerprint === incomingPrint;
+  const local: Scheduling = {
+    isWorkday: existing.isWorkday,
+    startTime: existing.startTime,
+    endTime: existing.endTime,
+    mealMinutes: existing.mealMinutes,
+  };
+  return existing.oracleFingerprint === incomingPrint && sameScheduling(incoming, local);
 }
 
 /**
