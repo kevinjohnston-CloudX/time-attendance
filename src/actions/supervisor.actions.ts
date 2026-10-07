@@ -9,7 +9,6 @@ import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { createCorrectionPunch } from "@/lib/utils/punch-correction";
 import { assertEditable, punchInScope, timesheetInScope } from "@/lib/rbac/scope";
 import { computeRoundedTime } from "@/lib/utils/date";
-import { scheduledWindow } from "@/lib/utils/shift-schedule";
 import {
   resolveExceptionSchema,
   addMissingPunchSchema,
@@ -18,19 +17,16 @@ import {
   type AddMissingPunchInput,
   type CorrectAndResolveInput,
 } from "@/lib/validators/supervisor.schema";
-import { format, endOfDay, startOfDay } from "date-fns";
 import { z } from "zod";
 import { ExceptionType } from "@prisma/client";
 import type { Role } from "@/lib/rbac/roles";
 import { getSubordinateIds } from "@/lib/get-subordinate-ids";
+import { dayRange, readOpenExceptions } from "@/lib/exceptions/read-open-exceptions";
 import type { PunchState, PunchType } from "@prisma/client";
 
 const PAYROLL_ROLES: Role[] = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"];
 
 /** Pay periods are stored at UTC midnight, so one day is that whole UTC day. */
-function dayRange(day: string) {
-  return { gte: new Date(`${day}T00:00:00.000Z`), lt: new Date(`${day}T23:59:59.999Z`) };
-}
 
 // ─── Exceptions ───────────────────────────────────────────────────────────────
 
@@ -72,139 +68,7 @@ export const getTeamExceptions = withRBAC(
       if (subordinateIds.length === 0) return [];
       idFilter = { id: { in: subordinateIds } };
     }
-    const employeeFilter = {
-      tenantId: t,
-      ...idFilter,
-      ...(siteId ? { siteId } : {}),
-      ...(departmentId ? { departmentId } : {}),
-      ...(shiftId ? { shiftId } : {}),
-    };
-
-    const rows = await db.exception.findMany({
-      where: {
-        resolvedAt: null,
-        exceptionType: { in: Object.values(ExceptionType) },
-        ...(exceptionType ? { exceptionType } : {}),
-        timesheet: {
-          ...(payPeriodStart ? { payPeriod: { startDate: dayRange(payPeriodStart) } } : {}),
-          employee: employeeFilter,
-        },
-      },
-      select: {
-        id: true,
-        exceptionType: true,
-        description: true,
-        occurredAt: true,
-        timesheetId: true,
-        timesheet: {
-          select: {
-            employeeId: true,
-            employee: {
-              select: {
-                shiftId:    true,
-                user:       { select: { name: true } },
-                site:       { select: { name: true } },
-                department: { select: { name: true } },
-              },
-            },
-            payPeriod: {
-              select: {
-                id: true,
-                startDate: true,
-                endDate: true,
-                // Which end date convention the period uses (see pay-period-display).
-                ruleSet: { select: { payFrequency: true } },
-                tenant: { select: { payFrequency: true } },
-              },
-            },
-            _count: { select: { punches: { where: { isApproved: true, correctedById: null } } } },
-          },
-        },
-      },
-      orderBy: { occurredAt: "asc" },
-    });
-
-    /**
-     * What the day was scheduled as, and what was actually recorded on it.
-     *
-     * <p>Two more queries rather than two more includes, and that is the whole
-     * point. Including the punches is what made this page 25MB: roughly three
-     * exceptions share a timesheet, so every punch on that sheet was
-     * serialised three times over. Here the punch read is narrowed to clock in
-     * and clock out, to the sheets already in the result, to the days those
-     * exceptions fell on, and to three columns, and nothing but two short
-     * strings per card ever reaches the browser.
-     *
-     * <p>The days are bucketed with the same format() the action panel uses
-     * rather than by grouping on rounded_time::date in Postgres. The database
-     * would do the arithmetic in one query fewer and would put a night shift's
-     * clock out on the following day, because the column is stored in UTC.
-     */
-    const timesheetIds = Array.from(new Set(rows.map((r) => r.timesheetId)));
-    const recorded = new Map<string, { in: string | null; out: string | null }>();
-
-    if (timesheetIds.length > 0) {
-      let earliest = rows[0].occurredAt;
-      let latest = rows[0].occurredAt;
-      for (const r of rows) {
-        if (r.occurredAt < earliest) earliest = r.occurredAt;
-        if (r.occurredAt > latest) latest = r.occurredAt;
-      }
-
-      const punches = await db.punch.findMany({
-        where: {
-          timesheetId: { in: timesheetIds },
-          punchType: { in: ["CLOCK_IN", "CLOCK_OUT"] },
-          isApproved: true,
-          correctedById: null,
-          roundedTime: { gte: startOfDay(earliest), lte: endOfDay(latest) },
-        },
-        select: { timesheetId: true, punchType: true, roundedTime: true },
-        orderBy: { roundedTime: "asc" },
-      });
-
-      for (const p of punches) {
-        if (!p.timesheetId) continue;
-        const key = `${p.timesheetId}|${format(p.roundedTime, "yyyy-MM-dd")}`;
-        const entry = recorded.get(key) ?? { in: null, out: null };
-        // Read in time order, so the first clock in and the last clock out of
-        // the day win. A split shift shows the outer edges of it, which is
-        // what the exception was raised against.
-        if (p.punchType === "CLOCK_IN") entry.in = entry.in ?? format(p.roundedTime, "HH:mm");
-        else entry.out = format(p.roundedTime, "HH:mm");
-        recorded.set(key, entry);
-      }
-    }
-
-    const shiftIds = Array.from(
-      new Set(rows.map((r) => r.timesheet.employee.shiftId).filter((id): id is string => !!id)),
-    );
-    const shifts = shiftIds.length
-      ? await db.shift.findMany({
-          // Scoped by the employees already in scope rather than by tenant
-          // again: these ids came off rows this caller is allowed to read.
-          where: { id: { in: shiftIds } },
-          select: { id: true, startTime: true, endTime: true, daySchedule: true },
-        })
-      : [];
-    const shiftById = new Map(shifts.map((sh) => [sh.id, sh]));
-
-    return rows.map(({ timesheet, ...ex }) => ({
-      ...ex,
-      scheduled: scheduledWindow(
-        timesheet.employee.shiftId ? shiftById.get(timesheet.employee.shiftId) : null,
-        ex.occurredAt,
-      ),
-      recorded:
-        recorded.get(`${ex.timesheetId}|${format(ex.occurredAt, "yyyy-MM-dd")}`) ??
-        { in: null, out: null },
-      timesheet: {
-        employeeId: timesheet.employeeId,
-        employee:   timesheet.employee,
-        payPeriod:  timesheet.payPeriod,
-        hasPunches: timesheet._count.punches > 0,
-      },
-    }));
+    return readOpenExceptions({ t, idFilter, siteId, departmentId, shiftId, exceptionType, payPeriodStart });
   }
 );
 
