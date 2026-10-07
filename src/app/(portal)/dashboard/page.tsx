@@ -77,7 +77,10 @@ export default async function DashboardPage({
   const year = now.getFullYear();
   const { overviewPeriodId } = (await searchParams) ?? {};
 
-  const [payPeriod, allLeaveBalances, myLeaveRequests, me] = await Promise.all([
+  // Three rounds, each waiting only on what it needs: what is open now and who
+  // this is, then everything that hangs off the open period, then the counts
+  // for the period the overview is showing.
+  const [payPeriod, allLeaveBalances, myLeaveRequests, me, hasPayrollAccess, canApproveTeam] = await Promise.all([
     tenantId
       ? db.payPeriod.findFirst({
           where: {
@@ -113,26 +116,20 @@ export default async function DashboardPage({
           select: { site: { select: { name: true } } },
         })
       : null,
+
+    // ── What this person is allowed to see ──────────────────────────────────
+    session?.user ? userHasPermission(session.user, "PAY_PERIOD_MANAGE") : false,
+    session?.user ? userHasPermission(session.user, "TIMESHEET_APPROVE_TEAM") : false,
   ]);
 
-  const currentTimesheet =
+  // ── The cards, and the periods either side of this one ────────────────────
+  const [currentTimesheet, today, exceptionsFeed, presence, upcoming, prevPP, nextPP] = await Promise.all([
     payPeriod && employeeId
-      ? await db.timesheet.findFirst({
+      ? db.timesheet.findFirst({
           where: { employeeId, payPeriodId: payPeriod.id },
           include: { overtimeBuckets: true },
         })
-      : null;
-
-  // ── What this person is allowed to see ────────────────────────────────────
-  const hasPayrollAccess = session?.user
-    ? await userHasPermission(session.user, "PAY_PERIOD_MANAGE")
-    : false;
-  const canApproveTeam = session?.user
-    ? await userHasPermission(session.user, "TIMESHEET_APPROVE_TEAM")
-    : false;
-
-  // ── The cards ─────────────────────────────────────────────────────────────
-  const [today, exceptionsFeed, presence, upcoming] = await Promise.all([
+      : null,
     employeeId ? getToday(employeeId, now) : null,
     canApproveTeam && tenantId
       ? getExceptionsFeed(employeeId, tenantId, hasPayrollAccess, payPeriod?.id ?? null)
@@ -143,6 +140,20 @@ export default async function DashboardPage({
     tenantId
       ? getUpcoming(employeeId, tenantId, now, payPeriod ? parseUtcDate(payPeriod.endDate) : null)
       : [],
+    hasPayrollAccess && tenantId && payPeriod
+      ? db.payPeriod.findFirst({
+          where: { tenantId, ruleSetId: { not: null }, endDate: { lt: payPeriod.startDate } },
+          orderBy: { endDate: "desc" },
+          select: { id: true, startDate: true, endDate: true },
+        })
+      : null,
+    hasPayrollAccess && tenantId && payPeriod
+      ? db.payPeriod.findFirst({
+          where: { tenantId, ruleSetId: { not: null }, startDate: { gt: payPeriod.endDate } },
+          orderBy: { startDate: "asc" },
+          select: { id: true, startDate: true, endDate: true },
+        })
+      : null,
   ]);
 
   // ── Period overview (PAY_PERIOD_MANAGE only) ─────────────────────────────
@@ -153,23 +164,6 @@ export default async function DashboardPage({
   let timesheetStatusCounts: { status: string; _count: { _all: number } }[] = [];
 
   if (hasPayrollAccess && tenantId) {
-    const [prevPP, nextPP] = await Promise.all([
-      payPeriod
-        ? db.payPeriod.findFirst({
-            where: { tenantId, ruleSetId: { not: null }, endDate: { lt: payPeriod.startDate } },
-            orderBy: { endDate: "desc" },
-            select: { id: true, startDate: true, endDate: true },
-          })
-        : null,
-      payPeriod
-        ? db.payPeriod.findFirst({
-            where: { tenantId, ruleSetId: { not: null }, startDate: { gt: payPeriod.endDate } },
-            orderBy: { startDate: "asc" },
-            select: { id: true, startDate: true, endDate: true },
-          })
-        : null,
-    ]);
-
     type PeriodOption = { id: string; startDate: Date; endDate: Date; label: string };
     const allPeriods: PeriodOption[] = [
       prevPP && {

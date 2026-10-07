@@ -68,10 +68,14 @@ export async function getScanLog(
   siteId: string,
   input: ScanLogInput,
 ): Promise<ScanLogPage | null> {
-  const site = await db.site.findFirst({
-    where: { id: siteId, tenantId, isActive: true },
-    select: { timezone: true },
-  });
+  // Both small reads of the sites table, asked together rather than in turn.
+  const [site, scope] = await Promise.all([
+    db.site.findFirst({
+      where: { id: siteId, tenantId, isActive: true },
+      select: { timezone: true },
+    }),
+    siteScope(tenantId, siteId),
+  ]);
   if (!site) return null;
 
   const timezone = site.timezone || "America/New_York";
@@ -80,7 +84,6 @@ export async function getScanLog(
   const dayStart = snapToLocalTime("00:00", day, timezone);
   const dayEnd = snapToLocalTime("00:00", addDays(day, 1), timezone);
 
-  const scope = await siteScope(tenantId, siteId);
   const q = input.q?.trim() || null;
   const ids = input.ids?.length ? input.ids : null;
   // The people picked, and whoever matches what is still being typed.

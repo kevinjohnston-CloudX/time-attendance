@@ -62,9 +62,17 @@ export default async function PayPeriodsPage({
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "PAY_PERIOD_MANAGE")) redirect("/dashboard");
-  const canRunPayroll = await userHasPermission(session.user, "PAYROLL_RUN");
 
-  const result = await getPayPeriods();
+  // The period picked does not wait on the list, so it is asked now and read
+  // below. A failure still surfaces at that await; the no-op catch only keeps
+  // a redirect in between from leaving it unhandled.
+  const detailRead = selectedId ? getPayPeriodDetail({ payPeriodId: selectedId }) : Promise.resolve(null);
+  detailRead.catch(() => {});
+
+  const [canRunPayroll, result] = await Promise.all([
+    userHasPermission(session.user, "PAYROLL_RUN"),
+    getPayPeriods(),
+  ]);
   if (!result.success) redirect("/dashboard");
   const all = result.data;
 
@@ -122,7 +130,7 @@ export default async function PayPeriodsPage({
     />
   );
 
-  const detailResult = selectedId ? await getPayPeriodDetail({ payPeriodId: selectedId }) : null;
+  const detailResult = await detailRead;
   const detail = detailResult?.success ? detailResult.data : null;
 
   if (!detail) {

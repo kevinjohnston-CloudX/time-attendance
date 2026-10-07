@@ -138,6 +138,18 @@ export default async function TimecardsPage({
   const selectedEmployeeId =
     sp.employeeId && employees.some((e) => e.employeeId === sp.employeeId) ? sp.employeeId : employees[0].employeeId;
 
+  // Pay codes, reason codes, and the employee's site time zone: the sheet
+  // shows and reads every time in it, whoever is looking. None of them waits
+  // on the period or the timecard, so they are asked now and read below. A
+  // failure still surfaces at that await; the no-op catch only keeps an
+  // earlier throw from leaving this one unhandled.
+  const sheetRefsRead = Promise.all([
+    getPayCodes({}),
+    getReasonCodes(),
+    db.employee.findUnique({ where: { id: selectedEmployeeId }, select: { site: { select: { timezone: true } } } }),
+  ]);
+  sheetRefsRead.catch(() => {});
+
   // Load periods for the selected employee's rule set
   let periods: { id: string; startDate: string; endDate: string; status: string }[] = [];
   let payFrequency = "BIWEEKLY";
@@ -172,13 +184,7 @@ export default async function TimecardsPage({
     }
   }
 
-  // Fetch pay codes and reason codes, and the employee's site time zone: the
-  // sheet shows and reads every time in it, whoever is looking.
-  const [payCodesResult, reasonCodesResult, siteOfEmployee] = await Promise.all([
-    getPayCodes({}),
-    getReasonCodes(),
-    db.employee.findUnique({ where: { id: selectedEmployeeId }, select: { site: { select: { timezone: true } } } }),
-  ]);
+  const [payCodesResult, reasonCodesResult, siteOfEmployee] = await sheetRefsRead;
   const payCodes = payCodesResult.success ? payCodesResult.data : [];
   const reasonCodes = reasonCodesResult.success ? reasonCodesResult.data : [];
 

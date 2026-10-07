@@ -38,8 +38,24 @@ export default async function PortalLayout({
   // Check if the employee is active. Inactive employees get a restricted read-only view.
   // The same read also carries what the tablet photo lookup needs, so the
   // sidebar can show the signed-in person's own photo. Only ever their own.
+  let tenantBannerName: string | null = null;
+  const realRole = session.user.role ?? "EMPLOYEE";
+  let sidebarRole = realRole;
+
+  const customRoleId = session.user.customRoleId ?? null;
+  const isPrivileged = PRIVILEGED_ROLES.includes(realRole);
+
+  // Asked now, read below in the same order as ever, so it overlaps the
+  // employee read instead of waiting behind it. A failure still surfaces at
+  // the await; the no-op catch only keeps an early redirect from leaving it
+  // unhandled.
+  const liveAttendanceOnlyRead = isPrivileged ? Promise.resolve(false) : isLiveAttendanceOnly(customRoleId);
+  liveAttendanceOnlyRead.catch(() => {});
+
   let isEmployeeActive = true;
-  let userPhoto: string | null = null;
+  // Started here and awaited only when the shell is drawn, so the photo lookup
+  // runs alongside the reads below instead of in front of them.
+  let userPhotoRead: Promise<string | null> = Promise.resolve(null);
   if (session.user.employeeId) {
     const emp = await db.employee.findUnique({
       where: { id: session.user.employeeId },
@@ -47,20 +63,11 @@ export default async function PortalLayout({
     });
     isEmployeeActive = emp?.isActive ?? true;
     if (emp) {
-      try {
-        userPhoto = (await photoUrls(emp.tenantId, [emp])).get(emp.id) ?? null;
-      } catch {
-        userPhoto = null; // a failed lookup shows the initials, never breaks the page
-      }
+      userPhotoRead = photoUrls(emp.tenantId, [emp])
+        .then((urls) => urls.get(emp.id) ?? null)
+        .catch(() => null); // a failed lookup shows the initials, never breaks the page
     }
   }
-
-  let tenantBannerName: string | null = null;
-  const realRole = session.user.role ?? "EMPLOYEE";
-  let sidebarRole = realRole;
-
-  const customRoleId = session.user.customRoleId ?? null;
-  const isPrivileged = PRIVILEGED_ROLES.includes(realRole);
 
   /**
    * A role limited to Live Attendance opens that page and nothing else. This
@@ -80,7 +87,7 @@ export default async function PortalLayout({
     if (!INACTIVE_PATHS.some((p) => path === p || path.startsWith(`${p}/`))) redirect("/time/timesheet");
   }
 
-  const liveAttendanceOnly = !isPrivileged && (await isLiveAttendanceOnly(customRoleId));
+  const liveAttendanceOnly = await liveAttendanceOnlyRead;
   if (liveAttendanceOnly) {
     const path = (await headers()).get(REQUEST_PATH_HEADER) ?? "";
     const onPage = path === LIVE_ATTENDANCE_HREF || path.startsWith(`${LIVE_ATTENDANCE_HREF}/`);
@@ -202,6 +209,7 @@ export default async function PortalLayout({
     : [];
 
   const classicUntil = classicDesignUntil();
+  const userPhoto = await userPhotoRead;
 
   const destinations: Destination[] = isEmployeeActive
     ? [

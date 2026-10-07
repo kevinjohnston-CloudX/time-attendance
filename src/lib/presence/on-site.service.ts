@@ -110,10 +110,16 @@ export async function getViewableSites(
  * building.
  */
 export async function getPresenceBoard(tenantId: string, siteId: string): Promise<PresenceBoard | null> {
-  const site = await db.site.findFirst({
-    where: { id: siteId, tenantId, isActive: true },
-    select: { id: true, name: true, timezone: true },
-  });
+  // Both are small reads of the sites table, asked together rather than one
+  // after the other. The scope is only used once the site is known to exist.
+  const [site, scope] = await Promise.all([
+    db.site.findFirst({
+      where: { id: siteId, tenantId, isActive: true },
+      select: { id: true, name: true, timezone: true },
+    }),
+    // The scans made at this building, whoever made them (see site-scope.ts).
+    siteScope(tenantId, siteId),
+  ]);
   if (!site) return null;
 
   const now = new Date();
@@ -122,8 +128,6 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
   const todayStart = snapToLocalTime("00:00", today, timezone);
   const windowStart = new Date(now.getTime() - LOOKBACK_MS);
   const workDate = new Date(`${today}T00:00:00.000Z`);
-  // The scans made at this building, whoever made them (see site-scope.ts).
-  const scope = await siteScope(tenantId, siteId);
   const here = scansHereSql(scope);
 
   const [latest, todayRows, lastGate, scheduled, leaveRequests, onLeaveFlags, roster] = await Promise.all([

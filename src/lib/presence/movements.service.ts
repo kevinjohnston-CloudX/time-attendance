@@ -57,10 +57,14 @@ export async function getSiteDay(
   siteId: string,
   input: { day?: string | null; since?: { watermark: string | null; generatedAt: string } | null },
 ): Promise<SiteDay | { unchanged: true } | null> {
-  const site = await db.site.findFirst({
-    where: { id: siteId, tenantId, isActive: true },
-    select: { id: true, name: true, timezone: true },
-  });
+  // Both small reads of the sites table, asked together rather than in turn.
+  const [site, scope] = await Promise.all([
+    db.site.findFirst({
+      where: { id: siteId, tenantId, isActive: true },
+      select: { id: true, name: true, timezone: true },
+    }),
+    siteScope(tenantId, siteId),
+  ]);
   if (!site) return null;
 
   const timezone = site.timezone || "America/New_York";
@@ -70,7 +74,6 @@ export async function getSiteDay(
   const dayStart = snapToLocalTime("00:00", day, timezone);
   const dayEnd = snapToLocalTime("00:00", addDays(day, 1), timezone);
   const workDate = new Date(`${day}T00:00:00.000Z`);
-  const scope = await siteScope(tenantId, siteId);
   const here = scansHere(scope);
   const atSite = { tenantId, scanTime: { gte: dayStart, lt: dayEnd }, AND: [here] };
 
