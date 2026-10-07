@@ -7,7 +7,7 @@ import { CalendarRange, Check, CircleAlert, CircleCheck, Clock, Files } from "lu
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
-import { getPayPeriods, getPayPeriodDetail } from "@/actions/pay-period.actions";
+import { getPayPeriodRail, getPayPeriodDetail } from "@/actions/pay-period.actions";
 import { getAdpConfig } from "@/lib/integrations/adp/client";
 import { dayKey, FREQ_LABEL, periodLastDay, periodRange } from "@/lib/pay-period-display";
 import { parseUtcDate } from "@/lib/utils/date";
@@ -71,12 +71,12 @@ export default async function PayPeriodsPage({
 
   const [canRunPayroll, result] = await Promise.all([
     userHasPermission(session.user, "PAYROLL_RUN"),
-    getPayPeriods(),
+    getPayPeriodRail(),
   ]);
   if (!result.success) redirect("/dashboard");
   const all = result.data;
 
-  // The company every period here belongs to (getPayPeriods is scoped to it),
+  // The company every period here belongs to (getPayPeriodRail is scoped to it),
   // for its own pay frequency and for the site and department lists.
   const tenantId = all[0]?.tenantId ?? session.user.tenantId ?? null;
   const tenant = tenantId ? await db.tenant.findUnique({ where: { id: tenantId }, select: { payFrequency: true } }) : null;
@@ -97,7 +97,7 @@ export default async function PayPeriodsPage({
       groupKey: pp.ruleSetId ?? "company",
       groupName: pp.ruleSet?.name ?? COMPANY_NAME,
       freqLabel: FREQ_LABEL[freqOf(pp)],
-      total: pp.timesheets.length,
+      total: pp._count.timesheets,
     };
   });
 

@@ -33,6 +33,27 @@ export const getPayPeriods = withRBAC("PAY_PERIOD_MANAGE", async ({ tenantId }, 
   });
 });
 
+/**
+ * The same periods for the Pay Periods rail, which shows only how many
+ * timesheets each one holds: counted in the database rather than loading
+ * every timesheet the company has ever had to take its length. Classic still
+ * reads {@link getPayPeriods}, which it needs for its locked counts.
+ */
+export const getPayPeriodRail = withRBAC("PAY_PERIOD_MANAGE", async ({ tenantId }, _input: void) => {
+  // With no company, tenantId undefined would match every company's periods.
+  if (!tenantId) throw new Error("Tenant context required");
+  return db.payPeriod.findMany({
+    where: { tenantId },
+    orderBy: { startDate: "desc" },
+    include: {
+      _count: { select: { timesheets: true } },
+      ruleSet: {
+        select: { id: true, name: true, payFrequency: true },
+      },
+    },
+  });
+});
+
 export const getPayPeriodDetail = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (
@@ -54,11 +75,21 @@ export const getPayPeriodDetail = withRBAC(
       db.payPeriod.findUniqueOrThrow({
         where: { id: payPeriodId },
         include: {
+          // Only what both designs read: who, where, the hours and how many
+          // open exceptions. The whole user row (password hash included) and
+          // every exception's text used to come along for nothing.
           timesheets: {
             include: {
-              employee: { include: { user: true, site: { select: { id: true, name: true } } } },
+              employee: {
+                select: {
+                  siteId: true,
+                  departmentId: true,
+                  user: { select: { name: true } },
+                  site: { select: { id: true, name: true } },
+                },
+              },
               overtimeBuckets: true,
-              exceptions: { where: { resolvedAt: null } },
+              exceptions: { where: { resolvedAt: null }, select: { id: true } },
             },
           },
         },
