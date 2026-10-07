@@ -44,24 +44,26 @@ export default async function TimecardsPage({
   const t = session.user.tenantId ?? undefined;
 
   // Load employees + sites + departments in parallel
+  const listFilters = {
+    siteId: sp.siteId ?? null,
+    departmentId: sp.departmentId ?? null,
+    payPeriodId: sp.periodId ?? null,
+  };
   const [employeesResult, sites, departments] = await Promise.all([
-    isAllScope
-      ? getActiveEmployeesForTimecards({
-          siteId: sp.siteId ?? null,
-          departmentId: sp.departmentId ?? null,
-          payPeriodId: sp.periodId ?? null,
-        })
-      : getTeamEmployeesForTimecards({}),
+    isAllScope ? getActiveEmployeesForTimecards(listFilters) : getTeamEmployeesForTimecards(listFilters),
     db.site.findMany({
       where: { isActive: true, ...(t ? { tenantId: t } : {}) },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    // A site's departments: the ones set up for it, and any its people are in.
     db.department.findMany({
       where: {
         isActive: true,
         ...(t ? { tenantId: t } : {}),
-        ...(sp.siteId ? { sites: { some: { siteId: sp.siteId } } } : {}),
+        ...(sp.siteId
+          ? { OR: [{ sites: { some: { siteId: sp.siteId } } }, { employees: { some: { siteId: sp.siteId, isActive: true } } }] }
+          : {}),
       },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
@@ -82,7 +84,11 @@ export default async function TimecardsPage({
   }
 
   // Resolve selected employee (URL param or first in list)
-  const selectedEmployeeId = sp.employeeId ?? employees[0].employeeId;
+  // Only someone on the list the caller was given, as on the new design.
+  const selectedEmployeeId =
+    sp.employeeId && employees.some((e) => e.employeeId === sp.employeeId)
+      ? sp.employeeId
+      : (employees.find((e) => e.isActive) ?? employees[0]).employeeId;
 
   // Load periods for the selected employee's rule set
   let periods: { id: string; startDate: string; endDate: string; status: string }[] = [];
