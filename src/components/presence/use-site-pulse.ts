@@ -78,10 +78,22 @@ export function useSitePulse(siteId: string | null, alerts: boolean): SitePulse 
  * Runs `onChange` each time `value` moves on from one it has already seen.
  * The first value only sets the baseline, since whatever it describes was
  * loaded along with the view; so does the first one after `enabled` turns on.
+ *
+ * <p>With `minGapMs`, runs at most once per gap: a change inside the gap is
+ * held and run once when the gap ends, however many arrived, so the last one
+ * always lands. For the whole-building reloads (the board, Movements), which a
+ * busy gate would otherwise ask for every few seconds on every screen.
  */
-export function useOnPulseChange(value: string | null | undefined, enabled: boolean, onChange: () => void): void {
+export function useOnPulseChange(
+  value: string | null | undefined,
+  enabled: boolean,
+  onChange: () => void,
+  minGapMs = 0,
+): void {
   const seen = useRef<{ value: string | null } | null>(null);
   const latest = useRef(onChange);
+  const lastRun = useRef(0);
+  const held = useRef<number | null>(null);
   useEffect(() => {
     latest.current = onChange;
   }, [onChange]);
@@ -96,6 +108,26 @@ export function useOnPulseChange(value: string | null | undefined, enabled: bool
     }
     if (seen.current.value === value) return;
     seen.current = { value };
-    latest.current();
-  }, [value, enabled]);
+    if (held.current !== null) return;
+    const wait = lastRun.current + minGapMs - Date.now();
+    if (wait <= 0) {
+      lastRun.current = Date.now();
+      latest.current();
+      return;
+    }
+    held.current = window.setTimeout(() => {
+      held.current = null;
+      lastRun.current = Date.now();
+      latest.current();
+    }, wait);
+  }, [value, enabled, minGapMs]);
+  // A held run belongs to the view that asked for it: turning the view off
+  // or leaving the page drops it, and the view's own load takes over.
+  useEffect(
+    () => () => {
+      if (held.current !== null) window.clearTimeout(held.current);
+      held.current = null;
+    },
+    [enabled],
+  );
 }

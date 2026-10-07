@@ -119,6 +119,12 @@ import { Face } from "./face";
  */
 
 const POLL_MS = 30_000;
+/**
+ * The least time between two reloads of the whole board for new scans. At a
+ * busy gate a scan lands every few seconds, and each reload reads every
+ * person in the building; scans inside the gap arrive together at its end.
+ */
+const PULSE_RELOAD_GAP_MS = 5_000;
 const TILES_PER_GROUP = 60;
 /** Compact cards are half the size, so a screenful holds twice as many. */
 const TILES_PER_GROUP_COMPACT = 120;
@@ -404,9 +410,14 @@ export function OnSiteBoard({
   const pulse = useSitePulse(siteId, gateAlerts);
   // Which building this page is on, and whether it is in front, for the gate alert diagnostics.
   useScreenWatch(siteId);
-  useOnPulseChange(pulse?.scans, !!siteId, () => {
-    if (siteId) void refresh(siteId);
-  });
+  useOnPulseChange(
+    pulse?.scans,
+    !!siteId,
+    () => {
+      if (siteId) void refresh(siteId);
+    },
+    PULSE_RELOAD_GAP_MS,
+  );
 
   // ── The 30 second poll ──────────────────────────────────────────────────
   useEffect(() => {

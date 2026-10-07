@@ -28,6 +28,8 @@ import { useOnPulseChange } from "./use-site-pulse";
  */
 
 const POLL_MS = 30_000;
+/** The least time between two whole-day reloads for new scans, as on the board (see on-site-board.tsx). */
+const PULSE_RELOAD_GAP_MS = 5_000;
 export const PEOPLE_PER_PAGE = 50;
 
 /**
@@ -109,10 +111,15 @@ export function useSiteDay({
     };
   }, [active, siteId, load]);
 
-  useOnPulseChange(pulse, active && !!siteId, () => {
-    const d = dataRef.current;
-    if (d && d.day === d.today) void load(true);
-  });
+  useOnPulseChange(
+    pulse,
+    active && !!siteId,
+    () => {
+      const d = dataRef.current;
+      if (d && d.day === d.today) void load(true);
+    },
+    PULSE_RELOAD_GAP_MS,
+  );
 
   return { data: data && data.site.id === siteId ? data : null, failure, retry: () => load(false) };
 }
