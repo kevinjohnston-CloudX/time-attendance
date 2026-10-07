@@ -22,7 +22,7 @@ type Tab = "general" | "personal" | "pay";
 
 interface Props {
   sites: Site[];
-  departments: (Department & { sites: { site: Site }[] })[];
+  departments: (Department & { sites: { site: Pick<Site, "id" | "name"> }[] })[];
   ruleSets: RuleSet[];
   employees: EmployeeOption[];
   customRoles: { id: string; name: string }[];

@@ -29,7 +29,7 @@ type EmployeeWithRelations = Omit<Employee, MoneyCols> & Money & {
 interface Props {
   employee: EmployeeWithRelations;
   sites: Site[];
-  departments: (Department & { sites: { site: Site }[] })[];
+  departments: (Department & { sites: { site: Pick<Site, "id" | "name"> }[] })[];
   ruleSets: RuleSet[];
   employees: { id: string; user: { name: string | null } }[];
   customRoles: { id: string; name: string; isSystem: boolean; rank: number }[];

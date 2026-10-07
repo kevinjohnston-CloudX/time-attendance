@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState, useTransition, type ReactNode, type SelectHTMLAttributes } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode, type SelectHTMLAttributes } from "react";
 import { useRouter } from "next/navigation";
-import { createEmployee } from "@/actions/admin.actions";
+import { createEmployee, getSupervisorOptions } from "@/actions/admin.actions";
 import type { CopyFromEmployee } from "@/lib/employee-copy";
 import type { Site, Department, RuleSet } from "@prisma/client";
 import { Banner, Button, Input, SegmentedControl, Select } from "@/components/ui";
@@ -37,9 +37,13 @@ type Tab = "general" | "personal" | "pay";
 
 interface Props {
   sites: Site[];
-  departments: (Department & { sites: { site: Site }[] })[];
+  departments: (Department & { sites: { site: Pick<Site, "id" | "name"> }[] })[];
   ruleSets: RuleSet[];
-  employees: EmployeeOption[];
+  /**
+   * Who can be picked as supervisor. Left out, the window asks for the list
+   * when it opens, so the page does not carry every name in the company.
+   */
+  employees?: EmployeeOption[];
   customRoles: { id: string; name: string }[];
   shifts: { id: string; name: string; startTime: string; endTime: string }[];
   holidayRules: { id: string; name: string }[];
@@ -119,6 +123,29 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
   const [copy, setCopy] = useState<CopyFromEmployee | null>(copyFrom ?? null);
   const [open, setOpen] = useState(!!copyFrom);
   const [activeTab, setActiveTab] = useState<Tab>("general");
+
+  // The supervisor list, asked for the first time the window opens when the
+  // page did not hand one over. A failed ask is tried again on the next open.
+  const [loadedSupervisors, setLoadedSupervisors] = useState<EmployeeOption[] | null>(null);
+  const [supervisorsFailed, setSupervisorsFailed] = useState(false);
+  const supervisors = employees ?? loadedSupervisors;
+  useEffect(() => {
+    if (!open || employees || loadedSupervisors) return;
+    let dead = false;
+    setSupervisorsFailed(false);
+    getSupervisorOptions()
+      .then((r) => {
+        if (dead) return;
+        if (r.success) setLoadedSupervisors(r.data);
+        else setSupervisorsFailed(true);
+      })
+      .catch(() => {
+        if (!dead) setSupervisorsFailed(true);
+      });
+    return () => {
+      dead = true;
+    };
+  }, [open, employees, loadedSupervisors]);
 
   const defaultSiteId =
     sites.find((s) => departments.some((d) => d.sites.some((ds) => ds.site.id === s.id)))?.id ?? sites[0]?.id ?? "";
@@ -320,12 +347,25 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                     ))}
                   </SelectField>
 
-                  <SelectField label="Supervisor" name="supervisorId" defaultValue={copy?.supervisorId ?? ""}>
-                    <option value="">None</option>
-                    {employees.map((emp) => (
-                      <option key={emp.id} value={emp.id}>{emp.user.name}</option>
-                    ))}
-                  </SelectField>
+                  {supervisors ? (
+                    <SelectField label="Supervisor" name="supervisorId" defaultValue={copy?.supervisorId ?? ""}>
+                      <option value="">None</option>
+                      {supervisors.map((emp) => (
+                        <option key={emp.id} value={emp.id}>{emp.user.name}</option>
+                      ))}
+                    </SelectField>
+                  ) : (
+                    // Until the list arrives: the field holds its place, and
+                    // the copied supervisor (or None) is what a save sends, so
+                    // an early save never drops it. The real list mounts with
+                    // the same default once it lands.
+                    <>
+                      <input type="hidden" name="supervisorId" value={copy?.supervisorId ?? ""} />
+                      <SelectField label="Supervisor" disabled value="">
+                        <option value="">{supervisorsFailed ? "The list did not load. Close and open again." : "Loading supervisors…"}</option>
+                      </SelectField>
+                    </>
+                  )}
 
                   <SelectField label="Job Title" name="jobTitleId" defaultValue={copy?.jobTitleId ?? ""}>
                     <option value="">None</option>

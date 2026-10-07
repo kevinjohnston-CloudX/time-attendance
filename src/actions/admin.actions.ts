@@ -117,27 +117,52 @@ function serializePayRate<T extends { payRate: unknown; chargeRate?: unknown; ho
 
 // ─── Reference data (used by forms) ──────────────────────────────────────────
 
-export const getAdminRefData = withRBAC(
+/**
+ * Everyone who can be picked as a supervisor, for the Create employee window
+ * on the new design's Employees list, which asks when the window opens rather
+ * than sending every name with every page of the list. Same people, same
+ * order and the same permission as the list getAdminRefData carries.
+ */
+export const getSupervisorOptions = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ tenantId }, _input: void) => {
+    return db.employee.findMany({
+      where: { isActive: true, tenantId: tenantId ?? undefined },
+      select: { id: true, user: { select: { name: true } } },
+      orderBy: { user: { name: "asc" } },
+    });
+  }
+);
+
+export const getAdminRefData = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async ({ tenantId }, input: { withEmployees?: boolean } | void) => {
     const t = tenantId ?? undefined;
+    // Every page but the new Employees list still takes the supervisor list
+    // from here; that one asks getSupervisorOptions when its window opens.
+    const withEmployees = (input && input.withEmployees) ?? true;
     const [sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies] = await Promise.all([
       db.site.findMany({ where: { isActive: true, tenantId: t }, orderBy: { name: "asc" } }),
+      // Each department's buildings by id and name, which is all the employee
+      // forms read (to offer the departments of the building picked). The
+      // whole site row on every one of the ~800 links was most of the page.
       db.department.findMany({
         where: { isActive: true, tenantId: t },
         orderBy: { name: "asc" },
-        include: { sites: { include: { site: true } } },
+        include: { sites: { select: { site: { select: { id: true, name: true } } } } },
       }),
       db.ruleSet.findMany({ where: { tenantId: t }, orderBy: { name: "asc" } }),
       // Only what the Supervisor dropdown draws. This used to be every column
       // on the employee plus the whole user row, which put pay rates, dates of
       // birth, home addresses and password hashes into the page source of
       // every screen that asks for reference data.
-      db.employee.findMany({
-        where: { isActive: true, tenantId: t },
-        select: { id: true, user: { select: { name: true } } },
-        orderBy: { user: { name: "asc" } },
-      }),
+      withEmployees
+        ? db.employee.findMany({
+            where: { isActive: true, tenantId: t },
+            select: { id: true, user: { select: { name: true } } },
+            orderBy: { user: { name: "asc" } },
+          })
+        : Promise.resolve([] as { id: string; user: { name: string | null } }[]),
       db.customRole.findMany({
         where: { tenantId: t, isActive: true },
         select: { id: true, name: true, isSystem: true, rank: true, liveAttendanceOnly: true },

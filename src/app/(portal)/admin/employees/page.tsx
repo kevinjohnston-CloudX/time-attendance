@@ -70,14 +70,15 @@ export default async function EmployeesPage({
       page, q: q || undefined, site: site || undefined, dept: dept || undefined, role: role || undefined,
       status, shift: shift || undefined, pay, missing, sort,
     }),
-    getAdminRefData(),
+    // The supervisor list is left out: the Create window asks when it opens.
+    getAdminRefData({ withEmployees: false }),
     copyFromId ? getEmployeeById({ employeeId: copyFromId }) : Promise.resolve(null),
   ]);
 
   if (!employeesResult.success || !refDataResult.success) redirect("/admin");
 
   const { employees, total, pageSize } = employeesResult.data;
-  const { sites, departments, ruleSets, employees: allEmps, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies } = refDataResult.data;
+  const { sites, departments, ruleSets, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies } = refDataResult.data;
 
   const copyFrom = toCopyFromEmployee(copySourceResult?.success ? copySourceResult.data : null, sites, customRoles);
 
@@ -111,7 +112,6 @@ export default async function EmployeesPage({
                   sites={sites}
                   departments={departments}
                   ruleSets={ruleSets}
-                  employees={allEmps}
                   customRoles={customRoles}
                   shifts={shifts}
                   holidayRules={holidayRules}

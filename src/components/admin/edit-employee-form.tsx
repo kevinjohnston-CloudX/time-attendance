@@ -85,7 +85,7 @@ interface Props {
   /** Whether this viewer may replace the photo (PRESENCE_PHOTO_EDIT). */
   canEditPhoto: boolean;
   sites: Site[];
-  departments: (Department & { sites: { site: Site }[] })[];
+  departments: (Department & { sites: { site: Pick<Site, "id" | "name"> }[] })[];
   ruleSets: RuleSet[];
   employees: { id: string; user: { name: string | null } }[];
   customRoles: { id: string; name: string; isSystem: boolean; rank: number; liveAttendanceOnly?: boolean }[];
