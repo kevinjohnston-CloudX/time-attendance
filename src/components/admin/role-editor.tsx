@@ -450,7 +450,7 @@ export function RoleEditor({
                 <span className="wms-label">Limit to Live Attendance</span>
                 <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)", textWrap: "pretty" }}>
                   {liveAttendanceOnly
-                    ? "People with this role can only open Live Attendance. Every other page, their own timesheet and punch clock included, is blocked, and downloads are off. Of the permissions below, only Live Attendance Write (photos) and Execute (gate alerts) still apply."
+                    ? "People with this role can only open Live Attendance. Every other page, their own timesheet and punch clock included, is blocked. They can still print and export from Live Attendance. Of the permissions below, only Live Attendance Write (photos) and Execute (gate alerts) still apply."
                     : "For a shared screen or a team that only watches the building. People with this role can open Live Attendance and nothing else."}
                 </span>
               </div>

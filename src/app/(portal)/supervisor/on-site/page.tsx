@@ -5,7 +5,6 @@ import { getOnSiteBoard, getOnSiteSites } from "@/actions/presence.actions";
 import { getGateAlertsSetting } from "@/actions/gate-refusals.actions";
 import { OnSiteBoard } from "@/components/presence/on-site-board";
 import { gateReadsCloudTimeSchedule } from "@/lib/presence/gate-schedule";
-import { isLiveAttendanceOnly } from "@/lib/rbac/permission-resolver";
 
 /**
  * On Site: who is in the building right now, for HR and loss prevention.
@@ -53,11 +52,10 @@ export default async function OnSitePage({
   const siteId = sites.some((s) => s.id === params.site) ? params.site! : defaultSiteId;
 
   const boardResult = siteId ? await getOnSiteBoard({ siteId }) : null;
-  const [canEditPhotos, canManageEmployees, gateAlerts, limited, gateSwitch, canOpenReports] = await Promise.all([
+  const [canEditPhotos, canManageEmployees, gateAlerts, gateSwitch, canOpenReports] = await Promise.all([
     userHasPermission(session.user, "PRESENCE_PHOTO_EDIT"),
     userHasPermission(session.user, "EMPLOYEE_MANAGE"),
     userHasPermission(session.user, "PRESENCE_SCHEDULE_ADD"),
-    isLiveAttendanceOnly(session.user.customRoleId),
     // System Admins only: anybody else is refused, and gets no switch. One per building.
     getGateAlertsSetting(),
     // Export points at the scan reports for more than a week, for those who can open them.
@@ -74,7 +72,6 @@ export default async function OnSitePage({
       initialSiteId={siteId}
       initialBoard={boardResult?.success ? boardResult.data : null}
       canEditPhotos={canEditPhotos}
-      canExport={!limited}
       canOpenReports={canOpenReports}
       scheduling={canSchedule ? { live: gateReadsCloudTimeSchedule() } : null}
       gateAlerts={gateAlerts}

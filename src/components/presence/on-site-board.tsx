@@ -154,7 +154,6 @@ export function OnSiteBoard({
   initialBoard,
   initialFilters,
   canEditPhotos = false,
-  canExport = true,
   canOpenReports = false,
   scheduling = null,
   gateAlerts = false,
@@ -182,12 +181,6 @@ export function OnSiteBoard({
   };
   /** Draws Update photo on the employee panel. The save checks again on the server. */
   canEditPhotos?: boolean;
-  /**
-   * Draws Export. Off for a role limited to Live Attendance: a shared screen
-   * shows everyone's movements, and a download from it could never be traced
-   * to the person who took it. What is on screen is still on screen.
-   */
-  canExport?: boolean;
   /** Whether the Export window may point at the Reports page for longer date ranges. */
   canOpenReports?: boolean;
   /**
@@ -817,7 +810,8 @@ export function OnSiteBoard({
           onOpenGate={() => setGateOpen(true)}
         />
       )}
-      {canExport && (
+      {/* Everyone who can open the page, Loss Prevention included: they print
+          the In the building roll call at the door. */}
       <Button
         hierarchy="secondary"
         leadingIcon={<Download className="h-4 w-4" aria-hidden="true" />}
@@ -827,7 +821,6 @@ export function OnSiteBoard({
       >
         Export
       </Button>
-      )}
       {fullscreen ? (
         <Button
           hierarchy="secondary"
