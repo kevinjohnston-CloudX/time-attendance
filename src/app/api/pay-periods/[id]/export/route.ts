@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { db } from "@/lib/db";
 import { format } from "date-fns";
+import { parseUtcDate } from "@/lib/utils/date";
 
 function esc(val: unknown): string {
   const s = val == null ? "" : String(val);
@@ -43,7 +44,7 @@ export async function GET(
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  const periodLabel = `${format(payPeriod.startDate, "yyyy-MM-dd")}_to_${format(payPeriod.endDate, "yyyy-MM-dd")}`;
+  const periodLabel = `${format(parseUtcDate(payPeriod.startDate), "yyyy-MM-dd")}_to_${format(parseUtcDate(payPeriod.endDate), "yyyy-MM-dd")}`;
 
   let csv = "";
   let filename = "";

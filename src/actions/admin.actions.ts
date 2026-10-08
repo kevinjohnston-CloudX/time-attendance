@@ -1,6 +1,6 @@
 "use server";
 
-import { parseISO, addMonths, addYears, differenceInMonths } from "date-fns";
+import { addMonths, addYears, differenceInMonths } from "date-fns";
 import { generatePeriodsForRuleSet } from "@/lib/pay-period-utils";
 import { migrateTimesheetsOnRuleSetChange, migrateTimesheetBetweenRuleSets } from "@/lib/timesheet-migration";
 import { z } from "zod";
@@ -109,13 +109,33 @@ const BUILT_IN_ROLES = new Set<string>(ROLES.map((r) => r.toUpperCase()));
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * A yyyy-MM-dd day as stored: midnight UTC on that day. parseISO read it at
+ * midnight on the server's clock, which is only the same thing where the
+ * server runs on UTC.
+ */
+function calendarDay(day: string): Date {
+  return new Date(day + "T00:00:00.000Z");
+}
+
+/** Today's date at the employee's site, as yyyy-MM-dd. */
+async function siteToday(siteId: string | null): Promise<string> {
+  const site = siteId ? await db.site.findUnique({ where: { id: siteId }, select: { timezone: true } }) : null;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: site?.timezone ?? "America/New_York" }).format(new Date());
+}
+
 /** Decimal money columns as plain numbers, so the record can reach a client component. */
-function serializePayRate<T extends { payRate: unknown; chargeRate?: unknown; holidayRate?: unknown }>(
+function serializePayRate<T extends { payRate: unknown; chargeRate?: unknown; holidayRate?: unknown; overtimeRate?: unknown }>(
   emp: T,
-): Omit<T, "payRate" | "chargeRate" | "holidayRate"> & { payRate: number | null; chargeRate: number | null; holidayRate: number | null } {
-  const { payRate, chargeRate, holidayRate, ...rest } = emp;
+): Omit<T, "payRate" | "chargeRate" | "holidayRate" | "overtimeRate"> & {
+  payRate: number | null;
+  chargeRate: number | null;
+  holidayRate: number | null;
+  overtimeRate: number | null;
+} {
+  const { payRate, chargeRate, holidayRate, overtimeRate, ...rest } = emp;
   const num = (v: unknown) => (v != null ? Number(v) : null);
-  return { ...rest, payRate: num(payRate), chargeRate: num(chargeRate), holidayRate: num(holidayRate) };
+  return { ...rest, payRate: num(payRate), chargeRate: num(chargeRate), holidayRate: num(holidayRate), overtimeRate: num(overtimeRate) };
 }
 
 // ─── Reference data (used by forms) ──────────────────────────────────────────
@@ -415,7 +435,7 @@ export const createEmployee = withRBAC(
           siteId: parsed.siteId,
           departmentId: parsed.departmentId,
           ruleSetId: parsed.ruleSetId,
-          hireDate: parseISO(parsed.hireDate),
+          hireDate: calendarDay(parsed.hireDate),
           supervisorId: parsed.supervisorId ?? null,
           wmsId: parsed.wmsId ?? null,
           payType: parsed.payType ?? null,
@@ -455,7 +475,7 @@ export const updateEmployee = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: UpdateEmployeeInput) => {
     const {
       employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, payTypeId, isActive, onLeave, wmsId, barcode, adpWorkerId,
-      adjustedHireDate, jobTitle, jobTitleId, agencyId, terminationReason, payType, payRate, chargeRate, holidayRate,
+      adjustedHireDate, jobTitle, jobTitleId, agencyId, terminationReason, terminatedAt: terminatedAtInput, payType, payRate, chargeRate, holidayRate, overtimeRate,
       phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
       address1, address2, city, state, country, zipCode,
@@ -468,6 +488,23 @@ export const updateEmployee = withRBAC(
     });
     await assertOwnAssignments(tenantId, jobTitleId, agencyId);
     if (!current) throw new Error("Employee not found");
+
+    // The termination date follows the status. Made inactive: the date given,
+    // or today at their site. Made active again: cleared, since the time clock
+    // and the gate treat anyone with a termination date as gone, and a rehire
+    // kept their old one (the old date stays in the audit history). An active
+    // person never carries one, so a date sent for them is not kept.
+    const willBeActive = isActive ?? current.isActive;
+    const currentTermDay = current.terminatedAt ? current.terminatedAt.toISOString().slice(0, 10) : null;
+    let terminatedAt: string | null | undefined = undefined;
+    if (willBeActive) {
+      if (currentTermDay) terminatedAt = null;
+    } else if (terminatedAtInput !== undefined) {
+      terminatedAt = terminatedAtInput ?? (currentTermDay || (await siteToday(current.siteId)));
+    } else if (current.isActive) {
+      terminatedAt = await siteToday(current.siteId);
+    }
+    if (terminatedAt !== undefined && terminatedAt === currentTermDay) terminatedAt = undefined;
 
     // Who may change what. Nobody changes their own role, status, pay or
     // supervisor. Nobody edits someone senior to them. With a peer, only the
@@ -483,11 +520,13 @@ export const updateEmployee = withRBAC(
     const sensitive =
       roleChanges ||
       (isActive !== undefined && isActive !== current.isActive) ||
+      terminatedAt !== undefined ||
       (payType !== undefined && payType !== current.payType) ||
       moneyChanges(payRate, current.payRate) ||
       // Informational, but still pay: the same people may change them
       moneyChanges(chargeRate, current.chargeRate) ||
-      moneyChanges(holidayRate, current.holidayRate);
+      moneyChanges(holidayRate, current.holidayRate) ||
+      moneyChanges(overtimeRate, current.overtimeRate);
     if (!me.isSuperAdmin) {
       if (me.employeeId === employeeId) {
         if (sensitive || (supervisorId !== undefined && (supervisorId ?? null) !== current.supervisorId)) {
@@ -555,15 +594,17 @@ export const updateEmployee = withRBAC(
             barcodeOverride: Boolean(barcode),
           }),
           ...(adpWorkerId !== undefined && { adpWorkerId }),
-          ...(adjustedHireDate !== undefined && { adjustedHireDate: adjustedHireDate ? parseISO(adjustedHireDate) : null }),
+          ...(adjustedHireDate !== undefined && { adjustedHireDate: adjustedHireDate ? calendarDay(adjustedHireDate) : null }),
           ...(jobTitle !== undefined && { jobTitle }),
           ...(jobTitleId !== undefined && { jobTitleRef: jobTitleId ? { connect: { id: jobTitleId } } : { disconnect: true } }),
           ...(agencyId !== undefined && { agencyRef: agencyId ? { connect: { id: agencyId } } : { disconnect: true } }),
           ...(terminationReason !== undefined && { terminationReason }),
+          ...(terminatedAt !== undefined && { terminatedAt: terminatedAt ? new Date(terminatedAt + "T00:00:00.000Z") : null }),
           ...(payType !== undefined && { payType }),
           ...(payRate !== undefined && { payRate }),
           ...(chargeRate !== undefined && { chargeRate }),
           ...(holidayRate !== undefined && { holidayRate }),
+          ...(overtimeRate !== undefined && { overtimeRate }),
           ...(encPii.phone !== undefined && { phone: encPii.phone }),
           ...(encPii.phone2 !== undefined && { phone2: encPii.phone2 }),
           ...(encPii.gender !== undefined && { gender: encPii.gender }),
@@ -645,6 +686,7 @@ export const updateEmployee = withRBAC(
     if (barcode !== undefined) diff("Badge barcode", current.barcode, barcode);
     if (adpWorkerId !== undefined) diff("ADP Worker ID", current.adpWorkerId, adpWorkerId);
     if (terminationReason !== undefined) diff("Termination Reason", current.terminationReason, terminationReason);
+    if (terminatedAt !== undefined) diff("Termination Date", currentTermDay, terminatedAt);
     if (adjustedHireDate !== undefined) {
       diff("Adjusted Hire Date", current.adjustedHireDate ? current.adjustedHireDate.toISOString().slice(0, 10) : null, adjustedHireDate);
     }
@@ -656,6 +698,7 @@ export const updateEmployee = withRBAC(
     const usd = (v: unknown) => (v != null ? `$${Number(v).toFixed(2)}` : null);
     if (moneyChanges(chargeRate, current.chargeRate)) diff("Charge Rate", usd(current.chargeRate), usd(chargeRate));
     if (moneyChanges(holidayRate, current.holidayRate)) diff("Holiday Rate", usd(current.holidayRate), usd(holidayRate));
+    if (moneyChanges(overtimeRate, current.overtimeRate)) diff("Overtime Rate", usd(current.overtimeRate), usd(overtimeRate));
     if (phone !== undefined) diff("Phone 1", decCurrent.phone, phone);
     if (phone2 !== undefined) diff("Phone 2", decCurrent.phone2, phone2);
     if (gender !== undefined) diff("Gender", decCurrent.gender, gender);
@@ -1910,7 +1953,7 @@ export const bulkCreateEmployees = withRBAC(
               siteId: r.siteId,
               departmentId: r.departmentId,
               ruleSetId: r.ruleSetId,
-              hireDate: parseISO(r.hireDate),
+              hireDate: calendarDay(r.hireDate),
               supervisorId: null,
               wmsId: r.wmsId ?? null,
               payType: r.payType ?? null,

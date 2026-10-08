@@ -185,6 +185,7 @@ model Employee {
   /// Informational only, as NovaTime's Miscellaneous Rate: nothing calculates with these.
   chargeRate     Decimal?  @db.Decimal(10, 4)
   holidayRate    Decimal?  @db.Decimal(10, 4)
+  overtimeRate   Decimal?  @db.Decimal(10, 4)
   holidayRuleId  String?
   payCategoryId  String?
 

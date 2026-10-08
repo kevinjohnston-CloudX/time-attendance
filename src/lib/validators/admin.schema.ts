@@ -91,6 +91,13 @@ export const updateEmployeeSchema = z.object({
   jobTitleId: nullableStr,
   agencyId: nullableStr,
   terminationReason: nullableStr,
+  // The last day, as yyyy-MM-dd. Left out means "not changing it"; the status
+  // change fills or clears it (see updateEmployee).
+  terminatedAt: z.union([
+    z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    z.literal(""),
+    z.null(),
+  ]).optional().transform((v) => (v === undefined ? undefined : v || null)),
   // Pay
   payType: z.enum(["HOURLY", "SALARY"]).nullable().optional(),
   payTypeId: nullableStr,
@@ -98,6 +105,7 @@ export const updateEmployeeSchema = z.object({
   // Informational only, nothing calculates from them
   chargeRate: z.number().min(0).nullable().optional(),
   holidayRate: z.number().min(0).nullable().optional(),
+  overtimeRate: z.number().min(0).nullable().optional(),
   // Personal
   phone: nullableStr,
   phone2: nullableStr,

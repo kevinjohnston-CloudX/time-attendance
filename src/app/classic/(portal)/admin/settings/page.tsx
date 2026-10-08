@@ -29,7 +29,7 @@ export default async function CompanySettingsPage() {
   const { payFrequency, payPeriodAnchorDate, name } = result.data;
 
   const anchorStr = payPeriodAnchorDate
-    ? format(payPeriodAnchorDate, "yyyy-MM-dd")
+    ? format(parseUtcDate(payPeriodAnchorDate), "yyyy-MM-dd")
     : "";
 
   // The period Generate will create, as the server works it out, with its

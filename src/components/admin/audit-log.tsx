@@ -8,6 +8,7 @@ import type { AuditEntityType } from "@prisma/client";
 import { Badge, Button, LinkButton, PageHeader, PinnedBar, SegmentedControl } from "@/components/ui";
 import { useCondensingBar } from "@/components/layout/use-condensing-bar";
 import { ENTITY_LABEL, ENTITY_TYPES, actionLabel, isGateAlertSwitch } from "@/lib/audit/labels";
+import { parseUtcDate } from "@/lib/utils/date";
 
 /**
  * The Audit Log, from the Audit Log handoff: search and three filters in one
@@ -72,10 +73,26 @@ const initials = (name: string) =>
 type DiffRow = { field: string; before: string; after: string; removed: boolean };
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
 
-function show(v: unknown): string {
+/** A field that holds a calendar day (startDate, segmentDate, hireDate…), not a moment. */
+const DAY_FIELD = /date$/i;
+/** Midnight UTC on the dot: how a calendar day is stored. */
+const UTC_MIDNIGHT = /T00:00:00(\.000)?Z$/;
+
+/**
+ * A value as text. A calendar day is shown as that day, from its UTC date:
+ * on the viewer's clock, a day stored at midnight UTC read as the evening
+ * before ("Oct 6, 2026 8:00 PM" for a pay period starting Oct 7). A moment
+ * keeps its time, on the viewer's clock.
+ */
+function show(v: unknown, field = ""): string {
   if (v === undefined) return "";
   if (v === null) return "None";
-  if (typeof v === "string") return ISO.test(v) && !isNaN(Date.parse(v)) ? format(new Date(v), "MMM d, yyyy h:mm a") : v;
+  if (typeof v === "string" && ISO.test(v) && !isNaN(Date.parse(v))) {
+    return DAY_FIELD.test(field) || UTC_MIDNIGHT.test(v)
+      ? format(parseUtcDate(v), "MMM d, yyyy")
+      : format(new Date(v), "MMM d, yyyy h:mm a");
+  }
+  if (typeof v === "string") return v;
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
 }
@@ -93,8 +110,8 @@ function diffOf(changes: unknown): { hasBefore: boolean; rows: DiffRow[] } {
   if (Array.isArray(c.fields)) {
     const rows = (c.fields as Record<string, unknown>[]).map((f) => ({
       field: String(f.field ?? f.label ?? "value"),
-      before: show(f.before ?? f.from) || "None",
-      after: show(f.after ?? f.to) || "None",
+      before: show(f.before ?? f.from, String(f.field ?? f.label ?? "")) || "None",
+      after: show(f.after ?? f.to, String(f.field ?? f.label ?? "")) || "None",
       removed: false,
     }));
     return { hasBefore: true, rows };
@@ -106,10 +123,10 @@ function diffOf(changes: unknown): { hasBefore: boolean; rows: DiffRow[] } {
     const keys = [...new Set([...Object.keys(b), ...Object.keys(a)])];
     return {
       hasBefore,
-      rows: keys.map((k) => ({ field: k, before: show(b[k]) || "None", after: a[k] === undefined ? "Removed" : show(a[k]), removed: a[k] === undefined })),
+      rows: keys.map((k) => ({ field: k, before: show(b[k], k) || "None", after: a[k] === undefined ? "Removed" : show(a[k], k), removed: a[k] === undefined })),
     };
   }
-  return { hasBefore: false, rows: Object.entries(c).map(([k, v]) => ({ field: k, before: "", after: show(v), removed: false })) };
+  return { hasBefore: false, rows: Object.entries(c).map(([k, v]) => ({ field: k, before: "", after: show(v, k), removed: false })) };
 }
 
 /* ── Small parts ───────────────────────────────────────────────────────── */

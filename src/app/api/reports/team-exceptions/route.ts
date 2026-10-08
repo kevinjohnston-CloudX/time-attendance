@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { format } from "date-fns";
+import { parseUtcDate } from "@/lib/utils/date";
 import { getTeamExceptions } from "@/actions/supervisor.actions";
 import { formatTimeOfDay } from "@/lib/utils/date";
 
@@ -99,8 +100,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         formatTimeOfDay(ex.scheduled.end) ?? "",
         formatTimeOfDay(ex.recorded.in) ?? "",
         formatTimeOfDay(ex.recorded.out) ?? "",
-        format(ex.timesheet.payPeriod.startDate, "yyyy-MM-dd"),
-        format(ex.timesheet.payPeriod.endDate, "yyyy-MM-dd"),
+        format(parseUtcDate(ex.timesheet.payPeriod.startDate), "yyyy-MM-dd"),
+        format(parseUtcDate(ex.timesheet.payPeriod.endDate), "yyyy-MM-dd"),
         ex.description,
       ]
         .map(csvCell)

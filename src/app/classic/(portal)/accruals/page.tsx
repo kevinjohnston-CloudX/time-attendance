@@ -4,6 +4,7 @@ import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import { format } from "date-fns";
+import { parseUtcDate } from "@/lib/utils/date";
 import { AccrualsEmployeeList } from "@/classic/components/admin/accruals-employee-list";
 
 export default async function AccrualsPage() {
@@ -65,7 +66,7 @@ export default async function AccrualsPage() {
     payCategory: emp.payCategory
       ? emp.payCategory.description ?? `Category ${emp.payCategory.number}`
       : null,
-    hireDate: emp.hireDate ? format(emp.hireDate, "MMM d, yyyy") : null,
+    hireDate: emp.hireDate ? format(parseUtcDate(emp.hireDate), "MMM d, yyyy") : null,
   }));
 
   return (

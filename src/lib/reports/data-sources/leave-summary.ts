@@ -5,6 +5,7 @@ import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { format } from "date-fns";
+import { parseUtcDate } from "@/lib/utils/date";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "employee.user.name",       type: "string" },
@@ -90,8 +91,8 @@ export const leaveSummarySource: DataSourceDefinition = {
       department: r.employee.department.name,
       leaveType: r.leaveType.name,
       status: readable("leaveStatus", r.status),
-      startDate: format(r.startDate, "yyyy-MM-dd"),
-      endDate: format(r.endDate, "yyyy-MM-dd"),
+      startDate: format(parseUtcDate(r.startDate), "yyyy-MM-dd"),
+      endDate: format(parseUtcDate(r.endDate), "yyyy-MM-dd"),
       durationMinutes: r.durationMinutes,
       note: r.note,
       reviewNote: r.reviewNote,

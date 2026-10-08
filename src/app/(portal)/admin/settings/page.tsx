@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { format } from "date-fns";
+import { parseUtcDate } from "@/lib/utils/date";
 import { ArrowLeft } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { LinkButton, PageHeader } from "@/components/ui";
@@ -41,7 +42,7 @@ export default async function CompanySettingsPage() {
       />
       <CompanySettings
         frequency={payFrequency}
-        anchor={payPeriodAnchorDate ? format(payPeriodAnchorDate, "yyyy-MM-dd") : ""}
+        anchor={payPeriodAnchorDate ? format(parseUtcDate(payPeriodAnchorDate), "yyyy-MM-dd") : ""}
         next={
           nextPeriod
             ? { startDate: nextPeriod.startDate.toISOString(), endDate: nextPeriod.endDate.toISOString(), frequency: nextPeriod.frequency }

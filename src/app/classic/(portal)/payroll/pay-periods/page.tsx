@@ -8,8 +8,10 @@ import { getAdpConfig } from "@/lib/integrations/adp/client";
 import { PAY_PERIOD_STATUS_LABEL } from "@/classic/lib/labels";
 import { PayPeriodActions } from "@/classic/components/payroll/pay-period-actions";
 import { PayPeriodsFilter } from "@/classic/components/payroll/pay-periods-filter";
-import { format, addDays } from "date-fns";
+import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
+import { periodLastDay } from "@/lib/pay-period-display";
+import type { PayFrequency } from "@prisma/client";
 import { PayPeriodTimesheets } from "@/classic/components/payroll/pay-period-timesheets";
 import { PayPeriodDetailFilter } from "@/classic/components/payroll/pay-period-detail-filter";
 import { PayPeriodDownload } from "@/classic/components/payroll/pay-period-download";
@@ -65,6 +67,15 @@ export default async function PayPeriodsPage({
   if (!result.success) redirect("/dashboard");
 
   const allPayPeriods = result.data;
+
+  // A period as its calendar days: the stored start is read for its day, not
+  // on the server's clock, and the stored end is turned into the last day by
+  // the period's frequency. The detail heading printed the stored end, which
+  // for weekly and biweekly periods is the next period's first day.
+  const tenantFrequency = ((t ? await db.tenant.findUnique({ where: { id: t }, select: { payFrequency: true } }) : null)?.payFrequency ?? "BIWEEKLY") as PayFrequency;
+  const frequencyOf = (id: string) => (allPayPeriods.find((p) => p.id === id)?.ruleSet?.payFrequency ?? tenantFrequency) as PayFrequency;
+  const periodText = (id: string, start: Date | string, end: Date | string) =>
+    `${format(parseUtcDate(start), "MMM d")} – ${format(periodLastDay(end, frequencyOf(id)), "MMM d, yyyy")}`;
   const currentYear = new Date().getFullYear();
 
   // Default to the current pay period when none is selected.
@@ -215,7 +226,7 @@ export default async function PayPeriodsPage({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">
-                      {format(pp.startDate, "MMM d")} – {format(addDays(pp.endDate, -1), "MMM d, yyyy")}
+                      {periodText(pp.id, pp.startDate, pp.endDate)}
                     </p>
                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${PP_BADGE[pp.status]}`}>
                       {PAY_PERIOD_STATUS_LABEL[pp.status]}
@@ -264,8 +275,7 @@ export default async function PayPeriodsPage({
             <div className="flex items-start justify-between">
               <div>
                 <h2 className="text-2xl font-bold text-zinc-900 dark:text-white">
-                  {format(detail.payPeriod.startDate, "MMM d")} –{" "}
-                  {format(detail.payPeriod.endDate, "MMM d, yyyy")}
+                  {periodText(detail.payPeriod.id, detail.payPeriod.startDate, detail.payPeriod.endDate)}
                 </h2>
                 <div className="mt-1 flex items-center gap-2">
                   <span className={`rounded-full px-3 py-0.5 text-xs font-medium ${PP_BADGE[detail.payPeriod.status]}`}>
@@ -276,7 +286,7 @@ export default async function PayPeriodsPage({
               <div className="flex items-start gap-2">
                 <PayPeriodDownload
                   payPeriodId={detail.payPeriod.id}
-                  label={`${format(detail.payPeriod.startDate, "MMM d")} – ${format(detail.payPeriod.endDate, "MMM d, yyyy")}`}
+                  label={periodText(detail.payPeriod.id, detail.payPeriod.startDate, detail.payPeriod.endDate)}
                 />
                 {canRunPayroll && (
                   <PayPeriodActions

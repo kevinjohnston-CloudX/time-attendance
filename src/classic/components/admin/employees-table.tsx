@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
+import { parseUtcDate } from "@/lib/utils/date";
 
 const ROLE_BADGE: Record<string, string> = {
   EMPLOYEE: "bg-zinc-100 text-zinc-600",
@@ -181,7 +182,7 @@ export function EmployeesTable({ employees, total, page, pageSize, sites, depart
                   <span className="ml-1 text-zinc-400">· {emp.site.name}</span>
                 </td>
                 <td className="px-4 py-3 text-zinc-500">
-                  {format(emp.hireDate, "MMM d, yyyy")}
+                  {format(parseUtcDate(emp.hireDate), "MMM d, yyyy")}
                 </td>
                 <td className="px-4 py-3">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${

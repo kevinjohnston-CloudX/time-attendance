@@ -62,24 +62,28 @@ export default async function TimecardsPage({
   const t = session.user.tenantId ?? undefined;
 
   // Load employees + sites + departments in parallel
+  const listFilters = {
+    siteId: sp.siteId ?? null,
+    departmentId: sp.departmentId ?? null,
+    payPeriodId: sp.periodId ?? null,
+  };
   const [employeesResult, sites, departments] = await Promise.all([
-    isAllScope
-      ? getActiveEmployeesForTimecards({
-          siteId: sp.siteId ?? null,
-          departmentId: sp.departmentId ?? null,
-          payPeriodId: sp.periodId ?? null,
-        })
-      : getTeamEmployeesForTimecards({}),
+    isAllScope ? getActiveEmployeesForTimecards(listFilters) : getTeamEmployeesForTimecards(listFilters),
     db.site.findMany({
       where: { isActive: true, ...(t ? { tenantId: t } : {}) },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    // A site's departments: the ones set up for it, and any its people are
+    // in. The setup is not complete, and a department missing from it left
+    // its people at that site unreachable by department.
     db.department.findMany({
       where: {
         isActive: true,
         ...(t ? { tenantId: t } : {}),
-        ...(sp.siteId ? { sites: { some: { siteId: sp.siteId } } } : {}),
+        ...(sp.siteId
+          ? { OR: [{ sites: { some: { siteId: sp.siteId } } }, { employees: { some: { siteId: sp.siteId, isActive: true } } }] }
+          : {}),
       },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
@@ -136,7 +140,9 @@ export default async function TimecardsPage({
   // Only someone on the list the caller was given: an id typed into the
   // address for anybody else opens the first person instead.
   const selectedEmployeeId =
-    sp.employeeId && employees.some((e) => e.employeeId === sp.employeeId) ? sp.employeeId : employees[0].employeeId;
+    sp.employeeId && employees.some((e) => e.employeeId === sp.employeeId)
+      ? sp.employeeId
+      : (employees.find((e) => e.isActive) ?? employees[0]).employeeId;
 
   // Pay codes, reason codes, and the employee's site time zone: the sheet
   // shows and reads every time in it, whoever is looking. None of them waits

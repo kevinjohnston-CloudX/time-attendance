@@ -4,124 +4,52 @@ import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { z } from "zod";
 import { assertEmployeeInScope, timesheetInScope } from "@/lib/rbac/scope";
+import { timecardList } from "@/lib/timecards/timecard-list";
 
-// ─── Active employee directory (employee-centric timecard) ───────────────────
+// ─── Employee list (employee-centric timecard) ───────────────────────────────
+
+const listInputSchema = z.object({
+  siteId: z.string().nullish(),
+  departmentId: z.string().nullish(),
+  payPeriodId: z.string().nullish(),
+});
+type ListInput = { siteId?: string | null; departmentId?: string | null; payPeriodId?: string | null };
 
 export const getActiveEmployeesForTimecards = withRBAC(
   ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"],
-  async ({ tenantId }, input: { siteId?: string | null; departmentId?: string | null; payPeriodId?: string | null }) => {
-    const { siteId, departmentId, payPeriodId: payPeriodIdInput } = z.object({
-      siteId: z.string().nullish(),
-      departmentId: z.string().nullish(),
-      payPeriodId: z.string().nullish(),
-    }).parse(input);
-
-    // Fall back to the current tenant pay period for exception dot display
-    let payPeriodId = payPeriodIdInput ?? null;
-    if (!payPeriodId && tenantId) {
-      const now = new Date();
-      const todayUTCStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-      const current = await db.payPeriod.findFirst({
-        where: { tenantId, ruleSetId: null, startDate: { lte: now }, endDate: { gte: todayUTCStart } },
-        select: { id: true },
-        orderBy: { startDate: "desc" },
-      });
-      payPeriodId = current?.id ?? null;
-    }
-
-    // `select` rather than `include`: include brings every column on the
-    // employee with it, so the picker was carrying pay rates, dates of birth
-    // and home addresses for everybody to draw a name and a department.
-    //
+  async ({ tenantId }, input: ListInput) => {
+    const { siteId, departmentId, payPeriodId } = listInputSchema.parse(input);
     // Scoped by tenant as well. It was filtered on isActive alone, which read
     // the employee table across tenants.
-    const employees = await db.employee.findMany({
-      where: {
-        isActive: true,
+    return timecardList(
+      {
         ...(tenantId ? { tenantId } : {}),
         ...(siteId ? { siteId } : {}),
         ...(departmentId ? { departmentId } : {}),
       },
-      select: {
-        id: true,
-        employeeCode: true,
-        wmsId: true,
-        isActive: true,
-        payType: true,
-        user: { select: { name: true } },
-        department: { select: { name: true } },
-        site: { select: { id: true, name: true } },
-        ...(payPeriodId
-          ? {
-              timesheets: {
-                where: { payPeriodId },
-                select: {
-                  exceptions: {
-                    where: { resolvedAt: null },
-                    select: { exceptionType: true },
-                  },
-                },
-              },
-            }
-          : {}),
-      },
-      orderBy: { user: { name: "asc" } },
-    });
-
-    return employees.map((emp) => {
-      const timesheetExceptions: string[] = payPeriodId
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ? ((emp as any).timesheets as { exceptions: { exceptionType: string }[] }[] | undefined)
-            ?.flatMap((ts) => ts.exceptions.map((e) => e.exceptionType)) ?? []
-        : [];
-
-      return {
-        employeeId: emp.id,
-        name: emp.user?.name ?? emp.id,
-        employeeCode: emp.employeeCode,
-        wmsId: emp.wmsId ?? null,
-        department: emp.department.name,
-        siteId: emp.site?.id ?? null,
-        siteName: emp.site?.name ?? null,
-        isActive: emp.isActive,
-        payType: emp.payType ?? null,
-        exceptionTypes: [...new Set(timesheetExceptions)],
-      };
-    });
+      tenantId,
+      payPeriodId ?? null,
+    );
   }
 );
 
 // ─── Team employees for supervisor view ──────────────────────────────────────
 
+/** A supervisor's own people, narrowed by the same site and department the page offers them. */
 export const getTeamEmployeesForTimecards = withRBAC(
   ["TIMECARD_VIEW_TEAM", "TIMECARD_EDIT_TEAM"],
-  async ({ employeeId, tenantId }, _input: Record<string, never>) => {
-    const employees = await db.employee.findMany({
-      where: {
-        isActive: true,
+  async ({ employeeId, tenantId }, input: ListInput) => {
+    const { siteId, departmentId, payPeriodId } = listInputSchema.parse(input ?? {});
+    return timecardList(
+      {
         supervisorId: employeeId,
         ...(tenantId ? { tenantId } : {}),
+        ...(siteId ? { siteId } : {}),
+        ...(departmentId ? { departmentId } : {}),
       },
-      include: {
-        user: { select: { name: true } },
-        department: { select: { name: true } },
-        site: { select: { id: true, name: true } },
-      },
-      orderBy: { user: { name: "asc" } },
-    });
-
-    return employees.map((emp) => ({
-      employeeId: emp.id,
-      name: emp.user?.name ?? emp.id,
-      employeeCode: emp.employeeCode,
-      wmsId: emp.wmsId ?? null,
-      department: emp.department.name,
-      siteId: emp.site?.id ?? null,
-      siteName: emp.site?.name ?? null,
-      isActive: emp.isActive,
-      payType: emp.payType ?? null,
-      exceptionTypes: [] as string[],
-    }));
+      tenantId,
+      payPeriodId ?? null,
+    );
   }
 );
 

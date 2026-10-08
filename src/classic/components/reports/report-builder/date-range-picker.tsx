@@ -1,6 +1,7 @@
 "use client";
 
 import type { DateRange } from "@/lib/validators/report.schema";
+import { parseUtcDate } from "@/lib/utils/date";
 
 interface PayPeriodOption {
   id: string;
@@ -36,13 +37,14 @@ export function DateRangePicker({
     payPeriods[0];
 
   function formatPeriodLabel(pp: PayPeriodOption) {
-    const start = new Date(pp.startDate).toLocaleDateString("en-US", {
+    // The stored start is a calendar day; read on the viewer's clock it was the day before.
+    const start = parseUtcDate(pp.startDate).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
     });
     // The stored end is often the next period's first day; lastDay is the
     // day the period actually ends on. Noon, so no time zone moves the day.
-    const end = (pp.lastDay ? new Date(`${pp.lastDay}T12:00:00`) : new Date(pp.endDate)).toLocaleDateString("en-US", {
+    const end = (pp.lastDay ? new Date(`${pp.lastDay}T12:00:00`) : parseUtcDate(pp.endDate)).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
