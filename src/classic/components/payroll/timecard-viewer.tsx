@@ -768,13 +768,14 @@ export function TimecardViewer({
     }
 
     const todayMidnight = new Date(today);
-    // For salary/auto-pay employees the timecard has pre-generated future segments;
-    // show the full period so non-working days (e.g. Saturday) still appear.
-    // For hourly employees cap at today so empty future rows don't clutter the grid.
-    const hasFutureSegments =
-      timecard?.segments.some((s) => parseUtcDate(s.segmentDate) > todayMidnight) ?? false;
+    // Salaried: the whole period, which their pre-filled salary hours cover, so
+    // non-working days (e.g. Saturday) still appear. Everyone else: up to today,
+    // and after it only the days that already have something on them (time off
+    // HR has entered ahead, say), which are appended below. Any future entry used
+    // to open the whole rest of the period, empty days and all.
+    const isSalaried = timecard?.employee.payType === "SALARY";
     const effectiveEnd =
-      hasFutureSegments
+      isSalaried
         ? periodEnd
         : !customStartDate && !customEndDate && todayMidnight >= periodStart && todayMidnight < periodEnd
         ? todayMidnight
