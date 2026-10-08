@@ -36,7 +36,10 @@ export default async function EmployeesPage({ searchParams }: Props) {
   if (!employeesResult.success || !refDataResult.success) redirect("/admin");
 
   const { employees, total, pageSize } = employeesResult.data;
-  const { sites, departments, ruleSets, employees: allEmps, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies } = refDataResult.data;
+  const { sites, departments, ruleSets, employees: allEmps, customRoles: allRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies } = refDataResult.data;
+  // A new account only offers the roles this person may give (Loss Prevention and
+  // other Live Attendance roles are a System Admin's); the save checks again.
+  const customRoles = allRoles.filter((r) => r.givable);
   const copyFrom = toCopyFromEmployee(copySourceResult?.success ? copySourceResult.data : null, sites, customRoles);
 
   return (

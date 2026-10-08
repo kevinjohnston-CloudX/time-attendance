@@ -34,7 +34,10 @@ export default async function EditEmployeePage({
   const employee = empResult.data;
   const hrSiteAccess = siteAccessResult.success ? siteAccessResult.data : [];
   const actorRole = session.user.role;
-  const { sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies } = refResult.data;
+  const { sites, departments, ruleSets, employees, customRoles: allRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies } = refResult.data;
+  // Only the roles this person may give, plus the one the employee has now so
+  // the form still shows it. The save checks again.
+  const customRoles = allRoles.filter((r) => r.givable || r.id === employee.customRoleId);
 
   return (
     <div className="max-w-2xl">

@@ -18,7 +18,7 @@ import { startOfDayInTz } from "@/lib/utils/date";
 import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
 import { currentIdentity } from "@/lib/rbac/current";
 import { employeeRank, forgetIdentity, type LiveIdentity } from "@/lib/rbac/identity";
-import { ROLE_RANK, isValidRole } from "@/lib/rbac/roles";
+import { ROLE_RANK, isValidRole, givesLiveAttendanceRoles } from "@/lib/rbac/roles";
 import { todayKey } from "@/lib/pay-rates";
 
 // Maps system custom role names to their legacy enum values
@@ -36,8 +36,11 @@ async function assertAssignable(
   if (!me) throw new Error("FORBIDDEN");
   let rank: number | null = null;
   if (customRoleId) {
-    const cr = await db.customRole.findFirst({ where: { id: customRoleId, tenantId }, select: { rank: true } });
+    const cr = await db.customRole.findFirst({ where: { id: customRoleId, tenantId }, select: { rank: true, liveAttendanceOnly: true } });
     if (!cr) throw new Error("That role does not exist");
+    if (cr.liveAttendanceOnly && !givesLiveAttendanceRoles(me)) {
+      throw new Error("Only a System Admin can give a role limited to Live Attendance");
+    }
     rank = cr.rank;
   } else if (role !== undefined) {
     if (role === "SUPER_ADMIN" || !isValidRole(role)) throw new Error("That role cannot be given");
@@ -201,7 +204,13 @@ export const getAdminRefData = withRBAC(
     ]);
     // No serializePayRate here any more: the rows no longer carry a pay rate
     // to turn from a Decimal into a number.
-    return { sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies };
+    // Whether the person looking may pick each role. A role limited to Live
+    // Attendance is a System Admin's to give (assertAssignable checks again);
+    // the forms leave it out for anyone else, unless the person edited has it.
+    const me = await currentIdentity();
+    const givesLimited = !!me && givesLiveAttendanceRoles(me);
+    const roles = customRoles.map((r) => ({ ...r, givable: !r.liveAttendanceOnly || givesLimited }));
+    return { sites, departments, ruleSets, employees, customRoles: roles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies };
   }
 );
 
@@ -1763,12 +1772,15 @@ export const bulkCreateEmployees = withRBAC(
       db.department.findMany({ where: { isActive: true, tenantId } }),
       db.ruleSet.findMany({ where: { tenantId } }),
       db.employee.findMany({ where: { tenantId }, select: { id: true, employeeCode: true } }),
-      db.customRole.findMany({ where: { tenantId }, select: { id: true, name: true, rank: true } }),
+      db.customRole.findMany({ where: { tenantId }, select: { id: true, name: true, rank: true, liveAttendanceOnly: true } }),
     ]);
-    // The same rule as one at a time: only roles below the importer's own.
+    // The same rules as one at a time: only roles below the importer's own,
+    // and a role limited to Live Attendance only from a System Admin.
     const me = await currentIdentity();
     if (!me) throw new Error("FORBIDDEN");
     const roleRankById = new Map(customRoles.map((cr) => [cr.id, cr.rank]));
+    const limitedRoleIds = new Set(customRoles.filter((cr) => cr.liveAttendanceOnly).map((cr) => cr.id));
+    const givesLimited = givesLiveAttendanceRoles(me);
     const tooSenior = (rank: number) => !me.isSuperAdmin && rank >= me.rank;
 
     const siteMap = new Map(sites.map((s) => [s.name.toLowerCase(), s.id]));
@@ -1846,6 +1858,9 @@ export const bulkCreateEmployees = withRBAC(
         : isValidRole(resolvedRole) ? ROLE_RANK[resolvedRole] : 0;
       if (resolvedRole === "SUPER_ADMIN" || tooSenior(givenRank)) {
         errors.push("You can only give a role below your own");
+      }
+      if (resolvedCustomRoleId && limitedRoleIds.has(resolvedCustomRoleId) && !givesLimited) {
+        errors.push("Only a System Admin can give a role limited to Live Attendance");
       }
 
       if (errors.length > 0) {
