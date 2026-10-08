@@ -1082,10 +1082,20 @@ export async function rebuildSegments(
     }),
   ]);
   const existingLeaveDates = new Set(existingLeaveMarkers.map((s) => format(s.segmentDate, "yyyy-MM-dd")));
+  // Only a day somebody clocked in on is a missed-punch day. Autopay and salary
+  // hours are added later in the rebuild, so their days have no new WORK
+  // segment at this point either; treated as missed punches, every salaried
+  // day got a marker copying whatever code its hours had that night, and kept
+  // it after the hours' code changed (Regular Hours shown on Salary days).
+  const clockInDays = new Set(
+    punches
+      .filter((p) => p.punchType === "CLOCK_IN")
+      .map((p) => new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(p.roundedTime)),
+  );
   const payCodeMarkers = existingWorkWithPayCode
     .filter((s) => {
       const key = format(s.segmentDate, "yyyy-MM-dd");
-      return !newSegmentDates.has(key) && !existingLeaveDates.has(key);
+      return clockInDays.has(key) && !newSegmentDates.has(key) && !existingLeaveDates.has(key);
     })
     .reduce<Map<string, string>>((acc, s) => {
       const key = format(s.segmentDate, "yyyy-MM-dd");
@@ -1275,11 +1285,14 @@ export async function rebuildSegments(
   // Sync ABSENT exceptions for past days in the pay period with no activity.
   // An inactive employee raises no new absences: the record keeps no
   // termination date, so every scheduled day after they left would read as
-  // absent. Open ones still auto-resolve when a day gets activity.
+  // absent. Open ones still auto-resolve when a day gets activity. Days
+  // before the hire date are not absences either: someone hired mid-period
+  // was flagged absent for every scheduled day before they started.
+  const hireDay = timesheet.employee.hireDate.toISOString().slice(0, 10);
   await syncAbsentExceptions(
     timesheetId,
     timezone,
-    bounds.firstDay,
+    hireDay > bounds.firstDay ? hireDay : bounds.firstDay,
     bounds.lastDay,
     punches,
     timesheet.employee.shift?.workDays,
