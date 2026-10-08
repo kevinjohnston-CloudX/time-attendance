@@ -2,7 +2,7 @@
 
 import { addMonths, addYears, differenceInMonths } from "date-fns";
 import { generatePeriodsForRuleSet } from "@/lib/pay-period-utils";
-import { migrateTimesheetsOnRuleSetChange, migrateTimesheetBetweenRuleSets } from "@/lib/timesheet-migration";
+import { moveTimecardsToRuleSet } from "@/lib/timesheet-migration";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -635,7 +635,7 @@ export const updateEmployee = withRBAC(
     }
 
     // When the rule set changes, write a history record (for split-segment logic) and
-    // migrate the open timesheet to the new rule set's pay period.
+    // move the open timecards to the new rule set's pay periods, day by day.
     if (ruleSetId !== undefined && ruleSetId !== current.ruleSetId) {
       const today = new Date();
       today.setUTCHours(0, 0, 0, 0);
@@ -644,12 +644,7 @@ export const updateEmployee = withRBAC(
       });
 
       const newRuleSet = await db.ruleSet.findUnique({ where: { id: ruleSetId } });
-      if (newRuleSet) {
-        // RS-to-RS: move timesheet between two rule-set-specific periods
-        await migrateTimesheetBetweenRuleSets(employeeId, current.ruleSetId, ruleSetId, newRuleSet);
-        // Tenant-to-RS: move any tenant-level fallback timesheets
-        await migrateTimesheetsOnRuleSetChange(employeeId, ruleSetId);
-      }
+      if (newRuleSet) await moveTimecardsToRuleSet(employeeId, newRuleSet, actorId ?? null);
     }
 
     // Build field-level diff for audit log

@@ -96,6 +96,7 @@ const NAMED: Record<string, string> = {
   REPORT_CREATED: "Report added",
   REPORT_UPDATED: "Report edited",
   REPORT_DELETED: "Report deleted",
+  TIMESHEET_MOVED: "Timecard moved to the new rule set",
   ADP_SYNC_COMPLETED: "ADP sync completed",
   ADP_PAYROLL_PUSHED: "Payroll sent to ADP",
   VIEW_AS_STARTED: "View as started",
