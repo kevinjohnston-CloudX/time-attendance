@@ -55,7 +55,7 @@ export const getRoleById = withRBAC(
 
 export const createRole = withRBAC(
   "ROLE_MANAGE",
-  async ({ tenantId }, input: CreateRoleInput) => {
+  async ({ employeeId: actorId, tenantId }, input: CreateRoleInput) => {
     if (!tenantId) throw new Error("Tenant context required");
     const data = createRoleSchema.parse(input);
 
@@ -80,6 +80,7 @@ export const createRole = withRBAC(
 
     await writeAuditLog({
       tenantId,
+      actorId,
       action: "CREATE",
       entityType: "ROLE",
       entityId: role.id,
@@ -93,7 +94,7 @@ export const createRole = withRBAC(
 
 export const updateRole = withRBAC(
   "ROLE_MANAGE",
-  async ({ tenantId }, input: UpdateRoleInput) => {
+  async ({ employeeId: actorId, tenantId }, input: UpdateRoleInput) => {
     if (!tenantId) throw new Error("Tenant context required");
     const data = updateRoleSchema.parse(input);
 
@@ -144,10 +145,14 @@ export const updateRole = withRBAC(
 
     await writeAuditLog({
       tenantId,
+      actorId,
       action: "UPDATE",
       entityType: "ROLE",
       entityId: role.id,
-      changes: { before: { name: existing.name }, after: { name: role.name, permissions: data.permissions } },
+      changes: {
+        before: { name: existing.name, rank: existing.rank, liveAttendanceOnly: existing.liveAttendanceOnly },
+        after: { name: role.name, rank: role.rank, liveAttendanceOnly: role.liveAttendanceOnly, permissions: data.permissions },
+      },
     });
 
     revalidatePath("/admin/roles");
@@ -157,7 +162,7 @@ export const updateRole = withRBAC(
 
 export const deleteRole = withRBAC(
   "ROLE_MANAGE",
-  async ({ tenantId }, input: { id: string }) => {
+  async ({ employeeId: actorId, tenantId }, input: { id: string }) => {
     if (!tenantId) throw new Error("Tenant context required");
 
     const role = await db.customRole.findFirst({
@@ -177,6 +182,7 @@ export const deleteRole = withRBAC(
 
     await writeAuditLog({
       tenantId,
+      actorId,
       action: "DELETE",
       entityType: "ROLE",
       entityId: input.id,
@@ -190,7 +196,7 @@ export const deleteRole = withRBAC(
 
 export const duplicateRole = withRBAC(
   "ROLE_MANAGE",
-  async ({ tenantId }, input: { id: string; name: string }) => {
+  async ({ employeeId: actorId, tenantId }, input: { id: string; name: string }) => {
     if (!tenantId) throw new Error("Tenant context required");
 
     const source = await db.customRole.findFirst({
@@ -216,6 +222,15 @@ export const duplicateRole = withRBAC(
         },
       },
       include: { permissions: true },
+    });
+
+    await writeAuditLog({
+      tenantId,
+      actorId,
+      action: "CREATE",
+      entityType: "ROLE",
+      entityId: role.id,
+      changes: { after: { name: role.name, copiedFrom: source.name } },
     });
 
     revalidatePath("/admin/roles");

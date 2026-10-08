@@ -361,6 +361,8 @@ export const createEmployee = withRBAC(
     // Auto-assign the system custom role when only a role enum is provided
     let resolvedCustomRoleId = parsed.customRoleId ?? null;
     let resolvedRole = parsed.role;
+    // The role by the name people see, for the audit log.
+    let roleName: string | null = null;
     if (!resolvedCustomRoleId) {
       const systemName = Object.entries(SYSTEM_ROLE_NAME_TO_ENUM).find(([, v]) => v === parsed.role)?.[0];
       if (systemName) {
@@ -369,11 +371,13 @@ export const createEmployee = withRBAC(
           select: { id: true },
         });
         resolvedCustomRoleId = systemRole?.id ?? null;
+        roleName = systemRole ? systemName : null;
       }
     } else {
       // Derive role enum from the provided customRoleId
       const cr = await db.customRole.findFirst({ where: { id: resolvedCustomRoleId, tenantId }, select: { isSystem: true, name: true } });
       resolvedRole = (cr?.isSystem ? (SYSTEM_ROLE_NAME_TO_ENUM[cr.name] ?? "EMPLOYEE") : "EMPLOYEE") as typeof parsed.role;
+      roleName = cr?.name ?? null;
     }
 
     const employee = await db.$transaction(async (tx) => {
@@ -429,7 +433,7 @@ export const createEmployee = withRBAC(
       entityType: "EMPLOYEE",
       entityId: employee.id,
       action: "EMPLOYEE_CREATED",
-      changes: { after: { employeeCode: employee.employeeCode, role: parsed.role } },
+      changes: { after: { employeeCode: employee.employeeCode, role: roleName ?? resolvedRole } },
     });
 
     revalidatePath("/admin/employees");
@@ -451,7 +455,7 @@ export const updateEmployee = withRBAC(
     if (!tenantId) throw new Error("Tenant context required");
     const current = await db.employee.findFirst({
       where: { id: employeeId, tenantId },
-      include: { user: true },
+      include: { user: true, customRole: { select: { name: true } } },
     });
     await assertOwnAssignments(tenantId, jobTitleId, agencyId);
     if (!current) throw new Error("Employee not found");
@@ -492,12 +496,18 @@ export const updateEmployee = withRBAC(
 
     // Derive the role enum from the custom role when customRoleId is being set
     let derivedRole: string | undefined = role;
+    // The role by the name people see, for the audit log. The level alone
+    // cannot tell a custom role such as Loss Prevention from Employee.
+    let newRoleName: string | null | undefined;
     if (customRoleId !== undefined && customRoleId !== null) {
       const cr = await db.customRole.findFirst({
         where: { id: customRoleId, tenantId },
         select: { isSystem: true, name: true },
       });
       derivedRole = cr?.isSystem ? (SYSTEM_ROLE_NAME_TO_ENUM[cr.name] ?? "EMPLOYEE") : "EMPLOYEE";
+      newRoleName = cr?.name ?? null;
+    } else if (customRoleId === null) {
+      newRoleName = null;
     }
 
     await db.$transaction(async (tx) => {
@@ -610,7 +620,11 @@ export const updateEmployee = withRBAC(
 
     if (name !== undefined) diff("Full Name", current.user.name, name);
     if (email !== undefined) diff("Email", current.user.email, email);
-    if (derivedRole !== undefined) diff("Role", current.role, derivedRole);
+    if (newRoleName !== undefined) {
+      diff("Role", current.customRole?.name ?? current.role, newRoleName ?? derivedRole ?? current.role);
+    } else if (derivedRole !== undefined) {
+      diff("Role", current.role, derivedRole);
+    }
     const statusLabel = (active: boolean, leave: boolean) => !active ? "Inactive" : leave ? "On Leave" : "Active";
     if (isActive !== undefined || onLeave !== undefined) {
       const newActive = isActive ?? current.isActive;
@@ -1925,13 +1939,29 @@ export const bulkCreateEmployees = withRBAC(
         return resolved.length;
       }, { timeout: 120000 });
 
+      // Each person's role by name, so an import that hands out a custom role
+      // (such as Loss Prevention) can be traced like a one-by-one create.
+      const roleIds = [...new Set(resolved.map((r) => r.resolvedCustomRoleId).filter((id): id is string => !!id))];
+      const roleNames = new Map(
+        (await db.customRole.findMany({ where: { id: { in: roleIds }, tenantId }, select: { id: true, name: true } }))
+          .map((cr) => [cr.id, cr.name]),
+      );
       await writeAuditLog({
         tenantId,
         actorId,
         entityType: "EMPLOYEE",
         entityId: "BULK_IMPORT",
         action: "EMPLOYEES_BULK_CREATED",
-        changes: { after: { count: created, codes: resolved.map((r) => r.employeeCode) } },
+        changes: {
+          after: {
+            count: created,
+            codes: resolved.map((r) => r.employeeCode),
+            roles: resolved.map((r) => ({
+              code: r.employeeCode,
+              role: (r.resolvedCustomRoleId && roleNames.get(r.resolvedCustomRoleId)) || r.resolvedRole,
+            })),
+          },
+        },
       });
 
       revalidatePath("/admin/employees");
