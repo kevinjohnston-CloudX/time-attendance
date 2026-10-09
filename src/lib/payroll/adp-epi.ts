@@ -8,7 +8,9 @@ import type { ExceptionType, PayBucket, Prisma } from "@prisma/client";
  * pay code first, then by hours type:
  * - a meal premium is always the meal penalty code;
  * - a pay code outside the regular bucket (holiday, PTO, sick, bereavement...)
- *   is written under its own export code, even when it sits on worked hours;
+ *   is written under its own export code, even when it sits on worked hours.
+ *   The export code is the pay code's ADP code, or its Express code when it
+ *   has none, which the preview lists so a code ADP does not know is caught;
  * - regular-type pay codes (Regular Hours, Salary...) and uncoded hours go to
  *   Reg Hours, O/T Hours, or the double time code by the segment's bucket;
  * - unpaid time (unpaid meals, unpaid time off) is left out.
@@ -70,6 +72,8 @@ export type EpiSummary = {
   byCode: { code: string; minutes: number }[];
   noBadge: { name: string; minutes: number }[];
   leftOut: { label: string; minutes: number; people: number }[];
+  /** Hours sent under a pay code's Express code because it has no ADP code. */
+  noAdpCode: { label: string; code: string; minutes: number; people: number }[];
   unlockedLeftOut: number;
   needsDoubleTimeCode: boolean;
   needsMealPenaltyCode: boolean;
@@ -139,7 +143,7 @@ export async function buildAdpEpi(opts: {
   const [payCodes, timesheets] = await Promise.all([
     db.payCode.findMany({
       where: { tenantId },
-      select: { id: true, code: true, label: true, expressCode: true, payBucket: true, isActive: true },
+      select: { id: true, code: true, label: true, expressCode: true, adpCode: true, payBucket: true, isActive: true },
       orderBy: { code: "asc" },
     }),
     db.timesheet.findMany({
@@ -161,10 +165,12 @@ export async function buildAdpEpi(opts: {
   ]);
 
   const codeById = new Map(payCodes.map((c) => [c.id, c]));
-  const bucketDefault = new Map<PayBucket, string>();
+  /** The code a pay code goes to ADP under: its ADP code, else its Express code. */
+  const exportCode = (c: (typeof payCodes)[number]) => c.adpCode?.trim() || c.expressCode?.trim() || null;
+  const bucketDefault = new Map<PayBucket, (typeof payCodes)[number]>();
   for (const c of payCodes) {
-    if (c.isActive && c.payBucket && c.expressCode && !NO_FALLBACK.has(c.payBucket) && !bucketDefault.has(c.payBucket)) {
-      bucketDefault.set(c.payBucket, c.expressCode);
+    if (c.isActive && c.payBucket && exportCode(c) && !NO_FALLBACK.has(c.payBucket) && !bucketDefault.has(c.payBucket)) {
+      bucketDefault.set(c.payBucket, c);
     }
   }
 
@@ -172,6 +178,7 @@ export async function buildAdpEpi(opts: {
   const people = new Map<string, Person>();
   const noBadge = new Map<string, number>();
   const leftOut = new Map<string, { minutes: number; people: Set<string> }>();
+  const noAdp = new Map<string, { label: string; code: string; minutes: number; people: Set<string> }>();
   let unlockedLeftOut = 0;
   let dtMinutes = 0;
   let mpMinutes = 0;
@@ -209,6 +216,15 @@ export async function buildAdpEpi(opts: {
       ? people.get(file) ?? { file, reg: 0, ot: 0, codes: new Map() }
       : { file: "", reg: 0, ot: 0, codes: new Map() };
     const addCode = (code: string, m: number) => person.codes.set(code, (person.codes.get(code) ?? 0) + m);
+    // Hours under a pay code, by its export code; one with no ADP code is noted.
+    const addPayCode = (pc: (typeof payCodes)[number], m: number) => {
+      addCode(exportCode(pc)!, m);
+      if (pc.adpCode?.trim()) return;
+      const e = noAdp.get(pc.id) ?? { label: pc.label, code: exportCode(pc)!, minutes: 0, people: new Set<string>() };
+      e.minutes += m;
+      e.people.add(file || name);
+      noAdp.set(pc.id, e);
+    };
     const leave = (label: string, m: number) => {
       const e = leftOut.get(label) ?? { minutes: 0, people: new Set<string>() };
       e.minutes += m;
@@ -228,8 +244,8 @@ export async function buildAdpEpi(opts: {
       }
       if (pc && pc.payBucket && pc.payBucket !== "REG") {
         if (pc.payBucket === "UNPAID") continue;
-        if (pc.expressCode) addCode(pc.expressCode, m);
-        else leave(`${pc.label} (pay code ${pc.code} has no Express code)`, m);
+        if (exportCode(pc)) addPayCode(pc, m);
+        else leave(`${pc.label} (pay code ${pc.code} has no ADP or Express code)`, m);
         continue;
       }
       if (bucket === "REG") person.reg += m;
@@ -238,7 +254,7 @@ export async function buildAdpEpi(opts: {
       else if (bucket === "UNPAID") continue;
       else {
         const fallback = bucketDefault.get(bucket);
-        if (fallback) addCode(fallback, m);
+        if (fallback) addPayCode(fallback, m);
         else leave(`${bucket} hours with no pay code`, m);
       }
     }
@@ -296,6 +312,9 @@ export async function buildAdpEpi(opts: {
       byCode: [...byCode.entries()].map(([code, minutes]) => ({ code, minutes })).sort((a, b) => b.minutes - a.minutes),
       noBadge: [...noBadge.entries()].map(([name, minutes]) => ({ name, minutes })).sort((a, b) => a.name.localeCompare(b.name)),
       leftOut: [...leftOut.entries()].map(([label, v]) => ({ label, minutes: v.minutes, people: v.people.size })),
+      noAdpCode: [...noAdp.values()]
+        .map((v) => ({ label: v.label, code: v.code, minutes: v.minutes, people: v.people.size }))
+        .sort((a, b) => b.minutes - a.minutes),
       unlockedLeftOut,
       needsDoubleTimeCode: dtMinutes > 0 && !codes.doubleTimeCode.trim(),
       needsMealPenaltyCode: mpMinutes > 0 && !codes.mealPenaltyCode.trim(),

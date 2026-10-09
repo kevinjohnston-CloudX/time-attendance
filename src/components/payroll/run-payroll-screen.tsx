@@ -256,8 +256,15 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
           {summary.leftOut.length > 0 && (
             <Banner
               tone="warning"
-              title="Some hours are on pay codes with no Express code, and will be left out. Add one under Company Setup → Pay Codes."
+              title="Some hours are on pay codes with no ADP or Express code, and will be left out. Add an ADP code under Company Setup → Pay Codes."
               body={summary.leftOut.map((l) => `${l.label}: ${hrs(l.minutes)} h, ${l.people} ${l.people === 1 ? "person" : "people"}`).join(" · ")}
+            />
+          )}
+          {summary.noAdpCode.length > 0 && (
+            <Banner
+              tone="warning"
+              title="Some leave hours go to ADP under the Express code because their pay code has no ADP code. ADP may not know these codes. Add the ADP code under Company Setup → Pay Codes."
+              body={summary.noAdpCode.map((c) => `${c.label} as ${c.code}: ${hrs(c.minutes)} h, ${c.people} ${c.people === 1 ? "person" : "people"}`).join(" · ")}
             />
           )}
           {summary.unlockedLeftOut > 0 && (

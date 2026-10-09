@@ -29,7 +29,11 @@ export function PayCodeFields({ initial, mode = "create" }: { initial?: PayCode;
         <label className="mb-1 block text-xs text-zinc-500">Express Code</label>
         <input name="expressCode" maxLength={4} defaultValue={initial?.expressCode ?? ""} placeholder="e.g. WKHR" className={inputCls} style={{ textTransform: "uppercase" }} />
       </div>
-      <div className="sm:col-span-2">
+      <div>
+        <label className="mb-1 block text-xs text-zinc-500">ADP Code</label>
+        <input name="adpCode" maxLength={10} defaultValue={initial?.adpCode ?? ""} placeholder="e.g. PTI" title="The hours code ADP expects. Blank sends the Express code." className={inputCls} style={{ textTransform: "uppercase" }} />
+      </div>
+      <div>
         <label className="mb-1 block text-xs text-zinc-500">Pay Bucket</label>
         <select name="payBucket" defaultValue={initial?.payBucket ?? ""} className={inputCls}>
           <option value="">— None —</option>
@@ -130,6 +134,11 @@ export function PayCodesManager({ payCodes }: Props) {
                 {pc.expressCode && (
                   <span className="rounded bg-blue-50 px-1.5 py-0.5 text-xs font-mono font-medium text-blue-600 dark:bg-blue-900/20 dark:text-blue-400">
                     {pc.expressCode}
+                  </span>
+                )}
+                {pc.adpCode && (
+                  <span title="ADP code" className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-mono font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400">
+                    ADP {pc.adpCode}
                   </span>
                 )}
                 {pc.payBucket && <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">{pc.payBucket}</span>}

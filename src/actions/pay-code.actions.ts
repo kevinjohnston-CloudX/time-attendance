@@ -39,10 +39,19 @@ export const getAllPayCodes = withRBAC(
 
 // ─── Create a pay code ───────────────────────────────────────────────────────
 
+/** The hours code ADP expects. Left out, a save keeps the one stored. */
+const ADP_CODE = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9]{0,10}$/, "Enter the ADP code in letters and numbers, up to 10")
+  .nullable()
+  .optional();
+
 const createPayCodeSchema = z.object({
   code: z.number().int().min(0),
   label: z.string().min(1).max(100),
   expressCode: z.string().max(4).nullable().optional(),
+  adpCode: ADP_CODE,
   payBucket: z.string().nullable().optional(),
   countsTowardOt: z.boolean().optional().default(true),
   sortOrder: z.number().int().min(0).optional(),
@@ -51,7 +60,7 @@ const createPayCodeSchema = z.object({
 export const createPayCode = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (ctx, input: unknown) => {
-    const { code, label, expressCode, payBucket, countsTowardOt, sortOrder } = createPayCodeSchema.parse(input);
+    const { code, label, expressCode, adpCode, payBucket, countsTowardOt, sortOrder } = createPayCodeSchema.parse(input);
     const tenantId = ctx.tenantId;
     if (!tenantId) throw new Error("No tenant");
 
@@ -77,6 +86,7 @@ export const createPayCode = withRBAC(
         code,
         label,
         expressCode: expressCode?.trim().toUpperCase() || null,
+        adpCode: adpCode?.toUpperCase() || null,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         payBucket: payBucket ? (payBucket as any) : null,
         countsTowardOt,
@@ -109,6 +119,7 @@ const updatePayCodeSchema = z.object({
   code: z.number().int().min(0),
   label: z.string().min(1).max(100),
   expressCode: z.string().max(4).nullable().optional(),
+  adpCode: ADP_CODE,
   payBucket: z.string().nullable().optional(),
   countsTowardOt: z.boolean().optional().default(true),
   sortOrder: z.number().int().min(0),
@@ -118,7 +129,7 @@ const updatePayCodeSchema = z.object({
 export const updatePayCode = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (ctx, input: unknown) => {
-    const { payCodeId, code, label, expressCode, payBucket, countsTowardOt, sortOrder, isActive } =
+    const { payCodeId, code, label, expressCode, adpCode, payBucket, countsTowardOt, sortOrder, isActive } =
       updatePayCodeSchema.parse(input);
     const tenantId = ctx.tenantId;
     if (!tenantId) throw new Error("No tenant");
@@ -140,6 +151,7 @@ export const updatePayCode = withRBAC(
         code,
         label,
         expressCode: expressCode?.trim().toUpperCase() || null,
+        ...(adpCode !== undefined ? { adpCode: adpCode?.toUpperCase() || null } : {}),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         payBucket: payBucket ? (payBucket as any) : null,
         countsTowardOt,

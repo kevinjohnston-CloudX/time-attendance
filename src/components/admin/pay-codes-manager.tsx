@@ -65,7 +65,7 @@ export function PayCodesManager({ payCodes }: { payCodes: PayCode[] }) {
   const [orderError, setOrderError] = useState<string | null>(null);
 
   const { view, setView, counts, kept } = useStatusView(items);
-  const shown = kept.filter((p) => matches(query, p.code, p.label, p.expressCode, p.payBucket && PAY_BUCKET_LABEL[p.payBucket]));
+  const shown = kept.filter((p) => matches(query, p.code, p.label, p.expressCode, p.adpCode, p.payBucket && PAY_BUCKET_LABEL[p.payBucket]));
 
   function open(p: PayCode | "new") {
     setEditing(p);
@@ -108,6 +108,7 @@ export function PayCodesManager({ payCodes }: { payCodes: PayCode[] }) {
       code: Number(form.get("code")),
       label: String(form.get("label") ?? "").trim(),
       expressCode: String(form.get("expressCode") ?? "").trim() || null,
+      adpCode: String(form.get("adpCode") ?? "").trim() || null,
       payBucket: String(form.get("payBucket") ?? "") || null,
       countsTowardOt: form.get("countsTowardOt") !== "false",
     };
@@ -168,6 +169,7 @@ export function PayCodesManager({ payCodes }: { payCodes: PayCode[] }) {
                 </TH>
                 <TH>Pay code</TH>
                 <TH>Express code</TH>
+                <TH>ADP code</TH>
                 <TH>Pay bucket</TH>
                 <TH>Overtime</TH>
                 <TH>Status</TH>
@@ -214,6 +216,7 @@ export function PayCodesManager({ payCodes }: { payCodes: PayCode[] }) {
                   </TD>
                   <TD style={{ fontWeight: "var(--weight-medium)" }}>{p.label}</TD>
                   <TD style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>{p.expressCode || <Muted />}</TD>
+                  <TD style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>{p.adpCode || <Muted />}</TD>
                   <TD style={{ color: "var(--text-secondary)" }}>
                     {p.payBucket ? (PAY_BUCKET_LABEL[p.payBucket] ?? p.payBucket) : <Muted />}
                   </TD>
@@ -274,9 +277,21 @@ function PayCodeDialog({
           maxLength={4}
           defaultValue={p?.expressCode ?? ""}
           placeholder="WKHR"
-          hint="Optional. Up to 4 letters."
+          hint="Optional. Up to 4 letters. Shown on timecards."
           style={{ textTransform: "uppercase" }}
         />
+        <Input
+          label="ADP code"
+          name="adpCode"
+          maxLength={10}
+          defaultValue={p?.adpCode ?? ""}
+          placeholder="PTI"
+          hint="The hours code ADP expects. Blank sends the Express code."
+          style={{ textTransform: "uppercase" }}
+        />
+      </div>
+
+      <div className={FIELD_GRID}>
         <SelectField label="Pay bucket" name="payBucket" defaultValue={p?.payBucket ?? ""}>
           <option value="">None</option>
           {Object.entries(PAY_BUCKET_LABEL).map(([value, label]) => (

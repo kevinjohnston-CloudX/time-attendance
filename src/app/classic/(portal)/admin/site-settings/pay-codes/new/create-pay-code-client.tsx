@@ -24,6 +24,7 @@ export function CreatePayCodeClient() {
         code: Number(fd.get("code")),
         label: fd.get("label") as string,
         expressCode: (fd.get("expressCode") as string) || null,
+        adpCode: (fd.get("adpCode") as string) || null,
         payBucket: (fd.get("payBucket") as string) || null,
         countsTowardOt: fd.get("countsTowardOt") !== "false",
       });

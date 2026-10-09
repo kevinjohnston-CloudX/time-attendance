@@ -6,6 +6,9 @@ model PayCode {
   code        Int    /// Numeric code (e.g. 0, 1, 5, 42)
   label       String /// Human-readable label (e.g. "Regular Hours")
   expressCode String? /// Up to 4-char code for payroll export (e.g. "WKHR", "PTO")
+  /// The hours code ADP expects (e.g. "PTI"), written in the ADP file in place
+  /// of the Express code. Not unique: PTO and PTO Carryover both go as PTI.
+  adpCode     String?
   /// Maps to the PayBucket enum for overtime/payroll classification
   payBucket      PayBucket?
   countsTowardOt Boolean    @default(true)
