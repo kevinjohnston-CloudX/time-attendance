@@ -81,6 +81,7 @@ export async function findEmployeeIdentityByBadge(code: string) {
       id: true,
       tenantId: true,
       wmsName: true,
+      timeZone: true,
       site: { select: { timezone: true } },
       user: { select: { name: true } },
     },

@@ -18,6 +18,7 @@ function fmtDate(d: Date | string, fmt: string) {
 import { LeaveCalendar } from "@/classic/components/leave/leave-calendar";
 import { RequestLeaveModal } from "@/classic/components/leave/request-leave-modal";
 import { CancelLeaveButton } from "@/classic/components/leave/cancel-leave-button";
+import { shiftInfo } from "@/lib/shift-meal";
 
 export default async function MyLeavePage() {
   const session = await auth();
@@ -31,8 +32,7 @@ export default async function MyLeavePage() {
     db.employee.findFirst({
       where: { userId: session.user.id },
       select: {
-        shift: { select: { startTime: true, endTime: true, workDays: true } },
-        ruleSet: { select: { mealBreakMinutes: true, mealBreakAfterMinutes: true } },
+        shift: { select: { startTime: true, endTime: true, workDays: true, mealConfig: true } },
       },
     }),
   ]);
@@ -72,7 +72,7 @@ export default async function MyLeavePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">My Leave</h1>
-        <RequestLeaveModal leaveTypes={leaveTypes} shift={employee?.shift ? { ...employee.shift, ...employee.ruleSet } : null} />
+        <RequestLeaveModal leaveTypes={leaveTypes} shift={employee?.shift ? shiftInfo(employee.shift) : null} />
       </div>
 
       {/* Balances */}

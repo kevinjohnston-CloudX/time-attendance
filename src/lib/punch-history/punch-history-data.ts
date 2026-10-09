@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { endOfDayInTz, snapToLocalTime } from "@/lib/utils/date";
 import { photoUrls } from "@/lib/presence/photos";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * Everything the Team Punch History screen and its export read, in one place,
@@ -328,6 +329,7 @@ export async function loadTeamPunchHistory(
     employeeCode: true,
     user: { select: { name: true } },
     department: { select: { name: true } },
+    timeZone: true,
     site: { select: { name: true, timezone: true } },
     // Only to find each person's tablet photo; never sent to the browser.
     barcode: true,
@@ -373,7 +375,7 @@ export async function loadTeamPunchHistory(
   // The range is needed before the list when the list is narrowed to people
   // with something in it, so it is read on the named person's clock, else the
   // first site's, and read again below if the person opened is on another.
-  const listTz = named?.site?.timezone ?? firstSite?.timezone ?? FALLBACK_TZ;
+  const listTz = named ? personTimeZone(named, FALLBACK_TZ) : (firstSite?.timezone ?? FALLBACK_TZ);
   const listRange = await resolveRange(tenantId, params, listTz);
   const listWhere: Prisma.EmployeeWhereInput = attentionOnly
     ? {
@@ -401,7 +403,7 @@ export async function loadTeamPunchHistory(
   ]);
 
   const selectedRow = params.employeeId ? named : (list[0] ?? null);
-  const timezone = selectedRow?.site?.timezone ?? firstSite?.timezone ?? FALLBACK_TZ;
+  const timezone = selectedRow ? personTimeZone(selectedRow, FALLBACK_TZ) : (firstSite?.timezone ?? FALLBACK_TZ);
   const { today, payPeriods, isCustomRange, startDate, endDate } =
     timezone === listTz ? listRange : await resolveRange(tenantId, params, timezone);
   const rangeStart = snapToLocalTime("00:00", startDate, timezone);
@@ -695,6 +697,7 @@ export async function loadPunchExport(viewer: Viewer, params: PunchHistoryParams
         wmsId: true,
         user: { select: { name: true } },
         department: { select: { name: true } },
+        timeZone: true,
         site: { select: { name: true, timezone: true } },
       },
     }),
@@ -727,7 +730,7 @@ export async function loadPunchExport(viewer: Viewer, params: PunchHistoryParams
   for (const p of pairCorrections(punches.filter((x) => !isRemovalMarker(x)))) {
     const e = who.get(p.employeeId);
     if (!e) continue;
-    const c = clockFor(e.site?.timezone ?? FALLBACK_TZ);
+    const c = clockFor(personTimeZone(e, FALLBACK_TZ));
     const date = c.date.format(p.roundedTime);
     if (date < startDate || date > endDate) continue;
     rows.push({

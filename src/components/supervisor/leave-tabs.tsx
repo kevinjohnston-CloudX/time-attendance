@@ -39,6 +39,7 @@ import { HrApproveButtons } from "@/components/supervisor/hr-approve-buttons";
 import { LEAVE_STATUS_LABEL, type LeaveRequestStatusValue } from "@/lib/state-machines/labels";
 import { getTeamMembersForLeave, createLeaveRequestForEmployee } from "@/actions/leave.actions";
 import { LeaveDayPicker, type DaySelection, type ShiftInfo } from "@/components/leave/leave-day-picker";
+import { shiftMeal } from "@/lib/shift-meal";
 
 /**
  * Team Leave, as the portal design lays it out: the list screen's header,
@@ -297,7 +298,7 @@ export function LeaveTabs({
         startTime: selectedEmployee.shift.startTime,
         endTime: selectedEmployee.shift.endTime,
         workDays: selectedEmployee.shift.workDays,
-        mealBreakMinutes: (selectedEmployee.shift.mealConfig as { deductMinutes?: number } | null)?.deductMinutes ?? null,
+        mealBreakMinutes: shiftMeal(selectedEmployee.shift.mealConfig).minutes,
       }
     : null;
 

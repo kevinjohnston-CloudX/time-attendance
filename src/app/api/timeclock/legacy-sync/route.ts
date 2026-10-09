@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { findEmployeeIdentityByBadge } from "@/lib/utils/badge-lookup";
 import { legacySyncReportSchema } from "@/lib/validators/punch.schema";
 import { parseScanTime } from "@/lib/utils/scan-time";
+import { tabletTimeZone } from "@/lib/utils/tablet-time-zone";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * What happened when a tablet talked to Oracle.
@@ -67,11 +69,14 @@ export async function POST(req: NextRequest) {
     // writing punches to Oracle for somebody this system cannot name.
     const employee = await findEmployeeIdentityByBadge(EmployeeCode);
 
-    // The site's zone, because the tablet stamps local time with no offset.
-    // Falling back to Eastern is what every other ingest path here does.
+    // The tablet's building's zone, because the tablet stamps local time with
+    // no offset; the person's site, then Eastern, when the tablet is unknown.
     let scanTime: Date;
     try {
-      scanTime = parseScanTime(ScanDateTime, employee?.site.timezone ?? "America/New_York");
+      scanTime = parseScanTime(
+        ScanDateTime,
+        await tabletTimeZone({ deviceName: DeviceName, personTimeZone: employee ? personTimeZone(employee) : null }),
+      );
     } catch {
       return NextResponse.json({
         success: true,

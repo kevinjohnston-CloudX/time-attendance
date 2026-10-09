@@ -10,6 +10,7 @@ import type {
   ScanOutcome,
   ScanStream,
 } from "@prisma/client";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * The tablets' transaction log — recording, direction resolution, and the
@@ -267,7 +268,7 @@ export async function recordScanEvent(input: RecordScanInput): Promise<RecordedS
     };
   }
 
-  const timezone = employee?.site?.timezone ?? "America/New_York";
+  const timezone = personTimeZone(employee);
 
   const created = await db.$transaction(async (tx) => {
     // A re-read: the same badge at the same kind of reader again within a

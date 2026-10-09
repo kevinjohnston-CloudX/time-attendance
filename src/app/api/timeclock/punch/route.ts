@@ -10,7 +10,9 @@ import { timeclockScanSchema } from "@/lib/validators/punch.schema";
 import { recordScanEvent, resolveScanOutcome } from "@/lib/services/scan-event.service";
 import { toTabletVerdict } from "@/lib/services/tablet-verdict";
 import { findEmployeeByBadge } from "@/lib/utils/badge-lookup";
+import { tabletTimeZone } from "@/lib/utils/tablet-time-zone";
 import type { PunchType, PunchState } from "@prisma/client";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 function unauthorized() {
   return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
@@ -55,7 +57,7 @@ function parseLocalDateTime(naiveDateStr: string, timezone: string): Date {
  *
  * The kiosk is a 2-state device: every scan is either a clock-in or a clock-out.
  * Meal deduction is handled entirely by the segment builder using the shift's
- * mealConfig (authoritative) or ruleSet.autoDeductMeal (fallback when no shift).
+ * mealConfig (the rule set's meal settings are no longer read).
  * Punch classification at the kiosk must never depend on meal settings.
  */
 function detectPunchType(currentState: PunchState): PunchType {
@@ -119,12 +121,16 @@ export async function POST(req: NextRequest) {
 
   // 4. Parse the scan time. Needed before anything else now, because the
   //    tablet's transaction is written down before any timecard work happens.
+  //    The tablet stamps its own local time, so it is read in the tablet's
+  //    building's zone, not the person's (see tablet-time-zone).
+  const scanZone = await tabletTimeZone({
+    warehouse: Warehouse,
+    deviceName: DeviceName,
+    personTimeZone: employee ? personTimeZone(employee) : null,
+  });
   let punchTime: Date;
   try {
-    punchTime = parseLocalDateTime(
-      ScanDateTime,
-      employee?.site.timezone ?? "America/New_York"
-    );
+    punchTime = parseLocalDateTime(ScanDateTime, scanZone);
   } catch {
     return NextResponse.json(
       { success: false, error: `Invalid ScanDateTime: ${ScanDateTime}` },
@@ -269,7 +275,7 @@ export async function POST(req: NextRequest) {
   //    not the moment it reached us (a tablet may flush its queue late).
   const payPeriod = await findOpenPayPeriod(employee.tenantId, employee.ruleSetId, {
     at: punchTime,
-    timezone: employee.site.timezone,
+    timezone: personTimeZone(employee),
   });
   if (!payPeriod) {
     await saveRejectedPunch({ employeeId: employee.id, timesheetId: null, punchType: "CLOCK_IN", source: "KIOSK", stateBefore: "OUT", rejectionReason: "No active pay period" });
@@ -303,7 +309,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (lastOpenPunch?.timesheetId) {
-      const tz = employee.site.timezone;
+      const tz = personTimeZone(employee);
 
       if (employee.ruleSet.workdayExpansionUseShiftDef && employee.shift) {
         // Shift-based expiry: shift_end + expansion_window_minutes
@@ -387,7 +393,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const roundedTime = computeRoundedTime(punchTime, punchType, employee.ruleSet, employee.shift, employee.site.timezone);
+  const roundedTime = computeRoundedTime(punchTime, punchType, employee.ruleSet, employee.shift, personTimeZone(employee));
 
   // 9. Create punch + audit log in transaction
   try {

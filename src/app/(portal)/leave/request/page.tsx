@@ -4,6 +4,7 @@ import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getLeaveTypes } from "@/actions/leave.actions";
 import { db } from "@/lib/db";
 import { RequestLeaveForm } from "@/components/leave/request-leave-form";
+import { shiftInfo } from "@/lib/shift-meal";
 
 /**
  * Request Leave — the design's document template.
@@ -22,8 +23,7 @@ export default async function RequestLeavePage() {
     db.employee.findFirst({
       where: { userId: session.user.id },
       select: {
-        shift: { select: { startTime: true, endTime: true, workDays: true } },
-        ruleSet: { select: { mealBreakMinutes: true, mealBreakAfterMinutes: true } },
+        shift: { select: { startTime: true, endTime: true, workDays: true, mealConfig: true } },
       },
     }),
   ]);
@@ -33,7 +33,7 @@ export default async function RequestLeavePage() {
   return (
     <RequestLeaveForm
       leaveTypes={result.data}
-      shift={employee?.shift ? { ...employee.shift, ...employee.ruleSet } : null}
+      shift={employee?.shift ? shiftInfo(employee.shift) : null}
     />
   );
 }

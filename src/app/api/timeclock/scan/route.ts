@@ -3,6 +3,8 @@ import { findEmployeeIdentityByBadge } from "@/lib/utils/badge-lookup";
 import { kioskScanSchema } from "@/lib/validators/punch.schema";
 import { parseScanTime } from "@/lib/utils/scan-time";
 import { recordScanEvent } from "@/lib/services/scan-event.service";
+import { tabletTimeZone } from "@/lib/utils/tablet-time-zone";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * Security-gate scan ingest.
@@ -69,7 +71,10 @@ export async function POST(req: NextRequest) {
 
   let scanTime: Date;
   try {
-    scanTime = parseScanTime(ScanDateTime, employee?.site.timezone ?? "America/New_York");
+    scanTime = parseScanTime(
+      ScanDateTime,
+      await tabletTimeZone({ warehouse: Warehouse, deviceName: DeviceName, personTimeZone: employee ? personTimeZone(employee) : null }),
+    );
   } catch {
     return NextResponse.json(
       { success: false, error: `Invalid ScanDateTime: ${ScanDateTime}` },

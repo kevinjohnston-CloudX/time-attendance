@@ -13,6 +13,7 @@ import { getReasonCodes } from "@/actions/reason-code.actions";
 import { TimecardViewer } from "@/components/payroll/timecard-viewer";
 import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { Users } from "lucide-react";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * Timecards, as the portal design lays it out: the list template for choosing
@@ -152,7 +153,7 @@ export default async function TimecardsPage({
   const sheetRefsRead = Promise.all([
     getPayCodes({}),
     getReasonCodes(),
-    db.employee.findUnique({ where: { id: selectedEmployeeId }, select: { site: { select: { timezone: true } } } }),
+    db.employee.findUnique({ where: { id: selectedEmployeeId }, select: { timeZone: true, site: { select: { timezone: true } } } }),
   ]);
   sheetRefsRead.catch(() => {});
 
@@ -234,9 +235,6 @@ export default async function TimecardsPage({
             ? { mealConfig: timecard.employee.shift.mealConfig as { autoDeduct?: boolean; meals?: { workAtLeastHours: number; deductMinutes: number }[] } | null }
             : null,
           ruleSet: {
-            autoDeductMeal: timecard.employee.ruleSet.autoDeductMeal,
-            mealBreakMinutes: timecard.employee.ruleSet.mealBreakMinutes,
-            mealBreakAfterMinutes: timecard.employee.ruleSet.mealBreakAfterMinutes,
             overtimeRequiresAuth: timecard.employee.ruleSet.overtimeRequiresAuth,
             allowTimesheetOtAuth: timecard.employee.ruleSet.allowTimesheetOtAuth,
             defaultPayCodeId: timecard.employee.ruleSet.defaultPayCodeId ?? null,
@@ -307,7 +305,7 @@ export default async function TimecardsPage({
         employees={employees}
         selectedEmployeeId={selectedEmployeeId}
         timecard={serializedTimecard}
-        siteTimezone={siteOfEmployee?.site?.timezone ?? null}
+        siteTimezone={siteOfEmployee ? personTimeZone(siteOfEmployee) : null}
         payFrequency={payFrequency}
         userRole={session.user.role ?? "EMPLOYEE"}
         readOnly={!canEdit}

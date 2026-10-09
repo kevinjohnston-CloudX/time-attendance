@@ -4,6 +4,7 @@ import { snapToLocalTime } from "@/lib/utils/date";
 import type { OracleGateScanRow } from "./gate-state-sync.service";
 import { recordScanEvent } from "./scan-event.service";
 import { SyncTally } from "./sync-run.service";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * Fills in gate crossings that happened at a reader CloudTime is not connected
@@ -82,7 +83,7 @@ export async function applyGateReconBatch(
       continue;
     }
 
-    const timezone = employee.site?.timezone ?? "America/New_York";
+    const timezone = personTimeZone(employee);
     const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(now);
     const todayStart = snapToLocalTime("00:00", localDate, timezone);
 

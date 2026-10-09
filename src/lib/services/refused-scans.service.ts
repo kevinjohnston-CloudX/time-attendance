@@ -4,6 +4,7 @@ import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { computeRoundedTime } from "@/lib/utils/date";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * Time clock scans refused because nobody held the badge yet, and turning
@@ -68,6 +69,7 @@ async function loadEmployee(tenantId: string, employeeId: string) {
       ruleSet: true,
       ruleSetId: true,
       shift: { select: { startTime: true, endTime: true, workDays: true } },
+      timeZone: true,
       site: { select: { timezone: true } },
     },
   });
@@ -128,7 +130,7 @@ export async function getRefusedScans(
     db.payPeriod.findFirst({ where: { id: payPeriodId, tenantId }, select: { startDate: true, endDate: true } }),
   ]);
   if (!emp || !period) return null;
-  const tz = emp.site?.timezone || "America/New_York";
+  const tz = personTimeZone(emp);
 
   const rows = await refusedRows(tenantId, emp, period.startDate, period.endDate);
 
@@ -190,7 +192,7 @@ export async function recoverRefusedScans(
     throw new RecoverError("This timecard is locked or approved for pay. Reopen it to add punches.");
   }
 
-  const tz = emp.site?.timezone || "UTC";
+  const tz = personTimeZone(emp, "UTC");
   const planned = input.items
     .map((i) => {
       const r = byId.get(i.scanId)!;

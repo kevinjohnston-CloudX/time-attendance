@@ -6,6 +6,7 @@ import { PunchHistoryTable } from "@/components/time/punch-history-table";
 import { Card, LinkButton, PageHeader, Toolbar } from "@/components/ui";
 import { format, addDays } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * Punch History, on the portal design's list template: header, a toolbar
@@ -30,11 +31,11 @@ export default async function PunchHistoryPage() {
   // Resolve the employee's rule set so we find the right pay period
   const employee = await db.employee.findUnique({
     where: { id: employeeId },
-    select: { ruleSetId: true, tenantId: true, site: { select: { timezone: true } } },
+    select: { ruleSetId: true, tenantId: true, timeZone: true, site: { select: { timezone: true } } },
   });
 
   const payPeriod = employee
-    ? await findOpenPayPeriod(employee.tenantId, employee.ruleSetId, { timezone: employee.site?.timezone })
+    ? await findOpenPayPeriod(employee.tenantId, employee.ruleSetId, { timezone: personTimeZone(employee) })
     : null;
 
   const punches = payPeriod

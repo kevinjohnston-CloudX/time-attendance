@@ -385,7 +385,7 @@ export function ShiftEditor({ shift, payCodes }: { shift: ShiftRow | null; payCo
           <span style={words}>to</span>
           <Num value={meal.maxMealMinutes ?? 0} onChange={(e) => setM("maxMealMinutes", parseInt(e.target.value) || 0)} min={0} max={480} width={80} unit="min" aria-label="Longest meal gap" />
         </Row>
-        <Row label="Short meals" hint="Otherwise a meal shorter than the rule set's meal length is deducted as the full length.">
+        <Row label="Short meals" hint="Otherwise a meal shorter than the shift's meal length is deducted as the full length.">
           <Tick
             checked={!!meal.disableMinDeduction}
             onChange={(v) => setM("disableMinDeduction", v)}
@@ -395,12 +395,18 @@ export function ShiftEditor({ shift, payCodes }: { shift: ShiftRow | null; payCo
         <Row label="Automatic meal">
           <span className="flex flex-col gap-2.5">
             <Tick checked={!!meal.autoDeduct} onChange={(v) => setM("autoDeduct", v)} label="Take a meal off automatically" />
-            {meal.autoDeduct && (
+            {meal.autoDeduct ? (
               <span className="flex flex-wrap items-center gap-2" style={words}>
                 <span>Take off</span>
                 <Num value={firstMeal.deductMinutes} onChange={(e) => setMealRow(0, { deductMinutes: parseInt(e.target.value) || 0 })} min={0} width={80} aria-label="Minutes taken off" />
                 <span>min once someone has worked</span>
                 <Num value={firstMeal.workAtLeastHours} onChange={(e) => setMealRow(0, { workAtLeastHours: parseFloat(e.target.value) || 0 })} min={0} step={0.25} width={80} unit="hours" aria-label="Hours worked first" />
+              </span>
+            ) : (
+              <span className="flex flex-wrap items-center gap-2" style={words}>
+                <span>Meal length</span>
+                <Num value={firstMeal.deductMinutes} onChange={(e) => setMealRow(0, { deductMinutes: parseInt(e.target.value) || 0 })} min={0} width={80} unit="min" aria-label="Meal length" />
+                <span>Punched, not taken off. A full day of leave is the shift less this.</span>
               </span>
             )}
           </span>
@@ -680,7 +686,7 @@ function OtherMealRules({
           </Select>
         </span>
       </Row>
-      <Row label="Meals in a day" hint="Only the first meal's minutes and hours are used, and only when a meal is taken off automatically.">
+      <Row label="Meals in a day" hint="Only the first meal is used: taken off automatically when that is on, and taken off a full day of leave either way.">
         <span className="flex w-full flex-col gap-2">
           {MEALS.map((label, i) => {
             const m = meal.meals?.[i] ?? { mealBeforeHours: 0, workAtLeastHours: 0, deductMinutes: 0 };

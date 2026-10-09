@@ -1,6 +1,7 @@
 import { parseISO, getYear, differenceInMonths } from "date-fns";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { shiftMeal } from "@/lib/shift-meal";
 import { validateLeaveTransition } from "@/lib/state-machines/leave-state";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
 import { reverseLeaveUsage } from "@/lib/engines/accrual-engine";
@@ -47,8 +48,7 @@ export async function createLeaveRequestCore(
   const employee = await db.employee.findUniqueOrThrow({
     where: { id: employeeId },
     select: {
-      shift: { select: { startTime: true, endTime: true } },
-      ruleSet: { select: { mealBreakMinutes: true, mealBreakAfterMinutes: true } },
+      shift: { select: { startTime: true, endTime: true, mealConfig: true } },
       siteId: true,
       payCategory: {
         select: {
@@ -69,8 +69,10 @@ export async function createLeaveRequestCore(
 
   const shiftStartMins    = employee.shift ? timeToMins(employee.shift.startTime) : 9 * 60;
   const shiftEndMins      = employee.shift ? timeToMins(employee.shift.endTime)   : 17 * 60;
-  const mealBreakMins     = employee.ruleSet?.mealBreakMinutes     ?? 0;
-  const mealBreakAfter    = employee.ruleSet?.mealBreakAfterMinutes ?? 300;
+  // A full day is the shift less its meal, punched or taken off automatically.
+  const meal              = shiftMeal(employee.shift?.mealConfig);
+  const mealBreakMins     = meal.minutes;
+  const mealBreakAfter    = meal.afterMinutes;
   const mealBreakStart    = shiftStartMins + mealBreakAfter;
   const mealBreakEnd      = mealBreakStart + mealBreakMins;
 

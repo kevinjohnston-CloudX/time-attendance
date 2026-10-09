@@ -4,6 +4,7 @@ import { findOpenPayPeriod } from "@/lib/utils/punch-helpers";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { writeAuditLog } from "@/lib/audit/logger";
 import type { RuleSet } from "@prisma/client";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /** How far back a rule set change reaches: open timecards ending within this many days. */
 const REACH_DAYS = 35;
@@ -32,9 +33,9 @@ const REACH_DAYS = 35;
 export async function moveTimecardsToRuleSet(employeeId: string, ruleSet: RuleSet, actorId: string | null): Promise<void> {
   const employee = await db.employee.findUniqueOrThrow({
     where: { id: employeeId },
-    select: { tenantId: true, site: { select: { timezone: true } } },
+    select: { tenantId: true, timeZone: true, site: { select: { timezone: true } } },
   });
-  const timezone = employee.site?.timezone ?? "America/New_York";
+  const timezone = personTimeZone(employee);
   const ownSchedule = Boolean(ruleSet.payFrequency && ruleSet.payPeriodAnchorDate);
   const dayOf = (at: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(at);
 

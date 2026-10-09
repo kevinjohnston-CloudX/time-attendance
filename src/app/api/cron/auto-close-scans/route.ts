@@ -116,7 +116,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     )
     SELECT l."employeeId", l."tenantId", l."badgeCode", l."stream",
            l."scanTime", l."direction", l."site",
-           si."timezone", u."name"
+           COALESCE(e."timeZone", si."timezone") AS "timezone", u."name"
     FROM   latest l
     JOIN   "employees" e  ON e."id" = l."employeeId"
     LEFT   JOIN "sites" si ON si."id" = e."siteId"

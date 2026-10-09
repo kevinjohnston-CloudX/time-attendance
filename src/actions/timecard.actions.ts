@@ -148,9 +148,6 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
             shift: { select: { mealConfig: true } },
             ruleSet: {
               select: {
-                autoDeductMeal: true,
-                mealBreakMinutes: true,
-                mealBreakAfterMinutes: true,
                 overtimeRequiresAuth: true,
                 allowTimesheetOtAuth: true,
                 defaultPayCodeId: true,
@@ -324,9 +321,6 @@ export const getTimecardDetail = withRBAC(
             shift: { select: { mealConfig: true } },
             ruleSet: {
               select: {
-                autoDeductMeal: true,
-                mealBreakMinutes: true,
-                mealBreakAfterMinutes: true,
                 overtimeRequiresAuth: true,
                 allowTimesheetOtAuth: true,
                 defaultPayCodeId: true,

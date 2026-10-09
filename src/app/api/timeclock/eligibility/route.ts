@@ -4,6 +4,7 @@ import { badgeWhere } from "@/lib/utils/badge-lookup";
 import { shownNameOrNull } from "@/lib/utils/shown-name";
 import { recordGateRefusal } from "@/lib/presence/gate-refusals.service";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * May this badge scan right now, and who is it?
@@ -101,6 +102,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       wmsName: true,
       user: { select: { name: true } },
       department: { select: { name: true } },
+      timeZone: true,
       site: { select: { timezone: true, gateScanMode: true } },
     },
   });
@@ -112,7 +114,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ success: true, found: false, badge });
   }
 
-  const timezone = employee.site?.timezone ?? "America/New_York";
+  const timezone = personTimeZone(employee);
   const today = localDate(new Date(), timezone);
 
   const scheduleDay = await db.scheduleDay.findFirst({

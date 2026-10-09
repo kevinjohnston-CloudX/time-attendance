@@ -44,6 +44,7 @@ import { PhotoEditor } from "@/components/presence/photo-editor";
 import styles from "./employee-record.module.css";
 import { PayRatesTable } from "./pay-rates-table";
 import type { PayRateRow } from "@/actions/pay-rate.actions";
+import { TIME_ZONE_OPTIONS, timeZoneLabel } from "@/lib/utils/person-time-zone";
 
 /**
  * The employee record. It opens to read: every section shows its values as
@@ -130,6 +131,8 @@ type Values = {
   agencyId: string;
   customRoleId: string;
   siteId: string;
+  /** The person's own time zone; empty means the site's. */
+  timeZone: string;
   departmentId: string;
   supervisorId: string;
   status: "active" | "on-leave" | "inactive";
@@ -357,6 +360,7 @@ export function EditEmployeeForm({
       agencyId: employee.agencyId ?? "",
       customRoleId: roleId,
       siteId: employee.siteId,
+      timeZone: employee.timeZone ?? "",
       departmentId: employee.departmentId,
       supervisorId: employee.supervisorId ?? "",
       status: !employee.isActive ? "inactive" : employee.onLeave ? "on-leave" : "active",
@@ -526,6 +530,7 @@ export function EditEmployeeForm({
         case "agencyId":
         case "adjustedHireDate":
         case "terminatedAt":
+        case "timeZone":
           out[k] = val || null;
           break;
         default:
@@ -585,6 +590,7 @@ export function EditEmployeeForm({
 
   // ── Display lookups ───────────────────────────────────────────────
   const siteName = (id: string) => sites.find((s) => s.id === id)?.name ?? "";
+  const siteZone = (id: string) => sites.find((s) => s.id === id)?.timezone ?? employee.site.timezone;
   const deptName = (id: string) =>
     departments.find((d) => d.id === id)?.name ?? (id === employee.departmentId ? employee.department.name : "");
   const supervisorName = (id: string) =>
@@ -896,6 +902,20 @@ export function EditEmployeeForm({
                 </Field>
                 <Field label="Site" htmlFor="f-siteId" read={siteName(v.siteId) || employee.site.name}>
                   {pick("siteId", sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>))}
+                </Field>
+                <Field
+                  label="Time zone"
+                  htmlFor="f-timeZone"
+                  read={v.timeZone ? timeZoneLabel(v.timeZone) : `Site's (${timeZoneLabel(siteZone(v.siteId))})`}
+                >
+                  {pick(
+                    "timeZone",
+                    <>
+                      <option value="">Site's ({timeZoneLabel(siteZone(v.siteId))})</option>
+                      {TIME_ZONE_OPTIONS.map((z) => <option key={z.value} value={z.value}>{z.label}</option>)}
+                      {v.timeZone && !TIME_ZONE_OPTIONS.some((z) => z.value === v.timeZone) && <option value={v.timeZone}>{v.timeZone}</option>}
+                    </>,
+                  )}
                 </Field>
                 <Field label="Department" htmlFor="f-departmentId" read={deptName(v.departmentId)}>
                   {pick(

@@ -11,6 +11,7 @@ import { setTemporaryPassword } from "@/actions/password.actions";
 import type { PayRateRow } from "@/actions/pay-rate.actions";
 import { PayRatesTable } from "@/classic/components/admin/pay-rates-table";
 import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
+import { TIME_ZONE_OPTIONS, timeZoneLabel } from "@/lib/utils/person-time-zone";
 
 // The user row arrives without its password fields (the shared action only
 // sends id, name and email), which is all this form reads.
@@ -135,6 +136,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       email: fd.get("email") as string,
       customRoleId: (fd.get("customRoleId") as string) || null,
       siteId: fd.get("siteId") as string,
+      timeZone: (fd.get("timeZone") as string) || null,
       departmentId: fd.get("departmentId") as string,
       supervisorId: (fd.get("supervisorId") as string) || null,
       isActive: fd.get("status") !== "inactive",
@@ -301,6 +303,15 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
                 className={inputCls}
               >
                 {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className={labelCls}>Time Zone</label>
+              <select name="timeZone" defaultValue={employee.timeZone ?? ""} className={inputCls}>
+                <option value="">Site&apos;s ({timeZoneLabel(sites.find((s) => s.id === selectedSiteId)?.timezone ?? employee.site.timezone)})</option>
+                {TIME_ZONE_OPTIONS.map((z) => <option key={z.value} value={z.value}>{z.label}</option>)}
+                {employee.timeZone && !TIME_ZONE_OPTIONS.some((z) => z.value === employee.timeZone) && <option value={employee.timeZone}>{employee.timeZone}</option>}
               </select>
             </div>
 

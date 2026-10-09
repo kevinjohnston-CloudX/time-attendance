@@ -98,6 +98,12 @@ export const updateEmployeeSchema = z.object({
     z.literal(""),
     z.null(),
   ]).optional().transform((v) => (v === undefined ? undefined : v || null)),
+  // The person's own time zone; empty means the site's.
+  timeZone: z.union([
+    z.string().refine((z) => { try { new Intl.DateTimeFormat("en-US", { timeZone: z }); return true; } catch { return false; } }, "Pick a time zone from the list"),
+    z.literal(""),
+    z.null(),
+  ]).optional().transform((v) => (v === undefined ? undefined : v || null)),
   // Pay
   payType: z.enum(["HOURLY", "SALARY"]).nullable().optional(),
   payTypeId: nullableStr,

@@ -29,6 +29,7 @@ import {
   type PunchStateValue,
   type TimesheetStatusValue,
 } from "@/lib/state-machines/labels";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * The dashboard, as the portal design lays it out.
@@ -113,7 +114,7 @@ export default async function DashboardPage({
     employeeId
       ? db.employee.findUnique({
           where: { id: employeeId },
-          select: { site: { select: { name: true, timezone: true } } },
+          select: { timeZone: true, site: { select: { name: true, timezone: true } } },
         })
       : null,
 
@@ -126,7 +127,7 @@ export default async function DashboardPage({
   // server's clock is UTC in production, so formatting the instant directly showed
   // the Live time four or five hours ahead and the next day's date after 8 PM.
   // Same zone and fallback as Team Overview.
-  const siteZone = me?.site?.timezone || "America/New_York";
+  const siteZone = personTimeZone(me);
   const siteNow = toSiteClock(now, siteZone);
 
   // ── The cards, and the periods either side of this one ────────────────────

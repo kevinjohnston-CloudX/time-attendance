@@ -169,6 +169,10 @@ model Employee {
   userDate2        DateTime?  /// Custom configurable date field
   dateOfBirth      DateTime?
   terminatedAt     DateTime?
+  /// The person's own time zone (IANA, e.g. "America/Los_Angeles"), for someone
+  /// who works in another zone than their site, such as a Rey 11 person in
+  /// California. Null means the site's zone, which is everyone else.
+  timeZone         String?
 
   // Work info
   jobTitle          String?

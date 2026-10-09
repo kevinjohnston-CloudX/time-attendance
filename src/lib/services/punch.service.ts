@@ -11,6 +11,7 @@ import {
 import { validateTransition } from "@/lib/state-machines/punch-state";
 import { recordPunchSchema } from "@/lib/validators/punch.schema";
 import type { PunchSource, Punch } from "@prisma/client";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 interface PunchServiceContext {
   employeeId: string;
@@ -34,7 +35,7 @@ export async function recordPunchCore(
     },
   });
 
-  const payPeriod = await findOpenPayPeriod(tenantId, employee.ruleSetId, { timezone: employee.site?.timezone });
+  const payPeriod = await findOpenPayPeriod(tenantId, employee.ruleSetId, { timezone: personTimeZone(employee) });
   if (!payPeriod) {
     await saveRejectedPunch({ employeeId, timesheetId: null, punchType, source, stateBefore: "OUT", rejectionReason: "No active pay period" });
     throw new Error("No active pay period. Contact payroll.");
@@ -60,7 +61,7 @@ export async function recordPunchCore(
     punchType,
     employee.ruleSet,
     employee.shift,
-    employee.site?.timezone ?? "UTC",
+    personTimeZone(employee, "UTC"),
   );
 
   const punch = await db.$transaction(async (tx) => {

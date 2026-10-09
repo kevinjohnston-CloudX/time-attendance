@@ -20,6 +20,8 @@ import { currentIdentity } from "@/lib/rbac/current";
 import { employeeRank, forgetIdentity, type LiveIdentity } from "@/lib/rbac/identity";
 import { ROLE_RANK, isValidRole, givesLiveAttendanceRoles } from "@/lib/rbac/roles";
 import { todayKey } from "@/lib/pay-rates";
+import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
+import { rebuildSegments } from "@/lib/engines/segment-builder";
 
 // Maps system custom role names to their legacy enum values
 /**
@@ -118,10 +120,10 @@ function calendarDay(day: string): Date {
   return new Date(day + "T00:00:00.000Z");
 }
 
-/** Today's date at the employee's site, as yyyy-MM-dd. */
-async function siteToday(siteId: string | null): Promise<string> {
-  const site = siteId ? await db.site.findUnique({ where: { id: siteId }, select: { timezone: true } }) : null;
-  return new Intl.DateTimeFormat("en-CA", { timeZone: site?.timezone ?? "America/New_York" }).format(new Date());
+/** Today's date for the employee (their own time zone, else their site's), as yyyy-MM-dd. */
+async function siteToday(siteId: string | null, ownZone?: string | null): Promise<string> {
+  const site = siteId && !ownZone ? await db.site.findUnique({ where: { id: siteId }, select: { timezone: true } }) : null;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: personTimeZone({ timeZone: ownZone, site }) }).format(new Date());
 }
 
 /** Decimal money columns as plain numbers, so the record can reach a client component. */
@@ -475,7 +477,7 @@ export const updateEmployee = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: UpdateEmployeeInput) => {
     const {
       employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, payTypeId, isActive, onLeave, wmsId, barcode, adpWorkerId,
-      adjustedHireDate, jobTitle, jobTitleId, agencyId, terminationReason, terminatedAt: terminatedAtInput, payType, payRate, chargeRate, holidayRate, overtimeRate,
+      adjustedHireDate, jobTitle, jobTitleId, agencyId, terminationReason, terminatedAt: terminatedAtInput, timeZone, payType, payRate, chargeRate, holidayRate, overtimeRate,
       phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
       address1, address2, city, state, country, zipCode,
@@ -500,9 +502,9 @@ export const updateEmployee = withRBAC(
     if (willBeActive) {
       if (currentTermDay) terminatedAt = null;
     } else if (terminatedAtInput !== undefined) {
-      terminatedAt = terminatedAtInput ?? (currentTermDay || (await siteToday(current.siteId)));
+      terminatedAt = terminatedAtInput ?? (currentTermDay || (await siteToday(current.siteId, current.timeZone)));
     } else if (current.isActive) {
-      terminatedAt = await siteToday(current.siteId);
+      terminatedAt = await siteToday(current.siteId, current.timeZone);
     }
     if (terminatedAt !== undefined && terminatedAt === currentTermDay) terminatedAt = undefined;
 
@@ -600,6 +602,7 @@ export const updateEmployee = withRBAC(
           ...(agencyId !== undefined && { agencyRef: agencyId ? { connect: { id: agencyId } } : { disconnect: true } }),
           ...(terminationReason !== undefined && { terminationReason }),
           ...(terminatedAt !== undefined && { terminatedAt: terminatedAt ? new Date(terminatedAt + "T00:00:00.000Z") : null }),
+          ...(timeZone !== undefined && { timeZone }),
           ...(payType !== undefined && { payType }),
           ...(payRate !== undefined && { payRate }),
           ...(chargeRate !== undefined && { chargeRate }),
@@ -694,6 +697,7 @@ export const updateEmployee = withRBAC(
     if (moneyChanges(chargeRate, current.chargeRate)) diff("Charge Rate", usd(current.chargeRate), usd(chargeRate));
     if (moneyChanges(holidayRate, current.holidayRate)) diff("Holiday Rate", usd(current.holidayRate), usd(holidayRate));
     if (moneyChanges(overtimeRate, current.overtimeRate)) diff("Overtime Rate", usd(current.overtimeRate), usd(overtimeRate));
+    if (timeZone !== undefined) diff("Time Zone", current.timeZone ? timeZoneLabel(current.timeZone) : "Site's time zone", timeZone ? timeZoneLabel(timeZone) : "Site's time zone");
     if (phone !== undefined) diff("Phone 1", decCurrent.phone, phone);
     if (phone2 !== undefined) diff("Phone 2", decCurrent.phone2, phone2);
     if (gender !== undefined) diff("Gender", decCurrent.gender, gender);
@@ -858,6 +862,16 @@ export const updateEmployee = withRBAC(
         action: "EMPLOYEE_UPDATED",
         changes: { fields: fieldChanges },
       });
+    }
+
+    // A new time zone moves where their days start and end: their open
+    // timecards are recalculated now rather than at their next punch.
+    if (timeZone !== undefined && timeZone !== current.timeZone) {
+      const open = await db.timesheet.findMany({
+        where: { employeeId, status: { notIn: ["LOCKED", "PAYROLL_APPROVED"] }, payPeriod: { status: "OPEN" } },
+        select: { id: true, employee: { select: { ruleSet: true } } },
+      });
+      for (const t of open) await rebuildSegments(t.id, t.employee.ruleSet).catch(() => {});
     }
 
     // A role or status change reaches their next click, not the next cache refresh.

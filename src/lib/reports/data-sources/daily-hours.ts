@@ -4,6 +4,7 @@ import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, sortRowsInMemory, type FieldMap } from "../query-builder";
 import { periodDayRange } from "@/lib/pay-period-days";
 import type { ReportConfig } from "@/lib/validators/report.schema";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "timesheet.employee.user.name",       type: "string" },
@@ -111,7 +112,7 @@ export const dailyHoursSource: DataSourceDefinition = {
         );
         dayMap.set(key, {
           employeeId: seg.timesheet.employeeId,
-          timezone: seg.timesheet.employee.site.timezone,
+          timezone: personTimeZone(seg.timesheet.employee),
           isSalary: seg.timesheet.employee.payType === "SALARY",
           employeeName: seg.timesheet.employee.user?.name ?? seg.timesheet.employee.employeeCode,
           employeeCode: seg.timesheet.employee.wmsId ?? seg.timesheet.employee.employeeCode,
@@ -298,6 +299,7 @@ async function addDaysWithoutHours(
       id: true, wmsId: true, employeeCode: true, payType: true,
       user: { select: { name: true } },
       department: { select: { name: true } },
+      timeZone: true,
       site: { select: { name: true, timezone: true } },
     },
   });
@@ -320,7 +322,7 @@ async function addDaysWithoutHours(
     },
     select: { employeeId: true, roundedTime: true },
   });
-  for (const p of clockIns) add(p.employeeId, siteDay(p.roundedTime, byId.get(p.employeeId)!.site.timezone));
+  for (const p of clockIns) add(p.employeeId, siteDay(p.roundedTime, personTimeZone(byId.get(p.employeeId))));
 
   // Absences. They are stamped at noon UTC on their day, so the UTC date is the day.
   const absences = await db.exception.findMany({
@@ -347,7 +349,7 @@ async function addDaysWithoutHours(
     const e = byId.get(employeeId)!;
     dayMap.set(key, {
       employeeId,
-      timezone: e.site.timezone,
+      timezone: personTimeZone(e),
       isSalary: e.payType === "SALARY",
       employeeName: e.user?.name ?? e.employeeCode,
       employeeCode: e.wmsId ?? e.employeeCode,

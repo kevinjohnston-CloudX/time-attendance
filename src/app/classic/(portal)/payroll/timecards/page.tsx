@@ -12,6 +12,7 @@ import {
 import { getPayCodes } from "@/actions/pay-code.actions";
 import { getReasonCodes } from "@/actions/reason-code.actions";
 import { TimecardViewer } from "@/classic/components/payroll/timecard-viewer";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 export default async function TimecardsPage({
   searchParams,
@@ -129,7 +130,7 @@ export default async function TimecardsPage({
   const [payCodesResult, reasonCodesResult, siteOfEmployee] = await Promise.all([
     getPayCodes({}),
     getReasonCodes(),
-    db.employee.findUnique({ where: { id: selectedEmployeeId }, select: { site: { select: { timezone: true } } } }),
+    db.employee.findUnique({ where: { id: selectedEmployeeId }, select: { timeZone: true, site: { select: { timezone: true } } } }),
   ]);
   const payCodes = payCodesResult.success ? payCodesResult.data : [];
   const reasonCodes = reasonCodesResult.success ? reasonCodesResult.data : [];
@@ -174,9 +175,6 @@ export default async function TimecardsPage({
             ? { mealConfig: timecard.employee.shift.mealConfig as { autoDeduct?: boolean; meals?: { workAtLeastHours: number; deductMinutes: number }[] } | null }
             : null,
           ruleSet: {
-            autoDeductMeal: timecard.employee.ruleSet.autoDeductMeal,
-            mealBreakMinutes: timecard.employee.ruleSet.mealBreakMinutes,
-            mealBreakAfterMinutes: timecard.employee.ruleSet.mealBreakAfterMinutes,
             overtimeRequiresAuth: timecard.employee.ruleSet.overtimeRequiresAuth,
             allowTimesheetOtAuth: timecard.employee.ruleSet.allowTimesheetOtAuth,
             defaultPayCodeId: timecard.employee.ruleSet.defaultPayCodeId ?? null,
@@ -242,7 +240,7 @@ export default async function TimecardsPage({
         employees={employees}
         selectedEmployeeId={selectedEmployeeId}
         timecard={serializedTimecard}
-        siteTimezone={siteOfEmployee?.site?.timezone ?? null}
+        siteTimezone={siteOfEmployee ? personTimeZone(siteOfEmployee) : null}
         payFrequency={payFrequency}
         userRole={session.user.role ?? "EMPLOYEE"}
         readOnly={!canEdit}

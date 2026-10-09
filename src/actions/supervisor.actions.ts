@@ -23,6 +23,7 @@ import type { Role } from "@/lib/rbac/roles";
 import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import { dayRange, readOpenExceptions } from "@/lib/exceptions/read-open-exceptions";
 import type { PunchState, PunchType } from "@prisma/client";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 const PAYROLL_ROLES: Role[] = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"];
 
@@ -259,8 +260,8 @@ export const addMissingPunchForEmployee = withRBAC(
       },
     });
 
-    const { ruleSet, shift, site } = timesheet.employee;
-    const roundedTime = computeRoundedTime(punchTime, punchType, ruleSet, shift, site?.timezone ?? "UTC");
+    const { ruleSet, shift } = timesheet.employee;
+    const roundedTime = computeRoundedTime(punchTime, punchType, ruleSet, shift, personTimeZone(timesheet.employee, "UTC"));
 
     await db.$transaction(async (tx) => {
       await tx.punch.create({

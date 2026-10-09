@@ -493,6 +493,7 @@ function MealTab({ cfg, onChange }: { cfg: MealConfig; onChange: (c: MealConfig)
         </div>
         <p className="mt-2 text-[10px] text-zinc-400">
           Meal Before = meal window starts before scheduled end. Work At Least = minimum hours worked to trigger deduction.
+          Meal 1&apos;s Deduct minutes also set a full day of leave (the shift less them), even when meals are punched and not deducted.
         </p>
       </div>
 

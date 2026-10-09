@@ -6,6 +6,8 @@ import { startOfDayInTz, nextMidnightInTz, endOfDayInTz, roundDurationMinutes } 
 import { periodBoundsInZone, periodDateBounds } from "@/lib/pay-period-days";
 import type { Punch, RuleSet, PayBucket, SegmentType, HolidayCreditMethod } from "@prisma/client";
 import type { MealConfig } from "@/actions/shift.actions";
+import { shiftMeal as shiftMealOf } from "@/lib/shift-meal";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 type MealPremiumRowCfg = {
   applyFromMinutes: number;    // window start relative to shift start (minutes)
@@ -244,7 +246,7 @@ function applyMealPunchValidation(
 /**
  * For NJ-style auto-deduct employees: after computing segments from punches,
  * inject a synthetic MEAL segment on any day where the employee worked more
- * than ruleSet.mealBreakAfterMinutes, unless that day is in waivedDates.
+ * than the shift's meal hours (mealBreakAfterMinutes), unless that day is in waivedDates.
  *
  * The MEAL is inserted at the mealBreakAfterMinutes mark from the first
  * WORK segment's start time, splitting that segment in two.
@@ -847,6 +849,7 @@ export async function rebuildSegments(
           hireDate: true,
           adjustedHireDate: true,
           dateOfBirth: true,
+          timeZone: true,
           site: { select: { timezone: true } },
           shift: {
             select: {
@@ -911,7 +914,7 @@ export async function rebuildSegments(
       payPeriod: { select: { startDate: true, endDate: true, ruleSet: { select: { payFrequency: true } }, tenant: { select: { payFrequency: true } } } },
     },
   });
-  const timezone = timesheet.employee.site?.timezone ?? "UTC";
+  const timezone = personTimeZone(timesheet.employee, "UTC");
   const tenantId = timesheet.employee.tenantId;
   const isSalary = timesheet.employee.payType === "SALARY";
 
@@ -988,24 +991,16 @@ export async function rebuildSegments(
 
   const rawSegments = computeSegments(timesheetId, punches, timezone, bounds.start, carryIn);
 
-  // Merge shift-level meal config on top of rule set defaults.
-  // When a shift is assigned, the shift's mealConfig is authoritative:
-  //   - shiftMeal.autoDeduct = true/false → use that value
-  //   - shiftMeal is null (shift assigned but no meal config saved) → no auto-deduct
-  // Only fall back to ruleSet.autoDeductMeal when no shift is assigned at all.
-  const hasShift = !!timesheet.employee.shift;
+  // Meals come from the shift alone: a shift with no meal set up, or no shift,
+  // takes nothing off. The rule set's meal fields are no longer read; they
+  // used to fill in for a shift without automatic deduction, and when no shift
+  // was assigned at all.
   const shiftMeal = timesheet.employee.shift?.mealConfig as MealConfig | null | undefined;
-  const shiftFirstMeal = shiftMeal?.meals?.[0];
-  const effectiveAutoDeductMeal = hasShift
-    ? (shiftMeal?.autoDeduct ?? false)
-    : ruleSet.autoDeductMeal;
+  const meal = shiftMealOf(shiftMeal);
+  const effectiveAutoDeductMeal = meal.autoDeduct;
   const effectiveMealCfg: EffectiveMealCfg = {
-    mealBreakAfterMinutes: shiftMeal?.autoDeduct && shiftFirstMeal
-      ? Math.round(shiftFirstMeal.workAtLeastHours * 60)
-      : ruleSet.mealBreakAfterMinutes,
-    mealBreakMinutes: shiftMeal?.autoDeduct && shiftFirstMeal
-      ? shiftFirstMeal.deductMinutes
-      : ruleSet.mealBreakMinutes,
+    mealBreakAfterMinutes: meal.afterMinutes,
+    mealBreakMinutes: meal.minutes,
     minMealMinutes: shiftMeal?.minMealMinutes ?? 0,
     maxMealMinutes: shiftMeal?.maxMealMinutes ?? Infinity,
     disableMinDeduction: shiftMeal?.disableMinDeduction ?? false,

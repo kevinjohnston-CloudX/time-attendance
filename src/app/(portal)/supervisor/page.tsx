@@ -17,6 +17,7 @@ import { getPresence } from "@/lib/dashboard/dashboard-data";
 import { getExceptionTypes, getTeamQueues, getTimeOffAhead } from "@/lib/team/team-overview";
 import { EXCEPTION_TYPE_LABEL } from "@/lib/state-machines/labels";
 import { Badge, Card, LinkButton, exceptionTone } from "@/components/ui";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * Team Overview: the screen the Team section opens on.
@@ -89,7 +90,7 @@ export default async function TeamOverviewPage() {
     employeeId
       ? db.employee.findFirst({
           where: { id: employeeId, tenantId },
-          select: { site: { select: { name: true, timezone: true } } },
+          select: { timeZone: true, site: { select: { name: true, timezone: true } } },
         })
       : null,
     userHasPermission(session.user, "PRESENCE_VIEW_ANY"),
@@ -121,7 +122,7 @@ export default async function TeamOverviewPage() {
       )
     : 0;
 
-  const timezone = me?.site?.timezone || "America/New_York";
+  const timezone = personTimeZone(me);
   const asOf = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit", hour12: true }).format(now);
 
   // ── The work queue ────────────────────────────────────────────────────────

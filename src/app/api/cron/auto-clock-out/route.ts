@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PunchState } from "@prisma/client";
 import { db } from "@/lib/db";
 import { endOfDayInTz, computeShiftExpiry } from "@/lib/utils/date";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 // Runs at 10:00 AM UTC daily (= 6:00 AM EDT) AND at 16:00 AM UTC (= 12:00 PM EDT).
 // The second run catches night-shift workers whose expansion windows close mid-morning.
@@ -51,6 +52,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           timesheetId: true,
           employee: {
             select: {
+              timeZone: true,
               site: { select: { timezone: true } },
               shift: { select: { startTime: true, endTime: true } },
               ruleSet: {
@@ -70,7 +72,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         continue;
       }
 
-      const timezone = latestPunch.employee.site?.timezone ?? "America/New_York";
+      const timezone = personTimeZone(latestPunch.employee);
       const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(latestPunch.punchTime);
       const ruleSet = latestPunch.employee.ruleSet;
       const shift = latestPunch.employee.shift;

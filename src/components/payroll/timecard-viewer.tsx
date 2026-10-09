@@ -82,6 +82,7 @@ import {
 import { RefusedScansNotice } from "@/components/payroll/refused-scans-notice";
 import { TimecardLockControl } from "@/components/payroll/timecard-lock-control";
 import grid from "./timecard.module.css";
+import { shiftMeal } from "@/lib/shift-meal";
 
 /**
  * The Timecards workspace, as the portal design lays it out.
@@ -217,7 +218,7 @@ type TimecardDetail = {
     payRate: number | null;
     payType: string | null;
     shift: { mealConfig: { autoDeduct?: boolean; minMealMinutes?: number; maxMealMinutes?: number; meals?: { workAtLeastHours: number; deductMinutes: number }[] } | null } | null;
-    ruleSet: { autoDeductMeal: boolean; mealBreakMinutes: number; mealBreakAfterMinutes: number; overtimeRequiresAuth: boolean; allowTimesheetOtAuth: boolean; defaultPayCodeId: string | null };
+    ruleSet: { overtimeRequiresAuth: boolean; allowTimesheetOtAuth: boolean; defaultPayCodeId: string | null };
   };
   punches: TimecardPunch[];
   segments: TimecardSegment[];
@@ -261,7 +262,7 @@ interface TimecardViewerProps {
   /** Page actions drawn at the end of the title row, after the pay period. */
   headerActions?: React.ReactNode;
   /**
-   * The selected employee's site time zone. Every time on the sheet is shown,
+   * The selected employee's time zone (their own, else their site's). Every time on the sheet is shown,
    * and every typed time read, in it, whoever is looking.
    */
   siteTimezone?: string | null;
@@ -715,7 +716,7 @@ export function TimecardViewer({
   const atSite = (iso: string) => toSiteClock(parseISO(iso), siteTz);
   const toMoment = (clock: Date) => fromSiteClock(clock, siteTz);
   const viewerTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const zoneNote = `Times in ${timeZoneAbbrev(siteTz)}${siteTz !== viewerTz ? " (site time)" : ""}`;
+  const zoneNote = `Times in ${timeZoneAbbrev(siteTz)}${siteTz !== viewerTz ? " (employee's time)" : ""}`;
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [exceptionFilter, setExceptionFilter] = useState("ALL");
@@ -1709,15 +1710,10 @@ export function TimecardViewer({
     });
   }
 
-  // Effective meal deduction settings: shift overrides ruleset, matching segment-builder logic.
-  const shiftMeal = timecard?.employee.shift?.mealConfig;
-  const shiftFirstMeal = shiftMeal?.meals?.[0];
-  const effectiveAutoDeductMeal = timecard
-    ? (timecard.employee.shift ? (shiftMeal?.autoDeduct ?? false) : timecard.employee.ruleSet.autoDeductMeal)
-    : false;
-  const effectiveMealBreakAfterMinutes = shiftMeal?.autoDeduct && shiftFirstMeal
-    ? Math.round(shiftFirstMeal.workAtLeastHours * 60)
-    : (timecard?.employee.ruleSet.mealBreakAfterMinutes ?? 0);
+  // Meal settings come from the shift alone, as the segment builder reads them.
+  const meal = shiftMeal(timecard?.employee.shift?.mealConfig);
+  const effectiveAutoDeductMeal = meal.autoDeduct;
+  const effectiveMealBreakAfterMinutes = meal.afterMinutes;
   // Waived premiums count: their lines carry the Waived control in the Meal column.
   const hasMealPremiums =
     (timecard?.segments.some(s => s.segmentType === "MEAL_PREMIUM") ?? false) ||
@@ -2262,7 +2258,7 @@ export function TimecardViewer({
                         is not the viewer's own zone, so a California sheet read
                         in New Jersey is not taken for Eastern. */}
                     <span aria-hidden="true">·</span>
-                    <span title={`Clock times are shown, and typed times read, in the employee's site time zone (${siteTz}).`}>
+                    <span title={`Clock times are shown, and typed times read, in the employee's time zone (${siteTz}): their own when their record sets one, else their site's.`}>
                       {zoneNote}
                     </span>
                   </p>

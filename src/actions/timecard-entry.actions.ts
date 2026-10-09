@@ -16,6 +16,7 @@ import {
 } from "@/lib/validators/timecard-entry.schema";
 import { z } from "zod";
 import type { LeaveType } from "@prisma/client";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 // ─── Get leave types for timecard entry modal ─────────────────────────────────
 
@@ -68,8 +69,8 @@ export const addManualPunchPair = withRBAC(
       throw new Error("Cannot modify a locked or approved timesheet.");
     }
 
-    const { ruleSet, shift, site } = ts.employee;
-    const tz = site?.timezone ?? "UTC";
+    const { ruleSet, shift } = ts.employee;
+    const tz = personTimeZone(ts.employee, "UTC");
     const roundedIn = computeRoundedTime(inDate, "CLOCK_IN", ruleSet, shift, tz);
     const roundedOut = computeRoundedTime(outDate, "CLOCK_OUT", ruleSet, shift, tz);
 
@@ -199,8 +200,8 @@ export const addSingleManualPunch = withRBAC(
       throw new Error("Cannot modify a locked or approved timesheet.");
     }
 
-    const { ruleSet, shift, site } = ts.employee;
-    const roundedTime = computeRoundedTime(punchDate, punchType, ruleSet, shift, site?.timezone ?? "UTC");
+    const { ruleSet, shift } = ts.employee;
+    const roundedTime = computeRoundedTime(punchDate, punchType, ruleSet, shift, personTimeZone(ts.employee, "UTC"));
 
     // Reject if another approved punch already lands at the exact same rounded time
     const conflicting = await db.punch.findFirst({
@@ -635,7 +636,7 @@ export const addManualHoursEntry = withRBAC(
       }
     } else {
       // Non-leave pay code: create a synthetic punch pair at local midnight.
-      const tz = ts.employee.site?.timezone ?? "UTC";
+      const tz = personTimeZone(ts.employee, "UTC");
       const inDate  = snapToLocalTime("00:00", date, tz);
       const outDate = new Date(inDate.getTime() + minutes * 60_000);
 

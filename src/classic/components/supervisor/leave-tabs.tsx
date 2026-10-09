@@ -17,6 +17,7 @@ import { HrApproveButtons } from "@/classic/components/supervisor/hr-approve-but
 import { LEAVE_STATUS_LABEL, LEAVE_STATUS_BADGE, type LeaveRequestStatusValue } from "@/classic/lib/labels";
 import { getTeamMembersForLeave, createLeaveRequestForEmployee } from "@/actions/leave.actions";
 import { LeaveDayPicker, type DaySelection, type ShiftInfo } from "@/classic/components/leave/leave-day-picker";
+import { shiftMeal } from "@/lib/shift-meal";
 
 interface LeaveRequestRow {
   id: string;
@@ -77,7 +78,7 @@ export function LeaveTabs({ pending, hrPending, upcoming, initialTab, canFilter,
         startTime: selectedEmployee.shift.startTime,
         endTime: selectedEmployee.shift.endTime,
         workDays: selectedEmployee.shift.workDays,
-        mealBreakMinutes: (selectedEmployee.shift.mealConfig as { deductMinutes?: number } | null)?.deductMinutes ?? null,
+        mealBreakMinutes: shiftMeal(selectedEmployee.shift.mealConfig).minutes,
       }
     : null;
 

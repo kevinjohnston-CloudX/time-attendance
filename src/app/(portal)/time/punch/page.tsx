@@ -11,6 +11,7 @@ import { formatTimeOfDay, parseUtcDate, startOfDayInTz, toSiteClock } from "@/li
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { CalendarPlus, ClipboardList, FileClock, Plane } from "lucide-react";
 import type { PunchStateValue } from "@/lib/state-machines/labels";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * The Punch Clock, as the portal design lays it out: a hero card carrying the
@@ -33,7 +34,7 @@ export default async function PunchPage() {
   const [employee, payPeriod] = await Promise.all([
     db.employee.findUnique({
       where: { id: employeeId },
-      select: { site: { select: { name: true, timezone: true } }, shift: { select: { name: true } } },
+      select: { timeZone: true, site: { select: { name: true, timezone: true } }, shift: { select: { name: true } } },
     }),
     tenantId
       ? db.payPeriod.findFirst({
@@ -52,7 +53,7 @@ export default async function PunchPage() {
   // Today, this week and what is next all follow the clock where this person
   // works. The server's own clock is UTC in production, which started the
   // next day at 8 PM Eastern. Same zone and fallback as the Dashboard.
-  const siteZone = employee?.site?.timezone || "America/New_York";
+  const siteZone = personTimeZone(employee);
 
   const [today, upcomingShifts, periodSheet, todayPunchRecords] = await Promise.all([
     getToday(employeeId, now, siteZone),

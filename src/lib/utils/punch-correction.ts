@@ -2,6 +2,7 @@ import { computeRoundedTime } from "@/lib/utils/date";
 import { writeAuditLog } from "@/lib/audit/logger";
 import type { Punch, RuleSet } from "@prisma/client";
 import type { TxClient } from "@/types/prisma";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 interface CorrectionInput {
   originalPunchId: string;
@@ -60,7 +61,7 @@ export async function createCorrectionPunch(
     original.punchType,
     original.employee.ruleSet,
     original.employee.shift,
-    original.employee.site?.timezone ?? "UTC",
+    personTimeZone(original.employee, "UTC"),
   );
 
   const correction = await tx.punch.create({

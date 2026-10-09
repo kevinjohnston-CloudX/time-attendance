@@ -11,6 +11,7 @@ import {
   getCurrentPunchState,
   findOpenPayPeriod,
 } from "@/lib/utils/punch-helpers";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 export async function GET(req: NextRequest) {
   try {
@@ -19,13 +20,13 @@ export async function GET(req: NextRequest) {
 
     const employee = await db.employee.findUnique({
       where: { id: actor.employeeId },
-      select: { ruleSetId: true, site: { select: { timezone: true } } },
+      select: { ruleSetId: true, timeZone: true, site: { select: { timezone: true } } },
     });
 
     const [punchState, payPeriod, lastPunch, leaveBalances] = await Promise.all(
       [
         getCurrentPunchState(actor.employeeId),
-        findOpenPayPeriod(actor.tenantId, employee?.ruleSetId, { timezone: employee?.site?.timezone }),
+        findOpenPayPeriod(actor.tenantId, employee?.ruleSetId, { timezone: employee ? personTimeZone(employee) : undefined }),
         db.punch.findFirst({
           where: {
             employeeId: actor.employeeId,

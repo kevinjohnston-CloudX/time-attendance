@@ -22,6 +22,7 @@ import {
 } from "@/lib/validators/punch.schema";
 import type { Punch } from "@prisma/client";
 import { PUNCH_TYPE_LABEL, type PunchTypeValue } from "@/lib/state-machines/labels";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 
 // ─── recordPunch ─────────────────────────────────────────────────────────────
@@ -62,7 +63,7 @@ export const requestMissedPunch = withRBAC(
       },
     });
 
-    const payPeriod = await findOpenPayPeriod(tenantId, employee.ruleSetId, { timezone: employee.site?.timezone });
+    const payPeriod = await findOpenPayPeriod(tenantId, employee.ruleSetId, { timezone: personTimeZone(employee) });
     if (!payPeriod) throw new Error("No active pay period. Contact payroll.");
 
     const timesheet = await findOrCreateTimesheet(employeeId, payPeriod.id);
@@ -72,7 +73,7 @@ export const requestMissedPunch = withRBAC(
       punchType,
       employee.ruleSet,
       employee.shift,
-      employee.site?.timezone ?? "UTC",
+      personTimeZone(employee, "UTC"),
     );
 
     const punch = await db.$transaction(async (tx) => {
