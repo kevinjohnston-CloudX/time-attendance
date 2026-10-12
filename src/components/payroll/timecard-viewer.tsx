@@ -1136,7 +1136,10 @@ export function TimecardViewer({
   }
 
   function handleAddPunchBlur() {
-    if (!addingPunch || !editOriginalDate || !timecard) return;
+    // No timecard yet is fine: the time is held as a pending change, and
+    // saving creates the timecard (see handleSaveChanges). Requiring one here
+    // dropped the first time typed for anyone with no punches in the period.
+    if (!addingPunch || !editOriginalDate) return;
     if (!editTimeStr.trim()) { cancelEditing(); return; }
     const parsed = parseTimeInput(editTimeStr);
     if (!parsed) { cancelEditing(); return; }
