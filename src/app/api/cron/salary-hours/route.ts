@@ -34,17 +34,22 @@ export async function GET(req: NextRequest) {
         select: { id: true, ruleSetId: true },
       });
     } else {
-      const ruleSetsWithOwnPeriod = await db.payPeriod.findMany({
+      // A rule set with a pay schedule of its own is never paid on a company
+      // period. This used to skip only rule sets with a period open at this
+      // moment, so a run in the hours before one began (NJ Exempt's periods
+      // start at 1 PM Eastern) or across a month boundary (the Netherlands'
+      // monthly ones) gave their people 80 hours on a company timecard as well.
+      const ruleSetsWithOwnPeriod = await db.ruleSet.findMany({
         where: {
           tenantId: period.tenantId,
-          ruleSetId: { not: null },
-          startDate: { lte: today },
-          endDate: { gte: today },
-          status: "OPEN",
+          OR: [
+            { payFrequency: { not: null }, payPeriodAnchorDate: { not: null } },
+            { payPeriods: { some: { startDate: { lte: today }, endDate: { gte: today }, status: "OPEN" } } },
+          ],
         },
-        select: { ruleSetId: true },
+        select: { id: true },
       });
-      const excludedRuleSetIds = ruleSetsWithOwnPeriod.map((p) => p.ruleSetId!);
+      const excludedRuleSetIds = ruleSetsWithOwnPeriod.map((r) => r.id);
       employees = await db.employee.findMany({
         where: {
           isActive: true,
