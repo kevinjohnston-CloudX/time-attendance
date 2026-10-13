@@ -40,12 +40,33 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     },
   });
 
-  const results = await Promise.allSettled(
-    timesheets.map((ts) => rebuildSegments(ts.id, ts.employee.ruleSet))
-  );
+  // A few at a time, and a failure is tried once more. All ~1,700 were started
+  // at once, which ran the database out of connections: a recalculation that
+  // failed part way left its lines rebuilt as all regular hours with the
+  // overtime step never run (9 timecards on 10/12, Martha Chauca 48.7 regular
+  // hours in a week), while the totals kept the overtime from the last good run.
+  const failed: typeof timesheets = [];
+  let processed = 0;
+  for (let i = 0; i < timesheets.length; i += CONCURRENCY) {
+    const batch = timesheets.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(batch.map((ts) => rebuildSegments(ts.id, ts.employee.ruleSet)));
+    results.forEach((r, j) => (r.status === "fulfilled" ? processed++ : failed.push(batch[j])));
+  }
+  const errors: string[] = [];
+  for (const ts of failed) {
+    try {
+      await rebuildSegments(ts.id, ts.employee.ruleSet);
+      processed++;
+    } catch (err) {
+      errors.push(ts.id);
+      console.error("detect-missing-punches: recalculation failed twice", ts.id, err);
+    }
+  }
 
-  const processed = results.filter((r) => r.status === "fulfilled").length;
-  const errors = results.filter((r) => r.status === "rejected").length;
-
-  return NextResponse.json({ total: timesheets.length, processed, errors });
+  return NextResponse.json({ total: timesheets.length, processed, retried: failed.length, errors: errors.length });
 }
+
+/** Recalculations run side by side: enough to finish in time, few enough for the connection pool. */
+const CONCURRENCY = 8;
+
+export const maxDuration = 300;
