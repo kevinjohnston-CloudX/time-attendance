@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { DAYS_BACK, addDays, clampDay } from "./days";
 import { photoUrls } from "./photos";
+import { employmentEnded, endedAmong, madeActiveAt } from "./employment";
 import { expectedHours, shiftHoursOn, SHIFT_HOURS_SELECT } from "./expected-hours";
 import { EFFECTIVE_STATE_SQL, PUNCH_CHAIN, PUNCH_CHAIN_JOINS, currentPunch } from "./effective-punch";
 import { isHere, scansElsewhere, scansHere, scansHereSql, siteOf, siteScope } from "./site-scope";
@@ -260,6 +261,8 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
           wmsId: true,
           isActive: true,
           terminatedAt: true,
+          hireDate: true,
+          adjustedHireDate: true,
           wmsName: true,
           user: { select: { name: true } },
           jobTitle: true,
@@ -270,7 +273,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       })
     : [];
 
-  const photos = await photoUrls(tenantId, employees);
+  const [photos, ended] = await Promise.all([photoUrls(tenantId, employees), endedAmong(employees, today)]);
   const people: PresencePerson[] = [];
 
   for (const emp of employees) {
@@ -364,7 +367,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       scheduledStart: schedule?.start ?? null,
       scheduledEnd: schedule?.end ?? null,
       lateMinutes,
-      inactive: !emp.isActive || emp.terminatedAt !== null,
+      inactive: ended.has(emp.id),
       homeSite: emp.site && emp.site.id !== siteId ? emp.site.name : null,
       elsewhere,
       gate: gate
@@ -464,11 +467,13 @@ export async function getPresenceDetail(
       supervisor: { select: { user: { select: { name: true } } } },
       site: { select: { id: true, name: true } },
       hireDate: true,
+      adjustedHireDate: true,
       role: true,
       customRole: { select: { name: true } },
     },
   });
   if (!emp) return null;
+  const inactive = employmentEnded(emp, today, (await madeActiveAt([emp])).get(emp.id) ?? null);
 
   const theDay = clampDay(day, today) ?? today;
   const dayStart = snapToLocalTime("00:00", theDay, timezone);
@@ -563,7 +568,7 @@ export async function getPresenceDetail(
     shift: emp.shift?.name ?? null,
     supervisor: emp.supervisor?.user?.name ?? null,
     salaried: emp.payType === "SALARY",
-    inactive: !emp.isActive || emp.terminatedAt !== null,
+    inactive,
     homeSite: emp.site && emp.site.id !== siteId ? emp.site.name : null,
     site: emp.site?.name ?? null,
     role: emp.customRole?.name ?? SYSTEM_ROLE_NAME[emp.role] ?? null,

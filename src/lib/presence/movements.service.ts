@@ -4,6 +4,7 @@ import { snapToLocalTime } from "@/lib/utils/date";
 import { addDays, clampDay } from "./days";
 import { LOOKBACK_MS, localDateString, toScan, withCurrentPunch, type ScanRow } from "./on-site.service";
 import { photoUrls } from "./photos";
+import { endedAmong } from "./employment";
 import { expectedHours, SHIFT_HOURS_SELECT } from "./expected-hours";
 import { EFFECTIVE_TYPE_SQL, PUNCH_CHAIN, PUNCH_CHAIN_JOINS } from "./effective-punch";
 import { scansElsewhere, scansHere, scansHereSql, siteOf, siteScope } from "./site-scope";
@@ -251,6 +252,8 @@ export async function getSiteDay(
           wmsId: true,
           isActive: true,
           terminatedAt: true,
+          hireDate: true,
+          adjustedHireDate: true,
           wmsName: true,
           user: { select: { name: true } },
           jobTitle: true,
@@ -261,7 +264,7 @@ export async function getSiteDay(
       })
     : [];
 
-  const photos = await photoUrls(tenantId, employees);
+  const [photos, ended] = await Promise.all([photoUrls(tenantId, employees), endedAmong(employees, day)]);
   const people: DayPerson[] = employees.map((e) => {
     // Only this site's own people are expected here; a visitor's shift is
     // their home building's business.
@@ -277,7 +280,7 @@ export async function getSiteDay(
       shift: e.shift?.name ?? null,
       photoUrl: photos.get(e.id) ?? null,
       salaried: e.payType === "SALARY",
-      inactive: !e.isActive || e.terminatedAt !== null,
+      inactive: ended.has(e.id),
       scheduledStart: schedule?.start ?? null,
       scheduledEnd: schedule?.end ?? null,
       onLeave: leaveIds.has(e.id),
