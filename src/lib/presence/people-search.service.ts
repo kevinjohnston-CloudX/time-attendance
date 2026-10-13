@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { shownNameOrNull } from "@/lib/utils/shown-name";
 import { addDays, DAYS_BACK } from "./days";
 import { photoUrls } from "./photos";
+import { endedAmong } from "./employment";
 import { localDateString } from "./on-site.service";
 import { MAX_PICKED } from "./search-limits";
 import { scansHere, siteScope } from "./site-scope";
@@ -58,6 +59,8 @@ const SELECT = {
   wmsId: true,
   isActive: true,
   terminatedAt: true,
+  hireDate: true,
+  adjustedHireDate: true,
   wmsName: true,
   user: { select: { name: true } },
   department: { select: { name: true } },
@@ -100,14 +103,19 @@ function nameOrCodeMatches(r: Row, low: string): boolean {
 }
 
 async function shape(tenantId: string, rows: Row[], withPhotos: boolean, typed?: string): Promise<PickablePerson[]> {
-  const photos = withPhotos ? await photoUrls(tenantId, rows) : new Map<string, string | null>();
+  const [photos, ended] = await Promise.all([
+    withPhotos ? photoUrls(tenantId, rows) : new Map<string, string | null>(),
+    // Today by UTC: this only marks a name in a list, and a building's own
+    // date differs from it for a few hours on a termination date at most.
+    endedAmong(rows, new Date().toISOString().slice(0, 10)),
+  ]);
   const low = typed?.trim().toLowerCase() ?? "";
   return rows.map((r) => ({
     id: r.id,
     name: shownNameOrNull(r) ?? r.employeeCode,
     employeeCode: r.employeeCode,
     department: r.department?.name ?? null,
-    inactive: !r.isActive || !!r.terminatedAt,
+    inactive: ended.has(r.id),
     photoUrl: photos.get(r.id) ?? null,
     badge: low && !nameOrCodeMatches(r, low) ? typed!.trim() : null,
   }));

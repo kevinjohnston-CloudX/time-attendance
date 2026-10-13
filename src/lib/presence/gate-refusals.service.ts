@@ -249,9 +249,12 @@ export async function getOpenGateRefusals(tenantId: string, siteId: string): Pro
     lastAt: { gte: onSince },
     dismissedAt: null,
     scheduledAt: null,
+    // Not `terminatedAt: null`: a refusal is only ever noted for someone the
+    // gate did not judge to have left (employment.ts), and somebody made
+    // Active again can still carry their old date. Status still hides a card
+    // for anyone set Inactive since.
     employee: {
       isActive: true,
-      terminatedAt: null,
       scheduleDays: { none: { workDate: day.workDate, isWorkday: true } },
     },
   };

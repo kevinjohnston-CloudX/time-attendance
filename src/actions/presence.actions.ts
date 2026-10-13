@@ -14,6 +14,7 @@ import { setScheduleDay } from "@/lib/services/schedule-sync.service";
 import { markGateRefusalScheduled, turnedAwayHereToday } from "@/lib/presence/gate-refusals.service";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { employmentEnded, madeActiveAt } from "@/lib/presence/employment";
 
 /**
  * On Site: who is in the building right now.
@@ -243,12 +244,24 @@ export const addToTodaysSchedule = withRBAC(
       const [shown, turnedAway] = await Promise.all([reachable(tenantId, input.siteId), turnedAwayHereToday(tenantId, input.siteId)]);
       const person = await db.employee.findFirst({
         where: { AND: [{ id: input.employeeId, tenantId }, { OR: turnedAway ? [shown, turnedAway] : [shown] }] },
-        select: { id: true, isActive: true, terminatedAt: true, timeZone: true, site: { select: { timezone: true } } },
+        select: {
+          id: true,
+          isActive: true,
+          terminatedAt: true,
+          hireDate: true,
+          adjustedHireDate: true,
+          timeZone: true,
+          site: { select: { timezone: true } },
+        },
       });
       if (!person) throw new Error("NOT_FOUND");
-      if (!person.isActive || person.terminatedAt) throw new Error("INACTIVE");
 
       const today = localDateString(new Date(), personTimeZone(person));
+      // The same test the gate applies (employment.ts), so loss prevention can
+      // schedule exactly the people the gate would let in once scheduled.
+      if (employmentEnded(person, today, (await madeActiveAt([person])).get(person.id) ?? null)) {
+        throw new Error("INACTIVE");
+      }
       const existing = await db.scheduleDay.findFirst({
         where: { tenantId, employeeId: person.id, workDate: new Date(`${today}T00:00:00.000Z`) },
         select: { isWorkday: true, startTime: true, endTime: true, mealMinutes: true },

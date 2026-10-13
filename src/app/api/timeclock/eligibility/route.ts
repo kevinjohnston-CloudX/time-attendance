@@ -5,6 +5,7 @@ import { shownNameOrNull } from "@/lib/utils/shown-name";
 import { recordGateRefusal } from "@/lib/presence/gate-refusals.service";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { employmentEnded, madeActiveAt } from "@/lib/presence/employment";
 
 /**
  * May this badge scan right now, and who is it?
@@ -98,6 +99,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       wmsId: true,
       isActive: true,
       terminatedAt: true,
+      hireDate: true,
+      adjustedHireDate: true,
       siteId: true,
       wmsName: true,
       user: { select: { name: true } },
@@ -165,7 +168,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       select: { id: true },
     })) !== null;
 
-  const terminated = !employee.isActive || employee.terminatedAt !== null;
+  // Status decides; a termination date only while nothing since says they came
+  // back (employment.ts). Someone made Active again is let in even when the
+  // old date was never cleared.
+  const terminated = employmentEnded(
+    employee,
+    today,
+    (await madeActiveAt([employee])).get(employee.id) ?? null,
+  );
 
   // The legacy rule, restated: a shift today, or already inside. Order matters
   // only for the reason string — a scheduled person who is also inside is
