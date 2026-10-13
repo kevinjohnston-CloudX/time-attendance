@@ -244,6 +244,28 @@ function applyMealPunchValidation(
 }
 
 /**
+ * The first time off the clock on a day that counts as a meal: a gap between
+ * two pieces of on-the-clock time (work or a paid break) that falls inside the
+ * shift's meal range ("A meal is a punch gap of 1 to 60 min"). A gap outside it
+ * is not a meal, so the automatic deduction still applies on that day.
+ */
+function punchedMealGap(
+  segments: SegmentInput[],
+  dayKey: string,
+  cfg: EffectiveMealCfg,
+): { minutes: number; after: SegmentInput } | null {
+  const onClock = segments
+    .filter((s) => (s.segmentType === "WORK" || s.segmentType === "BREAK") && format(s.segmentDate, "yyyy-MM-dd") === dayKey)
+    .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+  const min = Math.max(1, cfg.minMealMinutes);
+  for (let i = 1; i < onClock.length; i++) {
+    const minutes = Math.round((onClock[i].startTime.getTime() - onClock[i - 1].endTime.getTime()) / 60_000);
+    if (minutes >= min && minutes <= cfg.maxMealMinutes && onClock[i].segmentType === "WORK") return { minutes, after: onClock[i] };
+  }
+  return null;
+}
+
+/**
  * For NJ-style auto-deduct employees: after computing segments from punches,
  * inject a synthetic MEAL segment on any day where the employee worked more
  * than the shift's meal hours (mealBreakAfterMinutes), unless that day is in waivedDates.
@@ -251,7 +273,8 @@ function applyMealPunchValidation(
  * The MEAL is inserted at the mealBreakAfterMinutes mark from the first
  * WORK segment's start time, splitting that segment in two.
  */
-function applyAutoMealDeduction(
+/** Exported for its test. */
+export function applyAutoMealDeduction(
   segments: SegmentInput[],
   cfg: EffectiveMealCfg,
   waivedDates: Set<string>
@@ -280,6 +303,25 @@ function applyAutoMealDeduction(
         format(s.segmentDate, "yyyy-MM-dd") === dayKey
     );
     if (hasRealMeal) continue;
+
+    // A punch out and back in is the meal too, as NovaTime counts it. The
+    // tablets have no meal button, so a lunch arrives as a clock out and a
+    // clock in, and this used to take the automatic meal off on top of the
+    // lunch already off the clock. A gap inside the shift's meal range is the
+    // meal taken. Only when the shift deducts the full meal length is the rest
+    // of a shorter one taken off.
+    const gap = punchedMealGap(segments, dayKey, cfg);
+    if (gap) {
+      const short = cfg.disableMinDeduction ? 0 : cfg.mealBreakMinutes - gap.minutes;
+      if (short > 0 && gap.after.durationMinutes > short) {
+        const after = gap.after;
+        const splitMs = after.startTime.getTime() + short * 60_000;
+        toRemove.add(after);
+        extra.push({ ...after, segmentType: "MEAL", endTime: new Date(splitMs), durationMinutes: short, isPaid: false, payBucket: "UNPAID", isSplit: false });
+        toAdd.push({ ...after, startTime: new Date(splitMs), durationMinutes: after.durationMinutes - short });
+      }
+      continue;
+    }
 
     const totalWork = workSegs.reduce((s, seg) => s + seg.durationMinutes, 0);
     if (totalWork <= cfg.mealBreakAfterMinutes) continue;

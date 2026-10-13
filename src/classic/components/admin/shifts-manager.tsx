@@ -288,6 +288,9 @@ function MealTab({ cfg, onChange }: { cfg: MealConfig; onChange: (c: MealConfig)
             className={numInputCls} />{" "}
           minutes
         </p>
+        <p className="-mt-2 mb-3 text-[10px] text-zinc-400">
+          Clocking out and back in within this range is the meal, so the automatic meal is not taken off as well.
+        </p>
 
         {/* Allow Pay Reimbursement */}
         <div className="mb-2">

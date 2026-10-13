@@ -380,7 +380,7 @@ export function ShiftEditor({ shift, payCodes }: { shift: ShiftRow | null; payCo
             />
           </div>
         )}
-        <Row label="A meal is a punch gap of" hint="A shorter or longer gap is counted as worked time.">
+        <Row label="A meal is a punch gap of" hint="Clocking out and back in within this range is the meal, so the automatic meal is not taken off as well. A meal punch outside it counts as worked time.">
           <Num value={meal.minMealMinutes ?? 0} onChange={(e) => setM("minMealMinutes", parseInt(e.target.value) || 0)} min={0} max={480} width={80} aria-label="Shortest meal gap" />
           <span style={words}>to</span>
           <Num value={meal.maxMealMinutes ?? 0} onChange={(e) => setM("maxMealMinutes", parseInt(e.target.value) || 0)} min={0} max={480} width={80} unit="min" aria-label="Longest meal gap" />
