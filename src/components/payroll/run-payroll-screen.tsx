@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
-import { saveRunCodes, type RunCodes } from "@/lib/payroll/run-codes";
+import { batchLabel, saveRunCodes, type RunCodes } from "@/lib/payroll/run-codes";
 import { MultiSelectFilter } from "@/components/payroll/multi-select-filter";
 import { fmtDay, includedDates } from "@/lib/payroll/run-range";
 import { Download, Eye, Play } from "lucide-react";
@@ -16,6 +16,7 @@ import {
   type RunPreview,
 } from "@/actions/payroll-run.actions";
 import type { EpiSummary } from "@/lib/payroll/adp-epi";
+import { missingAdpCodes } from "@/lib/payroll/adp-codes";
 import { Banner, Button, Card, Checkbox, ConfirmDialog, Input, PageHeader, Select, StatCard, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
 
 type Option = { id: string; name: string };
@@ -194,10 +195,8 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
               </ul>
             )}
           </div>
-          <Input label="Co Code" required value={codes.coCode} onChange={(e) => setCode("coCode", e.target.value)} placeholder="e.g. ATW" hint="ADP company code, on every row" />
-          <Input label="Batch ID" required value={codes.batchId} onChange={(e) => setCode("batchId", e.target.value)} placeholder="e.g. BATCH1" />
-          <Input label="Double time code" value={codes.doubleTimeCode} onChange={(e) => setCode("doubleTimeCode", e.target.value)} placeholder="ADP hours code" hint="Needed when the period has double time" />
-          <Input label="Meal penalty code" value={codes.mealPenaltyCode} onChange={(e) => setCode("mealPenaltyCode", e.target.value)} placeholder="MP" />
+          <Input label="Co Code" required value={codes.coCode} onChange={(e) => setCode("coCode", e.target.value)} placeholder="e.g. D0F" hint="ADP company code, on every row" />
+          <Input label="Batch ID" required value={codes.batchId} onChange={(e) => setCode("batchId", e.target.value)} placeholder="e.g. BATCH1" hint={codes.batchId.trim() && batchLabel(codes.batchId) !== codes.batchId.trim().toUpperCase() ? `Written as ${batchLabel(codes.batchId)}` : undefined} />
         </div>
       </Card>
 
@@ -244,8 +243,7 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
             <StatCard label="Other hours" value={hrs(otherMinutes)} sub={`${summary.byCode.length} ${summary.byCode.length === 1 ? "code" : "codes"}`} />
           </div>
 
-          {summary.needsDoubleTimeCode && <Banner tone="error" body="This period has double time. Enter the ADP code for double time before processing." />}
-          {summary.needsMealPenaltyCode && <Banner tone="error" body="This period has meal penalties. Enter the ADP code for meal penalty before processing." />}
+          {missingAdpCodes(summary).map((m) => <Banner key={m} tone="error" body={m} />)}
           {summary.noBadge.length > 0 && (
             <Banner
               tone="warning"

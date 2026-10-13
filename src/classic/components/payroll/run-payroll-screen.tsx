@@ -12,7 +12,8 @@ import {
   type RunPreview,
 } from "@/actions/payroll-run.actions";
 import type { EpiSummary } from "@/lib/payroll/adp-epi";
-import { saveRunCodes, type RunCodes } from "@/lib/payroll/run-codes";
+import { missingAdpCodes } from "@/lib/payroll/adp-codes";
+import { batchLabel, saveRunCodes, type RunCodes } from "@/lib/payroll/run-codes";
 import { MultiSelectFilter } from "@/classic/components/payroll/multi-select-filter";
 import { fmtDay, includedDates } from "@/lib/payroll/run-range";
 
@@ -215,16 +216,10 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
               )}
             </div>
             <Field label="Co Code" hint="ADP company code, on every row">
-              <input value={codes.coCode} onChange={(e) => setCode("coCode", e.target.value)} placeholder="e.g. ATW" className={inputCls} />
+              <input value={codes.coCode} onChange={(e) => setCode("coCode", e.target.value)} placeholder="e.g. D0F" className={inputCls} />
             </Field>
-            <Field label="Batch ID">
+            <Field label="Batch ID" hint={codes.batchId.trim() && batchLabel(codes.batchId) !== codes.batchId.trim().toUpperCase() ? `Written as ${batchLabel(codes.batchId)}` : undefined}>
               <input value={codes.batchId} onChange={(e) => setCode("batchId", e.target.value)} placeholder="e.g. BATCH1" className={inputCls} />
-            </Field>
-            <Field label="Double time code" hint="Needed when the period has double time">
-              <input value={codes.doubleTimeCode} onChange={(e) => setCode("doubleTimeCode", e.target.value)} placeholder="ADP hours code" className={inputCls} />
-            </Field>
-            <Field label="Meal penalty code">
-              <input value={codes.mealPenaltyCode} onChange={(e) => setCode("mealPenaltyCode", e.target.value)} placeholder="MP" className={inputCls} />
             </Field>
           </div>
         </div>
@@ -288,8 +283,7 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
               ))}
             </div>
 
-            {summary.needsDoubleTimeCode && <Notice tone="error">This period has double time. Enter the ADP code for double time before processing.</Notice>}
-            {summary.needsMealPenaltyCode && <Notice tone="error">This period has meal penalties. Enter the ADP code for meal penalty before processing.</Notice>}
+            {missingAdpCodes(summary).map((m) => <Notice key={m} tone="error">{m}</Notice>)}
             {summary.noBadge.length > 0 && (
               <Notice tone="warning">
                 <strong>{summary.noBadge.length} {summary.noBadge.length === 1 ? "employee has" : "employees have"} hours but no Badge ID, and will be left out:</strong>{" "}

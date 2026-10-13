@@ -6,7 +6,11 @@ import type { ExceptionType, PayBucket, Prisma } from "@prisma/client";
  *
  * <p>Hours are read from each timecard's paid work segments and placed by
  * pay code first, then by hours type:
- * - a meal premium is always the meal penalty code;
+ * - a meal premium goes under the ADP code of its own pay code (the meal
+ *   premium rows point at MEAL PENALTY), and double time under the ADP code of
+ *   the Double Time pay code (an active pay code in the double time bucket that
+ *   is not a retro code). Neither falls back to anything: with no ADP code set
+ *   the run is refused and says which pay code needs one;
  * - a pay code outside the regular bucket (holiday, PTO, sick, bereavement...)
  *   is written under its own export code, even when it sits on worked hours.
  *   The export code is the pay code's ADP code, or its Express code when it
@@ -60,8 +64,6 @@ export type MissedPunchCard = {
 export type EpiCodes = {
   coCode: string;
   batchId: string;
-  doubleTimeCode: string;
-  mealPenaltyCode: string;
 };
 
 export type EpiSummary = {
@@ -75,8 +77,10 @@ export type EpiSummary = {
   /** Hours sent under a pay code's Express code because it has no ADP code. */
   noAdpCode: { label: string; code: string; minutes: number; people: number }[];
   unlockedLeftOut: number;
-  needsDoubleTimeCode: boolean;
-  needsMealPenaltyCode: boolean;
+  /** Double time hours with no ADP code to go under: the pay code to set one on, or null when there is none. */
+  needsDoubleTimeCode: { payCode: string | null } | null;
+  /** Meal premium hours with no ADP code to go under, by the pay code their lines carry. */
+  needsMealPenaltyCode: { payCodes: string[] } | null;
   /** Open exceptions on the timecards in the run, by type, most first. */
   openExceptions: { type: ExceptionType; label: string; count: number; people: number }[];
   /** Timecards with open missed punches, by name. */
@@ -180,8 +184,13 @@ export async function buildAdpEpi(opts: {
   const leftOut = new Map<string, { minutes: number; people: Set<string> }>();
   const noAdp = new Map<string, { label: string; code: string; minutes: number; people: Set<string> }>();
   let unlockedLeftOut = 0;
+  // Double time goes under the Double Time pay code's ADP code.
+  const dtPayCode = payCodes
+    .filter((c) => c.isActive && c.payBucket === "DT" && !/retro/i.test(c.label))
+    .sort((a, b) => a.code - b.code)[0] ?? null;
+  const dtCode = dtPayCode?.adpCode?.trim() || null;
   let dtMinutes = 0;
-  let mpMinutes = 0;
+  const mpMissing = new Set<string>();
   const exceptionCounts = new Map<ExceptionType, { count: number; people: Set<string> }>();
   const missedPunches: MissedPunchCard[] = [];
 
@@ -238,8 +247,9 @@ export async function buildAdpEpi(opts: {
       const pc = seg.payCodeId ? codeById.get(seg.payCodeId) : undefined;
 
       if (seg.segmentType === "MEAL_PREMIUM") {
-        mpMinutes += m;
-        addCode(codes.mealPenaltyCode, m);
+        const mp = pc?.adpCode?.trim();
+        if (mp) addCode(mp, m);
+        else mpMissing.add(pc ? `${pc.code} ${pc.label}` : "no pay code");
         continue;
       }
       if (pc && pc.payBucket && pc.payBucket !== "REG") {
@@ -250,7 +260,7 @@ export async function buildAdpEpi(opts: {
       }
       if (bucket === "REG") person.reg += m;
       else if (bucket === "OT") person.ot += m;
-      else if (bucket === "DT") { dtMinutes += m; addCode(codes.doubleTimeCode, m); }
+      else if (bucket === "DT") { dtMinutes += m; if (dtCode) addCode(dtCode, m); }
       else if (bucket === "UNPAID") continue;
       else {
         const fallback = bucketDefault.get(bucket);
@@ -316,8 +326,8 @@ export async function buildAdpEpi(opts: {
         .map((v) => ({ label: v.label, code: v.code, minutes: v.minutes, people: v.people.size }))
         .sort((a, b) => b.minutes - a.minutes),
       unlockedLeftOut,
-      needsDoubleTimeCode: dtMinutes > 0 && !codes.doubleTimeCode.trim(),
-      needsMealPenaltyCode: mpMinutes > 0 && !codes.mealPenaltyCode.trim(),
+      needsDoubleTimeCode: dtMinutes > 0 && !dtCode ? { payCode: dtPayCode ? `${dtPayCode.code} ${dtPayCode.label}` : null } : null,
+      needsMealPenaltyCode: mpMissing.size ? { payCodes: [...mpMissing] } : null,
       openExceptions: [...exceptionCounts.entries()]
         .map(([type, v]) => ({ type, label: EXCEPTION_LABEL[type], count: v.count, people: v.people.size }))
         .sort((a, b) => b.count - a.count),
@@ -325,3 +335,4 @@ export async function buildAdpEpi(opts: {
     },
   };
 }
+

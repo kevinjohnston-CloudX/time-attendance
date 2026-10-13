@@ -5,9 +5,11 @@ import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { buildAdpEpi, employeeWhere, type EpiFilters, type EpiSummary } from "@/lib/payroll/adp-epi";
+import { missingAdpCodes } from "@/lib/payroll/adp-codes";
 import { lockPeriod } from "@/lib/payroll/lock-period";
 import { dayKey, FREQ_LABEL, periodLastDay } from "@/lib/pay-period-display";
 import type { PayFrequency } from "@prisma/client";
+import { batchLabel } from "@/lib/payroll/run-codes";
 
 /**
  * Run Payroll: lock the pay periods of one frequency that fall inside a date
@@ -118,9 +120,7 @@ const runSchema = z.object({
   acknowledgeMissedPunches: z.boolean().default(false),
   codes: z.object({
     coCode: z.string().trim().regex(/^[A-Za-z0-9]{1,10}$/, "Enter the ADP company code (letters and numbers)"),
-    batchId: z.string().trim().regex(/^[A-Za-z0-9_-]{1,20}$/, "Enter a batch ID (letters, numbers, - or _)"),
-    doubleTimeCode: z.string().trim().regex(/^[A-Za-z0-9]{0,6}$/, "The double time code is letters and numbers only"),
-    mealPenaltyCode: z.string().trim().regex(/^[A-Za-z0-9]{0,6}$/, "The meal penalty code is letters and numbers only"),
+    batchId: z.string().trim().regex(/^[A-Za-z0-9_-]{1,20}$/, "Enter a batch ID (letters, numbers, - or _)").transform(batchLabel),
   }),
 }).refine((v) => v.from <= v.to, { message: "The From date must be on or before the To date" });
 export type RunPayrollInput = z.input<typeof runSchema>;
@@ -207,8 +207,8 @@ export const draftPayrollFile = withRBAC(
 
     const { csv, summary } = await buildAdpEpi({ tenantId, payPeriodIds: periods.map((p) => p.id), filters, codes: parsed.codes, mode: "preview" });
     if (summary.employees === 0) throw new Error("Nobody with hours matches these filters.");
-    if (summary.needsDoubleTimeCode) throw new Error("Some hours are double time. Enter the ADP code for double time.");
-    if (summary.needsMealPenaltyCode) throw new Error("Some hours are meal penalties. Enter the ADP code for meal penalty.");
+    const missing = missingAdpCodes(summary);
+    if (missing.length) throw new Error(missing.join(" "));
 
     return { csv, filename: `DRAFT_EPI${parsed.codes.coCode}01_${parsed.from.replace(/-/g, "")}_${parsed.to.replace(/-/g, "")}.csv` };
   },
@@ -227,8 +227,8 @@ export const processPayrollRun = withRBAC(
     // Refuse before locking anything if the file could not be written as asked.
     const check = await buildAdpEpi({ tenantId, payPeriodIds: periodIds, filters, codes: parsed.codes, mode: "preview" });
     if (check.summary.employees === 0) throw new Error("Nobody with hours matches these filters.");
-    if (check.summary.needsDoubleTimeCode) throw new Error("Some hours are double time. Enter the ADP code for double time.");
-    if (check.summary.needsMealPenaltyCode) throw new Error("Some hours are meal penalties. Enter the ADP code for meal penalty.");
+    const missing = missingAdpCodes(check.summary);
+    if (missing.length) throw new Error(missing.join(" "));
     const missedInFile = check.summary.missedPunches.filter((m) => !m.excluded);
     if (missedInFile.length > 0 && !parsed.acknowledgeMissedPunches) {
       throw new Error(
