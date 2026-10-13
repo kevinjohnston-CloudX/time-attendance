@@ -204,7 +204,7 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
               ) : (
                 <ul className="flex flex-col gap-1 text-sm text-zinc-500">
                   {included.map((g) => (
-                    <li key={g.startDay}>
+                    <li key={`${g.startDay}|${g.lastDay}`}>
                       <span className="font-medium text-zinc-900 dark:text-white">{fmtDay(g.startDay)} to {fmtDay(g.lastDay)}</span>
                       {` · ${g.timecards} timecards`}
                       {g.locked > 0 && (g.locked === g.names.length ? " · locked" : ` · ${g.locked} of ${g.names.length} locked`)}

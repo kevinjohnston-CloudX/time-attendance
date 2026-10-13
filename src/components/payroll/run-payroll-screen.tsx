@@ -182,7 +182,7 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
             ) : (
               <ul className="m-0 flex list-none flex-col gap-1 p-0" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                 {included.map((g) => (
-                  <li key={g.startDay}>
+                  <li key={`${g.startDay}|${g.lastDay}`}>
                     <span style={{ color: "var(--text-primary)", fontWeight: "var(--weight-medium)" }}>
                       {fmtDay(g.startDay)} to {fmtDay(g.lastDay)}
                     </span>
