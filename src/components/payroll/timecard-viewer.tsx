@@ -1084,11 +1084,31 @@ export function TimecardViewer({
     );
   }
 
+  // A clock out after midnight that ends a shift the hours keep whole on the
+  // day before (a hand-entered 7:00 PM to 12:30 AM) shows on that day's row,
+  // beside its clock in. Read from the hours themselves: a work line of that
+  // earlier day ending at the clock out's minute.
+  const overnightOutDay = (() => {
+    const byPunch = new Map<string, string>();
+    if (!timecard) return byPunch;
+    const workEndDay = new Map<number, string>();
+    for (const s of timecard.segments) {
+      if (s.segmentType === "WORK") workEndDay.set(new Date(s.endTime).getTime(), format(parseUtcDate(s.segmentDate), "yyyy-MM-dd"));
+    }
+    for (const p of timecard.punches) {
+      if (p.punchType !== "CLOCK_OUT") continue;
+      const minute = Math.floor(new Date(p.roundedTime).getTime() / 60_000) * 60_000;
+      const day = workEndDay.get(minute);
+      if (day && day < format(atSite(p.roundedTime), "yyyy-MM-dd")) byPunch.set(p.id, day);
+    }
+    return byPunch;
+  })();
+
   function punchesForDay(day: Date): TimecardPunch[] {
     if (!timecard) return [];
     const dayStr = format(day, "yyyy-MM-dd");
     return timecard.punches.filter(
-      (p) => format(atSite(p.roundedTime), "yyyy-MM-dd") === dayStr
+      (p) => (overnightOutDay.get(p.id) ?? format(atSite(p.roundedTime), "yyyy-MM-dd")) === dayStr
     );
   }
 
@@ -1167,10 +1187,8 @@ export function TimecardViewer({
         setEditError(`Clock in must be before clock out (${format(snap.pairedTime, "h:mm a")}).`);
         return;
       }
-      if (snap.punchType === "CLOCK_OUT" && punchDate <= snap.pairedTime) {
-        setEditError(`Clock out must be after clock in (${format(snap.pairedTime, "h:mm a")}).`);
-        return;
-      }
+      // A clock out earlier than its clock in is the next morning: 7:00 PM to 12:30 AM.
+      if (snap.punchType === "CLOCK_OUT" && punchDate <= snap.pairedTime) punchDate.setDate(punchDate.getDate() + 1);
     }
 
     setPendingNewPunches((prev) => [...prev, { dayKey: snap.dayKey, pairIndex: snap.pairIndex, punchType: snap.punchType, punchDate }]);
@@ -1231,10 +1249,10 @@ export function TimecardViewer({
       `${newEntryDate}T${String(outH).padStart(2, "0")}:${String(outParsed.minutes).padStart(2, "0")}:00`
     );
 
-    if (outDate <= inDate) {
-      setNewEntryError("Clock out must be after clock in.");
-      return;
-    }
+    // A clock out earlier than the clock in is the next morning: 7:00 PM to
+    // 12:30 AM. Its hours stay on this date, on one row.
+    const endsNextDay = outDate <= inDate;
+    if (endsNextDay) outDate.setDate(outDate.getDate() + 1);
 
     // Client-side overlap check against existing punch pairs for this date
     if (timecard) {
@@ -1286,7 +1304,7 @@ export function TimecardViewer({
         });
       }
       const inFormatted = format(inDate, "h:mm a");
-      const outFormatted = format(outDate, "h:mm a");
+      const outFormatted = format(outDate, "h:mm a") + (endsNextDay ? " (next day)" : "");
       const entryLines: string[] = [`  In/Out: ${inFormatted} – ${outFormatted}`];
       if (newEntryPayCodeId) {
         const codeLabel = payCodes.find((c) => c.id === newEntryPayCodeId)?.label;

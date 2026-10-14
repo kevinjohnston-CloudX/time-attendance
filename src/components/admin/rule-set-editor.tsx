@@ -1127,9 +1127,9 @@ function MealPremiums({
                 </span>
                 <span className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
                   <span className="inline-flex items-center gap-2">
-                    <Tick checked={t.exceed} onChange={(v) => tick(i, "exceed", v)} label="Not when hours worked are over" />
+                    <Tick checked={t.exceed} onChange={(v) => tick(i, "exceed", v)} label="Can't be waived when hours worked are over" />
                     <input type="hidden" name={`mpr${i}UnlessExceed`} value={t.exceed ? "true" : "false"} />
-                    <Num name={`mpr${i}UnlessHrs`} min={0} step={0.01} width={80} defaultValue={r.unlessHoursExceedMinutes ? hrs(r.unlessHoursExceedMinutes, 0) : ""} placeholder="0" unit="hours" aria-label={`${label} meal, not when hours are over`} />
+                    <Num name={`mpr${i}UnlessHrs`} min={0} step={0.01} width={80} defaultValue={r.unlessHoursExceedMinutes ? hrs(r.unlessHoursExceedMinutes, 0) : ""} placeholder="0" unit="hours" aria-label={`${label} meal, can't be waived when hours are over`} />
                   </span>
                   <Tick checked={t.punched} onChange={(v) => tick(i, "punched", v)} label="Only a punched meal counts" />
                   <input type="hidden" name={`mpr${i}UnlessPunched`} value={t.punched ? "true" : "false"} />

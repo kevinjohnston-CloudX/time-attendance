@@ -1261,7 +1261,7 @@ export function RuleSetFields({ rs, payCodes }: { rs?: RuleSet; payCodes: { id: 
                   <th className="py-2 pr-3 text-center font-medium text-zinc-500 whitespace-nowrap">Pay Level</th>
                   <th className="py-2 pr-3 text-center font-medium text-zinc-500 whitespace-nowrap">Ref Time</th>
                   <th className="py-2 pr-3 text-center font-medium text-zinc-500 whitespace-nowrap">Waive</th>
-                  <th className="py-2 pr-3 text-center font-medium text-zinc-500 whitespace-nowrap">Unless hrs exceed</th>
+                  <th className="py-2 pr-3 text-center font-medium text-zinc-500 whitespace-nowrap" title="A waiver does not hold on a day worked past these hours: the premium is paid">Unless hrs exceed</th>
                   <th className="py-2 text-center font-medium text-zinc-500 whitespace-nowrap">Unless<br />Punched Meal</th>
                 </tr>
               </thead>

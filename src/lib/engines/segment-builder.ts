@@ -15,7 +15,7 @@ type MealPremiumRowCfg = {
   minimumMealMinutes: number;  // minimum qualifying meal duration
   payMinutes: number;          // premium credit minutes
   payCodeId: string | null;
-  unlessHoursExceed: boolean;  // suppress if total worked > unlessHoursExceedMinutes
+  unlessHoursExceed: boolean;  // a waiver only holds while total worked <= unlessHoursExceedMinutes (NovaTime's "Unless hours exceed")
   unlessHoursExceedMinutes: number;
   unlessPunchedMeal: boolean;  // only real MEAL_START/MEAL_END punches suppress premium (vs. any MEAL segment)
 };
@@ -64,6 +64,7 @@ function payBucketFor(state: ActiveState): PayBucket {
  * Build one or more SegmentInputs from a time range, splitting at every local midnight.
  * Uses the employee's site timezone so splits happen at the correct wall-clock midnight,
  * not UTC midnight. Recursive — handles shifts crossing multiple midnights.
+ * With keepOnStartDay the range stays whole, on the day it starts.
  */
 function buildSegmentSpan(
   timesheetId: string,
@@ -71,11 +72,12 @@ function buildSegmentSpan(
   end: Date,
   state: ActiveState,
   isSplit: boolean,
-  timezone: string
+  timezone: string,
+  keepOnStartDay = false
 ): SegmentInput[] {
   const nextMidnight = nextMidnightInTz(start, timezone);
 
-  if (end <= nextMidnight) {
+  if (keepOnStartDay || end <= nextMidnight) {
     const durationMinutes = (end.getTime() - start.getTime()) / 60_000;
     if (durationMinutes <= 0) return [];
     return [
@@ -106,6 +108,25 @@ function buildSegmentSpan(
  */
 const truncToMin = (d: Date): Date => new Date(Math.floor(d.getTime() / 60_000) * 60_000);
 
+/**
+ * A clock in and clock out both entered by hand by a person (Add time), as
+ * HR does for the odd evening that runs past midnight, 7:00 PM to 12:30 AM.
+ * Such a pair keeps all its hours on the day it starts, on one timecard row,
+ * as NovaTime does. Time clock shifts, and punches brought in by an import
+ * (no one approved them), still split at midnight.
+ */
+function isHandEnteredPair(clockIn: Punch | null, clockOut: Punch): boolean {
+  return Boolean(
+    clockIn &&
+      clockIn.punchType === "CLOCK_IN" &&
+      clockOut.punchType === "CLOCK_OUT" &&
+      clockIn.source === "MANUAL" &&
+      clockOut.source === "MANUAL" &&
+      clockIn.approvedById &&
+      clockOut.approvedById,
+  );
+}
+
 export function computeSegments(
   timesheetId: string,
   punches: Punch[],
@@ -120,6 +141,7 @@ export function computeSegments(
   const segments: SegmentInput[] = [];
   let openStart: Date | null = carryIn ? truncToMin(carryIn.openStart) : null;
   let openState: ActiveState | null = carryIn?.openState ?? null;
+  let openPunch: Punch | null = null;
 
   for (const punch of punches) {
     const punchMin = truncToMin(punch.roundedTime);
@@ -133,6 +155,7 @@ export function computeSegments(
       const floor = periodStart && periodStart > dayStartUtc ? truncToMin(periodStart) : dayStartUtc;
       openStart = floor;
       openState = punch.stateBefore as ActiveState;
+      openPunch = null;
     }
 
     // Close the previous segment at this punch's truncated minute
@@ -141,7 +164,12 @@ export function computeSegments(
       const punchDay = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(punchMin);
 
       const dayDiff = (new Date(punchDay + "T00:00:00Z").getTime() - new Date(openDay + "T00:00:00Z").getTime()) / (24 * 60 * 60_000);
-      if (openDay !== punchDay && (punch.stateBefore === "OUT" || dayDiff > 1)) {
+      // A hand-entered clock in and the next morning's clock out are one shift,
+      // kept whole on the day it starts. A clock out added on its own on the
+      // timecard is stored as stateBefore "OUT", which alone would read as a
+      // missed clock out below.
+      const keepOnStartDay = dayDiff === 1 && isHandEnteredPair(openPunch, punch);
+      if (openDay !== punchDay && !keepOnStartDay && (punch.stateBefore === "OUT" || dayDiff > 1)) {
         // Discard when the open segment crosses into a later day via a missing clock-out.
         // Two cases: (1) stateBefore="OUT" means the end-of-day SYSTEM reset fired, indicating
         // a missed clock-out on the previous day; (2) dayDiff > 1 means the CLOCK_IN was left
@@ -149,17 +177,19 @@ export function computeSegments(
         // 24-hour blocks. In both cases the MISSING_PUNCH exception still flags the day.
       } else {
         segments.push(
-          ...buildSegmentSpan(timesheetId, openStart, punchMin, openState, false, timezone)
+          ...buildSegmentSpan(timesheetId, openStart, punchMin, openState, false, timezone, keepOnStartDay)
         );
       }
       openStart = null;
       openState = null;
+      openPunch = null;
     }
 
     // Open a new segment if entering an active state
     if (punch.stateAfter !== "OUT") {
       openStart = punchMin;
       openState = punch.stateAfter as ActiveState;
+      openPunch = punch;
     }
   }
 
@@ -671,7 +701,8 @@ async function ensureSalarySegments(
  * For each active MealPremiumRow, the rule triggers when:
  *  - The hours worked go past the hour the row's window closes in (more than 5 for a window ending at 299)
  *  - No qualifying meal occurred within [shiftStart + applyFromMinutes, shiftStart + applyToMinutes]
- *  - Optional suppressions (unlessHoursExceed, unlessPunchedMeal) do not apply
+ *  - unlessPunchedMeal does not apply, and the premium is not waived (a waiver
+ *    does not hold on a day worked past unlessHoursExceedMinutes)
  *
  * Returns MEAL_PREMIUM SegmentInputs appended after the shift, one per triggered row per day.
  */
@@ -735,7 +766,13 @@ export function computeMealPremiums(
 
     // Punches for this local calendar day (keyed by actual punchTime in site tz)
     const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: timezone });
-    const dayPunches = punches.filter(p => fmt.format(p.punchTime) === dayKey);
+    // Plus a clock out after midnight that ends a shift kept whole on this day
+    // (a hand-entered 7:00 PM to 12:30 AM): without it the day looked still
+    // clocked in.
+    const lastWorkEndMs = Math.max(...workSegs.map(s => s.endTime.getTime()));
+    const dayPunches = punches.filter(p =>
+      fmt.format(p.punchTime) === dayKey ||
+      (p.punchType === "CLOCK_OUT" && fmt.format(p.punchTime) > dayKey && truncToMin(p.roundedTime).getTime() === lastWorkEndMs));
 
     // Shift start, where the meal windows are measured from — the actual punch
     // when configured, else the rounded first work line.
@@ -786,9 +823,6 @@ export function computeMealPremiums(
       // for 5 hours or less. With no clock out, the hours worked so far count.
       const owedAfterMins = Math.ceil((row.applyToMinutes + 1) / 60) * 60;
       if (workedMins <= owedAfterMins) continue;
-
-      // unlessHoursExceed: suppress when total worked exceeds threshold
-      if (row.unlessHoursExceed && totalWorkedMins > row.unlessHoursExceedMinutes) continue;
 
       // Window within which a qualifying meal must have occurred
       const windowStartMs = shiftStartMs + row.applyFromMinutes * 60_000;
@@ -852,7 +886,13 @@ export function computeMealPremiums(
       // the lines do not sit on top of each other. A waiver goes by the day and
       // the row (premiumRow), not by this time, which moves with the day's punches.
       const premStart = new Date(lastWorkSeg.endTime.getTime() + accumulatedPremiumMins * 60_000);
-      if (!isWaived(dayKey, row.rowIndex, premStart)) {
+      // "Unless hours exceed" limits the waiver, as in NovaTime: California
+      // lets a second meal be waived only on a day of 12 hours or less (the
+      // first, 6 hours or less), so past that a waiver does not hold and the
+      // premium is paid. It used to stop the premium itself past those hours,
+      // and as the second meal is only owed past 12 hours, it was never paid.
+      const waiverHolds = !(row.unlessHoursExceed && totalWorkedMins > row.unlessHoursExceedMinutes);
+      if (!(waiverHolds && isWaived(dayKey, row.rowIndex, premStart))) {
         premiums.push({
           timesheetId,
           segmentType: "MEAL_PREMIUM",

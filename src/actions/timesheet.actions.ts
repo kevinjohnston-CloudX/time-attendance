@@ -274,6 +274,27 @@ export const toggleMealPremiumWaiver = withRBAC(
       });
     } else {
       const name = premiumName(rowIndex);
+      // A premium row with "Unless hours exceed" can only be waived on a day
+      // worked up to those hours (California: 12 for the second meal); past
+      // them the waiver would not hold and the premium is paid anyway.
+      if (rowIndex != null) {
+        const sheetRules = await db.timesheet.findUniqueOrThrow({
+          where: { id: timesheetId },
+          select: { employee: { select: { ruleSet: { select: { mealPremiumRows: true } } } } },
+        });
+        const row = ((sheetRules.employee.ruleSet.mealPremiumRows ?? []) as { unlessHoursExceed?: boolean; unlessHoursExceedMinutes?: number }[])[rowIndex];
+        if (row?.unlessHoursExceed) {
+          const worked = await db.workSegment.aggregate({
+            where: { timesheetId, segmentType: "WORK", isPaid: true, segmentDate: dateObj },
+            _sum: { durationMinutes: true },
+          });
+          const workedMins = worked._sum.durationMinutes ?? 0;
+          const limit = row.unlessHoursExceedMinutes ?? 0;
+          if (workedMins > limit) {
+            throw new Error(`${name} can't be waived: ${(workedMins / 60).toFixed(2)} hours worked is over the ${(limit / 60).toFixed(2)} hours a waiver is allowed for.`);
+          }
+        }
+      }
       await db.$transaction(async (tx) => {
         await tx.mealPremiumWaiver.create({
           data: { timesheetId, segmentDate: dateObj, segmentStart: startObj, rowIndex, createdById: actorId },
