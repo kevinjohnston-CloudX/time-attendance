@@ -192,9 +192,10 @@ export function sortRowsInMemory(
       const bVal = b[sort.field];
       const dir = sort.direction === "desc" ? -1 : 1;
 
+      // Empty values go last either way, so a high-to-low sort starts with the highest.
       if (aVal == null && bVal == null) continue;
-      if (aVal == null) return dir;
-      if (bVal == null) return -dir;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
 
       if (typeof aVal === "number" && typeof bVal === "number") {
         if (aVal !== bVal) return (aVal - bVal) * dir;

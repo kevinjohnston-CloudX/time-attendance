@@ -59,6 +59,7 @@ interface FilterOptions {
   payPeriods: { id: string; startDate: string | Date; endDate: string | Date; status: string }[];
   leaveTypes: { id: string; name: string }[];
   payCodes: { code: number; label: string }[];
+  lookups?: Record<string, { value: string; label: string }[]>;
 }
 
 /** A preview stops here; the report only counts the rows it returned, so a

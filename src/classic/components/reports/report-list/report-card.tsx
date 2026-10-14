@@ -10,6 +10,7 @@ import {
   FileText,
   ShieldCheck,
   Timer,
+  Users,
 } from "lucide-react";
 
 const SOURCE_ICONS: Record<string, React.ElementType> = {
@@ -22,6 +23,7 @@ const SOURCE_ICONS: Record<string, React.ElementType> = {
   EXCEPTION_REPORT: AlertCircle,
   SECURITY_SCAN: ShieldCheck,
   TIME_CLOCK_SCAN: Timer,
+  EMPLOYEES: Users,
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -34,6 +36,7 @@ const SOURCE_LABELS: Record<string, string> = {
   EXCEPTION_REPORT: "Exception Report",
   SECURITY_SCAN: "Security Scan Report",
   TIME_CLOCK_SCAN: "Time Clock Report",
+  EMPLOYEES: "Employees",
 };
 
 interface ReportCardProps {

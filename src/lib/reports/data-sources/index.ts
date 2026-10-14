@@ -8,6 +8,7 @@ import { leaveBalanceSource } from "./leave-balance";
 import { punchAuditSource } from "./punch-audit";
 import { exceptionReportSource } from "./exception-report";
 import { securityScanSource, timeClockScanSource } from "./scan-report";
+import { employeesSource } from "./employees";
 import { daysOf } from "../period";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -77,6 +78,7 @@ const sources: Record<DataSourceId, DataSourceDefinition> = {
   EXCEPTION_REPORT: exceptionReportSource,
   SECURITY_SCAN: securityScanSource,
   TIME_CLOCK_SCAN: timeClockScanSource,
+  EMPLOYEES: employeesSource,
 };
 
 /**

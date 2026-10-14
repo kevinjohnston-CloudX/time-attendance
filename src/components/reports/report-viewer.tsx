@@ -63,6 +63,7 @@ interface FilterOptions {
   sites?: { id: string; name: string }[];
   departments?: { id: string; name: string }[];
   leaveTypes?: { id: string; name: string }[];
+  lookups?: Record<string, { value: string; label: string }[]>;
 }
 
 const WHO_CAN_OPEN: Record<string, string> = {
@@ -161,6 +162,8 @@ export function ReportViewer({
     const v = String(value ?? "");
     const fromOptions = field?.options?.find((o) => o.value === v)?.label;
     if (fromOptions) return fromOptions;
+    const looked = filterOptions?.lookups?.[fieldId]?.find((o) => o.value === v)?.label;
+    if (looked) return looked;
     if (fieldId === "siteId") return filterOptions?.sites?.find((x) => x.id === v)?.name ?? v;
     if (fieldId === "departmentId") return filterOptions?.departments?.find((x) => x.id === v)?.name ?? v;
     if (fieldId === "leaveTypeId") return filterOptions?.leaveTypes?.find((x) => x.id === v)?.name ?? v;

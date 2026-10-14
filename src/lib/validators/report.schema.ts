@@ -97,6 +97,7 @@ export const DATA_SOURCES = [
   "EXCEPTION_REPORT",
   "SECURITY_SCAN",
   "TIME_CLOCK_SCAN",
+  "EMPLOYEES",
 ] as const;
 
 export type DataSourceId = (typeof DATA_SOURCES)[number];

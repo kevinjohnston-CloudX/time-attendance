@@ -697,9 +697,35 @@ export const getFilterOptions = withRBAC(
       })),
       leaveTypes,
       payCodes,
+      lookups: await employeeLookups(tenantId),
     };
   }
 );
+
+/**
+ * Dropdown values for the Employees report's filters, by filter id. Kept as one
+ * list so a new filter needs a line here and nothing in the screens.
+ */
+async function employeeLookups(tenantId: string): Promise<Record<string, { value: string; label: string }[]>> {
+  const [agencies, ruleSets, shifts, payCategories, supervisors] = await Promise.all([
+    db.agency.findMany({ where: { tenantId }, select: { id: true, code: true, description: true }, orderBy: { code: "asc" } }),
+    db.ruleSet.findMany({ where: { tenantId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.shift.findMany({ where: { tenantId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.payCategory.findMany({ where: { tenantId }, select: { id: true, number: true, description: true }, orderBy: { number: "asc" } }),
+    db.employee.findMany({
+      where: { tenantId, isActive: true, subordinates: { some: {} } },
+      select: { id: true, user: { select: { name: true } } },
+      orderBy: { user: { name: "asc" } },
+    }),
+  ]);
+  return {
+    agencyId: agencies.map((a) => ({ value: a.id, label: `${a.code} ${a.description}` })),
+    ruleSetId: ruleSets.map((r) => ({ value: r.id, label: r.name })),
+    shiftId: shifts.map((s) => ({ value: s.id, label: s.name })),
+    payCategoryId: payCategories.map((c) => ({ value: c.id, label: `${c.number} ${c.description?.trim() ?? ""}`.trim() })),
+    supervisorId: supervisors.map((s) => ({ value: s.id, label: s.user?.name ?? s.id })),
+  };
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

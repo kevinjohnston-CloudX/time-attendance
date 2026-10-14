@@ -15,6 +15,8 @@ interface FilterOption {
   sites: { id: string; name: string }[];
   departments: { id: string; name: string }[];
   payCodes: { code: number; label: string }[];
+  /** Dropdown values for other filters, by filter id (the Employees report). */
+  lookups?: Record<string, { value: string; label: string }[]>;
 }
 
 const OPERATOR_LABELS: Record<string, string> = {
@@ -78,6 +80,7 @@ export function FilterBuilder({
     if (fieldDef?.options) return fieldDef.options;
 
     // Dynamic options from filterOptions
+    if (filterOptions?.lookups?.[fieldId]) return filterOptions.lookups[fieldId];
     if (fieldId === "siteId" && filterOptions?.sites) {
       return filterOptions.sites.map((s) => ({ value: s.id, label: s.name }));
     }

@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Timer,
   TriangleAlert,
+  Users,
 } from "lucide-react";
 import type { ElementType } from "react";
 
@@ -35,6 +36,7 @@ const LABELS: Record<string, string> = {
   LEAVE_BALANCE:     "Time off balances",
   SECURITY_SCAN:     "Security scan report",
   TIME_CLOCK_SCAN:   "Time clock report",
+  EMPLOYEES:         "Employees",
 };
 
 /** One plain line on what each report shows, for the Standard reports cards. */
@@ -48,6 +50,7 @@ const DESCRIPTIONS: Record<string, string> = {
   LEAVE_BALANCE:     "How much time off each employee has earned, used and has left.",
   SECURITY_SCAN:     "Each person's first gate arrival and last gate departure for the day, with the hours between them.",
   TIME_CLOCK_SCAN:   "Each person's first clock in and last clock out for the day, with the hours between them.",
+  EMPLOYEES:         "Each employee's setup: site, department, agency, supervisor, rule set, shift, pay and dates, with their last punch.",
 };
 
 const ICONS: Record<string, ElementType> = {
@@ -60,6 +63,7 @@ const ICONS: Record<string, ElementType> = {
   LEAVE_BALANCE:     Hourglass,
   SECURITY_SCAN:     ShieldCheck,
   TIME_CLOCK_SCAN:   Timer,
+  EMPLOYEES:         Users,
 };
 
 /** The order the Standard reports cards are laid out in: hours first, time off last. */
@@ -73,6 +77,7 @@ export const STANDARD_REPORTS = [
   "LEAVE_BALANCE",
   "SECURITY_SCAN",
   "TIME_CLOCK_SCAN",
+  "EMPLOYEES",
 ] as const;
 
 /** The one line under a report's name. */
@@ -125,6 +130,7 @@ const TONES: Record<string, { bg: string; fg: string }> = {
   LEAVE_BALANCE:     { bg: "var(--surface-success)", fg: "var(--icon-success)" },
   SECURITY_SCAN:     { bg: "var(--surface-tertiary)", fg: "var(--icon-secondary)" },
   TIME_CLOCK_SCAN:   { bg: "var(--surface-info)", fg: "var(--icon-accent)" },
+  EMPLOYEES:         { bg: "var(--surface-tertiary)", fg: "var(--icon-secondary)" },
 };
 
 export function dataSourceTone(id: string): { bg: string; fg: string } {
@@ -136,6 +142,7 @@ export const REPORT_GROUPS: { title: string; ids: readonly string[] }[] = [
   { title: "Hours and attendance", ids: ["HOURS_SUMMARY", "ATTENDANCE_DETAIL", "DAILY_HOURS", "EXCEPTION_REPORT", "PUNCH_AUDIT"] },
   { title: "Time off", ids: ["LEAVE_SUMMARY", "LEAVE_BALANCE"] },
   { title: "Daily scans", ids: ["SECURITY_SCAN", "TIME_CLOCK_SCAN"] },
+  { title: "People", ids: ["EMPLOYEES"] },
 ];
 
 /**
