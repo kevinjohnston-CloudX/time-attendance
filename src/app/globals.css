@@ -992,3 +992,12 @@ tbody .ta-row:hover {
     top: auto;
   }
 }
+
+/* A dropdown's list is drawn by the browser from the select's own colours,
+   and a select inherits the text colour of what it sits in. On the dark theme
+   that left light text on the browser's white list (the Employees filters).
+   The options take the theme's surface and text instead, in both themes. */
+option {
+  background-color: var(--surface-card);
+  color: var(--text-primary);
+}

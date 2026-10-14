@@ -25,6 +25,11 @@
    because the three that existed before are near-blacks against near-blacks. */
 :root.dark,
 :root[data-theme="dark"] {
+  /* The browser's own parts (a select's list, a date picker, scrollbars)
+     drawn dark too. Without it a dropdown opened white with the page's
+     light text on it. */
+  color-scheme: dark;
+
   /* Surfaces — near-black page, gray-900 cards. */
   --surface-page:      rgb(3, 7, 18);
   --surface-card:      rgb(17, 24, 39);
