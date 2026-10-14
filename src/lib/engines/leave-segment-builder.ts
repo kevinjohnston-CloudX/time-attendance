@@ -117,7 +117,10 @@ export async function syncLeaveSegments(
     // Resolve effective pay code: policy rule → leave type fallback
     const employee = await tx.employee.findUniqueOrThrow({
       where: { id: request.employeeId },
-      select: { hireDate: true, siteId: true, payCategoryId: true, tenantId: true },
+      select: {
+        hireDate: true, siteId: true, payCategoryId: true, tenantId: true,
+        ruleSet: { select: { id: true, payFrequency: true, payPeriodAnchorDate: true } },
+      },
     });
     const tenureMonths = Math.floor(
       (Date.now() - employee.hireDate.getTime()) / (1000 * 60 * 60 * 24 * 30.44)
@@ -138,11 +141,20 @@ export async function syncLeaveSegments(
     // as starting at 1 PM on a Sunday still owns that Sunday, and its stored end
     // is the next period's first day, not its own. Candidates come from a window
     // a day wider each way, then the day ranges decide.
+    // Only the employee's own schedule (their rule set's periods, or the
+    // company's when the rule set has none), plus any period they already have
+    // a timecard in: a day with no timecard yet used to land in both the
+    // company period and the rule set's, making two timecards for one stretch.
+    const ownSchedule = Boolean(employee.ruleSet.payFrequency && employee.ruleSet.payPeriodAnchorDate);
     const candidates = await tx.payPeriod.findMany({
       where: {
         tenantId: employee.tenantId,
         startDate: { lte: new Date(request.endDate.getTime() + 86_400_000) },
         endDate: { gte: new Date(request.startDate.getTime() - 86_400_000) },
+        OR: [
+          ownSchedule ? { ruleSetId: employee.ruleSet.id } : { ruleSetId: null },
+          { timesheets: { some: { employeeId: request.employeeId } } },
+        ],
       },
       include: { ruleSet: { select: { payFrequency: true } }, tenant: { select: { payFrequency: true } } },
       orderBy: { startDate: "asc" },
@@ -168,10 +180,14 @@ export async function syncLeaveSegments(
     });
     const existingPeriodIds = new Set(existingTimesheets.map((t) => t.payPeriodId));
 
-    // Use only periods with an existing timesheet if any exist; otherwise all.
-    const payPeriods = existingPeriodIds.size > 0
-      ? allOverlapping.filter((p) => existingPeriodIds.has(p.id))
-      : allOverlapping;
+    // A day goes on the timecard the employee already has for it, else on a
+    // new one in their schedule's period. It used to be only the existing
+    // timecards whenever there was one, so time off running into a period with
+    // no timecard yet lost the days past the end of the first.
+    const payPeriods = [
+      ...allOverlapping.filter((p) => existingPeriodIds.has(p.id)),
+      ...allOverlapping.filter((p) => !existingPeriodIds.has(p.id)),
+    ];
 
     // 4. Build a map of date → timesheetId (finding or creating timesheets)
     const leaveDays = eachDayOfInterval({
@@ -187,10 +203,10 @@ export async function syncLeaveSegments(
       const range = dayRanges.get(pp.id)!;
       const overlapStart = max([parseISO(range.firstDay), toLocalDay(request.startDate)]);
       const overlapEnd = min([parseISO(range.lastDay), toLocalDay(request.endDate)]);
-      const overlapDays = eachDayOfInterval({
-        start: overlapStart,
-        end: overlapEnd,
-      });
+      const overlapDays = overlapStart > overlapEnd
+        ? []
+        : eachDayOfInterval({ start: overlapStart, end: overlapEnd })
+            .filter((day) => !timesheetsByDate.has(format(day, "yyyy-MM-dd")));
 
       if (overlapDays.length === 0) continue;
 

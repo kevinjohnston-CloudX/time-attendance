@@ -1,10 +1,57 @@
-import { addDays } from "date-fns";
+import { addDays, addMonths } from "date-fns";
 import { db } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit/logger";
-import type { PayFrequency } from "@prisma/client";
+import type { PayFrequency, PayPeriod } from "@prisma/client";
 import { getPeriodContaining, periodAfter } from "@/lib/pay-period-math";
+import { periodDayRange } from "@/lib/pay-period-days";
+import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
 
 export { getPeriodContaining };
+
+/**
+ * How far ahead pay periods are kept, so HR can open a timecard and enter time
+ * off anywhere in the coming year. It was two periods, which stopped them at a
+ * date about a month out (November 21 in October).
+ */
+export const PERIOD_MONTHS_AHEAD = 12;
+
+/** The day the periods have to reach: today plus the months ahead. */
+function periodsReachDate(monthsAhead: number): Date {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return addMonths(today, monthsAhead);
+}
+
+/**
+ * Puts approved time off on a period just created. Time off can be approved
+ * for days no period covers yet; those days had nowhere to go, and nothing
+ * added them once the period was made. Only people on the period's schedule:
+ * the rule set's, or the company's for rule sets without their own.
+ */
+async function addTimeOffToNewPeriod(period: PayPeriod, frequency: PayFrequency): Promise<void> {
+  const { firstDay, lastDay } = periodDayRange(period, frequency);
+  const requests = await db.leaveRequest.findMany({
+    where: {
+      status: { in: ["APPROVED", "POSTED"] },
+      startDate: { lte: new Date(`${lastDay}T23:59:59.999Z`) },
+      endDate: { gte: new Date(`${firstDay}T00:00:00.000Z`) },
+      employee: {
+        tenantId: period.tenantId,
+        ruleSet: period.ruleSetId
+          ? { id: period.ruleSetId, payFrequency: { not: null }, payPeriodAnchorDate: { not: null } }
+          : { OR: [{ payFrequency: null }, { payPeriodAnchorDate: null }] },
+      },
+    },
+    select: { id: true },
+  });
+  for (const r of requests) {
+    try {
+      await syncLeaveSegments(r.id);
+    } catch (err) {
+      console.error("pay periods: time off not added to a new period", period.id, r.id, err);
+    }
+  }
+}
 
 /**
  * The company level period that comes after the latest one, which is what
@@ -35,13 +82,13 @@ export async function nextTenantPeriod(
 }
 
 /**
- * Ensure `targetFutureCount` future OPEN pay periods exist for the given tenant.
- * "Future" means startDate > today. Returns the number of periods created.
- * Idempotent — skips a period if it already exists.
+ * Ensure the tenant's OPEN pay periods reach `monthsAhead` months past today,
+ * with approved time off put on each new one. Returns the number of periods
+ * created. Idempotent — skips a period if it already exists.
  */
 export async function generatePeriodsForTenant(
   tenantId: string,
-  targetFutureCount = 2
+  monthsAhead = PERIOD_MONTHS_AHEAD
 ): Promise<number> {
   const tenant = await db.tenant.findUnique({
     where: { id: tenantId },
@@ -53,18 +100,17 @@ export async function generatePeriodsForTenant(
   const anchor = tenant.payPeriodAnchorDate;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-
-  let futureCount = await db.payPeriod.count({
-    where: { tenantId, startDate: { gt: today } },
-  });
+  const reach = periodsReachDate(monthsAhead);
 
   let created = 0;
 
-  while (futureCount < targetFutureCount) {
+  // A cap on the loop, should a period ever fail to move the end forward.
+  for (let guard = 0; guard < 120; guard++) {
     const last = await db.payPeriod.findFirst({
       where: { tenantId },
       orderBy: { endDate: "desc" },
     });
+    if (last && last.endDate >= reach) break;
 
     // Advance one day past last.endDate so getPeriodContaining lands in the NEXT period,
     // regardless of whether last.endDate used the old inclusive or new exclusive convention.
@@ -97,25 +143,28 @@ export async function generatePeriodsForTenant(
         action: "CREATE",
         changes: { after: { startDate, endDate, frequency: tenant.payFrequency, source: "AUTO_CRON" } },
       });
+      await addTimeOffToNewPeriod(period, tenant.payFrequency);
 
       created++;
+    } else {
+      // Already there yet not the latest by its end: nothing further to make.
+      break;
     }
-
-    futureCount++;
   }
 
   return created;
 }
 
 /**
- * Ensure `targetFutureCount` future OPEN pay periods exist for the given rule set.
+ * Ensure the rule set's OPEN pay periods reach `monthsAhead` months past
+ * today, with approved time off put on each new one.
  * Only runs when the rule set has its own payFrequency and payPeriodAnchorDate configured.
  * Idempotent — skips a period if it already exists (checked by ruleSetId + dates).
  */
 export async function generatePeriodsForRuleSet(
   ruleSetId: string,
   tenantId: string,
-  targetFutureCount = 2
+  monthsAhead = PERIOD_MONTHS_AHEAD
 ): Promise<number> {
   const ruleSet = await db.ruleSet.findUnique({
     where: { id: ruleSetId },
@@ -127,18 +176,17 @@ export async function generatePeriodsForRuleSet(
   const anchor = ruleSet.payPeriodAnchorDate;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-
-  let futureCount = await db.payPeriod.count({
-    where: { ruleSetId, startDate: { gt: today } },
-  });
+  const reach = periodsReachDate(monthsAhead);
 
   let created = 0;
 
-  while (futureCount < targetFutureCount) {
+  // A cap on the loop, should a period ever fail to move the end forward.
+  for (let guard = 0; guard < 120; guard++) {
     const last = await db.payPeriod.findFirst({
       where: { ruleSetId },
       orderBy: { endDate: "desc" },
     });
+    if (last && last.endDate >= reach) break;
 
     const referenceDate = last ? addDays(last.endDate, 1) : today;
     const period = getPeriodContaining(ruleSet.payFrequency, anchor, referenceDate);
@@ -166,11 +214,13 @@ export async function generatePeriodsForRuleSet(
         action: "CREATE",
         changes: { after: { startDate, endDate, frequency: ruleSet.payFrequency, ruleSetId, source: "AUTO_CRON" } },
       });
+      await addTimeOffToNewPeriod(period, ruleSet.payFrequency);
 
       created++;
+    } else {
+      // Already there yet not the latest by its end: nothing further to make.
+      break;
     }
-
-    futureCount++;
   }
 
   return created;

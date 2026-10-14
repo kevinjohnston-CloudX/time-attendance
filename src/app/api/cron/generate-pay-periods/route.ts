@@ -4,7 +4,8 @@ import { generatePeriodsForTenant, generatePeriodsForRuleSet } from "@/lib/pay-p
 
 /**
  * Nightly cron: ensure every tenant (and every rule set with its own schedule)
- * has at least 2 future OPEN pay periods.
+ * has OPEN pay periods a year ahead (PERIOD_MONTHS_AHEAD), with approved time
+ * off put on each new one.
  * Secured with CRON_SECRET.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   });
 
   const tenantResults = await Promise.allSettled(
-    tenants.map((t) => generatePeriodsForTenant(t.id, 2))
+    tenants.map((t) => generatePeriodsForTenant(t.id))
   );
 
   // Rule-set-level periods for rule sets with their own schedule configured
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   });
 
   const ruleSetResults = await Promise.allSettled(
-    ruleSets.map((rs) => generatePeriodsForRuleSet(rs.id, rs.tenantId, 2))
+    ruleSets.map((rs) => generatePeriodsForRuleSet(rs.id, rs.tenantId))
   );
 
   const generated =
@@ -57,3 +58,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     ruleSets: ruleSets.length,
   });
 }
+
+// The first run after the change makes about a year of periods for every rule set.
+export const maxDuration = 300;

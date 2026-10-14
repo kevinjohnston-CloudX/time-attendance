@@ -1356,7 +1356,7 @@ export const updateRuleSet = withRBAC(
     // current + future periods so findOpenPayPeriod never falls back to the
     // tenant-level period and creates an orphaned timesheet.
     if (updated.payFrequency && updated.payPeriodAnchorDate) {
-      await generatePeriodsForRuleSet(ruleSetId, tenantId, 2);
+      await generatePeriodsForRuleSet(ruleSetId, tenantId);
     }
 
     await writeAuditLog({
