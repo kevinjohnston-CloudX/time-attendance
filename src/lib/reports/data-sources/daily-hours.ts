@@ -20,7 +20,7 @@ const fieldMap: FieldMap = {
 export const dailyHoursSource: DataSourceDefinition = {
   id: "DAILY_HOURS",
   label: "Daily hours",
-  description: "One row per employee per day showing REG, OT, and DT hours alongside first clock-in and last clock-out. Time off and holiday hours count as Regular, as they do on the timecard.",
+  description: "One row per employee per day showing REG, OT, and DT hours alongside first clock-in and last clock-out. Time off and holiday hours count as Regular, as they do on the timecard; meal premiums are their own column.",
   icon: "CalendarClock",
   columns: [
     { id: "employeeName",    label: "Employee",       type: "string",  defaultVisible: true },
@@ -34,6 +34,7 @@ export const dailyHoursSource: DataSourceDefinition = {
     { id: "otMinutes",       label: "Overtime",       type: "number",  defaultVisible: true },
     { id: "dtMinutes",       label: "Double time",       type: "number",  defaultVisible: true },
     { id: "totalMinutes",    label: "Total",    type: "number",  defaultVisible: true },
+    { id: "premiumMinutes",  label: "Meal premium", type: "number", defaultVisible: false },
     { id: "payType",         label: "Pay type",       type: "string",  defaultVisible: false },
     { id: "payCodes",        label: "Pay codes",      type: "string",  defaultVisible: false },
     { id: "reasonCode",      label: "Reason code",    type: "string",  defaultVisible: false },
@@ -93,9 +94,10 @@ export const dailyHoursSource: DataSourceDefinition = {
     // Pass 2: let a 0-duration absent-day marker's pay code stand for its day.
     //
     // The hours are counted the way the timecard counts them (timecard-viewer's
-    // day row), so the two agree: time off, holiday and meal premium hours sit
-    // under Regular, the pay code says which they are, and Total is the paid
-    // hours, so unpaid time off is in Regular but not in Total.
+    // day row), so the two agree: time off and holiday hours sit under
+    // Regular, the pay code says which they are, and Total is the paid hours,
+    // so unpaid time off is in Regular but not in Total. A meal premium is an
+    // hour of pay, not an hour worked, so it is in neither: it has its own column.
     type DayKey = string; // "employeeId|YYYY-MM-DD"
     const dayMap = new Map<DayKey, DayRow>();
 
@@ -125,6 +127,7 @@ export const dailyHoursSource: DataSourceDefinition = {
           otMinutes: 0,
           dtMinutes: 0,
           paidMinutes: 0,
+          premiumMinutes: 0,
           payType: seg.timesheet.employee.payType === "SALARY" ? "Salary" : "Hourly",
           payCodeSet: new Set(),
           reasonCode: dayReason
@@ -135,13 +138,19 @@ export const dailyHoursSource: DataSourceDefinition = {
 
       const day = dayMap.get(key)!;
 
+      if (seg.segmentType === "MEAL_PREMIUM") {
+        if (seg.isPaid) day.premiumMinutes += seg.durationMinutes;
+        if (seg.payCode) day.payCodeSet.add(`${seg.payCode.label} (${seg.payCode.code})`);
+        continue;
+      }
+
       // An override to REG/OT/DT only tags the line; the engine's bucket decides the column.
       const bucket =
         seg.payBucketOverride && !["REG", "OT", "DT"].includes(seg.payBucketOverride)
           ? seg.payBucketOverride
           : seg.payBucket;
       const column =
-        seg.segmentType === "HOLIDAY" || seg.segmentType === "LEAVE" || seg.segmentType === "MEAL_PREMIUM"
+        seg.segmentType === "HOLIDAY" || seg.segmentType === "LEAVE"
           ? "REG"
           : bucket;
       if (column === "REG")      day.regMinutes += seg.durationMinutes;
@@ -189,6 +198,7 @@ export const dailyHoursSource: DataSourceDefinition = {
       otMinutes:     day.otMinutes,
       dtMinutes:     day.dtMinutes,
       totalMinutes:  day.paidMinutes,
+      premiumMinutes: day.premiumMinutes,
       payType:       day.payType,
       payCodes:      day.payCodeSet.size > 0 ? Array.from(day.payCodeSet).join(", ") : null,
       reasonCode:    day.reasonCode,
@@ -229,6 +239,7 @@ type DayRow = {
   otMinutes: number;
   dtMinutes: number;
   paidMinutes: number;
+  premiumMinutes: number;
   payType: string;
   payCodeSet: Set<string>;
   reasonCode: string | null;
@@ -362,6 +373,7 @@ async function addDaysWithoutHours(
       otMinutes: 0,
       dtMinutes: 0,
       paidMinutes: 0,
+      premiumMinutes: 0,
       payType: e.payType === "SALARY" ? "Salary" : "Hourly",
       payCodeSet: new Set(),
       reasonCode: reasonByKey.get(key) ?? null,

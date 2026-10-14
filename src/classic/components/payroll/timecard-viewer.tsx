@@ -337,6 +337,8 @@ function SummaryRow({
   dt,
   total,
   rate,
+  premium = 0,
+  showPremium = false,
   isBold,
   className,
 }: {
@@ -346,6 +348,9 @@ function SummaryRow({
   dt: number;
   total: number;
   rate: number | null;
+  /** Meal premium minutes: paid at the regular rate, not hours worked, so not in Reg or Total. */
+  premium?: number;
+  showPremium?: boolean;
   isBold?: boolean;
   className?: string;
 }) {
@@ -354,7 +359,8 @@ function SummaryRow({
   const regPay = rate ? (reg / 60) * rate : 0;
   const otPay = rate ? (ot / 60) * rate * 1.5 : 0;
   const dtPay = rate ? (dt / 60) * rate * 2 : 0;
-  const totalPay = regPay + otPay + dtPay;
+  const premiumPay = rate ? (premium / 60) * rate : 0;
+  const totalPay = regPay + otPay + dtPay + premiumPay;
 
   const base = isBold
     ? "border-t-2 border-zinc-300 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900"
@@ -387,6 +393,15 @@ function SummaryRow({
       >
         {dt > 0 ? fmt(dt) : "—"}
       </td>
+      {showPremium && (
+        <td
+          className={`px-3 py-1.5 text-right tabular-nums ${
+            premium > 0 ? "font-semibold text-amber-700 dark:text-amber-300" : text
+          }`}
+        >
+          {premium > 0 ? fmt(premium) : "—"}
+        </td>
+      )}
       <td className={`px-3 py-1.5 text-right tabular-nums ${isBold ? text : "font-semibold text-zinc-900 dark:text-white"}`}>
         {fmt(total)}
       </td>
@@ -1393,6 +1408,8 @@ export function TimecardViewer({
     (timecard?.segments.some(s => s.segmentType === "MEAL_PREMIUM") ?? false) ||
     (timecard?.mealPremiumWaivers.length ?? 0) > 0;
   const showMealColumn = effectiveAutoDeductMeal || hasMealPremiums;
+  const hasPremiumHours =
+    timecard?.segments.some(s => s.segmentType === "MEAL_PREMIUM" && s.isPaid && s.durationMinutes > 0) ?? false;
 
   // Column count for colSpan on expanded rows
   // Base: chevron + date + notes-icon + in + out + reg + ot + dt + total = 9
@@ -1921,12 +1938,14 @@ export function TimecardViewer({
 
                       const buckets: Record<string, number> = {};
                       for (const seg of daySegments) {
+                        // Meal premiums show on their own line, not in the day's hours
+                        if (seg.segmentType === "MEAL_PREMIUM") continue;
                         // REG/OT/DT overrides are display-only tags; use engine payBucket for column math
                         const eb = (seg.payBucketOverride && !["REG", "OT", "DT"].includes(seg.payBucketOverride))
                           ? seg.payBucketOverride
                           : seg.payBucket;
-                        // Holiday, leave, and meal premiums all credit under the REG column
-                        const displayBucket = (seg.segmentType === "HOLIDAY" || seg.segmentType === "LEAVE" || seg.segmentType === "MEAL_PREMIUM") ? "REG" : eb;
+                        // Holiday and leave credit under the REG column
+                        const displayBucket = (seg.segmentType === "HOLIDAY" || seg.segmentType === "LEAVE") ? "REG" : eb;
                         buckets[displayBucket] = (buckets[displayBucket] ?? 0) + seg.durationMinutes;
                       }
 
@@ -1934,7 +1953,7 @@ export function TimecardViewer({
                       const ot = buckets["OT"] ?? 0;
                       const dt = buckets["DT"] ?? 0;
                       const dailyTotal = daySegments
-                        .filter((s) => s.isPaid)
+                        .filter((s) => s.isPaid && s.segmentType !== "MEAL_PREMIUM")
                         .reduce((a, s) => a + s.durationMinutes, 0);
 
                       const pairs = buildPunchPairs(dayPunches);
@@ -2834,13 +2853,16 @@ export function TimecardViewer({
                               <td className="w-7 px-1 py-1.5" />
                               <td className="px-2 py-1 font-mono text-sm text-zinc-300 dark:text-zinc-700">—</td>
                               <td className="px-2 py-1 font-mono text-sm text-zinc-300 dark:text-zinc-700">—</td>
-                              <td className="px-3 py-1.5 text-right tabular-nums text-sm font-medium text-amber-700 dark:text-amber-300">
-                                {seg.waivedLine ? "—" : minutesToHoursDecimal(seg.durationMinutes)}
-                              </td>
+                              {/* A premium is an hour of pay, not an hour worked: it stays out of
+                                  Reg and the day's Total, and shows here on its own line. */}
                               <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
                               <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
-                              <td className="pl-3 pr-8 py-1.5 text-right tabular-nums text-sm font-bold text-amber-700 dark:text-amber-300">
-                                {seg.waivedLine ? "—" : minutesToHoursDecimal(seg.durationMinutes)}
+                              <td className="px-3 py-1.5 text-right text-zinc-300 dark:text-zinc-700 text-sm">—</td>
+                              <td
+                                className="pl-3 pr-8 py-1.5 text-right tabular-nums text-sm font-medium text-amber-700 dark:text-amber-300"
+                                title="Meal premium: one hour of pay at the regular rate, not counted as hours worked"
+                              >
+                                {seg.waivedLine ? "—" : `+${minutesToHoursDecimal(seg.durationMinutes)}`}
                               </td>
                               {showMealColumn && (() => {
                                 const segStart = seg.startTime;
@@ -3027,6 +3049,11 @@ export function TimecardViewer({
                           <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
                             DT
                           </th>
+                          {hasPremiumHours && (
+                            <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
+                              Meal Prem
+                            </th>
+                          )}
                           <th className="px-3 py-1.5 text-right text-xs font-medium text-zinc-500">
                             Total Hrs
                           </th>
@@ -3072,10 +3099,12 @@ export function TimecardViewer({
                           if (summaryGroupBy === "total") {
                             // Recompute from segments so missing-punch days are excluded
                             const filteredBucketMap: Record<string, number> = {};
+                            let premium = 0;
                             for (const s of (timecard?.segments ?? [])) {
                               if (!s.isPaid) continue;
                               const sd = format(parseUtcDate(s.segmentDate), "yyyy-MM-dd");
                               if (missingPunchDates.has(sd)) continue;
+                              if (s.segmentType === "MEAL_PREMIUM") { premium += s.durationMinutes; continue; }
                               const eb = (s.payBucketOverride && !["REG", "OT", "DT"].includes(s.payBucketOverride))
                                 ? s.payBucketOverride
                                 : s.payBucket;
@@ -3099,6 +3128,8 @@ export function TimecardViewer({
                                 dt={dt}
                                 total={total}
                                 rate={rate}
+                                premium={premium}
+                                showPremium={hasPremiumHours}
                                 isBold
                               />
                             );
@@ -3134,7 +3165,8 @@ export function TimecardViewer({
                             let grandReg = 0,
                               grandOt = 0,
                               grandDt = 0,
-                              grandTotal = 0;
+                              grandTotal = 0,
+                              grandPremium = 0;
 
                             return (
                               <>
@@ -3148,8 +3180,10 @@ export function TimecardViewer({
                                   );
                                   const weekBuckets: Record<string, number> =
                                     {};
+                                  let weekPremium = 0;
                                   for (const s of weekSegs) {
-                                    if (s.isPaid) {
+                                    if (s.isPaid && s.segmentType === "MEAL_PREMIUM") weekPremium += s.durationMinutes;
+                                    else if (s.isPaid) {
                                       const eb = (s.payBucketOverride && !["REG", "OT", "DT"].includes(s.payBucketOverride))
                                         ? s.payBucketOverride
                                         : s.payBucket;
@@ -3168,6 +3202,7 @@ export function TimecardViewer({
                                   grandOt += ot;
                                   grandDt += dt;
                                   grandTotal += total;
+                                  grandPremium += weekPremium;
                                   return (
                                     <SummaryRow
                                       key={week.label}
@@ -3177,6 +3212,8 @@ export function TimecardViewer({
                                       dt={dt}
                                       total={total}
                                       rate={rate}
+                                      premium={weekPremium}
+                                      showPremium={hasPremiumHours}
                                     />
                                   );
                                 })}
@@ -3187,6 +3224,8 @@ export function TimecardViewer({
                                   dt={grandDt}
                                   total={grandTotal}
                                   rate={rate}
+                                  premium={grandPremium}
+                                  showPremium={hasPremiumHours}
                                   isBold
                                 />
                               </>
@@ -3196,7 +3235,7 @@ export function TimecardViewer({
                           // Pay code grouping
                           const byCode: Record<
                             string,
-                            { label: string; reg: number; ot: number; dt: number; total: number }
+                            { label: string; reg: number; ot: number; dt: number; total: number; premium: number }
                           > = {};
                           for (const seg of (timecard?.segments ?? [])) {
                             if (!seg.isPaid) continue;
@@ -3209,7 +3248,8 @@ export function TimecardViewer({
                               seg.payCode
                                 ? `${seg.payCode.code}[${seg.payCode.label}]`
                                 : PAY_BUCKET_LABEL[eb as PayBucketValue] ?? eb;
-                            byCode[key] = byCode[key] ?? { label: key, reg: 0, ot: 0, dt: 0, total: 0 };
+                            byCode[key] = byCode[key] ?? { label: key, reg: 0, ot: 0, dt: 0, total: 0, premium: 0 };
+                            if (seg.segmentType === "MEAL_PREMIUM") { byCode[key].premium += seg.durationMinutes; continue; }
                             byCode[key].total += seg.durationMinutes;
                             if (eb === "REG" || PAID_LEAVE_BUCKETS.has(eb)) {
                               byCode[key].reg += seg.durationMinutes;
@@ -3219,9 +3259,9 @@ export function TimecardViewer({
                               byCode[key].dt += seg.durationMinutes;
                             }
                           }
-                          let grandReg = 0, grandOt = 0, grandDt = 0, grandTotal = 0;
+                          let grandReg = 0, grandOt = 0, grandDt = 0, grandTotal = 0, grandPremium = 0;
                           for (const e of Object.values(byCode)) {
-                            grandReg += e.reg; grandOt += e.ot; grandDt += e.dt; grandTotal += e.total;
+                            grandReg += e.reg; grandOt += e.ot; grandDt += e.dt; grandTotal += e.total; grandPremium += e.premium;
                           }
 
                           return (
@@ -3235,6 +3275,8 @@ export function TimecardViewer({
                                   dt={entry.dt}
                                   total={entry.total}
                                   rate={rate}
+                                  premium={entry.premium}
+                                  showPremium={hasPremiumHours}
                                 />
                               ))}
                               <SummaryRow
@@ -3244,6 +3286,8 @@ export function TimecardViewer({
                                 dt={grandDt}
                                 total={grandTotal}
                                 rate={rate}
+                                premium={grandPremium}
+                                showPremium={hasPremiumHours}
                                 isBold
                               />
                             </>

@@ -669,7 +669,7 @@ async function ensureSalarySegments(
  * Compute meal break premium segments for days where a qualifying meal was not taken.
  *
  * For each active MealPremiumRow, the rule triggers when:
- *  - The shift span (clock-in to clock-out) exceeds row.applyToMinutes
+ *  - The hours worked go past the hour the row's window closes in (more than 5 for a window ending at 299)
  *  - No qualifying meal occurred within [shiftStart + applyFromMinutes, shiftStart + applyToMinutes]
  *  - Optional suppressions (unlessHoursExceed, unlessPunchedMeal) do not apply
  *
@@ -700,7 +700,8 @@ function premiumWaivedTest(waivers: PremiumWaiverKey[], learned: Map<string, num
   };
 }
 
-function computeMealPremiums(
+/** Exported for its test. */
+export function computeMealPremiums(
   timesheetId: string,
   segments: SegmentInput[],
   punches: Punch[],
@@ -736,22 +737,17 @@ function computeMealPremiums(
     const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: timezone });
     const dayPunches = punches.filter(p => fmt.format(p.punchTime) === dayKey);
 
-    // Shift span and start — use actual punch times when configured, else rounded segment times
+    // Shift start, where the meal windows are measured from — the actual punch
+    // when configured, else the rounded first work line.
     let shiftStartMs: number;
-    let shiftSpanMins: number;
     if (ruleSet.mealPremiumUseActualForWindow) {
       const clockIns = dayPunches.filter(p => p.punchType === "CLOCK_IN");
       const clockOuts = dayPunches.filter(p => p.punchType === "CLOCK_OUT");
       if (clockIns.length === 0 || clockOuts.length === 0) continue;
       shiftStartMs = clockIns[0].punchTime.getTime();
-      const shiftEndMs = clockOuts[clockOuts.length - 1].punchTime.getTime();
-      shiftSpanMins = (shiftEndMs - shiftStartMs) / 60_000;
     } else {
       const sorted = [...workSegs].sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
       shiftStartMs = sorted[0].startTime.getTime();
-      const lastWork = sorted[sorted.length - 1];
-      shiftSpanMins = (lastWork.endTime.getTime() - shiftStartMs) / 60_000
-        + mealSegs.reduce((s, m) => s + m.durationMinutes, 0);
     }
 
     const totalWorkedMins = workSegs.reduce((s, w) => s + w.durationMinutes, 0);
@@ -766,13 +762,14 @@ function computeMealPremiums(
       .sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime());
     const hasMissingClockOut = sortedClockPunches.length > 0 &&
       sortedClockPunches[sortedClockPunches.length - 1].punchType === "CLOCK_IN";
-    // An open shift may simply still be going: it has lasted until now so far,
-    // and no longer. Treating it as longer than every window put a premium on
-    // everyone mid-shift (a second-meal premium for someone back from a proper
-    // lunch, a first-meal one for someone not yet due a lunch). A shift that
-    // really is missing its clock out gets the premium once enough time has
-    // passed, at the next recalculation.
-    const openSpanMins = (Date.now() - shiftStartMs) / 60_000;
+    // Hours actually worked: the work lines, plus, for someone still clocked
+    // in, the time since their last clock in (an open shift has no line yet).
+    // An open shift counts for as long as it has lasted, and no longer:
+    // treating it as longer than every window put a premium on everyone
+    // mid-shift. One really missing its clock out gets the premium once enough
+    // time has passed, at the next recalculation.
+    const lastClock = sortedClockPunches[sortedClockPunches.length - 1];
+    const workedMins = totalWorkedMins + (hasMissingClockOut ? Math.max(0, (Date.now() - lastClock.punchTime.getTime()) / 60_000) : 0);
 
     let premiumsThisDay = 0;
     let accumulatedPremiumMins = 0; // offset so each row gets a distinct startTime
@@ -780,10 +777,15 @@ function computeMealPremiums(
     for (const row of activeRows) {
       if (premiumsThisDay >= ruleSet.mealBreakPremiumMaxPerDay) break;
 
-      // Trigger: shift must extend past the end of the required meal window.
-      // With no clock out, the shift's true end is unknown; it counts for as
-      // long as it has lasted so far.
-      if ((hasMissingClockOut ? openSpanMins : shiftSpanMins) < row.applyToMinutes) continue;
+      // Trigger: a meal is owed only once the hours worked go past the hour the
+      // meal window closes in: more than 5 hours for a window ending at minute
+      // 299 (or 293), more than 10 for one ending at 599. It used to compare the
+      // time from first clock in to last clock out with the window's last
+      // minute, so exactly 5 hours worked (8:00 to 1:00) drew a premium, and
+      // time off the clock counted as if worked. California requires no meal
+      // for 5 hours or less. With no clock out, the hours worked so far count.
+      const owedAfterMins = Math.ceil((row.applyToMinutes + 1) / 60) * 60;
+      if (workedMins <= owedAfterMins) continue;
 
       // unlessHoursExceed: suppress when total worked exceeds threshold
       if (row.unlessHoursExceed && totalWorkedMins > row.unlessHoursExceedMinutes) continue;

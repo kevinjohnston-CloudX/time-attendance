@@ -33,6 +33,7 @@ export const hoursSummarySource: DataSourceDefinition = {
     { id: "sickMinutes",   label: "Sick",        type: "number",  defaultVisible: false },
     { id: "holidayMinutes",label: "Holiday",     type: "number",  defaultVisible: false },
     { id: "totalMinutes",  label: "Total",       type: "number",  defaultVisible: true },
+    { id: "premiumMinutes", label: "Meal premium", type: "number", defaultVisible: false },
     { id: "status",        label: "Timesheet status",      type: "string",  defaultVisible: true },
   ],
   filters: [
@@ -94,6 +95,18 @@ export const hoursSummarySource: DataSourceDefinition = {
           })
         : [];
 
+    // Meal premiums: an hour of pay each, not hours worked, so not in Regular or Total.
+    const timesheetIds = timesheets.map((ts) => ts.id);
+    const premiums =
+      timesheetIds.length > 0
+        ? await db.workSegment.groupBy({
+            by: ["timesheetId"],
+            where: { timesheetId: { in: timesheetIds }, segmentType: "MEAL_PREMIUM", isPaid: true },
+            _sum: { durationMinutes: true },
+          })
+        : [];
+    const premiumByTimesheet = new Map(premiums.map((p) => [p.timesheetId, p._sum.durationMinutes ?? 0]));
+
     const ptoByEmployee: Record<string, number> = {};
     for (const bal of ptoBalances) {
       ptoByEmployee[bal.employeeId] =
@@ -126,6 +139,7 @@ export const hoursSummarySource: DataSourceDefinition = {
         sickMinutes: sick,
         holidayMinutes: holiday,
         totalMinutes: reg + ot + dt,
+        premiumMinutes: premiumByTimesheet.get(ts.id) ?? 0,
         status: readable("timesheetStatus", ts.status),
       };
     });
