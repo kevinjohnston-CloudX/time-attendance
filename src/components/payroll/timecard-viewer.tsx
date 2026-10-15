@@ -11,7 +11,7 @@ import {
 } from "date-fns";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-import { fromSiteClock, parseUtcDate, timeZoneAbbrev, toSiteClock } from "@/lib/utils/date";
+import { fromSiteClock, MAX_OVERNIGHT_MS, parseUtcDate, timeZoneAbbrev, toSiteClock } from "@/lib/utils/date";
 import { periodLastDay } from "@/lib/pay-period-display";
 import type { PayFrequency } from "@prisma/client";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
@@ -1187,8 +1187,19 @@ export function TimecardViewer({
         setEditError(`Clock in must be before clock out (${format(snap.pairedTime, "h:mm a")}).`);
         return;
       }
-      // A clock out earlier than its clock in is the next morning: 7:00 PM to 12:30 AM.
-      if (snap.punchType === "CLOCK_OUT" && punchDate <= snap.pairedTime) punchDate.setDate(punchDate.getDate() + 1);
+      // An AM clock out earlier than a PM clock in is the next morning, 7:00 PM
+      // to 12:30 AM, for up to 16 hours (see handleAddEntry).
+      const nextMorning = snap.punchType === "CLOCK_OUT" && punchDate <= snap.pairedTime
+        && snap.pairedTime.getHours() >= 12 && editAmPm === "AM";
+      if (nextMorning) punchDate.setDate(punchDate.getDate() + 1);
+      if (snap.punchType === "CLOCK_OUT" && punchDate <= snap.pairedTime) {
+        setEditError(`Clock out must be after clock in (${format(snap.pairedTime, "h:mm a")}).`);
+        return;
+      }
+      if (nextMorning && punchDate.getTime() - snap.pairedTime.getTime() > MAX_OVERNIGHT_MS) {
+        setEditError("A shift past midnight can be up to 16 hours. Check the AM and PM.");
+        return;
+      }
     }
 
     setPendingNewPunches((prev) => [...prev, { dayKey: snap.dayKey, pairIndex: snap.pairIndex, punchType: snap.punchType, punchDate }]);
@@ -1249,10 +1260,20 @@ export function TimecardViewer({
       `${newEntryDate}T${String(outH).padStart(2, "0")}:${String(outParsed.minutes).padStart(2, "0")}:00`
     );
 
-    // A clock out earlier than the clock in is the next morning: 7:00 PM to
-    // 12:30 AM. Its hours stay on this date, on one row.
-    const endsNextDay = outDate <= inDate;
+    // A PM clock in with an earlier AM clock out is the next morning, 7:00 PM
+    // to 12:30 AM, as in NovaTime; its hours stay on this date, on one row.
+    // Only that, and only up to 16 hours: 11:01 AM to 11:00 AM is a typo, not
+    // a 24 hour shift.
+    const endsNextDay = outDate <= inDate && newInAmPm === "PM" && newOutAmPm === "AM";
     if (endsNextDay) outDate.setDate(outDate.getDate() + 1);
+    if (outDate <= inDate) {
+      setNewEntryError("Clock out must be after clock in.");
+      return;
+    }
+    if (endsNextDay && outDate.getTime() - inDate.getTime() > MAX_OVERNIGHT_MS) {
+      setNewEntryError("A shift past midnight can be up to 16 hours. Check the AM and PM.");
+      return;
+    }
 
     // Client-side overlap check against existing punch pairs for this date
     if (timecard) {

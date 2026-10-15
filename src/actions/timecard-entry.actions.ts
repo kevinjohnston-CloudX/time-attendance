@@ -8,7 +8,7 @@ import { TIMECARD_EDITORS, TIMECARD_EDITORS_COMPANY } from "@/lib/rbac/permissio
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
-import { computeRoundedTime, snapToLocalTime } from "@/lib/utils/date";
+import { computeRoundedTime, MAX_OVERNIGHT_MS, snapToLocalTime } from "@/lib/utils/date";
 import {
   manualPunchPairSchema,
   singleManualPunchSchema,
@@ -71,6 +71,12 @@ export const addManualPunchPair = withRBAC(
 
     const { ruleSet, shift } = ts.employee;
     const tz = personTimeZone(ts.employee, "UTC");
+    // A pair past midnight is the odd late evening (7:00 PM to 12:30 AM); one
+    // longer than 16 hours is an AM/PM slip, not a shift.
+    const localDay = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(d);
+    if (localDay(inDate) !== localDay(outDate) && outDate.getTime() - inDate.getTime() > MAX_OVERNIGHT_MS) {
+      throw new Error("A shift past midnight can be up to 16 hours. Check the AM and PM.");
+    }
     const roundedIn = computeRoundedTime(inDate, "CLOCK_IN", ruleSet, shift, tz);
     const roundedOut = computeRoundedTime(outDate, "CLOCK_OUT", ruleSet, shift, tz);
 

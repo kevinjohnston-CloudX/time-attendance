@@ -136,6 +136,12 @@ export function today(): Date {
  * PostgreSQL date-only columns arrive as UTC midnight Date objects.
  * Convert to local midnight so format() and getDay() use the intended calendar date.
  */
+/**
+ * The longest shift past midnight a person may enter by hand: a PM clock in
+ * with an AM clock out, 7:00 PM to 12:30 AM. Longer is taken for an AM/PM slip.
+ */
+export const MAX_OVERNIGHT_MS = 16 * 60 * 60_000;
+
 export function parseUtcDate(d: Date | string): Date {
   const date = typeof d === "string" ? new Date(d) : d;
   return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
