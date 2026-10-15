@@ -19,6 +19,10 @@ const ruleSet = {
   ],
 } as never;
 const TZ = "America/Los_Angeles";
+const novaTimeLike = { ...(ruleSet as object), mealBreakPremiumMaxPerDay: 2, mealPremiumRows: [
+  { applyFromMinutes: 1, applyToMinutes: 299, minimumMealMinutes: 30, payMinutes: 60, payCodeId: "mp", unlessHoursExceed: false, unlessHoursExceedMinutes: 0, unlessPunchedMeal: false },
+  { applyFromMinutes: 360, applyToMinutes: 719, minimumMealMinutes: 30, payMinutes: 60, payCodeId: "mp", unlessHoursExceed: true, unlessHoursExceedMinutes: 719, unlessPunchedMeal: false },
+] } as never;
 const day = new Date("2026-10-13T00:00:00.000Z");
 const at = (hhmm: string) => new Date(`2026-10-13T${hhmm}:00-07:00`);
 const punch = (punchType: string, hhmm: string) => ({ punchType, punchTime: at(hhmm), roundedTime: at(hhmm) });
@@ -59,6 +63,14 @@ describe("California meal premium", () => {
     const seg = { timesheetId: "t", segmentType: "WORK", startTime: inT, endTime: outT, durationMinutes: 330, segmentDate: day, isPaid: true, payBucket: "REG", isSplit: false };
     const ps = [punch("CLOCK_IN", "19:00"), { punchType: "CLOCK_OUT", punchTime: outT, roundedTime: outT }];
     expect(computeMealPremiums("t", [seg] as never, ps as never, ruleSet, TZ).length).toBe(1);
+  });
+  it("does not count a missed clock out from an earlier day as worked until now (Krystle Brewster, 10/12)", () => {
+    // 6:58 to 11:19, a 4 hour gap (a good first meal), back in 3:28 PM with no clock out; looked at 3 days later.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-16T09:00:00-07:00"));
+    const p = computeMealPremiums("t", [work("06:58", "11:19")] as never, [punch("CLOCK_IN", "06:58"), punch("CLOCK_OUT", "11:19"), punch("CLOCK_IN", "15:28")] as never, novaTimeLike, TZ);
+    vi.useRealTimers();
+    expect(p.length).toBe(0);
   });
   it("pays at most one hour a day", () => {
     // 12 hours straight: both meals missed, one premium.

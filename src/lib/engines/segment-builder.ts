@@ -109,6 +109,18 @@ function buildSegmentSpan(
 const truncToMin = (d: Date): Date => new Date(Math.floor(d.getTime() / 60_000) * 60_000);
 
 /**
+ * The day someone started, as "yyyy-MM-dd": the later of the hire date and the
+ * adjusted hire date. A rehire's adjusted hire date is the day they came back;
+ * one set earlier for seniority does not move the start before the hire date.
+ * Nothing before it is an absence or earns salary hours.
+ */
+export function startedOn(employee: { hireDate: Date; adjustedHireDate?: Date | null }): string {
+  const hired = employee.hireDate.toISOString().slice(0, 10);
+  const adjusted = employee.adjustedHireDate ? employee.adjustedHireDate.toISOString().slice(0, 10) : null;
+  return adjusted && adjusted > hired ? adjusted : hired;
+}
+
+/**
  * A clock in and clock out both entered by hand by a person (Add time), as
  * HR does for the odd evening that runs past midnight, 7:00 PM to 12:30 AM.
  * Such a pair keeps all its hours on the day it starts, on one timecard row,
@@ -800,13 +812,16 @@ export function computeMealPremiums(
     const hasMissingClockOut = sortedClockPunches.length > 0 &&
       sortedClockPunches[sortedClockPunches.length - 1].punchType === "CLOCK_IN";
     // Hours actually worked: the work lines, plus, for someone still clocked
-    // in, the time since their last clock in (an open shift has no line yet).
-    // An open shift counts for as long as it has lasted, and no longer:
+    // in today, the time since their last clock in (an open shift has no line
+    // yet). An open shift counts for as long as it has lasted, and no longer:
     // treating it as longer than every window put a premium on everyone
-    // mid-shift. One really missing its clock out gets the premium once enough
-    // time has passed, at the next recalculation.
+    // mid-shift. A missed clock out on an earlier day adds nothing: counted
+    // "until now" it ran for days, past every window, and drew a second meal
+    // premium on a day with a good first meal (Krystle Brewster, 10/12). Its
+    // hours count once the clock out is entered, as in NovaTime.
     const lastClock = sortedClockPunches[sortedClockPunches.length - 1];
-    const workedMins = totalWorkedMins + (hasMissingClockOut ? Math.max(0, (Date.now() - lastClock.punchTime.getTime()) / 60_000) : 0);
+    const onShiftToday = hasMissingClockOut && fmt.format(new Date()) === dayKey;
+    const workedMins = totalWorkedMins + (onShiftToday ? Math.max(0, (Date.now() - lastClock.punchTime.getTime()) / 60_000) : 0);
 
     let premiumsThisDay = 0;
     let accumulatedPremiumMins = 0; // offset so each row gets a distinct startTime
@@ -1025,7 +1040,14 @@ export async function rebuildSegments(
     },
     orderBy: { effectiveDate: "desc" },
   });
-  const autoPayCreditsFrom = midPeriodEntry?.effectiveDate ?? undefined;
+  // And never before the day they started (hire date, or a rehire's adjusted
+  // hire date): someone salaried hired mid-period was paid salary hours for
+  // every weekday of the period before they started, since a new employee has
+  // no rule set history entry to start from.
+  const hiredFrom = new Date(`${startedOn(timesheet.employee)}T00:00:00.000Z`);
+  const autoPayCreditsFrom = [midPeriodEntry?.effectiveDate, hiredFrom]
+    .filter((d): d is Date => Boolean(d))
+    .reduce<Date | undefined>((latest, d) => (!latest || d > latest ? d : latest), undefined);
 
   const punches = await db.punch.findMany({
     where: { timesheetId, isApproved: true, correctedById: null },
@@ -1365,9 +1387,10 @@ export async function rebuildSegments(
   // An inactive employee raises no new absences: the record keeps no
   // termination date, so every scheduled day after they left would read as
   // absent. Open ones still auto-resolve when a day gets activity. Days
-  // before the hire date are not absences either: someone hired mid-period
-  // was flagged absent for every scheduled day before they started.
-  const hireDay = timesheet.employee.hireDate.toISOString().slice(0, 10);
+  // before they started (hire date, or a rehire's adjusted hire date) are not
+  // absences either: someone hired mid-period was flagged absent for every
+  // scheduled day before they started.
+  const hireDay = startedOn(timesheet.employee);
   await syncAbsentExceptions(
     timesheetId,
     timezone,
