@@ -122,7 +122,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const scheduleDay = await db.scheduleDay.findFirst({
     where: { employeeId: employee.id, workDate: new Date(`${today}T00:00:00.000Z`) },
-    select: { isWorkday: true, startTime: true, endTime: true },
+    select: { isWorkday: true, startTime: true, endTime: true, source: true },
   });
 
   // Presence per CloudTime's own record. Newest row wins outright rather than
@@ -199,6 +199,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     employee: employee.id,
     scheduled,
     reason,
+    // Admitted on a stand-in rather than Oracle's day (schedule-stand-in.ts).
+    // The tablet is told WORKDAY all the same; this is for the log only.
+    standIn: scheduleDay?.source === "STAND_IN" || undefined,
     terminated: terminated || undefined,
     ...from,
     noting,

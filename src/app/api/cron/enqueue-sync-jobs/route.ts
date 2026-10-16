@@ -9,6 +9,7 @@ import {
   gateStateSeedDue,
   scheduleWindow,
 } from "@/lib/services/bridge.service";
+import { runScheduleStandIn } from "@/lib/services/schedule-stand-in.service";
 
 /**
  * Queues the work the bridge will collect on its next pass.
@@ -63,11 +64,30 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
   }
 
+  // Stand-in schedules for any building whose day Oracle has not sent (see
+  // schedule-stand-in.ts). After the queueing, and caught, so a fault here
+  // can never stop the pull that would bring Oracle's day in.
+  const standIn: Array<Record<string, unknown>> = [];
+  for (const tenant of tenants) {
+    try {
+      const run = await runScheduleStandIn(tenant.id);
+      standIn.push({
+        tenant: tenant.slug,
+        skipped: run.skipped,
+        sites: run.sites.filter((s) => s.step !== "NONE"),
+      });
+    } catch (err) {
+      console.error(`[schedule-stand-in] ${tenant.slug} failed`, err);
+      standIn.push({ tenant: tenant.slug, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   return NextResponse.json({
     tenants: tenants.length,
     created: queued.filter((q) => q.created).length,
     alreadyPending: queued.filter((q) => !q.created).length,
     window,
     queued,
+    standIn,
   });
 }

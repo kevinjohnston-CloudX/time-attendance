@@ -184,9 +184,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const todayIso = new Intl.DateTimeFormat("en-CA", { timeZone: SCHEDULE_ZONE }).format(new Date(now));
     const today = new Date(`${todayIso}T00:00:00.000Z`);
     const tomorrow = new Date(today.getTime() + 86_400_000);
+    // Oracle's rows only. A stand-in (schedule-stand-in.ts) is CloudTime
+    // covering for a day Oracle has not sent, and must not hide that it hasn't.
+    const fromOracle = { source: { not: "STAND_IN" as const } };
     const [todayRows, tomorrowRows] = await Promise.all([
-      db.scheduleDay.count({ where: { workDate: today } }),
-      db.scheduleDay.count({ where: { workDate: tomorrow } }),
+      db.scheduleDay.count({ where: { workDate: today, ...fromOracle } }),
+      db.scheduleDay.count({ where: { workDate: tomorrow, ...fromOracle } }),
     ]);
     if (todayRows > 0 && tomorrowRows < todayRows * SCHEDULE_MIN_SHARE) {
       findings.push({
