@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Providers } from "@/app/_components/providers";
 import { NavigationProgress } from "@/components/layout/navigation-progress";
@@ -30,6 +30,18 @@ export const metadata: Metadata = {
       ? "[LOCAL] CloudTime"
       : "CloudTime",
   description: "Time and attendance for CloudX Systems.",
+};
+
+/**
+ * The page reaches under an iPhone's notch and home bar ("cover"), so the
+ * phone frame can paint those strips itself and pad its bars by the safe area
+ * insets, as a native app does. Zoom stays allowed: people who need larger
+ * text pinch to get it.
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

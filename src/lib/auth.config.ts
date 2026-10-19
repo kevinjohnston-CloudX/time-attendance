@@ -55,11 +55,21 @@ function classicServes(pathname: string): boolean {
  * instead (the not found screen asking New). `headers` carries the portal's
  * request path header.
  */
+/**
+ * A phone always gets the new design, whatever the browser chose: the classic
+ * one was never made for a small screen. Read from the browser's "Mobi" token,
+ * the standard test for a phone; an iPad reports itself as a desktop and keeps
+ * its choice.
+ */
+function isPhone(request: Request): boolean {
+  return /Mobi/i.test(request.headers.get("user-agent") ?? "");
+}
+
 function serve(request: Request & { nextUrl: URL; cookies: { get(name: string): { value: string } | undefined } }, headers?: Headers) {
   const { nextUrl } = request;
   const init = headers ? { request: { headers } } : undefined;
   const chosen = request.headers.get(DESIGN_PROBE_HEADER) ?? request.cookies.get(DESIGN_COOKIE)?.value;
-  if (classicServes(nextUrl.pathname) && designFromCookie(chosen) === "classic") {
+  if (classicServes(nextUrl.pathname) && designFromCookie(chosen) === "classic" && !isPhone(request)) {
     const url = new URL(`${CLASSIC_PREFIX}${nextUrl.pathname}${nextUrl.search}`, nextUrl);
     return NextResponse.rewrite(url, init);
   }
