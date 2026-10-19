@@ -24,6 +24,8 @@ import {
   Banknote,
   Cog,
   DoorOpen,
+  House,
+  ClipboardCheck,
 } from "lucide-react";
 
 /**
@@ -110,7 +112,7 @@ export const SECTIONS: NavSection[] = [
     icon: Users,
     railLabel: "Team",
     label: "Team",
-    prefixes: ["/supervisor"],
+    prefixes: ["/supervisor", "/approvals"],
     items: [
       { label: "Team Overview", href: "/supervisor", icon: Users, permission: "PUNCH_VIEW_TEAM" },
       { label: "Live Attendance", href: "/supervisor/on-site", icon: DoorOpen, permission: "PRESENCE_VIEW_ANY" },
@@ -270,4 +272,92 @@ export function locate(pathname: string): { section: NavSection; item: NavItem |
     s.prefixes.some((p) => pathname === p || pathname.startsWith(p + "/")),
   );
   return section ? { section, item: null } : null;
+}
+
+/** Approvals: everything waiting on this person's decision, on one screen. */
+export const APPROVALS_HREF = "/approvals";
+
+export type PhoneTab = { label: string; href: string; icon: React.ElementType; approvals?: boolean };
+
+/**
+ * The phone's bottom bar: four pages chosen by what this person mostly does,
+ * then Menu (drawn by the bar itself), which holds every page the sidebar
+ * lists. The four only decide what is one tap away; nothing becomes
+ * unreachable, so a role is never worse off for the choice made here.
+ *
+ * <p>Read in this order, first match wins: limited to Live Attendance, an
+ * inactive account, HR (people and the building), payroll, a supervisor,
+ * and everyone else, who mostly punch and check their hours.
+ */
+export function phoneTabs({
+  can,
+  liveAttendanceOnly = false,
+  inactive = false,
+}: {
+  can: (permission?: string | string[]) => boolean;
+  liveAttendanceOnly?: boolean;
+  inactive?: boolean;
+}): PhoneTab[] {
+  const home: PhoneTab = { label: "Home", href: "/dashboard", icon: House };
+  const approvals: PhoneTab = { label: "Approvals", href: APPROVALS_HREF, icon: ClipboardCheck, approvals: true };
+  const attendance: PhoneTab = { label: "Attendance", href: "/supervisor/on-site", icon: DoorOpen };
+
+  if (liveAttendanceOnly) return [attendance];
+  if (inactive) {
+    return [
+      { label: "Timesheet", href: "/time/timesheet", icon: ClipboardList },
+      { label: "History", href: "/time/history", icon: History },
+      { label: "Documents", href: "/documents", icon: FileText },
+    ];
+  }
+  if (can("EMPLOYEE_MANAGE") && can("PRESENCE_VIEW_ANY")) {
+    return [home, attendance, { label: "Employees", href: "/admin/employees", icon: Users }, approvals];
+  }
+  if (can("PAY_PERIOD_MANAGE")) {
+    return [
+      home,
+      { label: "Timecards", href: "/payroll/timecards", icon: FileSpreadsheet },
+      { label: "Pay Periods", href: "/payroll", icon: CalendarRange },
+      approvals,
+    ];
+  }
+  if (can("PUNCH_VIEW_TEAM")) {
+    return [home, { label: "Team", href: "/supervisor", icon: Users }, approvals, { label: "Punch", href: "/time/punch", icon: Clock }];
+  }
+  return [
+    home,
+    { label: "Punch", href: "/time/punch", icon: Clock },
+    { label: "Timesheet", href: "/time/timesheet", icon: ClipboardList },
+    { label: "Time Off", href: "/leave", icon: CalendarDays },
+  ];
+}
+
+/**
+ * The sections and pages this person's menu lists. One answer for the sidebar
+ * and the phone menu, so the two can never disagree about what someone can
+ * reach.
+ */
+export function visibleSections({
+  permissions,
+  isInactive = false,
+  onlyHrefs,
+}: {
+  permissions?: string[];
+  isInactive?: boolean;
+  onlyHrefs?: string[];
+}): NavSection[] {
+  const has = (perm?: string | string[]) => {
+    if (!perm) return true;
+    if (!permissions || permissions.length === 0) return false;
+    if (Array.isArray(perm)) return perm.some((p) => permissions.includes(p));
+    return permissions.includes(perm);
+  };
+  return SECTIONS.map((section) => ({
+    ...section,
+    items: onlyHrefs
+      ? section.items.filter((i) => onlyHrefs.includes(i.href))
+      : isInactive
+        ? section.items.filter((i) => INACTIVE_ALLOWED_HREFS.includes(i.href))
+        : section.items.filter((i) => has(i.permission)),
+  })).filter((section) => section.items.length > 0);
 }

@@ -44,7 +44,7 @@ check("/payroll/timecards", activeHref("/payroll/timecards", ALL_HREFS), "/payro
 
 // A child route with no destination of its own falls back to its parent.
 check("/time/timesheet/abc123", activeHref("/time/timesheet/abc123", ALL_HREFS), "/time/timesheet");
-check("/supervisor/timesheets/x", activeHref("/supervisor/timesheets/x", ALL_HREFS), "/supervisor/timesheets");
+check("/supervisor/leave/x", activeHref("/supervisor/leave/x", ALL_HREFS), "/supervisor/leave");
 // A Team page that is not a supervisor queue still lights its own row, not
 // Team Overview's, even though /supervisor prefixes it.
 check("/supervisor/on-site", activeHref("/supervisor/on-site", ALL_HREFS), "/supervisor/on-site");
@@ -67,7 +67,7 @@ const where = (p: string) => {
 // Destinations name their section and their page.
 check("/dashboard", where("/dashboard"), "Me > Dashboard");
 check("/supervisor/exceptions", where("/supervisor/exceptions"), "Team > Exceptions");
-check("/supervisor/on-site", where("/supervisor/on-site"), "Team > On Site");
+check("/supervisor/on-site", where("/supervisor/on-site"), "Team > Live Attendance");
 check("/payroll/timecards", where("/payroll/timecards"), "Payroll > Timecards");
 check("/admin/audit", where("/admin/audit"), "Administration > Audit Log");
 
@@ -78,6 +78,9 @@ check("/admin/sites/abc123", where("/admin/sites/abc123"), "Administration");
 check("/admin/employees/abc123", where("/admin/employees/abc123"), "Administration > Employees");
 check("/accruals/abc123", where("/accruals/abc123"), "Me > Accruals");
 check("/reports/abc123", where("/reports/abc123"), "Payroll > Reports");
+// Approvals is not in the sidebar (the phone's bottom bar opens it), but on a
+// computer it still names the section it belongs to.
+check("/approvals", where("/approvals"), "Team");
 check("/payroll/pay-periods/abc", where("/payroll/pay-periods/abc"), "Payroll > Pay Periods");
 
 // Outside the portal entirely.

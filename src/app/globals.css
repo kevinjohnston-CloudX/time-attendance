@@ -1001,3 +1001,52 @@ option {
   background-color: var(--surface-card);
   color: var(--text-primary);
 }
+
+/* A work queue row's one line of detail (components/supervisor/work-queue):
+   cut to one line beside a wide row, given its full say on a phone. */
+.ta-queue-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Phones ----
+   One switch for the whole app: below 768px wide, or a phone held sideways
+   (a touch screen under 500px tall), the desktop sidebar and top bar give way
+   to the phone frame (components/layout/phone-shell.tsx). Same query in every
+   rule below, on purpose, so the two can never disagree about which frame is
+   showing. */
+.ta-phone-only {
+  display: none;
+}
+.ta-desktop-only {
+  display: contents;
+}
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  :root {
+    --ta-page-top: 8px;
+    --ta-page-x: 16px;
+  }
+  .ta-phone-only {
+    display: contents;
+  }
+  .ta-desktop-only {
+    display: none;
+  }
+  .ta-queue-detail {
+    white-space: normal;
+  }
+  /* The shell's 12px frame around the sidebar card has nothing to frame. */
+  .ta-shell-row {
+    padding: 0;
+    gap: 0;
+  }
+  /* Safari zooms the whole page into any text box set below 16px, and does
+     not zoom back out. At 16px it leaves the page alone. Components set their
+     font inline, hence the !important. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

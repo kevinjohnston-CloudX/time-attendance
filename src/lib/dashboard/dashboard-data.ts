@@ -422,11 +422,14 @@ export async function getWaitingOnYou({
   tenantId,
   canApproveTeam,
   isPayroll,
+  canApproveHr = false,
 }: {
   employeeId: string | null;
   tenantId: string | null;
   canApproveTeam: boolean;
   isPayroll: boolean;
+  /** HR's own step: leave a supervisor approved, waiting on HR. Company wide, as HR's queue is. */
+  canApproveHr?: boolean;
 }): Promise<WaitingItem[]> {
   if (!tenantId) return [];
 
@@ -434,9 +437,12 @@ export async function getWaitingOnYou({
     ? { tenantId }
     : { tenantId, supervisorId: employeeId ?? "" };
 
-  const [leaveToApprove, openExceptions, myDrafts] = await Promise.all([
+  const [leaveToApprove, waitingOnHr, openExceptions, myDrafts] = await Promise.all([
     canApproveTeam
       ? db.leaveRequest.count({ where: { status: "PENDING", employee: teamScope } })
+      : 0,
+    canApproveHr
+      ? db.leaveRequest.count({ where: { status: "PENDING_HR", employee: { tenantId } } })
       : 0,
     canApproveTeam
       ? db.exception.count({
@@ -452,6 +458,7 @@ export async function getWaitingOnYou({
 
   return [
     { label: "Leave to approve",      count: leaveToApprove,  href: "/supervisor/leave" },
+    { label: "Leave waiting on HR",   count: waitingOnHr,     href: "/supervisor/leave?tab=hr-pending" },
     { label: "Open exceptions",       count: openExceptions,  href: "/supervisor/exceptions" },
     { label: "Unsent leave requests", count: myDrafts,        href: "/leave" },
   ].filter((i) => i.count > 0);

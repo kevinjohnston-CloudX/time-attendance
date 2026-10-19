@@ -1,14 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { addDays, format } from "date-fns";
-import {
-  CalendarClock,
-  CalendarDays,
-  Check,
-  ChevronRight,
-  TriangleAlert,
-  UserCheck,
-} from "lucide-react";
+import { ChevronRight, UserCheck } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { userHasPermission } from "@/lib/rbac/check-permission";
@@ -18,6 +11,7 @@ import { getExceptionTypes, getTeamQueues, getTimeOffAhead } from "@/lib/team/te
 import { EXCEPTION_TYPE_LABEL } from "@/lib/state-machines/labels";
 import { Badge, Card, LinkButton, exceptionTone } from "@/components/ui";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { WorkQueueList, workQueueRows } from "@/components/supervisor/work-queue";
 
 /**
  * Team Overview: the screen the Team section opens on.
@@ -129,40 +123,7 @@ export default async function TeamOverviewPage() {
   // `actionable` is whether this viewer can do anything about the count. A
   // supervisor cannot decide leave that is already with HR, so for them that
   // row is information and its count stays grey.
-  const queueRows = [
-    {
-      key: "exceptions",
-      icon: <TriangleAlert className="h-[17px] w-[17px]" />,
-      label: "Exceptions to resolve",
-      detail: "Missing punches and rule breaks that keep hours wrong until they are fixed",
-      count: queues.exceptions,
-      href: "/supervisor/exceptions",
-      actionable: true,
-      tone: "error" as const,
-    },
-    {
-      key: "leave",
-      icon: <CalendarClock className="h-[17px] w-[17px]" />,
-      label: "Leave requests to decide",
-      detail: isPayroll ? "Waiting on a supervisor's decision" : "Time off your team has asked for",
-      count: queues.leavePending,
-      href: "/supervisor/leave?tab=pending",
-      actionable: true,
-      tone: "warning" as const,
-    },
-    {
-      key: "hr",
-      icon: <CalendarDays className="h-[17px] w-[17px]" />,
-      label: isPayroll ? "Leave awaiting HR approval" : "Leave with HR",
-      detail: isPayroll
-        ? "Approved on the floor and waiting on the HR decision"
-        : "You approved these, and HR makes the final decision",
-      count: queues.leaveWithHr,
-      href: "/supervisor/leave?tab=hr-pending",
-      actionable: isPayroll,
-      tone: "warning" as const,
-    },
-  ];
+  const queueRows = workQueueRows(queues, isPayroll);
 
   const waitingTotal = queueRows.filter((r) => r.actionable).reduce((n, r) => n + r.count, 0);
   const exceptionMax = exceptionTypes[0]?.count ?? 0;
@@ -222,31 +183,7 @@ export default async function TeamOverviewPage() {
           ) : undefined
         }
       >
-        <div className="flex flex-col" style={{ gap: 1, background: "var(--stroke-divider)" }}>
-          {queueRows.map((r) => (
-            <Link
-              key={r.key}
-              href={r.href}
-              className="ta-hoverable grid items-center gap-x-3.5 px-4 py-3 [grid-template-columns:32px_minmax(0,1fr)_auto_18px]"
-              style={{ background: "var(--surface-card)", color: "var(--text-primary)", textDecoration: "none" }}
-            >
-              <span
-                className="inline-flex items-center justify-center"
-                style={{ width: 32, height: 32, borderRadius: 9, background: "var(--surface-info)", color: "var(--icon-accent)" }}
-              >
-                {r.icon}
-              </span>
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span style={{ font: "var(--weight-semibold) 15px/22px var(--font-sans)" }}>{r.label}</span>
-                <span className="truncate" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                  {r.detail}
-                </span>
-              </span>
-              <CountPill count={r.count} actionable={r.actionable} tone={r.tone} />
-              <ChevronRight className="h-[17px] w-[17px]" style={{ color: "var(--icon-tertiary)" }} />
-            </Link>
-          ))}
-        </div>
+        <WorkQueueList rows={queueRows} />
       </Card>
 
       {/* ── Today, and what is coming ────────────────────────────────────── */}
@@ -418,47 +355,6 @@ export default async function TeamOverviewPage() {
 }
 
 /* ── Pieces ─────────────────────────────────────────────────────────────── */
-
-/**
- * The count at the end of a work queue row. Tinted only when there is
- * something this viewer can act on; a clear queue says so in green instead of
- * showing a zero somebody has to interpret.
- */
-function CountPill({ count, actionable, tone }: { count: number; actionable: boolean; tone: "warning" | "error" }) {
-  const base = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 4,
-    height: 24,
-    minWidth: 32,
-    justifyContent: "center",
-    padding: "0 9px",
-    borderRadius: 999,
-    whiteSpace: "nowrap" as const,
-    font: "var(--weight-semibold) 13px/18px var(--font-sans)",
-    fontVariantNumeric: "tabular-nums",
-  };
-  if (count === 0) {
-    return (
-      <span style={{ ...base, background: "var(--surface-success)", color: "var(--text-success)", boxShadow: "inset 0 0 0 1px var(--stroke-success)" }}>
-        <Check className="h-3.5 w-3.5" aria-hidden="true" />
-        Clear
-      </span>
-    );
-  }
-  if (!actionable) {
-    return <span style={{ ...base, background: "var(--ta-track)", color: "var(--text-secondary)" }}>{count.toLocaleString()}</span>;
-  }
-  const t =
-    tone === "error"
-      ? { bg: "var(--surface-error)", fg: "var(--text-error)", line: "var(--stroke-error)" }
-      : { bg: "var(--surface-warning)", fg: "var(--text-warning)", line: "var(--stroke-warning)" };
-  return (
-    <span style={{ ...base, background: t.bg, color: t.fg, boxShadow: `inset 0 0 0 1px ${t.line}` }}>
-      {count.toLocaleString()}
-    </span>
-  );
-}
 
 function Tile({ label, value, dot }: { label: string; value: number; dot: string }) {
   return (

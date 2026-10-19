@@ -1,0 +1,319 @@
+/* The phone frame (phone-shell.tsx). Shown only where .ta-phone-only shows,
+   so nothing here needs its own media query. Every bar pads itself by the
+   iPhone's safe area insets, because the page reaches under the notch and
+   the home bar (viewport-fit: cover). */
+
+/* ---- Top bar ---- */
+
+.top {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: calc(52px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+}
+.brand {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  border-radius: 10px;
+}
+.brandTile {
+  display: inline-flex;
+  flex: none;
+  border-radius: 8px;
+  box-shadow: var(--ta-tile-shadow);
+}
+.topActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.iconBtn {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--icon-secondary);
+}
+.iconBtn:active {
+  background: var(--ta-row-hover);
+}
+/* The bell is the desktop one; on a phone its button grows to a finger's size. */
+.bell {
+  position: relative;
+}
+.bell > div > button {
+  min-width: 44px;
+  width: auto;
+  height: 44px;
+  justify-content: center;
+  padding: 0 10px;
+  border-radius: 12px;
+}
+.bell > div > button svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ---- Bottom bar ---- */
+
+.tabs {
+  position: relative;
+  z-index: 41;
+  display: grid;
+  flex: none;
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: var(--surface-card);
+  box-shadow: 0 -1px 0 var(--stroke-divider);
+}
+.tab {
+  display: flex;
+  min-width: 0;
+  height: 56px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--icon-tertiary);
+  -webkit-tap-highlight-color: transparent;
+}
+.tab:active .tabIcon {
+  transform: scale(0.92);
+}
+.tab[data-on="true"] {
+  color: var(--icon-accent);
+}
+.tabIcon {
+  position: relative;
+  display: inline-flex;
+  transition: transform 120ms ease;
+}
+.tabLabel {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 2px;
+  font: var(--weight-medium) 11px/13px var(--font-sans);
+  color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tab[data-on="true"] .tabLabel {
+  font-weight: var(--weight-semibold);
+  color: var(--text-accent);
+}
+.tabCount {
+  position: absolute;
+  top: -5px;
+  left: calc(100% - 8px);
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--fill-accent);
+  box-shadow: 0 0 0 2px var(--surface-card);
+  font: var(--weight-semibold) 11px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-on-accent);
+}
+
+/* ---- Menu ---- */
+
+.menu {
+  position: fixed;
+  inset: 0 0 calc(56px + env(safe-area-inset-bottom)) 0;
+  z-index: 40;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--ta-canvas);
+  outline: none;
+  animation: menuIn 160ms ease-out;
+}
+@keyframes menuIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu {
+    animation: none;
+  }
+}
+.menuInner {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: calc(16px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 28px max(16px, env(safe-area-inset-left));
+}
+.menuTitle {
+  margin: 0;
+  font: var(--type-h1);
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.card {
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+}
+.cardPadded {
+  padding: 12px;
+}
+.groupLabel {
+  margin: 0 0 8px;
+  padding: 0 4px;
+  font: var(--weight-semibold) 13px/18px var(--font-sans);
+  color: var(--text-tertiary);
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+.accountText {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.accountName {
+  overflow: hidden;
+  font: var(--weight-semibold) 17px/22px var(--font-sans);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.accountRole {
+  font: var(--type-body1);
+  color: var(--text-secondary);
+}
+.viewingAs {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 7px;
+  background: var(--surface-warning);
+  font: var(--weight-medium) 13px/18px var(--font-sans);
+  color: var(--text-warning);
+}
+.note {
+  margin: 0;
+  padding: 10px 16px;
+  font: var(--type-body1);
+  color: var(--text-warning);
+}
+
+.row {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px 0 16px;
+  border-top: 1px solid var(--stroke-divider);
+  text-align: left;
+  color: var(--text-primary);
+  -webkit-tap-highlight-color: transparent;
+}
+.card > .row:first-child,
+.card > a.row:first-of-type {
+  border-top: 0;
+}
+.row:active {
+  background: var(--ta-row-hover);
+}
+.rowIcon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--icon-secondary);
+}
+.rowLabel {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font: var(--weight-medium) 16px/22px var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rowChevron {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--icon-tertiary);
+  transition: transform 150ms ease;
+}
+.rowChevron[data-open="true"] {
+  transform: rotate(90deg);
+}
+.row[data-on="true"] {
+  background: var(--ta-choice-on);
+}
+.row[data-on="true"] .rowIcon,
+.row[data-on="true"] .rowLabel {
+  color: var(--text-accent);
+}
+.row[data-on="true"] .rowLabel {
+  font-weight: var(--weight-semibold);
+}
+
+.roles {
+  display: flex;
+  flex-direction: column;
+  padding: 0 8px 8px 42px;
+}
+.roleRow {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font: var(--type-body1);
+  font-size: 15px;
+  color: var(--text-secondary);
+}
+.roleRow:active:not(:disabled) {
+  background: var(--ta-row-hover);
+}
+.roleRow[data-on="true"] {
+  background: var(--ta-choice-on);
+  color: var(--text-accent);
+}
+.roleRow:disabled:not([data-on="true"]) {
+  opacity: 0.5;
+}
+.roleActive {
+  font: var(--weight-medium) 13px/18px var(--font-sans);
+}
+
+.search {
+  display: flex;
+  height: 48px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+  font: var(--type-body1);
+  font-size: 16px;
+  color: var(--text-tertiary);
+}

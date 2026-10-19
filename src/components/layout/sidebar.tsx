@@ -10,13 +10,7 @@ import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { BrandTile } from "./cloudtime-logo";
 import { openCommandPalette } from "./command-palette";
 import { useNavMode, useSidebarCollapsed } from "./nav-mode";
-import {
-  SECTIONS,
-  type NavItem,
-  ROLE_LABEL,
-  INACTIVE_ALLOWED_HREFS,
-  activeHref,
-} from "./nav-model";
+import { type NavItem, ROLE_LABEL, activeHref, visibleSections } from "./nav-model";
 
 function initials(name?: string | null): string {
   if (!name) return "?";
@@ -414,21 +408,7 @@ export function Sidebar({
     });
   }
 
-  function hasPermission(perm?: string | string[]) {
-    if (!perm) return true;
-    if (!permissions || permissions.length === 0) return false;
-    if (Array.isArray(perm)) return perm.some((p) => permissions.includes(p));
-    return permissions.includes(perm);
-  }
-
-  const sections = SECTIONS.map((section) => ({
-    ...section,
-    items: onlyHrefs
-      ? section.items.filter((i) => onlyHrefs.includes(i.href))
-      : isInactive
-        ? section.items.filter((i) => INACTIVE_ALLOWED_HREFS.includes(i.href))
-        : section.items.filter((i) => hasPermission(i.permission)),
-  })).filter((section) => section.items.length > 0);
+  const sections = visibleSections({ permissions, isInactive, onlyHrefs });
 
   const current = activeHref(
     pathname,

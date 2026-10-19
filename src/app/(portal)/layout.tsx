@@ -9,6 +9,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
+import { PhoneNav, PhoneTopBar } from "@/components/layout/phone-shell";
 import { CommandPalette, type Destination } from "@/components/layout/command-palette";
 import { SECTIONS, ADMIN_GROUPS, INACTIVE_ALLOWED_HREFS } from "@/components/layout/nav-model";
 import { InactiveRouteGuard } from "@/components/layout/inactive-route-guard";
@@ -205,8 +206,12 @@ export default async function PortalLayout({
         tenantId: session.user.tenantId ?? null,
         canApproveTeam: userPermissions.includes("TIMESHEET_APPROVE_TEAM"),
         isPayroll: userPermissions.includes("PAY_PERIOD_MANAGE"),
+        canApproveHr: userPermissions.includes("LEAVE_APPROVE_ANY"),
       })
     : [];
+
+  // The phone's Approvals tab counts decisions only, not your own unsent requests.
+  const approvalsCount = waiting.filter((i) => i.href !== "/leave").reduce((n, i) => n + i.count, 0);
 
   const classicUntil = classicDesignUntil();
   const userPhoto = await userPhotoRead;
@@ -229,7 +234,9 @@ export default async function PortalLayout({
       );
 
   return (
-    <div className="ta-canvas flex h-screen flex-col overflow-hidden">
+    // h-dvh, not h-screen: on a phone 100vh reaches under Safari's toolbar,
+    // which would hide the bottom bar behind it.
+    <div className="ta-canvas flex h-dvh flex-col overflow-hidden">
       {/* The Layout handoff's super admin bar: a warning strip on the canvas,
           above the shell, with the way back to the super admin console. */}
       {tenantBannerName && (
@@ -272,7 +279,8 @@ export default async function PortalLayout({
           from every edge, and the content column sits beside it. Clipped,
           not hidden: a hidden box can still be scrolled sideways by focus,
           which pushed the sidebar off the left edge on a narrow window. */}
-      <div className="flex min-h-0 flex-1 gap-3 overflow-clip p-3">
+      <div className="ta-shell-row flex min-h-0 flex-1 gap-3 overflow-clip p-3">
+        <div className="ta-desktop-only">
         <Sidebar
           role={sidebarRole}
           userName={session.user.name}
@@ -285,6 +293,7 @@ export default async function PortalLayout({
           isInactive={!isEmployeeActive}
           onlyHrefs={liveAttendanceOnly ? [LIVE_ATTENDANCE_HREF] : undefined}
         />
+        </div>
         {/* Breadcrumb bar sits inside the content column, not above the
             sidebar, so it only ever costs the content its own 40px. */}
         <div className="flex min-w-0 flex-1 flex-col overflow-x-clip">
@@ -295,13 +304,18 @@ export default async function PortalLayout({
           {/* No design switch for a role limited to Live Attendance: the
               classic design has no such limit, so it would be a way out. Nor
               once the classic design's last day has passed. */}
-          <TopBar
-            reachableHrefs={destinations.map((d) => d.href)}
-            waiting={waiting}
-            classicOffered={!liveAttendanceOnly && !classicDesignEnded(classicUntil)}
-            classicUntil={classicUntil?.label ?? null}
-            signInId={session.user.signInId}
-          />
+          <div className="ta-desktop-only">
+            <TopBar
+              reachableHrefs={destinations.map((d) => d.href)}
+              waiting={waiting}
+              classicOffered={!liveAttendanceOnly && !classicDesignEnded(classicUntil)}
+              classicUntil={classicUntil?.label ?? null}
+              signInId={session.user.signInId}
+            />
+          </div>
+          {/* Phones: this bar instead of the one above, and no design switch,
+              since a phone is always on the new design. */}
+          <PhoneTopBar waiting={waiting} />
           <main className="ta-page-scroll min-h-0 flex-1 overflow-y-auto">
             <PageScrollReveal />
             <InactiveRouteGuard isInactive={!isEmployeeActive} />
@@ -312,6 +326,21 @@ export default async function PortalLayout({
           </main>
         </div>
       </div>
+
+      {/* Phones: the bottom bar and Menu, in place of the sidebar. Fed the
+          same permissions, so a phone reaches exactly what a computer does. */}
+      <PhoneNav
+        userName={session.user.name}
+        userPhoto={userPhoto}
+        permissions={userPermissions}
+        realRole={realRole}
+        viewAsRole={viewAsRole}
+        canViewAs={canUseViewAs && isEmployeeActive}
+        viewAsOptions={viewAsOptions.map((r) => ({ id: r.id, name: r.name }))}
+        isInactive={!isEmployeeActive}
+        liveAttendanceOnly={liveAttendanceOnly}
+        approvalsCount={approvalsCount}
+      />
 
       <CommandPalette destinations={destinations} />
     </div>
