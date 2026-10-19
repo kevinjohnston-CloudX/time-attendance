@@ -420,4 +420,13 @@
     flex-basis: 100%;
     margin: 0 0 4px;
   }
+  /* A phone has the height to spare, not the width: a choice's one line
+     wraps rather than being cut mid-word. */
+  .choiceBody {
+    overflow: visible;
+    white-space: normal;
+  }
+  .choice {
+    padding-block: 10px;
+  }
 }

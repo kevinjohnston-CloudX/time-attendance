@@ -66,7 +66,7 @@ export function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-6"
+      className="ta-sheet-scrim fixed inset-0 z-[60] flex items-center justify-center p-6"
       style={{ background: "var(--wms-overlay-modal)" }}
       onClick={(e) => e.target === e.currentTarget && !pending && onCancel()}
     >
@@ -75,12 +75,14 @@ export function ConfirmDialog({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
-        className="relative flex w-full max-w-[470px] flex-col items-center gap-3.5 px-6 pb-5 pt-4 text-center sm:w-auto sm:min-w-[370px]"
+        className="ta-sheet relative flex w-full max-w-[470px] flex-col items-center gap-3.5 px-6 pb-5 pt-4 text-center sm:w-auto sm:min-w-[370px]"
         style={{
           background: "var(--surface-card)",
           border: "1px solid var(--stroke-divider)",
           borderRadius: "var(--radius-l)",
           boxShadow: "var(--shadow-md)",
+          // Its own bottom padding, kept when a phone shows it as a sheet.
+          ["--ta-sheet-pad" as string]: "20px",
         }}
       >
         <span className="absolute right-3.5 top-3.5">

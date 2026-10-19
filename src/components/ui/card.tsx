@@ -45,6 +45,7 @@ export function Card({
     >
       {(title || actions) && (
         <header
+          className="ta-card-head"
           style={{
             display: "flex",
             alignItems: "center",
@@ -60,7 +61,7 @@ export function Card({
               <p style={{ margin: 0, font: "var(--type-subtitle)", color: "var(--text-secondary)" }}>{subtitle}</p>
             )}
           </div>
-          {actions && <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>{actions}</div>}
+          {actions && <div className="ta-card-actions" style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>{actions}</div>}
         </header>
       )}
       <div

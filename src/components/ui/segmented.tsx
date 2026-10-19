@@ -105,7 +105,7 @@ export function SegmentedControl({
   ariaLabel?: string;
 }) {
   return (
-    <div role="group" aria-label={ariaLabel} style={trackStyle(size, fullWidth)}>
+    <div role="group" aria-label={ariaLabel} className="ta-seg-track" style={trackStyle(size, fullWidth)}>
       {items.map((raw) => {
         const it: SegmentItem = typeof raw === "string" ? { value: raw, label: raw } : raw;
         const active = it.value === value;
@@ -150,7 +150,7 @@ export function SegmentedLinks({
   ariaLabel?: string;
 }) {
   return (
-    <div role="group" aria-label={ariaLabel} style={trackStyle(size, fullWidth)}>
+    <div role="group" aria-label={ariaLabel} className="ta-seg-track" style={trackStyle(size, fullWidth)}>
       {items.map((it) => {
         const on = it.value === active;
         return (

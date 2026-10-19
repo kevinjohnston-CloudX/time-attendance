@@ -1050,3 +1050,174 @@ option {
     font-size: 16px !important;
   }
 }
+
+/* ---- Phones: the shared components ----
+   What every screen built from the kit gets on a phone, without the screen
+   doing anything: text a step larger, controls a finger can hit, the search
+   and filters reshaped for one hand, the page's buttons on a line of their
+   own, and the shared pop ups opening from the bottom. Same query as the
+   frame switch above. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* Text one step up, so nothing on a phone sits under 12px. The tokens stay
+     copied verbatim in styles/wms; this only re-points them on a phone. */
+  :root {
+    --type-body1: var(--weight-regular) 15px/22px var(--font-sans);
+    --type-body2: var(--weight-regular) 14px/20px var(--font-sans);
+    --type-subtitle: var(--weight-regular) 13px/18px var(--font-sans);
+    --type-caption1: var(--weight-regular) 12px/16px var(--font-sans);
+    --type-caption2: var(--weight-medium) 11px/14px var(--font-sans);
+    --type-button1: var(--weight-medium) 15px/20px var(--font-sans);
+    --type-button2: var(--weight-medium) 13px/18px var(--font-sans);
+  }
+
+  /* Buttons and fields at a finger's size: 40px buttons, 44px fields. */
+  .wms-btn:not(.wms-btn-link) {
+    height: 40px !important;
+    min-width: 40px;
+  }
+  .wms-input,
+  select.ta-field,
+  input.ta-field {
+    min-height: 44px;
+  }
+  .ta-chip {
+    height: 36px !important;
+  }
+  /* The typing area fills its box, so a tap anywhere on a 44px field lands
+     in it rather than on padding around a 22px line. */
+  .wms-input > input,
+  .wms-input > textarea,
+  .ta-search > input {
+    align-self: stretch;
+  }
+  .ta-search {
+    min-height: 44px;
+  }
+  /* Segmented switches (Active, Inactive, All; Movements, People) at 36px,
+     in a track that swipes sideways when it holds more than the width. */
+  .wms-seg {
+    min-height: 36px;
+    flex: none;
+  }
+  .ta-seg-track {
+    height: auto !important;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .ta-seg-track::-webkit-scrollbar {
+    display: none;
+  }
+  /* A card's side content (a button, a progress bar) drops under its title
+     rather than squeezing the title into a narrow column beside it. */
+  .ta-card-head {
+    flex-wrap: wrap;
+  }
+  .ta-card-head > :first-child {
+    flex: 1 1 200px;
+  }
+
+  /* The page's buttons go on a line of their own under the title, starting
+     from the left, rather than stacking up on the right of a narrow screen. */
+  .ta-header-actions {
+    width: 100%;
+    margin-left: 0 !important;
+    justify-content: flex-start !important;
+  }
+
+  /* Pinned headers scroll with the page on a phone: a title, its buttons and
+     a filter row would cover a third of the screen. The phone's own top and
+     bottom bars are what stays put. */
+  .ta-pinned,
+  .ta-pin {
+    position: relative !important;
+    top: auto !important;
+  }
+
+  /* The search and filters bar: the search across the full width, then every
+     filter in one row that swipes sideways (each one opens the phone's own
+     picker), then the count and the sort. */
+  .ta-tools {
+    row-gap: 0 !important;
+    padding: 4px 6px !important;
+  }
+  .ta-tools-divider {
+    display: none !important;
+  }
+  .ta-tools-group,
+  .ta-tools-search {
+    flex: 1 1 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+  }
+  .ta-tools .ta-search {
+    height: 44px !important;
+    padding-left: 8px !important;
+  }
+  .ta-tools .ta-tools-filters,
+  .ta-tools[data-stacked="true"] .ta-tools-filters {
+    order: 10;
+    flex: 1 1 100% !important;
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+    margin: 4px -6px 0 !important;
+    padding: 6px 6px 2px !important;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    border-top: 1px solid var(--stroke-divider);
+  }
+  .ta-tools-filters::-webkit-scrollbar {
+    display: none;
+  }
+  .ta-tools .ta-chip {
+    flex: none;
+    height: 40px !important;
+    padding: 0 12px !important;
+    border-radius: 12px !important;
+    background: var(--ta-well) !important;
+    font: var(--weight-medium) 15px/1 var(--font-sans) !important;
+  }
+  .ta-tools .ta-chip[data-applied="true"] {
+    background: var(--surface-info) !important;
+  }
+  .ta-tools-end {
+    order: 11;
+    flex: 1 1 100% !important;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    margin: 0 !important;
+    padding: 4px 0 2px;
+  }
+  .ta-tools-count {
+    padding: 0 8px !important;
+  }
+
+  /* The shared pop ups open as a sheet from the bottom edge, full width, and
+     clear the home bar. A window too tall for the screen scrolls inside. */
+  .ta-sheet-scrim {
+    align-items: flex-end !important;
+    justify-content: stretch !important;
+    padding: 0 !important;
+  }
+  .ta-sheet {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    max-height: calc(100dvh - env(safe-area-inset-top) - 16px) !important;
+    border-radius: 20px 20px 0 0 !important;
+    padding-bottom: calc(var(--ta-sheet-pad, 0px) + env(safe-area-inset-bottom)) !important;
+    animation: ta-sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}
+@keyframes ta-sheet-up {
+  from {
+    transform: translateY(32px);
+    opacity: 0.4;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ta-sheet {
+    animation: none;
+  }
+}

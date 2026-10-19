@@ -60,14 +60,14 @@ export function BuildingWindow({
   }, []);
 
   return createPortal(
-    <div className={styles.scrim} onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={`${styles.scrim} ta-sheet-scrim`} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div
         ref={ref}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="building-window-title"
-        className={styles.window}
+        className={`${styles.window} ta-sheet`}
         style={{ maxWidth: width, outline: "none" }}
       >
         <header className={styles.head}>

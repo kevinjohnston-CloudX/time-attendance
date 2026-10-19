@@ -565,8 +565,8 @@ function Shell({
   }, []);
 
   return createPortal(
-    <div className={styles.scrim} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="export-window-title" className={styles.window}>
+    <div className={`${styles.scrim} ta-sheet-scrim`} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="export-window-title" className={`${styles.window} ta-sheet`}>
         <header className={styles.head}>
           <span className={styles.glyph} aria-hidden="true">
             <Download />

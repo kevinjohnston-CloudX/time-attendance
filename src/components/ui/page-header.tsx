@@ -51,7 +51,7 @@ export function PageHeader({
         )}
       </div>
       {/* Kept right when a narrow window wraps them under the title. */}
-      {actions && <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{actions}</div>}
+      {actions && <div className="ta-header-actions ml-auto flex flex-wrap items-center justify-end gap-2">{actions}</div>}
     </div>
   );
   return pinned ? <PinnedBar>{header}</PinnedBar> : header;
