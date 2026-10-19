@@ -1302,3 +1302,43 @@ option {
     display: none !important;
   }
 }
+
+/* ---- Phones: Home (app/(portal)/dashboard) ---- */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* The Today card punches, employees have the Punch tab and everyone has
+     Menu: on a phone the Punch Clock button only took a line of its own. */
+  .ta-header-actions > .ta-dash-punch {
+    display: none !important;
+  }
+  .ta-header-actions:not(:has(> :not(.ta-dash-punch))) {
+    display: none !important;
+  }
+  /* The expected punch at the full width and a thumb's height; the rest
+     share the line under it. */
+  .ta-punch-actions > .wms-btn {
+    flex: 1 1 0;
+    height: 48px !important;
+  }
+  .ta-punch-actions > .wms-btn:first-child {
+    flex-basis: 100%;
+  }
+  /* Punch Clock: the punches take the full width under the figures. */
+  .ta-punch-hero-actions {
+    width: 100% !important;
+  }
+  .ta-punch-hero-actions > .wms-btn {
+    height: 48px !important;
+  }
+  /* An upcoming shift on two short lines (day and status, then the times and
+     hours) rather than one with the times cut. */
+  .ta-shift-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 12px !important;
+    padding-block: 10px !important;
+  }
+  .ta-shift-row > :nth-child(1) { grid-area: 1 / 1; width: auto !important; }
+  .ta-shift-row > :nth-child(2) { grid-area: 2 / 1; overflow: visible; white-space: normal; }
+  .ta-shift-row > :nth-child(3) { grid-area: 2 / 2; justify-self: end; }
+  .ta-shift-row > :nth-child(4) { grid-area: 1 / 2; justify-self: end; }
+}

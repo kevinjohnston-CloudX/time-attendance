@@ -110,7 +110,7 @@ export function PunchHero({
         ))}
       </div>
 
-      <div className="flex w-[220px] flex-none flex-col gap-2">
+      <div className="ta-punch-hero-actions flex w-[220px] flex-none flex-col gap-2">
         {available.length === 0 ? (
           <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
             No actions available.

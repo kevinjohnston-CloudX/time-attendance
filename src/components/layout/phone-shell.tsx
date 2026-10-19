@@ -190,6 +190,9 @@ function PhoneMenu({
       if (id) await setViewAsRole(id);
       else await clearViewAsRole();
       setPickingRole(false);
+      // Home is usually where the menu already is, so arriving there would
+      // not close it: close it here, so the new view is what shows.
+      onClose();
       router.push("/dashboard");
       router.refresh();
     });

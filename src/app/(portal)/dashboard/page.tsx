@@ -344,7 +344,7 @@ export default async function DashboardPage({
         subtitle={subtitle}
         actions={
           employeeId ? (
-            <LinkButton href="/time/punch" hierarchy="secondary">
+            <LinkButton href="/time/punch" hierarchy="secondary" className="ta-dash-punch">
               Punch Clock
             </LinkButton>
           ) : undefined

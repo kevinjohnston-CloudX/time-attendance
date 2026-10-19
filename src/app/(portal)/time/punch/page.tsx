@@ -253,7 +253,7 @@ export default async function PunchPage() {
               upcomingShifts.map((u) => (
                 <div
                   key={u.key}
-                  className="flex items-center gap-3 py-2"
+                  className="ta-shift-row flex items-center gap-3 py-2"
                   style={{ borderBottom: "1px solid var(--stroke-divider)" }}
                 >
                   <span

@@ -48,7 +48,9 @@ export function TodayPunchActions({ state }: { state: PunchStateValue }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap gap-2">
+      {/* ta-punch-actions: on a phone the expected punch takes the full width
+          at a thumb's size, and the others share the line under it. */}
+      <div className="ta-punch-actions flex flex-wrap gap-2">
         {available.map((type, i) => (
           <Button
             key={type}
