@@ -442,6 +442,11 @@ export function LeaveTabs({
   }
 
   const [calMonth, setCalMonth] = useState(() => new Date());
+  // Phones: which of the two views is showing (a computer shows both side by
+  // side), and the coverage day whose people are listed under the month. A
+  // phone has no hover, so a tap on a day stands in for the tooltip.
+  const [phoneView, setPhoneView] = useState<"requests" | "coverage">("requests");
+  const [dayPick, setDayPick] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{
     top: number;
     left: number;
@@ -560,6 +565,16 @@ export function LeaveTabs({
   const focusedDaySet = new Set(focusedDays);
 
   const inScope = (e: Entry) => !scopedToDept || e.departmentId === focusedDept!.id;
+  // The day listed under the month on a phone: the one tapped, else today when
+  // today is in the month on screen, else the month's first day.
+  const pickedKey =
+    dayPick ??
+    format(
+      calMonth.getMonth() === new Date().getMonth() && calMonth.getFullYear() === new Date().getFullYear()
+        ? new Date()
+        : startOfMonth(calMonth),
+      "yyyy-MM-dd",
+    );
 
   /**
    * Everyone off on the focused request's days, counted once each however many
@@ -661,8 +676,8 @@ export function LeaveTabs({
           </div>
 
           {/* Pushed right, and kept right when a narrow window wraps it
-              under the title. */}
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+              under the title. On a phone, a line of its own under the title. */}
+          <div className="ta-header-actions ta-leave-actions ml-auto flex flex-wrap items-center justify-end gap-2">
             <SegmentedControl
               ariaLabel="Leave view"
               items={[
@@ -678,7 +693,7 @@ export function LeaveTabs({
                 setShown(PAGE_SIZE);
               }}
             />
-            <LinkButton href="/supervisor" hierarchy="tertiary">
+            <LinkButton href="/supervisor" hierarchy="tertiary" className="ta-leave-back">
               ← Team Overview
             </LinkButton>
             <Button
@@ -693,7 +708,7 @@ export function LeaveTabs({
               Export
             </Button>
             {canSubmitLeave && (
-              <Button onClick={openSubmitModal} leadingIcon={<Plus className="h-4 w-4" />}>
+              <Button className="ta-leave-submit" onClick={openSubmitModal} leadingIcon={<Plus className="h-4 w-4" />}>
                 Submit Leave
               </Button>
             )}
@@ -791,6 +806,21 @@ export function LeaveTabs({
         </div>
       </div>
 
+      {/* Phones: the requests and the coverage month are two views of the one
+          screen, where a computer has room to show them side by side. */}
+      <div className="ta-phone-only">
+        <SegmentedControl
+          ariaLabel="Show"
+          fullWidth
+          value={phoneView}
+          onChange={(v) => setPhoneView(v as "requests" | "coverage")}
+          items={[
+            { value: "requests", label: "Requests", count: rows.length },
+            { value: "coverage", label: focused ? `Coverage around ${shortName(focused.employee.user?.name ?? "")}` : "Coverage" },
+          ]}
+        />
+      </div>
+
       {/* A saved view is only worth saving if it can be got back, so the
           design's single link grows the row that returns you to one. */}
       {savedViews.length > 0 && (
@@ -855,12 +885,15 @@ export function LeaveTabs({
           split the width evenly, which left the request cards mostly empty
           and squeezed seven day columns into the other half. Below the lg
           breakpoint they stack, list first. */}
-      <div className="grid grid-cols-1 items-start gap-4 lg:[grid-template-columns:minmax(340px,440px)_minmax(0,1fr)]">
+      <div
+        className="ta-leave-grid grid grid-cols-1 items-start gap-4 lg:[grid-template-columns:minmax(340px,440px)_minmax(0,1fr)]"
+        data-phone-view={phoneView}
+      >
         {/* ── The requests ─────────────────────────────────────────────── */}
         {/* The list is a stack of selectable cards, as the design lays it
             out, rather than one card of divided rows. Selecting a card drives
             the coverage panel beside it. */}
-        <div className="flex min-w-0 flex-col gap-2.5">
+        <div className="ta-leave-list flex min-w-0 flex-col gap-2.5">
           {rows.length === 0 ? (
             <div
               className="flex flex-col items-center gap-2.5 px-6 py-12 text-center"
@@ -951,7 +984,7 @@ export function LeaveTabs({
             cap: a month needs about 700px, and on a shorter window a fixed
             height let the weeks spill under the colour key. */}
         <div
-          className="sticky min-w-0 lg:flex lg:min-h-[var(--coverage-h)] lg:flex-col"
+          className="ta-leave-coverage sticky min-w-0 lg:flex lg:min-h-[var(--coverage-h)] lg:flex-col"
           style={{
             top: toolbarHeight + 16,
             ["--coverage-h" as string]: `max(560px, calc(100dvh - ${toolbarHeight + 96}px))`,
@@ -977,7 +1010,10 @@ export function LeaveTabs({
                 size="sm"
                 iconOnly
                 aria-label="Previous month"
-                onClick={() => setCalMonth((m) => subMonths(m, 1))}
+                onClick={() => {
+                  setCalMonth((m) => subMonths(m, 1));
+                  setDayPick(null);
+                }}
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -992,11 +1028,21 @@ export function LeaveTabs({
                 size="sm"
                 iconOnly
                 aria-label="Next month"
-                onClick={() => setCalMonth((m) => addMonths(m, 1))}
+                onClick={() => {
+                  setCalMonth((m) => addMonths(m, 1));
+                  setDayPick(null);
+                }}
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
-              <Button hierarchy="tertiary" size="sm" onClick={() => setCalMonth(new Date())}>
+              <Button
+                hierarchy="tertiary"
+                size="sm"
+                onClick={() => {
+                  setCalMonth(new Date());
+                  setDayPick(null);
+                }}
+              >
                 Today
               </Button>
             </div>
@@ -1047,7 +1093,7 @@ export function LeaveTabs({
 
             {/* Rows share whatever height is left, and never drop below the
                 height a cell needs for its date and two names. */}
-            <div className="grid min-h-0 flex-1 grid-cols-7 gap-1 [grid-auto-rows:minmax(4.5rem,1fr)]">
+            <div className="ta-cov-grid grid min-h-0 flex-1 grid-cols-7 gap-1 [grid-auto-rows:minmax(4.5rem,1fr)]">
               {gridDays.map((day) => {
                 const key = format(day, "yyyy-MM-dd");
                 const approvedEntries = (approvedMap.get(key) ?? []).filter(inScope);
@@ -1089,7 +1135,9 @@ export function LeaveTabs({
                 return (
                   <div
                     key={key}
-                    className="flex min-h-[4.5rem] flex-col gap-1 rounded-md p-1.5"
+                    className="ta-cov-cell flex min-h-[4.5rem] flex-col gap-1 rounded-md p-1.5"
+                    data-picked={key === pickedKey}
+                    onClick={() => setDayPick(key)}
                     style={{
                       // The focused request's own days outrank the tint: the
                       // supervisor has to see which days they are deciding on
@@ -1114,9 +1162,12 @@ export function LeaveTabs({
                       // visible on both sides of it.
                       opacity: inMonth || inFocusedRequest ? 1 : total > 0 ? 0.6 : 0.4,
                     }}
-                    onMouseEnter={
+                    // A mouse only: a phone fakes a hover on every tap, and
+                    // lists the tapped day's people under the month instead.
+                    onPointerEnter={
                       total > 0
                         ? (e) => {
+                            if (e.pointerType !== "mouse") return;
                             const rect = e.currentTarget.getBoundingClientRect();
                             setTooltip({
                               top: rect.bottom + 6,
@@ -1129,7 +1180,7 @@ export function LeaveTabs({
                           }
                         : undefined
                     }
-                    onMouseLeave={() => setTooltip(null)}
+                    onPointerLeave={() => setTooltip(null)}
                   >
                     <div className="flex items-center gap-1">
                       <span
@@ -1159,7 +1210,7 @@ export function LeaveTabs({
                       )}
                     </div>
 
-                    <div className="flex min-w-0 flex-col gap-0.5">
+                    <div className="ta-cov-names flex min-w-0 flex-col gap-0.5">
                       {names.slice(0, 2).map((n, i) => (
                         <span
                           key={i}
@@ -1183,6 +1234,16 @@ export function LeaveTabs({
                   </div>
                 );
               })}
+            </div>
+
+            {/* Phones: who is off on the day tapped, in place of the hover
+                tooltip a phone cannot show. */}
+            <div className="ta-phone-only">
+              <CoverageDay
+                dateKey={pickedKey}
+                approved={(approvedMap.get(pickedKey) ?? []).filter(inScope)}
+                pending={tab === "pending" ? (pendingMap.get(pickedKey) ?? []).filter(inScope) : []}
+              />
             </div>
 
             <div
@@ -1244,8 +1305,8 @@ export function LeaveTabs({
       <Toast message={toast} />
 
       {showSubmitModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="ta-modal max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl">
+        <div className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="ta-sheet ta-modal max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl">
             <div
               className="sticky top-0 z-10 flex items-center justify-between gap-3 px-6 py-4"
               style={{
@@ -1353,7 +1414,7 @@ export function LeaveTabs({
       {tooltip && (
         <div
           style={{ position: "fixed", top: tooltip.top, left: tooltip.left, zIndex: 100 }}
-          className="ta-modal pointer-events-none flex min-w-[9rem] max-w-[14rem] flex-col gap-2 rounded-xl p-3"
+          className="ta-desktop-tip ta-modal pointer-events-none flex min-w-[9rem] max-w-[14rem] flex-col gap-2 rounded-xl p-3"
         >
           <p
             style={{
@@ -1588,7 +1649,7 @@ function RequestCard({
           reads. They used to run together on two gray lines joined by dots,
           so nothing said which number was the date and which was the amount. */}
       <dl
-        className="grid grid-cols-[1.4fr_1fr_0.8fr] gap-3 rounded-lg px-3 py-2.5"
+        className="ta-req-facts grid grid-cols-[1.4fr_1fr_0.8fr] gap-3 rounded-lg px-3 py-2.5"
         style={{ margin: 0, background: selected ? "var(--surface-card)" : "var(--surface-tertiary)" }}
       >
         <div className="flex min-w-0 flex-col gap-0.5">
@@ -1657,7 +1718,7 @@ function RequestCard({
           foot of the card. Clicking an action must not also toggle the card. */}
       {hasActions && (
         <div
-          className="flex flex-wrap items-center gap-2 pt-3"
+          className="ta-req-actions flex flex-wrap items-center gap-2 pt-3"
           style={{ borderTop: "1px solid var(--stroke-divider)" }}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
@@ -1678,3 +1739,72 @@ function RequestCard({
   );
 }
 
+
+/**
+ * Phones: everyone off on one coverage day, listed under the month. Pending
+ * requests first, as in the day cells, because those are the ones waiting on
+ * a decision; each says which queue it is in, in words as well as colour.
+ */
+function CoverageDay({
+  dateKey,
+  approved,
+  pending,
+}: {
+  dateKey: string;
+  approved: { name: string; leaveType: string; employeeId: string }[];
+  pending: { name: string; leaveType: string; employeeId: string }[];
+}) {
+  const day = new Date(`${dateKey}T00:00:00`);
+  const people = [
+    ...pending.map((p) => ({ ...p, state: "Pending" as const })),
+    ...approved.map((a) => ({ ...a, state: "Approved" as const })),
+  ];
+  const clash = pending.length > 0 && approved.some((a) => pending.some((p) => p.employeeId !== a.employeeId));
+  return (
+    <section
+      aria-live="polite"
+      className="flex flex-col gap-2 rounded-xl p-3"
+      style={{ background: "var(--ta-well)", boxShadow: "inset 0 0 0 1px var(--ta-well-ring)" }}
+    >
+      <h4 style={{ margin: 0, font: "var(--weight-semibold) 15px/20px var(--font-sans)", color: "var(--text-primary)" }}>
+        {format(day, "EEEE, MMMM d")}
+      </h4>
+      {people.length === 0 ? (
+        <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+          Nobody is booked off on this day. Tap another day to see who is.
+        </p>
+      ) : (
+        <ul className="flex flex-col" style={{ margin: 0, padding: 0, listStyle: "none" }}>
+          {people.map((p, i) => (
+            <li
+              // One person can hold two requests on a day, so the position is part of the key.
+              key={`${p.employeeId}-${p.state}-${i}`}
+              className="flex min-h-[44px] items-center gap-2.5"
+              style={{ borderTop: i === 0 ? undefined : "1px solid var(--stroke-divider)" }}
+            >
+              <span
+                aria-hidden="true"
+                className="h-2 w-2 flex-none rounded-full"
+                style={{
+                  background:
+                    p.state === "Approved" ? "var(--fill-success)" : clash ? "var(--fill-error)" : "var(--fill-warning)",
+                }}
+              />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate" style={{ font: "var(--weight-medium) 15px/20px var(--font-sans)", color: "var(--text-primary)" }}>
+                  {p.name}
+                </span>
+                <span className="truncate" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                  {p.leaveType}
+                </span>
+              </span>
+              <span style={{ font: "var(--weight-medium) 13px/18px var(--font-sans)", color: "var(--text-tertiary)" }}>
+                {p.state}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}

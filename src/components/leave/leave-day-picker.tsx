@@ -348,7 +348,7 @@ function NavButton({
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="ta-field inline-flex h-[26px] w-[26px] items-center justify-center rounded-md"
+      className="ta-month-nav ta-field inline-flex h-[26px] w-[26px] items-center justify-center rounded-md"
       style={{
         border: "1px solid var(--stroke-secondary)",
         background: "var(--surface-card)",

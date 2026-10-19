@@ -1083,6 +1083,12 @@ option {
   .ta-chip {
     height: 36px !important;
   }
+  /* A month picker's arrows (the leave day picker), at a finger's size. */
+  .ta-month-nav {
+    width: 40px !important;
+    height: 40px !important;
+    border-radius: 10px !important;
+  }
   /* The typing area fills its box, so a tap anywhere on a 44px field lands
      in it rather than on padding around a 22px line. */
   .wms-input > input,
@@ -1107,6 +1113,17 @@ option {
   }
   .ta-seg-track::-webkit-scrollbar {
     display: none;
+  }
+  /* The edge with more beyond it fades out, so a swipeable row reads as one
+     rather than as a cut off word. */
+  .ta-seg-track[data-more-right="true"] {
+    mask-image: linear-gradient(to right, black calc(100% - 48px), transparent);
+  }
+  .ta-seg-track[data-more-left="true"] {
+    mask-image: linear-gradient(to left, black calc(100% - 48px), transparent);
+  }
+  .ta-seg-track[data-more-left="true"][data-more-right="true"] {
+    mask-image: linear-gradient(to right, transparent, black 48px, black calc(100% - 48px), transparent);
   }
   /* A card's side content (a button, a progress bar) drops under its title
      rather than squeezing the title into a narrow column beside it. */
@@ -1219,5 +1236,69 @@ option {
 @media (prefers-reduced-motion: reduce) {
   .ta-sheet {
     animation: none;
+  }
+}
+
+/* ---- Phones: Leave Requests (components/supervisor/leave-tabs.tsx) ----
+   The four views span the width; Requests and Coverage are two views of the
+   screen rather than two columns; the month shows a tint and a count per day
+   and lists the people of the tapped day under it. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .ta-leave-actions > .ta-seg-track {
+    flex: 1 1 100%;
+  }
+  .ta-leave-actions > .ta-seg-track > .wms-seg {
+    flex: 1 0 auto;
+  }
+  /* Team Overview is a tap away in the bottom bar's Approvals and in Menu;
+     on a phone the shortcut only pushed Submit Leave onto a line alone. */
+  .ta-leave-actions > .ta-leave-back {
+    display: none !important;
+  }
+  .ta-leave-actions > .ta-leave-submit {
+    order: -1;
+  }
+  .ta-leave-actions > .ta-seg-track {
+    order: -2;
+  }
+  /* A request's decision buttons share the card's width, for a thumb. */
+  .ta-req-actions .wms-btn:not(.wms-btn-link) {
+    flex: 1 1 0;
+  }
+  /* A request's facts wrap ("8.00 h", then "1 day") rather than cut. */
+  .ta-req-facts dd {
+    overflow: visible !important;
+    white-space: normal !important;
+  }
+  .ta-leave-grid[data-phone-view="requests"] > .ta-leave-coverage,
+  .ta-leave-grid[data-phone-view="coverage"] > .ta-leave-list {
+    display: none;
+  }
+  .ta-leave-coverage {
+    position: static !important;
+  }
+  .ta-cov-grid {
+    grid-auto-rows: 48px !important;
+  }
+  .ta-cov-cell {
+    min-height: 48px !important;
+    justify-content: center;
+    padding: 4px !important;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ta-cov-cell > :first-child {
+    flex-direction: column;
+    gap: 2px !important;
+  }
+  .ta-cov-cell > :first-child > span:last-child {
+    margin-left: 0 !important;
+  }
+  .ta-cov-cell[data-picked="true"] {
+    box-shadow: 0 0 0 2px var(--stroke-accent-focus);
+  }
+  .ta-cov-names,
+  .ta-desktop-tip {
+    display: none !important;
   }
 }

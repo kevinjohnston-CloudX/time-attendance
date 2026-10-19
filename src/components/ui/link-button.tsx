@@ -30,6 +30,7 @@ export function LinkButton({
   trailingIcon,
   title,
   reloadDocument = false,
+  className,
 }: {
   href: string;
   children: ReactNode;
@@ -40,6 +41,8 @@ export function LinkButton({
   title?: string;
   /** Load the page fresh instead of moving in place, for a screen whose styles must not come along. */
   reloadDocument?: boolean;
+  /** A hook for a screen's own stylesheet (a phone layout placing the button). */
+  className?: string;
 }) {
   const s = SIZES[size];
   const isLink = hierarchy === "link";
@@ -86,7 +89,7 @@ export function LinkButton({
     <Anchor
       href={href}
       title={title}
-      className={`wms-btn${isLink ? " wms-btn-link" : ""}`}
+      className={`wms-btn${isLink ? " wms-btn-link" : ""}${className ? ` ${className}` : ""}`}
       style={{
         ...palette,
         display: "inline-flex",

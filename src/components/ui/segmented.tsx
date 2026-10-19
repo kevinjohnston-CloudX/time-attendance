@@ -1,7 +1,45 @@
 "use client";
 
 import Link from "next/link";
-import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
+
+// useLayoutEffect warns when rendered on the server; on the server nothing is measured anyway.
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+/**
+ * For a track wider than its space (a phone, where the track swipes
+ * sideways): marks which edges have more beyond them, so the stylesheet can
+ * fade that edge, and keeps the chosen segment scrolled into view. Does
+ * nothing where everything fits.
+ */
+function useSwipeTrack(chosen: string) {
+  const ref = useRef<HTMLDivElement>(null);
+  useIsoLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const mark = () => {
+      const over = el.scrollWidth > el.clientWidth + 1;
+      el.dataset.moreLeft = String(over && el.scrollLeft > 1);
+      el.dataset.moreRight = String(over && el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+    };
+    const on = el.querySelector<HTMLElement>('[aria-pressed="true"], [aria-current="page"]');
+    if (on && el.scrollWidth > el.clientWidth + 1) {
+      const left = on.offsetLeft - el.offsetLeft;
+      if (left < el.scrollLeft || left + on.offsetWidth > el.scrollLeft + el.clientWidth) {
+        el.scrollLeft = Math.max(0, left - 24);
+      }
+    }
+    mark();
+    el.addEventListener("scroll", mark, { passive: true });
+    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(mark) : null;
+    ro?.observe(el);
+    return () => {
+      el.removeEventListener("scroll", mark);
+      ro?.disconnect();
+    };
+  }, [chosen]);
+  return ref;
+}
 
 /**
  * The design system's SegmentedControl: an enclosed switch for a small set of
@@ -104,8 +142,9 @@ export function SegmentedControl({
   fullWidth?: boolean;
   ariaLabel?: string;
 }) {
+  const trackRef = useSwipeTrack(value);
   return (
-    <div role="group" aria-label={ariaLabel} className="ta-seg-track" style={trackStyle(size, fullWidth)}>
+    <div ref={trackRef} role="group" aria-label={ariaLabel} className="ta-seg-track" style={trackStyle(size, fullWidth)}>
       {items.map((raw) => {
         const it: SegmentItem = typeof raw === "string" ? { value: raw, label: raw } : raw;
         const active = it.value === value;
@@ -149,8 +188,9 @@ export function SegmentedLinks({
   fullWidth?: boolean;
   ariaLabel?: string;
 }) {
+  const trackRef = useSwipeTrack(active);
   return (
-    <div role="group" aria-label={ariaLabel} className="ta-seg-track" style={trackStyle(size, fullWidth)}>
+    <div ref={trackRef} role="group" aria-label={ariaLabel} className="ta-seg-track" style={trackStyle(size, fullWidth)}>
       {items.map((it) => {
         const on = it.value === active;
         return (
