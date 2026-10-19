@@ -1108,6 +1108,9 @@ option {
   .ta-seg-track {
     height: auto !important;
     max-width: 100%;
+    /* In a scrolling column (a window's body) a scroller may otherwise be
+       squeezed to nothing. */
+    flex-shrink: 0;
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -1158,6 +1161,9 @@ option {
   .ta-pin {
     position: relative !important;
     top: auto !important;
+    /* No layer of its own either: a window opened from a header button
+       lives inside it, and must cover the bottom bar like any sheet. */
+    z-index: auto !important;
   }
 
   /* The search and filters bar: the search across the full width, then every
@@ -1234,6 +1240,28 @@ option {
     border-radius: 20px 20px 0 0 !important;
     padding-bottom: calc(var(--ta-sheet-pad, 0px) + env(safe-area-inset-bottom)) !important;
     animation: ta-sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  /* Gone on a phone, where the bottom bar and Menu already reach it (a link
+     back to a hub page, say). Never for something only reachable here. */
+  .ta-phone-hide {
+    display: none !important;
+  }
+  /* A page's main action leads its header on a line of its own, full width,
+     and the rest share the line under it. */
+  /* A label too long to share a line takes one of its own, full width. */
+  .ta-header-actions:has(> .ta-header-primary) > *,
+  .ta-header-actions:has(> .ta-header-even) > * {
+    flex: 1 1 0;
+    min-width: max-content;
+  }
+  .ta-header-actions:has(> .ta-header-primary) > .ta-header-primary {
+    order: -1;
+    flex-basis: 100%;
+  }
+  /* A sheet's closing buttons share its width, for a thumb. */
+  .ta-sheet-actions > .wms-btn {
+    flex: 1 1 0;
   }
 }
 @keyframes ta-sheet-up {
@@ -1341,4 +1369,58 @@ option {
   .ta-shift-row > :nth-child(2) { grid-area: 2 / 1; overflow: visible; white-space: normal; }
   .ta-shift-row > :nth-child(3) { grid-area: 2 / 2; justify-self: end; }
   .ta-shift-row > :nth-child(4) { grid-area: 1 / 2; justify-self: end; }
+}
+
+/* ---- Phones: the employee record (components/admin) ----
+   Pay rates in read mode: one block per rate, the date on top, the three
+   rates side by side under their names, then the note in full. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .ta-rates[data-mode="read"] table {
+    display: block;
+    min-width: 0 !important;
+  }
+  .ta-rates[data-mode="read"] thead {
+    display: none;
+  }
+  .ta-rates[data-mode="read"] tbody {
+    display: block;
+  }
+  .ta-rates[data-mode="read"] tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px 12px;
+    height: auto !important;
+    padding: 12px 14px;
+  }
+  .ta-rates[data-mode="read"] tr + tr {
+    border-top: 1px solid var(--stroke-divider);
+  }
+  .ta-rates[data-mode="read"] td {
+    display: block;
+    height: auto !important;
+    padding: 0 !important;
+    border: 0 !important;
+    text-align: left !important;
+    white-space: normal !important;
+  }
+  .ta-rates[data-mode="read"] td:first-child {
+    grid-column: 1 / -1;
+    font-weight: var(--weight-semibold);
+  }
+  .ta-rates[data-mode="read"] td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font: var(--type-caption1);
+    color: var(--text-tertiary);
+  }
+  .ta-rates[data-mode="read"] .ta-rates-note {
+    grid-column: 1 / -1;
+  }
+  .ta-rates[data-mode="read"] .ta-rates-note[data-empty] {
+    display: none;
+  }
+  .ta-rates[data-mode="read"] .ta-rates-note > span {
+    max-width: none;
+    white-space: normal;
+  }
 }

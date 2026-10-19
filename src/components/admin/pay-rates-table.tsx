@@ -65,7 +65,13 @@ export function PayRatesTable({ employeeId, initial, salary }: { employeeId: str
 
       {error && <Banner tone="error" body={error} />}
 
-      <div className="overflow-x-auto rounded-lg" style={{ border: "1px solid var(--stroke-divider)" }}>
+      {/* On a phone, read mode stacks each rate as a small labelled block
+          (globals.css, .ta-rates); editing keeps the grid, which swipes. */}
+      <div
+        className="ta-rates overflow-x-auto rounded-lg"
+        data-mode={draft ? "edit" : "read"}
+        style={{ border: "1px solid var(--stroke-divider)" }}
+      >
         <Table>
           <THead>
             <TR>
@@ -123,10 +129,10 @@ export function PayRatesTable({ employeeId, initial, salary }: { employeeId: str
                         <span className="ml-2" style={{ font: "var(--type-caption1)", color: "var(--text-accent)" }}>Upcoming</span>
                       )}
                     </TD>
-                    <TD numeric>{money(r.rate1)}</TD>
-                    <TD numeric>{money(r.rate2) || "—"}</TD>
-                    <TD numeric>{money(r.rate3) || "—"}</TD>
-                    <TD>
+                    <TD numeric data-label="Rate 1">{money(r.rate1)}</TD>
+                    <TD numeric data-label="Rate 2">{money(r.rate2) || "—"}</TD>
+                    <TD numeric data-label="Rate 3">{money(r.rate3) || "—"}</TD>
+                    <TD className="ta-rates-note" data-empty={r.note ? undefined : "true"}>
                       <span className="block max-w-[320px] truncate" title={r.note ?? undefined} style={{ color: r.note ? "var(--text-secondary)" : "var(--text-tertiary)" }}>
                         {r.note || "—"}
                       </span>

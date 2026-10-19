@@ -207,14 +207,14 @@ export function CsvUploadForm({ sites, departments, ruleSets }: Props) {
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
           onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
         >
           {/* Backdrop */}
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
           {/* Modal */}
-          <div className="relative w-full max-w-lg rounded-2xl ta-modal p-6">
+          <div className="ta-sheet relative w-full max-w-lg rounded-2xl ta-modal p-6" style={{ "--ta-sheet-pad": "24px" } as React.CSSProperties}>
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-[var(--text-primary)]">
                 Import Employees from CSV

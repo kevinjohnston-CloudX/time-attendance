@@ -686,10 +686,10 @@ export function EditEmployeeForm({
             actions={
               editing ? (
                 <>
-                  <Button type="button" hierarchy="secondary" onClick={cancel} disabled={isPending}>
+                  <Button type="button" hierarchy="secondary" className="ta-header-even ta-phone-hide" onClick={cancel} disabled={isPending}>
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={isPending || changeCount === 0}>
+                  <Button type="submit" className="ta-header-even ta-phone-hide" disabled={isPending || changeCount === 0}>
                     {isPending ? "Saving…" : "Save changes"}
                   </Button>
                 </>
@@ -698,6 +698,7 @@ export function EditEmployeeForm({
                   <LinkButton
                     href="/admin/employees"
                     hierarchy="tertiary"
+                    className="ta-phone-hide"
                     leadingIcon={<ArrowLeft className="h-4 w-4" aria-hidden="true" />}
                   >
                     Employees
@@ -718,6 +719,7 @@ export function EditEmployeeForm({
                   </LinkButton>
                   <Button
                     type="button"
+                    className="ta-header-primary"
                     onClick={startEditing}
                     leadingIcon={<Pencil className="h-4 w-4" aria-hidden="true" />}
                   >
@@ -1382,6 +1384,26 @@ export function EditEmployeeForm({
             </section>
           </div>
         </div>
+
+        {/* On a phone the header scrolls away, so while editing, Cancel and
+            Save stay at the bottom of the screen instead. */}
+        {editing && (
+          <div className="ta-phone-only">
+            <div className={styles.phoneSave}>
+              <span className={styles.phoneSaveCount}>
+                {changeCount === 0 ? "No changes yet" : changeCount === 1 ? "1 unsaved change" : `${changeCount} unsaved changes`}
+              </span>
+              <div className={styles.phoneSaveButtons}>
+                <Button type="button" hierarchy="secondary" onClick={cancel} disabled={isPending}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isPending || changeCount === 0}>
+                  {isPending ? "Saving…" : "Save changes"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </form>
       </Editing.Provider>
 
@@ -1418,10 +1440,10 @@ export function EditEmployeeForm({
       {/* ── Temp password modal ───────────────────────────────────────────── */}
       {showPasswordModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           onClick={(e) => { if (e.target === e.currentTarget) setShowPasswordModal(false); }}
         >
-          <div className="ta-modal w-full max-w-sm rounded-xl p-6">
+          <div className="ta-modal ta-sheet w-full max-w-sm rounded-xl p-6" style={{ "--ta-sheet-pad": "24px" } as React.CSSProperties}>
             <h2 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>
               Set Temporary Password
             </h2>
@@ -1459,7 +1481,7 @@ export function EditEmployeeForm({
                 <Banner tone={tempStatus === "error" ? "error" : "success"} body={tempMessage} />
               )}
 
-              <div className="mt-1 flex justify-end gap-2">
+              <div className="ta-sheet-actions mt-1 flex justify-end gap-2">
                 <Button type="button" hierarchy="secondary" onClick={() => setShowPasswordModal(false)}>
                   Cancel
                 </Button>

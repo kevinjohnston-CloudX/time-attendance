@@ -20,8 +20,10 @@ import { useEffect, useRef, useState } from "react";
  * list moved up, the browser scrolled back to hold the list still, that
  * unshrank the bar, and the header shuddered between its two sizes.
  *
- * <p>Where the bar does not pin (a narrow or short window, see .ta-pinned),
- * it never slims, since it scrolls away with the page anyway.
+ * <p>Where the bar does not pin (a phone, or a narrow or short window, see
+ * .ta-pinned), it never slims, since it scrolls away with the page anyway,
+ * and its height reads as 0, so a column header that sticks under it sticks
+ * to the top of the page instead of halfway down it.
  */
 export function useCondensingBar() {
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -51,6 +53,8 @@ export function useCondensingBar() {
       const marker = markerRef.current;
       if (!marker) return;
       const pinned = getComputedStyle(bar).position === "sticky";
+      // Turning a phone sideways can pin or unpin the bar without resizing it.
+      if (!pinned) setBarHeight(0);
       const travelled = bar.getBoundingClientRect().top - marker.getBoundingClientRect().top;
       const next = pinned && (condensedRef.current ? travelled > 4 : travelled > 16);
       if (next === condensedRef.current) return;
@@ -85,7 +89,7 @@ export function useCondensingBar() {
               setGap(gap);
               if (!condensedRef.current && gap === 0) fullHeight.current = 0;
             }
-            const h = Math.round(exact);
+            const h = getComputedStyle(bar).position === "sticky" ? Math.round(exact) : 0;
             setBarHeight((prev) => (prev === h ? prev : h));
           })
         : null;

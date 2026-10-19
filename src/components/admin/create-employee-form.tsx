@@ -253,16 +253,20 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
   return (
     <>
-      <Button onClick={() => setOpen(true)} leadingIcon={<Plus className="h-4 w-4" aria-hidden="true" />}>
+      <Button
+        className="ta-header-primary"
+        onClick={() => setOpen(true)}
+        leadingIcon={<Plus className="h-4 w-4" aria-hidden="true" />}
+      >
         Add Employee
       </Button>
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
         >
-          <div className="ta-modal flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl">
+          <div className="ta-modal ta-sheet flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl">
             <div
               className="flex items-center justify-between gap-3 px-6 py-4"
               style={{ borderBottom: "1px solid var(--stroke-divider)" }}
@@ -498,7 +502,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
               </div>
 
               <div
-                className="flex items-center gap-2 px-6 py-4"
+                className="ta-sheet-actions flex items-center gap-2 px-6 py-4"
                 style={{ borderTop: "1px solid var(--stroke-divider)" }}
               >
                 <Button type="submit" disabled={isPending}>

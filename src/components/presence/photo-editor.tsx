@@ -328,7 +328,7 @@ export function PhotoEditor({
 
   return (
     <div
-      className={styles.peScrim}
+      className={`${styles.peScrim} ta-sheet-scrim`}
       onClick={saving ? undefined : onClose}
       // A photo let go of beside the dialog must not open in the tab instead.
       onDragOver={(e) => e.preventDefault()}
@@ -336,7 +336,7 @@ export function PhotoEditor({
     >
       <div
         ref={dialogRef}
-        className={styles.peDialog}
+        className={`${styles.peDialog} ta-sheet`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="pe-title"

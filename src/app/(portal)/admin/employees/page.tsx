@@ -95,6 +95,7 @@ export default async function EmployeesPage({
                 <LinkButton
                   href="/admin"
                   hierarchy="tertiary"
+                  className="ta-phone-hide"
                   leadingIcon={<ArrowLeft className="h-4 w-4" aria-hidden="true" />}
                 >
                   Administration
