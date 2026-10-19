@@ -455,11 +455,13 @@ function PersonRow({
           </span>
         </span>
 
-        <span className={styles.mvFact}>
+        {/* data-label: on a phone the column headings are not drawn, so each
+            fact carries its own (see on-site.module.css, Phones). */}
+        <span className={styles.mvFact} data-label="Arrived">
           <span className={styles.mvFactValue}>{arrived}</span>
           {!hasGate && v.schedule && <span className={styles.mvFactSub}>Due {time(v.schedule.start)}</span>}
         </span>
-        <span className={styles.mvFact}>
+        <span className={styles.mvFact} data-label="Left">
           <span className={styles.mvFactValue}>{left}</span>
           {!hasGate &&
             (stillOn ? (
@@ -469,7 +471,7 @@ function PersonRow({
             ))}
         </span>
         {hasGate && (
-          <span className={styles.mvFact}>
+          <span className={styles.mvFact} data-label="Clock in">
             <span className={styles.mvFactValue}>{clockedIn}</span>
             {/* Office staff do not clock in, so a time to clock in by would
                 read as one they missed. */}
@@ -477,12 +479,12 @@ function PersonRow({
           </span>
         )}
         {hasGate && (
-          <span className={styles.mvFact}>
+          <span className={styles.mvFact} data-label="Clock out">
             <span className={styles.mvFactValue}>{clockedOut}</span>
             {v.schedule && !p.salaried && <span className={styles.mvFactSub}>Ends {time(v.schedule.end)}</span>}
           </span>
         )}
-        <span className={styles.mvFact}>
+        <span className={styles.mvFact} data-label="On the clock">
           {/* No clock time is normal for salaried people, who do not clock
               in, and a gap for anyone hourly; neither reads as "0 min".
               With a gate, the time inside sits under it. */}

@@ -855,7 +855,7 @@ export function OnSiteBoard({
 
       <div
         ref={barRef}
-        className="ta-canvas sticky top-0 z-20 flex flex-col"
+        className={`${styles.boardBar} ta-canvas sticky top-0 z-20 flex flex-col`}
         // The bar keeps 14px of canvas under the tools while pinned; the
         // board's own 16px gap is taken back, so the content sits 14px under
         // the tools, as the handoff spaces its main column.
@@ -955,7 +955,7 @@ export function OnSiteBoard({
           </div>
           {/* Wraps rather than running off a narrow window, and stays on the
               right when it does, as every page header does. */}
-          <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">{actions}</div>
+          <div className="ta-header-actions ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">{actions}</div>
         </div>
 
         {/* Row two, how you are looking at it: search first, then who, then

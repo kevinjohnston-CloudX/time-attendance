@@ -436,3 +436,11 @@
     display: none;
   }
 }
+
+/* Phones (the app frame's query): the building menu's rows at a finger's
+   height. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .menuItem {
+    min-height: 44px;
+  }
+}

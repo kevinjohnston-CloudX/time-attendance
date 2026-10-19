@@ -5013,3 +5013,204 @@
   background: var(--ta-well) !important;
   box-shadow: inset 0 0 0 1px var(--ta-well-ring);
 }
+
+/* ── Phones ──────────────────────────────────────────────────────────────
+   The same query as the app's phone frame (globals.css). The shared phone
+   rules for the tools bar lose to this file's own, which load later at the
+   same strength, so the board states its phone shape here. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* The bar scrolls with the page, as every pinned header does on a phone:
+     pinned, it covered two fifths of the screen. */
+  .boardBar {
+    position: relative !important;
+    top: auto !important;
+  }
+
+  /* The building leads the line of buttons and takes what is left of it. */
+  :global(.ta-header-actions) > span:has(> .siteBtn) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .siteBtn {
+    width: 100%;
+    min-width: 0;
+    height: 40px !important;
+  }
+  /* Three situations after the lead figure: the third takes the full width
+     under the first two rather than leaving a hole beside it. */
+  .summaryMain[data-cards="3"] > .summaryCard:last-child {
+    grid-column: 1 / -1;
+  }
+
+  /* Search across the full width; the filters one row that swipes; the count,
+     sort and View on the line under them. */
+  .tools {
+    padding: 4px 6px !important;
+  }
+  .tools .psWrap {
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: none;
+  }
+  .tools .psField {
+    min-height: 44px;
+    padding-left: 8px;
+  }
+  .tools :global(.ta-chip) {
+    flex: none;
+    height: 40px !important;
+    padding: 0 12px !important;
+    border-radius: 12px !important;
+    background: var(--ta-well) !important;
+    font: var(--weight-medium) 15px/1 var(--font-sans) !important;
+  }
+  .tools :global(.ta-chip)[data-applied="true"] {
+    background: var(--surface-info) !important;
+  }
+
+  /* A situation's name wraps rather than being cut ("Scheduled, out of the
+     building"), and the summary's quiet note takes a line of its own under
+     the status chips instead of running over them. */
+  .summaryLabel {
+    white-space: normal;
+    align-items: baseline;
+  }
+  .summaryLabel > :global(.truncate) {
+    overflow: visible;
+    white-space: normal;
+  }
+  .summaryLabel > .dot {
+    flex: none;
+    transform: translateY(-1px);
+  }
+  .summaryHero,
+  .summaryCard {
+    padding: 16px 16px 18px;
+  }
+  /* The statuses swipe sideways in one row, as the filters do, instead of
+     stacking six lines deep. */
+  .summaryMore {
+    padding: 12px 0;
+  }
+  .summaryChips {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding: 0 16px;
+  }
+  .summaryChips::-webkit-scrollbar {
+    display: none;
+  }
+  .summaryChip {
+    flex: none;
+  }
+  .summaryMore > .summaryNote {
+    padding: 0 16px;
+  }
+  /* Movements: three facts to a line, each under its own small label,
+     since the column headings are not drawn on a phone. */
+  .mvRow,
+  .mvRow[data-gate="false"] {
+    position: relative;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px 10px;
+  }
+  .mvRow > .mvWho {
+    grid-column: 1 / -1;
+    padding-right: 40px;
+  }
+  /* The expand arrow sits in the row's corner, so it takes no column. */
+  .mvRow > .mvToggleCell {
+    position: absolute;
+    top: 12px;
+    right: 8px;
+  }
+  .mvRow > .mvFact::before {
+    content: attr(data-label);
+    font: var(--weight-medium) 12px/16px var(--font-sans);
+    color: var(--text-tertiary);
+  }
+  .mvRow > .mvFact {
+    white-space: normal;
+  }
+  .mvRow {
+    align-items: start !important;
+  }
+  /* With a gate there are five facts: the last line holds two, so the time
+     on the clock takes both free columns and its "Inside" line stays whole. */
+  .mvRow:not([data-gate="false"]) > .mvFact[data-label="On the clock"] {
+    grid-column: span 2;
+  }
+  /* The person panel: the day's six figures fit their thirds ("8 hr 50
+     min" whole), a long shift name wraps, and the chart's hour marks thin
+     to every other one so they do not run into each other. */
+  .ppGlanceCell {
+    padding: 12px 10px 13px 12px;
+  }
+  .ppGlanceValue {
+    font-size: 17px;
+    letter-spacing: -0.02em;
+  }
+  .ppFact dd {
+    overflow: visible;
+    white-space: normal;
+  }
+  .ppAxis > span:nth-child(even):not(.ppNowLabel),
+  .ppAxis > span:nth-last-child(2):not(:first-child) {
+    visibility: hidden;
+  }
+  /* A group's heading sticks to the top of the screen, not under the
+     desktop's pinned bar, which a phone does not pin. Its hint takes the
+     line under the name rather than being cut. */
+  .groupHead {
+    top: 0 !important;
+  }
+  .groupToggle {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .groupToggle .chevron {
+    margin-left: auto;
+  }
+  .groupHint {
+    order: 5;
+    flex: 1 1 100%;
+    padding-left: 18px;
+    white-space: normal;
+  }
+  .summaryMore {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .summaryNote {
+    flex: 1 1 100%;
+    margin-left: 0;
+    white-space: normal;
+  }
+  /* The count, the sort and View share one line under the filters: in the
+     bar's end, the pills drop back to 36px. */
+  .tools :global(.ta-tools-end) {
+    flex-wrap: nowrap !important;
+    gap: 4px;
+  }
+  .tools :global(.ta-tools-end) :global(.ta-chip) {
+    height: 36px !important;
+    padding: 0 8px !important;
+    font-size: 14px !important;
+  }
+  .tools :global(.ta-tools-end) :global(.ta-tools-count) {
+    padding: 0 6px 0 8px !important;
+  }
+  /* Four situations after the lead figure: two by two under it, not four
+     squeezed into one row. */
+  .summaryMain[data-cards="4"],
+  .summaryMain[data-cards="3"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .summaryChip {
+    height: 36px;
+    font-size: 14px;
+  }
+}

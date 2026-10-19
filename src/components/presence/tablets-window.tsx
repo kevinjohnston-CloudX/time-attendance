@@ -8,6 +8,7 @@ import { BuildingWindow } from "./building-window";
 import { countHealth, healthOf, issuesOf, statusOf, type Health } from "./tablet-health";
 import bw from "./building-windows.module.css";
 import styles from "./tablets-window.module.css";
+import { isPhone } from "@/lib/phone";
 
 /**
  * Every tablet at the building on Live Attendance, for loss prevention and
@@ -180,7 +181,14 @@ export function TabletsBody({
                       role="option"
                       aria-selected={current?.key === t.key}
                       className={styles.choice}
-                      onClick={() => onChoose(t.key)}
+                      onClick={() => {
+                        onChoose(t.key);
+                        // A phone stacks the details under the list, out of
+                        // sight: take the person to them.
+                        if (isPhone()) {
+                          setTimeout(() => document.getElementById("tablet-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+                        }
+                      }}
                     >
                       <span className={styles.choiceIcon} aria-hidden="true">
                         <g.Icon />
@@ -231,7 +239,7 @@ function TabletDetail({ t, tz, now, newest }: { t: Tablet; tz: string; now: numb
         : `${kind(t)}. Checked in ${agoLabel(t.lastSeenAt, now)}.`;
 
   return (
-    <section className={`${bw.card} ${styles.detailCard}`} aria-label={t.name}>
+    <section id="tablet-detail" className={`${bw.card} ${styles.detailCard}`} aria-label={t.name}>
       <div className={`ta-scroll ${styles.detail}`}>
         <div className={styles.top}>
           <header className={styles.detailHead}>

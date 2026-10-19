@@ -1141,6 +1141,15 @@ option {
     margin-left: 0 !important;
     justify-content: flex-start !important;
   }
+  /* A page's view switch (Movements, People, Scan log; All, Pending...) leads
+     that line at the full width; the buttons follow on the line under it. */
+  .ta-header-actions > .ta-seg-track {
+    flex: 1 1 100%;
+    order: -2;
+  }
+  .ta-header-actions > .ta-seg-track > .wms-seg {
+    flex: 1 0 auto;
+  }
 
   /* Pinned headers scroll with the page on a phone: a title, its buttons and
      a filter row would cover a third of the screen. The phone's own top and
@@ -1244,12 +1253,6 @@ option {
    screen rather than two columns; the month shows a tint and a count per day
    and lists the people of the tapped day under it. */
 @media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
-  .ta-leave-actions > .ta-seg-track {
-    flex: 1 1 100%;
-  }
-  .ta-leave-actions > .ta-seg-track > .wms-seg {
-    flex: 1 0 auto;
-  }
   /* Team Overview is a tap away in the bottom bar's Approvals and in Menu;
      on a phone the shortcut only pushed Submit Leave onto a line alone. */
   .ta-leave-actions > .ta-leave-back {
@@ -1257,9 +1260,6 @@ option {
   }
   .ta-leave-actions > .ta-leave-submit {
     order: -1;
-  }
-  .ta-leave-actions > .ta-seg-track {
-    order: -2;
   }
   /* A request's decision buttons share the card's width, for a thumb. */
   .ta-req-actions .wms-btn:not(.wms-btn-link) {
