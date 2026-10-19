@@ -13,6 +13,7 @@ import { Button, Input, LinkButton, Select, Textarea } from "@/components/ui";
 import { formatTimeOfDay } from "@/lib/utils/date";
 import { parseTimeOfDay, type Meridiem } from "@/lib/utils/time-of-day";
 import type { ExceptionRow } from "@/components/supervisor/exceptions-screen";
+import styles from "./exceptions.module.css";
 
 /**
  * One exception, as the handoff draws it: who and when, what is wrong in a
@@ -300,7 +301,7 @@ export function ExceptionCard({
       }}
     >
       <div className="flex items-baseline gap-3 px-4 pb-3 pt-3.5">
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className={`${styles.cardWho} flex min-w-0 flex-1 flex-col gap-0.5`}>
           <span
             className="truncate"
             style={{
@@ -322,7 +323,7 @@ export function ExceptionCard({
           </span>
         </div>
         <span
-          className="tabular whitespace-nowrap"
+          className={`${styles.cardDate} tabular whitespace-nowrap`}
           style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
         >
           {format(row.occurredAt, "EEE MMM d, yyyy")}
@@ -371,7 +372,8 @@ export function ExceptionCard({
                 color: f.color,
               }}
             >
-              {f.value}
+              {/* A time never splits from its AM or PM on a narrow card. */}
+              {f.value.replace(/ (AM|PM)\b/g, "\u00a0$1")}
             </span>
           </div>
         ))}
@@ -387,7 +389,7 @@ export function ExceptionCard({
       )}
 
       {mode === null && (
-        <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+        <div className={`${styles.cardActions} flex flex-wrap items-center gap-2 px-4 py-3`}>
           <Button
             size="sm"
             disabled={loadingPunches || (!addsPunches && !row.hasPunches)}
@@ -401,7 +403,7 @@ export function ExceptionCard({
           {/* Pushed to the far end of the row, as the handoff has it: it
               leaves the screen, and the two buttons that do not should not
               sit next to something that does. */}
-          <span style={{ marginLeft: "auto" }}>
+          <span className={styles.cardLink} style={{ marginLeft: "auto" }}>
             <LinkButton
               href={`/payroll/timecards?periodId=${row.payPeriod.id}&employeeId=${row.employeeId}`}
               hierarchy="link"
@@ -418,7 +420,7 @@ export function ExceptionCard({
           className="flex flex-col gap-3 px-4 py-3.5"
           style={{ background: "var(--surface-tertiary)" }}
         >
-          <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
+          <div className={`${styles.form} grid gap-2.5`} style={{ gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
             {addsPunches ? (
               <>
                 <TimeField
@@ -440,7 +442,7 @@ export function ExceptionCard({
               </>
             ) : (
               <>
-                <Field label="Punch">
+                <Field label="Punch" wide>
                   <Select
                     aria-label="Punch to correct"
                     value={punchId}
@@ -459,6 +461,7 @@ export function ExceptionCard({
                   </Select>
                 </Field>
                 <TimeField
+                  wide
                   label="New time"
                   value={newTime}
                   meridiem={newHalf}
@@ -469,7 +472,7 @@ export function ExceptionCard({
               </>
             )}
 
-            <Field label="Reason">
+            <Field label="Reason" wide>
               {reasonCodes.length > 0 ? (
                 <Select
                   aria-label="Reason"
@@ -496,18 +499,18 @@ export function ExceptionCard({
             </Field>
 
             {reasonCodes.length > 0 && (
-              <Field label="Detail">
+              <Field label="Detail" wide>
                 <Input
                   aria-label="Detail"
                   value={detail}
                   onChange={(e) => setDetail(e.target.value)}
-                  placeholder="Anything the code does not say (optional)"
+                  placeholder="Optional"
                 />
               </Field>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className={`${styles.formButtons} flex items-center gap-2`}>
             <Button size="sm" disabled={isPending || !reasonText.trim()} onClick={savePunch}>
               {isPending ? "Saving" : "Save and Resolve"}
             </Button>
@@ -532,7 +535,7 @@ export function ExceptionCard({
               placeholder="The employee sees this note"
             />
           </Field>
-          <div className="flex items-center gap-2">
+          <div className={`${styles.formButtons} flex items-center gap-2`}>
             <Button size="sm" disabled={isPending || !note.trim()} onClick={saveNote}>
               {isPending ? "Saving" : "Resolve"}
             </Button>
@@ -552,9 +555,18 @@ export function ExceptionCard({
  * <p>The shared Input draws its own label, and it is not this one, so every
  * cell here is labelled the same way instead: one grid, one label style.
  */
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  wide = false,
+  children,
+}: {
+  label: string;
+  /** Takes the whole row on a phone, where two columns are too narrow for it. */
+  wide?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <label className="flex min-w-0 flex-col gap-1.5">
+    <label className={`${wide ? styles.formWide : ""} flex min-w-0 flex-col gap-1.5`}>
       <span className="wms-overline" style={{ color: "var(--text-tertiary)" }}>
         {label}
       </span>
@@ -571,6 +583,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
  */
 function TimeField({
   label,
+  wide = false,
   value,
   meridiem,
   placeholder,
@@ -578,6 +591,7 @@ function TimeField({
   onMeridiemChange,
 }: {
   label: string;
+  wide?: boolean;
   value: string;
   meridiem: Meridiem;
   placeholder: string;
@@ -585,20 +599,25 @@ function TimeField({
   onMeridiemChange: (value: Meridiem) => void;
 }) {
   return (
-    <Field label={label}>
+    <Field label={label} wide={wide}>
       <span className="flex items-center gap-1.5">
-        <Input
-          aria-label={label}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          inputMode="numeric"
-          className="tabular"
-          style={{ flex: 1, minWidth: 0 }}
-        />
+        {/* The field's own wrapper will not shrink below the input's natural
+            width, so this one does it for it. Without it the AM and PM button
+            is pushed out of a narrow column. */}
+        <span className="min-w-0 flex-1">
+          <Input
+            aria-label={label}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            inputMode="numeric"
+            className="tabular"
+          />
+        </span>
         <Button
           hierarchy="secondary"
           size="sm"
+          className={styles.meridiem}
           aria-label={`${label} is ${meridiem}`}
           onClick={() => onMeridiemChange(meridiem === "AM" ? "PM" : "AM")}
         >

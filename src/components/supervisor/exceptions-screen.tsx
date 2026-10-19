@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
-import { Inbox } from "lucide-react";
+import { ChevronLeft, ChevronRight, Inbox } from "lucide-react";
 import { ExceptionCard } from "@/components/supervisor/exception-card";
 import {
   Button,
@@ -14,6 +14,8 @@ import {
   ToolsCount,
   useToast,
 } from "@/components/ui";
+import { isPhone } from "@/lib/phone";
+import styles from "./exceptions.module.css";
 
 /**
  * The Exceptions screen, as the Claude Design handoff lays it out: one pinned
@@ -171,6 +173,49 @@ export function ExceptionsScreen({
   }, []);
 
   /**
+   * On a phone, whether the cards are showing rather than the people.
+   *
+   * <p>A phone shows the rail and the cards one after the other instead of
+   * side by side (exceptions.module.css). A link to one person's exceptions
+   * opens on that person, as it does on a computer.
+   */
+  const [phoneCards, setPhoneCards] = useState(Boolean(selected.employeeId));
+  /** Where the people list was scrolled to, so coming back lands there. */
+  const listScroll = useRef(0);
+  /** Where the page goes once the switch has drawn, set by the two switches below. */
+  const scrollAfterSwitch = useRef<number | null>(null);
+
+  const pageScroller = () => document.querySelector<HTMLElement>("main.ta-page-scroll");
+
+  /** A row in the rail was tapped. On a phone that opens it, never closes it. */
+  const openFromRail = useCallback(
+    (id: string | null) => {
+      if (!isPhone()) {
+        setOpenEmployeeId(openEmployeeId === id ? null : id);
+        return;
+      }
+      setOpenEmployeeId(id);
+      listScroll.current = pageScroller()?.scrollTop ?? 0;
+      scrollAfterSwitch.current = 0;
+      setPhoneCards(true);
+    },
+    [openEmployeeId, setOpenEmployeeId],
+  );
+
+  const backToPeople = useCallback(() => {
+    scrollAfterSwitch.current = listScroll.current;
+    setPhoneCards(false);
+  }, []);
+
+  // Before the frame is painted, so the new screen never shows at the old
+  // screen's scroll position first.
+  useLayoutEffect(() => {
+    if (scrollAfterSwitch.current === null) return;
+    pageScroller()?.scrollTo({ top: scrollAfterSwitch.current });
+    scrollAfterSwitch.current = null;
+  }, [phoneCards, openEmployeeId]);
+
+  /**
    * The bar pins, so the rail has to pin below it rather than at a guessed
    * offset. Its height is not a constant: the chips wrap onto a second line on
    * a narrow window and "Clear all" comes and goes. The handoff measures it
@@ -254,6 +299,7 @@ export function ExceptionsScreen({
       }
       const qs = params.toString();
       setOpenEmployeeId(null);
+      setPhoneCards(false);
       router.push(`/supervisor/exceptions${qs ? `?${qs}` : ""}`, { scroll: false });
     },
     [router, selected, setOpenEmployeeId],
@@ -334,6 +380,8 @@ export function ExceptionsScreen({
 
   const page = useMemo(() => visible.slice(0, shown), [visible, shown]);
 
+  const openPerson = openEmployeeId ? people.find((p) => p.id === openEmployeeId) : undefined;
+
   const dirty = Boolean(
     query ||
       openEmployeeId ||
@@ -357,7 +405,11 @@ export function ExceptionsScreen({
   }
 
   return (
-    <div className="relative flex flex-col gap-4">
+    <div
+      className={`${styles.screen} relative flex flex-col gap-4`}
+      data-phone-view={people.length === 0 ? "empty" : phoneCards ? "cards" : "people"}
+      data-phone-person={phoneCards && openEmployeeId ? "true" : undefined}
+    >
       {/* The whole top of the page pins, not just the filters. Scrolling a
           queue of several hundred used to take the title and the export away
           with it. The title keeps its size while it is pinned: on a queue
@@ -367,10 +419,10 @@ export function ExceptionsScreen({
         ref={toolbarRef}
         // Pulled up into the page's top padding so it already sits where it
         // pins: a bar that does not shrink has no business sliding either.
-        className="ta-pin ta-canvas sticky top-0 z-20 flex flex-col"
+        className={`${styles.bar} ta-pin ta-canvas sticky top-0 z-20 flex flex-col`}
       >
         <div
-          className="flex flex-wrap items-baseline gap-x-3 gap-y-1"
+          className={`${styles.titleRow} flex flex-wrap items-baseline gap-x-3 gap-y-1`}
           style={{ paddingBottom: 12 }}
         >
           <h1
@@ -427,6 +479,7 @@ export function ExceptionsScreen({
                     onClick={() => {
                       setQuery("");
                       setOpenEmployeeId(null);
+                      setPhoneCards(false);
                       router.push("/supervisor/exceptions", { scroll: false });
                     }}
                   >
@@ -486,7 +539,7 @@ export function ExceptionsScreen({
             scrolling back up for the list. */}
         <div
           ref={railRef}
-          className="ta-rail min-w-0 flex-[1_1_216px]"
+          className={`${styles.rail} ta-rail min-w-0 flex-[1_1_216px]`}
           style={{ maxWidth: 256, "--ta-rail-top": `${toolbarHeight + 14}px` } as React.CSSProperties}
         >
           <div
@@ -505,7 +558,7 @@ export function ExceptionsScreen({
               Employees ({people.length})
             </div>
             <div
-              className={`ta-scroll flex min-h-0 flex-1 flex-col overflow-y-auto ${railHeight === null ? "max-h-[460px]" : ""}`}
+              className={`${styles.railList} ta-scroll flex min-h-0 flex-1 flex-col overflow-y-auto ${railHeight === null ? "max-h-[460px]" : ""}`}
             >
               <RailRow
                 name="All employees"
@@ -513,7 +566,7 @@ export function ExceptionsScreen({
                 count={rows.filter((r) => matchesQuery(r.employeeName)).length}
                 selected={!openEmployeeId}
                 severity={null}
-                onClick={() => setOpenEmployeeId(null)}
+                onClick={() => openFromRail(null)}
               />
               {people.length > 0 && people.filter((p) => matchesQuery(p.name)).length === 0 && (
                 <p
@@ -535,14 +588,29 @@ export function ExceptionsScreen({
                     severity={p.worst}
                     // Clicking the person you already have open takes you back
                     // to everyone, so the rail is never a place you get stuck.
-                    onClick={() => setOpenEmployeeId(openEmployeeId === p.id ? null : p.id)}
+                    // On a phone it opens them, every time.
+                    onClick={() => openFromRail(p.id)}
                   />
                 ))}
             </div>
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-[4_1_380px] flex-col gap-2.5">
+        <div className={`${styles.cards} flex min-w-0 flex-[4_1_380px] flex-col gap-2.5`}>
+          {phoneCards && people.length > 0 && (
+            <div className="ta-phone-only">
+              <div className={styles.detailHead}>
+                <button type="button" className={styles.back} onClick={backToPeople}>
+                  <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+                  Exceptions
+                </button>
+                <h2 className={styles.detailName}>{openEmployeeId ? (openPerson?.name ?? "Employee") : "All employees"}</h2>
+                <p className={styles.detailMeta}>
+                  {visible.length === 1 ? "1 open exception" : `${visible.length} open exceptions`}
+                </p>
+              </div>
+            </div>
+          )}
           {visible.length === 0 ? (
             <EmptyState
               icon={<Inbox className="h-8 w-8" />}
@@ -683,7 +751,7 @@ function RailRow({
       type="button"
       onClick={onClick}
       aria-current={selected ? "true" : undefined}
-      className="ta-rail-row flex w-full items-center gap-2.5 px-3.5 py-2 text-left"
+      className={`${styles.railRow} ta-rail-row flex w-full items-center gap-2.5 px-3.5 py-2 text-left`}
       style={{
         boxSizing: "border-box",
         border: 0,
@@ -731,6 +799,9 @@ function RailRow({
         }}
       >
         {count}
+      </span>
+      <span className="ta-phone-only">
+        <ChevronRight className={styles.railChevron} aria-hidden="true" />
       </span>
     </button>
   );

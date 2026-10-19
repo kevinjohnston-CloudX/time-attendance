@@ -1,0 +1,133 @@
+/* Exceptions on a phone (exceptions-screen.tsx and exception-card.tsx).
+
+   On a computer the page is a rail of people beside the cards. A phone has
+   room for one of the two, so it shows them one after the other, the way a
+   phone's own Mail does: the people first, then whoever was tapped, with a
+   way back. The root carries data-phone-view, "people" or "cards", and
+   "empty" when nobody has anything open (the cards column holds the empty
+   state, so that is the one that shows).
+
+   Everything here is phone only. Inline styles on these elements are why
+   some lines need !important. */
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* ---- The page header: title and Export on one line, the line under it ---- */
+  .titleRow > p {
+    order: 2;
+    flex-basis: 100%;
+  }
+  .titleRow > h1 {
+    font-size: 28px !important;
+    line-height: 34px !important;
+  }
+
+  /* ---- Which half shows ---- */
+  .screen[data-phone-view="people"] .cards,
+  .screen[data-phone-view="cards"] .rail,
+  .screen[data-phone-view="empty"] .rail,
+  .screen[data-phone-view="cards"] .bar {
+    display: none;
+  }
+
+  /* ---- People ---- */
+  .rail {
+    max-width: none !important;
+    flex-basis: 100% !important;
+  }
+  /* The page scrolls, not a box inside it, so the list has no height of its own. */
+  .railList {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  .railRow {
+    min-height: 64px;
+    gap: 12px !important;
+    padding: 10px 12px 10px 16px !important;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .railRow:last-child {
+    border-bottom: 0 !important;
+  }
+  .railRow:active {
+    background: var(--ta-row-hover) !important;
+  }
+  .railChevron {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    color: var(--icon-tertiary);
+  }
+
+  /* ---- One person, or everybody ---- */
+  .detailHead {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-bottom: 6px;
+  }
+  .back {
+    display: inline-flex;
+    align-self: flex-start;
+    min-height: 44px;
+    align-items: center;
+    gap: 2px;
+    margin-left: -8px;
+    padding: 0 10px 0 4px;
+    border-radius: 10px;
+    font: var(--weight-medium) 16px/22px var(--font-sans);
+    color: var(--text-accent);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .back:active {
+    background: var(--ta-row-hover);
+  }
+  .detailName {
+    margin: 0;
+    overflow: hidden;
+    font: var(--weight-bold) 24px/30px var(--font-sans);
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .detailMeta {
+    margin: 0;
+    font: var(--type-body2);
+    color: var(--text-secondary);
+  }
+
+  /* ---- A card ---- */
+  /* Inside one person's screen their name heads the page, so each card
+     leads with its day instead of repeating who it is. */
+  .screen[data-phone-person] .cardWho {
+    display: none !important;
+  }
+  .screen[data-phone-person] .cardDate {
+    font: var(--weight-semibold) 16px/22px var(--font-sans) !important;
+    color: var(--text-primary) !important;
+  }
+  .cardActions > :not(.cardLink) {
+    flex: 1 1 0;
+    min-width: max-content;
+  }
+  .cardLink {
+    display: flex;
+    flex-basis: 100%;
+    justify-content: center;
+    margin-left: 0 !important;
+  }
+  .form {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .formWide {
+    grid-column: 1 / -1;
+  }
+  .formButtons > * {
+    flex: 1 1 0;
+  }
+  /* As tall as the time beside it, which is a 44px field on a phone. */
+  .meridiem:global(.wms-btn) {
+    height: 44px !important;
+    min-width: 52px;
+  }
+}

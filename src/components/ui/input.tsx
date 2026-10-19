@@ -99,6 +99,7 @@ export function Input({
   trailingIcon,
   id,
   style,
+  className,
   ...rest
 }: InputProps) {
   const fieldId = id ?? (label ? `f-${label.replace(/\s+/g, "-").toLowerCase()}` : undefined);
@@ -119,7 +120,9 @@ export function Input({
           disabled={disabled}
           readOnly={readOnly}
           required={required}
-          className="min-w-0 flex-1 border-0 bg-transparent outline-none"
+          // Added to, never replaced: a caller's "tabular" used to take
+          // min-w-0 with it, and the field then refused to shrink.
+          className={`min-w-0 flex-1 border-0 bg-transparent outline-none${className ? ` ${className}` : ""}`}
           style={{ font: "var(--type-body1)", color: "inherit" }}
           {...rest}
         />

@@ -1075,10 +1075,11 @@ option {
     height: 40px !important;
     min-width: 40px;
   }
+  /* !important because the shared Input sets its height inline. */
   .wms-input,
   select.ta-field,
   input.ta-field {
-    min-height: 44px;
+    min-height: 44px !important;
   }
   .ta-chip {
     height: 36px !important;
