@@ -102,12 +102,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         continue;
       }
 
+      // Raised closed, as a record on the person that a scan went wrong. What
+      // it costs the timecard is already an open exception HR works from: the
+      // missed punch, or the absence, of that day. Left open, each one was a
+      // second item to resolve by hand for the same problem, and stayed open
+      // after the punch was fixed.
       await db.exception.create({
         data: {
           timesheetId: timesheet.id,
           exceptionType: "SCAN_DISCREPANCY",
           description: `[${d.kind}] ${d.description}`,
           occurredAt: d.scanTime,
+          resolvedAt: new Date(),
+          resolution: "Closed automatically: kept as a record of the scan. The day's missed punch or absence exception is where it is worked.",
         },
       });
       raised += 1;
