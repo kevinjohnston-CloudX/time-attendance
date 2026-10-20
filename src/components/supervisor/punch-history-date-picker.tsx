@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui";
+import { isPhone } from "@/lib/phone";
+import styles from "./punch-history-date-picker.module.css";
 import { PAY_PERIOD_STATUS_LABEL } from "@/lib/state-machines/labels";
 import type { PayPeriodPreset } from "@/lib/punch-history/punch-history-data";
 
@@ -155,147 +158,156 @@ export function PunchHistoryDatePicker({
         <ChevronDown className="h-3.5 w-3.5 flex-none" style={{ color: "var(--icon-tertiary)" }} />
       </button>
 
-      {open && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => onOpenChange(false)} aria-hidden="true" />
-          <div
-            role="dialog"
-            aria-label="Date range"
-            className="absolute left-0 top-[calc(100%+6px)] z-40 flex w-[560px] max-w-[calc(100vw-48px)] flex-wrap overflow-hidden"
-            style={{
-              border: "1px solid var(--stroke-secondary)",
-              borderRadius: "var(--radius-l)",
-              background: "var(--surface-card)",
-              boxShadow: "var(--shadow-menu)",
-            }}
-          >
+      {open &&
+        inPlaceOrOnTop(
+          <>
+            <div className={`fixed inset-0 z-30 ${styles.catcher}`} onClick={() => onOpenChange(false)} aria-hidden="true" />
             <div
-              className="flex flex-[1_1_180px] flex-col gap-1 px-2 py-2.5"
-              style={{ borderRight: "1px solid var(--stroke-divider)", background: "var(--surface-tertiary)" }}
+              role="dialog"
+              aria-label="Date range"
+              className={`absolute left-0 top-[calc(100%+6px)] z-40 flex w-[560px] max-w-[calc(100vw-48px)] flex-wrap overflow-hidden ${styles.sheet}`}
+              style={{
+                border: "1px solid var(--stroke-secondary)",
+                borderRadius: "var(--radius-l)",
+                background: "var(--surface-card)",
+                boxShadow: "var(--shadow-menu)",
+              }}
             >
-              <span className="wms-overline px-2.5 py-1">Pay periods</span>
-              {payPeriods.length === 0 && (
-                <span className="px-2.5 py-2" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                  No pay periods yet
-                </span>
-              )}
-              {payPeriods.map((p, i) => {
-                const on = p.startDate === startDate && p.endDate === endDate;
-                const caption = presetCaption(p, i, payPeriods);
-                return (
-                  <button
-                    key={`${p.startDate}|${p.endDate}`}
-                    type="button"
-                    onClick={() => onPick(p.startDate, p.endDate)}
-                    className="ta-outlined flex w-full flex-col items-start gap-px rounded-md px-2.5 py-2 text-left"
-                    style={{
-                      border: `1px solid ${on ? "var(--stroke-accent)" : "transparent"}`,
-                      background: on ? "var(--surface-card)" : "transparent",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <span
-                      className="tabular whitespace-nowrap"
-                      style={{
-                        font: "var(--type-body1)",
-                        fontWeight: "var(--weight-medium)",
-                        color: on ? "var(--text-accent)" : "var(--text-primary)",
-                      }}
-                    >
-                      {dayLabel(p.startDate)} to {dayLabel(p.endDate)}
-                    </span>
-                    {caption && (
-                      <span style={{ font: "var(--type-caption1)", color: "var(--text-secondary)" }}>{caption}</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="flex flex-[2_1_300px] flex-col gap-2 px-3.5 py-3">
-              <div className="flex items-center justify-between">
-                <Button hierarchy="tertiary" iconOnly aria-label="Previous month" onClick={() => setMonth((m) => m - 1)}>
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
-                  {MONTH_LONG[first.getMonth()]} {first.getFullYear()}
-                </span>
-                <Button hierarchy="tertiary" iconOnly aria-label="Next month" onClick={() => setMonth((m) => m + 1)}>
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-7 gap-0.5" onMouseLeave={() => setHover(null)}>
-                {DOW_SHORT.map((d) => (
-                  <span
-                    key={d}
-                    className="pb-1 pt-0.5 text-center"
-                    style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}
-                  >
-                    {d}
+              <div className={styles.head}>Date range</div>
+              <div
+                className={`flex flex-[1_1_180px] flex-col gap-1 px-2 py-2.5 ${styles.periods}`}
+                style={{ borderRight: "1px solid var(--stroke-divider)", background: "var(--surface-tertiary)" }}
+              >
+                <span className="wms-overline px-2.5 py-1">Pay periods</span>
+                {payPeriods.length === 0 && (
+                  <span className="px-2.5 py-2" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                    No pay periods yet
                   </span>
-                ))}
-                {Array.from({ length: weeks * 7 }, (_, i) => {
-                  const d = new Date(gridStart);
-                  d.setDate(gridStart.getDate() + i);
-                  const iso = isoOf(d);
-                  const inMonth = d.getMonth() === first.getMonth();
-                  const endpoint = iso === a || iso === b;
-                  const inside = !!a && !!reach && iso > a && iso < reach;
+                )}
+                {payPeriods.map((p, i) => {
+                  const on = p.startDate === startDate && p.endDate === endDate;
+                  const caption = presetCaption(p, i, payPeriods);
                   return (
                     <button
-                      key={iso}
+                      key={`${p.startDate}|${p.endDate}`}
                       type="button"
-                      onClick={() => pick(iso)}
-                      onMouseEnter={() => a && !b && setHover(iso)}
-                      className="ta-day tabular h-9 rounded-md"
+                      onClick={() => onPick(p.startDate, p.endDate)}
+                      className="ta-outlined flex w-full flex-col items-start gap-px rounded-md px-2.5 py-2 text-left"
                       style={{
-                        border: 0,
-                        font: "var(--type-body1)",
-                        fontWeight: endpoint ? "var(--weight-semibold)" : "var(--weight-regular)",
-                        background: endpoint ? "var(--fill-accent)" : inside ? "var(--surface-info)" : "transparent",
-                        color: endpoint
-                          ? "var(--text-on-accent)"
-                          : inside
-                            ? "var(--text-accent)"
-                            : inMonth
-                              ? "var(--text-primary)"
-                              : "var(--text-disabled)",
-                        // Today is a hairline, never a fill, so it cannot be
-                        // mistaken for one end of the range being picked.
-                        boxShadow: iso === today && !endpoint && !inside ? "inset 0 0 0 1px var(--stroke-accent)" : "none",
+                        border: `1px solid ${on ? "var(--stroke-accent)" : "transparent"}`,
+                        background: on ? "var(--surface-card)" : "transparent",
                         cursor: "pointer",
                       }}
                     >
-                      {d.getDate()}
+                      <span
+                        className="tabular whitespace-nowrap"
+                        style={{
+                          font: "var(--type-body1)",
+                          fontWeight: "var(--weight-medium)",
+                          color: on ? "var(--text-accent)" : "var(--text-primary)",
+                        }}
+                      >
+                        {dayLabel(p.startDate)} to {dayLabel(p.endDate)}
+                      </span>
+                      {caption && (
+                        <span style={{ font: "var(--type-caption1)", color: "var(--text-secondary)" }}>{caption}</span>
+                      )}
                     </button>
                   );
                 })}
               </div>
 
-              <div className="flex items-center gap-1.5 pt-2" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
-                <span className="flex-1" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                  {a && !b ? "Select an end date" : "Select a start date"}
-                </span>
-                <Button
-                  hierarchy="tertiary"
-                  size="sm"
-                  onClick={() => {
-                    setA(null);
-                    setB(null);
-                    setHover(null);
-                  }}
-                >
-                  Clear
-                </Button>
-                <Button hierarchy="secondary" size="sm" onClick={() => onOpenChange(false)}>
-                  Close
-                </Button>
+              <div className={`flex flex-[2_1_300px] flex-col gap-2 px-3.5 py-3 ${styles.month}`}>
+                <div className="flex items-center justify-between">
+                  <Button hierarchy="tertiary" iconOnly aria-label="Previous month" onClick={() => setMonth((m) => m - 1)}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+                    {MONTH_LONG[first.getMonth()]} {first.getFullYear()}
+                  </span>
+                  <Button hierarchy="tertiary" iconOnly aria-label="Next month" onClick={() => setMonth((m) => m + 1)}>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-7 gap-0.5" onMouseLeave={() => setHover(null)}>
+                  {DOW_SHORT.map((d) => (
+                    <span
+                      key={d}
+                      className="pb-1 pt-0.5 text-center"
+                      style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}
+                    >
+                      {d}
+                    </span>
+                  ))}
+                  {Array.from({ length: weeks * 7 }, (_, i) => {
+                    const d = new Date(gridStart);
+                    d.setDate(gridStart.getDate() + i);
+                    const iso = isoOf(d);
+                    const inMonth = d.getMonth() === first.getMonth();
+                    const endpoint = iso === a || iso === b;
+                    const inside = !!a && !!reach && iso > a && iso < reach;
+                    return (
+                      <button
+                        key={iso}
+                        type="button"
+                        onClick={() => pick(iso)}
+                        onMouseEnter={() => a && !b && setHover(iso)}
+                        className="ta-day tabular h-9 rounded-md"
+                        style={{
+                          border: 0,
+                          font: "var(--type-body1)",
+                          fontWeight: endpoint ? "var(--weight-semibold)" : "var(--weight-regular)",
+                          background: endpoint ? "var(--fill-accent)" : inside ? "var(--surface-info)" : "transparent",
+                          color: endpoint
+                            ? "var(--text-on-accent)"
+                            : inside
+                              ? "var(--text-accent)"
+                              : inMonth
+                                ? "var(--text-primary)"
+                                : "var(--text-disabled)",
+                          // Today is a hairline, never a fill, so it cannot be
+                          // mistaken for one end of the range being picked.
+                          boxShadow: iso === today && !endpoint && !inside ? "inset 0 0 0 1px var(--stroke-accent)" : "none",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {d.getDate()}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className={`flex items-center gap-1.5 pt-2 ${styles.foot}`} style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+                  <span className="flex-1" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                    {a && !b ? "Select an end date" : "Select a start date"}
+                  </span>
+                  <Button
+                    hierarchy="tertiary"
+                    size="sm"
+                    onClick={() => {
+                      setA(null);
+                      setB(null);
+                      setHover(null);
+                    }}
+                  >
+                    Clear
+                  </Button>
+                  <Button hierarchy="secondary" size="sm" onClick={() => onOpenChange(false)}>
+                    Close
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        </>
-      )}
+          </>
+        )}
     </div>
   );
+}
+
+/** On a phone the picker is a sheet, drawn at the page root so the tools
+ *  bar's layer cannot hold it under the tab bar; on a computer it stays
+ *  beside the button it drops from. */
+function inPlaceOrOnTop(node: React.ReactNode) {
+  return isPhone() ? createPortal(node, document.body) : node;
 }

@@ -1,0 +1,76 @@
+/* The date range picker on a phone (punch-history-date-picker.tsx).
+
+   A 560px popover beside its button on a computer. On a phone it opens as a
+   sheet from the bottom edge over a dimmed page: a title, the pay periods,
+   then the month with thumb sized days, and Clear and Close held at the
+   foot while the rest scrolls. */
+
+.head {
+  display: none;
+}
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .catcher {
+    z-index: 60 !important;
+    background: var(--wms-overlay-modal);
+  }
+  .sheet {
+    position: fixed !important;
+    top: auto !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    z-index: 61 !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: calc(100dvh - env(safe-area-inset-top) - 16px);
+    overflow-y: auto !important;
+    border: 0 !important;
+    border-radius: 20px 20px 0 0 !important;
+    animation: rangeUp 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .head {
+    display: block;
+    flex: 1 1 100%;
+    padding: 16px 16px 8px;
+    font: var(--weight-semibold) 17px/22px var(--font-sans);
+    color: var(--text-primary);
+  }
+  .periods {
+    flex-basis: 100% !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--stroke-divider);
+  }
+  .periods > button {
+    min-height: 52px;
+    justify-content: center;
+  }
+  .month {
+    flex-basis: 100% !important;
+    padding-bottom: 0 !important;
+  }
+  .month :global(.ta-day) {
+    height: 44px !important;
+  }
+  .foot {
+    position: sticky;
+    bottom: 0;
+    margin: 0 -14px;
+    padding: 12px 14px calc(12px + env(safe-area-inset-bottom)) !important;
+    background: var(--surface-card);
+  }
+  .foot > :global(.wms-btn) {
+    height: 44px;
+  }
+}
+@keyframes rangeUp {
+  from {
+    transform: translateY(32px);
+    opacity: 0.4;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet {
+    animation: none;
+  }
+}
