@@ -1,0 +1,132 @@
+/* Team Punch History on a phone (punch-history-screen.tsx).
+
+   One thing at a time, as on Exceptions and Timecards: the people, then
+   whoever was tapped, with a way back. The root carries data-phone-view,
+   "list", "card", or "loading" while the tapped person's punches are on
+   their way. The page scrolls rather than the list. Inline styles and the
+   shared .ta-tph rules in globals.css are why some lines need !important. */
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .screen[data-phone-view="list"] .punches,
+  .screen[data-phone-view="card"] .people,
+  .screen[data-phone-view="loading"] .punches,
+  .screen[data-phone-view="loading"] .people {
+    display: none !important;
+  }
+
+  .people {
+    flex-basis: 100% !important;
+  }
+  .list {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  .person {
+    min-height: 60px;
+    gap: 12px !important;
+    padding: 10px 12px 10px 14px !important;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .person:last-child {
+    border-bottom: 0 !important;
+  }
+  .chevron {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    color: var(--icon-tertiary);
+  }
+
+  .back {
+    display: inline-flex;
+    align-self: flex-start;
+    min-height: 44px;
+    align-items: center;
+    gap: 2px;
+    margin: 0 0 4px -8px;
+    padding: 0 10px 0 4px;
+    border-radius: 10px;
+    font: var(--weight-medium) 16px/22px var(--font-sans);
+    color: var(--text-accent);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .back:active {
+    background: var(--ta-row-hover);
+  }
+  .loading {
+    margin: 0;
+    padding: 48px 16px;
+    text-align: center;
+    font: var(--type-body1);
+    color: var(--text-secondary);
+  }
+
+  /* The person: the record is the whole width, so nothing scrolls sideways
+     and nothing needs pinning to the left edge. */
+  .punches {
+    overflow: visible !important;
+    flex-basis: 100% !important;
+  }
+  .punches :global(.ta-tph-punches-inner) {
+    min-width: 0 !important;
+  }
+  .punches :global(.ta-tph-info) {
+    position: static !important;
+    width: auto !important;
+    padding: 14px 16px !important;
+  }
+  .stats {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px !important;
+    width: 100%;
+  }
+
+  .stats > * {
+    align-items: flex-start !important;
+    text-align: left !important;
+  }
+
+  /* A day's heading: the date and the shape of the day on the left, which
+     may wrap, the hours and the status kept at the top right. */
+  .dayHead {
+    flex-wrap: nowrap !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+    padding: 14px 16px 10px !important;
+  }
+  .dayHead > :first-child {
+    flex: 1 1 auto;
+  }
+  /* The parts of the day one under another, so a wrapped line never starts
+     with the dot that separated it. */
+  .shape {
+    flex-direction: column;
+    align-items: flex-start !important;
+    row-gap: 1px;
+  }
+  .shape > span > [aria-hidden="true"] {
+    display: none;
+  }
+  /* A punch: the time, then what it was and where it came from, with any
+     status under it rather than squeezed in a third column. */
+  .punch {
+    grid-template-columns: 84px minmax(0, 1fr) !important;
+    row-gap: 2px !important;
+    column-gap: 12px !important;
+    padding: 8px 16px !important;
+  }
+  /* The exact clock time under a rounded one, on two short lines rather
+     than running into the next column. */
+  .punch > :first-child > span + span {
+    white-space: normal !important;
+    line-height: 16px;
+  }
+  .punch > :nth-child(3) {
+    grid-column: 2;
+    justify-content: flex-start !important;
+  }
+  .punch > :nth-child(3):has(> :global(.sr-only):only-child) {
+    display: none !important;
+  }
+}

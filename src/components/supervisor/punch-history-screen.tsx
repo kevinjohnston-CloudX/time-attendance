@@ -1,9 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useTransition, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useTransition, type CSSProperties } from "react";
+import { useSearchParams } from "next/navigation";
 import { useRouter } from "@/components/layout/navigation-progress";
 import {
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Coffee,
   LogIn,
@@ -18,6 +21,8 @@ import { PUNCH_TYPE_LABEL, type PunchTypeValue } from "@/lib/state-machines/labe
 import type { PunchHistoryData, PunchHistoryParams, PunchHistoryPunch } from "@/lib/punch-history/punch-history-data";
 import { PunchHistoryDatePicker, dayLabel, rangeLabel } from "./punch-history-date-picker";
 import { Face, PhotoViewer, ZoomableFace } from "@/components/presence/face";
+import { isPhone } from "@/lib/phone";
+import styles from "./punch-history.module.css";
 
 /**
  * Team Punch History, as the Claude Design handoff lays it out: a pinned bar
@@ -138,6 +143,31 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
   const [exporting, setExporting] = useState(false);
   const [zoomed, setZoomed] = useState<string | null>(null);
 
+  /**
+   * On a phone, whose punches are showing instead of the list of people.
+   *
+   * <p>A phone shows the two one after the other (punch-history.module.css).
+   * The page always has somebody selected, the first person when the address
+   * names nobody, so a phone starts on the list unless the address asked for
+   * a person. While a tapped person's punches load, "loading"; if a filter
+   * then changes who is selected, it goes back to the list rather than
+   * showing somebody who was not tapped.
+   */
+  const searchParams = useSearchParams();
+  const [phoneFor, setPhoneFor] = useState<string | null>(() => {
+    const asked = searchParams.get("employeeId");
+    return asked && asked === data.selected?.id ? asked : null;
+  });
+  const phoneView =
+    phoneFor === null ? "list" : phoneFor === data.selected?.id ? "card" : isPending ? "loading" : "list";
+  const listScroll = useRef(0);
+  const scrollAfterSwitch = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (scrollAfterSwitch.current === null) return;
+    barRef.current?.closest("main")?.scrollTo({ top: scrollAfterSwitch.current });
+    scrollAfterSwitch.current = null;
+  }, [phoneView]);
+
   // Clock time on the site's clock, 12 hour, always.
   const clock = useCallback(
     (iso: string, seconds: boolean) =>
@@ -249,10 +279,22 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
   }
 
   function openPerson(id: string) {
+    if (isPhone()) {
+      listScroll.current = barRef.current?.closest("main")?.scrollTop ?? 0;
+      scrollAfterSwitch.current = 0;
+      setPhoneFor(id);
+      if (id !== selected?.id) navigate({ employeeId: id });
+      return;
+    }
     navigate({ employeeId: id });
     // Back to the top of the record, as the handoff does, so the next person
     // opens at their first day rather than wherever the last one was left.
     barRef.current?.closest("main")?.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function backToList() {
+    scrollAfterSwitch.current = listScroll.current;
+    setPhoneFor(null);
   }
 
   const dirty =
@@ -331,7 +373,8 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
 
   return (
     <div
-      className="ta-tph relative flex flex-col"
+      className={`${styles.screen} ta-tph relative flex flex-col`}
+      data-phone-view={phoneView}
       style={{ "--tph-bar": `${barHeight}px` } as CSSProperties}
     >
       {/* ── Pinned bar ─────────────────────────────────────────────────────── */}
@@ -422,6 +465,12 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
         </ToolsBar>
       </div>
 
+      {phoneView === "loading" && (
+        <div className="ta-phone-only">
+          <p className={styles.loading} role="status">Opening punches…</p>
+        </div>
+      )}
+
       {/* ── Board ──────────────────────────────────────────────────────────── */}
       <div
         className="ta-tph-board flex flex-wrap items-start gap-3.5"
@@ -429,7 +478,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
         aria-busy={isPending}
       >
         {/* People */}
-        <div className="ta-tph-people z-[1] min-w-0 flex-[1_1_240px]">
+        <div className={`${styles.people} ta-tph-people z-[1] min-w-0 flex-[1_1_240px]`}>
           <div
             className="flex flex-col overflow-hidden"
             style={{
@@ -453,7 +502,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
               </span>
             </div>
 
-            <div className="ta-tph-list ta-scroll flex flex-col overflow-y-auto">
+            <div className={`${styles.list} ta-tph-list ta-scroll flex flex-col overflow-y-auto`}>
               {data.employees.map((e) => {
                 const on = e.id === selected?.id;
                 return (
@@ -462,7 +511,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                     type="button"
                     onClick={() => openPerson(e.id)}
                     aria-current={on ? "true" : undefined}
-                    className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left ${on ? "" : "ta-tph-row"}`}
+                    className={`${styles.person} flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left ${on ? "" : "ta-tph-row"}`}
                     style={{
                       border: 0,
                       borderBottom: "1px solid var(--stroke-divider)",
@@ -520,6 +569,9 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                         <TriangleAlert className="h-4 w-4" aria-label="Missing punch" />
                       </span>
                     )}
+                    <span className="ta-phone-only">
+                      <ChevronRight className={styles.chevron} aria-hidden="true" />
+                    </span>
                   </button>
                 );
               })}
@@ -549,7 +601,13 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
         </div>
 
         {/* Punches */}
-        <div className="ta-tph-punches flex min-w-0 flex-[3_1_480px] flex-col">
+        <div className={`${styles.punches} ta-tph-punches flex min-w-0 flex-[3_1_480px] flex-col`}>
+          <div className="ta-phone-only">
+            <button type="button" className={styles.back} onClick={backToList}>
+              <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+              Employees
+            </button>
+          </div>
           {selected ? (
             <div className={`flex flex-col ${data.punches.length > 0 ? "ta-tph-punches-inner" : ""}`}>
               <div
@@ -588,7 +646,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                       {[selected.badgeId, selected.department, selected.site].filter(Boolean).join(" · ")}
                     </span>
                   </div>
-                  <div className="flex items-center gap-[22px]">
+                  <div className={`${styles.stats} flex items-center gap-[22px]`}>
                     <Stat value={hours(data.totals.workedMinutes)} label="Hours worked" />
                     <Stat value={String(data.totals.daysWorked)} label="Days worked" />
                     <Stat
@@ -678,7 +736,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                             answer, and the day's one status under them. The
                             punches that make it up follow as its rows. */}
                         <div
-                          className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-[18px] pb-3 pt-4"
+                          className={`${styles.dayHead} flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-[18px] pb-3 pt-4`}
                           style={{ borderBottom: "1px solid var(--stroke-divider)" }}
                         >
                           <div className="flex min-w-0 flex-col gap-1">
@@ -689,7 +747,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                               {dayLabel(day.date, true)}
                             </span>
                             {shape.length > 0 && (
-                              <span className="tabular flex flex-wrap items-center gap-x-2" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                              <span className={`${styles.shape} tabular flex flex-wrap items-center gap-x-2`} style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                                 {shape.map((s, i) => (
                                   <span key={i} className="inline-flex items-center gap-2 whitespace-nowrap">
                                     {i > 0 && <span aria-hidden="true" style={{ color: "var(--text-tertiary)" }}>·</span>}
@@ -778,7 +836,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
                             return (
                               <div
                                 key={p.id}
-                                className="grid min-h-[42px] items-center gap-x-4 px-[18px] py-2"
+                                className={`${styles.punch} grid min-h-[42px] items-center gap-x-4 px-[18px] py-2`}
                                 style={{
                                   gridTemplateColumns: ROW_COLUMNS,
                                   borderBottom: "1px solid var(--stroke-divider)",
