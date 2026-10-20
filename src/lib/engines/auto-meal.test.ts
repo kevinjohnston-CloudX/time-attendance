@@ -28,6 +28,27 @@ describe("automatic meal with a lunch punched out and back in", () => {
     expect(paid(applyAutoMealDeduction(segs as never, cfg, new Set()) as never)).toBe(540 - 30);
   });
 
+  it("takes the meal off where 6 hours worked is reached, after a long lunch (Arianna Garcia Vazquez, 10/19)", () => {
+    // 8:01 to 1:02 and 2:10 to 5:06 Eastern: 68 min off is not a meal, and 6
+    // hours worked comes at 3:09, in the afternoon. NovaTime paid 7.45.
+    const segs = [work("12:01", "17:02"), work("18:10", "21:06")];
+    const out = applyAutoMealDeduction(segs as never, cfg, new Set()) as never as { segmentType: string; startTime: Date; endTime: Date }[];
+    expect(paid(out as never)).toBe(301 + 176 - 30);
+    expect(out.find((s) => s.segmentType === "MEAL")?.startTime.toISOString()).toBe("2026-10-12T19:09:00.000Z");
+  });
+
+  it("does the same after a lunch of over two hours (Tiffany Barton, 10/19)", () => {
+    const segs = [work("11:30", "16:05"), work("18:20", "22:05")];
+    expect(paid(applyAutoMealDeduction(segs as never, cfg, new Set()) as never)).toBe(275 + 225 - 30); // 7.83 h, as NovaTime
+  });
+
+  it("still ends the meal at the clock out when 6 hours comes just before it (Michelle Avila, 10/19)", () => {
+    const segs = [work("11:59", "18:04"), work("19:05", "21:02")];
+    const out = applyAutoMealDeduction(segs as never, cfg, new Set()) as never as { segmentType: string; startTime: Date; endTime: Date }[];
+    expect(paid(out as never)).toBe(365 + 117 - 30); // 7.53 h, as NovaTime
+    expect(out.find((s) => s.segmentType === "MEAL")?.endTime.toISOString()).toBe("2026-10-12T18:04:00.000Z");
+  });
+
   it("takes the rest of the meal off a short lunch when the shift deducts the full length", () => {
     const segs = [work("08:00", "12:00"), work("12:20", "16:30")];
     expect(paid(applyAutoMealDeduction(segs as never, { ...cfg, disableMinDeduction: false }, new Set()) as never)).toBe(240 + 250 - 10);

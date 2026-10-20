@@ -102,6 +102,49 @@ async function reverseDebit(
 }
 
 /**
+ * The leave type a pay code takes hours from: the one pointing at the code,
+ * else the one of the code's pay bucket. Null for a code that is not leave.
+ */
+export async function leaveTypeForPayCode(payCodeId: string, tenantId: string): Promise<{ id: string } | null> {
+  const linked = await db.leaveType.findFirst({
+    where: { payCodeId, isActive: true, tenantId },
+    select: { id: true },
+  });
+  if (linked) return linked;
+  const payCode = await db.payCode.findUnique({ where: { id: payCodeId }, select: { payBucket: true } });
+  const category = payCode?.payBucket ? BUCKET_TO_CATEGORY[payCode.payBucket] : undefined;
+  if (!category) return null;
+  return db.leaveType.findFirst({ where: { category, isActive: true, tenantId }, select: { id: true } });
+}
+
+/**
+ * Salary and auto-pay hours under a leave code, made again by a
+ * recalculation, find the leave already taken off for their day: a posted
+ * request of that leave type, from the timecard (no punch), that no hours
+ * hold yet. Nothing is debited here; the link is what lets a later change of
+ * code reverse the deduction instead of leaving it, or taking it twice.
+ */
+export async function relinkCreditLeave(timesheetId: string, employeeId: string, tenantId: string): Promise<void> {
+  const credits = await db.workSegment.findMany({
+    where: { timesheetId, segmentType: "WORK", leaveRequestId: null, payCodeId: { not: null }, durationMinutes: { gt: 0 } },
+    select: { id: true, startTime: true, segmentDate: true, payCodeId: true },
+  });
+  const leaveTypes = new Map<string, { id: string } | null>();
+  for (const seg of credits) {
+    if (seg.startTime.getTime() !== seg.segmentDate.getTime()) continue; // from punches, not a credit
+    if (!leaveTypes.has(seg.payCodeId!)) leaveTypes.set(seg.payCodeId!, await leaveTypeForPayCode(seg.payCodeId!, tenantId));
+    const leaveType = leaveTypes.get(seg.payCodeId!);
+    if (!leaveType) continue;
+    const request = await db.leaveRequest.findFirst({
+      where: { employeeId, leaveTypeId: leaveType.id, status: "POSTED", sourcePunchId: null, startDate: seg.segmentDate, segments: { none: {} } },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    if (request) await db.workSegment.update({ where: { id: seg.id }, data: { leaveRequestId: request.id } });
+  }
+}
+
+/**
  * After every rebuildSegments run (and after setSegmentPayCode changes):
  * 1. Applies the payCodeId (and derived payBucketOverride) from each CLOCK_IN punch
  *    to the WORK segments in that punch pair's time range — so custom pay codes
@@ -146,28 +189,7 @@ export async function reconcileSalarySegmentDeduction(
     : null;
 
   // Resolve leave type from the new pay code
-  let newLeaveType: { id: string } | null = null;
-  if (newPayCodeId) {
-    newLeaveType = await db.leaveType.findFirst({
-      where: { payCodeId: newPayCodeId, isActive: true, tenantId },
-      select: { id: true },
-    });
-    if (!newLeaveType) {
-      const payCode = await db.payCode.findUnique({
-        where: { id: newPayCodeId },
-        select: { payBucket: true },
-      });
-      if (payCode?.payBucket) {
-        const category = BUCKET_TO_CATEGORY[payCode.payBucket];
-        if (category) {
-          newLeaveType = await db.leaveType.findFirst({
-            where: { category, isActive: true, tenantId },
-            select: { id: true },
-          });
-        }
-      }
-    }
-  }
+  const newLeaveType = newPayCodeId ? await leaveTypeForPayCode(newPayCodeId, tenantId) : null;
 
   // Clearing pay code or no leave type found → cancel existing deduction
   if (!newLeaveType) {

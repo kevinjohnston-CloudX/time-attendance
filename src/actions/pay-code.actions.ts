@@ -206,6 +206,38 @@ async function assertOwnPayCode(payCodeId: string, tenantId: string | null) {
   if (!found) throw new Error("That pay code does not exist");
 }
 
+/**
+ * A day's own code: the 0-minute LEAVE line a day with no punches keeps its
+ * pay code on. Cleared, the line goes, unless it also holds a pay bucket.
+ */
+async function setDayCode(timesheetId: string, segmentDate: Date, payCodeId: string | null) {
+  const existing = await db.workSegment.findFirst({
+    where: { timesheetId, segmentDate, durationMinutes: 0, segmentType: "LEAVE" },
+    select: { id: true, payBucketOverride: true },
+  });
+  if (existing) {
+    if (payCodeId || existing.payBucketOverride) {
+      await db.workSegment.update({ where: { id: existing.id }, data: { payCodeId } });
+    } else {
+      await db.workSegment.delete({ where: { id: existing.id } });
+    }
+  } else if (payCodeId) {
+    await db.workSegment.create({
+      data: {
+        timesheetId,
+        segmentType: "LEAVE",
+        startTime: segmentDate,
+        endTime: segmentDate,
+        durationMinutes: 0,
+        segmentDate,
+        isPaid: false,
+        payBucket: "REG",
+        payCodeId,
+      },
+    });
+  }
+}
+
 // ─── Set pay code on a work segment ─────────────────────────────────────────
 
 const setSegmentPayCodeSchema = z.object({
@@ -225,23 +257,29 @@ export const setSegmentPayCode = withRBAC(
     const segment = await db.workSegment.update({
       where: { id: segmentId },
       data: { payCodeId },
-      select: { timesheetId: true, startTime: true },
+      select: { timesheetId: true, startTime: true, segmentDate: true },
     });
 
-    // Write the pay code back to the originating CLOCK_IN punch so it survives
-    // future rebuildSegments calls.
+    // Salary and auto-pay hours start at midnight of their day and come from
+    // no punch. Their code is kept as the day's code, which a recalculation
+    // reads when it makes them again; written to the last clock in instead, it
+    // landed on whatever punch came before (an earlier day's) and the hours
+    // went back to Salary at the next recalculation.
+    const atMidnight = segment.startTime.getTime() === segment.segmentDate.getTime();
     const clockIn = await db.punch.findFirst({
       where: {
         timesheetId: segment.timesheetId,
         punchType: "CLOCK_IN",
         isApproved: true,
         correctedById: null,
-        roundedTime: { lte: segment.startTime },
+        ...(atMidnight ? { roundedTime: segment.startTime } : { roundedTime: { lte: segment.startTime } }),
       },
       orderBy: { roundedTime: "desc" },
       select: { id: true },
     });
-    if (clockIn) {
+    if (!clockIn) {
+      await setDayCode(segment.timesheetId, segment.segmentDate, payCodeId);
+    } else {
       await db.punch.update({
         where: { id: clockIn.id },
         data: { payCodeId: payCodeId ?? null },
@@ -421,6 +459,23 @@ export const setAbsentDayPayCode = withRBAC(
       where: { timesheetId, segmentDate: date, durationMinutes: { gt: 0 }, segmentType: "LEAVE" },
       data: { payCodeId },
     });
+
+    // And the day's salary or auto-pay hours (from midnight, no punch), with
+    // their leave balance: the code set only on the day used to leave them,
+    // and the timecard's summary, under Salary.
+    const credits = await db.workSegment.findMany({
+      where: { timesheetId, segmentDate: date, startTime: date, durationMinutes: { gt: 0 }, segmentType: "WORK" },
+      select: { id: true },
+    });
+    if (credits.length > 0) {
+      await db.workSegment.updateMany({ where: { id: { in: credits.map((c) => c.id) } }, data: { payCodeId } });
+      const owner = await db.timesheet.findUnique({ where: { id: timesheetId }, select: { employeeId: true } });
+      if (owner && ctx.tenantId) {
+        for (const c of credits) {
+          await reconcileSalarySegmentDeduction(c.id, payCodeId, owner.employeeId, ctx.tenantId, ctx.employeeId);
+        }
+      }
+    }
 
     // Also propagate to any existing CLOCK_IN on this day that hasn't been paired yet
     // (handles the case where In time was entered before the pay code was set)

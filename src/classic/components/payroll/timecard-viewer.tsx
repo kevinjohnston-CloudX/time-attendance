@@ -2116,9 +2116,12 @@ export function TimecardViewer({
                             {payCodes.length > 0 && (
                               <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                                 {(() => {
-                                  const workSeg = daySegments.find(
-                                    (s) => s.segmentType === "WORK" || s.segmentType === "LEAVE"
-                                  );
+                                  // The day's hours first: on a salaried day the day's own
+                                  // code (a 0-minute line) sits beside them, and shown when it
+                                  // came first in the list, the row named a code the hours,
+                                  // and so the summary, were not paid under.
+                                  const isCodeSeg = (s: { segmentType: string }) => s.segmentType === "WORK" || s.segmentType === "LEAVE";
+                                  const workSeg = daySegments.find((s) => isCodeSeg(s) && s.durationMinutes > 0) ?? daySegments.find(isCodeSeg);
                                   // 0-duration marker = absent day with a code override
                                   const isMarker = !!workSeg && workSeg.durationMinutes === 0;
                                   const dayStr = format(day, "yyyy-MM-dd");

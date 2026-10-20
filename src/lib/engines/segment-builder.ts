@@ -1,7 +1,7 @@
 import { format, eachDayOfInterval, isWeekend, addDays } from "date-fns";
 import { db } from "@/lib/db";
 import { applyOvertime } from "@/lib/engines/overtime-engine";
-import { reconcileLeaveDeductions } from "@/lib/engines/leave-deduction";
+import { reconcileLeaveDeductions, relinkCreditLeave } from "@/lib/engines/leave-deduction";
 import { startOfDayInTz, nextMidnightInTz, endOfDayInTz, roundDurationMinutes } from "@/lib/utils/date";
 import { periodBoundsInZone, periodDateBounds } from "@/lib/pay-period-days";
 import type { Punch, RuleSet, PayBucket, SegmentType, HolidayCreditMethod } from "@prisma/client";
@@ -30,6 +30,46 @@ type EffectiveMealCfg = {
 
 const SALARY_DAILY_MINUTES = 480; // 8 h
 
+/** The code chosen for a day's salary or auto-pay hours, and the leave they hold. */
+type ChosenCode = { payCodeId: string; leaveRequestId: string | null };
+
+/**
+ * The code chosen for each day with no punches: the day's own code if one is
+ * set, else the code somebody gave its salary or auto-pay hours. Those hours
+ * are made again from scratch at every recalculation, under the rule set's
+ * code, so a code chosen on them (Floating Holiday, PTO Carryover) was lost
+ * while the day's code still showed it. A code the engine gives anyway (the
+ * default, the overflow) is not a choice and is not kept. Exported for its test.
+ */
+export function chooseDayCodes(
+  work: { segmentDate: Date; startTime: Date; payCodeId: string | null; leaveRequestId: string | null }[],
+  dayCodes: { segmentDate: Date; payCodeId: string | null }[],
+  clockInDays: Set<string>,
+  engineCodeIds: (string | null | undefined)[],
+): Map<string, ChosenCode> {
+  const engineCodes = new Set(engineCodeIds.filter(Boolean));
+  const chosen = new Map<string, ChosenCode>();
+  for (const s of work) {
+    const key = format(s.segmentDate, "yyyy-MM-dd");
+    // Salary and auto-pay hours start at midnight of their day.
+    const isCredit = s.startTime.getTime() === s.segmentDate.getTime() && !clockInDays.has(key);
+    if (isCredit && s.payCodeId && !engineCodes.has(s.payCodeId) && !chosen.has(key)) {
+      chosen.set(key, { payCodeId: s.payCodeId, leaveRequestId: s.leaveRequestId });
+    }
+  }
+  for (const d of dayCodes) {
+    const key = format(d.segmentDate, "yyyy-MM-dd");
+    if (!d.payCodeId || clockInDays.has(key)) continue;
+    const held = chosen.get(key);
+    // A day's code left at the default under hours given another code later
+    // (left by an old fault that copied the hours' code every night) is not
+    // the newer choice. Choosing a code now sets both, so they agree.
+    if (held && engineCodes.has(d.payCodeId)) continue;
+    chosen.set(key, { payCodeId: d.payCodeId, leaveRequestId: held?.payCodeId === d.payCodeId ? held.leaveRequestId : null });
+  }
+  return chosen;
+}
+
 type ActiveState = "WORK" | "MEAL" | "BREAK";
 
 interface SegmentInput {
@@ -43,6 +83,8 @@ interface SegmentInput {
   payBucket: PayBucket;
   isSplit: boolean;
   payCodeId?: string | null;
+  /** On salary or auto-pay hours under a leave code: the leave taken off for them. */
+  leaveRequestId?: string | null;
   /** On a meal premium: the premium row that produced it, for a waiver to name. */
   premiumRow?: number | null;
 }
@@ -373,17 +415,24 @@ export function applyAutoMealDeduction(
       (a, b) => a.startTime.getTime() - b.startTime.getTime()
     );
 
-    // Find the segment that contains the meal start point
-    let mealStartMs =
-      sorted[0].startTime.getTime() + cfg.mealBreakAfterMinutes * 60_000;
+    // The meal goes where the hours worked reach the shift's meal hours, as
+    // "once someone has worked 6 hours" reads. It used to be the first clock
+    // in plus 6 hours on the clock, and when that landed in a long lunch
+    // (outside the meal range, so not a meal) the day lost its deduction:
+    // 8:01 to 1:02 and 2:10 to 5:06 put the point at 2:01, off the clock.
+    let target: SegmentInput | undefined;
+    let mealStartMs = 0;
+    let workedBefore = 0;
+    for (const seg of sorted) {
+      if (workedBefore + seg.durationMinutes > cfg.mealBreakAfterMinutes) {
+        target = seg;
+        mealStartMs = seg.startTime.getTime() + (cfg.mealBreakAfterMinutes - workedBefore) * 60_000;
+        break;
+      }
+      workedBefore += seg.durationMinutes;
+    }
+    if (!target) continue;
     let mealEndMs = mealStartMs + cfg.mealBreakMinutes * 60_000;
-
-    const target = sorted.find(
-      (seg) =>
-        seg.startTime.getTime() <= mealStartMs &&
-        seg.endTime.getTime() > mealStartMs
-    );
-    if (!target) continue; // Meal point falls in a gap — skip deduction
 
     // If the meal window extends past the target segment's end (employee clocked out
     // before the meal finished), slide the meal back so it ends at clock-out.
@@ -526,6 +575,7 @@ async function applyAutoPayCredits(
   ruleSet: RuleSet,
   shift: { startTime: string; endTime: string; workDays: number[] } | null,
   creditsFrom?: Date,
+  chosenCodes: Map<string, ChosenCode> = new Map(),
 ): Promise<void> {
   // Normalize to the last inclusive calendar day.
   // Midnight endDate = exclusive next-day boundary (weekly/biweekly + new semi/monthly periods).
@@ -591,7 +641,8 @@ async function applyAutoPayCredits(
         isPaid: true,
         payBucket: "REG" as PayBucket,
         isSplit: false,
-        payCodeId: useOverflow ? overflowPayCodeId : basePayCodeId,
+        payCodeId: chosenCodes.get(dateKey)?.payCodeId ?? (useOverflow ? overflowPayCodeId : basePayCodeId),
+        leaveRequestId: chosenCodes.get(dateKey)?.leaveRequestId ?? null,
       });
     }
   } else {
@@ -622,7 +673,8 @@ async function applyAutoPayCredits(
         isPaid: true,
         payBucket: "REG" as PayBucket,
         isSplit: false,
-        payCodeId: useOverflow ? overflowPayCodeId : basePayCodeId,
+        payCodeId: chosenCodes.get(dateKey)?.payCodeId ?? (useOverflow ? overflowPayCodeId : basePayCodeId),
+        leaveRequestId: chosenCodes.get(dateKey)?.leaveRequestId ?? null,
       });
     }
   }
@@ -649,6 +701,7 @@ async function ensureSalarySegments(
   periodEnd: Date,
   defaultPayCodeId?: string | null,
   creditsFrom?: Date,
+  chosenCodes: Map<string, ChosenCode> = new Map(),
 ): Promise<void> {
   const isExclusiveEnd = periodEnd.getUTCHours() === 0 && periodEnd.getUTCMinutes() === 0 && periodEnd.getUTCSeconds() === 0;
   const periodEndInclusive = isExclusiveEnd ? addDays(periodEnd, -1) : periodEnd;
@@ -698,7 +751,8 @@ async function ensureSalarySegments(
       isPaid: true,
       payBucket: "REG" as PayBucket,
       isSplit: false,
-      payCodeId: defaultPayCodeId ?? null,
+      payCodeId: chosenCodes.get(dateKey)?.payCodeId ?? defaultPayCodeId ?? null,
+      leaveRequestId: chosenCodes.get(dateKey)?.leaveRequestId ?? null,
     });
   }
 
@@ -1175,7 +1229,7 @@ export async function rebuildSegments(
   const [existingWorkWithPayCode, existingLeaveMarkers] = await Promise.all([
     db.workSegment.findMany({
       where: { timesheetId, segmentType: "WORK", payCodeId: { not: null } },
-      select: { segmentDate: true, payCodeId: true },
+      select: { segmentDate: true, payCodeId: true, startTime: true, leaveRequestId: true },
     }),
     db.workSegment.findMany({
       where: { timesheetId, segmentType: "LEAVE", durationMinutes: 0 },
@@ -1203,6 +1257,13 @@ export async function rebuildSegments(
       if (!acc.has(key)) acc.set(key, s.payCodeId!);
       return acc;
     }, new Map());
+
+  const chosenCodes = chooseDayCodes(
+    existingWorkWithPayCode,
+    existingLeaveMarkers,
+    clockInDays,
+    [ruleSet.defaultPayCodeId, ruleSet.autoPayPayCodeId, ruleSet.autoPayOverflowPayCodeId],
+  );
 
   // For brand-new missed-punch days (first miss — no prior WORK segment and no LEAVE
   // marker), seed a LEAVE marker from the CLOCK_IN punch's pay code, or fall back to
@@ -1309,6 +1370,7 @@ export async function rebuildSegments(
       ruleSet,
       timesheet.employee.shift ?? null,
       autoPayCreditsFrom,
+      chosenCodes,
     );
   } else if (isSalary) {
     await ensureSalarySegments(
@@ -1317,6 +1379,7 @@ export async function rebuildSegments(
       dates.endExclusive,
       ruleSet.defaultPayCodeId,
       autoPayCreditsFrom,
+      chosenCodes,
     );
   }
 
@@ -1394,6 +1457,7 @@ export async function rebuildSegments(
   // Runs after the code-0 auto-assign so leave-type pay codes correctly override it.
   if (tenantId && timesheet.employee.id) {
     await reconcileLeaveDeductions(timesheetId, timesheet.employee.id, tenantId);
+    if (isSalary) await relinkCreditLeave(timesheetId, timesheet.employee.id, tenantId);
   }
 
   // Sync ABSENT exceptions for past days in the pay period with no activity.
