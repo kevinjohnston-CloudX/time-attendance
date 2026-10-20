@@ -1,0 +1,77 @@
+/* Documents on a phone (documents-list.tsx, upload-document-form.tsx).
+   One block per document: its title, then who it is for, its type and when
+   it was added, then who added it, with Download and Delete as icons on the
+   right. Cells: [employee], title, type, added, [uploaded by], actions; the
+   two in brackets only for HR, so cells are found by class, not position.
+   The shared Table's inline styles are why some lines need !important. */
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .list table,
+  .list tbody {
+    display: block;
+    min-width: 0 !important;
+  }
+  .list thead {
+    display: none;
+  }
+  .list tr {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "title title title actions"
+      "employee type added actions"
+      "by by by actions";
+    gap: 4px 8px;
+    align-items: center;
+    padding: 12px 8px 12px 16px;
+  }
+  .list tr + tr {
+    border-top: 1px solid var(--stroke-divider);
+  }
+  .list td {
+    height: auto !important;
+    padding: 0 !important;
+    border: 0 !important;
+    min-width: 0;
+    text-align: left !important;
+  }
+  .title { grid-area: title; white-space: normal !important; }
+  .employee {
+    grid-area: employee;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font: var(--type-body2) !important;
+    color: var(--text-secondary);
+  }
+  .type { grid-area: type; }
+  .added { grid-area: added; font: var(--type-body2) !important; }
+  .by {
+    grid-area: by;
+    font: var(--type-caption1) !important;
+    color: var(--text-tertiary) !important;
+  }
+  .by::before { content: "Added by "; }
+  .actions { grid-area: actions; align-self: center; }
+  .actions > div {
+    gap: 0 !important;
+  }
+  /* Download as an icon, the size of the delete button beside it. */
+  .download {
+    width: 40px;
+    justify-content: center;
+    padding: 0 !important;
+  }
+  .download > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  /* The file picker's button at a finger's size. */
+  .file::file-selector-button {
+    padding: 10px 14px !important;
+  }
+}

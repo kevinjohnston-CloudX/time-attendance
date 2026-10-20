@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { Download, FileText } from "lucide-react";
 import { DeleteDocumentButton } from "./delete-document-button";
 import { DocumentsFilters } from "./documents-filters";
+import styles from "./documents.module.css";
 import { mimeToExt, mimeToLabel } from "@/lib/validators/document.schema";
 import {
   Badge,
@@ -161,6 +162,8 @@ export function DocumentsList({
           />
         ) : (
           <>
+            {/* One block per document on a phone (documents.module.css). */}
+            <div className={styles.list}>
             <Table>
               <THead>
                 <TR>
@@ -177,20 +180,20 @@ export function DocumentsList({
               <TBody>
                 {shown.map((doc) => (
                   <TR key={doc.id}>
-                    {showEmployee && <TD>{doc.employee?.user.name ?? "—"}</TD>}
-                    <TD style={{ fontWeight: "var(--weight-medium)" }}>{doc.title}</TD>
-                    <TD>
+                    {showEmployee && <TD className={styles.employee}>{doc.employee?.user.name ?? "—"}</TD>}
+                    <TD className={styles.title} style={{ fontWeight: "var(--weight-medium)" }}>{doc.title}</TD>
+                    <TD className={styles.type}>
                       <Badge size="sm">{mimeToLabel(doc.fileType)}</Badge>
                     </TD>
                     {/* Tabular figures: this column is read down, to find the
                         statement for a given fortnight. */}
-                    <TD numeric align="left" style={{ color: "var(--text-secondary)" }}>
+                    <TD numeric align="left" className={styles.added} style={{ color: "var(--text-secondary)" }}>
                       {format(doc.uploadedAt, "MMM d, yyyy")}
                     </TD>
                     {showEmployee && (
-                      <TD style={{ color: "var(--text-secondary)" }}>{doc.uploadedBy}</TD>
+                      <TD className={styles.by} style={{ color: "var(--text-secondary)" }}>{doc.uploadedBy}</TD>
                     )}
-                    <TD align="right">
+                    <TD align="right" className={styles.actions}>
                       <div className="flex items-center justify-end gap-2">
                         <DownloadLink id={doc.id} title={doc.title} />
                         {canDelete && <DeleteDocumentButton documentId={doc.id} />}
@@ -200,6 +203,7 @@ export function DocumentsList({
                 ))}
               </TBody>
             </Table>
+            </div>
 
             <TableFooter
               shown={shown.length}
@@ -279,7 +283,7 @@ function DownloadLink({ id, title }: { id: string; title: string }) {
       target="_blank"
       rel="noopener noreferrer"
       title={`Download ${title}`}
-      className="wms-btn inline-flex h-6 flex-none items-center gap-1.5 rounded-md px-2.5"
+      className={`${styles.download} wms-btn inline-flex h-6 flex-none items-center gap-1.5 rounded-md px-2.5`}
       style={{
         ["--bg" as string]: "var(--surface-card)",
         ["--bg-h" as string]: "var(--fill-hover)",
@@ -292,7 +296,7 @@ function DownloadLink({ id, title }: { id: string; title: string }) {
       }}
     >
       <Download className="h-3.5 w-3.5" />
-      Download
+      <span>Download</span>
     </a>
   );
 }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Upload, X, Search } from "lucide-react";
 import { uploadDocument } from "@/actions/document.actions";
 import { Banner, Button, Input } from "@/components/ui";
+import styles from "./documents.module.css";
 
 interface Employee {
   id: string;
@@ -130,6 +131,7 @@ export function UploadDocumentForm({ employees }: Props) {
     <>
       <Button
         hierarchy="primary"
+        className="ta-header-primary"
         leadingIcon={<Upload className="h-4 w-4" />}
         onClick={() => { setOpen(true); setSuccess(false); setError(null); }}
       >
@@ -137,7 +139,7 @@ export function UploadDocumentForm({ employees }: Props) {
       </Button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:items-center">
+        <div className="ta-sheet-scrim fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:items-center">
           <div
             aria-hidden="true"
             onClick={closeModal}
@@ -152,7 +154,7 @@ export function UploadDocumentForm({ employees }: Props) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="upload-document-title"
-            className="ta-modal relative w-full max-w-[520px] rounded-2xl"
+            className="ta-sheet ta-modal relative w-full max-w-[520px] overflow-y-auto rounded-2xl"
           >
             <header
               className="flex items-center justify-between gap-3 px-4 py-3.5"
@@ -247,7 +249,7 @@ export function UploadDocumentForm({ employees }: Props) {
                   accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
                   required
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                  className="w-full file:mr-3 file:rounded-md file:border-0 file:bg-[var(--surface-tertiary)] file:px-3 file:py-1.5 file:text-[var(--text-primary)] hover:file:bg-[var(--fill-hover)]"
+                  className={`${styles.file} w-full file:mr-3 file:rounded-md file:border-0 file:bg-[var(--surface-tertiary)] file:px-3 file:py-1.5 file:text-[var(--text-primary)] hover:file:bg-[var(--fill-hover)]`}
                   style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
                 />
                 <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
@@ -255,7 +257,7 @@ export function UploadDocumentForm({ employees }: Props) {
                 </span>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-0.5">
+              <div className="ta-sheet-actions flex items-center justify-end gap-2 pt-0.5">
                 <Button type="button" hierarchy="secondary" onClick={closeModal}>
                   Cancel
                 </Button>
