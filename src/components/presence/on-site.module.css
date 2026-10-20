@@ -5121,7 +5121,8 @@
   .summaryChip {
     flex: none;
   }
-  .summaryMore > .summaryNote {
+  .summaryMore > .summaryNote,
+  .summaryMore > .summaryEmpty {
     padding: 0 16px;
   }
   /* Movements: three facts to a line, each under its own small label,

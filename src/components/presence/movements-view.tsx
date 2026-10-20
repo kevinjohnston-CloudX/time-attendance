@@ -1224,7 +1224,9 @@ export function MovementsCounts({
             ))}
           </div>
         ) : (
-          <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>Nothing else to review {when}</span>
+          <span className={styles.summaryEmpty} style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+            Nothing else to review {when}
+          </span>
         )}
         <button type="button" className={styles.summaryScans} onClick={() => onJump(null)} title="Open the Scan log">
           <span className="tabular" style={{ fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
