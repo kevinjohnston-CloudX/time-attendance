@@ -9,10 +9,12 @@ import { useSyncExternalStore } from "react";
 export const PHONE_QUERY = "(max-width: 767px), (pointer: coarse) and (max-height: 500px)";
 
 export function isPhone(): boolean {
-  return typeof window !== "undefined" && window.matchMedia(PHONE_QUERY).matches;
+  // No matchMedia (a test's DOM, a very old browser) is not a phone.
+  return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(PHONE_QUERY).matches;
 }
 
 const watchPhone = (onChange: () => void) => {
+  if (typeof window.matchMedia !== "function") return () => {};
   const mq = window.matchMedia(PHONE_QUERY);
   mq.addEventListener("change", onChange);
   return () => mq.removeEventListener("change", onChange);
