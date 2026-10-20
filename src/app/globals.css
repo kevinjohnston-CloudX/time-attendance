@@ -1258,7 +1258,8 @@ option {
     flex: 1 1 0;
     min-width: max-content;
   }
-  .ta-header-actions:has(> .ta-header-primary) > .ta-header-primary {
+  /* As specific as the rule above, which it must beat. */
+  .ta-header-actions:has(> .ta-header-primary) > .ta-header-primary:not(.fixed):not(.ta-sheet-scrim) {
     order: -1;
     flex-basis: 100%;
   }
