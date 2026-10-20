@@ -29,7 +29,7 @@ export function AuthScreen({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen items-center justify-center px-6 py-12">
+    <div className="flex min-h-dvh items-center justify-center px-6 py-12">
       <div className="flex w-full max-w-[380px] flex-col gap-[22px]">
         <BrandLockup />
 

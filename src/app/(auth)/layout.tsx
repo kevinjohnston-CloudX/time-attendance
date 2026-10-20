@@ -17,7 +17,7 @@ import "@/app/globals.css";
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="min-h-screen"
+      className="min-h-dvh"
       style={{ background: "var(--surface-page)", color: "var(--text-primary)" }}
     >
       {children}

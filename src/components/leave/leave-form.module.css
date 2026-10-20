@@ -23,6 +23,20 @@
   .kvValue {
     line-height: 22px !important;
     white-space: normal !important;
+    text-align: right;
+  }
+  /* First and last day as lines, the name on the left and the day on the
+     right, as read only facts read on a phone. */
+  .kv {
+    flex-direction: row !important;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-top: 1px solid var(--stroke-divider);
+  }
+  .kv > :global(.wms-label) {
+    font: var(--weight-regular) 15px/20px var(--font-sans);
+    color: var(--text-secondary);
   }
 
   /* A day in the month, at a finger's height. */

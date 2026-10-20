@@ -281,7 +281,12 @@ export default async function TeamOverviewPage() {
                           Off today
                         </Badge>
                       )}
-                      <span className="tabular whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                      {/* "Off today" already says a one day absence's date; a
+                          phone gives the name that room. */}
+                      <span
+                        className={`tabular whitespace-nowrap${onNow && dateRange(r.startDate, r.endDate) === dateRange(r.startDate, r.startDate) ? " ta-phone-hide" : ""}`}
+                        style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                      >
                         {dateRange(r.startDate, r.endDate)}
                       </span>
                     </span>

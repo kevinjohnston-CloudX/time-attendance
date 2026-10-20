@@ -1,0 +1,77 @@
+/* Team Members on a phone (team-members-screen.tsx): a row per person, and
+   their details in a sheet, a line per fact. */
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.list > li {
+  display: flex;
+}
+.list > li + li > :global(.ta-list-row)::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 16px;
+  height: 1px;
+  background: var(--stroke-divider);
+}
+.sheet {
+  --ta-sheet-pad: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 16px 0;
+  background-color: var(--surface-card);
+}
+.sheetHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sheetHead > h2 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font: var(--weight-semibold) 20px/25px var(--font-sans);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.close {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  place-items: center;
+  border-radius: 18px;
+  background: var(--ta-well);
+  color: var(--icon-secondary);
+}
+.facts {
+  margin: 0;
+}
+.facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 0;
+}
+.facts > div + div {
+  border-top: 1px solid var(--stroke-divider);
+}
+.facts dt {
+  flex: none;
+  font: var(--weight-regular) 15px/20px var(--font-sans);
+  color: var(--text-secondary);
+}
+.facts dd {
+  min-width: 0;
+  margin: 0;
+  font: var(--weight-medium) 15px/20px var(--font-sans);
+  color: var(--text-primary);
+  text-align: right;
+}

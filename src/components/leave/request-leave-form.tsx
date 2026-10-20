@@ -186,7 +186,7 @@ export function RequestLeaveForm({ leaveTypes, shift, layout = "page", onSuccess
 /** A label-over-value pair, as the design's document fields draw them. */
 function Kv({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className={`${styles.kv} flex min-w-0 flex-col gap-1.5`}>
       <span className="wms-label">{label}</span>
       <span
         className={`${styles.kvValue} truncate`}

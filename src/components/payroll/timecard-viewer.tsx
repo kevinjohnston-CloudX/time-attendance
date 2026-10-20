@@ -1974,7 +1974,9 @@ export function TimecardViewer({
   const listNarrowed =
     statusFilter !== "ALL" || payTypeFilter !== "ALL" || exceptionFilter !== "ALL" || !activeOnly || !!search.trim();
   const filtersOn =
-    Number(statusFilter !== "ALL") + Number(payTypeFilter !== "ALL") + Number(exceptionFilter !== "ALL") + Number(!activeOnly);
+    Number(statusFilter !== "ALL") + Number(payTypeFilter !== "ALL") + Number(exceptionFilter !== "ALL") + Number(!activeOnly) +
+    // On a phone site and department are picked in Filters too.
+    (phone ? Number(!!selectedSiteId) + Number(!!selectedDepartmentId) : 0);
 
   return (
     // The whole window, as a workspace: the header and the pay period control
@@ -2206,6 +2208,42 @@ export function TimecardViewer({
                   className={`ta-modal ta-sheet absolute right-0 top-full z-30 mt-1.5 flex w-64 flex-col gap-3 rounded-lg p-3.5 ${grid.filterSheet}`}
                 >
                   <div className={grid.filterHead}>Filter employees</div>
+                  {/* A phone picks who is listed here rather than in two pills
+                      over the pay period, which took a row of their own. */}
+                  {phone && sites.length > 0 && (
+                    <label className="flex flex-col gap-1">
+                      <span style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>Site</span>
+                      <Select
+                        value={selectedSiteId ?? ""}
+                        onChange={(e) => navigate(null, selectedPeriodId, e.target.value || null, null)}
+                        style={{ width: "100%" }}
+                      >
+                        <option value="">All sites</option>
+                        {sites.map((o) => (
+                          <option key={o.id} value={o.id}>
+                            {o.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </label>
+                  )}
+                  {phone && (
+                    <label className="flex flex-col gap-1">
+                      <span style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>Department</span>
+                      <Select
+                        value={selectedDepartmentId ?? ""}
+                        onChange={(e) => navigate(selectedEmployeeId, selectedPeriodId, selectedSiteId, e.target.value || null)}
+                        style={{ width: "100%" }}
+                      >
+                        <option value="">All departments</option>
+                        {departments.map((o) => (
+                          <option key={o.id} value={o.id}>
+                            {o.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </label>
+                  )}
                   {[
                     { label: "Status", value: statusFilter, set: setStatusFilter, all: "All statuses", options: STATUS_FILTER_OPTIONS },
                     { label: "Pay type", value: payTypeFilter, set: setPayTypeFilter, all: "All pay types", options: PAY_TYPE_FILTER_OPTIONS },
@@ -2228,13 +2266,15 @@ export function TimecardViewer({
                     <Button
                       hierarchy="link"
                       size="sm"
-                      disabled={!listNarrowed}
+                      disabled={!listNarrowed && !(phone && (selectedSiteId || selectedDepartmentId))}
                       onClick={() => {
                         setSearch("");
                         setStatusFilter("ALL");
                         setPayTypeFilter("ALL");
                         setExceptionFilter("ALL");
                         setActiveOnly(true);
+                        // Site and department are in this sheet on a phone.
+                        if (phone && (selectedSiteId || selectedDepartmentId)) navigate(null, selectedPeriodId, null, null);
                       }}
                     >
                       Clear all

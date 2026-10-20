@@ -371,3 +371,11 @@
     display: none;
   }
 }
+
+/* Site and department live in the list's Filters on a phone. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .listOnly {
+    display: none !important;
+  }
+}
+
