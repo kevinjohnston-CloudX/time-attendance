@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { Badge, Banner, Button, Select } from "@/components/ui";
 import { getTimecardRefusedScans, recoverTimecardRefusedScans } from "@/actions/refused-scans.actions";
 import type { RefusedScan } from "@/lib/services/refused-scans.service";
+import styles from "./refused-scans.module.css";
 
 /**
  * On a timecard: the time clock scans that were refused because this person
@@ -168,7 +169,7 @@ function ReviewDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.4)" }}
       onClick={(e) => {
         if (e.target === e.currentTarget) close();
@@ -178,11 +179,11 @@ function ReviewDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Refused scans"
-        className="ta-modal flex max-h-[90vh] w-full max-w-xl flex-col"
+        className="ta-modal ta-sheet flex max-h-[90vh] w-full max-w-xl flex-col"
         style={{ borderRadius: "var(--radius-l)" }}
       >
         <header
-          className="flex items-start justify-between gap-3 px-5 py-3.5"
+          className={`flex items-start justify-between gap-3 px-5 py-3.5 ${styles.head}`}
           style={{ borderBottom: "1px solid var(--stroke-divider)" }}
         >
           <div className="flex flex-col gap-0.5">
@@ -200,7 +201,7 @@ function ReviewDialog({
           {byDay.map((d) => (
             <section key={d.day} aria-label={d.label}>
               <h4
-                className="px-5 py-2"
+                className={`px-5 py-2 ${styles.day}`}
                 style={{
                   margin: 0,
                   font: "var(--type-button2)",
@@ -215,7 +216,7 @@ function ReviewDialog({
                 {d.scans.map((s) => (
                   <li
                     key={s.id}
-                    className="flex items-center gap-3 px-5 py-2.5"
+                    className={`flex items-center gap-3 px-5 py-2.5 ${styles.scan}`}
                     style={{ borderBottom: "1px solid var(--stroke-divider)" }}
                   >
                     <span
@@ -251,15 +252,15 @@ function ReviewDialog({
           ))}
         </div>
 
-        <footer className="flex flex-col gap-3 px-5 py-3.5" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+        <footer className={`flex flex-col gap-3 px-5 py-3.5 ${styles.foot}`} style={{ borderTop: "1px solid var(--stroke-divider)" }}>
           {error && <Banner tone="error" body={error} />}
-          <div className="flex items-center justify-between gap-3">
+          <div className={`flex items-center justify-between gap-3 ${styles.footRow}`}>
             <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
               {picked.length === 0
                 ? "Nothing picked to add"
                 : `Added as approved manual punches, noted as recovered from a refused scan`}
             </span>
-            <div className="flex flex-none items-center gap-2">
+            <div className={`flex flex-none items-center gap-2 ${styles.footButtons}`}>
               <Button hierarchy="secondary" size="sm" onClick={close} disabled={saving}>
                 Cancel
               </Button>
