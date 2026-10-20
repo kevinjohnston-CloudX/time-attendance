@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
 import { Button, Checkbox } from "@/components/ui";
+import phone from "../reports-phone.module.css";
 
 interface Column {
   id: string;
@@ -115,7 +116,7 @@ export function ColumnPicker({
                   opacity: dragId === id ? 0.45 : 1,
                 }}
               >
-                <span className="flex flex-none cursor-grab items-center active:cursor-grabbing" title="Drag to move">
+                <span className={`${phone.grip} flex flex-none cursor-grab items-center active:cursor-grabbing`} title="Drag to move">
                   <GripVertical className="h-4 w-4" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
                 </span>
                 <span className="tabular w-4 flex-none text-right" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>

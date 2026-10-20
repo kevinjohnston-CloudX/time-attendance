@@ -15,6 +15,7 @@ import { dataSourceDescription, dataSourceLabel, isScanReport } from "../data-so
 import { runReport, createReport, updateReport } from "@/actions/report.actions";
 import type { DataSourceId, FilterDef, SortDef, DateRange, ReportConfig } from "@/lib/validators/report.schema";
 import type { ReportResult } from "@/lib/reports/data-sources";
+import phone from "../reports-phone.module.css";
 
 /**
  * The report builder: the settings down a rail on the left, the rows they
@@ -310,6 +311,7 @@ export function ReportBuilder({
             )}
             <Button
               hierarchy="primary"
+              className="ta-header-primary"
               disabled={selectedColumns.length === 0}
               title={selectedColumns.length === 0 ? "Pick at least one column to save it" : undefined}
               onClick={() => setSaving(true)}
@@ -435,7 +437,7 @@ export function ReportBuilder({
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
               <h2 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>Preview</h2>
               <span
-                className="truncate"
+                className={`${phone.previewNote} truncate`}
                 title={previewNote}
                 style={{ font: "var(--type-body2)", color: stale ? "var(--text-warning)" : "var(--text-tertiary)" }}
               >
@@ -621,7 +623,7 @@ function SaveDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.5)" }}
       onClick={(e) => e.target === e.currentTarget && !pending && onClose()}
     >
@@ -630,7 +632,7 @@ function SaveDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="save-report-title"
-        className="ta-modal flex w-full max-w-md flex-col"
+        className="ta-sheet ta-modal flex w-full max-w-md flex-col overflow-y-auto"
         style={{ borderRadius: "var(--radius-l)" }}
       >
         <header className="flex items-center gap-3 px-5 py-3.5" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
@@ -661,7 +663,7 @@ function SaveDialog({
           )}
           <button type="submit" hidden />
         </form>
-        <footer className="flex items-center gap-2 px-5 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+        <footer className={`${phone.saveFoot} flex items-center gap-2 px-5 py-3`} style={{ borderTop: "1px solid var(--stroke-divider)" }}>
           <span className="min-w-0 flex-1" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
             {editing
               ? "Everyone it is shared with, and its emails, get the changes."

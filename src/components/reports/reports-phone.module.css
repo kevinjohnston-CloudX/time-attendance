@@ -136,6 +136,27 @@
     flex: 1 1 0;
   }
 
+  /* ---- The builder ---- */
+  /* Columns move with their arrows on a phone; dragging needs a mouse. */
+  .grip {
+    display: none !important;
+  }
+  /* The preview's note in full, not cut off. */
+  .previewNote {
+    white-space: normal !important;
+    overflow: visible !important;
+  }
+  /* The Save window's line over its two buttons. */
+  .saveFoot {
+    flex-wrap: wrap;
+  }
+  .saveFoot > span:first-child {
+    flex-basis: 100%;
+  }
+  .saveFoot > :global(.wms-btn) {
+    flex: 1 1 0;
+  }
+
   /* Rename and delete show on hover on a computer; a phone has no hover. */
   .folderActions {
     opacity: 1 !important;
