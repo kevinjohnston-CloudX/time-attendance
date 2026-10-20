@@ -1,0 +1,108 @@
+/* The Accruals list on a phone (accruals-employee-list.tsx): one two line
+   row per person, as the Employees list has, the whole row opening their
+   ledger. Name over badge ID and department, status on the right, then an
+   arrow. Pay category and hire date are on the ledger itself. The shared
+   Table's inline styles are why some lines need !important.
+   Cells: 1 name, 2 badge, 3 department, 4 pay category, 5 hired,
+   6 status, 7 ledger link. */
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .list table,
+  .list tbody {
+    display: block;
+    min-width: 0 !important;
+  }
+  .list thead {
+    display: none;
+  }
+  .list tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "name name status"
+      "badge dept status";
+    column-gap: 6px;
+    align-items: center;
+    min-height: 64px;
+    padding: 10px 16px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .list tr + tr {
+    border-top: 1px solid var(--stroke-divider);
+  }
+  .list td {
+    height: auto !important;
+    padding: 0 !important;
+    border: 0 !important;
+    min-width: 0;
+  }
+  .list td:nth-child(1) {
+    grid-area: name;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .list td:nth-child(2) {
+    grid-area: badge;
+    font-family: var(--font-sans) !important;
+  }
+  .list td:nth-child(2)::after {
+    content: "·";
+    margin-left: 6px;
+    color: var(--text-tertiary);
+  }
+  .list td:nth-child(3) {
+    grid-area: dept;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .list td:nth-child(2),
+  .list td:nth-child(3) {
+    font: var(--type-body2) !important;
+  }
+  .list td:nth-child(4),
+  .list td:nth-child(5),
+  .list td:nth-child(7) {
+    display: none;
+  }
+  .list td:nth-child(6) {
+    grid-area: status;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .chevron {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    color: var(--icon-tertiary);
+  }
+}
+
+/* An employee's ledger on a phone (leave-balances-panel.tsx), on top of the
+   shared labelled blocks: what the entry was and its date on one line, the
+   note under it, then the change, the balance after it, and who made it.
+   Cells: 1 date, 2 entry, 3 note, 4 change, 5 balance, 6 by. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .ledger:global(.ta-rates) tbody > tr {
+    grid-template-areas:
+      "entry entry date"
+      "note note note"
+      "change balance by";
+  }
+  .ledger:global(.ta-rates) tbody > tr > td:nth-child(1) {
+    grid-area: date;
+    justify-self: end;
+    font-weight: var(--weight-regular);
+  }
+  .ledger:global(.ta-rates) tbody > tr > td:nth-child(2) {
+    grid-area: entry;
+    font-weight: var(--weight-semibold);
+  }
+  .ledger:global(.ta-rates) tbody > tr > td:nth-child(3) {
+    grid-area: note;
+  }
+  .ledger:global(.ta-rates) tbody > tr > td:nth-child(4) { grid-area: change; }
+  .ledger:global(.ta-rates) tbody > tr > td:nth-child(5) { grid-area: balance; }
+  .ledger:global(.ta-rates) tbody > tr > td:nth-child(6) { grid-area: by; }
+}

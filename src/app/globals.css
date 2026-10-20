@@ -1372,9 +1372,11 @@ option {
   .ta-shift-row > :nth-child(4) { grid-area: 1 / 2; justify-self: end; }
 }
 
-/* ---- Phones: the employee record (components/admin) ----
-   Pay rates in read mode: one block per rate, the date on top, the three
-   rates side by side under their names, then the note in full. */
+/* ---- Phones: labelled blocks (.ta-rates[data-mode="read"]) ----
+   A read only table as one block per row: the first cell on top, the rest
+   side by side under their data-label captions, a .ta-rates-note in full.
+   First used for an employee's pay rates; also the Timecards and My
+   Timesheet summaries, Run Payroll and the Accruals ledger. */
 @media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
   .ta-rates[data-mode="read"] table {
     display: block;
@@ -1383,7 +1385,8 @@ option {
   .ta-rates[data-mode="read"] thead {
     display: none;
   }
-  .ta-rates[data-mode="read"] tbody {
+  .ta-rates[data-mode="read"] tbody,
+  .ta-rates[data-mode="read"] tfoot {
     display: block;
   }
   .ta-rates[data-mode="read"] tr {
@@ -1420,8 +1423,14 @@ option {
   .ta-rates[data-mode="read"] .ta-rates-note[data-empty] {
     display: none;
   }
-  .ta-rates[data-mode="read"] .ta-rates-note > span {
+  .ta-rates[data-mode="read"] .ta-rates-note > span,
+  .ta-rates[data-mode="read"] .ta-rates-note > div {
     max-width: none;
     white-space: normal;
+  }
+  /* A figure stacked with its small print sits under its caption, on the
+     left like everything else in the block. */
+  .ta-rates[data-mode="read"] td > .flex {
+    align-items: flex-start !important;
   }
 }

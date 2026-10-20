@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronRight, Hourglass, Plus } from "lucide-react";
+import { isPhone } from "@/lib/phone";
+import accrualStyles from "./accruals.module.css";
 import {
   postAccrualCorrection,
   postManualAccrualEntry,
@@ -655,6 +657,9 @@ function LedgerCard({
           />
         ) : (
           <>
+            {/* One labelled block per entry on a phone (globals.css,
+                and accruals.module.css for its layout). */}
+            <div className={`${accrualStyles.ledger} ta-rates`} data-mode="read">
             <Table>
               <THead>
                 <TR>
@@ -684,7 +689,12 @@ function LedgerCard({
                         )}
                       </span>
                     </TD>
-                    <TD style={{ color: "var(--text-secondary)" }} title={e.note ?? undefined}>
+                    <TD
+                      className="ta-rates-note"
+                      data-empty={e.note ? undefined : "true"}
+                      style={{ color: "var(--text-secondary)" }}
+                      title={e.note ?? undefined}
+                    >
                       {/* Clamped on a block inside the cell: the table sizes to
                           max-content, so a max-width on the td is ignored and
                           one long note widens every column after it. */}
@@ -692,13 +702,13 @@ function LedgerCard({
                         {e.note ?? <span style={{ color: "var(--text-tertiary)" }}>—</span>}
                       </div>
                     </TD>
-                    <TD numeric style={{ fontWeight: "var(--weight-medium)", color: deltaColor(e.deltaMinutes) }}>
+                    <TD numeric data-label="Change" style={{ fontWeight: "var(--weight-medium)", color: deltaColor(e.deltaMinutes) }}>
                       {delta(e.deltaMinutes)}
                     </TD>
-                    <TD numeric style={{ fontWeight: "var(--weight-semibold)", color: "var(--text-secondary)" }}>
+                    <TD numeric data-label="Balance" style={{ fontWeight: "var(--weight-semibold)", color: "var(--text-secondary)" }}>
                       {hrs(e.runningBalance)}
                     </TD>
-                    <TD style={{ color: "var(--text-tertiary)" }}>
+                    <TD data-label="By" style={{ color: "var(--text-tertiary)" }}>
                       {e.createdByName ?? "—"}
                     </TD>
                   </TR>
@@ -706,18 +716,19 @@ function LedgerCard({
               </TBody>
               <TFoot>
                 <TR>
-                  <TD style={{ color: "var(--text-tertiary)" }}>—</TD>
+                  <TD className="ta-phone-hide" style={{ color: "var(--text-tertiary)" }}>—</TD>
                   <TD colSpan={2} style={{ fontWeight: "var(--weight-medium)", color: "var(--text-secondary)" }}>
                     {isFiltered ? "Balance carried into range" : "Opening balance"}
                   </TD>
-                  <TD numeric style={{ color: "var(--text-tertiary)" }}>—</TD>
-                  <TD numeric style={{ fontWeight: "var(--weight-semibold)", color: "var(--text-secondary)" }}>
+                  <TD numeric className="ta-phone-hide" style={{ color: "var(--text-tertiary)" }}>—</TD>
+                  <TD numeric data-label="Balance" style={{ fontWeight: "var(--weight-semibold)", color: "var(--text-secondary)" }}>
                     {hrs(openingBalance)}
                   </TD>
                   <TD />
                 </TR>
               </TFoot>
             </Table>
+            </div>
             <TableFooter
               shown={newestFirst.length}
               total={isFiltered ? allEntries.length : newestFirst.length}
@@ -761,7 +772,7 @@ function BalanceTableRow({
         </span>
       </TD>
 
-      <TD style={{ color: "var(--text-secondary)" }}>
+      <TD data-label="Policy" style={{ color: "var(--text-secondary)" }}>
         {row.policyName ? (
           <span className="flex flex-col">
             <span style={{ whiteSpace: "nowrap" }}>{row.policyName}</span>
@@ -774,15 +785,15 @@ function BalanceTableRow({
         )}
       </TD>
 
-      <TD numeric style={{ color: "var(--text-secondary)" }}>
+      <TD numeric data-label="Rate" style={{ color: "var(--text-secondary)" }}>
         {row.policyAnnualHours != null
           ? row.policyAnnualHours.toFixed(2)
           : <span style={{ color: "var(--text-tertiary)" }}>—</span>}
       </TD>
 
-      <TD numeric>{hrs(row.accruedMinutes)}</TD>
+      <TD numeric data-label="Accrued">{hrs(row.accruedMinutes)}</TD>
 
-      <TD numeric style={{ color: "var(--text-accent)" }}>
+      <TD numeric data-label="Forecast" style={{ color: "var(--text-accent)" }}>
         {row.forecastedMinutes != null
           ? delta(row.forecastedMinutes)
           : <span style={{ color: "var(--text-tertiary)" }}>—</span>}
@@ -790,6 +801,7 @@ function BalanceTableRow({
 
       <TD
         numeric
+        data-label="Net adjustment"
         style={{
           color:
             row.netAdjustmentMinutes !== null
@@ -800,7 +812,7 @@ function BalanceTableRow({
         {row.netAdjustmentMinutes !== null ? delta(row.netAdjustmentMinutes) : "—"}
       </TD>
 
-      <TD numeric>
+      <TD numeric data-label="Booked">
         <span className="flex flex-col items-end">
           <span>{hrs(row.approvedMinutes + row.postedMinutes)}</span>
           {row.pendingMinutes > 0 && (
@@ -816,7 +828,7 @@ function BalanceTableRow({
         </span>
       </TD>
 
-      <TD numeric style={{ fontWeight: "var(--weight-semibold)" }}>
+      <TD numeric data-label="Available" style={{ fontWeight: "var(--weight-semibold)" }}>
         <span className="flex flex-col items-end">
           <span style={{ color: available < 0 ? "var(--text-error)" : "var(--text-primary)" }}>
             {hrs(available)}
@@ -829,7 +841,7 @@ function BalanceTableRow({
         </span>
       </TD>
 
-      <TD align="right" style={{ width: 40 }}>
+      <TD align="right" className="ta-phone-hide" style={{ width: 40 }}>
         <ChevronRight
           className="h-4 w-4"
           style={{ color: selected ? "var(--icon-accent)" : "var(--icon-tertiary)" }}
@@ -844,6 +856,15 @@ function BalanceTableRow({
 
 export function LeaveBalancesPanel({ employeeId, balances, canManage }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const ledgerRef = useRef<HTMLDivElement | null>(null);
+
+  /** A leave type picked. On a phone its ledger is a screen below, so go there. */
+  function selectRow(id: string) {
+    setSelectedId(id);
+    if (isPhone()) {
+      requestAnimationFrame(() => ledgerRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }));
+    }
+  }
   const [otherOpen, setOtherOpen] = useState(false);
   const [inputFrom, setInputFrom] = useState("");
   const [inputTo, setInputTo] = useState("");
@@ -934,6 +955,8 @@ export function LeaveBalancesPanel({ employeeId, balances, canManage }: Props) {
           />
         ) : (
           <>
+            {/* One labelled block per leave type on a phone (globals.css). */}
+            <div className="ta-rates" data-mode="read">
             <Table>
               <THead>
                 <TR>
@@ -954,7 +977,7 @@ export function LeaveBalancesPanel({ employeeId, balances, canManage }: Props) {
                     key={row.leaveTypeId}
                     row={row}
                     selected={row.leaveTypeId === selectedId}
-                    onSelect={() => setSelectedId(row.leaveTypeId)}
+                    onSelect={() => selectRow(row.leaveTypeId)}
                   />
                 ))}
 
@@ -971,7 +994,7 @@ export function LeaveBalancesPanel({ employeeId, balances, canManage }: Props) {
                       <button
                         type="button"
                         onClick={() => setOtherOpen((v) => !v)}
-                        className="flex w-full items-center gap-2 px-3.5 py-2 text-left"
+                        className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 px-3.5 py-2 text-left"
                         style={{ background: "transparent", border: 0, cursor: "pointer" }}
                       >
                         {otherOpen
@@ -994,16 +1017,20 @@ export function LeaveBalancesPanel({ employeeId, balances, canManage }: Props) {
                       key={row.leaveTypeId}
                       row={row}
                       selected={row.leaveTypeId === selectedId}
-                      onSelect={() => setSelectedId(row.leaveTypeId)}
+                      onSelect={() => selectRow(row.leaveTypeId)}
                     />
                   ))}
               </TBody>
             </Table>
+            </div>
             <TableFooter shown={shown} total={balances.length} label="leave types" />
           </>
         )}
       </Card>
 
+      {/* Wrapped so a phone can scroll to it: there it sits a screen below
+          the row that opened it. */}
+      <div ref={ledgerRef}>
       {selected ? (
         <LedgerCard
           // Keyed on the leave type so switching rows starts a fresh year
@@ -1026,6 +1053,7 @@ export function LeaveBalancesPanel({ employeeId, balances, canManage }: Props) {
           </Card>
         )
       )}
+      </div>
     </>
   );
 }

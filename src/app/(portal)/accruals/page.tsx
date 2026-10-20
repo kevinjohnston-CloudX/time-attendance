@@ -167,7 +167,7 @@ export default async function AccrualsPage({
               // It is also a main-nav page under Time, and a supervisor who arrived
               // from the sidebar has no Administration to go back to.
               canViewAny ? (
-                <LinkButton href="/admin" hierarchy="tertiary">
+                <LinkButton href="/admin" hierarchy="tertiary" className="ta-phone-hide">
                   ← Administration
                 </LinkButton>
               ) : undefined

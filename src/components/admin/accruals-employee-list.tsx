@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import Link from "next/link";
-import { Hourglass } from "lucide-react";
+import { ChevronRight, Hourglass } from "lucide-react";
+import styles from "./accruals.module.css";
 import {
   Badge,
   Button,
@@ -210,7 +211,7 @@ export function AccrualsEmployeeList({
             }
           />
         ) : (
-          <>
+          <div className={styles.list}>
             <Table>
               <THead>
                 <TR>
@@ -262,6 +263,9 @@ export function AccrualsEmployeeList({
                           // amber pill on somebody who left reads as an action.
                           <Badge size="sm">Inactive</Badge>
                         )}
+                        <span className="ta-phone-only">
+                          <ChevronRight className={styles.chevron} aria-hidden="true" />
+                        </span>
                       </TD>
                       <TD align="right">
                         {/* A real anchor rather than the row handler, so the
@@ -281,7 +285,7 @@ export function AccrualsEmployeeList({
               </TBody>
             </Table>
             <TableFooter shown={employees.length} total={total} label="employees" />
-          </>
+          </div>
         )}
       </Card>
     </div>
