@@ -1,0 +1,61 @@
+/* Requesting leave on a phone (request-leave-form.tsx, leave-day-picker.tsx;
+   the picker is also in the Submit Leave sheet on Leave Requests). Inline
+   styles are why some lines need !important. */
+
+/* The bar only exists on a phone (it is inside .ta-phone-only). */
+.submitBar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  gap: 8px;
+  margin: 0 calc(var(--ta-page-x) * -1) calc(var(--ta-page-bottom, 16px) * -1);
+  padding: 10px var(--ta-page-x) 12px;
+  background: var(--surface-card);
+  box-shadow: 0 -1px 0 var(--stroke-divider), 0 -8px 20px rgba(0, 0, 0, 0.06);
+}
+.submitBar > * {
+  flex: 1 1 0;
+}
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* First and last day: read, not lined up with a 32px control any more. */
+  .kvValue {
+    line-height: 22px !important;
+    white-space: normal !important;
+  }
+
+  /* A day in the month, at a finger's height. */
+  .dayCell {
+    height: 44px !important;
+    border-radius: 10px !important;
+  }
+
+  /* A chosen day: the day, its hours and remove on top; full or partial,
+     and the partial time, under it. */
+  .dayRow {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "label total remove"
+      "switch switch switch"
+      "partial partial partial";
+    gap: 8px 8px !important;
+    padding: 8px 8px 12px 14px !important;
+  }
+  .dayRow > .dayLabel { grid-area: label; }
+  .dayRow > .daySwitch { grid-area: switch; }
+  .dayRow > .dayPartial { grid-area: partial; }
+  .dayRow > .dayTotal { grid-area: total; width: auto !important; }
+  .dayRow > .dayRemove { grid-area: remove; }
+
+  .partialInput {
+    width: 64px !important;
+    height: 44px !important;
+    padding: 0 10px !important;
+    border: 1px solid var(--stroke-secondary) !important;
+    border-radius: 10px !important;
+    background: var(--surface-card) !important;
+    font-size: 16px !important;
+  }
+}

@@ -14,6 +14,7 @@ import {
   startOfToday,
 } from "date-fns";
 import { Button, SegmentedControl } from "@/components/ui";
+import styles from "./leave-form.module.css";
 
 /**
  * Pick the days you are asking off, and how much of each.
@@ -204,7 +205,7 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
               disabled={disabled}
               onClick={() => toggleDay(day)}
               aria-pressed={!!sel}
-              className={`tabular flex h-8 w-full items-center justify-center rounded${disabled || sel ? "" : " ta-hoverable"}`}
+              className={`${styles.dayCell} tabular flex h-8 w-full items-center justify-center rounded${disabled || sel ? "" : " ta-hoverable"}`}
               style={{
                 ...tone,
                 font: "var(--type-body2)",
@@ -247,19 +248,20 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
             return (
               <div
                 key={day.date}
-                className="flex flex-wrap items-center gap-2 rounded-lg px-3 py-2"
+                className={`${styles.dayRow} flex flex-wrap items-center gap-2 rounded-lg px-3 py-2`}
                 style={{
                   border: "1px solid var(--stroke-secondary)",
                   background: "var(--surface-secondary)",
                 }}
               >
-                <span className="flex-1" style={{ font: "var(--type-body1)" }}>
+                <span className={`${styles.dayLabel} flex-1`} style={{ font: "var(--type-body1)" }}>
                   {label}
                 </span>
 
                 {/* Re-picking the segment that is already on would otherwise
                     throw away typed partial hours, because setPartial resets
                     them to half a shift. */}
+                <span className={styles.daySwitch}>
                 <SegmentedControl
                   size="sm"
                   ariaLabel={`Duration for ${label}`}
@@ -271,11 +273,13 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
                     else setPartial(day.date);
                   }}
                 />
+                </span>
 
                 {day.type === "PARTIAL" && (
-                  <div className="flex items-center gap-1">
+                  <div className={`${styles.dayPartial} flex items-center gap-1`}>
                     <input
                       type="number"
+                      inputMode="numeric"
                       min="0"
                       max="23"
                       step="1"
@@ -285,7 +289,7 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
                         const h = Math.max(0, parseInt(e.target.value) || 0);
                         setMinutes(day.date, h * 60 + (day.minutes % 60));
                       }}
-                      className="ta-cell w-12"
+                      className={`${styles.partialInput} ta-cell w-12`}
                       style={{ minWidth: 0 }}
                     />
                     <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>h</span>
@@ -293,6 +297,7 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
                       type="number"
                       min="0"
                       max="59"
+                      inputMode="numeric"
                       step="1"
                       aria-label={`Minutes off on ${label}`}
                       value={day.minutes % 60}
@@ -300,7 +305,7 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
                         const m = Math.min(59, Math.max(0, parseInt(e.target.value) || 0));
                         setMinutes(day.date, Math.floor(day.minutes / 60) * 60 + m);
                       }}
-                      className="ta-cell w-12"
+                      className={`${styles.partialInput} ta-cell w-12`}
                       style={{ minWidth: 0 }}
                     />
                     <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>m</span>
@@ -308,7 +313,7 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
                 )}
 
                 <span
-                  className="tabular w-12 text-right"
+                  className={`${styles.dayTotal} tabular w-12 text-right`}
                   style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
                 >
                   {fmtMins(mins)}
@@ -318,6 +323,7 @@ export function LeaveDayPicker({ value, onChange, shift }: Props) {
                   hierarchy="tertiary"
                   size="sm"
                   iconOnly
+                  className={styles.dayRemove}
                   aria-label={`Remove ${label}`}
                   onClick={() => removeDay(day.date)}
                 >

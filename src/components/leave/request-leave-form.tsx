@@ -5,6 +5,7 @@ import { useRouter } from "@/components/layout/navigation-progress";
 import { format, parseISO } from "date-fns";
 import { createLeaveRequest, submitLeaveRequest } from "@/actions/leave.actions";
 import { LeaveDayPicker, type DaySelection, type ShiftInfo } from "./leave-day-picker";
+import styles from "./leave-form.module.css";
 import {
   Banner,
   Button,
@@ -108,12 +109,14 @@ export function RequestLeaveForm({ leaveTypes, shift, layout = "page", onSuccess
           title="Request Leave"
           subtitle="Choose your days and send the request for approval"
           actions={
-            <>
+            // On a phone these sit in a bar at the bottom of the screen
+            // instead (below), where the thumb is after picking the days.
+            <span className="ta-desktop-only">
               <LinkButton href="/leave" hierarchy="tertiary">
                 ← My Leave
               </LinkButton>
               {submitButton}
-            </>
+            </span>
           }
         />
       )}
@@ -165,6 +168,17 @@ export function RequestLeaveForm({ leaveTypes, shift, layout = "page", onSuccess
 
         {!isPage && <div className="flex justify-end">{submitButton}</div>}
       </div>
+
+      {isPage && (
+        <div className="ta-phone-only">
+          <div className={styles.submitBar}>
+            <LinkButton href="/leave" hierarchy="secondary">
+              Cancel
+            </LinkButton>
+            {submitButton}
+          </div>
+        </div>
+      )}
     </form>
   );
 }
@@ -175,7 +189,7 @@ function Kv({ label, value }: { label: string; value: string }) {
     <div className="flex min-w-0 flex-col gap-1.5">
       <span className="wms-label">{label}</span>
       <span
-        className="truncate"
+        className={`${styles.kvValue} truncate`}
         style={{
           font: "var(--type-body1)",
           fontWeight: "var(--weight-medium)",
