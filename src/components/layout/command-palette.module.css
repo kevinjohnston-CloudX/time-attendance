@@ -1,0 +1,51 @@
+/* Search pages on a phone (command-palette.tsx).
+
+   It stays at the top rather than becoming a bottom sheet: the keyboard
+   opens as soon as it does, and a sheet at the bottom would sit under it.
+   The keyboard's own hints (esc, the Enter arrow) mean nothing on a phone,
+   so a Cancel button takes their place, the rows are a thumb tall, and the
+   list stops short of where the keyboard covers the screen. */
+
+.cancel {
+  display: none;
+}
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .scrim {
+    padding: calc(env(safe-area-inset-top) + 8px) 8px 0 !important;
+  }
+  .panel {
+    max-width: none !important;
+    border-radius: 16px !important;
+  }
+  .inputRow {
+    height: 52px !important;
+    padding-right: 4px !important;
+  }
+  .keyHint {
+    display: none;
+  }
+  .cancel {
+    display: inline-flex;
+    height: 44px;
+    align-items: center;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    font: var(--weight-medium) 16px/22px var(--font-sans);
+    color: var(--text-accent);
+    white-space: nowrap;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .cancel:active {
+    background: var(--ta-row-hover);
+  }
+  .list {
+    max-height: 45dvh !important;
+  }
+  .row {
+    min-height: 48px;
+  }
+}

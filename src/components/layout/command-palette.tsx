@@ -2,6 +2,7 @@
 
 import { useRouter } from "@/components/layout/navigation-progress";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import styles from "./command-palette.module.css";
 import { CornerDownLeft, Search } from "lucide-react";
 
 /**
@@ -152,13 +153,13 @@ export function CommandPalette({ destinations }: { destinations: Destination[] }
       aria-modal="true"
       aria-label="Search pages"
       onMouseDown={close}
-      className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[12vh]"
+      className={`fixed inset-0 z-50 flex items-start justify-center px-4 pt-[12vh] ${styles.scrim}`}
       style={{ background: "var(--wms-overlay-modal)" }}
     >
       <div
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
-        className="flex w-full max-w-lg flex-col overflow-hidden"
+        className={`flex w-full max-w-lg flex-col overflow-hidden ${styles.panel}`}
         style={{
           background: "var(--surface-card)",
           borderRadius: "var(--radius-l)",
@@ -166,7 +167,7 @@ export function CommandPalette({ destinations }: { destinations: Destination[] }
         }}
       >
         <div
-          className="flex items-center gap-2.5 px-4"
+          className={`flex items-center gap-2.5 px-4 ${styles.inputRow}`}
           style={{ height: 48, borderBottom: "1px solid var(--stroke-divider)" }}
         >
           <Search className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} />
@@ -182,7 +183,7 @@ export function CommandPalette({ destinations }: { destinations: Destination[] }
             style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}
           />
           <kbd
-            className="rounded px-1.5"
+            className={`rounded px-1.5 ${styles.keyHint}`}
             style={{
               font: "var(--type-caption1)",
               color: "var(--text-tertiary)",
@@ -191,9 +192,12 @@ export function CommandPalette({ destinations }: { destinations: Destination[] }
           >
             esc
           </kbd>
+          <button type="button" className={styles.cancel} onClick={close}>
+            Cancel
+          </button>
         </div>
 
-        <div ref={listRef} className="ta-scroll max-h-80 overflow-y-auto py-1.5">
+        <div ref={listRef} className={`ta-scroll max-h-80 overflow-y-auto py-1.5 ${styles.list}`}>
           {results.length === 0 ? (
             <p className="px-4 py-6 text-center" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
               No page matches “{query}”.
@@ -205,7 +209,7 @@ export function CommandPalette({ destinations }: { destinations: Destination[] }
                 data-index={i}
                 onMouseEnter={() => setActive(i)}
                 onClick={() => go(r.href)}
-                className="flex w-full items-center gap-3 px-4 py-2 text-left"
+                className={`flex w-full items-center gap-3 px-4 py-2 text-left ${styles.row}`}
                 style={{
                   background: i === active ? "var(--surface-info)" : "transparent",
                   color: i === active ? "var(--text-accent)" : "var(--text-primary)",
@@ -223,7 +227,7 @@ export function CommandPalette({ destinations }: { destinations: Destination[] }
                   {r.group}
                 </span>
                 {i === active && (
-                  <CornerDownLeft className="h-3.5 w-3.5 flex-none" style={{ color: "var(--icon-accent)" }} />
+                  <CornerDownLeft className={`h-3.5 w-3.5 flex-none ${styles.keyHint}`} style={{ color: "var(--icon-accent)" }} />
                 )}
               </button>
             ))
