@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
-import { ChevronLeft, ChevronRight, Inbox } from "lucide-react";
+import { ChevronRight, Inbox } from "lucide-react";
 import { ExceptionCard } from "@/components/supervisor/exception-card";
 import {
   Button,
@@ -14,7 +14,8 @@ import {
   ToolsCount,
   useToast,
 } from "@/components/ui";
-import { isPhone } from "@/lib/phone";
+import { isPhone, usePhoneLayout } from "@/lib/phone";
+import { usePhoneBack } from "@/components/layout/phone-back";
 import styles from "./exceptions.module.css";
 
 /**
@@ -206,6 +207,8 @@ export function ExceptionsScreen({
     scrollAfterSwitch.current = listScroll.current;
     setPhoneCards(false);
   }, []);
+  // The way back to the people is the phone's top bar, as in any phone app.
+  const phone = usePhoneLayout();
 
   // Before the frame is painted, so the new screen never shows at the old
   // screen's scroll position first.
@@ -359,6 +362,7 @@ export function ExceptionsScreen({
       (a, b) => a.worst - b.worst || a.name.localeCompare(b.name),
     );
   }, [rows, typeLabels]);
+  usePhoneBack(phone && phoneCards && people.length > 0 ? "Exceptions" : null, backToPeople);
 
   const matchesQuery = useCallback(
     (name: string) => !query.trim() || name.toLowerCase().includes(query.trim().toLowerCase()),
@@ -393,7 +397,8 @@ export function ExceptionsScreen({
   );
 
   const matching = visible.length;
-  const countLabel = matching === total ? `${total} open` : `${matching} of ${total}`;
+  const countLabel =
+    matching === total ? `${total.toLocaleString()} open` : `${matching.toLocaleString()} of ${total.toLocaleString()}`;
 
   function exportUrl(): string {
     const params = new URLSearchParams();
@@ -600,13 +605,9 @@ export function ExceptionsScreen({
           {phoneCards && people.length > 0 && (
             <div className="ta-phone-only">
               <div className={styles.detailHead}>
-                <button type="button" className={styles.back} onClick={backToPeople}>
-                  <ChevronLeft className="h-5 w-5" aria-hidden="true" />
-                  Exceptions
-                </button>
                 <h2 className={styles.detailName}>{openEmployeeId ? (openPerson?.name ?? "Employee") : "All employees"}</h2>
                 <p className={styles.detailMeta}>
-                  {visible.length === 1 ? "1 open exception" : `${visible.length} open exceptions`}
+                  {visible.length === 1 ? "1 open exception" : `${visible.length.toLocaleString()} open exceptions`}
                 </p>
               </div>
             </div>
@@ -675,7 +676,7 @@ export function ExceptionsScreen({
                         className="tabular"
                         style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
                       >
-                        {groupCount}
+                        {groupCount.toLocaleString()}
                       </span>
                       <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                         {group.hint}

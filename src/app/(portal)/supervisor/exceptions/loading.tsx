@@ -10,6 +10,8 @@
  * land.
  */
 
+import { PhoneListSkeleton } from "@/components/ui/phone-list-skeleton";
+
 function Bar({ w, h = 12 }: { w: string; h?: number }) {
   return (
     <span
@@ -65,51 +67,59 @@ function CardSkeleton() {
 
 export default function Loading() {
   return (
-    <div className="flex flex-col gap-4" aria-busy="true" aria-label="Loading exceptions">
-      <div className="flex flex-col gap-2">
-        <Bar w="190px" h={28} />
-        <Bar w="330px" />
+    <div aria-busy="true" aria-label="Loading exceptions">
+      {/* A phone opens on the people list, so that is what loads. */}
+      <div className="ta-phone-only">
+        <PhoneListSkeleton faces={false} />
       </div>
-
-      <div className="flex flex-wrap items-center gap-2.5">
-        <Bar w="260px" h={30} />
-        <Bar w="86px" h={28} />
-        <Bar w="120px" h={28} />
-        <Bar w="82px" h={28} />
-        <Bar w="74px" h={28} />
-        <Bar w="112px" h={28} />
-      </div>
-
-      <div className="flex flex-wrap items-start gap-4">
-        <div
-          className="flex flex-[1_1_216px] flex-col overflow-hidden"
-          style={{
-            maxWidth: 256,
-            border: "1px solid var(--stroke-secondary)",
-            borderRadius: "var(--radius-m)",
-            background: "var(--surface-card)",
-          }}
-        >
-          <div className="px-3.5 py-2.5" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
-            <Bar w="92px" h={10} />
+      <div className="ta-desktop-only">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Bar w="190px" h={28} />
+            <Bar w="330px" />
           </div>
-          {Array.from({ length: 6 }, (_, i) => (
-            <div
-              key={i}
-              className="flex flex-col gap-1.5 px-3.5 py-2.5"
-              style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-            >
-              <Bar w="74%" h={13} />
-              <Bar w="52%" h={10} />
-            </div>
-          ))}
-        </div>
 
-        <div className="flex min-w-0 flex-[4_1_380px] flex-col gap-2.5">
-          <Bar w="210px" h={16} />
-          <CardSkeleton />
-          <CardSkeleton />
-          <CardSkeleton />
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Bar w="260px" h={30} />
+            <Bar w="86px" h={28} />
+            <Bar w="120px" h={28} />
+            <Bar w="82px" h={28} />
+            <Bar w="74px" h={28} />
+            <Bar w="112px" h={28} />
+          </div>
+
+          <div className="flex flex-wrap items-start gap-4">
+            <div
+              className="flex flex-[1_1_216px] flex-col overflow-hidden"
+              style={{
+                maxWidth: 256,
+                border: "1px solid var(--stroke-secondary)",
+                borderRadius: "var(--radius-m)",
+                background: "var(--surface-card)",
+              }}
+            >
+              <div className="px-3.5 py-2.5" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
+                <Bar w="92px" h={10} />
+              </div>
+              {Array.from({ length: 6 }, (_, i) => (
+                <div
+                  key={i}
+                  className="flex flex-col gap-1.5 px-3.5 py-2.5"
+                  style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+                >
+                  <Bar w="74%" h={13} />
+                  <Bar w="52%" h={10} />
+                </div>
+              ))}
+            </div>
+
+            <div className="flex min-w-0 flex-[4_1_380px] flex-col gap-2.5">
+              <Bar w="210px" h={16} />
+              <CardSkeleton />
+              <CardSkeleton />
+              <CardSkeleton />
+            </div>
+          </div>
         </div>
       </div>
     </div>

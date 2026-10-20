@@ -9,7 +9,7 @@ import {
   getExceptionPunches,
   resolveException,
 } from "@/actions/supervisor.actions";
-import { Button, Input, LinkButton, Select, Textarea } from "@/components/ui";
+import { Badge, Button, Input, LinkButton, Select, Textarea } from "@/components/ui";
 import { formatTimeOfDay } from "@/lib/utils/date";
 import { parseTimeOfDay, type Meridiem } from "@/lib/utils/time-of-day";
 import type { ExceptionRow } from "@/components/supervisor/exceptions-screen";
@@ -36,6 +36,8 @@ const PUNCH_LABEL: Record<string, string> = {
 
 const SEVERITY_INK = ["var(--text-error)", "var(--text-warning)", "var(--text-secondary)"];
 const SEVERITY_RULE = ["var(--fill-error)", "var(--fill-warning)", "var(--stroke-secondary)"];
+/** The same three, as the pill a phone shows beside the day. */
+const SEVERITY_TONE = ["error", "warning", "neutral"] as const;
 
 type Punch = { id: string; punchType: PunchType; roundedTime: Date };
 
@@ -290,7 +292,7 @@ export function ExceptionCard({
 
   return (
     <div
-      className="flex flex-col overflow-hidden"
+      className={`${styles.card} flex flex-col overflow-hidden`}
       style={{
         border: "1px solid var(--stroke-secondary)",
         borderLeft: `3px solid ${SEVERITY_RULE[severity]}`,
@@ -300,7 +302,7 @@ export function ExceptionCard({
         background: "var(--surface-card)",
       }}
     >
-      <div className="flex items-baseline gap-3 px-4 pb-3 pt-3.5">
+      <div className={`${styles.cardHead} flex items-baseline gap-3 px-4 pb-3 pt-3.5`}>
         <div className={`${styles.cardWho} flex min-w-0 flex-1 flex-col gap-0.5`}>
           <span
             className="truncate"
@@ -328,6 +330,13 @@ export function ExceptionCard({
         >
           {format(row.occurredAt, "EEE MMM d, yyyy")}
         </span>
+        {/* On a phone the kind of exception is a pill beside the day, in
+            place of the first of the four facts. */}
+        <span className={styles.cardKind}>
+          <Badge tone={SEVERITY_TONE[severity]} size="sm">
+            {typeLabel}
+          </Badge>
+        </span>
       </div>
 
       <div className="px-4 pb-3.5">
@@ -347,7 +356,7 @@ export function ExceptionCard({
 
       {/* The four facts, as a grid whose 1px gaps are the dividers. */}
       <div
-        className="grid grid-cols-2"
+        className={`${styles.facts} grid grid-cols-2`}
         style={{
           gap: 1,
           background: "var(--stroke-divider)",
@@ -358,7 +367,7 @@ export function ExceptionCard({
         {facts.map((f) => (
           <div
             key={f.label}
-            className="flex flex-col gap-0.5 px-4 py-2.5"
+            className={`${styles.fact} flex flex-col gap-0.5 px-4 py-2.5`}
             style={{ background: "var(--surface-card)" }}
           >
             <span className="wms-overline" style={{ color: "var(--text-secondary)" }}>

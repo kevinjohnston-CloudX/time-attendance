@@ -13,6 +13,9 @@ export type WorkQueueRow = {
   icon: React.ReactNode;
   label: string;
   detail: string;
+  /** Shorter words for a phone's one line row. */
+  phoneLabel: string;
+  phoneDetail: string;
   count: number;
   href: string;
   /** Whether this viewer can act on the count; if not it is information and stays grey. */
@@ -32,6 +35,8 @@ export function workQueueRows(queues: TeamQueues, isPayroll: boolean): WorkQueue
       icon: <TriangleAlert className="h-[17px] w-[17px]" />,
       label: "Exceptions to resolve",
       detail: "Missing punches and rule breaks that keep hours wrong until they are fixed",
+      phoneLabel: "Exceptions",
+      phoneDetail: "Missing punches and rule breaks",
       count: queues.exceptions,
       href: "/supervisor/exceptions",
       actionable: true,
@@ -42,6 +47,8 @@ export function workQueueRows(queues: TeamQueues, isPayroll: boolean): WorkQueue
       icon: <CalendarClock className="h-[17px] w-[17px]" />,
       label: "Leave requests to decide",
       detail: isPayroll ? "Waiting on a supervisor's decision" : "Time off your team has asked for",
+      phoneLabel: "Leave to decide",
+      phoneDetail: isPayroll ? "Waiting on a supervisor" : "Time off your team asked for",
       count: queues.leavePending,
       href: "/supervisor/leave?tab=pending",
       actionable: true,
@@ -54,6 +61,8 @@ export function workQueueRows(queues: TeamQueues, isPayroll: boolean): WorkQueue
       detail: isPayroll
         ? "Approved on the floor and waiting on the HR decision"
         : "You approved these, and HR makes the final decision",
+      phoneLabel: isPayroll ? "Leave waiting on HR" : "Leave with HR",
+      phoneDetail: isPayroll ? "Approved on the floor" : "HR makes the final decision",
       count: queues.leaveWithHr,
       href: "/supervisor/leave?tab=hr-pending",
       actionable: isPayroll,
@@ -79,10 +88,21 @@ export function WorkQueueList({ rows }: { rows: WorkQueueRow[] }) {
           >
             {r.icon}
           </span>
-          <span className="flex min-w-0 flex-col gap-0.5">
-            <span style={{ font: "var(--weight-semibold) 15px/22px var(--font-sans)" }}>{r.label}</span>
-            <span className="ta-queue-detail" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-              {r.detail}
+          <span className="ta-desktop-only">
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span style={{ font: "var(--weight-semibold) 15px/22px var(--font-sans)" }}>{r.label}</span>
+              <span className="ta-queue-detail" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                {r.detail}
+              </span>
+            </span>
+          </span>
+          {/* A phone's row: the queue's short name and one line under it. */}
+          <span className="ta-phone-only">
+            <span className="ta-list-text">
+              <span className="ta-list-title">{r.phoneLabel}</span>
+              <span className="ta-list-sub" style={{ whiteSpace: "normal" }}>
+                {r.phoneDetail}
+              </span>
             </span>
           </span>
           <CountPill count={r.count} actionable={r.actionable} tone={r.tone} />

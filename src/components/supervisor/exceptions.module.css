@@ -131,3 +131,87 @@
     min-width: 52px;
   }
 }
+
+/* The kind of exception as a pill beside the day: a phone's (see below). */
+.cardKind {
+  display: none;
+}
+
+/* Phones: an exception reads as a white card with its day and its kind at
+   the top, the sentence, then the facts as lines (name left, value right),
+   and the two fixes sharing the width. No stripe down the edge: the pill
+   carries how serious it is, in words. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .card {
+    border: 0 !important;
+    border-radius: 14px !important;
+    box-shadow: var(--ta-raised);
+  }
+  .cardKind {
+    display: inline-flex;
+    flex: none;
+    align-self: center;
+  }
+  /* With everybody's exceptions, a card names its person: the name and
+     department on the left, the kind and the day stacked on the right, so
+     the name is not squeezed to a few letters. */
+  .screen:not([data-phone-person]) .cardHead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "who kind" "who date";
+    align-items: start;
+    gap: 2px 12px;
+  }
+  .screen:not([data-phone-person]) .cardWho {
+    grid-area: who;
+  }
+  .screen:not([data-phone-person]) .cardKind {
+    grid-area: kind;
+    justify-self: end;
+  }
+  .screen:not([data-phone-person]) .cardDate {
+    grid-area: date;
+    justify-self: end;
+  }
+  .facts {
+    display: block !important;
+    margin: 0 16px;
+    background: transparent !important;
+    border-bottom: 0 !important;
+  }
+  .fact {
+    flex-direction: row !important;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 0 !important;
+    background: transparent !important;
+  }
+  .fact + .fact {
+    border-top: 1px solid var(--stroke-divider);
+  }
+  /* Said by the pill at the top. */
+  .fact:first-child {
+    display: none !important;
+  }
+  .fact + .fact:nth-child(2) {
+    border-top: 0;
+  }
+  .fact > :first-child {
+    flex: none;
+    font: var(--weight-regular) 15px/20px var(--font-sans) !important;
+  }
+  .fact > :last-child {
+    min-width: 0;
+    text-align: right;
+    font: var(--weight-medium) 15px/20px var(--font-sans) !important;
+  }
+  .cardActions :global(.wms-btn) {
+    height: 44px !important;
+  }
+  .detailName {
+    font: var(--weight-bold) 32px/38px var(--font-sans) !important;
+    letter-spacing: -0.02em !important;
+  }
+}
+
