@@ -309,3 +309,65 @@
     font-size: 15px !important;
   }
 }
+
+/* Phones: an open timecard is the person's own screen. Their name is the
+   title (the page's title and line belong to the list, a tap back), the
+   period's figures are tiles, figure first, and the list does not show
+   anybody as picked before anything has been tapped. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .screen[data-phone-view="card"] :global(.ta-page-title),
+  .screen[data-phone-view="card"] :global(.ta-page-sub),
+  .screen[data-phone-view="loading"] :global(.ta-page-title),
+  .screen[data-phone-view="loading"] :global(.ta-page-sub) {
+    display: none !important;
+  }
+  .cardName {
+    font: var(--weight-bold) 28px/34px var(--font-sans) !important;
+    letter-spacing: -0.02em;
+    white-space: normal;
+  }
+  .figures {
+    gap: 1px !important;
+    margin-top: 12px !important;
+    overflow: hidden;
+    border: 1px solid var(--stroke-divider);
+    border-radius: 12px;
+    background: var(--stroke-divider);
+  }
+  .figure {
+    flex: 1 1 70px;
+    flex-direction: column-reverse;
+    align-items: flex-start !important;
+    gap: 0 !important;
+    padding: 10px 12px;
+    background: var(--surface-card);
+    font: var(--weight-medium) 13px/17px var(--font-sans);
+  }
+  .figure > :global(.tabular) {
+    font: var(--weight-semibold) 22px/28px var(--font-sans) !important;
+    letter-spacing: -0.01em;
+  }
+  .figures > :not(.figure) {
+    flex: 1 1 100%;
+    padding: 8px 12px;
+    background: var(--surface-card);
+  }
+  .screen[data-phone-view="list"] .listRow[data-active] {
+    background: transparent !important;
+  }
+  .screen[data-phone-view="list"] .listRow[data-active] span {
+    color: inherit;
+  }
+  .screen[data-phone-view="list"] .listRow > div:first-child > span:first-child {
+    color: var(--text-primary) !important;
+    font: var(--weight-semibold) 17px/22px var(--font-sans) !important;
+  }
+  .listRow > div:nth-child(2) > span:first-child {
+    font: var(--weight-regular) 15px/20px var(--font-sans) !important;
+    color: var(--text-secondary) !important;
+  }
+  /* The usual state says nothing on every row; only a changed one shows. */
+  .listRow [data-status="OPEN"] {
+    display: none;
+  }
+}

@@ -283,8 +283,10 @@ export default async function TimecardsPage({
 
   // The line under the title. The dates themselves are on the pay period
   // control beside it, and the viewer puts the pay frequency first.
+  // Active people, as the list shows by default, so the two numbers agree.
+  const activeCount = employees.filter((e) => e.isActive).length;
   const subtitle = [
-    `${employees.length} ${employees.length === 1 ? "employee" : "employees"}`,
+    `${activeCount.toLocaleString()} active ${activeCount === 1 ? "employee" : "employees"}`,
     canEdit ? null : "Read only",
   ]
     .filter(Boolean)

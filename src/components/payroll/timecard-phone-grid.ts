@@ -45,6 +45,17 @@ const AREAS: Record<string, string[]> = {
   premium: ["day day total total chev", "meal meal pay pay ."],
 };
 
+/**
+ * A day that is not open: its date and total, then its times on one line
+ * ("6:54 AM – 3:31 PM"), read rather than laid out as a form. A tap opens it
+ * to everything above, hours, pay code, reason and the edits. The tracks
+ * here are their own, sized to the times.
+ */
+const CLOSED: Record<string, string[]> = {
+  day: ["day day day total chev", "in out . . notes"],
+  more: ["day day day total chev", "in out . . notes"],
+};
+
 /** The caption over a cell, where the cell alone does not say what it is. */
 const LABEL: Partial<Record<GridColumn, string>> = {
   in: "Clock in",
@@ -89,5 +100,28 @@ export function phoneGridCss(table: string, columns: GridColumn[]): string {
       rules.push(`${each(i, "")}{justify-self:end;align-self:center}`);
     }
   });
+  for (const [row, areas] of Object.entries(CLOSED)) {
+    const closed = `.${table} tr[data-row="${row}"]:not([data-open])`;
+    const named = new Set(areas.join(" ").split(/\s+/));
+    rules.push(
+      `${closed}{grid-template-columns:auto auto minmax(0,1fr) auto auto;grid-template-areas:${areas.map((a) => `"${a}"`).join(" ")};column-gap:6px;row-gap:0}`,
+    );
+    columns.forEach((col, i) => {
+      const cell = `${closed}>td:nth-child(${i + 1})`;
+      if (!named.has(col)) {
+        rules.push(`${cell}{display:none!important}`);
+        return;
+      }
+      rules.push(`${cell}{grid-area:${col}}`);
+      if (col === "in" || col === "out") {
+        // Plain text, and the tap goes to the day, which opens.
+        rules.push(`${cell}::before{content:none!important}`);
+        rules.push(
+          `${cell}>button,${cell}>div{display:inline-flex!important;width:auto!important;min-height:0!important;padding:0!important;border:0!important;background:none!important;pointer-events:none;font:var(--weight-regular) 15px/20px var(--font-sans)!important;color:var(--text-secondary)!important}`,
+        );
+      }
+      if (col === "in") rules.push(`${cell}:not(:empty)::after{content:"\\2013";margin-left:6px;color:var(--text-tertiary)}`);
+    });
+  }
   return `@media ${PHONE_QUERY}{${rules.join("")}}`;
 }

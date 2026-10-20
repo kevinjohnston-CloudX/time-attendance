@@ -86,7 +86,8 @@ import { RefusedScansNotice } from "@/components/payroll/refused-scans-notice";
 import { TimecardLockControl } from "@/components/payroll/timecard-lock-control";
 import grid from "./timecard.module.css";
 import { phoneGridCss, type GridColumn } from "./timecard-phone-grid";
-import { isPhone } from "@/lib/phone";
+import { isPhone, usePhoneLayout } from "@/lib/phone";
+import { usePhoneBack } from "@/components/layout/phone-back";
 import { shiftMeal } from "@/lib/shift-meal";
 import { roundedHoursNote } from "@/lib/utils/hours-entry";
 
@@ -521,7 +522,7 @@ const PAID_LEAVE_BUCKETS = new Set(["PTO", "SICK", "HOLIDAY", "FMLA", "BEREAVEME
 /** One labelled number on the line under the person's name. */
 function PeriodFigure({ label, value, tone, strong = false }: { label: string; value: string; tone?: string; strong?: boolean }) {
   return (
-    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+    <span className={`${grid.figure} inline-flex items-baseline gap-1.5 whitespace-nowrap`}>
       <span>{label}</span>
       <span
         className="tabular"
@@ -772,6 +773,9 @@ export function TimecardViewer({
     return asked && asked === selectedEmployeeId ? asked : null;
   });
   const phoneView = phoneFor === null ? "list" : phoneFor === selectedEmployeeId ? "card" : "loading";
+  const phone = usePhoneLayout();
+  // The way back to the list is the top bar's, as in any phone app.
+  usePhoneBack(phone && phoneView !== "list" ? "Timecards" : null, () => backToList());
   /** Where the list was scrolled to, so coming back lands there. */
   const listScroll = useRef(0);
   const scrollAfterSwitch = useRef<number | null>(null);
@@ -2337,7 +2341,7 @@ export function TimecardViewer({
                               {emp.wmsId ?? emp.employeeCode} · {emp.department}
                             </span>
                             {emp.status && (
-                              <span className="flex-none">
+                              <span className="flex-none" data-status={empStatus}>
                                 <Badge tone={statusTone(empStatus)} size="sm">
                                   {TIMESHEET_STATUS_LABEL[empStatus as TimesheetStatusValue] ?? empStatus}
                                 </Badge>
@@ -2374,12 +2378,6 @@ export function TimecardViewer({
           className={`${grid.cardPane} flex min-h-0 flex-col overflow-hidden`}
           style={{ background: "var(--surface-card)", borderRadius: "var(--radius-l)", boxShadow: "var(--shadow-card)" }}
         >
-          <div className="ta-phone-only">
-            <button type="button" className={grid.back} onClick={backToList}>
-              <ChevronLeft className="h-5 w-5" aria-hidden="true" />
-              Employees
-            </button>
-          </div>
           {!selectedEmployeeId || !days ? (
             <div className="flex flex-1 items-center justify-center">
               <EmptyState
@@ -2405,7 +2403,7 @@ export function TimecardViewer({
                 <div className="flex min-w-0 flex-col gap-1">
                   <div className="flex flex-wrap items-center gap-2.5">
                     <h2
-                      className="truncate"
+                      className={`${grid.cardName} truncate`}
                       style={{ margin: 0, font: "var(--type-h3)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}
                     >
                       {displayName}
@@ -2462,7 +2460,7 @@ export function TimecardViewer({
                       to learn whether this person needs a look. */}
                   {timecard && (
                     <p
-                      className="m-0 mt-1 flex flex-wrap items-center gap-x-4 gap-y-1"
+                      className={`${grid.figures} m-0 mt-1 flex flex-wrap items-center gap-x-4 gap-y-1`}
                       style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
                     >
                       <PeriodFigure label="Total" value={minutesToHoursDecimal(periodTotals.total)} strong />
@@ -2729,12 +2727,15 @@ export function TimecardViewer({
                               needed a colour legend to be read at all. */}
                           <tr
                             data-row="day"
+                            // On a phone a closed day is read, not edited, and
+                            // any day opens with a tap (timecard-phone-grid.ts).
+                            data-open={isExpanded ? "true" : undefined}
                             className={`transition-colors ${isMainRowPendingDelete ? "opacity-40 line-through" : ""} ${
                               !isMainRowPendingDelete ? "hover:bg-[var(--ta-row-hover)]" : ""
                             } ${hasActivity ? "cursor-pointer" : ""}`}
                             style={{ borderBottom: "1px solid var(--stroke-divider)" }}
                             onClick={
-                              hasActivity
+                              hasActivity || phone
                                 ? () => toggleDay(dayKey)
                                 : undefined
                             }
@@ -3404,6 +3405,7 @@ export function TimecardViewer({
                             return (
                               <tr
                                 data-row="more"
+                                data-open={isExpanded ? "true" : undefined}
                                 key={`${dayKey}-pair${pairIdx}`}
                                 style={{ borderBottom: "1px solid var(--stroke-divider)" }}
                               >
