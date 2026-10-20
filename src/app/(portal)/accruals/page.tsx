@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import { getSubordinateIds } from "@/lib/get-subordinate-ids";
+import { siteLimit } from "@/lib/rbac/scope";
 import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 import { AccrualsEmployeeList } from "@/components/admin/accruals-employee-list";
@@ -70,9 +71,13 @@ export default async function AccrualsPage({
     canViewAny || !session.user.employeeId
       ? null
       : [...(await getSubordinateIds(session.user.employeeId, session.user.tenantId ?? null)), session.user.employeeId];
+  // A Payroll Admin held to some sites sees the people at those sites only,
+  // as on Timecards.
+  const siteIds = canViewAny ? await siteLimit({ employeeId: session.user.employeeId ?? "", role: session.user.role ?? "" }) : null;
   const employeeScope = {
     tenantId: session.user.tenantId ?? undefined,
     ...(teamIds ? { id: { in: teamIds } } : {}),
+    ...(siteIds ? { siteId: { in: siteIds } } : {}),
   };
 
   /**
@@ -88,7 +93,8 @@ export default async function AccrualsPage({
     ...employeeScope,
     ...(filters.status === "active"   ? { isActive: true }  : {}),
     ...(filters.status === "inactive" ? { isActive: false } : {}),
-    ...(filters.site ? { siteId: filters.site } : {}),
+    // Beside the site limit, not over it: a site picked outside it finds nobody.
+    ...(filters.site ? { AND: [{ siteId: filters.site }] } : {}),
     ...(filters.dept ? { department: { name: filters.dept } } : {}),
     ...(needle
       ? {
@@ -119,7 +125,7 @@ export default async function AccrualsPage({
       orderBy: { user: { name: "asc" } },
     }),
     db.site.findMany({
-      where: { isActive: true, tenantId: session.user.tenantId ?? undefined },
+      where: { isActive: true, tenantId: session.user.tenantId ?? undefined, ...(siteIds ? { id: { in: siteIds } } : {}) },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

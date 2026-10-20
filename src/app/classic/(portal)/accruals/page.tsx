@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import { getSubordinateIds } from "@/lib/get-subordinate-ids";
+import { siteLimit } from "@/lib/rbac/scope";
+import type { Prisma } from "@prisma/client";
 import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 import { AccrualsEmployeeList } from "@/classic/components/admin/accruals-employee-list";
@@ -22,13 +24,19 @@ export default async function AccrualsPage() {
     redirect(`/accruals/${session.user.employeeId}`);
   }
 
-  let employeeWhere = {};
+  // Always the viewer's own company: seeing everyone's used to read every
+  // company's employees and sites. A Payroll Admin held to some sites sees the
+  // people at those sites only, as on Timecards.
+  const tenantId = session.user.tenantId ?? "__no_company__";
+  const siteIds = canViewAny ? await siteLimit({ employeeId: session.user.employeeId ?? "", role: session.user.role ?? "" }) : null;
+  let employeeWhere: Prisma.EmployeeWhereInput = { tenantId, ...(siteIds ? { siteId: { in: siteIds } } : {}) };
   if (!canViewAny && session.user.employeeId) {
     const subordinateIds = await getSubordinateIds(
       session.user.employeeId,
       session.user.tenantId ?? null
     );
     employeeWhere = {
+      tenantId,
       OR: [
         { id: { in: subordinateIds } },
         { id: session.user.employeeId },
@@ -48,7 +56,7 @@ export default async function AccrualsPage() {
       orderBy: { user: { name: "asc" } },
     }),
     db.site.findMany({
-      where: { isActive: true },
+      where: { isActive: true, tenantId, ...(siteIds ? { id: { in: siteIds } } : {}) },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
