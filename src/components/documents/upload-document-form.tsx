@@ -203,7 +203,7 @@ export function UploadDocumentForm({ employees }: Props) {
 
                 {showDropdown && filtered.length > 0 && (
                   <div
-                    className="ta-modal absolute left-0 right-0 top-full z-20 mt-1 max-h-52 overflow-y-auto rounded-lg"
+                    className={`ta-modal absolute left-0 right-0 top-full z-20 mt-1 max-h-52 overflow-y-auto rounded-lg ${styles.suggest}`}
                     style={{ border: "1px solid var(--stroke-secondary)" }}
                   >
                     {filtered.map((emp) => (

@@ -162,3 +162,13 @@
     opacity: 1 !important;
   }
 }
+
+/* The people suggestions under a name field inside a sheet: in the flow on
+   a phone, so they push what follows down and the sheet scrolls, rather
+   than hanging off the bottom of the screen. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .suggest {
+    position: static !important;
+    max-height: 40dvh !important;
+  }
+}

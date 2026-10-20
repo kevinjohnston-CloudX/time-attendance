@@ -9,6 +9,7 @@ import {
   Switch,
 } from "@/components/ui";
 import { shareReport, unshareReport, updateReport } from "@/actions/report.actions";
+import phone from "../reports-phone.module.css";
 
 interface ShareDialogProps {
   reportId: string;
@@ -194,7 +195,7 @@ export function ShareDialog({
             />
             {filteredUsers.length > 0 && (
               <ul
-                className="ta-modal absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto"
+                className={`ta-modal absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto ${phone.suggest}`}
                 style={{ borderRadius: "var(--radius-m)", listStyle: "none", margin: 0, padding: 4 }}
               >
                 {filteredUsers.map((user) => (
