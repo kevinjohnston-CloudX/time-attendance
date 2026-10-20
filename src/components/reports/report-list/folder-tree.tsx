@@ -11,6 +11,7 @@ import {
   renameFolder,
   deleteFolder,
 } from "@/actions/report.actions";
+import phone from "../reports-phone.module.css";
 
 /**
  * The folder rail beside the reports list.
@@ -265,7 +266,7 @@ export function FolderTree({
               </span>
               {/* Rename and delete appear on hover, but focus has to reveal
                   them too or they are unreachable from the keyboard. */}
-              <div className="flex flex-none items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+              <div className={`${phone.folderActions} flex flex-none items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100`}>
                 <Button
                   size="sm"
                   hierarchy="tertiary"

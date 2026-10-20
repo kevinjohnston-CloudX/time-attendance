@@ -6,6 +6,7 @@ import { Button } from "@/components/ui";
 import { REPORT_GROUPS, dataSourceDescription, dataSourceLabel } from "./data-source-label";
 import { ReportTypeIcon } from "./report-type-icon";
 import type { DataSourceId } from "@/lib/validators/report.schema";
+import phone from "./reports-phone.module.css";
 
 export interface ReportTypeOption {
   id: DataSourceId;
@@ -105,7 +106,7 @@ export function ReportTypeDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.5)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
@@ -114,7 +115,7 @@ export function ReportTypeDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="report-type-title"
-        className="ta-modal flex max-h-[calc(100dvh-2rem)] w-full max-w-[880px] flex-col overflow-hidden"
+        className={`${phone.typeSheet} ta-sheet ta-modal flex max-h-[calc(100dvh-2rem)] w-full max-w-[880px] flex-col overflow-hidden`}
         style={{ borderRadius: "var(--radius-l)", height: 600 }}
       >
         <header
@@ -134,7 +135,7 @@ export function ReportTypeDialog({
           </Button>
         </header>
 
-        <div className="grid min-h-0 flex-1 [grid-template-columns:272px_minmax(0,1fr)]">
+        <div className={`${phone.typeBody} grid min-h-0 flex-1 [grid-template-columns:272px_minmax(0,1fr)]`}>
           {/* ── The types ─────────────────────────────────────────── */}
           <div
             role="listbox"
@@ -194,7 +195,7 @@ export function ReportTypeDialog({
         </div>
 
         <footer
-          className="flex flex-none items-center gap-2 px-6 py-3.5"
+          className={`${phone.typeFoot} flex flex-none items-center gap-2 px-6 py-3.5`}
           style={{ borderTop: "1px solid var(--stroke-divider)" }}
         >
           <span className="min-w-0 flex-1" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>

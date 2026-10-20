@@ -1,0 +1,70 @@
+/* Reports on a phone (reports-list.tsx, report-list/folder-tree.tsx and,
+   later in this file, the viewer and builder). Inline styles and Tailwind
+   grid classes are why some lines need !important. */
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* ---- The list ---- */
+  /* The column header names columns a phone does not draw. */
+  .listHead {
+    display: none !important;
+  }
+  /* A report: its name (and description) over its type and last run, with
+     the arrow on the right. The narrow window's three column grid squeezed
+     the name out entirely. */
+  .line {
+    grid-template-columns: auto minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      "name name chev"
+      "type run chev";
+    gap: 2px 8px !important;
+    padding: 12px 16px !important;
+  }
+  .line > :nth-child(1) { grid-area: name; }
+  .line > :nth-child(2) {
+    grid-area: type;
+    margin-left: 48px;
+  }
+  .line > :nth-child(2)::after {
+    content: "·";
+    margin-left: 8px;
+    color: var(--text-tertiary);
+  }
+  .line > :nth-child(5) {
+    grid-area: run;
+    flex-direction: row !important;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .line > :nth-child(7) { grid-area: chev; }
+
+  /* ---- New report / Change report type ---- */
+  /* A bottom sheet as tall as it needs (it had a fixed 600px), the types
+     then the picked one's details in one scrolling column, the footer's
+     line over its two buttons. */
+  .typeSheet {
+    height: auto !important;
+  }
+  .typeBody {
+    display: block !important;
+    overflow-y: auto;
+  }
+  .typeBody > [role="listbox"] {
+    overflow: visible !important;
+    border-right: 0 !important;
+  }
+  .typeFoot {
+    flex-wrap: wrap;
+    padding: 12px 16px !important;
+  }
+  .typeFoot > span:first-child {
+    flex-basis: 100%;
+  }
+  .typeFoot > :global(.wms-btn) {
+    flex: 1 1 0;
+  }
+
+  /* Rename and delete show on hover on a computer; a phone has no hover. */
+  .folderActions {
+    opacity: 1 !important;
+  }
+}

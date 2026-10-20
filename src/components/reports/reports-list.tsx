@@ -22,6 +22,7 @@ import { STANDARD_REPORTS, dataSourceDescription, dataSourceLabel } from "./data
 import { FolderTree, type FolderNode } from "./report-list/folder-tree";
 import { ReportTypeIcon } from "./report-type-icon";
 import { ReportTypeDialog, type ReportTypeOption } from "./report-type-dialog";
+import phone from "./reports-phone.module.css";
 
 /**
  * The Reports page: the reports people have saved, and nothing else.
@@ -225,6 +226,7 @@ export function ReportsList({
               )}
               <Button
                 hierarchy="primary"
+                className="ta-header-primary"
                 leadingIcon={<Plus className="h-4 w-4" />}
                 disabled={sources.length === 0}
                 title={sources.length === 0 ? "The report types did not load. Reload the page to try again." : undefined}
@@ -328,7 +330,7 @@ export function ReportsList({
             <div>
               <div>
                 <div
-                  className={`sticky z-10 h-10 items-center gap-x-4 px-5 ${GRID_CLS}`}
+                  className={`${phone.listHead} sticky z-10 h-10 items-center gap-x-4 px-5 ${GRID_CLS}`}
                   style={{
                     ...GRID,
                     top: barHeight,
@@ -380,7 +382,7 @@ function ReportLine({ report, access }: { report: ReportRow; access: Access }) {
   return (
     <Link
       href={`/reports/${report.id}`}
-      className={`ta-hoverable group min-h-[64px] items-center gap-x-4 px-5 py-3 ${GRID_CLS}`}
+      className={`${phone.line} ta-hoverable group min-h-[64px] items-center gap-x-4 px-5 py-3 ${GRID_CLS}`}
       style={{ ...GRID, textDecoration: "none" }}
     >
       <span className="flex min-w-0 items-center gap-3">
