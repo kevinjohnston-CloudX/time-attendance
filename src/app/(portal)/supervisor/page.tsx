@@ -12,6 +12,7 @@ import { EXCEPTION_TYPE_LABEL } from "@/lib/state-machines/labels";
 import { Badge, Card, LinkButton, exceptionTone } from "@/components/ui";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { WorkQueueList, workQueueRows } from "@/components/supervisor/work-queue";
+import styles from "@/components/supervisor/team-overview.module.css";
 
 /**
  * Team Overview: the screen the Team section opens on.
@@ -149,7 +150,8 @@ export default async function TeamOverviewPage() {
         </div>
         {canSeeOnSite && (
           <div className="flex items-center gap-2">
-            <LinkButton href="/supervisor/on-site" hierarchy="secondary">
+            {/* On a phone the Attendance tab and the card below both go there. */}
+            <LinkButton href="/supervisor/on-site" hierarchy="secondary" className="ta-phone-hide">
               Live Attendance
             </LinkButton>
           </div>
@@ -167,7 +169,7 @@ export default async function TeamOverviewPage() {
         }
         actions={
           payPeriod ? (
-            <div className="flex w-[180px] flex-col items-end gap-1.5">
+            <div className={`${styles.progress} flex w-[180px] flex-col items-end gap-1.5`}>
               <span className="tabular whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                 {daysLeft === 0 ? "Closes today" : `${plural(daysLeft, "day")} left in the period`}
               </span>
@@ -193,7 +195,7 @@ export default async function TeamOverviewPage() {
           subtitle={`Clocked in right now, as of ${asOf}`}
           actions={
             canSeeOnSite ? (
-              <LinkButton href="/supervisor/on-site" hierarchy="tertiary" size="sm">
+              <LinkButton href="/supervisor/on-site" hierarchy="tertiary" size="sm" className={styles.cardLink}>
                 Open Live Attendance
               </LinkButton>
             ) : undefined
@@ -247,7 +249,7 @@ export default async function TeamOverviewPage() {
               : `${plural(timeOff.offToday, "person", "people")} off today, ${plural(timeOff.total, "absence")} in the next 14 days`
           }
           actions={
-            <LinkButton href="/supervisor/leave?tab=upcoming" hierarchy="tertiary" size="sm">
+            <LinkButton href="/supervisor/leave?tab=upcoming" hierarchy="tertiary" size="sm" className={styles.cardLink}>
               Team Calendar
             </LinkButton>
           }
@@ -305,7 +307,7 @@ export default async function TeamOverviewPage() {
         title="Exceptions by Type"
         subtitle={queues.exceptions === 0 ? "Open exceptions" : `${plural(queues.exceptions, "open exception")}, largest first`}
         actions={
-          <LinkButton href="/supervisor/exceptions" hierarchy="tertiary" size="sm">
+          <LinkButton href="/supervisor/exceptions" hierarchy="tertiary" size="sm" className={styles.cardLink}>
             Open Exceptions
           </LinkButton>
         }

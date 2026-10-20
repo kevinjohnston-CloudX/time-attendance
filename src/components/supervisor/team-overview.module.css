@@ -1,0 +1,20 @@
+/* Team Overview on a phone (app/(portal)/supervisor/page.tsx). */
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* A card's link drops under its title there, so its words line up with
+     the title's rather than sitting in by the button's own padding, and it
+     takes the accent colour, since there is no hover to show it is a link. */
+  .cardLink {
+    margin-left: -10px;
+    color: var(--text-accent) !important;
+  }
+  /* The days left in the period and its bar span the card under the title,
+     rather than hanging at 180px off to one side. */
+  :global(.ta-card-actions):has(> .progress) {
+    flex: 1 1 100% !important;
+  }
+  .progress {
+    width: 100% !important;
+    align-items: flex-start !important;
+  }
+}
