@@ -709,6 +709,21 @@ function InlinePunchEdit({
   );
 }
 
+/**
+ * A panel that drops from its button on a computer and opens as a sheet on
+ * a phone, drawn at the page root (over a dimmed page) so the list's own
+ * layer cannot hold it under the tab bar. The panel itself carries ta-sheet.
+ */
+function inPlaceOrSheet(panel: React.ReactNode, scrimClass: string) {
+  if (!isPhone()) return panel;
+  return createPortal(
+    <div className={`ta-sheet-scrim fixed inset-0 flex ${scrimClass}`} style={{ background: "var(--wms-overlay-modal)" }}>
+      {panel}
+    </div>,
+    document.body
+  );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function TimecardViewer({
@@ -815,6 +830,8 @@ export function TimecardViewer({
     return sel ? parseUtcDate(sel.startDate).getFullYear() : new Date().getFullYear();
   });
   const calendarRef = useRef<HTMLDivElement>(null);
+  // On a phone the month picker is a sheet drawn at the page root, outside calendarRef.
+  const monthSheetRef = useRef<HTMLDivElement>(null);
 
   // All unique "YYYY-MM" keys that have at least one pay period
   const allMonthKeys = [...new Set(
@@ -862,10 +879,13 @@ export function TimecardViewer({
   // The Filters panel, closed by a click anywhere outside it.
   const [showFilters, setShowFilters] = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
+  // On a phone the panel is a sheet drawn at the page root, outside filtersRef.
+  const filterPanelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!showFilters) return;
     function onDown(e: MouseEvent) {
-      if (filtersRef.current && !filtersRef.current.contains(e.target as Node)) setShowFilters(false);
+      const t = e.target as Node;
+      if (filtersRef.current && !filtersRef.current.contains(t) && !filterPanelRef.current?.contains(t)) setShowFilters(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setShowFilters(false);
@@ -882,7 +902,8 @@ export function TimecardViewer({
   useEffect(() => {
     if (!showCalendar) return;
     function handleClick(e: MouseEvent) {
-      if (calendarRef.current && !calendarRef.current.contains(e.target as Node)) {
+      const t = e.target as Node;
+      if (calendarRef.current && !calendarRef.current.contains(t) && !monthSheetRef.current?.contains(t)) {
         setShowCalendar(false);
       }
     }
@@ -2019,8 +2040,14 @@ export function TimecardViewer({
                     <Calendar className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
                     {selectedPeriodLabel}
                   </button>
-                  {showCalendar && (
-                    <div className="ta-modal absolute left-0 top-full z-50 mt-1 w-56 rounded-lg p-3">
+                  {showCalendar && inPlaceOrSheet(
+                    <div
+                      ref={monthSheetRef}
+                      role="dialog"
+                      aria-label="Jump to a month"
+                      className={`ta-modal ta-sheet absolute left-0 top-full z-50 mt-1 w-56 rounded-lg p-3 ${grid.monthSheet}`}
+                    >
+                      <div className={grid.monthHead}>Jump to a month</div>
                       <div className="mb-2.5 flex items-center justify-between">
                         <Button hierarchy="tertiary" size="sm" iconOnly onClick={() => setPickerYear((y) => y - 1)} aria-label="Previous year">
                           <ChevronLeft className="h-4 w-4" />
@@ -2035,7 +2062,7 @@ export function TimecardViewer({
                       {/* A month with no pay period is disabled rather than
                           hidden: the gap is information, and a grid that reflowed
                           would move January under your cursor. */}
-                      <div className="grid grid-cols-4 gap-1">
+                      <div className={`grid grid-cols-4 gap-1 ${grid.monthGrid}`}>
                         {MONTHS.map((label, idx) => {
                           const hasPeriod = monthsWithPeriods.has(idx);
                           const isSelected = pickerYear === selectedMonthYear && idx === selectedMonthIdx;
@@ -2072,7 +2099,8 @@ export function TimecardViewer({
                           );
                         })}
                       </div>
-                    </div>
+                    </div>,
+                    grid.monthScrim
                   )}
                 </div>
 
@@ -2148,12 +2176,14 @@ export function TimecardViewer({
               >
                 {filtersOn > 0 ? `Filters ${filtersOn}` : "Filters"}
               </Button>
-              {showFilters && (
+              {showFilters && inPlaceOrSheet(
                 <div
+                  ref={filterPanelRef}
                   role="dialog"
                   aria-label="Filter employees"
-                  className="ta-modal absolute right-0 top-full z-30 mt-1.5 flex w-64 flex-col gap-3 rounded-lg p-3.5"
+                  className={`ta-modal ta-sheet absolute right-0 top-full z-30 mt-1.5 flex w-64 flex-col gap-3 rounded-lg p-3.5 ${grid.filterSheet}`}
                 >
+                  <div className={grid.filterHead}>Filter employees</div>
                   {[
                     { label: "Status", value: statusFilter, set: setStatusFilter, all: "All statuses", options: STATUS_FILTER_OPTIONS },
                     { label: "Pay type", value: payTypeFilter, set: setPayTypeFilter, all: "All pay types", options: PAY_TYPE_FILTER_OPTIONS },
@@ -2172,7 +2202,7 @@ export function TimecardViewer({
                     </label>
                   ))}
                   <Checkbox checked={activeOnly} onChange={setActiveOnly} label="Active employees only" />
-                  <div className="flex items-center justify-between gap-2 pt-1" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+                  <div className={`flex items-center justify-between gap-2 pt-1 ${grid.filterFoot}`} style={{ borderTop: "1px solid var(--stroke-divider)" }}>
                     <Button
                       hierarchy="link"
                       size="sm"
@@ -2191,7 +2221,8 @@ export function TimecardViewer({
                       Done
                     </Button>
                   </div>
-                </div>
+                </div>,
+                grid.filterScrim
               )}
             </div>
             {/* The views most visits start from. Status in Filters writes the
