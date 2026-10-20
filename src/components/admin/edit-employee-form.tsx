@@ -12,6 +12,7 @@ import {
   Banner,
   Button,
   Checkbox,
+  ConfirmDialog,
   EmptyState,
   Input,
   LinkButton,
@@ -499,8 +500,18 @@ export function EditEmployeeForm({
     setEditing(true);
   }
 
+  const [askingDiscard, setAskingDiscard] = useState(false);
+
   function cancel() {
-    if (dirty && !window.confirm("Discard your unsaved changes?")) return;
+    if (dirty) {
+      setAskingDiscard(true);
+      return;
+    }
+    discard();
+  }
+
+  function discard() {
+    setAskingDiscard(false);
     setEditing(false);
     setError(null);
   }
@@ -1435,6 +1446,18 @@ export function EditEmployeeForm({
           detail={`${employee.wmsId ?? employee.employeeCode} · ${employee.department.name} · ${employee.site.name}`}
           onClose={() => setZoomed(null)}
         />
+      )}
+
+      {askingDiscard && (
+        <ConfirmDialog
+          title="Discard your changes?"
+          tone="warning"
+          confirmLabel="Discard changes"
+          onCancel={() => setAskingDiscard(false)}
+          onConfirm={discard}
+        >
+          The changes you made to this employee are not saved. Discarding puts the record back the way it was.
+        </ConfirmDialog>
       )}
 
       {/* ── Temp password modal ───────────────────────────────────────────── */}
