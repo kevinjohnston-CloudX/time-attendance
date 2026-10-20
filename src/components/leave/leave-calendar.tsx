@@ -8,6 +8,8 @@ import {
 } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { leaveTone, type BadgeTone } from "@/components/ui";
+import { LEAVE_STATUS_LABEL, type LeaveRequestStatusValue } from "@/lib/state-machines/labels";
+import styles from "./my-leave.module.css";
 
 /**
  * The month view of your own leave, as the design's calendar section draws it:
@@ -84,6 +86,11 @@ type LeaveRequest = {
 
 export function LeaveCalendar({ requests, className }: { requests: LeaveRequest[]; className?: string }) {
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
+  /**
+   * The booked day somebody tapped, so it can say what it is. A day's details
+   * used to live only in a hover tooltip, which a phone never shows.
+   */
+  const [picked, setPicked] = useState<string | null>(null);
 
   const days = eachDayOfInterval({
     start: startOfWeek(startOfMonth(currentMonth)),
@@ -108,7 +115,7 @@ export function LeaveCalendar({ requests, className }: { requests: LeaveRequest[
   return (
     <div className={`flex flex-col gap-2.5${className ? ` ${className}` : ""}`}>
       <div className="flex shrink-0 items-center gap-1.5">
-        <NavButton label="Previous month" onClick={() => setCurrentMonth((m) => subMonths(m, 1))}>
+        <NavButton label="Previous month" onClick={() => { setPicked(null); setCurrentMonth((m) => subMonths(m, 1)); }}>
           <ChevronLeft className="h-[15px] w-[15px]" />
         </NavButton>
         <span
@@ -117,7 +124,7 @@ export function LeaveCalendar({ requests, className }: { requests: LeaveRequest[
         >
           {format(currentMonth, "MMMM yyyy")}
         </span>
-        <NavButton label="Next month" onClick={() => setCurrentMonth((m) => addMonths(m, 1))}>
+        <NavButton label="Next month" onClick={() => { setPicked(null); setCurrentMonth((m) => addMonths(m, 1)); }}>
           <ChevronRight className="h-[15px] w-[15px]" />
         </NavButton>
       </div>
@@ -142,12 +149,22 @@ export function LeaveCalendar({ requests, className }: { requests: LeaveRequest[
           // crosses a month boundary.
           const booked  = req && inMonth ? surfaceFor(req.status) : null;
           const today   = isToday(day);
+          const key     = format(day, "yyyy-MM-dd");
+          const Cell    = booked ? "button" : "div";
 
           return (
-            <div
+            <Cell
               key={day.toISOString()}
+              {...(booked
+                ? {
+                    type: "button" as const,
+                    onClick: () => setPicked(picked === key ? null : key),
+                    "aria-pressed": picked === key,
+                    "aria-label": `${format(day, "EEEE, MMMM d")}: ${req!.leaveType.name}`,
+                  }
+                : {})}
               title={req ? `${req.leaveType.name} · ${(req.durationMinutes / 60).toFixed(2)} h` : undefined}
-              className="tabular flex items-center justify-center rounded-md"
+              className={`tabular flex items-center justify-center rounded-md${booked ? ` ${styles.dayButton}` : ""}${picked === key ? ` ${styles.picked}` : ""}`}
               style={{
                 border: `1px solid ${booked ? booked.line : "var(--stroke-divider)"}`,
                 background: booked ? booked.bg : "var(--surface-secondary)",
@@ -171,10 +188,28 @@ export function LeaveCalendar({ requests, className }: { requests: LeaveRequest[
               ) : (
                 format(day, "d")
               )}
-            </div>
+            </Cell>
           );
         })}
       </div>
+
+      {(() => {
+        if (!picked) return null;
+        const req = requestForDay(parseLeaveDate(picked));
+        if (!req) return null;
+        const s = parseLeaveDate(req.startDate as string);
+        const e = parseLeaveDate(req.endDate as string);
+        // The run it belongs to, only when it is more than the day tapped.
+        const dates = format(s, "yyyy-MM-dd") === format(e, "yyyy-MM-dd") ? "" : ` (${format(s, "MMM d")} – ${format(e, "MMM d")})`;
+        return (
+          <p className={styles.dayDetail} role="status">
+            <strong style={{ color: "var(--text-primary)", fontWeight: "var(--weight-semibold)" }}>
+              {format(parseLeaveDate(picked), "EEEE, MMMM d")}
+            </strong>
+            {`: ${req.leaveType.name}, ${(req.durationMinutes / 60).toFixed(2)} h, ${LEAVE_STATUS_LABEL[req.status as LeaveRequestStatusValue] ?? req.status}${dates}`}
+          </p>
+        );
+      })()}
 
       <div
         className="flex shrink-0 flex-wrap gap-x-4 gap-y-2 pt-3"
@@ -222,7 +257,7 @@ function NavButton({
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="ta-field inline-flex h-[26px] w-[26px] items-center justify-center rounded-md"
+      className="ta-field ta-month-nav inline-flex h-[26px] w-[26px] items-center justify-center rounded-md"
       style={{
         border: "1px solid var(--stroke-secondary)",
         background: "var(--surface-card)",

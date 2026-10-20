@@ -23,6 +23,7 @@ import { format, parseISO } from "date-fns";
 import { CalendarOff } from "lucide-react";
 import { LeaveCalendar } from "@/components/leave/leave-calendar";
 import { CancelLeaveButton } from "@/components/leave/cancel-leave-button";
+import styles from "@/components/leave/my-leave.module.css";
 
 /**
  * My Leave, as the portal design lays it out: the list template, with this
@@ -107,7 +108,7 @@ export default async function MyLeavePage() {
       />
 
       {balances.length > 0 && (
-        <div className={BALANCE_GRID}>
+        <div className={`${styles.balances} ${BALANCE_GRID}`}>
           {balances.map((b) => {
             const totalMinutes     = b.balanceMinutes + b.usedMinutes;
             const approvedMinutes  = approvedByType[b.leaveTypeId] ?? 0;
@@ -156,6 +157,8 @@ export default async function MyLeavePage() {
             }
           />
         ) : (
+          // One card per request on a phone (my-leave.module.css).
+          <div className={styles.requests}>
           <Table>
             <THead>
               <TR>
@@ -171,30 +174,30 @@ export default async function MyLeavePage() {
             <TBody>
               {listed.map((req) => (
                 <TR key={req.id}>
-                  <TD style={{ fontWeight: "var(--weight-medium)" }}>{req.leaveType.name}</TD>
-                  <TD style={{ color: "var(--text-secondary)" }}>
+                  <TD className={styles.type} style={{ fontWeight: "var(--weight-medium)" }}>{req.leaveType.name}</TD>
+                  <TD className={styles.dates} style={{ color: "var(--text-secondary)" }}>
                     {fmtDate(req.startDate, "MMM d")} – {fmtDate(req.endDate, "MMM d, yyyy")}
                   </TD>
-                  <TD numeric>{(req.durationMinutes / 60).toFixed(2)}</TD>
+                  <TD numeric className={styles.hours}>{(req.durationMinutes / 60).toFixed(2)}</TD>
                   {/* createdAt is a real timestamp, not @db.Date, so it is
                       formatted in site time rather than pulled apart as UTC. */}
-                  <TD style={{ color: "var(--text-secondary)" }}>
+                  <TD className={styles.filed} style={{ color: "var(--text-secondary)" }}>
                     {format(req.createdAt, "MMM d, yyyy")}
                   </TD>
                   {showNotes && (
-                    <TD style={{ color: "var(--text-secondary)" }} title={req.reviewNote ?? undefined}>
+                    <TD className={req.reviewNote ? styles.note : "ta-phone-hide"} style={{ color: "var(--text-secondary)" }} title={req.reviewNote ?? undefined}>
                       {/* The clamp is on a block inside the cell: the table
                           sizes to max-content, so a max-width on the td itself
                           is ignored and one long note widens the whole list. */}
                       <div className="max-w-[280px] truncate">{req.reviewNote ?? "—"}</div>
                     </TD>
                   )}
-                  <TD>
+                  <TD className={styles.status}>
                     <Badge tone={leaveTone(req.status)} size="sm">
                       {LEAVE_STATUS_LABEL[req.status as LeaveRequestStatusValue]}
                     </Badge>
                   </TD>
-                  <TD align="right">
+                  <TD align="right" className={styles.cancel}>
                     {/* Self-cancel stops at PENDING. Once a supervisor has
                         approved it the hours are already off the balance, and
                         putting them back is their action, not this button. */}
@@ -204,6 +207,7 @@ export default async function MyLeavePage() {
               ))}
             </TBody>
           </Table>
+          </div>
         )}
       </Card>
 

@@ -1,0 +1,77 @@
+/* My Leave on a phone (app/(portal)/leave/page.tsx, cancel-leave-button.tsx,
+   leave-calendar.tsx). Inline styles and the shared Table's are why some
+   lines need !important. */
+
+/* The day the calendar is telling you about. */
+.picked {
+  box-shadow: 0 0 0 2px var(--stroke-accent-focus);
+}
+.dayButton {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.dayDetail {
+  margin: 0;
+  font: var(--type-body2);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* Balances two by two rather than one tall column. */
+  .balances {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  /* A request as one card: what and its status, then the dates and hours,
+     when it was filed, the review note in full, and Cancel request across
+     the bottom. */
+  .requests table,
+  .requests tbody {
+    display: block;
+    min-width: 0 !important;
+  }
+  .requests thead {
+    display: none;
+  }
+  .requests tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "type status"
+      "dates hours"
+      "filed filed"
+      "note note"
+      "cancel cancel";
+    gap: 4px 12px;
+    align-items: center;
+    padding: 14px 16px;
+  }
+  .requests tr + tr {
+    border-top: 1px solid var(--stroke-divider);
+  }
+  .requests td {
+    height: auto !important;
+    padding: 0 !important;
+    border: 0 !important;
+    min-width: 0;
+    text-align: left !important;
+  }
+  .requests td:empty {
+    display: none;
+  }
+  .type { grid-area: type; }
+  .status { grid-area: status; justify-self: end; }
+  .dates { grid-area: dates; }
+  .hours { grid-area: hours; justify-self: end; }
+  .hours::after { content: " h"; }
+  .filed { grid-area: filed; font: var(--type-body2) !important; color: var(--text-tertiary) !important; }
+  .filed::before { content: "Filed "; }
+  .note { grid-area: note; }
+  .note > div {
+    max-width: none !important;
+    white-space: normal !important;
+    overflow: visible !important;
+  }
+  .cancel { grid-area: cancel; padding-top: 8px !important; }
+}

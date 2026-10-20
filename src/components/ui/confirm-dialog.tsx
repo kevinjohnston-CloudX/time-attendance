@@ -112,7 +112,7 @@ export function ConfirmDialog({
             {error}
           </p>
         )}
-        <div className="flex w-full justify-center gap-2">
+        <div className="ta-sheet-actions flex w-full justify-center gap-2">
           <Button data-cancel hierarchy="secondary" onClick={onCancel} disabled={pending}>
             Cancel
           </Button>
