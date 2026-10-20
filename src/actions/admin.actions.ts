@@ -11,7 +11,7 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { photoUrls } from "@/lib/presence/photos";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
 import { looksLikeBadge } from "@/lib/presence/people-search.service";
-import { MISSING_OPTIONS, PAY_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
+import { MISSING_OPTIONS, PAY_OPTIONS, PERIOD_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { ENTITY_TYPES, actionsMatching, isGateAlertSwitch } from "@/lib/audit/labels";
 import { startOfDayInTz } from "@/lib/utils/date";
@@ -261,13 +261,14 @@ export const getEmployees = withRBAC(
     { tenantId, employeeId: actorEmpId, role: actorRole },
     input?: {
       page?: number; q?: string; site?: string; dept?: string; role?: string;
-      status?: string; shift?: string; pay?: string; missing?: string; sort?: string;
+      status?: string; shift?: string; pay?: string; period?: string; missing?: string; sort?: string;
     },
   ) => {
     const { page = 0, q, site, dept, role, shift } = input ?? {};
     // Only the listed choices count; anything else is no filter at all.
     const status = pick(STATUS_OPTIONS, input?.status);
     const pay = pick(PAY_OPTIONS, input?.pay);
+    const period = pick(PERIOD_OPTIONS, input?.period);
     const missing = pick(MISSING_OPTIONS, input?.missing);
     const sort = pick(SORT_OPTIONS, input?.sort);
 
@@ -287,6 +288,14 @@ export const getEmployees = withRBAC(
     if (status === "inactive") where.isActive = false;
     if (shift) where.shiftId = shift;
     if (pay) where.payType = pay;
+    // Paid on their rule set's pay period, or on the company's when the rule
+    // set sets none (most do not: the company's is biweekly).
+    if (period) {
+      const company = tenantId ? await db.tenant.findUnique({ where: { id: tenantId }, select: { payFrequency: true } }) : null;
+      where.ruleSet = company?.payFrequency === period
+        ? { OR: [{ payFrequency: period }, { payFrequency: null }] }
+        : { payFrequency: period };
+    }
     // No badge means neither an employee number nor a barcode, so the time
     // clock has nothing to match a scan to.
     if (missing === "badge") Object.assign(where, { wmsId: null, barcode: null });

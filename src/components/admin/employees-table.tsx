@@ -18,7 +18,7 @@ import {
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Users } from "lucide-react";
 import { Face } from "@/components/presence/face";
 import { LIST_COOKIE } from "./employees-list-cookie";
-import { LIST_KEYS, MISSING_OPTIONS, PAY_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS } from "./employees-list-options";
+import { LIST_KEYS, MISSING_OPTIONS, PAY_OPTIONS, PERIOD_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS } from "./employees-list-options";
 import styles from "./employees.module.css";
 import { usePhoneLayout } from "@/lib/phone";
 
@@ -61,7 +61,7 @@ interface Employee {
   photo: string | null;
 }
 
-type Filters = Record<"q" | "site" | "dept" | "role" | "status" | "shift" | "pay" | "missing" | "sort", string>;
+type Filters = Record<"q" | "site" | "dept" | "role" | "status" | "shift" | "pay" | "period" | "missing" | "sort", string>;
 
 interface Props {
   employees: Employee[];
@@ -150,7 +150,7 @@ export function EmployeesTable({
   // The sort is not a filter: it hides nobody, so it does not count here.
   const isFiltered = Boolean(
     currentFilters.q || currentFilters.site || currentFilters.dept || currentFilters.role ||
-    currentFilters.status || currentFilters.shift || currentFilters.pay || currentFilters.missing,
+    currentFilters.status || currentFilters.shift || currentFilters.pay || currentFilters.period || currentFilters.missing,
   );
 
   const shiftById = new Map(shifts.map((s) => [s.id, s]));
@@ -235,6 +235,12 @@ export function EmployeesTable({
               value={currentFilters.pay}
               options={PAY_OPTIONS}
               onChange={(v) => onFilterChange("pay", v)}
+            />
+            <FilterSelectChip
+              label="Pay period"
+              value={currentFilters.period}
+              options={PERIOD_OPTIONS}
+              onChange={(v) => onFilterChange("period", v)}
             />
             <FilterSelectChip
               label="Missing"

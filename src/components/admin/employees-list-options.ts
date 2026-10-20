@@ -18,6 +18,17 @@ export const PAY_OPTIONS = [
   { id: "SALARY", name: "Salary" },
 ] as const;
 
+/**
+ * How often someone is paid: their rule set's pay period, or the company's
+ * for a rule set that sets none.
+ */
+export const PERIOD_OPTIONS = [
+  { id: "WEEKLY", name: "Weekly" },
+  { id: "BIWEEKLY", name: "Biweekly" },
+  { id: "SEMIMONTHLY", name: "Semi-monthly" },
+  { id: "MONTHLY", name: "Monthly" },
+] as const;
+
 /** Records missing something they need: a badge to punch, a shift, a supervisor, a pay method. */
 export const MISSING_OPTIONS = [
   { id: "badge", name: "Badge" },
@@ -38,6 +49,7 @@ export const SORT_OPTIONS = [
 
 export type EmployeeStatus = (typeof STATUS_OPTIONS)[number]["id"];
 export type EmployeePay = (typeof PAY_OPTIONS)[number]["id"];
+export type EmployeePeriod = (typeof PERIOD_OPTIONS)[number]["id"];
 export type EmployeeMissing = (typeof MISSING_OPTIONS)[number]["id"];
 export type EmployeeSort = (typeof SORT_OPTIONS)[number]["id"];
 
@@ -47,4 +59,4 @@ export function pick<T extends string>(options: readonly { id: T }[], value: str
 }
 
 /** Every query string key the list understands, for carrying a remembered list over. */
-export const LIST_KEYS = ["q", "site", "dept", "role", "status", "shift", "pay", "missing", "sort", "page"] as const;
+export const LIST_KEYS = ["q", "site", "dept", "role", "status", "shift", "pay", "period", "missing", "sort", "page"] as const;

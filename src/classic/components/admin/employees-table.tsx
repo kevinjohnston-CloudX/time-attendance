@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
+import { PERIOD_OPTIONS } from "@/components/admin/employees-list-options";
 
 const ROLE_BADGE: Record<string, string> = {
   EMPLOYEE: "bg-zinc-100 text-zinc-600",
@@ -42,7 +43,7 @@ interface Props {
   pageSize: number;
   sites: string[];
   departments: string[];
-  currentFilters: { q: string; site: string; dept: string; role: string; showInactive: boolean };
+  currentFilters: { q: string; site: string; dept: string; role: string; period: string; showInactive: boolean };
 }
 
 export function EmployeesTable({ employees, total, page, pageSize, sites, departments, currentFilters }: Props) {
@@ -62,12 +63,14 @@ export function EmployeesTable({ employees, total, page, pageSize, sites, depart
     const site         = overrides.site         ?? currentFilters.site;
     const dept         = overrides.dept         ?? currentFilters.dept;
     const role         = overrides.role         ?? currentFilters.role;
+    const period       = overrides.period       ?? currentFilters.period;
     const showInactive = overrides.showInactive  ?? currentFilters.showInactive;
     const pg           = overrides.page          ?? 0;
     if (q)            params.set("q",       q);
     if (site)         params.set("site",    site);
     if (dept)         params.set("dept",    dept);
     if (role)         params.set("role",    role);
+    if (period)       params.set("period",  period);
     if (showInactive) params.set("inactive", "1");
     if (pg)           params.set("page",    String(pg));
     const qs = params.toString();
@@ -84,7 +87,7 @@ export function EmployeesTable({ employees, total, page, pageSize, sites, depart
     debounceRef.current = setTimeout(() => navigate({ q: val, page: 0 }), 350);
   }
 
-  function onFilterChange(key: "site" | "dept" | "role", val: string) {
+  function onFilterChange(key: "site" | "dept" | "role" | "period", val: string) {
     navigate({ [key]: val, page: 0 });
   }
 
@@ -125,6 +128,14 @@ export function EmployeesTable({ employees, total, page, pageSize, sites, depart
           {Object.entries(ROLE_LABEL).map(([value, label]) => (
             <option key={value} value={value}>{label}</option>
           ))}
+        </select>
+        <select
+          value={currentFilters.period}
+          onChange={(e) => onFilterChange("period", e.target.value)}
+          className={selectClass}
+        >
+          <option value="">All Pay Periods</option>
+          {PERIOD_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
         <label className="ml-1 flex cursor-pointer items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
           <input
