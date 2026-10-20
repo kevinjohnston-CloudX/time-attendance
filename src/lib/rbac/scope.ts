@@ -38,9 +38,33 @@ export async function reachesCompany(ctx: Ctx, companyWide: Wide): Promise<boole
   return false;
 }
 
+/**
+ * The sites a Payroll or HR Admin is held to, set on their employee record
+ * (Site access); null when they reach every site, which no rows means. Other
+ * roles are never held to sites here.
+ */
+export async function siteLimit(ctx: { employeeId: string; role: string }): Promise<string[] | null> {
+  if ((ctx.role !== "PAYROLL_ADMIN" && ctx.role !== "HR_ADMIN") || !ctx.employeeId) return null;
+  const rows = await db.hrSiteAccess.findMany({ where: { employeeId: ctx.employeeId }, select: { siteId: true } });
+  return rows.length > 0 ? rows.map((r) => r.siteId) : null;
+}
+
+/**
+ * Timecard access a site limit narrows: a Payroll Admin held to some sites
+ * sees and changes the timecards of people at those sites only, and an id
+ * from anywhere else answers "not found", as the list never offers it. The
+ * screens that check punch editing alone (exceptions, missed punches) list
+ * every site still, so their actions are not narrowed either.
+ */
+const SITE_LIMITED: Permission[] = ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"];
+
 export async function employeeScope(ctx: Ctx, companyWide: Wide): Promise<Prisma.EmployeeWhereInput> {
   const company: Prisma.EmployeeWhereInput = { tenantId: ctx.tenantId ?? "__no_company__" };
-  if (await reachesCompany(ctx, companyWide)) return company;
+  if (await reachesCompany(ctx, companyWide)) {
+    const wide = Array.isArray(companyWide) ? companyWide : [companyWide];
+    const sites = wide.some((p) => SITE_LIMITED.includes(p)) ? await siteLimit(ctx) : null;
+    return sites ? { ...company, siteId: { in: sites } } : company;
+  }
   const team = ctx.employeeId ? await getSubordinateIds(ctx.employeeId, ctx.tenantId) : [];
   return { ...company, id: { in: team } };
 }

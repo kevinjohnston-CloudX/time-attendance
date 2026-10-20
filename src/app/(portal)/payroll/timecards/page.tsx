@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
+import { siteLimit } from "@/lib/rbac/scope";
 import { db } from "@/lib/db";
 import {
   getActiveEmployeesForTimecards,
@@ -66,6 +67,9 @@ export default async function TimecardsPage({
   const t = session.user.tenantId ?? undefined;
 
   // Load employees + sites + departments in parallel
+  // A Payroll Admin held to some sites is offered those sites only, as the
+  // list of people is.
+  const siteIds = isAllScope ? await siteLimit({ employeeId: session.user.employeeId ?? "", role: session.user.role ?? "" }) : null;
   const listFilters = {
     siteId: sp.siteId ?? null,
     departmentId: sp.departmentId ?? null,
@@ -74,7 +78,7 @@ export default async function TimecardsPage({
   const [employeesResult, sites, departments] = await Promise.all([
     isAllScope ? getActiveEmployeesForTimecards(listFilters) : getTeamEmployeesForTimecards(listFilters),
     db.site.findMany({
-      where: { isActive: true, ...(t ? { tenantId: t } : {}) },
+      where: { isActive: true, ...(t ? { tenantId: t } : {}), ...(siteIds ? { id: { in: siteIds } } : {}) },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),

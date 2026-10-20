@@ -4,6 +4,8 @@ const db = vi.hoisted(() => ({
   timesheet: { findUnique: vi.fn(), upsert: vi.fn(), findFirst: vi.fn() },
   employee: { findUnique: vi.fn(), findFirst: vi.fn() },
   punch: { findFirst: vi.fn() },
+  // No site access set: the caller reaches every site.
+  hrSiteAccess: { findMany: vi.fn(async () => []) },
 }));
 vi.mock("@/lib/db", () => ({ db }));
 // Company-wide reach and rank are not what is tested here.

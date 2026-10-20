@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const granted = new Set<string>();
-vi.mock("@/lib/db", () => ({ db: {} }));
+// Site access rows: "me" is held to 0299 Rutherford.
+vi.mock("@/lib/db", () => ({
+  db: { hrSiteAccess: { findMany: async ({ where }: { where: { employeeId: string } }) => (where.employeeId === "me" ? [{ siteId: "rutherford" }] : []) } },
+}));
 vi.mock("@/lib/get-subordinate-ids", () => ({ getSubordinateIds: async () => [] }));
 vi.mock("./check-permission", () => ({ checkPermission: async (p: string) => granted.has(p) }));
 // The caller is a Payroll Admin (2); the person whose records they change is a System Admin (4).
 vi.mock("./identity", () => ({ employeeRank: async (id: string) => (id === "me" ? 2 : 4) }));
 
-import { assertNotSenior } from "./scope";
+import { assertNotSenior, employeeScope } from "./scope";
 import { TIMECARD_EDITORS_COMPANY } from "./permissions";
 
 const ctx = { employeeId: "me", tenantId: "t", role: "PAYROLL_ADMIN" };
@@ -44,5 +47,26 @@ describe("changing the records of someone ranked above you", () => {
   it("does not let Timecard write All reach leave approval", async () => {
     granted.add("TIMECARD_EDIT_ANY");
     await expect(assertNotSenior(ctx, "senior", "LEAVE_APPROVE_ANY")).rejects.toThrow(RANKED);
+  });
+});
+
+describe("a Payroll Admin held to some sites", () => {
+  it("reaches the timecards of people at those sites only", async () => {
+    expect(await employeeScope(ctx, TIMECARD_EDITORS_COMPANY)).toEqual({ tenantId: "t", siteId: { in: ["rutherford"] } });
+    expect(await employeeScope(ctx, ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"])).toEqual({ tenantId: "t", siteId: { in: ["rutherford"] } });
+  });
+
+  it("is not held to sites when none are set", async () => {
+    expect(await employeeScope({ ...ctx, employeeId: "other" }, TIMECARD_EDITORS_COMPANY)).toEqual({ tenantId: "t" });
+  });
+
+  it("keeps the whole company for leave approval, payroll, and the exception screens' punch fixes", async () => {
+    expect(await employeeScope(ctx, "LEAVE_APPROVE_ANY")).toEqual({ tenantId: "t" });
+    expect(await employeeScope(ctx, "PAYROLL_RUN")).toEqual({ tenantId: "t" });
+    expect(await employeeScope(ctx, "PUNCH_EDIT_ANY")).toEqual({ tenantId: "t" });
+  });
+
+  it("never holds a System Admin to sites", async () => {
+    expect(await employeeScope({ ...ctx, role: "SYSTEM_ADMIN" }, TIMECARD_EDITORS_COMPANY)).toEqual({ tenantId: "t" });
   });
 });
