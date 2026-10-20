@@ -9,6 +9,7 @@ import { Badge, Button, LinkButton, PageHeader, PinnedBar, SegmentedControl } fr
 import { useCondensingBar } from "@/components/layout/use-condensing-bar";
 import { ENTITY_LABEL, ENTITY_TYPES, actionLabel, isGateAlertSwitch } from "@/lib/audit/labels";
 import { parseUtcDate } from "@/lib/utils/date";
+import phone from "./audit.module.css";
 
 /**
  * The Audit Log, from the Audit Log handoff: search and three filters in one
@@ -231,7 +232,7 @@ function CopyButton({ text, label, dark = false }: { text: string; label: string
     );
   }
   return (
-    <button type="button" onClick={copy} aria-label={`Copy ${label}`} title={done ? "Copied" : "Copy"} className="ta-icon-btn h-[26px] w-[26px]" style={{ borderRadius: 7, color: done ? "var(--icon-success)" : undefined }}>
+    <button type="button" onClick={copy} aria-label={`Copy ${label}`} title={done ? "Copied" : "Copy"} className={`${phone.copy} ta-icon-btn h-[26px] w-[26px]`} style={{ borderRadius: 7, color: done ? "var(--icon-success)" : undefined }}>
       {done ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
     </button>
   );
@@ -401,10 +402,10 @@ export function AuditLog({
               onChange={(e) => onSearch(e.target.value)}
               placeholder="Search action or record ID"
               aria-label="Search action or record ID"
-              className="h-[34px] min-w-[120px] max-w-[320px] flex-[1_1_200px] border-0 bg-transparent px-2 outline-none"
+              className={`${phone.search} h-[34px] min-w-[120px] max-w-[320px] flex-[1_1_200px] border-0 bg-transparent px-2 outline-none`}
               style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}
             />
-            <span aria-hidden className="mx-1.5 h-5 w-px flex-none" style={{ background: "var(--ta-ring-strong)" }} />
+            <span aria-hidden className={`${phone.toolDivider} mx-1.5 h-5 w-px flex-none`} style={{ background: "var(--ta-ring-strong)" }} />
             <ToolSelect label="Type" value={filters.type} options={typeOptions} onChange={(v) => go({ type: v })} />
             <ToolSelect label="Actor" value={filters.actor} options={actorOptions} onChange={(v) => go({ actor: v })} />
             <ToolSelect label="When" value={filters.range || "any"} options={RANGES} onChange={(v) => go({ range: v })} />
@@ -457,7 +458,7 @@ export function AuditLog({
         ) : (
           <>
             <div
-              className={`${GRID} mx-1.5 mt-1.5 h-[38px] whitespace-nowrap px-3.5`}
+              className={`${phone.listHead} ${GRID} mx-1.5 mt-1.5 h-[38px] whitespace-nowrap px-3.5`}
               style={{ ...OVERLINE, borderRadius: 12, background: "var(--ta-well)" }}
             >
               <span>When</span>
@@ -466,10 +467,10 @@ export function AuditLog({
               <span>Record</span>
               <span />
             </div>
-            <div className="min-w-[712px] px-1.5 pb-1 pt-0.5">
+            <div className={`${phone.listBody} min-w-[712px] px-1.5 pb-1 pt-0.5`}>
               {!hydrated
                 ? Array.from({ length: Math.min(8, logs.length) }, (_, i) => (
-                    <div key={i} className={`${GRID} min-h-[52px] px-3.5 py-1.5`}>
+                    <div key={i} className={`${phone.row} ${GRID} min-h-[52px] px-3.5 py-1.5`}>
                       {[64, 120, 180, 120].map((w, j) => (
                         <span key={j} className="h-3 rounded" style={{ width: w, background: "var(--ta-skeleton)" }} />
                       ))}
@@ -499,7 +500,7 @@ export function AuditLog({
                             setView("fields");
                           }}
                           aria-current={r.id === selId ? "true" : undefined}
-                          className={`ta-row-btn ${GRID} min-h-[52px] w-full border-0 bg-transparent px-3.5 py-1.5 text-left`}
+                          className={`${phone.row} ta-row-btn ${GRID} min-h-[52px] w-full border-0 bg-transparent px-3.5 py-1.5 text-left`}
                         >
                           <span className="tabular whitespace-nowrap" style={{ fontFamily: MONO, fontSize: 12.5, color: "var(--text-secondary)" }}>
                             {format(new Date(r.createdAt), "h:mm:ss a")}
@@ -529,7 +530,7 @@ export function AuditLog({
                   ))}
             </div>
             <div
-              className="tabular mx-1.5 mb-1.5 flex min-w-[700px] items-center gap-2.5 py-2 pl-3.5 pr-2"
+              className={`${phone.listFoot} tabular mx-1.5 mb-1.5 flex min-w-[700px] items-center gap-2.5 py-2 pl-3.5 pr-2`}
               style={{ borderRadius: 12, background: "var(--ta-well)", font: "var(--type-body2)", color: "var(--text-secondary)" }}
             >
               <span>
@@ -599,7 +600,7 @@ function EntryPanel({
         role="dialog"
         aria-modal="true"
         aria-labelledby="audit-entry-title"
-        className="fixed bottom-3 right-3 top-3 z-[55] flex w-[440px] max-w-[calc(100vw-24px)] flex-col overflow-hidden"
+        className={`${phone.drawer} fixed bottom-3 right-3 top-3 z-[55] flex w-[440px] max-w-[calc(100vw-24px)] flex-col overflow-hidden`}
         style={{ borderRadius: 18, background: "var(--surface-card)", boxShadow: "var(--ta-drop-shadow)" }}
       >
         <div className="flex flex-none items-start gap-3 pb-3.5 pl-5 pr-4 pt-[18px]">
@@ -656,7 +657,7 @@ function EntryPanel({
             </div>
             {view === "fields" ? (
               <div className="overflow-hidden" style={{ borderRadius: 14, boxShadow: "inset 0 0 0 1px var(--ta-well-ring)" }}>
-                <div className="grid gap-2.5 px-3.5 py-2" style={{ ...OVERLINE, gridTemplateColumns: cols, background: "var(--ta-well)" }}>
+                <div className={`${phone.diffHead} grid gap-2.5 px-3.5 py-2`} style={{ ...OVERLINE, gridTemplateColumns: cols, background: "var(--ta-well)" }}>
                   <span>Field</span>
                   {diff.hasBefore && <span>Before</span>}
                   <span>{diff.hasBefore ? "After" : "Recorded"}</span>
@@ -667,7 +668,12 @@ function EntryPanel({
                   </div>
                 ) : (
                   diff.rows.map((d, i) => (
-                    <div key={i} className="grid items-baseline gap-2.5 px-3.5 py-[9px]" style={{ gridTemplateColumns: cols, boxShadow: "inset 0 1px 0 var(--stroke-divider)" }}>
+                    <div
+                      key={i}
+                      className={`${phone.diffRow} grid items-baseline gap-2.5 px-3.5 py-[9px]`}
+                      data-before={diff.hasBefore ? "true" : undefined}
+                      style={{ gridTemplateColumns: cols, boxShadow: "inset 0 1px 0 var(--stroke-divider)" }}
+                    >
                       <code style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: "var(--text-primary)", overflowWrap: "anywhere" }}>{d.field}</code>
                       {diff.hasBefore && (
                         <span style={{ font: "var(--type-body2)", color: "var(--text-error)", textDecoration: "line-through", textDecorationColor: "color-mix(in srgb, var(--text-error) 35%, transparent)", overflowWrap: "anywhere" }}>
@@ -695,7 +701,7 @@ function EntryPanel({
           </div>
         </div>
 
-        <div className="flex flex-none items-center gap-2 pb-3.5 pl-5 pr-4 pt-3" style={{ boxShadow: "inset 0 1px 0 var(--stroke-divider)" }}>
+        <div className={`${phone.drawerFoot} flex flex-none items-center gap-2 pb-3.5 pl-5 pr-4 pt-3`} style={{ boxShadow: "inset 0 1px 0 var(--stroke-divider)" }}>
           {row.href && (
             <LinkButton href={row.href} size="sm" trailingIcon={<ArrowRight className="h-3.5 w-3.5" />}>
               {openLabel(row)}
