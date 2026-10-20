@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useTransition, useEffect, useLayoutEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "@/components/layout/navigation-progress";
 import {
@@ -21,6 +22,7 @@ import {
   Banner,
   Button,
   Checkbox,
+  ConfirmDialog,
   EmptyState,
   FilterSelectChip,
   Input,
@@ -625,6 +627,7 @@ function InlinePunchEdit({
 }) {
   const deletingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [askingDelete, setAskingDelete] = useState(false);
   // Refocus the input whenever a validation error appears so the user can correct without re-clicking
   useEffect(() => {
     if (error) inputRef.current?.focus();
@@ -673,12 +676,8 @@ function InlinePunchEdit({
             disabled={isPending}
             onMouseDown={() => { deletingRef.current = true; }}
             onClick={() => {
-              if (!window.confirm("Remove this punch? This cannot be undone.")) {
-                deletingRef.current = false;
-                return;
-              }
               deletingRef.current = false;
-              onDelete();
+              setAskingDelete(true);
             }}
             className="rounded p-0.5 disabled:opacity-40"
             style={{ color: "var(--icon-error)", background: "transparent", border: 0, cursor: "pointer" }}
@@ -691,6 +690,21 @@ function InlinePunchEdit({
       {error && (
         <span style={{ font: "var(--type-caption1)", color: "var(--text-error)" }}>{error}</span>
       )}
+      {askingDelete && onDelete &&
+        createPortal(
+          <ConfirmDialog
+            title="Remove this punch?"
+            confirmLabel="Remove punch"
+            onCancel={() => setAskingDelete(false)}
+            onConfirm={() => {
+              setAskingDelete(false);
+              onDelete();
+            }}
+          >
+            The punch is taken off this timecard and the hours are worked out again. This cannot be undone.
+          </ConfirmDialog>,
+          document.body
+        )}
     </div>
   );
 }
@@ -1467,7 +1481,6 @@ export function TimecardViewer({
   }
 
   function handleDeletePunch(punchId: string) {
-    if (!window.confirm("Remove this punch? This cannot be undone.")) return;
     startTransition(async () => {
       const result = await deletePunch({ punchId, reason: "Removed by payroll" });
       if (!result.success) {
