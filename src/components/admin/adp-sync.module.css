@@ -1,0 +1,36 @@
+/* ADP Sync on a phone (adp-sync-panel.tsx).
+
+   The page is already cards in a column there. What does not fit is the
+   280px picker beside each new employee default, which squeezed its
+   description into a column one word wide: on a phone the picker drops
+   under its label at the full width. The one time sign ins become one
+   block per person, and the sync confirm opens as a sheet. Inline styles
+   are why some lines need !important. */
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .stackRow {
+    flex-wrap: wrap;
+  }
+  .stackRow > :last-child {
+    flex: 1 1 100% !important;
+  }
+  .stackRow select {
+    width: 100% !important;
+  }
+
+  /* A tile's small print reads in full rather than cut off. */
+  .tileNote {
+    overflow: visible !important;
+    white-space: normal !important;
+    text-overflow: clip !important;
+  }
+
+  /* Usernames and passwords are typed by hand, so each gets a line of its
+     own and only a very long one breaks, rather than running off the edge. */
+  .creds tr {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .creds td {
+    overflow-wrap: anywhere;
+  }
+}

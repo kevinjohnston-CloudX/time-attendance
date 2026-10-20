@@ -6,6 +6,7 @@ import { AlertCircle, ArrowLeft, CheckCircle2, Circle, RefreshCw } from "lucide-
 import { testAdpConnection, syncAdpEmployees } from "@/actions/adp.actions";
 import { parseUtcDate } from "@/lib/utils/date";
 import { Badge, Banner, Button, Card, LinkButton, PageHeader, Select, Table, THead, TBody, TR, TH, TD } from "@/components/ui";
+import styles from "./adp-sync.module.css";
 
 /**
  * ADP Sync: both directions of the ADP link on one page, in the Dashboard's
@@ -151,7 +152,7 @@ function Tile({ label, value, note, tone }: { label: string; value: number; note
       >
         {value.toLocaleString()}
       </span>
-      <span className="truncate" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }} title={note}>
+      <span className={`truncate ${styles.tileNote}`} style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }} title={note}>
         {note}
       </span>
     </div>
@@ -192,9 +193,22 @@ const CHECK_ICON: Record<Check, ReactNode> = {
 };
 
 /** A checklist or settings row. Both cards in the second row use it, so they share one rhythm. */
-function ListRow({ lead, label, note, children }: { lead?: ReactNode; label: string; note?: ReactNode; children?: ReactNode }) {
+function ListRow({
+  lead,
+  label,
+  note,
+  stack = false,
+  children,
+}: {
+  lead?: ReactNode;
+  label: string;
+  note?: ReactNode;
+  /** On a phone the control drops under the label at the full width. */
+  stack?: boolean;
+  children?: ReactNode;
+}) {
   return (
-    <div className="flex items-center gap-3 py-3" style={{ minHeight: 72 }}>
+    <div className={`flex items-center gap-3 py-3 ${stack ? styles.stackRow : ""}`} style={{ minHeight: 72 }}>
       {lead && <span className="flex flex-none self-start pt-0.5">{lead}</span>}
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-primary)" }}>{label}</span>
@@ -323,7 +337,7 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
         }
         actions={
           <>
-            <LinkButton href="/admin" hierarchy="tertiary" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
+            <LinkButton href="/admin" hierarchy="tertiary" className="ta-phone-hide" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
               Administration
             </LinkButton>
             {status.isConfigured && (
@@ -333,6 +347,7 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
                 </Button>
                 <Button
                   hierarchy="primary"
+                  className="ta-header-primary"
                   leadingIcon={<RefreshCw className="h-4 w-4" />}
                   onClick={() => setConfirming(true)}
                   disabled={isPending || !canSync}
@@ -447,7 +462,7 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
 
         <Card title="New employee defaults" subtitle="Where a sync puts anyone it adds. Linked employees keep their own." fill>
           <List>
-            <ListRow label="Site" note="The building they punch in at">
+            <ListRow label="Site" note="The building they punch in at" stack>
               <Select aria-label="Site" value={siteId} onChange={(e) => setSiteId(e.target.value)} style={SELECT_STYLE} disabled={!sites.length}>
                 {sites.length ? (
                   sites.map((s) => (
@@ -460,7 +475,7 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
                 )}
               </Select>
             </ListRow>
-            <ListRow label="Department" note="Only departments at that site">
+            <ListRow label="Department" note="Only departments at that site" stack>
               <Select
                 aria-label="Department"
                 value={deptId}
@@ -479,7 +494,7 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
                 )}
               </Select>
             </ListRow>
-            <ListRow label="Rule set" note="How their hours and overtime are worked out">
+            <ListRow label="Rule set" note="How their hours and overtime are worked out" stack>
               <Select
                 aria-label="Rule set"
                 value={ruleSetId}
@@ -508,25 +523,31 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
           subtitle="Shown only once. Copy these before you leave this page, because the passwords cannot be shown again."
           padding={0}
         >
-          <Table>
-            <THead>
-              <TR>
-                <TH>Employee</TH>
-                <TH>Username</TH>
-                <TH>Temporary password</TH>
-              </TR>
-            </THead>
-            <TBody>
-              {credentials.map((c) => (
-                <TR key={c.username}>
-                  <TD>{c.name}</TD>
-                  {/* Monospace: read aloud and typed by hand, so every character must be told apart. */}
-                  <TD style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>{c.username}</TD>
-                  <TD style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>{c.tempPassword}</TD>
+          <div className={`ta-rates ${styles.creds}`} data-mode="read">
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Employee</TH>
+                  <TH>Username</TH>
+                  <TH>Temporary password</TH>
                 </TR>
-              ))}
-            </TBody>
-          </Table>
+              </THead>
+              <TBody>
+                {credentials.map((c) => (
+                  <TR key={c.username}>
+                    <TD>{c.name}</TD>
+                    {/* Monospace: read aloud and typed by hand, so every character must be told apart. */}
+                    <TD data-label="Username" style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>
+                      {c.username}
+                    </TD>
+                    <TD data-label="Temporary password" style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>
+                      {c.tempPassword}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </div>
         </Card>
       )}
 
@@ -547,7 +568,7 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
 
       {confirming && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: "var(--wms-overlay-modal)" }}
           onClick={(e) => e.target === e.currentTarget && setConfirming(false)}
         >
@@ -555,8 +576,8 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="adp-sync-title"
-            className="ta-modal flex w-full max-w-[460px] flex-col gap-2 p-5"
-            style={{ borderRadius: "var(--radius-l)" }}
+            className="ta-modal ta-sheet flex w-full max-w-[460px] flex-col gap-2 p-5"
+            style={{ borderRadius: "var(--radius-l)", ["--ta-sheet-pad" as string]: "20px" }}
           >
             <h2 id="adp-sync-title" style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>
               Sync employees from ADP?
@@ -565,7 +586,7 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
               Employees linked to ADP are updated to match it, and anyone who has left is deactivated. Anyone in ADP not linked
               here yet is added as a new employee at {siteName}, in {deptName}, on {ruleSetName}.
             </p>
-            <div className="mt-3 flex justify-end gap-2">
+            <div className="ta-sheet-actions mt-3 flex justify-end gap-2">
               <Button hierarchy="secondary" onClick={() => setConfirming(false)}>
                 Cancel
               </Button>
