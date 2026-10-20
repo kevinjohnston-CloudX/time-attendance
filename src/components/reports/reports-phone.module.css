@@ -63,6 +63,79 @@
     flex: 1 1 0;
   }
 
+  /* ---- The viewer ---- */
+  /* A panel's actions (Download, Make a copy) take a line of their own under
+     its title, rather than squeezing the title into a narrow column. */
+  .panelHead > :first-child {
+    flex: 1 1 100% !important;
+  }
+  .panelHead > :not(:first-child) {
+    flex: 1 1 100%;
+  }
+  .panelHead > :not(:first-child) > :global(a.wms-btn) {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+  /* About: each label over its value. */
+  .aboutRow {
+    grid-template-columns: minmax(0, 1fr) !important;
+    row-gap: 2px;
+  }
+  /* A run: when and how on the left, its result and rows on the right. */
+  .runRow {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      "when result"
+      "how rows";
+    row-gap: 2px !important;
+    padding: 10px 16px !important;
+  }
+  .runRow > :nth-child(1) { grid-area: when; }
+  .runRow > :nth-child(2) { grid-area: how; }
+  .runRow > :nth-child(3) { grid-area: rows; }
+  .runRow > :nth-child(4) { grid-area: result; align-items: flex-end !important; }
+  .runRow > :nth-child(4) > span:last-child:not(:first-child) {
+    max-width: 180px !important;
+  }
+
+  /* The rows a report produced: still a table, since its columns are the
+     user's own choice and are read down. The first column stays put while
+     the rest scroll sideways, and the table scrolls inside its own height
+     so the header row stays in view. */
+  .results > div:first-child {
+    max-height: 70dvh;
+    overscroll-behavior-x: contain;
+  }
+  .results th:first-child,
+  .results td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--surface-card);
+    box-shadow: 1px 0 0 var(--stroke-divider);
+  }
+  /* The header cells are a see-through tint by default, which rows would
+     show through once they scroll under them; and the pinned one sits over
+     its neighbours (the shared header sets its layer inline). */
+  .results th {
+    background: var(--surface-secondary) !important;
+  }
+  .results th:first-child {
+    z-index: 3 !important;
+  }
+
+  /* The email schedule window's foot: Delete schedule on its own line,
+     Cancel and Save sharing the next. */
+  .schedFoot > div.flex-1 {
+    display: none;
+  }
+  .schedFoot > :first-child:not(:global(.wms-btn):not(.wms-btn-link)) {
+    flex-basis: 100%;
+  }
+  .schedFoot > :global(.wms-btn):not(:global(.wms-btn-link)) {
+    flex: 1 1 0;
+  }
+
   /* Rename and delete show on hover on a computer; a phone has no hover. */
   .folderActions {
     opacity: 1 !important;

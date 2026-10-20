@@ -20,6 +20,7 @@ import {
 } from "@/actions/report.actions";
 import { nextRun } from "@/lib/reports/schedule-time";
 import { MONTH_NAMES, timezoneAbbr } from "@/lib/reports/schedule-words";
+import phone from "./reports-phone.module.css";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -364,7 +365,7 @@ export function ScheduleForm({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.5)" }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -374,7 +375,7 @@ export function ScheduleForm({
         role="dialog"
         aria-modal="true"
         aria-label={existingSchedule ? "Email schedule" : "Email this report"}
-        className="ta-modal flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden"
+        className="ta-sheet ta-modal flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden"
         style={{ borderRadius: "var(--radius-l)" }}
       >
         <header
@@ -692,7 +693,7 @@ export function ScheduleForm({
         </div>
 
         <footer
-          className="flex flex-none flex-wrap items-center gap-2 px-5 py-3"
+          className={`${phone.schedFoot} flex flex-none flex-wrap items-center gap-2 px-5 py-3`}
           style={{ borderTop: "1px solid var(--stroke-divider)" }}
         >
           {existingSchedule && !confirmingDelete && (

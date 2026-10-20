@@ -14,6 +14,7 @@ import { dataSourceIcon, dataSourceLabel, isScanReport } from "./data-source-lab
 import { runReport, deleteReport, duplicateReport, toggleSchedule } from "@/actions/report.actions";
 import type { ReportResult } from "@/lib/reports/data-sources";
 import type { DateRange, FilterDef } from "@/lib/validators/report.schema";
+import phone from "./reports-phone.module.css";
 
 /**
  * A saved report: pick the dates, run it, download it; below, what it is,
@@ -220,7 +221,7 @@ export function ReportViewer({
                 Share
               </Button>
             )}
-            <Button hierarchy="primary" onClick={() => void handleRun()} disabled={isRunning} leadingIcon={<Play className="h-4 w-4" />}>
+            <Button hierarchy="primary" className="ta-header-primary" onClick={() => void handleRun()} disabled={isRunning} leadingIcon={<Play className="h-4 w-4" />}>
               {isRunning ? "Running" : "Run report"}
             </Button>
           </>
@@ -315,7 +316,7 @@ export function ReportViewer({
             {details.map((d, i) => (
               <div
                 key={d.label}
-                className="grid gap-x-4 py-2.5 [grid-template-columns:140px_minmax(0,1fr)]"
+                className={`${phone.aboutRow} grid gap-x-4 py-2.5 [grid-template-columns:140px_minmax(0,1fr)]`}
                 style={{ borderTop: i === 0 ? undefined : "1px solid var(--stroke-divider)" }}
               >
                 <dt style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>{d.label}</dt>
@@ -415,7 +416,7 @@ export function ReportViewer({
               return (
                 <li
                   key={run.id}
-                  className="grid items-center gap-x-4 px-5 py-2.5 [grid-template-columns:minmax(150px,1fr)_minmax(140px,1fr)_80px_minmax(90px,auto)]"
+                  className={`${phone.runRow} grid items-center gap-x-4 px-5 py-2.5 [grid-template-columns:minmax(150px,1fr)_minmax(140px,1fr)_80px_minmax(90px,auto)]`}
                   style={{ borderTop: "1px solid var(--stroke-divider)" }}
                 >
                   <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-primary)" }}>
@@ -541,7 +542,7 @@ function Panel({
       className="flex flex-col overflow-hidden"
       style={{ background: "var(--surface-card)", borderRadius: "var(--radius-l)", boxShadow: "var(--shadow-card)" }}
     >
-      <header className="flex flex-wrap items-start gap-3 px-5 pb-3 pt-4">
+      <header className={`${phone.panelHead} flex flex-wrap items-start gap-3 px-5 pb-3 pt-4`}>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <h2 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>{title}</h2>
           {subtitle && (
@@ -590,12 +591,12 @@ function DownloadLink({ href, label }: { href: string; label: string }) {
 function Dialog({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer: ReactNode }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.5)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
       onKeyDown={(e) => e.key === "Escape" && onClose()}
     >
-      <div role="dialog" aria-modal="true" aria-label={title} className="ta-modal flex w-full max-w-md flex-col" style={{ borderRadius: "var(--radius-l)" }}>
+      <div role="dialog" aria-modal="true" aria-label={title} className="ta-sheet ta-modal flex w-full max-w-md flex-col overflow-y-auto" style={{ borderRadius: "var(--radius-l)" }}>
         <header className="flex items-center gap-3 px-5 py-3.5" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
           <h2 className="min-w-0 flex-1" style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
             {title}
@@ -605,7 +606,7 @@ function Dialog({ title, onClose, children, footer }: { title: string; onClose: 
           </Button>
         </header>
         <div className="flex flex-col gap-3 px-5 py-4">{children}</div>
-        <footer className="flex items-center justify-end gap-2 px-5 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+        <footer className="ta-sheet-actions flex items-center justify-end gap-2 px-5 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
           {footer}
         </footer>
       </div>

@@ -129,7 +129,7 @@ export function ShareDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.5)" }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -139,7 +139,9 @@ export function ShareDialog({
         role="dialog"
         aria-modal="true"
         aria-label={`Share ${reportName}`}
-        className="ta-modal w-full max-w-lg overflow-hidden"
+        // A bottom sheet on a phone, scrolling when the list of people it is
+        // shared with runs long.
+        className="ta-sheet ta-modal w-full max-w-lg overflow-y-auto"
         style={{ borderRadius: "var(--radius-l)" }}
       >
         <header
@@ -317,7 +319,7 @@ export function ShareDialog({
         </div>
 
         <footer
-          className="flex justify-end px-5 py-3"
+          className="ta-sheet-actions flex justify-end px-5 py-3"
           style={{ borderTop: "1px solid var(--stroke-divider)" }}
         >
           <Button hierarchy="primary" onClick={onClose}>

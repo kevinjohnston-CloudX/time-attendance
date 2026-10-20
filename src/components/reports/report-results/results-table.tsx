@@ -3,6 +3,7 @@
 import { EmptyState, Table, TableFooter, TBody, TD, TH, THead, TR } from "@/components/ui";
 import { Loader2, SearchX } from "lucide-react";
 import { cellText } from "@/lib/reports/cell";
+import phone from "../reports-phone.module.css";
 
 interface Column {
   id: string;
@@ -54,7 +55,7 @@ export function ResultsTable({
   }
 
   return (
-    <div className={fill ? "flex min-h-0 flex-1 flex-col" : "contents"}>
+    <div className={`${fill ? "flex min-h-0 flex-1 flex-col" : "contents"} ${phone.results}`}>
       <Table style={fill ? { flex: 1, minHeight: 0 } : undefined}>
         <THead>
           <TR>
