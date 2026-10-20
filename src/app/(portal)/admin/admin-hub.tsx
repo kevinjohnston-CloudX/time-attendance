@@ -116,7 +116,8 @@ export function AdminHub({ groups }: { groups: HubGroup[] }) {
         </div>
       </section>
 
-      <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+      {/* A keyboard shortcut: nothing to press on a phone. */}
+      <p className="ta-phone-hide" style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
         Press ⌘K to jump straight to any setting.
       </p>
 
