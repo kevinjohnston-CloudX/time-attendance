@@ -1633,6 +1633,10 @@ html {
   .ta-page-sub {
     font: var(--weight-regular) 15px/20px var(--font-sans) !important;
   }
+  /* Nothing on a phone reads smaller than 12px, small badges included. */
+  .ta-badge {
+    font-size: 12px !important;
+  }
 }
 
 .ta-chip-none {

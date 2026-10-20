@@ -66,7 +66,7 @@ export function PhoneTopBar({ waiting }: { waiting: WaitingItem[] }) {
           )}
         </div>
         {/* The page's own title, once it has scrolled up under this bar. */}
-        <div className={styles.topTitle} data-on={folded && title ? "true" : undefined} aria-hidden="true">
+        <div className={styles.topTitle} data-on={!back && folded && title ? "true" : undefined} aria-hidden="true">
           {title}
         </div>
         <div className={styles.topActions}>

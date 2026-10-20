@@ -100,6 +100,7 @@ import { UnknownBadgesView, unknownBadgesLines, useUnknownBadges } from "./unkno
 import { ExportWindow } from "./export-window";
 import { dayWords, fileStamp, linesTable, movementsLines, stampLine, type ExportTable } from "./export-table";
 import styles from "./on-site.module.css";
+import { usePhoneLayout } from "@/lib/phone";
 import { Face } from "./face";
 
 /**
@@ -1770,6 +1771,52 @@ function PeopleTable({
   onOpen: (id: string) => void;
   selectedId: string | null;
 }) {
+  const phone = usePhoneLayout();
+  const nowIso = new Date(now).toISOString();
+  const more = people.length > shown && (
+    <div className="flex justify-center px-4 pb-4">
+      <Button hierarchy="secondary" size="sm" onClick={onShowMore}>
+        Show {Math.min(ROWS_PER_PAGE, people.length - shown).toLocaleString()} more
+      </Button>
+    </div>
+  );
+  // A phone gets the phone's list: the face, the name with the status at
+  // the end, then the department and where they are now. The sort lives in
+  // the Filters sheet, and the readers in the person's own screen.
+  if (phone)
+    return (
+      <>
+        <ol className={styles.plList}>
+          {people.slice(0, shown).map((p) => (
+            <li key={p.id}>
+              <button type="button" className="ta-list-row" data-lead="face" onClick={() => onOpen(p.id)}>
+                <Photo person={p} className={styles.plPhoto} />
+                <span className="ta-list-text">
+                  <span className={styles.plTop}>
+                    <span className="ta-list-title">{p.name}</span>
+                    <Badge tone={STATUS_META[p.status].badge} size="sm" dot>
+                      {statusLabel(p)}
+                    </Badge>
+                  </span>
+                  <span className="ta-list-sub">
+                    {p.department ? `${p.department}, ${lowerFirst(sinceLine(p, tz, nowIso))}` : sinceLine(p, tz, nowIso)}
+                    {p.lateMinutes !== null && (
+                      <span style={{ color: "var(--text-warning)" }}>, {fmtDuration(p.lateMinutes)} late</span>
+                    )}
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ol>
+        <TableFooter
+          shown={Math.min(shown, people.length)}
+          total={people.length}
+          label={people.length === 1 ? "person" : "people"}
+        />
+        {more}
+      </>
+    );
   return (
     <>
       <Table>
@@ -1864,15 +1911,14 @@ function PeopleTable({
         total={people.length}
         label={people.length === 1 ? "person" : "people"}
       />
-      {people.length > shown && (
-        <div className="flex justify-center px-4 pb-4">
-          <Button hierarchy="secondary" size="sm" onClick={onShowMore}>
-            Show {Math.min(ROWS_PER_PAGE, people.length - shown).toLocaleString()} more
-          </Button>
-        </div>
-      )}
+      {more}
     </>
   );
+}
+
+/** "Due 8:30 AM" as it reads after a comma. */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
 /**

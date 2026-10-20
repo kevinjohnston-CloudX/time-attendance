@@ -5188,6 +5188,11 @@
   .mvPhoto > .stripe {
     display: none;
   }
+  /* A tap anywhere on the row opens the person; the photo is enlarged from
+     their screen. */
+  .mvPhoto button {
+    pointer-events: none;
+  }
   .mvIdentity {
     display: grid;
     flex: 1;
@@ -5203,9 +5208,29 @@
   .mvNameButton {
     font: var(--weight-semibold) 17px/22px var(--font-sans);
   }
+  /* The name comes first: a long status ("In time clock, out building")
+     gives way before it does. */
   .mvPhonePill {
     display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
     justify-self: end;
+  }
+  .mvIdentity {
+    grid-template-columns: minmax(96px, auto) minmax(0, max-content) !important;
+    justify-content: space-between;
+  }
+  .mvPhonePill > :global(.ta-badge) {
+    display: block !important;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mvPhonePill > :global(.ta-badge) > span {
+    display: inline-block;
+    margin: 0 5px 1px 0;
+    vertical-align: middle;
   }
   .mvPhoneLine {
     display: flex;
@@ -5358,6 +5383,387 @@
     font: var(--weight-medium) 13px/17px var(--font-sans);
   }
   .summarySub {
+    display: none;
+  }
+}
+
+/* ---- Phones: a person, as a screen of its own (person-panel.tsx) ----
+   Pushed over the list between the phone's two bars, with the way back in
+   the top bar. White groups on the grey page, each fact a line with its
+   name on the left and its value on the right, as a phone's settings read,
+   rather than small labels stacked over values. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .scrim {
+    display: none;
+  }
+  .panel {
+    top: calc(52px + env(safe-area-inset-top));
+    bottom: calc(56px + env(safe-area-inset-bottom));
+    z-index: 30;
+    width: 100%;
+    background: var(--ta-canvas);
+    box-shadow: none;
+    animation: pushIn 320ms cubic-bezier(0.32, 0.72, 0, 1) backwards;
+  }
+  .panelHead {
+    display: none;
+  }
+  .panelBody {
+    gap: 22px;
+    padding: 8px 16px 32px;
+    overscroll-behavior: contain;
+  }
+  /* A group clips its rounded corners, which would let the column squeeze
+     it to nothing. */
+  .panelBody > * {
+    flex: none;
+  }
+  .ppProfile {
+    gap: 14px;
+  }
+  .ppPortrait {
+    width: 76px;
+    height: 86px;
+  }
+  .ppName {
+    font: var(--weight-bold) 24px/30px var(--font-sans);
+    white-space: normal;
+  }
+  .ppRole {
+    font-size: 15px;
+    line-height: 20px;
+  }
+  .ppProfileLink {
+    min-height: 32px;
+    font-size: 15px;
+  }
+
+  /* Where they are now: a white group with the dot, not a box with a stripe. */
+  .ppStatus {
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: var(--surface-card);
+    box-shadow: var(--ta-raised);
+  }
+  .ppStatusLabel {
+    font-size: 17px;
+    line-height: 22px;
+  }
+  .ppStatusText {
+    flex: 1 1 100%;
+    padding-left: 20px;
+    font: var(--weight-regular) 15px/20px var(--font-sans);
+  }
+
+  /* Code, department, shift, supervisor: one line each. */
+  .ppFacts {
+    display: block;
+    padding: 0;
+    border: 0;
+    border-radius: 14px;
+    background: var(--surface-card);
+    box-shadow: var(--ta-raised);
+    overflow: hidden;
+  }
+  .ppFact {
+    position: relative;
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 16px;
+  }
+  .ppFact + .ppFact::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 16px;
+    height: 1px;
+    background: var(--stroke-divider);
+  }
+  .ppFact dt {
+    flex: none;
+    font: var(--weight-regular) 15px/20px var(--font-sans);
+    color: var(--text-secondary);
+  }
+  .ppFact dd {
+    min-width: 0;
+    margin: 0;
+    font: var(--weight-medium) 15px/20px var(--font-sans);
+    text-align: right;
+  }
+
+  /* Attendance and Scans: each a white group with its heading inside. */
+  .ppSection {
+    gap: 0;
+    padding: 4px 16px 16px;
+    border-radius: 14px;
+    background: var(--surface-card);
+    box-shadow: var(--ta-raised);
+  }
+  .ppSectionHead {
+    min-height: 52px;
+  }
+  .ppTitle {
+    font: var(--weight-semibold) 17px/22px var(--font-sans);
+  }
+  .ppDayPick {
+    height: 36px;
+  }
+  .ppDayArrow {
+    width: 40px;
+  }
+  .ppDayLabel {
+    min-width: 88px;
+    font-size: 15px;
+    line-height: 34px;
+  }
+  .ppSection > * + * {
+    margin-top: 12px;
+  }
+  .ppSection > .ppSectionHead + * {
+    margin-top: 0;
+  }
+
+  /* The day's figures as lines: the name, then the time and what it is
+     measured against under it, on the right. */
+  .ppGlance,
+  .ppGlance[data-rows="2"] {
+    display: block;
+    border: 0;
+    border-radius: 0;
+    border-top: 1px solid var(--stroke-divider);
+    border-bottom: 1px solid var(--stroke-divider);
+  }
+  .ppGlanceCell,
+  .ppGlance[data-rows="2"] .ppGlanceCell {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    column-gap: 16px;
+    padding: 11px 0;
+    border: 0;
+  }
+  .ppGlanceCell + .ppGlanceCell,
+  .ppGlance[data-rows="2"] .ppGlanceCell + .ppGlanceCell {
+    border-top: 1px solid var(--stroke-divider);
+    border-left: 0;
+  }
+  .ppGlanceLabel {
+    font: var(--weight-regular) 15px/20px var(--font-sans);
+    color: var(--text-secondary);
+  }
+  .ppGlanceCell .ppGlanceValue {
+    padding: 0;
+    font: var(--weight-semibold) 17px/22px var(--font-sans);
+    text-align: right;
+  }
+  .ppGlanceSub {
+    grid-column: 2;
+    min-height: 0;
+    font-size: 13px;
+    line-height: 18px;
+    text-align: right;
+  }
+  .ppGlanceSub:empty {
+    display: none;
+  }
+
+  .ppTotals {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    border-top: 1px solid var(--stroke-divider);
+  }
+  /* Time inside and time on the clock are the first lines of the totals
+     under the chart, so the lines above do not say them a second time. */
+  .ppGlance:not([data-rows]) .ppGlanceCell:nth-child(3),
+  .ppGlance[data-rows="2"] .ppGlanceCell:nth-child(3),
+  .ppGlance[data-rows="2"] .ppGlanceCell:nth-child(6) {
+    display: none;
+  }
+  /* The chart sits in the group's white, not in a box of its own. */
+  .ppChart {
+    padding: 4px 0 0;
+    border: 0;
+    border-radius: 0;
+  }
+  .ppTotal {
+    min-height: 46px;
+  }
+  .ppTotal dt {
+    font-size: 15px;
+  }
+  .ppTotal dd {
+    font-size: 15px;
+  }
+}
+@keyframes pushIn {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    animation-name: fade;
+  }
+}
+
+/* The People list on a phone (PeopleTable): one row per person. */
+.plList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.plList > li {
+  display: flex;
+}
+.plList > li + li > :global(.ta-list-row)::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 68px;
+  height: 1px;
+  background: var(--stroke-divider);
+}
+.plPhoto {
+  position: relative;
+  display: inline-flex;
+  width: 40px;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--ps-photo);
+}
+.plPhoto img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.plPhoto .initials {
+  font: var(--weight-semibold) 14px/1 var(--font-sans);
+}
+.plTop {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.plTop > :global(.ta-list-title) {
+  min-width: 0;
+}
+.plTop > :last-child {
+  flex: none;
+}
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* Compact is three faces across on a phone, so it is the denser choice it
+     is on a computer rather than the same two columns as Photos. */
+  .grid.gridCompact {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* Scan log: each reader's figures as four tiles across, figure first, as
+     the Movements figures read, so the scans themselves start near the top. */
+  .rpBody {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .rpStats {
+    display: contents;
+  }
+  .rpLead,
+  .rpStat {
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 2px;
+    padding: 12px 8px 14px 12px !important;
+  }
+  .rpStat {
+    border-left: 1px solid var(--stroke-divider);
+  }
+  .rpLeadFigure,
+  .rpStatFigure {
+    order: -1;
+    margin: 0;
+    font: var(--weight-semibold) 26px/32px var(--font-sans);
+    letter-spacing: -0.02em;
+  }
+  .rpLeadLabel,
+  .rpStatLabel {
+    font: var(--weight-medium) 13px/17px var(--font-sans);
+  }
+  .rpLeadLabel {
+    font-weight: var(--weight-semibold);
+  }
+  .rpSub {
+    display: none;
+  }
+  .rpFoot {
+    padding: 10px 16px;
+  }
+}
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* Scan log: a scan is the face, the name with the time at the end, then
+     what happened and what it followed. The badge code, the job and the
+     reader's name are in the person's screen, a tap away. */
+  .logRow {
+    gap: 1px 12px;
+    min-height: 64px;
+    padding: 10px 16px;
+  }
+  .logPhoto {
+    width: 40px;
+    height: 44px;
+    border-radius: 10px;
+  }
+  .logWho .meta {
+    display: none;
+  }
+  .logWho .name {
+    font: var(--weight-semibold) 17px/22px var(--font-sans);
+  }
+  .logTime {
+    font: var(--weight-regular) 15px/22px var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+  }
+  .logWhat {
+    gap: 6px;
+  }
+  .logWhat .eventIcon {
+    width: 20px;
+    height: 20px;
+  }
+  .logWhat .eventIcon svg {
+    width: 12px;
+    height: 12px;
+  }
+  .logWhat > span:last-child > span:first-child {
+    font: var(--weight-regular) 15px/20px var(--font-sans) !important;
+    color: var(--text-secondary) !important;
+  }
+  .logWhat > span:last-child > span:last-child {
+    display: none;
+  }
+  .logContext {
+    padding-left: 26px;
+  }
+  .logContextText {
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .logTags:empty {
     display: none;
   }
 }

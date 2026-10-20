@@ -82,6 +82,7 @@ export function Badge({
 
   return (
     <span
+      className="ta-badge"
       style={{
         display: "inline-flex",
         alignItems: "center",

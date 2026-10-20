@@ -391,7 +391,7 @@ function PersonRow({
   const phoneDay =
     inAt !== null
       ? present || (where.leftAt === null && !unclosed)
-        ? `In since ${time(inAt)}${worked ? `, ${worked} on the clock` : ""}`
+        ? `In since ${time(inAt)}`
         : where.leftAt !== null
           ? `${time(inAt)} – ${time(where.leftAt)}${worked ? `, ${worked}` : ""}`
           : `In ${time(inAt)}, never scanned out`

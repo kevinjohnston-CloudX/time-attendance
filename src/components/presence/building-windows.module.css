@@ -444,3 +444,53 @@
     min-height: 44px;
   }
 }
+
+/* The building menu on a phone (building-menu.tsx): a sheet from the bottom
+   edge. Its name as the sheet's title, then the buildings as full lines with
+   the chosen one ticked at the end, then this building's tablets and gate
+   alerts. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .menuSheet {
+    position: relative;
+    z-index: auto;
+    padding: 22px 8px 12px;
+    border: 0;
+    box-shadow: none;
+  }
+  .menuSheet .menuLabel {
+    padding: 14px 12px 6px;
+    font: var(--weight-semibold) 13px/18px var(--font-sans);
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--text-tertiary);
+  }
+  .menuSheet > .menuLabel:first-child {
+    padding: 2px 12px 8px;
+    font: var(--weight-semibold) 20px/25px var(--font-sans);
+    color: var(--text-primary);
+  }
+  .menuSheet .menuSites {
+    max-height: 50dvh;
+    overscroll-behavior: contain;
+  }
+  .menuSheet .menuItem {
+    min-height: 50px;
+    padding: 0 12px;
+    border-radius: 10px;
+    font: var(--weight-regular) 17px/22px var(--font-sans);
+  }
+  .menuSheet .menuItem[aria-checked="true"] {
+    font-weight: var(--weight-semibold);
+    color: var(--text-accent);
+  }
+  .menuSheet .menuCheck {
+    order: 2;
+    color: var(--icon-accent);
+  }
+  .menuSheet .menuStatus {
+    font-size: 15px;
+  }
+  .menuSheet .menuDivider {
+    margin: 8px 12px;
+  }
+}

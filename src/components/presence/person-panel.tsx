@@ -23,6 +23,8 @@ import {
   statusLabel,
 } from "./presence-meta";
 import styles from "./on-site.module.css";
+import { usePhoneBack } from "@/components/layout/phone-back";
+import { usePhoneLayout } from "@/lib/phone";
 import { usePhoto, ZoomableFace } from "./face";
 import { PhotoEditor } from "./photo-editor";
 import { ScheduleDayDialog } from "./schedule-day-dialog";
@@ -100,6 +102,10 @@ export function PersonPanel({
   const [detail, setDetail] = useState<PresenceDetail | null>(null);
   const [failed, setFailed] = useState(false);
   const headRef = useRef<HTMLDivElement>(null);
+  // On a phone the person is a screen of their own, pushed over the list,
+  // and the way back is the top bar's, as in any phone app.
+  const phone = usePhoneLayout();
+  usePhoneBack(phone ? "Live Attendance" : null, onClose);
   // The board re-renders every few seconds with a fresh onClose, and the focus
   // effect below must run once per opening, not once per render.
   const closeRef = useRef(onClose);
@@ -212,7 +218,12 @@ export function PersonPanel({
   return (
     <>
       <div className={styles.scrim} onClick={onClose} aria-hidden="true" />
-      <aside className={styles.panel} role="dialog" aria-modal="true" aria-label={name || "Employee"}>
+      <aside
+        className={styles.panel}
+        role="dialog"
+        aria-modal={phone ? undefined : true}
+        aria-label={name || "Employee"}
+      >
         <div ref={headRef} className={styles.panelHead}>
           <span className={styles.ppEyebrow}>Employee</span>
           <Button hierarchy="tertiary" size="sm" iconOnly aria-label="Close" onClick={onClose}>

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Bell, BellOff, Building2, Check, ChevronDown, ChevronRight, Tablet as TabletIcon } from "lucide-react";
 import type { BuildingTablets } from "@/lib/presence/tablets.service";
 import { countHealth } from "./tablet-health";
 import styles from "./building-windows.module.css";
+import { usePhoneLayout } from "@/lib/phone";
 
 /**
  * The building button on Live Attendance, and the menu it opens: which
@@ -44,6 +45,8 @@ export function BuildingMenu({
   onOpenGate: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  // On a phone the menu is a sheet from the bottom edge, not a dropdown.
+  const phone = usePhoneLayout();
   const wrap = useRef<HTMLSpanElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   // Drawn on the page's body and placed under the button, so a narrow window
@@ -126,14 +129,16 @@ export function BuildingMenu({
         <ChevronDown className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
       </button>
       {open &&
-        place &&
+        (place || phone) &&
         createPortal(
+          inSheet(
+            phone,
           <div
             ref={panel}
-            className={styles.menu}
+            className={phone ? `ta-sheet ${styles.menu} ${styles.menuSheet}` : styles.menu}
             role="menu"
             aria-label="Building"
-            style={{ top: place.top, left: place.left, width: Math.min(MENU_WIDTH, window.innerWidth - 16) }}
+            style={phone || !place ? undefined : { top: place.top, left: place.left, width: Math.min(MENU_WIDTH, window.innerWidth - 16) }}
           >
             {sites.length > 1 && (
               <>
@@ -192,8 +197,19 @@ export function BuildingMenu({
               </>
             )}
           </div>,
+          ),
           document.body,
         )}
     </span>
+  );
+}
+
+/** On a phone, the menu over a dimmed screen, rising from the bottom edge. */
+function inSheet(phone: boolean, menu: ReactNode) {
+  if (!phone) return menu;
+  return (
+    <div className="ta-sheet-scrim fixed inset-0 z-[60] flex" style={{ background: "var(--wms-overlay-modal)" }}>
+      {menu}
+    </div>
   );
 }
