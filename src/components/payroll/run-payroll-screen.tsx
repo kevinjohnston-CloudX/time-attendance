@@ -139,30 +139,32 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
   const missedInFile = preview?.summary.missedPunches.filter((m) => !m.excluded).length ?? 0;
   const missedLeftOut = preview?.summary.missedPunches.filter((m) => m.excluded).length ?? 0;
 
+  const actions = (
+    <>
+      <Button hierarchy="secondary" onClick={runPreview} disabled={isPending || included.length === 0} leadingIcon={<Eye className="h-4 w-4" aria-hidden="true" />}>
+        {isPending && !confirming ? "Checking…" : "Preview"}
+      </Button>
+      <Button
+        hierarchy="secondary"
+        onClick={runDraft}
+        disabled={isPending || included.length === 0}
+        title="The file Process would build, without locking anything"
+        leadingIcon={<Download className="h-4 w-4" aria-hidden="true" />}
+      >
+        Download draft file
+      </Button>
+      <Button tone="success" className="ta-header-primary" onClick={() => setConfirming(true)} disabled={isPending || !preview} leadingIcon={<Play className="h-4 w-4" aria-hidden="true" />}>
+        Process
+      </Button>
+    </>
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Run Payroll"
         subtitle="Lock a pay period and build the ADP import file"
-        actions={
-          <>
-            <Button hierarchy="secondary" onClick={runPreview} disabled={isPending || included.length === 0} leadingIcon={<Eye className="h-4 w-4" aria-hidden="true" />}>
-              {isPending && !confirming ? "Checking…" : "Preview"}
-            </Button>
-            <Button
-              hierarchy="secondary"
-              onClick={runDraft}
-              disabled={isPending || included.length === 0}
-              title="The file Process would build, without locking anything"
-              leadingIcon={<Download className="h-4 w-4" aria-hidden="true" />}
-            >
-              Download draft file
-            </Button>
-            <Button tone="success" className="ta-header-primary" onClick={() => setConfirming(true)} disabled={isPending || !preview} leadingIcon={<Play className="h-4 w-4" aria-hidden="true" />}>
-              Process
-            </Button>
-          </>
-        }
+        actions={<span className="ta-phone-hide contents">{actions}</span>}
       />
 
       {error && <Banner tone="error" body={error} />}
@@ -339,6 +341,12 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
           )}
         </>
       )}
+
+      {/* On a phone the three steps sit at the bottom of the screen, after the
+          choices they act on, in the order they are taken. */}
+      <div className={`ta-phone-only`}>
+        <div className={styles.phoneActions}>{actions}</div>
+      </div>
 
       {confirming && preview && (
         <ConfirmDialog
