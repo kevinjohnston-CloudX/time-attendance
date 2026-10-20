@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { Plus, X } from "lucide-react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { createPtoPolicy, updatePtoPolicy, deletePtoPolicy } from "@/actions/pto-policy.actions";
 import { Banner, Button, Input, Select, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
 import { DeleteSection, EditorPage, Num, Row, Section, Tick, jumpToSection, words, type EditorGroup } from "./setup/editor-page";
-import { ChoiceField, DeleteAction, StatusBadge, StatusField, saveError } from "./setup/setup-ui";
+import { ChoiceField, DeleteAction, StatusBadge, StatusField, saveError, useColumnLabels } from "./setup/setup-ui";
+import phone from "./setup/setup-phone.module.css";
 
 /**
  * A leave policy, edited on a page of its own: the leave type it earns, how
@@ -190,6 +191,8 @@ export function LeavePolicyEditor({
   const categories = p?._count?.categoryLinks ?? 0;
 
   /* Tiers: kept exactly as stored until somebody changes one. */
+  const tiersRef = useRef<HTMLDivElement | null>(null);
+  useColumnLabels(tiersRef);
   const [rules, setRulesRaw] = useState<PolicyRule[]>(() =>
     p?.rules?.length
       ? [...p.rules].sort((a, b) => a.minTenureMonths - b.minTenureMonths).map((r) => r as PolicyRule)
@@ -579,7 +582,8 @@ export function LeavePolicyEditor({
             />
           </div>
         ) : null}
-        <div style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+        {/* One block per tier on a phone, labelled from this header row. */}
+        <div ref={tiersRef} className={`${phone.list} ${phone.tiers}`} style={{ borderTop: "1px solid var(--stroke-divider)" }}>
           <Table>
             <THead>
               <TR>

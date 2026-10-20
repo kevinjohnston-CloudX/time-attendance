@@ -451,7 +451,7 @@ export function ShiftEditor({ shift, payCodes }: { shift: ShiftRow | null; payCo
         unused
       >
         <Row label="Applied to" hint="Without a company template, the time worked setting is used.">
-          <Select value={diff.payMethod} onChange={(e) => setDiff({ ...diff, payMethod: e.target.value as DifferentialConfig["payMethod"] })} aria-label="Applied to" style={{ width: 320 }}>
+          <Select value={diff.payMethod} onChange={(e) => setDiff({ ...diff, payMethod: e.target.value as DifferentialConfig["payMethod"] })} aria-label="Applied to" style={{ width: 320, maxWidth: "100%" }}>
             <option value="TIME_SEGMENT">Each stretch of time worked, such as overnight hours</option>
             <option value="SHIFT_PERIOD">The whole shift</option>
             <option value="GLOBAL_DIFFERENTIAL">The company differential template</option>
@@ -520,7 +520,8 @@ function WeekSchedule({ schedule, onChange }: { schedule: DayScheduleRow[]; onCh
             style={{ borderTop: "1px solid var(--stroke-divider)" }}
           >
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <span className="w-[150px] flex-none">
+              {/* On a phone the day takes its own line, its times the next. */}
+              <span className="w-[150px] flex-none max-md:w-full">
                 <Checkbox
                   checked={d.isWorkday}
                   onChange={(on) =>
@@ -539,7 +540,7 @@ function WeekSchedule({ schedule, onChange }: { schedule: DayScheduleRow[]; onCh
                   <span style={words}>to</span>
                   <ClockInput value={d.endTime} onChange={(v) => update(d.day, { endTime: v })} label={`${DAY_NAMES[d.day]} end`} required />
                   {overnight && <span style={caption}>next day</span>}
-                  <span className="ml-auto inline-flex items-center gap-2">
+                  <span className="ml-auto inline-flex items-center gap-2 max-md:ml-0">
                     <Num
                       value={d.mealMinutes}
                       onChange={(e) => update(d.day, { mealMinutes: parseInt(e.target.value, 10) || 0 })}
@@ -556,7 +557,7 @@ function WeekSchedule({ schedule, onChange }: { schedule: DayScheduleRow[]; onCh
               )}
             </div>
             {windows && (
-              <div className="flex flex-wrap items-center gap-2 pl-[162px]" style={words}>
+              <div className="flex flex-wrap items-center gap-2 pl-[162px] max-md:pl-0" style={words}>
                 <span>Punches count toward this day from</span>
                 <ClockInput value={d.dayStart} onChange={(v) => v && update(d.day, { dayStart: v })} label={`${DAY_NAMES[d.day]} window start`} required />
                 <span>to</span>
