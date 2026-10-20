@@ -37,6 +37,8 @@ async function addTimeOffToNewPeriod(period: PayPeriod, frequency: PayFrequency)
       endDate: { gte: new Date(`${firstDay}T00:00:00.000Z`) },
       employee: {
         tenantId: period.tenantId,
+        // No timecard is made for someone who has left.
+        isActive: true,
         ruleSet: period.ruleSetId
           ? { id: period.ruleSetId, payFrequency: { not: null }, payPeriodAnchorDate: { not: null } }
           : { OR: [{ payFrequency: null }, { payPeriodAnchorDate: null }] },

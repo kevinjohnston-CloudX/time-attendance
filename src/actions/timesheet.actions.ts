@@ -1,6 +1,6 @@
 "use server";
 
-import { assertEditable, timesheetInScope } from "@/lib/rbac/scope";
+import { assertActiveForChange, assertEditable, timesheetInScope } from "@/lib/rbac/scope";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
@@ -24,6 +24,8 @@ export const recalculateSegments = withRBAC(
 
     if (timesheet.employeeId !== employeeId)
       throw new Error("Cannot access another employee's timesheet.");
+    // An inactive person keeps their last timesheet to look at, not to change.
+    assertActiveForChange(timesheet.employee.isActive);
 
     await rebuildSegments(timesheet.id, timesheet.employee.ruleSet);
     revalidatePath(`/time/timesheet/${timesheet.id}`);
@@ -61,7 +63,9 @@ export const unlockTimesheet = withRBAC(
   "PAYROLL_RUN",
   async (ctx, input: unknown): Promise<{ success: true }> => {
     const { timesheetId, reason } = unlockTimesheetSchema.parse(input);
-    const sheet = await timesheetInScope(ctx, timesheetId, "PAYROLL_RUN");
+    // Locking and unlocking still reach an inactive person's timecard: payroll
+    // closes out their final one. Nothing else changes it.
+    const sheet = await timesheetInScope(ctx, timesheetId, "PAYROLL_RUN", { allowInactive: true });
     if (sheet.employeeId === ctx.employeeId) throw new Error("You can't unlock your own timecard");
     if (sheet.status !== "LOCKED") throw new Error("This timecard is not locked.");
 
@@ -87,7 +91,9 @@ export const lockTimesheet = withRBAC(
   "PAYROLL_RUN",
   async (ctx, input: TimesheetIdInput): Promise<{ success: true }> => {
     const { timesheetId } = timesheetIdSchema.parse(input);
-    const sheet = await timesheetInScope(ctx, timesheetId, "PAYROLL_RUN");
+    // Locking and unlocking still reach an inactive person's timecard: payroll
+    // closes out their final one. Nothing else changes it.
+    const sheet = await timesheetInScope(ctx, timesheetId, "PAYROLL_RUN", { allowInactive: true });
     if (sheet.employeeId === ctx.employeeId) throw new Error("You can't lock your own timecard");
     if (sheet.status === "LOCKED") throw new Error("This timecard is already locked.");
 

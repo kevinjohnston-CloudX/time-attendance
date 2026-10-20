@@ -6,7 +6,7 @@ import { auth } from "@/lib/auth";
 import { withRBAC } from "@/lib/rbac/guard";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { validateLeaveTransition } from "@/lib/state-machines/leave-state";
-import { assertNotSenior, employeeScope, NotFoundError } from "@/lib/rbac/scope";
+import { assertActiveForChange, assertNotSenior, employeeScope, NotFoundError } from "@/lib/rbac/scope";
 import { postLeaveUsage, reverseLeaveUsage } from "@/lib/engines/accrual-engine";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
 import { writeAuditLog } from "@/lib/audit/logger";
@@ -199,6 +199,12 @@ export const createLeaveRequestForEmployee = withRBAC(
 
 // ─── Supervisor / HR actions ──────────────────────────────────────────────────
 
+/** An inactive employee's timecards take no leave: approving, posting or reversing it would change them. */
+async function assertLeaveOwnerActive(employeeId: string) {
+  const owner = await db.employee.findUnique({ where: { id: employeeId }, select: { isActive: true } });
+  assertActiveForChange(owner?.isActive ?? false);
+}
+
 /** Supervisor approves a PENDING leave request — moves it to PENDING_HR for HR review. */
 /**
  * A leave request the caller may review: inside their company, for payroll
@@ -224,6 +230,9 @@ export const approveLeaveRequest = withRBAC(
     const { leaveRequestId, reviewNote } = reviewLeaveSchema.parse(input);
 
     const request = await reviewableRequest(ctx, leaveRequestId);
+    // Leave on the timecards of someone who has left is refused before anything
+    // changes, so a request is never approved without its hours.
+    await assertLeaveOwnerActive(request.employeeId);
     // The supervisor's step only: Pending to waiting for HR. The final
     // approval is HR's, through hrApproveLeaveRequest, which also checks the
     // balance. Calling this twice used to skip HR altogether.
@@ -265,6 +274,9 @@ export const hrApproveLeaveRequest = withRBAC(
     const { employeeId: reviewerId, tenantId } = ctx;
 
     const request = await reviewableRequest(ctx, leaveRequestId);
+    // Leave on the timecards of someone who has left is refused before anything
+    // changes, so a request is never approved without its hours.
+    await assertLeaveOwnerActive(request.employeeId);
 
     const transition = validateLeaveTransition(request.status, "APPROVE");
     if (!transition.valid) throw new Error(transition.error);
@@ -349,6 +361,9 @@ export const reverseLeaveApproval = withRBAC(
     const { employeeId: reviewerId, tenantId } = ctx;
 
     const request = await reviewableRequest(ctx, leaveRequestId);
+    // Leave on the timecards of someone who has left is refused before anything
+    // changes, so a request is never approved without its hours.
+    await assertLeaveOwnerActive(request.employeeId);
 
     const transition = validateLeaveTransition(request.status, "REVERT");
     if (!transition.valid) throw new Error(transition.error);
@@ -397,6 +412,9 @@ export const postLeaveRequest = withRBAC(
     const { employeeId: actorId, tenantId } = ctx;
 
     const request = await reviewableRequest(ctx, leaveRequestId);
+    // Leave on the timecards of someone who has left is refused before anything
+    // changes, so a request is never approved without its hours.
+    await assertLeaveOwnerActive(request.employeeId);
 
     const transition = validateLeaveTransition(request.status, "POST");
     if (!transition.valid) throw new Error(transition.error);

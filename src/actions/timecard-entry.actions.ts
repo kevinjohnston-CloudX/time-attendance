@@ -1,6 +1,6 @@
 "use server";
 
-import { assertEditable, assertNotSenior, employeeScope, NotFoundError, timesheetInScope } from "@/lib/rbac/scope";
+import { assertActiveForChange, assertEditable, assertNotSenior, employeeScope, NotFoundError, timesheetInScope } from "@/lib/rbac/scope";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
@@ -340,9 +340,10 @@ export const removePayrollLeaveEntry = withRBAC(
     // Only leave of someone in the caller's company, and never their own.
     const inScope = await db.leaveRequest.findFirst({
       where: { id: leaveRequestId, employee: await employeeScope(ctx, TIMECARD_EDITORS_COMPANY) },
-      select: { employeeId: true },
+      select: { employeeId: true, employee: { select: { isActive: true } } },
     });
     if (!inScope) throw new NotFoundError("Leave request not found");
+    assertActiveForChange(inScope.employee.isActive);
     if (inScope.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
     await assertNotSenior(ctx, inScope.employeeId);
 
@@ -397,6 +398,7 @@ export const deleteManualPunchPair = withRBAC(
     });
 
     if (punches.length !== new Set(punchIds).size) throw new NotFoundError("Punches not found.");
+    assertActiveForChange(punches[0].employee.isActive);
     if (new Set(punches.map((p) => p.timesheetId)).size !== 1) throw new Error("Punches must be on one timecard.");
     if (punches[0].employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
     await assertNotSenior(ctx, punches[0].employeeId);

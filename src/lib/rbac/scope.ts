@@ -4,6 +4,7 @@ import { checkPermission } from "./check-permission";
 import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import { TIMECARD_EDITORS_COMPANY, type Permission } from "./permissions";
 import { employeeRank } from "./identity";
+import { assertActiveForChange } from "@/lib/inactive-timecards";
 
 /**
  * Whose records an action may touch, for actions that take an id.
@@ -62,25 +63,37 @@ export async function assertNotSenior(ctx: Ctx, targetEmployeeId: string): Promi
   }
 }
 
-type ScopeOptions = { forChange?: boolean };
+type ScopeOptions = {
+  forChange?: boolean;
+  /**
+   * For a change that may still be made to someone who is inactive: payroll
+   * locking or unlocking their timecard. Everything else is refused.
+   */
+  allowInactive?: boolean;
+};
+
+export { INACTIVE_TIMECARD_ERROR, assertActiveForChange } from "@/lib/inactive-timecards";
 
 /** The employee, if the caller may act on them. */
-export async function assertEmployeeInScope(ctx: Ctx, employeeId: string, companyWide: Wide, { forChange = true }: ScopeOptions = {}): Promise<void> {
+export async function assertEmployeeInScope(ctx: Ctx, employeeId: string, companyWide: Wide, { forChange = true, allowInactive = false }: ScopeOptions = {}): Promise<void> {
   const found = await db.employee.findFirst({
     where: { AND: [{ id: employeeId }, await employeeScope(ctx, companyWide)] },
-    select: { id: true },
+    select: { id: true, isActive: true },
   });
   if (!found) throw new NotFoundError("Employee not found");
+  if (forChange && !allowInactive) assertActiveForChange(found.isActive);
   if (forChange) await assertNotSenior(ctx, employeeId);
 }
 
 /** The timesheet's employee and status, if the caller may act on it. */
-export async function timesheetInScope(ctx: Ctx, timesheetId: string, companyWide: Wide, { forChange = true }: ScopeOptions = {}) {
-  const ts = await db.timesheet.findFirst({
+export async function timesheetInScope(ctx: Ctx, timesheetId: string, companyWide: Wide, { forChange = true, allowInactive = false }: ScopeOptions = {}) {
+  const found = await db.timesheet.findFirst({
     where: { id: timesheetId, employee: await employeeScope(ctx, companyWide) },
-    select: { id: true, employeeId: true, status: true },
+    select: { id: true, employeeId: true, status: true, employee: { select: { isActive: true } } },
   });
-  if (!ts) throw new NotFoundError("Timesheet not found");
+  if (!found) throw new NotFoundError("Timesheet not found");
+  const { employee, ...ts } = found;
+  if (forChange && !allowInactive) assertActiveForChange(employee.isActive);
   if (forChange) await assertNotSenior(ctx, ts.employeeId);
   return ts;
 }
@@ -98,11 +111,13 @@ export async function editableTimesheetInScope(ctx: Ctx, timesheetId: string) {
 
 /** The punch's employee and timesheet, if the caller may act on it. */
 export async function punchInScope(ctx: Ctx, punchId: string, companyWide: Wide) {
-  const punch = await db.punch.findFirst({
+  const found = await db.punch.findFirst({
     where: { id: punchId, employee: await employeeScope(ctx, companyWide) },
-    select: { id: true, employeeId: true, timesheetId: true },
+    select: { id: true, employeeId: true, timesheetId: true, employee: { select: { isActive: true } } },
   });
-  if (!punch) throw new NotFoundError("Punch not found");
+  if (!found) throw new NotFoundError("Punch not found");
+  const { employee, ...punch } = found;
+  assertActiveForChange(employee.isActive);
   await assertNotSenior(ctx, punch.employeeId);
   return punch;
 }

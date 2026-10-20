@@ -64,12 +64,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     try {
       const employee = await db.employee.findUnique({
         where: { id: d.employeeId },
-        select: { id: true, tenantId: true, ruleSetId: true, timeZone: true, site: { select: { timezone: true } } },
+        select: { id: true, tenantId: true, ruleSetId: true, isActive: true, timeZone: true, site: { select: { timezone: true } } },
       });
       if (!employee) {
         unattributable += 1;
         continue;
       }
+      // An inactive person's timecards are closed: no exception on them, and
+      // no timecard made to hold one.
+      if (!employee.isActive) continue;
 
       // The period holding the scan's day, not today's: the sweep looks back.
       const payPeriod = await findOpenPayPeriod(employee.tenantId, employee.ruleSetId, {

@@ -4,6 +4,7 @@ import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { computeRoundedTime } from "@/lib/utils/date";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
+import { INACTIVE_TIMECARD_ERROR } from "@/lib/inactive-timecards";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
@@ -63,6 +64,7 @@ async function loadEmployee(tenantId: string, employeeId: string) {
     where: { id: employeeId, tenantId },
     select: {
       id: true,
+      isActive: true,
       barcode: true,
       wmsId: true,
       badges: { select: { barcode: true } },
@@ -174,6 +176,7 @@ export async function recoverRefusedScans(
     }),
   ]);
   if (!emp || !period) throw new RecoverError("NOT_FOUND");
+  if (!emp.isActive) throw new RecoverError(INACTIVE_TIMECARD_ERROR);
   if (period.status === "LOCKED") throw new RecoverError("This pay period is locked. Reopen it to add punches.");
 
   const ids = [...new Set(input.items.map((i) => i.scanId))];

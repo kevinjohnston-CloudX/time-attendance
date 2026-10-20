@@ -33,8 +33,11 @@ const REACH_DAYS = 35;
 export async function moveTimecardsToRuleSet(employeeId: string, ruleSet: RuleSet, actorId: string | null): Promise<void> {
   const employee = await db.employee.findUniqueOrThrow({
     where: { id: employeeId },
-    select: { tenantId: true, timeZone: true, site: { select: { timezone: true } } },
+    select: { tenantId: true, isActive: true, timeZone: true, site: { select: { timezone: true } } },
   });
+  // An inactive person's timecards stay where they are: none is changed or
+  // made after they leave.
+  if (!employee.isActive) return;
   const timezone = personTimeZone(employee);
   const ownSchedule = Boolean(ruleSet.payFrequency && ruleSet.payPeriodAnchorDate);
   const dayOf = (at: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(at);

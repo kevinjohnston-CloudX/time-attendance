@@ -8,6 +8,7 @@ function toLocalDay(d: Date): Date {
 }
 import { db } from "@/lib/db";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
+import { assertActiveForChange } from "@/lib/inactive-timecards";
 import { periodDayRange } from "@/lib/pay-period-days";
 import type { LeaveCategory, PayBucket } from "@prisma/client";
 import type { TxClient } from "@/types/prisma";
@@ -90,6 +91,21 @@ export async function syncLeaveSegments(
   leaveRequestId: string
 ): Promise<void> {
   await db.$transaction(async (tx) => {
+    // An inactive employee's timecards are closed: leave neither comes off nor
+    // goes on them. A request with nothing on a timecard (rejected, cancelled)
+    // has nothing to change and passes; one that would change one is refused.
+    const owner = await tx.leaveRequest.findUniqueOrThrow({
+      where: { id: leaveRequestId },
+      select: { status: true, employee: { select: { isActive: true } } },
+    });
+    if (!owner.employee.isActive) {
+      const onTimecards = await tx.workSegment.count({ where: { leaveRequestId } });
+      if (onTimecards > 0 || owner.status === "APPROVED" || owner.status === "POSTED") {
+        assertActiveForChange(false);
+      }
+      return;
+    }
+
     // 1. Always delete existing segments for this request
     const oldSegments = await tx.workSegment.findMany({
       where: { leaveRequestId },
