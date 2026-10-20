@@ -1320,6 +1320,19 @@ export async function rebuildSegments(
     );
   }
 
+  // Sync MISSING_PUNCH exceptions for past days where the shift was left open,
+  // before overtime: the OT engine leaves days with an open missed punch out of
+  // overtime, so it must see the ones this recalculation closes. Run after it,
+  // a clock out added by hand left the day out of overtime until the next
+  // recalculation (Ashley Baez, week of 10/5: no overtime for 49 hours).
+  await syncMissingPunchExceptions(
+    timesheetId,
+    timezone,
+    bounds.firstDay,
+    bounds.lastDay,
+    punches
+  );
+
   // OT engine reads the fresh segments and writes REG/OT/DT buckets.
   await applyOvertime(timesheetId, ruleSet, timesheet.employee.shift ?? null, timezone);
 
@@ -1400,16 +1413,6 @@ export async function rebuildSegments(
     timesheet.employee.shift?.workDays,
     timesheet.employee.isActive,
   );
-
-  // Sync MISSING_PUNCH exceptions for past days where the shift was left open.
-  await syncMissingPunchExceptions(
-    timesheetId,
-    timezone,
-    bounds.firstDay,
-    bounds.lastDay,
-    punches
-  );
-
 }
 
 /**

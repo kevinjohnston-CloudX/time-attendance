@@ -111,13 +111,22 @@ describe("run-scheduled-reports", () => {
   });
 
   it("tries a failed send again in half an hour", async () => {
-    execute.mockRejectedValue(new Error("boom"));
-    db.reportSchedule.findMany.mockResolvedValue([due()]);
-    await call();
-    const retry = db.reportSchedule.updateMany.mock.calls[1][0];
-    const minutes = (retry.data.nextRunAt.getTime() - Date.now()) / 60_000;
-    expect(minutes).toBeGreaterThan(29);
-    expect(minutes).toBeLessThan(31);
+    // Noon Eastern: the next daily 8 AM run is hours away. Run between 7:30
+    // and 8:00 AM it would be under half an hour off, and rightly no retry is
+    // set, so the test used to fail at that time of day.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-02T16:00:00Z"));
+    try {
+      execute.mockRejectedValue(new Error("boom"));
+      db.reportSchedule.findMany.mockResolvedValue([due()]);
+      await call();
+      const retry = db.reportSchedule.updateMany.mock.calls[1][0];
+      const minutes = (retry.data.nextRunAt.getTime() - Date.now()) / 60_000;
+      expect(minutes).toBeGreaterThan(29);
+      expect(minutes).toBeLessThan(31);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("stops retrying after three failures in a day", async () => {

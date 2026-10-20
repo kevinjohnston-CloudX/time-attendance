@@ -360,7 +360,24 @@ function splitSegmentAtThresholds(
  * Reclassify WORK segments with correct payBucket values based on
  * the computed daily OT breakdown, then apply weekly OT conversion.
  */
-function reclassifySegments(
+/**
+ * Where each of a week's segments sits in the output right now. Read again
+ * for every week rather than once for all: a split adds a segment, which
+ * moves everything after it one place on, and positions read before a split
+ * in an earlier week pointed one segment early. That put a week's overtime on
+ * the day before the one that crossed 40 (Paulett Laje, 10/8 instead of 10/9,
+ * after her first week's Friday was split).
+ */
+function positionsIn(output: ReclassifiedSegment[], windowKey: string, ruleSet: RuleSet): number[] {
+  const at: number[] = [];
+  output.forEach((seg, i) => {
+    if (getOtWindowKey(seg.segmentDate, ruleSet) === windowKey) at.push(i);
+  });
+  return at;
+}
+
+/** Exported for its test. */
+export function reclassifySegments(
   segments: WorkSegment[],
   result: OvertimeResult,
   ruleSet: RuleSet
@@ -394,14 +411,8 @@ function reclassifySegments(
 
   // Phase 2: Weekly OT — per calendar week, convert last REG segments to OT
   if (result.weeklyOtConverted > 0) {
-    // Group output indices by calendar week
-    const weekGroups = new Map<string, number[]>();
-    for (let i = 0; i < output.length; i++) {
-      const weekKey = getOtWindowKey(output[i].segmentDate, ruleSet);
-      const indices = weekGroups.get(weekKey) ?? [];
-      indices.push(i);
-      weekGroups.set(weekKey, indices);
-    }
+    // The weeks, in order; each one's positions are read when it is reached.
+    const weekKeys = [...new Set(output.map((seg) => getOtWindowKey(seg.segmentDate, ruleSet)))];
 
     // Also group DayBreakdowns by week to get per-week REG totals
     const weekRegTotals = new Map<string, number>();
@@ -413,7 +424,8 @@ function reclassifySegments(
       );
     }
 
-    for (const [weekKey, indices] of weekGroups.entries()) {
+    for (const weekKey of weekKeys) {
+      const indices = positionsIn(output, weekKey, ruleSet);
       const weekReg = weekRegTotals.get(weekKey) ?? 0;
       let remaining = Math.max(0, weekReg - ruleSet.weeklyOtMinutes);
       if (remaining <= 0) continue;
@@ -457,13 +469,7 @@ function reclassifySegments(
 
   // Phase 3: Weekly DT — convert trailing OT segments to DT per window
   if (result.weeklyDtConverted > 0) {
-    const windowGroups = new Map<string, number[]>();
-    for (let i = 0; i < output.length; i++) {
-      const key = getOtWindowKey(output[i].segmentDate, ruleSet);
-      const indices = windowGroups.get(key) ?? [];
-      indices.push(i);
-      windowGroups.set(key, indices);
-    }
+    const windowKeys = [...new Set(output.map((seg) => getOtWindowKey(seg.segmentDate, ruleSet)))];
 
     const windowStats = new Map<string, { total: number; dailyDt: number }>();
     for (const day of result.days) {
@@ -472,7 +478,8 @@ function reclassifySegments(
       windowStats.set(key, { total: prev.total + day.workMinutes, dailyDt: prev.dailyDt + day.dtMinutes });
     }
 
-    for (const [key, indices] of windowGroups.entries()) {
+    for (const key of windowKeys) {
+      const indices = positionsIn(output, key, ruleSet);
       const stats = windowStats.get(key);
       if (!stats) continue;
       const raw = Math.max(0, Math.max(0, stats.total - ruleSet.weeklyDtMinutes) - stats.dailyDt);
