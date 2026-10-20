@@ -3,6 +3,7 @@ import { PUNCH_TYPE_LABEL } from "@/lib/state-machines/labels";
 import { Badge, EmptyState, Table, THead, TBody, TR, TH, TD, TableFooter, statusTone } from "@/components/ui";
 import { Clock } from "lucide-react";
 import type { Punch, PunchSource } from "@prisma/client";
+import styles from "./punch-list.module.css";
 
 /**
  * A punch list, as the portal design draws a table: no card of its own.
@@ -59,6 +60,8 @@ export function PunchHistoryTable({
 
   return (
     <>
+      {/* One block per punch on a phone (punch-list.module.css). */}
+      <div className={styles.list}>
       <Table>
         <THead>
           <TR>
@@ -80,7 +83,7 @@ export function PunchHistoryTable({
                 key={punch.id}
                 style={isSuperseded ? { opacity: 0.55, background: "var(--surface-tertiary)" } : undefined}
               >
-                <TD>{format(punch.punchTime, "MMM d")}</TD>
+                <TD className={styles.date}>{format(punch.punchTime, "MMM d")}</TD>
 
                 {/* Times are read down the column against each other, so they
                     get tabular figures. The raw time is struck through when a
@@ -89,6 +92,7 @@ export function PunchHistoryTable({
                 <TD
                   numeric
                   align="left"
+                  className={styles.time}
                   style={
                     isSuperseded
                       ? { textDecoration: "line-through", color: "var(--text-tertiary)" }
@@ -97,11 +101,11 @@ export function PunchHistoryTable({
                 >
                   {format(punch.punchTime, "h:mm:ss a")}
                 </TD>
-                <TD numeric align="left">
+                <TD numeric align="left" className={styles.rounded}>
                   {format(punch.roundedTime, "h:mm a")}
                 </TD>
 
-                <TD>
+                <TD className={styles.type}>
                   <span className="inline-flex items-center gap-2">
                     {PUNCH_TYPE_LABEL[punch.punchType]}
                     {isCorrection && (
@@ -112,10 +116,10 @@ export function PunchHistoryTable({
                   </span>
                 </TD>
 
-                <TD style={{ color: "var(--text-secondary)" }}>{SOURCE_LABEL[punch.source]}</TD>
+                <TD className={styles.source} style={{ color: "var(--text-secondary)" }}>{SOURCE_LABEL[punch.source]}</TD>
 
                 {withNotes && (
-                  <TD style={{ color: "var(--text-secondary)" }} title={punch.note ?? undefined}>
+                  <TD className={punch.note ? styles.note : "ta-phone-hide"} style={{ color: "var(--text-secondary)" }} title={punch.note ?? undefined}>
                     {/* A note is free text up to 500 characters. Clipped to one
                         line with the full text on hover, so one long
                         explanation cannot set the width of the whole table. */}
@@ -123,7 +127,7 @@ export function PunchHistoryTable({
                   </TD>
                 )}
 
-                <TD>
+                <TD className={styles.status}>
                   {isSuperseded ? (
                     // Deliberately toneless. A superseded punch is not a state
                     // anyone is waiting on, and colouring it would compete with
@@ -140,6 +144,7 @@ export function PunchHistoryTable({
           })}
         </TBody>
       </Table>
+      </div>
 
       {footerLabel && (
         <TableFooter shown={punches.length} total={punches.length} label={footerLabel} />
