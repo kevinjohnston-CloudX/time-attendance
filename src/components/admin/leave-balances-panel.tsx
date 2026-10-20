@@ -994,7 +994,7 @@ export function LeaveBalancesPanel({ employeeId, balances, canManage }: Props) {
                       <button
                         type="button"
                         onClick={() => setOtherOpen((v) => !v)}
-                        className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 px-3.5 py-2 text-left"
+                        className={`flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 px-3.5 py-2 text-left ${accrualStyles.otherToggle}`}
                         style={{ background: "transparent", border: 0, cursor: "pointer" }}
                       >
                         {otherOpen
@@ -1003,7 +1003,7 @@ export function LeaveBalancesPanel({ employeeId, balances, canManage }: Props) {
                         <span className="wms-overline">
                           Other leave types ({untracked.length})
                         </span>
-                        <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                        <span className={accrualStyles.otherNote} style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
                           not accrual-tracked
                         </span>
                       </button>

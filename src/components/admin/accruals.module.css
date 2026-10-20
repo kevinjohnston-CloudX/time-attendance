@@ -106,3 +106,18 @@
   .ledger:global(.ta-rates) tbody > tr > td:nth-child(5) { grid-area: balance; }
   .ledger:global(.ta-rates) tbody > tr > td:nth-child(6) { grid-area: by; }
 }
+
+/* "Other leave types (4)" in the balances: on a phone the arrow lines up
+   with the leave types above it, and the note goes on a line of its own
+   under the label rather than under the arrow. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .otherToggle {
+    padding-left: 0 !important;
+    padding-top: 12px !important;
+    padding-bottom: 12px !important;
+  }
+  .otherNote {
+    flex-basis: 100%;
+    padding-left: 22px;
+  }
+}
