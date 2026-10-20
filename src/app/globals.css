@@ -1300,14 +1300,51 @@ option {
   .ta-leave-actions > .ta-leave-submit {
     order: -1;
   }
-  /* A request's decision buttons share the card's width, for a thumb. */
+  /* A request's decision buttons share the card's width, for a thumb. They
+     sit one wrapper down, which has to take the width first. */
+  .ta-req-actions > * {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
   .ta-req-actions .wms-btn:not(.wms-btn-link) {
     flex: 1 1 0;
+    height: 44px !important;
+    white-space: nowrap;
   }
-  /* A request's facts wrap ("8.00 h", then "1 day") rather than cut. */
+  /* A request's facts as lines, the name on the left and the value on the
+     right, between hairlines: still each under its own name, without a
+     grey box of small labels stacked over values. */
+  .ta-req-facts {
+    display: block !important;
+    padding: 0 !important;
+    border-top: 1px solid var(--stroke-divider);
+    border-bottom: 1px solid var(--stroke-divider);
+    border-radius: 0 !important;
+    background: transparent !important;
+  }
+  .ta-req-facts > div {
+    flex-direction: row !important;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px !important;
+    padding: 8px 0;
+  }
+  .ta-req-facts > div + div {
+    border-top: 1px solid var(--stroke-divider);
+  }
+  .ta-req-facts dt {
+    flex: none;
+    color: var(--text-secondary) !important;
+    font: var(--weight-regular) 15px/20px var(--font-sans) !important;
+  }
   .ta-req-facts dd {
     overflow: visible !important;
     white-space: normal !important;
+    text-align: right;
+    font: var(--weight-medium) 15px/20px var(--font-sans) !important;
+  }
+  .ta-req-facts dd > span {
+    font-weight: inherit !important;
   }
   .ta-leave-grid[data-phone-view="requests"] > .ta-leave-coverage,
   .ta-leave-grid[data-phone-view="coverage"] > .ta-leave-list {
@@ -1332,6 +1369,13 @@ option {
   }
   .ta-cov-cell > :first-child > span:last-child {
     margin-left: 0 !important;
+  }
+  /* The month reads as a phone calendar: plain days are just their number,
+     days with people off keep their tint, the request's own days keep their
+     outline, and the tapped day takes a ring. No box around every day. */
+  .ta-cov-cell {
+    border-color: transparent !important;
+    border-radius: 12px !important;
   }
   .ta-cov-cell[data-picked="true"] {
     box-shadow: 0 0 0 2px var(--stroke-accent-focus);

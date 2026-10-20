@@ -816,7 +816,9 @@ export function LeaveTabs({
           onChange={(v) => setPhoneView(v as "requests" | "coverage")}
           items={[
             { value: "requests", label: "Requests", count: rows.length },
-            { value: "coverage", label: focused ? `Coverage around ${shortName(focused.employee.user?.name ?? "")}` : "Coverage" },
+            // A name here made the second half wider than the screen; the
+            // coverage view says whose dates it shows.
+            { value: "coverage", label: "Coverage" },
           ]}
         />
       </div>
