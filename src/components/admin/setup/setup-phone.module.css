@@ -1,0 +1,208 @@
+/* Company Setup and Rules Setup on a phone (setup-shell.tsx and the areas
+   it holds). One thing at a time, as on Timecards: the list of areas, then
+   the one tapped, with a way back. The shell carries data-phone-view,
+   "areas" or "area". Inline styles and the shared Table's are why some
+   lines need !important. */
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .shell[data-phone-view="areas"] .area,
+  .shell[data-phone-view="area"] .rail,
+  .shell[data-phone-view="sections"] .rail {
+    display: none !important;
+  }
+
+  /* An editor's sections: a Jump to picker over the form, pinned while the
+     form scrolls, instead of a rail of up to 19 sections above it. */
+  .jump {
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 calc(var(--ta-page-x) * -1);
+    padding: 8px var(--ta-page-x);
+    background: var(--ta-canvas);
+    font: var(--weight-medium) 14px/20px var(--font-sans);
+    color: var(--text-secondary);
+  }
+  .jump > select {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--stroke-secondary);
+    border-radius: 10px;
+    background: var(--surface-card);
+    font: var(--type-body1);
+    color: var(--text-primary);
+  }
+  /* An area in the list, at a finger's height, with an arrow. */
+  .areaLink {
+    height: 48px !important;
+  }
+  .chevron {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    color: var(--icon-tertiary);
+  }
+
+  /* An editor's form ends where its last section does, with Save pinned
+     under it, rather than under 40% of a screen of blank space. */
+  .form {
+    padding-bottom: 0 !important;
+  }
+  .saveBar {
+    position: sticky;
+    bottom: 0;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0 calc(var(--ta-page-x) * -1) calc(var(--ta-page-bottom, 16px) * -1);
+    padding: 10px var(--ta-page-x) 12px;
+    background: var(--surface-card);
+    box-shadow: 0 -1px 0 var(--stroke-divider), 0 -8px 20px rgba(0, 0, 0, 0.06);
+  }
+  .saveStatus {
+    flex: 1 1 auto;
+    min-width: 0;
+    font: var(--type-body2);
+  }
+  .saveBar > :global(.wms-btn) {
+    flex: 0 0 auto;
+    min-width: 140px;
+  }
+
+  /* ---- An area's panel ---- */
+  /* Its one action (Add ...) across the width under the title. */
+  .panelHead > span:first-child {
+    min-width: 0 !important;
+    flex-basis: 100% !important;
+  }
+  .panelHead > span:not(:first-child),
+  .panelHead > span:not(:first-child) > :global(.wms-btn) {
+    flex: 1 1 100% !important;
+  }
+  /* The search across the width; status and the count share the next line. */
+  .tools > :global(.ta-search) {
+    order: -1;
+    flex: 1 1 100% !important;
+  }
+
+  /* Its list: one labelled block per record (labels come from the table's
+     own header row, useColumnLabels in setup-ui.tsx), the record's name on
+     top and the rest under their column names, two by two. */
+  .list table,
+  .list tbody {
+    display: block;
+    min-width: 0 !important;
+  }
+  .list thead {
+    display: none;
+  }
+  .list tbody > tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 14px;
+    height: auto !important;
+    padding: 12px 16px;
+  }
+  .list tbody > tr + tr {
+    border-top: 1px solid var(--stroke-divider);
+  }
+  .list tbody > tr > td {
+    display: block;
+    height: auto !important;
+    min-width: 0;
+    padding: 0 !important;
+    border: 0 !important;
+    text-align: left !important;
+    white-space: normal !important;
+  }
+  .list tbody > tr > td[data-head] {
+    order: -1;
+    grid-column: 1 / -1;
+    font-weight: var(--weight-semibold);
+  }
+  .list tbody > tr > td[colspan] {
+    grid-column: 1 / -1;
+  }
+  .list tbody > tr > td[data-label]:not([data-label=""]):not([data-head])::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 1px;
+    font: var(--type-caption1);
+    color: var(--text-tertiary);
+  }
+  .list tbody > tr > td:empty {
+    display: none;
+  }
+  /* A cell with no column name holds a row's own controls (Pay codes'
+     Move up and Move down): across the foot of the block. */
+  .list tbody > tr > td[data-label=""]:not([data-head]) {
+    order: 99;
+    grid-column: 1 / -1;
+  }
+  /* Inner caps meant for a table cell's width. */
+  .list tbody > tr > td * {
+    max-width: none !important;
+  }
+
+  /* A leave policy's tiers (leave-policy-editor.tsx): each tier a block
+     headed "Tier 1" (or "Level 1"), its remove button at the top right. */
+  .tiers tbody > tr > td[data-head] {
+    grid-column: 1;
+  }
+  .tiers tbody > tr > td[data-head]::before {
+    content: attr(data-label) " ";
+  }
+  .tiers tbody > tr > td[data-label=""]:not([data-head]) {
+    order: -1;
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    align-self: center;
+  }
+
+  /* ---- The edit window ---- */
+  /* Delete (or why it cannot be) on a line of its own, then Cancel and Save
+     sharing the width. */
+  .dialogFoot {
+    flex-wrap: wrap;
+  }
+  .dialogFoot > span:first-child {
+    flex-basis: 100%;
+  }
+  .dialogFoot > span:first-child:empty {
+    display: none;
+  }
+  .dialogFoot > :global(.wms-btn) {
+    flex: 1 1 0;
+  }
+  .deleteAsk {
+    flex-wrap: wrap;
+  }
+  .deleteAsk > span:first-child {
+    flex-basis: 100%;
+    white-space: normal !important;
+  }
+
+  .back {
+    display: inline-flex;
+    align-self: flex-start;
+    min-height: 44px;
+    align-items: center;
+    gap: 2px;
+    margin: -4px 0 0 -8px;
+    padding: 0 10px 0 4px;
+    border-radius: 10px;
+    font: var(--weight-medium) 16px/22px var(--font-sans);
+    color: var(--text-accent);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .back:active {
+    background: var(--ta-row-hover);
+  }
+}

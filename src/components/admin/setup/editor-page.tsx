@@ -5,6 +5,7 @@ import { useRouter } from "@/components/layout/navigation-progress";
 import { Banner, Button, Checkbox, Input, Switch } from "@/components/ui";
 import { SetupShell } from "./setup-shell";
 import { NotCalculated } from "./setup-ui";
+import phone from "./setup-phone.module.css";
 
 /**
  * The frame every Rules Setup editor page shares: the rule set, the shift,
@@ -186,7 +187,7 @@ function useLeaveGuard(dirty: boolean, noun: string) {
 
   return pending ? (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(3, 7, 18, 0.5)" }}
       onClick={(e) => e.target === e.currentTarget && setPending(null)}
     >
@@ -194,7 +195,7 @@ function useLeaveGuard(dirty: boolean, noun: string) {
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="editor-leave-title"
-        className="ta-modal flex w-full max-w-[420px] flex-col gap-2 p-5"
+        className="ta-sheet ta-modal flex w-full max-w-[420px] flex-col gap-2 p-5"
         style={{ borderRadius: "var(--radius-l)" }}
       >
         <h2 id="editor-leave-title" style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>
@@ -203,7 +204,7 @@ function useLeaveGuard(dirty: boolean, noun: string) {
         <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
           The changes on this {noun} have not been saved. Leaving now loses them.
         </p>
-        <div className="mt-3 flex justify-end gap-2">
+        <div className="ta-sheet-actions mt-3 flex justify-end gap-2">
           <Button hierarchy="secondary" onClick={() => setPending(null)}>
             Keep editing
           </Button>
@@ -350,14 +351,15 @@ export function EditorPage({
         <>
           {status && (
             <span
-              className="whitespace-nowrap"
+              className="ta-phone-hide whitespace-nowrap"
               style={{ font: "var(--type-body2)", color: dirty ? "var(--text-warning)" : "var(--text-tertiary)" }}
               aria-live="polite"
             >
               {status}
             </span>
           )}
-          <Button type="submit" form={formId} disabled={pending || (!isNew && !dirty)}>
+          {/* On a phone, Save is the bar pinned under the form instead. */}
+          <Button type="submit" form={formId} className="ta-phone-hide" disabled={pending || (!isNew && !dirty)}>
             {pending ? "Saving…" : submitLabel}
           </Button>
         </>
@@ -374,10 +376,26 @@ export function EditorPage({
         onInput={check}
         onChange={check}
         noValidate
-        className="flex flex-col gap-4 pb-[40vh]"
+        className={`${phone.form} flex flex-col gap-4 pb-[40vh]`}
       >
         {shown && <Banner tone="error" title="Not saved" body={shown} />}
         {children}
+        {/* On a phone the header scrolls away with the page, so Save stays
+            at the bottom of the screen, where the thumb is after an edit. */}
+        <div className="ta-phone-only">
+          <div className={phone.saveBar}>
+            <span
+              className={phone.saveStatus}
+              style={{ color: dirty ? "var(--text-warning)" : "var(--text-tertiary)" }}
+              aria-hidden="true"
+            >
+              {status ?? (isNew ? "Not saved yet" : "No changes yet")}
+            </span>
+            <Button type="submit" disabled={pending || (!isNew && !dirty)}>
+              {pending ? "Saving…" : submitLabel}
+            </Button>
+          </div>
+        </div>
       </form>
       {leaveDialog}
     </SetupShell>

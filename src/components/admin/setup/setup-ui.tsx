@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode, type SelectHTMLAttributes } from "react";
 import { X } from "lucide-react";
 import { Badge, Banner, Button, Checkbox, SearchInput, SegmentedControl, Select, statusTone } from "@/components/ui";
+import phone from "./setup-phone.module.css";
 
 /**
  * The parts every Company Setup area is built from, so the eight of them read
@@ -172,13 +173,15 @@ export function AreaPanel({
   count?: string;
   children: ReactNode;
 }) {
+  const listRef = useRef<HTMLDivElement | null>(null);
+  useColumnLabels(listRef);
   return (
     <section
       aria-label={title}
       className="ta-card flex min-w-0 flex-col"
       style={{ borderRadius: "var(--radius-l)", overflow: "clip" }}
     >
-      <header className="flex flex-wrap items-start gap-3 px-5 pb-3 pt-4">
+      <header className={`${phone.panelHead} flex flex-wrap items-start gap-3 px-5 pb-3 pt-4`}>
         <span className="flex min-w-[220px] flex-1 flex-col gap-0.5">
           <h2 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>{title}</h2>
           <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" }}>
@@ -191,7 +194,7 @@ export function AreaPanel({
       {summary && <div className="px-5 pb-3.5">{summary}</div>}
 
       {(search || status || filters || count) && (
-        <div className="flex flex-wrap items-center gap-2.5 px-5 pb-3.5">
+        <div className={`${phone.tools} flex flex-wrap items-center gap-2.5 px-5 pb-3.5`}>
           {status && (
             <SegmentedControl
               ariaLabel="Status"
@@ -219,9 +222,48 @@ export function AreaPanel({
         </div>
       )}
 
-      <div style={{ borderTop: "1px solid var(--stroke-divider)" }}>{children}</div>
+      <div ref={listRef} className={phone.list} style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+        {children}
+      </div>
     </section>
   );
+}
+
+/**
+ * Each list cell's column name, copied from its table's header row onto the
+ * cell as data-label, so a phone can show every row as a labelled block
+ * (setup-phone.module.css) without each of the areas naming its columns a
+ * second time. The cell under the record's name (the first column, or the
+ * second when the first is the No.) is marked as the block's heading, unless
+ * an area marks its own with data-head. Kept up to date as rows change with
+ * a search, a filter or a save.
+ */
+export function useColumnLabels(ref: { current: HTMLElement | null }) {
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const label = () => {
+      for (const table of root.querySelectorAll("table")) {
+        const heads = [...table.querySelectorAll("thead th")].map((th) => (th.textContent ?? "").trim());
+        if (heads.length === 0) continue;
+        const own = table.querySelector("tbody td[data-head]") !== null;
+        const headAt = heads[0] === "" || /^no\.?$/i.test(heads[0]) ? 1 : 0;
+        for (const tr of table.querySelectorAll("tbody tr")) {
+          [...tr.children].forEach((cell, i) => {
+            if (!(cell instanceof HTMLTableCellElement) || cell.tagName !== "TD") return;
+            if (cell.colSpan > 1) return;
+            const want = heads[i] ?? "";
+            if (cell.dataset.label !== want) cell.dataset.label = want;
+            if (!own && i === headAt && cell.dataset.head !== "auto") cell.dataset.head = "auto";
+          });
+        }
+      }
+    };
+    label();
+    const mo = new MutationObserver(label);
+    mo.observe(root, { childList: true, subtree: true });
+    return () => mo.disconnect();
+  }, [ref]);
 }
 
 /** "12 sites", or "3 of 12 sites" once a search or filter has narrowed them. */
@@ -318,7 +360,7 @@ export function SetupDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(3, 7, 18, 0.5)" }}
       onClick={(e) => e.target === e.currentTarget && !pending && onClose()}
     >
@@ -327,7 +369,7 @@ export function SetupDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="setup-dialog-title"
-        className="ta-modal flex max-h-[calc(100dvh-2rem)] w-full flex-col"
+        className="ta-sheet ta-modal flex max-h-[calc(100dvh-2rem)] w-full flex-col"
         style={{ maxWidth: width, borderRadius: "var(--radius-l)" }}
       >
         <header
@@ -370,7 +412,7 @@ export function SetupDialog({
             {error && <Banner tone="error" title="Not saved" body={error} />}
             {children}
           </div>
-          <footer className="flex flex-none items-center gap-2 px-5 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+          <footer className={`${phone.dialogFoot} flex flex-none items-center gap-2 px-5 py-3`} style={{ borderTop: "1px solid var(--stroke-divider)" }}>
             <span className="flex min-w-0 flex-1 items-center">{danger}</span>
             <Button type="button" hierarchy="secondary" onClick={onClose} disabled={pending}>
               Cancel
@@ -409,7 +451,7 @@ export function DeleteAction({
     );
   }
   return (
-    <span className="flex min-w-0 items-center gap-2">
+    <span className={`${phone.deleteAsk} flex min-w-0 items-center gap-2`}>
       <span className="truncate" style={{ font: "var(--type-body2)", color: "var(--text-error)" }}>
         {question}
       </span>

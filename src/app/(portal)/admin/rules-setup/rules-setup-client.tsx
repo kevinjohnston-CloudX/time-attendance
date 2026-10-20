@@ -62,6 +62,7 @@ export function RulesSetupClient(props: Props) {
 
   return (
     <SetupShell
+      phoneList
       title="Rules Setup"
       subtitle="Overtime, rounding, meals, shifts, holiday pay and time off"
       path="/admin/rules-setup"

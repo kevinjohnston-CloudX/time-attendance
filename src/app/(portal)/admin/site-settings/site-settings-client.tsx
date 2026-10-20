@@ -114,6 +114,7 @@ export function SiteSettingsClient(props: Props) {
 
   return (
     <SetupShell
+      phoneList
       title="Company Setup"
       subtitle="Your organization, time off and the codes payroll uses"
       path="/admin/site-settings"
