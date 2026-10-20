@@ -312,12 +312,12 @@ export function GateRefusalAlert({
   const left = running ? Math.max(0, Math.ceil((running.until - now) / 1000)) : IDLE_MS / 1000;
 
   return onTop(
-    <div className={styles.gaScrim}>
+    <div className={`${styles.gaScrim} ta-sheet-scrim`}>
       <div
         key={card.id}
         ref={cardRef}
         tabIndex={-1}
-        className={styles.gaCard}
+        className={`${styles.gaCard} ta-sheet`}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="ga-title ga-name"

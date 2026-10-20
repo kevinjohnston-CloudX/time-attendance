@@ -122,10 +122,10 @@ export function ScheduleDayDialog({
   }
 
   return (
-    <div className={styles.peScrim} onClick={saving ? undefined : onClose}>
+    <div className={`${styles.peScrim} ta-sheet-scrim`} onClick={saving ? undefined : onClose}>
       <div
         ref={dialogRef}
-        className={styles.peDialog}
+        className={`${styles.peDialog} ta-sheet`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="sd-title"

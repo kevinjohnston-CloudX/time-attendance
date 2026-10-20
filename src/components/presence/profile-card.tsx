@@ -79,13 +79,13 @@ export function ProfileCard({
   const role = jobTitle ?? detail?.jobTitle;
 
   return (
-    <div className={styles.peScrim} onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={`${styles.peScrim} ta-sheet-scrim`} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="profile-card-name"
-        className={`${styles.peDialog} ${styles.pcDialog}`}
+        className={`${styles.peDialog} ${styles.pcDialog} ta-sheet`}
       >
         <div className={styles.panelHead}>
           <span className={styles.ppEyebrow}>Profile</span>

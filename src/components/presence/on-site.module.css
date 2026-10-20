@@ -5019,6 +5019,21 @@
    rules for the tools bar lose to this file's own, which load later at the
    same strength, so the board states its phone shape here. */
 @media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* The windows (photo, profile, Add to schedule) open as sheets: the
+     footer's note on its own line, the buttons under it sharing the width. */
+  .peFoot {
+    flex-wrap: wrap;
+  }
+  .peNote {
+    flex: 1 1 100%;
+  }
+  .peFoot > :last-child:not(.peNote) {
+    flex: 1 1 100%;
+  }
+  .peFoot > :last-child > :global(.wms-btn) {
+    flex: 1 1 0;
+  }
+
   /* The bar scrolls with the page, as every pinned header does on a phone:
      pinned, it covered two fifths of the screen. */
   .boardBar {
