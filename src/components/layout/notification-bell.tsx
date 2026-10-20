@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Bell } from "lucide-react";
 import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
+import styles from "./notification-bell.module.css";
 
 /**
  * The bell from the portal design, over what is actually waiting on this
@@ -97,7 +98,7 @@ export function WaitingPanel({
     <div
       role="dialog"
       aria-label="Waiting on you"
-      className="absolute right-0 top-[calc(100%+8px)] z-50 w-[300px] rounded-[14px] p-1.5"
+      className={`absolute right-0 top-[calc(100%+8px)] z-50 w-[300px] rounded-[14px] p-1.5 ${styles.panel}`}
       style={{ background: "var(--surface-card)", boxShadow: "var(--ta-drop-shadow)" }}
     >
       <p
@@ -122,7 +123,7 @@ export function WaitingPanel({
             key={item.href}
             href={item.href}
             onClick={onNavigate}
-            className="ta-pill-btn flex h-[38px] items-center gap-2.5 rounded-[9px] px-2.5"
+            className={`ta-pill-btn flex h-[38px] items-center gap-2.5 rounded-[9px] px-2.5 ${styles.row}`}
             style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
           >
             <span className="min-w-0 flex-1 truncate">{item.label}</span>

@@ -1,0 +1,16 @@
+/* The bell's "Waiting on you" list on a phone (notification-bell.tsx).
+
+   It still drops from the bell, the way a phone's own top bar menus do, but
+   spans the screen with the page's 8px margin, and each row is a thumb tall
+   rather than a pointer's 38px. Its right edge already sits 8px in, under
+   the bell, so only the width changes. */
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .panel {
+    width: calc(100vw - 16px) !important;
+  }
+  .row {
+    height: 48px !important;
+    font-size: 15px !important;
+  }
+}
