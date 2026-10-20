@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, Clock } from "lucide-react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { Badge, Button, SearchInput, SegmentedControl } from "@/components/ui";
+import ppStyles from "./pay-periods.module.css";
 import { PpSelect } from "@/components/payroll/pp-select";
 import { SHOW_OPTIONS, type TimesheetShow } from "./pay-period-show";
 
@@ -158,7 +159,7 @@ export function PayPeriodTimesheets({
           ]}
         />
       </div>
-      <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
+      <div className={`${ppStyles.search} flex flex-wrap items-center gap-2 px-4 pb-3`}>
         <SearchInput value={query} onValueChange={setQuery} placeholder="Employee name" width={220} />
         <PpSelect
           label="Show"
@@ -209,7 +210,7 @@ export function PayPeriodTimesheets({
                   className="mb-0.5"
                   style={{ borderRadius: 14, background: expanded ? "var(--ta-well)" : undefined, boxShadow: expanded ? "inset 0 0 0 1px var(--ta-well-ring)" : undefined }}
                 >
-                  <div className="flex min-h-[60px] flex-wrap items-center gap-x-3.5 gap-y-2 py-2 pl-3 pr-2">
+                  <div className={`${ppStyles.tsRow} flex min-h-[60px] flex-wrap items-center gap-x-3.5 gap-y-2 py-2 pl-3 pr-2`}>
                     <Link
                       href={href}
                       aria-label={`Open ${ts.employeeName}'s timecard`}

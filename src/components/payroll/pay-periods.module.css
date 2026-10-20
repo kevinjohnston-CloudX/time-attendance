@@ -1,0 +1,84 @@
+/* Pay Periods on a phone (pay-periods-shell.tsx, pay-periods-rail.tsx).
+   One thing at a time, as on Timecards: the list of periods, then the one
+   tapped, with a way back. The root carries data-phone-view, "list" or
+   "period" (from open=1 in the address; the route's loading screen covers
+   the wait). The page
+   scrolls rather than the list box. Inline styles and Tailwind height
+   classes are why some lines need !important. */
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .shell[data-phone-view="list"] > .detail,
+  .shell[data-phone-view="period"] > :global(aside) {
+    display: none !important;
+  }
+
+  /* The list as tall as it needs, in the page's own scroll. */
+  .shell > :global(aside) {
+    height: auto !important;
+  }
+  .shell > :global(aside) > :last-child {
+    overflow: visible !important;
+  }
+
+  /* The period's four totals two by two, at a size two fit side by side. */
+  .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+  .kpis > * {
+    padding: 14px !important;
+  }
+  .kpis > * > span:nth-child(2) > span:first-child {
+    font-size: 26px !important;
+    line-height: 30px !important;
+  }
+
+  /* A timesheet: the person and the arrow on one line, the issues under
+     the name when there are any. */
+  .tsRow {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "person arrow"
+      "issues issues";
+    row-gap: 4px !important;
+  }
+  .tsRow > a:first-child {
+    grid-area: person;
+    flex-wrap: nowrap !important;
+    min-width: 0;
+  }
+  /* Name and hours take what is left beside the icon and the status. */
+  .tsRow > a:first-child > span:nth-child(2) {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+  }
+  .tsRow > a:last-child {
+    grid-area: arrow;
+  }
+  .tsRow > button {
+    grid-area: issues;
+    justify-self: start;
+    margin-left: 46px;
+  }
+  .search > :first-child {
+    flex: 1 1 100% !important;
+  }
+
+  .back {
+    display: inline-flex;
+    align-self: flex-start;
+    min-height: 44px;
+    align-items: center;
+    gap: 2px;
+    margin: -6px 0 -6px -8px;
+    padding: 0 10px 0 4px;
+    border-radius: 10px;
+    font: var(--weight-medium) 16px/22px var(--font-sans);
+    color: var(--text-accent);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .back:active {
+    background: var(--ta-row-hover);
+  }
+}

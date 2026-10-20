@@ -17,6 +17,7 @@ import { PayPeriodDownload } from "@/components/payroll/pay-period-download";
 import { PayPeriodTimesheets, type TimesheetRow } from "@/components/payroll/pay-period-timesheets";
 import { matchesShow, parseShow, type TimesheetShow } from "@/components/payroll/pay-period-show";
 import { PayPeriodsShell } from "@/components/payroll/pay-periods-shell";
+import ppStyles from "@/components/payroll/pay-periods.module.css";
 import { PayPeriodsRail, type RailPeriod, type RailScope, type RailStatus } from "@/components/payroll/pay-periods-rail";
 
 /**
@@ -135,7 +136,7 @@ export default async function PayPeriodsPage({
 
   if (!detail) {
     return (
-      <PayPeriodsShell rail={railNode} header={null}>
+      <PayPeriodsShell rail={railNode} header={null} selectedId={selectedId}>
         <section className="flex flex-col items-center gap-2.5 px-6 py-16 text-center" style={PANEL}>
           <CalendarRange className="h-8 w-8" aria-hidden style={{ color: "var(--icon-disabled)" }} />
           <span style={{ font: "var(--weight-semibold) 15px/22px var(--font-sans)", color: "var(--text-primary)" }}>
@@ -202,7 +203,7 @@ export default async function PayPeriodsPage({
   );
 
   return (
-    <PayPeriodsShell rail={railNode} header={header}>
+    <PayPeriodsShell rail={railNode} header={header} selectedId={selectedId}>
       <PeriodBody
         detail={detail}
         freqLabel={FREQ_LABEL[freq]}
@@ -399,7 +400,7 @@ function PeriodBody({
 
   return (
     <>
-      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]">
+      <div className={`${ppStyles.kpis} grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]`}>
         <Kpi
           icon={<Files className="h-4 w-4" aria-hidden />}
           label="Total timesheets"

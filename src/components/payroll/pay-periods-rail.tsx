@@ -6,6 +6,7 @@ import { ArrowUpRight, Calendar, ChevronLeft, ChevronRight, X } from "lucide-rea
 import { useRouter } from "@/components/layout/navigation-progress";
 import { Badge, SegmentedControl, type BadgeTone } from "@/components/ui";
 import { PpSelect } from "@/components/payroll/pp-select";
+import { isPhone } from "@/lib/phone";
 
 /**
  * The Pay Periods list, from the page handoff: the scope, a stepper through
@@ -197,7 +198,10 @@ export function PayPeriodsRail({
   }, [picker]);
 
   // The open period in view when the page lands, however far down it is.
+  // Not on a phone, where the list is part of the page: there it would
+  // scroll the whole page past the controls at the top of the list.
   useEffect(() => {
+    if (isPhone()) return;
     listRef.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: "nearest" });
   }, [selectedId]);
 
