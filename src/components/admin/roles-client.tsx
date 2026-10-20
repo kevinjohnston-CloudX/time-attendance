@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { getRoleById } from "@/actions/role.actions";
 import { RoleEditor } from "@/components/admin/role-editor";
+import { useColumnLabels } from "@/components/admin/setup/setup-ui";
+import setupPhone from "@/components/admin/setup/setup-phone.module.css";
 import { Lock, Pencil, Plus, Shield } from "lucide-react";
 import {
   Badge,
@@ -77,6 +79,8 @@ export function RolesClient({
   roles: RoleSummary[];
   builtinRoles: BuiltinRoleSummary[];
 }) {
+  const listRef = useRef<HTMLDivElement | null>(null);
+  useColumnLabels(listRef);
   const [editingRole, setEditingRole] = useState<RoleDetail | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
@@ -114,10 +118,11 @@ export function RolesClient({
           subtitle="Control what each role can see and approve"
           actions={
             <>
-              <LinkButton href="/admin" hierarchy="tertiary">
+              <LinkButton href="/admin" hierarchy="tertiary" className="ta-phone-hide">
                 ← Administration
               </LinkButton>
               <Button
+                className="ta-header-primary"
                 onClick={() => setShowCreate(true)}
                 leadingIcon={<Plus className="h-4 w-4" />}
               >
@@ -163,6 +168,8 @@ export function RolesClient({
           />
         ) : (
           <>
+            {/* One labelled block per role on a phone (setup-phone.module.css). */}
+            <div ref={listRef} className={setupPhone.list}>
             <Table>
               <THead>
                 <TR>
@@ -187,7 +194,7 @@ export function RolesClient({
                         <span style={{ fontWeight: "var(--weight-medium)" }}>{role.name}</span>
                       </span>
                     </TD>
-                    <TD style={{ color: "var(--text-secondary)" }}>{role.description ?? "—"}</TD>
+                    <TD data-wide="true" style={{ color: "var(--text-secondary)" }}>{role.description ?? "—"}</TD>
                     {/* Rank is the hierarchy check: a role may only act on roles
                         below its own number, so it is read down the column. */}
                     <TD numeric style={{ color: "var(--text-secondary)" }}>{role.rank}</TD>
@@ -208,7 +215,7 @@ export function RolesClient({
                         {role.isActive ? "Active" : "Inactive"}
                       </Badge>
                     </TD>
-                    <TD align="right">
+                    <TD align="right" data-foot="true">
                       <Button
                         size="sm"
                         hierarchy="secondary"
@@ -223,6 +230,7 @@ export function RolesClient({
                 ))}
               </TBody>
             </Table>
+            </div>
             <TableFooter shown={visible.length} total={roles.length} label="roles" />
           </>
         )}

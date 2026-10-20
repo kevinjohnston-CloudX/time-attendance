@@ -145,6 +145,21 @@
     order: 99;
     grid-column: 1 / -1;
   }
+  /* A long text column (a role's description) across the block. */
+  .list tbody > tr > td[data-wide] {
+    grid-column: 1 / -1;
+  }
+  /* A row's action (Edit) across the foot of the block, without a caption. */
+  .list tbody > tr > td[data-foot] {
+    order: 99;
+    grid-column: 1 / -1;
+  }
+  .list tbody > tr > td[data-foot]::before {
+    content: none !important;
+  }
+  .list tbody > tr > td[data-foot] > :global(.wms-btn) {
+    width: 100%;
+  }
   /* Inner caps meant for a table cell's width. */
   .list tbody > tr > td * {
     max-width: none !important;

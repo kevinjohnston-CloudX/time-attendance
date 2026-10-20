@@ -1,0 +1,103 @@
+/* Roles & Permissions on a phone (roles-client.tsx, role-editor.tsx). */
+
+/* The phone permission blocks only render inside .ta-phone-only. */
+.perms {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.permsNote {
+  margin: 0;
+  font: var(--type-caption1);
+  color: var(--text-tertiary);
+}
+.resource {
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.resourceHead {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 14px;
+  background: var(--surface-secondary);
+  font: var(--weight-semibold) 15px/20px var(--font-sans);
+  color: var(--text-primary);
+}
+.resourceHead > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.resourceInfo {
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--surface-info);
+  font: var(--type-body2);
+  color: var(--text-secondary);
+}
+/* One action (Read, Write, Execute) and its three scopes. */
+.actionRow {
+  display: grid;
+  grid-template-columns: 72px repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px 4px 14px;
+  border-top: 1px solid var(--stroke-divider);
+}
+.actionName {
+  font: var(--weight-medium) 14px/20px var(--font-sans);
+  color: var(--text-secondary);
+}
+.scope {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+}
+.scope[data-off] {
+  opacity: 0.45;
+}
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* The editor as a bottom sheet: its header stays, its body scrolls, its
+     buttons stay in view at the foot. */
+  .editorSheet {
+    display: flex !important;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .editorBody {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+  .editorHead,
+  .editorFoot {
+    flex: none;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+  .editorFoot {
+    flex-direction: column-reverse;
+    align-items: stretch !important;
+  }
+  .editorFoot > div {
+    width: 100%;
+  }
+  .editorFoot > div > :global(.wms-btn) {
+    flex: 1 1 0;
+  }
+  .editorFoot > div:empty {
+    display: none;
+  }
+  /* A switch stays on the right of its words. */
+  .switchRow > :first-child {
+    min-width: 0 !important;
+  }
+  .switchRow {
+    flex-wrap: nowrap !important;
+  }
+}

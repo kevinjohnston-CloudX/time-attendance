@@ -6,11 +6,13 @@ import { createRole, updateRole, deleteRole, duplicateRole } from "@/actions/rol
 import { RESOURCES, ACTIONS, SCOPES, type PermissionEntry } from "@/lib/validators/role.schema";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { Trash2, Copy, Save, X, CopyCheck, Info } from "lucide-react";
+import phone from "./roles-phone.module.css";
 import {
   Badge,
   Banner,
   Button,
   Checkbox,
+  ConfirmDialog,
   Input,
   Select,
   Switch,
@@ -285,11 +287,23 @@ export function RoleEditor({
   const [selectedBuiltinKey, setSelectedBuiltinKey] = useState("");
   const [expandedResource, setExpandedResource] = useState<string | null>(null);
 
+  // The questions this window asks, in the app's own window (a bottom sheet
+  // on a phone) rather than the browser's confirm and prompt boxes.
+  const [askingReplace, setAskingReplace] = useState(false);
+  const [askingDelete, setAskingDelete] = useState(false);
+  const [copyName, setCopyName] = useState<string | null>(null);
+
   function handleMimicBuiltin() {
     const source = builtinRoles.find((r) => r.key === selectedBuiltinKey);
     if (!source) return;
-    if (permSet.size > 0 && !confirm(`Replace all current permissions with those from "${source.name}"?`)) return;
+    if (permSet.size > 0) return setAskingReplace(true);
     setPermSet(buildPermSet(source.permissions as PermissionEntry[]));
+  }
+
+  function replaceFromBuiltin() {
+    const source = builtinRoles.find((r) => r.key === selectedBuiltinKey);
+    if (source) setPermSet(buildPermSet(source.permissions as PermissionEntry[]));
+    setAskingReplace(false);
   }
 
   function handleToggle(resource: string, action: string, scope: string) {
@@ -346,7 +360,7 @@ export function RoleEditor({
 
   async function handleDelete() {
     if (!role) return;
-    if (!confirm(`Delete "${role.name}"? This cannot be undone.`)) return;
+    setAskingDelete(false);
 
     const res = await deleteRole({ id: role.id });
     if (!res.success) {
@@ -359,8 +373,9 @@ export function RoleEditor({
 
   async function handleDuplicate() {
     if (!role) return;
-    const newName = prompt("Name for the copy:", `${role.name} (Copy)`);
+    const newName = copyName?.trim();
     if (!newName) return;
+    setCopyName(null);
 
     const res = await duplicateRole({ id: role.id, name: newName });
     if (!res.success) {
@@ -375,10 +390,10 @@ export function RoleEditor({
     // The scrim stays a literal black wash in both themes: it is the absence
     // of the page rather than a surface, and a token that lightened in dark
     // mode would stop the dialog reading as modal.
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[5vh]">
-      <div className="ta-modal w-full max-w-4xl rounded-xl">
+    <div className="ta-sheet-scrim fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[5vh]">
+      <div className={`${phone.editorSheet} ta-sheet ta-modal w-full max-w-4xl rounded-xl`}>
         <header
-          className="flex items-center justify-between gap-3 px-6 py-4"
+          className={`${phone.editorHead} flex items-center justify-between gap-3 px-6 py-4`}
           style={{ borderBottom: "1px solid var(--stroke-divider)" }}
         >
           <div className="flex min-w-0 items-center gap-2.5">
@@ -396,7 +411,7 @@ export function RoleEditor({
           </Button>
         </header>
 
-        <div className="flex flex-col gap-5 px-6 py-5">
+        <div className={`${phone.editorBody} flex flex-col gap-5 px-6 py-5`}>
           <div className={FIELD_GRID}>
             <Input
               label="Name"
@@ -425,7 +440,7 @@ export function RoleEditor({
           />
 
           <div
-            className="flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3"
+            className={`${phone.switchRow} flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3`}
             style={{ border: "1px solid var(--stroke-secondary)" }}
           >
             <div className="flex min-w-[240px] flex-1 flex-col gap-0.5">
@@ -440,7 +455,7 @@ export function RoleEditor({
 
           {!isSystem && (
             <div
-              className="flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3"
+              className={`${phone.switchRow} flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3`}
               style={{
                 border: `1px solid ${liveAttendanceOnly ? "var(--stroke-warning)" : "var(--stroke-secondary)"}`,
                 background: liveAttendanceOnly ? "var(--surface-warning)" : undefined,
@@ -496,6 +511,60 @@ export function RoleEditor({
 
           <div className="flex flex-col gap-2">
             <span className="wms-label">Permissions</span>
+            {/* On a phone, one card per resource: its name, then Read, Write
+                and Execute, each with Own, Team and All. The grid below needs
+                about 500px, and swiping it to reach Write took the names off
+                screen. Both tick through handleToggle, so the same cells can
+                be ticked and the same higher scopes follow. */}
+            <div className="ta-phone-only">
+              <div className={phone.perms}>
+                <p className={phone.permsNote}>Greyed boxes are not enforced yet: nothing in the system checks them.</p>
+                {RESOURCES.map((resource) => {
+                  const info = RESOURCE_INFO[resource];
+                  const isExpanded = expandedResource === resource;
+                  return (
+                    <section key={resource} className={phone.resource} aria-label={RESOURCE_LABELS[resource]}>
+                      <div className={phone.resourceHead}>
+                        <span>{RESOURCE_LABELS[resource]}</span>
+                        {info && (
+                          <Button
+                            hierarchy="tertiary"
+                            size="sm"
+                            iconOnly
+                            aria-expanded={isExpanded}
+                            aria-label={`About ${RESOURCE_LABELS[resource]}`}
+                            onClick={() => setExpandedResource(isExpanded ? null : resource)}
+                          >
+                            <Info className="h-4 w-4" style={{ color: "var(--icon-tertiary)" }} />
+                          </Button>
+                        )}
+                      </div>
+                      {isExpanded && info && <p className={phone.resourceInfo}>{info.summary}</p>}
+                      {ACTIONS.map((action) => (
+                        <div key={action} className={phone.actionRow}>
+                          <span className={phone.actionName}>{ACTION_LABELS[action]}</span>
+                          {SCOPES.map((scope) => {
+                            const key = permKey(resource, action, scope);
+                            const isActive = ACTIVE_CELLS.has(key);
+                            return (
+                              <span key={scope} className={phone.scope} data-off={isActive ? undefined : "true"}>
+                                <Checkbox
+                                  checked={permSet.has(key)}
+                                  disabled={!isActive}
+                                  onChange={() => handleToggle(resource, action, scope)}
+                                  label={SCOPE_LABELS[scope]}
+                                />
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </section>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="ta-desktop-only">
             <div
               className="rounded-lg"
               style={{ border: "1px solid var(--stroke-secondary)", overflow: "hidden" }}
@@ -652,13 +721,14 @@ export function RoleEditor({
                 </TBody>
               </Table>
             </div>
+            </div>
           </div>
 
           {error && <Banner tone="error" body={error} />}
         </div>
 
         <footer
-          className="flex flex-wrap items-center justify-between gap-2 px-6 py-4"
+          className={`${phone.editorFoot} flex flex-wrap items-center justify-between gap-2 px-6 py-4`}
           style={{ borderTop: "1px solid var(--stroke-divider)" }}
         >
           <div className="flex gap-2">
@@ -666,7 +736,7 @@ export function RoleEditor({
               <Button
                 hierarchy="secondary"
                 tone="error"
-                onClick={handleDelete}
+                onClick={() => setAskingDelete(true)}
                 leadingIcon={<Trash2 className="h-4 w-4" />}
               >
                 Delete
@@ -675,7 +745,7 @@ export function RoleEditor({
             {isEditing && (
               <Button
                 hierarchy="secondary"
-                onClick={handleDuplicate}
+                onClick={() => setCopyName(`${role.name} (Copy)`)}
                 leadingIcon={<Copy className="h-4 w-4" />}
               >
                 Duplicate
@@ -696,6 +766,43 @@ export function RoleEditor({
           </div>
         </footer>
       </div>
+
+      {askingReplace && (
+        <ConfirmDialog
+          title="Replace the permissions?"
+          tone="warning"
+          confirmLabel="Replace permissions"
+          onConfirm={replaceFromBuiltin}
+          onCancel={() => setAskingReplace(false)}
+        >
+          Every permission ticked now is replaced with those of{" "}
+          {builtinRoles.find((r) => r.key === selectedBuiltinKey)?.name ?? "that role"}.
+        </ConfirmDialog>
+      )}
+      {askingDelete && role && (
+        <ConfirmDialog
+          title={`Delete ${role.name}?`}
+          confirmLabel="Delete role"
+          onConfirm={() => void handleDelete()}
+          onCancel={() => setAskingDelete(false)}
+        >
+          This cannot be undone.
+        </ConfirmDialog>
+      )}
+      {copyName !== null && role && (
+        <ConfirmDialog
+          title="Duplicate this role"
+          tone="info"
+          confirmLabel="Duplicate role"
+          onConfirm={() => void handleDuplicate()}
+          onCancel={() => setCopyName(null)}
+        >
+          <span className="flex flex-col gap-2 text-left">
+            <span>The copy starts with the same permissions and settings.</span>
+            <Input label="Name for the copy" value={copyName} onChange={(e) => setCopyName(e.target.value)} />
+          </span>
+        </ConfirmDialog>
+      )}
     </div>
   );
 }
