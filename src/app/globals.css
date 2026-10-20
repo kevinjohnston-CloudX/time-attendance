@@ -1238,6 +1238,10 @@ option {
     min-width: 0 !important;
     max-width: none !important;
     max-height: calc(100dvh - env(safe-area-inset-top) - 16px) !important;
+    /* A phone on its side is under 400px tall: a window taller than that
+       scrolls inside itself rather than running off the top. */
+    overflow-y: auto;
+    overscroll-behavior: contain;
     border-radius: 20px 20px 0 0 !important;
     padding-bottom: calc(var(--ta-sheet-pad, 0px) + env(safe-area-inset-bottom)) !important;
     animation: ta-sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
