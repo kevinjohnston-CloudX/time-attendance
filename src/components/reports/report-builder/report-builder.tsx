@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
+import { usePhoneBack } from "@/components/layout/phone-back";
+import { usePhoneLayout } from "@/lib/phone";
 import { ArrowLeft, ChevronDown, Play, RefreshCw, Save, Table2, X } from "lucide-react";
 import { Banner, Button, EmptyState, Input, LinkButton, PageHeader, Textarea } from "@/components/ui";
 import { ReportTypeIcon } from "../report-type-icon";
@@ -91,6 +93,9 @@ export function ReportBuilder({
   editing?: EditingReport;
 }) {
   const router = useRouter();
+  // On a phone the way out is the top bar's: back to the report being
+  // edited (Cancel), or to the list.
+  const onPhone = usePhoneLayout();
   const [isPending, startTransition] = useTransition();
   const previewRef = useRef<HTMLElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -292,6 +297,10 @@ export function ReportBuilder({
           : "Every row these settings return."
         : `The first ${PREVIEW_ROWS} rows these settings return.`;
 
+  usePhoneBack(onPhone ? (editing ? "Cancel" : "Reports") : null, () =>
+    router.push(editing ? `/reports/${editing.id}` : "/reports"),
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
@@ -301,11 +310,11 @@ export function ReportBuilder({
         actions={
           <>
             {editing ? (
-              <LinkButton href={`/reports/${editing.id}`} hierarchy="tertiary" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
+              <LinkButton href={`/reports/${editing.id}`} hierarchy="tertiary" className="ta-phone-hide" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
                 Cancel
               </LinkButton>
             ) : (
-              <LinkButton href="/reports" hierarchy="tertiary" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
+              <LinkButton href="/reports" hierarchy="tertiary" className="ta-phone-hide" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
                 Reports
               </LinkButton>
             )}

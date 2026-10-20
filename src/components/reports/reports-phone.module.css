@@ -172,3 +172,13 @@
     max-height: 40dvh !important;
   }
 }
+
+/* Folders on a phone: under the reports, not between the search and the
+   first one. The list is what the screen is for; the folders narrow it,
+   and a company with none had a box saying so at the top. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .folders {
+    order: 2;
+  }
+}
+

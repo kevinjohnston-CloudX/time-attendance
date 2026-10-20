@@ -2,6 +2,8 @@
 
 import { createElement, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
+import { usePhoneBack } from "@/components/layout/phone-back";
+import { usePhoneLayout } from "@/lib/phone";
 import { format } from "date-fns";
 import { ArrowLeft, Copy, Download, Mail, Pause, Pencil, Play, Share2, Trash2, X } from "lucide-react";
 import { Badge, Banner, Button, EmptyState, Input, LinkButton, PageHeader } from "@/components/ui";
@@ -114,6 +116,9 @@ export function ReportViewer({
   source?: SourceMeta | null;
 }) {
   const router = useRouter();
+  // On a phone the way back to the list is the top bar's.
+  const onPhone = usePhoneLayout();
+  usePhoneBack(onPhone ? "Reports" : null, () => router.push("/reports"));
   const [isToggling, startToggle] = useTransition();
   const [result, setResult] = useState<ReportResult | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -208,7 +213,7 @@ export function ReportViewer({
         subtitle={[sourceLabel, ownerText, report.description].filter(Boolean).join(" · ")}
         actions={
           <>
-            <LinkButton href="/reports" hierarchy="tertiary" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
+            <LinkButton href="/reports" hierarchy="tertiary" className="ta-phone-hide" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
               Reports
             </LinkButton>
             {isOwner && !report.isTemplate && (

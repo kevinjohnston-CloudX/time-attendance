@@ -293,7 +293,7 @@ export function ReportsList({
           // padding comes back as a -12px margin, then the 16px gap, so 4px
           // under the bar. Any more and it slid down by the difference
           // whenever the list beside it was tall enough to let it.
-          <div className="w-full flex-none lg:sticky lg:w-[228px]" style={{ top: barHeight + 4 }}>
+          <div className={`${phone.folders} w-full flex-none lg:sticky lg:w-[228px]`} style={{ top: barHeight + 4 }}>
             <FolderTree
               folders={folderNodes}
               selectedFolderId={folder || null}
