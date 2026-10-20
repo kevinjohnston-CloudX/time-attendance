@@ -220,6 +220,11 @@ model Employee {
   customRole   CustomRole?  @relation(fields: [customRoleId], references: [id])
   supervisor   Employee?    @relation("EmployeeSupervisor", fields: [supervisorId], references: [id])
   subordinates Employee[]   @relation("EmployeeSupervisor")
+  // Supervisors besides the one above (an agency's viewer beside the
+  // warehouse supervisor). They see the person as their own; what they may
+  // do comes from their role. The one above stays the supervisor of record.
+  additionalSupervisors EmployeeSupervisor[] @relation("SupervisedEmployee")
+  alsoSupervises        EmployeeSupervisor[] @relation("AdditionalSupervisor")
   site         Site         @relation(fields: [siteId], references: [id])
   department   Department   @relation(fields: [departmentId], references: [id])
   ruleSet      RuleSet      @relation(fields: [ruleSetId], references: [id])
@@ -384,6 +389,23 @@ model Document {
   @@map("documents")
 }
 
+/// A supervisor of an employee besides their supervisor of record.
+model EmployeeSupervisor {
+  id           String   @id @default(cuid())
+  employeeId   String
+  supervisorId String
+  createdAt    DateTime @default(now())
+  createdById  String?
+
+  employee   Employee @relation("SupervisedEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  supervisor Employee @relation("AdditionalSupervisor", fields: [supervisorId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, supervisorId])
+  // The team scopes look these up by supervisor.
+  @@index([supervisorId])
+  @@map("employee_supervisors")
+}
+
 model EmployeeRuleSetHistory {
   id            String   @id @default(cuid())
   employeeId    String
@@ -410,6 +432,12 @@ model EmployeePayRate {
   rate1         Decimal  @db.Decimal(10, 4)
   rate2         Decimal? @db.Decimal(10, 4)
   rate3         Decimal? @db.Decimal(10, 4)
+  /// The markup on Rate 1 in percent (32 = 32%), and the charge rate it gives:
+  /// Rate 1 × (1 + markup), to the cent, unless chargeManual says the charge
+  /// rate was set by hand (an agreement that does not follow the formula).
+  markupPct     Decimal? @db.Decimal(7, 3)
+  chargeRate    Decimal? @db.Decimal(10, 4)
+  chargeManual  Boolean  @default(false)
   note          String?
   createdById   String?
   createdAt     DateTime @default(now())
@@ -428,6 +456,9 @@ model Agency {
   description String
   laborRate   Decimal  @default(0) @db.Decimal(10, 6)
   chargeRate  Decimal  @default(0) @db.Decimal(10, 6)
+  /// The markup this agency's agreement adds to the hourly rate, in percent
+  /// (32 = 32%). A new pay rate row for one of its people starts from it.
+  defaultMarkupPct Decimal? @db.Decimal(7, 3)
   inactiveOn  DateTime?                 // null = still active
   maxWorkHours Decimal @default(0) @db.Decimal(8, 2)
   createdAt   DateTime @default(now())

@@ -1,4 +1,6 @@
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { directReportsOf } from "@/lib/get-subordinate-ids";
 
 /**
  * What Team Overview puts on screen that the dashboard does not already have.
@@ -35,10 +37,10 @@ export interface TimeOffRow {
   durationMinutes: number;
 }
 
-type Scope = { tenantId: string; supervisorId?: string };
+type Scope = Prisma.EmployeeWhereInput;
 
 function scopeOf(tenantId: string, employeeId: string | null, isPayroll: boolean): Scope {
-  return isPayroll ? { tenantId } : { tenantId, supervisorId: employeeId ?? "" };
+  return isPayroll ? { tenantId } : { tenantId, ...directReportsOf(employeeId ?? "") };
 }
 
 /** Today as the @db.Date columns store it: UTC midnight. */

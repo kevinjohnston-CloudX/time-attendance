@@ -31,6 +31,8 @@ export const PERMISSIONS = [
   // Run payroll: lock and unlock pay periods and single timecards, push to ADP
   "PAYROLL_RUN",
   "EMPLOYEE_MANAGE",
+  // See your own people's employee details (Team Members), read only
+  "EMPLOYEE_VIEW_TEAM",
   "RULES_MANAGE",
   "AUDIT_VIEW",
   "SITE_MANAGE",

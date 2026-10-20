@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import { Users, AlertCircle, CalendarDays, CalendarCheck } from "lucide-react";
+import { directReportsOf } from "@/lib/get-subordinate-ids";
 
 export default async function SupervisorDashboardPage() {
   const session = await auth();
@@ -24,26 +25,26 @@ export default async function SupervisorDashboardPage() {
         resolvedAt: null,
         ...(isPayroll
           ? {}
-          : { timesheet: { employee: { supervisorId: employeeId } } }),
+          : { timesheet: { employee: directReportsOf(employeeId) } }),
       },
     }),
     db.leaveRequest.count({
       where: {
         status: "PENDING",
-        ...(isPayroll ? {} : { employee: { supervisorId: employeeId } }),
+        ...(isPayroll ? {} : { employee: directReportsOf(employeeId) }),
       },
     }),
     db.leaveRequest.count({
       where: {
         status: "PENDING_HR",
-        ...(isPayroll ? {} : { employee: { supervisorId: employeeId } }),
+        ...(isPayroll ? {} : { employee: directReportsOf(employeeId) }),
       },
     }),
     db.leaveRequest.count({
       where: {
         status: { in: ["APPROVED", "POSTED"] },
         endDate: { gte: today },
-        ...(isPayroll ? {} : { employee: { supervisorId: employeeId } }),
+        ...(isPayroll ? {} : { employee: directReportsOf(employeeId) }),
       },
     }),
   ]);

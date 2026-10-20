@@ -4,6 +4,7 @@ import { userHasPermission } from "@/lib/rbac/check-permission";
 import { endOfDayInTz, snapToLocalTime } from "@/lib/utils/date";
 import { photoUrls } from "@/lib/presence/photos";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { directReportsOf } from "@/lib/get-subordinate-ids";
 
 /**
  * Everything the Team Punch History screen and its export read, in one place,
@@ -245,7 +246,7 @@ async function resolveScope(viewer: Viewer, params: PunchHistoryParams) {
   // drop the condition and hand them the whole company.
   const scope: Prisma.EmployeeWhereInput = isPayroll
     ? { isActive: true, ...(tenantId ? { tenantId } : {}) }
-    : { isActive: true, supervisorId: viewer.employeeId ?? "__none__", ...(tenantId ? { tenantId } : {}) };
+    : { isActive: true, ...directReportsOf(viewer.employeeId ?? "__none__"), ...(tenantId ? { tenantId } : {}) };
 
   const selectedSiteId = isPayroll ? (params.siteId || null) : null;
   const selectedDepartmentId = isPayroll ? (params.departmentId || null) : null;
@@ -256,14 +257,19 @@ async function resolveScope(viewer: Viewer, params: PunchHistoryParams) {
   };
 
   const search = (params.q ?? "").trim().slice(0, 80);
+  // The search narrows the team, never replaces it: both must hold.
   const matching: Prisma.EmployeeWhereInput = search
     ? {
-        ...filtered,
-        OR: [
-          { user: { name: { contains: search, mode: "insensitive" } } },
-          { employeeCode: { contains: search, mode: "insensitive" } },
-          { wmsId: { contains: search, mode: "insensitive" } },
-          { department: { name: { contains: search, mode: "insensitive" } } },
+        AND: [
+          filtered,
+          {
+            OR: [
+              { user: { name: { contains: search, mode: "insensitive" } } },
+              { employeeCode: { contains: search, mode: "insensitive" } },
+              { wmsId: { contains: search, mode: "insensitive" } },
+              { department: { name: { contains: search, mode: "insensitive" } } },
+            ],
+          },
         ],
       }
     : filtered;

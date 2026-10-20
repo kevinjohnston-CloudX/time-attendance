@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 import Link from "next/link";
-import { updateEmployee, updateHrSiteAccess } from "@/actions/admin.actions";
+import { updateAdditionalSupervisors, updateEmployee, updateHrSiteAccess } from "@/actions/admin.actions";
 import { setTemporaryPassword } from "@/actions/password.actions";
 import type { Site, Department, RuleSet, Employee } from "@prisma/client";
 import {
@@ -97,7 +97,7 @@ interface Props {
   payCategories: { id: string; number: number; description: string | null }[];
   payTypes: { id: string; number: number; description: string | null }[];
   jobTitles: { id: string; name: string; externalId: string | null }[];
-  agencies: { id: string; code: number; description: string; inactiveOn: Date | string | null }[];
+  agencies: { id: string; code: number; description: string; inactiveOn: Date | string | null; defaultMarkupPct?: number | null }[];
   logs: Array<{
     id: string;
     createdAt: string;
@@ -106,6 +106,8 @@ interface Props {
     fields: Array<{ field: string; before: string; after: string }>;
   }>;
   hrSiteAccess: string[];
+  /** Supervisors besides the supervisor of record. */
+  additionalSupervisors?: { id: string; name: string; isActive: boolean }[];
   actorRole: string;
   canManageRules?: boolean;
   payRates: PayRateRow[];
@@ -316,6 +318,7 @@ export function EditEmployeeForm({
   agencies,
   logs,
   hrSiteAccess,
+  additionalSupervisors = [],
   actorRole,
   canManageRules = false,
   payRates,
@@ -399,9 +402,11 @@ export function EditEmployeeForm({
     [employee, roleId],
   );
   const savedAccess = useMemo(() => new Set(hrSiteAccess), [hrSiteAccess]);
+  const savedExtra = useMemo(() => additionalSupervisors.map((s) => s.id), [additionalSupervisors]);
 
   const [draft, setDraft] = useState<Values>(saved);
   const [draftAccess, setDraftAccess] = useState<Set<string>>(savedAccess);
+  const [draftExtra, setDraftExtra] = useState<string[]>(savedExtra);
 
   // Read mode always shows what is saved; edit mode shows the draft.
   const v = editing ? draft : saved;
@@ -417,7 +422,9 @@ export function EditEmployeeForm({
     canManageSiteAccess &&
     showsSiteAccess &&
     (draftAccess.size !== savedAccess.size || [...draftAccess].some((id) => !savedAccess.has(id)));
-  const changeCount = changed.length + (accessChanged ? 1 : 0);
+  const extraChanged =
+    draftExtra.length !== savedExtra.length || draftExtra.some((id) => !savedExtra.includes(id));
+  const changeCount = changed.length + (accessChanged ? 1 : 0) + (extraChanged ? 1 : 0);
   const dirty = editing && changeCount > 0;
 
   // Leaving the page with unsaved edits asks first.
@@ -496,6 +503,7 @@ export function EditEmployeeForm({
   function startEditing() {
     setDraft(saved);
     setDraftAccess(new Set(savedAccess));
+    setDraftExtra(savedExtra);
     setError(null);
     setEditing(true);
   }
@@ -592,6 +600,18 @@ export function EditEmployeeForm({
         return;
       }
     }
+    if (extraChanged) {
+      const result = await updateAdditionalSupervisors({ employeeId: employee.id, supervisorIds: draftExtra });
+      if (!result.success) {
+        setError(
+          changed.length > 0 || accessChanged
+            ? `The other changes were saved, but additional supervisors were not: ${result.error ?? "they could not be saved."}`
+            : result.error ?? "Additional supervisors could not be saved.",
+        );
+        router.refresh();
+        return;
+      }
+    }
     startTransition(() => {
       router.refresh();
       setEditing(false);
@@ -604,6 +624,10 @@ export function EditEmployeeForm({
   const siteZone = (id: string) => sites.find((s) => s.id === id)?.timezone ?? employee.site.timezone;
   const deptName = (id: string) =>
     departments.find((d) => d.id === id)?.name ?? (id === employee.departmentId ? employee.department.name : "");
+  const extraName = (id: string) =>
+    employees.find((e) => e.id === id)?.user.name ??
+    additionalSupervisors.find((s) => s.id === id)?.name ??
+    id;
   const supervisorName = (id: string) =>
     id
       ? employees.find((e) => e.id === id)?.user.name ??
@@ -969,6 +993,56 @@ export function EditEmployeeForm({
                     </>,
                   )}
                 </Field>
+
+                <Field
+                  label="Additional supervisors"
+                  htmlFor="f-additionalSupervisors"
+                  read={
+                    additionalSupervisors.length
+                      ? additionalSupervisors.map((s) => s.name + (s.isActive ? "" : " (inactive)")).join(", ")
+                      : "None"
+                  }
+                  hint="They see this person on their team screens, with what their own role allows. The supervisor above stays the one on record."
+                >
+                  <span className="flex flex-col gap-2">
+                    {draftExtra.length > 0 && (
+                      <span className="flex flex-wrap gap-1.5">
+                        {draftExtra.map((id) => (
+                          <span
+                            key={id}
+                            className="inline-flex items-center gap-1 rounded-full py-0.5 pl-2.5 pr-1"
+                            style={{ background: "var(--surface-secondary)", font: "var(--type-body2)", color: "var(--text-primary)" }}
+                          >
+                            {extraName(id)}
+                            <button
+                              type="button"
+                              onClick={() => setDraftExtra((list) => list.filter((x) => x !== id))}
+                              aria-label={`Remove ${extraName(id)}`}
+                              className="rounded-full px-1.5"
+                              style={{ color: "var(--icon-secondary)" }}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                    <Select
+                      id="f-additionalSupervisors"
+                      value=""
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        if (id) setDraftExtra((list) => (list.includes(id) ? list : [...list, id]));
+                      }}
+                      style={{ width: "100%" }}
+                    >
+                      <option value="">Add a supervisor…</option>
+                      {employees
+                        .filter((e) => e.id !== employee.id && e.id !== draft.supervisorId && !draftExtra.includes(e.id))
+                        .map((e) => <option key={e.id} value={e.id}>{e.user.name}</option>)}
+                    </Select>
+                  </span>
+                </Field>
                 {/* Read mode shows status once, on the profile card. The
                     field only appears here when it can be changed. */}
                 {editing && (
@@ -1136,13 +1210,16 @@ export function EditEmployeeForm({
                 </Field>
 
                 <div style={{ gridColumn: "1 / -1" }}>
-                  <PayRatesTable employeeId={employee.id} initial={payRates} salary={v.payType === "SALARY"} />
+                  <PayRatesTable
+                    employeeId={employee.id}
+                    initial={payRates}
+                    salary={v.payType === "SALARY"}
+                    defaultMarkupPct={agencies.find((a) => a.id === v.agencyId)?.defaultMarkupPct ?? null}
+                  />
                 </div>
 
-                {/* For reference only: nothing calculates from these */}
-                <Field label="Charge rate" htmlFor="f-chargeRate" read={v.chargeRate ? `$${Number(v.chargeRate).toFixed(2)}` : null}>
-                  {text("chargeRate", { type: "number", min: 0, step: "0.01", inputMode: "decimal", placeholder: "0.00" })}
-                </Field>
+                {/* For reference only: nothing calculates from these. The charge
+                    rate is on each pay rate row, with its markup (Pay rates, above). */}
                 <Field label="Holiday rate" htmlFor="f-holidayRate" read={v.holidayRate ? `$${Number(v.holidayRate).toFixed(2)}` : null}>
                   {text("holidayRate", { type: "number", min: 0, step: "0.01", inputMode: "decimal", placeholder: "0.00" })}
                 </Field>

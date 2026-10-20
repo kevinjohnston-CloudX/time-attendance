@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 import { TeamPunchHistoryViewer } from "@/classic/components/supervisor/team-punch-history-viewer";
+import { directReportsOf } from "@/lib/get-subordinate-ids";
 
 export default async function TeamPunchHistoryPage({
   searchParams,
@@ -37,7 +38,7 @@ export default async function TeamPunchHistoryPage({
   } else {
     const today = new Date();
     const currentPP = await db.payPeriod.findFirst({
-      where: { startDate: { lte: today }, endDate: { gt: today } },
+      where: { startDate: { lte: today }, endDate: { gt: today }, ...(t ? { tenantId: t } : {}) },
     });
     if (currentPP) {
       startDate = format(parseUtcDate(currentPP.startDate), "yyyy-MM-dd");
@@ -80,7 +81,7 @@ export default async function TeamPunchHistoryPage({
     where: {
       ...(isPayroll
         ? { isActive: true, ...(t ? { tenantId: t } : {}) }
-        : { supervisorId: myEmployeeId, isActive: true, ...(t ? { tenantId: t } : {}) }),
+        : { ...directReportsOf(myEmployeeId ?? "__none__"), isActive: true, ...(t ? { tenantId: t } : {}) }),
       ...(selectedSiteId ? { siteId: selectedSiteId } : {}),
       ...(selectedDepartmentId ? { departmentId: selectedDepartmentId } : {}),
     },
@@ -91,8 +92,11 @@ export default async function TeamPunchHistoryPage({
     orderBy: { user: { name: "asc" } },
   });
 
+  // Only someone on the list above: the address is the browser's to edit, and
+  // an id taken from it unchecked showed anyone's punches.
   const selectedEmployeeId =
-    sp.employeeId ?? (employees.length > 0 ? employees[0].id : null);
+    (sp.employeeId && employees.some((e) => e.id === sp.employeeId) ? sp.employeeId : null) ??
+    (employees.length > 0 ? employees[0].id : null);
 
   // Punches for the selected employee within the date range
   const rangeStart = new Date(startDate + "T00:00:00");

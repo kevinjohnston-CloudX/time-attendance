@@ -57,9 +57,12 @@ const navItems: NavItem[] = [
 ];
 
 const supervisorItems: NavItem[] = [
-  { label: "Team Overview", href: "/supervisor", icon: Users, permission: "PUNCH_VIEW_TEAM" },
-  { label: "Exceptions", href: "/supervisor/exceptions", icon: AlertCircle, permission: "PUNCH_VIEW_TEAM" },
-  { label: "Leave Requests", href: "/supervisor/leave", icon: CalendarDays, permission: "PUNCH_VIEW_TEAM" },
+  // Each item asks for what its page asks for, so a view-only role is not
+  // shown links that send it back to the Dashboard.
+  { label: "Team Overview", href: "/supervisor", icon: Users, permission: "TIMESHEET_APPROVE_TEAM" },
+  { label: "Team Members", href: "/supervisor/team", icon: Users, permission: ["EMPLOYEE_VIEW_TEAM", "EMPLOYEE_MANAGE"] },
+  { label: "Exceptions", href: "/supervisor/exceptions", icon: AlertCircle, permission: "TIMESHEET_APPROVE_TEAM" },
+  { label: "Leave Requests", href: "/supervisor/leave", icon: CalendarDays, permission: "LEAVE_APPROVE_TEAM" },
   { label: "Team Punch History", href: "/supervisor/punch-history", icon: History, permission: "PUNCH_VIEW_TEAM" },
 ];
 

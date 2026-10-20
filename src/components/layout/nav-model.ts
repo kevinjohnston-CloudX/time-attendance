@@ -114,10 +114,13 @@ export const SECTIONS: NavSection[] = [
     label: "Team",
     prefixes: ["/supervisor", "/approvals"],
     items: [
-      { label: "Team Overview", href: "/supervisor", icon: Users, permission: "PUNCH_VIEW_TEAM" },
+      // Each item asks for what its page asks for, so a view-only role is not
+      // shown links that send it back to the Dashboard.
+      { label: "Team Overview", href: "/supervisor", icon: Users, permission: "TIMESHEET_APPROVE_TEAM" },
+      { label: "Team Members", href: "/supervisor/team", icon: IdCard, permission: ["EMPLOYEE_VIEW_TEAM", "EMPLOYEE_MANAGE"] },
       { label: "Live Attendance", href: "/supervisor/on-site", icon: DoorOpen, permission: "PRESENCE_VIEW_ANY" },
-      { label: "Exceptions", href: "/supervisor/exceptions", icon: AlertTriangle, permission: "PUNCH_VIEW_TEAM" },
-      { label: "Leave Requests", href: "/supervisor/leave", icon: CalendarClock, permission: "PUNCH_VIEW_TEAM" },
+      { label: "Exceptions", href: "/supervisor/exceptions", icon: AlertTriangle, permission: "TIMESHEET_APPROVE_TEAM" },
+      { label: "Leave Requests", href: "/supervisor/leave", icon: CalendarClock, permission: "LEAVE_APPROVE_TEAM" },
       { label: "Team Punch History", href: "/supervisor/punch-history", icon: History, permission: "PUNCH_VIEW_TEAM" },
     ],
   },
@@ -321,8 +324,19 @@ export function phoneTabs({
       approvals,
     ];
   }
-  if (can("PUNCH_VIEW_TEAM")) {
+  // Team Overview and the approval queues need approve rights, as their pages do.
+  if (can("TIMESHEET_APPROVE_TEAM")) {
     return [home, { label: "Team", href: "/supervisor", icon: Users }, approvals, { label: "Punch", href: "/time/punch", icon: Clock }];
+  }
+  // A view-only team role (an agency viewer): what it can open, and no Punch,
+  // Approvals or Team Overview, which would only send it back to Home.
+  if (can(["EMPLOYEE_VIEW_TEAM", "TIMECARD_VIEW_TEAM", "PUNCH_VIEW_TEAM"])) {
+    return [
+      home,
+      ...(can("EMPLOYEE_VIEW_TEAM") ? [{ label: "Team", href: "/supervisor/team", icon: Users }] : []),
+      ...(can("TIMECARD_VIEW_TEAM") ? [{ label: "Timecards", href: "/payroll/timecards", icon: FileSpreadsheet }] : []),
+      ...(can("PUNCH_VIEW_TEAM") ? [{ label: "Punches", href: "/supervisor/punch-history", icon: History }] : []),
+    ];
   }
   return [
     home,

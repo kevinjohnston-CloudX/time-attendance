@@ -1,9 +1,35 @@
 import { cache } from "react";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 
 /**
+ * The people who report to a supervisor directly: those whose supervisor of
+ * record they are, and those they were added to as an additional supervisor
+ * (employee_supervisors). Every screen that lists "my people" one level down
+ * uses this, so an additional supervisor sees exactly what the supervisor of
+ * record sees; what either may do there comes from their role.
+ *
+ * <p>Wrapped in AND, so a filter spread over it with its own OR (a name
+ * search) adds to it instead of replacing it: a bare OR here was replaced by
+ * Team Punch History's search, which then searched the whole company.
+ */
+export function directReportsOf(supervisorEmployeeId: string): Prisma.EmployeeWhereInput {
+  return {
+    AND: [
+      {
+        OR: [
+          { supervisorId: supervisorEmployeeId },
+          { additionalSupervisors: { some: { supervisorId: supervisorEmployeeId } } },
+        ],
+      },
+    ],
+  };
+}
+
+/**
  * Returns the IDs of all employees in the subtree rooted at actorId,
- * following the supervisorId chain to any depth: direct and indirect reports.
+ * following the supervisor links to any depth: direct and indirect reports,
+ * through the supervisor of record or an additional supervisor alike.
  *
  * <p>One recursive query rather than one query per level of the org chart
  * (ten levels deep when measured), and the same answer: UNION rather than
@@ -17,18 +43,27 @@ import { db } from "@/lib/db";
  */
 const subtree = cache(async (actorId: string, tenantId: string | null): Promise<string[]> => {
   const rows = await db.$queryRaw<{ id: string }[]>`
-    WITH RECURSIVE reports AS (
-      SELECT e.id
+    WITH RECURSIVE links AS (
+      SELECT e.id AS "employeeId", e."supervisorId"
       FROM   "employees" e
-      WHERE  e."supervisorId" = ${actorId}
+      WHERE  e."supervisorId" IS NOT NULL
         AND  (${tenantId}::text IS NULL OR e."tenantId" = ${tenantId})
       UNION
-      SELECT e.id
-      FROM   "employees" e
-      JOIN   reports r ON e."supervisorId" = r.id
+      SELECT es."employeeId", es."supervisorId"
+      FROM   "employee_supervisors" es
+      JOIN   "employees" e ON e.id = es."employeeId"
       WHERE  (${tenantId}::text IS NULL OR e."tenantId" = ${tenantId})
+    ),
+    reports AS (
+      SELECT l."employeeId" AS id
+      FROM   links l
+      WHERE  l."supervisorId" = ${actorId}
+      UNION
+      SELECT l."employeeId"
+      FROM   links l
+      JOIN   reports r ON l."supervisorId" = r.id
     )
-    SELECT id FROM reports
+    SELECT id FROM reports WHERE id <> ${actorId}
   `;
   return rows.map((r) => r.id);
 });

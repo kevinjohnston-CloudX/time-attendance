@@ -10,6 +10,7 @@ import { updateEmployee, updateHrSiteAccess } from "@/actions/admin.actions";
 import { setTemporaryPassword } from "@/actions/password.actions";
 import type { PayRateRow } from "@/actions/pay-rate.actions";
 import { PayRatesTable } from "@/classic/components/admin/pay-rates-table";
+import { AdditionalSupervisorsField } from "@/classic/components/admin/additional-supervisors-field";
 import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
 import { TIME_ZONE_OPTIONS, timeZoneLabel } from "@/lib/utils/person-time-zone";
 
@@ -40,7 +41,7 @@ interface Props {
   payCategories: { id: string; number: number; description: string | null }[];
   payTypes: { id: string; number: number; description: string | null }[];
   jobTitles: { id: string; name: string; externalId: string | null }[];
-  agencies: { id: string; code: number; description: string; inactiveOn: Date | string | null }[];
+  agencies: { id: string; code: number; description: string; inactiveOn: Date | string | null; defaultMarkupPct?: number | null }[];
   logs: Array<{
     id: string;
     createdAt: string;
@@ -49,6 +50,8 @@ interface Props {
     fields: Array<{ field: string; before: string; after: string }>;
   }>;
   hrSiteAccess: string[];
+  /** Supervisors besides the supervisor of record. */
+  additionalSupervisors?: { id: string; name: string; isActive: boolean }[];
   actorRole: string;
   canManageRules?: boolean;
   payRates: PayRateRow[];
@@ -66,7 +69,7 @@ const labelCls = "mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-
 
 type Tab = "general" | "personal" | "pay" | "logs" | "site-access";
 
-export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, logs, hrSiteAccess, actorRole, canManageRules = false, payRates }: Props) {
+export function EditEmployeeForm({ employee, sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, logs, hrSiteAccess, additionalSupervisors = [], actorRole, canManageRules = false, payRates }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -196,7 +199,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
       payCategoryId: (fd.get("payCategoryId") as string) || null,
       payTypeId: (fd.get("payTypeId") as string) || null,
       payType: fd.get("payType") as string,
-      chargeRate: money("chargeRate"),
+      // The charge rate is on each pay rate row now (Pay Rates, above).
       holidayRate: money("holidayRate"),
       overtimeRate: money("overtimeRate"),
     };
@@ -331,6 +334,15 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
                   .map((e) => <option key={e.id} value={e.id}>{e.user.name}</option>)}
               </select>
             </div>
+
+            <AdditionalSupervisorsField
+              employeeId={employee.id}
+              supervisorId={employee.supervisorId}
+              saved={additionalSupervisors}
+              employees={employees}
+              labelCls={labelCls}
+              inputCls={inputCls}
+            />
 
             <div>
               <label className={labelCls}>Job Title</label>
@@ -691,15 +703,17 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
           </div>
 
           <div className="mt-6">
-            <PayRatesTable employeeId={employee.id} initial={payRates} salary={payType === "SALARY"} />
+            <PayRatesTable
+              employeeId={employee.id}
+              initial={payRates}
+              salary={payType === "SALARY"}
+              defaultMarkupPct={agencies.find((a) => a.id === (employee as { agencyId?: string | null }).agencyId)?.defaultMarkupPct ?? null}
+            />
           </div>
 
           {/* For reference only: nothing calculates from these */}
+          {/* The charge rate is on each pay rate row, with its markup (Pay Rates, above). */}
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>Charge Rate</label>
-              <input type="number" name="chargeRate" min="0" step="0.01" placeholder="0.00" defaultValue={employee.chargeRate ?? ""} className={inputCls} />
-            </div>
             <div>
               <label className={labelCls}>Holiday Rate</label>
               <input type="number" name="holidayRate" min="0" step="0.01" placeholder="0.00" defaultValue={employee.holidayRate ?? ""} className={inputCls} />

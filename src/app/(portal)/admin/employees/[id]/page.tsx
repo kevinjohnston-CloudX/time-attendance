@@ -1,7 +1,7 @@
 import { redirect, notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
-import { getEmployeeById, getAdminRefData, getEmployeeAuditLogs, getHrSiteAccess } from "@/actions/admin.actions";
+import { getEmployeeById, getAdminRefData, getEmployeeAuditLogs, getHrSiteAccess, getAdditionalSupervisors } from "@/actions/admin.actions";
 import { EditEmployeeForm } from "@/components/admin/edit-employee-form";
 import { getPayRates } from "@/actions/pay-rate.actions";
 import { photoUrls } from "@/lib/presence/photos";
@@ -24,12 +24,13 @@ export default async function EditEmployeePage({
 
   const canManageRules = await userHasPermission(session.user, "RULES_MANAGE");
 
-  const [empResult, refResult, logsResult, siteAccessResult, payRatesResult] = await Promise.all([
+  const [empResult, refResult, logsResult, siteAccessResult, payRatesResult, extraResult] = await Promise.all([
     getEmployeeById({ employeeId: id }),
     getAdminRefData(),
     getEmployeeAuditLogs({ employeeId: id }),
     getHrSiteAccess({ employeeId: id }),
     getPayRates({ employeeId: id }),
+    getAdditionalSupervisors({ employeeId: id }),
   ]);
 
   if (!empResult.success) notFound();
@@ -75,6 +76,7 @@ export default async function EditEmployeePage({
         agencies={agencies ?? []}
         logs={logs}
         hrSiteAccess={hrSiteAccess}
+        additionalSupervisors={extraResult.success ? extraResult.data : []}
         actorRole={actorRole ?? "EMPLOYEE"}
         canManageRules={canManageRules}
         payRates={payRatesResult.success ? payRatesResult.data : []}

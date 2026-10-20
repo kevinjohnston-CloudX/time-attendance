@@ -101,6 +101,7 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
   employee: {
     summary: "Controls access to employee records.",
     cells: {
+      "read:team": "See your own people's details on Team Members (name, badge, site, department, agency, supervisor, shift, hire date), read only. No pay, contact details or changes.",
       "write:all": "Add new employees, edit profiles, change roles, and deactivate or terminate employees.",
     },
   },

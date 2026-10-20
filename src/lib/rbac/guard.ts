@@ -19,9 +19,42 @@ import { ZodError } from "zod";
  * which anyone can read in devtools. That is logged here with a short
  * reference, and the browser gets the reference only.
  */
+/** What a unique field is called on screen. Keys and company ids are left out of the sentence. */
+const UNIQUE_FIELD_LABEL: Record<string, string> = {
+  email: "email",
+  employeeCode: "Badge ID",
+  wmsId: "Badge ID",
+  barcode: "badge barcode",
+  adpWorkerId: "ADP Worker ID",
+  name: "name",
+  code: "code",
+  number: "number",
+};
+
+/**
+ * A save refused because a value is already on another record (Postgres
+ * 23505, Prisma P2002), said by which field: "That Badge ID is already in
+ * use." The fields come from the driver's report; nothing else of the error
+ * reaches the browser. It used to read "Something went wrong" with a
+ * reference only the server log could explain.
+ */
+export function alreadyInUse(err: Prisma.PrismaClientKnownRequestError): string {
+  const meta = (err.meta ?? {}) as {
+    target?: string | string[];
+    driverAdapterError?: { cause?: { constraint?: { fields?: string[] } } };
+  };
+  const raw = [
+    ...(Array.isArray(meta.target) ? meta.target : meta.target ? [meta.target] : []),
+    ...(meta.driverAdapterError?.cause?.constraint?.fields ?? []),
+  ].map((f) => f.replace(/"/g, "").trim());
+  const label = raw.map((f) => UNIQUE_FIELD_LABEL[f]).find(Boolean);
+  return label ? `That ${label} is already in use.` : "One of these details is already in use on another record.";
+}
+
 function publicError(err: unknown): string {
   if (err instanceof ZodError) return err.issues[0]?.message ?? "Some of the details are not valid";
   if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") return "Not found";
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") return alreadyInUse(err);
   const internal =
     err instanceof Prisma.PrismaClientKnownRequestError ||
     err instanceof Prisma.PrismaClientUnknownRequestError ||

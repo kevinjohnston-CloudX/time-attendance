@@ -221,7 +221,7 @@ export const getAdminRefData = withRBAC(
       db.agency.findMany({
         where: { tenantId: t },
         orderBy: { code: "asc" },
-        select: { id: true, code: true, description: true, inactiveOn: true },
+        select: { id: true, code: true, description: true, inactiveOn: true, defaultMarkupPct: true },
       }),
     ]);
     // No serializePayRate here any more: the rows no longer carry a pay rate
@@ -232,7 +232,11 @@ export const getAdminRefData = withRBAC(
     const me = await currentIdentity();
     const givesLimited = !!me && givesLiveAttendanceRoles(me);
     const roles = customRoles.map((r) => ({ ...r, givable: !r.liveAttendanceOnly || givesLimited }));
-    return { sites, departments, ruleSets, employees, customRoles: roles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies };
+    return {
+      sites, departments, ruleSets, employees, customRoles: roles, shifts, holidayRules, payCategories, payTypes, jobTitles,
+      // The default markup as a plain number: a Decimal does not cross to the browser.
+      agencies: agencies.map((a) => ({ ...a, defaultMarkupPct: a.defaultMarkupPct == null ? null : Number(a.defaultMarkupPct) })),
+    };
   }
 );
 
@@ -409,6 +413,37 @@ export const createEmployee = withRBAC(
       const cr = await db.customRole.findFirst({ where: { id: resolvedCustomRoleId, tenantId }, select: { isSystem: true, name: true } });
       resolvedRole = (cr?.isSystem ? (SYSTEM_ROLE_NAME_TO_ENUM[cr.name] ?? "EMPLOYEE") : "EMPLOYEE") as typeof parsed.role;
       roleName = cr?.name ?? null;
+    }
+
+    // A Badge ID or login email already on file is said in words, with who has
+    // it: the database refusal reached the screen only as "Something went
+    // wrong". Mostly a rehire whose old record is inactive (Fidella Rios,
+    // 639608, from the NovaTime import), who should be made active instead.
+    const badge = parsed.employeeCode || parsed.wmsId;
+    if (badge) {
+      const taken = await db.employee.findFirst({
+        where: { tenantId, OR: [{ employeeCode: badge }, { wmsId: badge }] },
+        select: { isActive: true, user: { select: { name: true } } },
+      });
+      if (taken) {
+        const who = taken.user?.name ?? "another employee";
+        throw new Error(
+          taken.isActive
+            ? `Badge ID ${badge} is already in use by ${who}.`
+            : `Badge ID ${badge} is already in use by ${who} (inactive). Open their record and make them active instead of adding them again.`,
+        );
+      }
+    }
+    if (parsed.email) {
+      const owner = await db.user.findUnique({
+        where: { email: parsed.email },
+        select: { name: true, employee: { select: { tenantId: true } } },
+      });
+      if (owner) {
+        // A name only from this company; anyone else's account stays unnamed.
+        const who = owner.employee?.tenantId === tenantId && owner.name ? owner.name : "another account";
+        throw new Error(`The email ${parsed.email} is already used by ${who}.`);
+      }
     }
 
     const employee = await db.$transaction(async (tx) => {
@@ -866,7 +901,8 @@ export const updateEmployee = withRBAC(
 
     // A new time zone moves where their days start and end: their open
     // timecards are recalculated now rather than at their next punch.
-    if (timeZone !== undefined && timeZone !== current.timeZone) {
+    // Not for someone inactive: their timecards stay as they were when they left.
+    if (timeZone !== undefined && timeZone !== current.timeZone && willBeActive) {
       const open = await db.timesheet.findMany({
         where: { employeeId, status: { notIn: ["LOCKED", "PAYROLL_APPROVED"] }, payPeriod: { status: "OPEN" } },
         select: { id: true, employee: { select: { ruleSet: true } } },
@@ -928,6 +964,75 @@ export const updateHrSiteAccess = withRBAC(
 
     revalidatePath("/admin/employees");
     return { siteIds: safeIds };
+  }
+);
+
+// ─── Additional supervisors ───────────────────────────────────────────────────
+
+/**
+ * An employee's supervisors besides the supervisor of record: each sees them
+ * on their team screens, with what their own role allows.
+ */
+export const getAdditionalSupervisors = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async ({ tenantId }, { employeeId }: { employeeId: string }) => {
+    if (!tenantId) throw new Error("NOT_FOUND");
+    // Held to the company: the id comes from the browser.
+    const rows = await db.employeeSupervisor.findMany({
+      where: { employeeId, employee: { tenantId } },
+      select: { supervisor: { select: { id: true, isActive: true, user: { select: { name: true } } } } },
+    });
+    return rows
+      .map((r) => ({ id: r.supervisor.id, name: r.supervisor.user?.name ?? r.supervisor.id, isActive: r.supervisor.isActive }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+);
+
+export const updateAdditionalSupervisors = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async ({ tenantId, employeeId: actorId }, input: { employeeId: string; supervisorIds: string[] }) => {
+    const { employeeId } = input;
+    if (!tenantId) throw new Error("NOT_FOUND");
+    const own = await db.employee.findFirst({ where: { id: employeeId, tenantId }, select: { id: true, supervisorId: true } });
+    if (!own) throw new Error("NOT_FOUND");
+
+    // Never the person themselves, nor their supervisor of record (already
+    // their supervisor), and only people in this company.
+    const wanted = [...new Set(input.supervisorIds)].filter((id) => id !== employeeId && id !== own.supervisorId);
+    const valid = await db.employee.findMany({ where: { tenantId, id: { in: wanted } }, select: { id: true } });
+    const validIds = new Set(valid.map((e) => e.id));
+    const next = wanted.filter((id) => validIds.has(id));
+
+    const current = await db.employeeSupervisor.findMany({ where: { employeeId }, select: { supervisorId: true } });
+    const before = new Set(current.map((c) => c.supervisorId));
+    const toAdd = next.filter((id) => !before.has(id));
+    const toRemove = [...before].filter((id) => !next.includes(id));
+    if (toAdd.length === 0 && toRemove.length === 0) return { supervisorIds: next };
+
+    await db.$transaction([
+      ...(toRemove.length > 0 ? [db.employeeSupervisor.deleteMany({ where: { employeeId, supervisorId: { in: toRemove } } })] : []),
+      ...(toAdd.length > 0
+        ? [db.employeeSupervisor.createMany({ data: toAdd.map((supervisorId) => ({ employeeId, supervisorId, createdById: actorId || null })) })]
+        : []),
+    ]);
+
+    const names = new Map(
+      (await db.employee.findMany({ where: { id: { in: [...before, ...next] } }, select: { id: true, user: { select: { name: true } } } }))
+        .map((e) => [e.id, e.user?.name ?? e.id]),
+    );
+    const list = (ids: Iterable<string>) => [...ids].map((id) => names.get(id) ?? id).sort().join(", ") || "—";
+    await writeAuditLog({
+      tenantId,
+      actorId,
+      entityType: "EMPLOYEE",
+      entityId: employeeId,
+      action: "EMPLOYEE_UPDATED",
+      changes: { fields: [{ field: "Additional supervisors", before: list(before), after: list(next) }] },
+    });
+
+    revalidatePath("/admin/employees");
+    revalidatePath(`/admin/employees/${employeeId}`);
+    return { supervisorIds: next };
   }
 );
 

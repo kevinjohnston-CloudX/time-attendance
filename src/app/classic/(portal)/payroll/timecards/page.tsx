@@ -41,6 +41,9 @@ export default async function TimecardsPage({
 
   const isAllScope = canViewAll || canEditAll;
   const canEdit = canEditTeam || canEditAll;
+  // Pay rates and pay are for people who edit timecards or run payroll; a
+  // read-only team viewer (an agency) sees hours only.
+  const canSeePay = canEdit || canRunPayroll || isAllScope;
 
   const t = session.user.tenantId ?? undefined;
 
@@ -169,7 +172,7 @@ export default async function TimecardsPage({
           department: { name: timecard.employee.department.name },
           employeeCode: timecard.employee.employeeCode,
           wmsId: timecard.employee.wmsId ?? null,
-          payRate: periodRate != null ? periodRate : timecard.employee.payRate ? Number(timecard.employee.payRate) : null,
+          payRate: !canSeePay ? null : periodRate != null ? periodRate : timecard.employee.payRate ? Number(timecard.employee.payRate) : null,
           payType: timecard.employee.payType,
           shift: timecard.employee.shift
             ? { mealConfig: timecard.employee.shift.mealConfig as { autoDeduct?: boolean; meals?: { workAtLeastHours: number; deductMinutes: number }[] } | null }

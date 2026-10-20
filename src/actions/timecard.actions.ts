@@ -5,6 +5,7 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { z } from "zod";
 import { assertEmployeeInScope, timesheetInScope } from "@/lib/rbac/scope";
 import { timecardList } from "@/lib/timecards/timecard-list";
+import { directReportsOf } from "@/lib/get-subordinate-ids";
 
 // ─── Employee list (employee-centric timecard) ───────────────────────────────
 
@@ -42,7 +43,7 @@ export const getTeamEmployeesForTimecards = withRBAC(
     const { siteId, departmentId, payPeriodId } = listInputSchema.parse(input ?? {});
     return timecardList(
       {
-        supervisorId: employeeId,
+        ...directReportsOf(employeeId),
         ...(tenantId ? { tenantId } : {}),
         ...(siteId ? { siteId } : {}),
         ...(departmentId ? { departmentId } : {}),
@@ -141,10 +142,19 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
       where: { employeeId_payPeriodId: { employeeId, payPeriodId: periodId } },
       include: {
         payPeriod: true,
+        // What the timecard shows, and no more: the whole row carried pay
+        // details, date of birth, address and phones to anyone who may view
+        // the timecard, a read-only agency viewer included.
         employee: {
-          include: {
-            user: { select: { id: true, name: true, email: true } },
-            department: true,
+          select: {
+            id: true,
+            employeeCode: true,
+            wmsId: true,
+            payType: true,
+            payRate: true,
+            isActive: true,
+            user: { select: { id: true, name: true } },
+            department: { select: { id: true, name: true } },
             shift: { select: { mealConfig: true } },
             ruleSet: {
               select: {
@@ -314,10 +324,19 @@ export const getTimecardDetail = withRBAC(
       where: { id: timesheetId },
       include: {
         payPeriod: true,
+        // What the timecard shows, and no more: the whole row carried pay
+        // details, date of birth, address and phones to anyone who may view
+        // the timecard, a read-only agency viewer included.
         employee: {
-          include: {
-            user: { select: { id: true, name: true, email: true } },
-            department: true,
+          select: {
+            id: true,
+            employeeCode: true,
+            wmsId: true,
+            payType: true,
+            payRate: true,
+            isActive: true,
+            user: { select: { id: true, name: true } },
+            department: { select: { id: true, name: true } },
             shift: { select: { mealConfig: true } },
             ruleSet: {
               select: {

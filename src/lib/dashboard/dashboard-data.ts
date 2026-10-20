@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { parseUtcDate, startOfDayInTz, toSiteClock } from "@/lib/utils/date";
 import type { BadgeTone } from "@/components/ui";
+import { directReportsOf } from "@/lib/get-subordinate-ids";
 
 /**
  * Everything the portal design's dashboard puts on screen, in one place.
@@ -150,7 +151,7 @@ export async function getExceptionsFeed(
     exceptionType: { not: "SCAN_DISCREPANCY" as const },
     timesheet: {
       ...(payPeriodId ? { payPeriodId } : {}),
-      employee: isPayroll ? { tenantId } : { tenantId, supervisorId: employeeId ?? "" },
+      employee: isPayroll ? { tenantId } : { tenantId, ...directReportsOf(employeeId ?? "") },
     },
   };
 
@@ -212,7 +213,7 @@ type StateRow = { employeeId: string; state: string; dept: string | null };
  */
 export async function getPresence(tenantId: string, supervisorId: string | null): Promise<Presence> {
   const scoped = supervisorId
-    ? { tenantId, isActive: true, supervisorId }
+    ? { tenantId, isActive: true, ...directReportsOf(supervisorId) }
     : { tenantId, isActive: true };
 
   const [states, headcount] = await Promise.all([
@@ -227,7 +228,9 @@ export async function getPresence(tenantId: string, supervisorId: string | null)
           LEFT JOIN "departments" d ON d.id = e."departmentId"
           WHERE e."tenantId" = ${tenantId}
             AND e."isActive" = true
-            AND e."supervisorId" = ${supervisorId}
+            AND (e."supervisorId" = ${supervisorId}
+                 OR EXISTS (SELECT 1 FROM "employee_supervisors" es
+                            WHERE es."employeeId" = e.id AND es."supervisorId" = ${supervisorId}))
             AND p."isRejected" = false
             AND p."correctedById" IS NULL
           ORDER BY p."employeeId", p."roundedTime" DESC
@@ -435,7 +438,7 @@ export async function getWaitingOnYou({
 
   const teamScope = isPayroll
     ? { tenantId }
-    : { tenantId, supervisorId: employeeId ?? "" };
+    : { tenantId, ...directReportsOf(employeeId ?? "") };
 
   const [leaveToApprove, waitingOnHr, openExceptions, myDrafts] = await Promise.all([
     canApproveTeam
