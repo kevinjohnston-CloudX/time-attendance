@@ -205,9 +205,9 @@ export function AddTimecardEntry({
             </span>
             <input
               type="number"
-              min="0.25"
+              min="0.01"
               max="24"
-              step="0.25"
+              step="0.01"
               value={durationHours}
               onChange={(e) => setDurationHours(e.target.value)}
               required

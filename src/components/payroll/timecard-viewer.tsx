@@ -88,6 +88,7 @@ import grid from "./timecard.module.css";
 import { phoneGridCss, type GridColumn } from "./timecard-phone-grid";
 import { isPhone } from "@/lib/phone";
 import { shiftMeal } from "@/lib/shift-meal";
+import { roundedHoursNote } from "@/lib/utils/hours-entry";
 
 /**
  * The Timecards workspace, as the portal design lays it out.
@@ -545,6 +546,8 @@ function SummaryRow({
   isBold,
   premium = 0,
   showPremium = false,
+  indent = false,
+  subtotal = false,
 }: {
   label: string;
   reg: number;
@@ -553,6 +556,10 @@ function SummaryRow({
   total: number;
   rate: number | null;
   isBold?: boolean;
+  /** A pay code line under its week's heading. */
+  indent?: boolean;
+  /** A week's own total, under its pay code lines. */
+  subtotal?: boolean;
   /** Meal premium minutes: paid at the regular rate, but not hours worked, so outside Regular and Total hours. */
   premium?: number;
   showPremium?: boolean;
@@ -572,8 +579,8 @@ function SummaryRow({
     font: "var(--type-body1)",
     fontVariantNumeric: "tabular-nums",
     textAlign: "right",
-    color: isBold ? "var(--text-primary)" : "var(--text-secondary)",
-    fontWeight: isBold ? "var(--weight-semibold)" : undefined,
+    color: isBold || subtotal ? "var(--text-primary)" : "var(--text-secondary)",
+    fontWeight: isBold || subtotal ? "var(--weight-semibold)" : undefined,
   };
   const emphasis = (on: boolean, color: string): React.CSSProperties =>
     on ? { ...cell, color, fontWeight: "var(--weight-semibold)" } : cell;
@@ -594,7 +601,7 @@ function SummaryRow({
           : { borderTop: "1px solid var(--stroke-divider)" }
       }
     >
-      <td style={{ ...cell, textAlign: "left", fontVariantNumeric: "normal" }}>{label}</td>
+      <td style={{ ...cell, textAlign: "left", fontVariantNumeric: "normal", paddingLeft: indent ? 28 : 12 }}>{label}</td>
       {/* data-label: the caption each figure carries on a phone, where the
           summary is one labelled block per row (globals.css, .ta-rates). */}
       <td data-label="Regular" style={cell}>{reg > 0 ? fmt(reg) : "—"}</td>
@@ -955,9 +962,9 @@ export function TimecardViewer({
   const [hoursError, setHoursError] = useState<string | null>(null);
 
   // Summary
-  const [summaryGroupBy, setSummaryGroupBy] = useState<
-    "total" | "week" | "paycode"
-  >("total");
+  // By pay code first: how the hours will be paid, with the period's totals
+  // on its last line. The bare Totals view repeated that last line alone.
+  const [summaryGroupBy, setSummaryGroupBy] = useState<"week" | "paycode">("paycode");
 
   // Employee pay rate for summary calculations
   const rate = timecard?.employee.payRate ?? null;
@@ -1019,7 +1026,10 @@ export function TimecardViewer({
     setNewEntryHours("");
   }, [timecard?.timesheetId]);
 
-  const canEdit = !readOnly && (timecard
+  // An inactive employee's timecards are closed to changes, and none is made
+  // for them; the server refuses either way (inactive-timecards).
+  const selectedInactive = employees.find((e) => e.employeeId === selectedEmployeeId)?.isActive === false;
+  const canEdit = !readOnly && !selectedInactive && (timecard
     ? (timecard.status !== "LOCKED" && timecard.status !== "PAYROLL_APPROVED")
     : (!!selectedEmployeeId && !!selectedPeriodId));
 
@@ -1883,8 +1893,9 @@ export function TimecardViewer({
         (b) => (b.bucket === "OT" || b.bucket === "DT") && b.totalMinutes > 0,
       ),
   );
+  // Not offered on a read-only timecard: the server refuses it there anyway.
   const canAuthorizeOt =
-    hasUnauthorizedOt && !!timecard?.employee.ruleSet.allowTimesheetOtAuth;
+    !readOnly && hasUnauthorizedOt && !!timecard?.employee.ruleSet.allowTimesheetOtAuth;
 
   /**
    * The banner over the grid: where this timecard sits, and what is stopping it.
@@ -1926,6 +1937,13 @@ export function TimecardViewer({
             tone: "warning",
             title: "Needs attention",
             body: `This timecard has ${blockers.join(" and ")}.`,
+          };
+        }
+        if (selectedInactive) {
+          return {
+            tone: "info",
+            title: "Inactive employee",
+            body: "Their timecards can't be changed and no new ones are made. To correct one, make them active again first.",
           };
         }
         return readOnly
@@ -3896,9 +3914,7 @@ export function TimecardViewer({
                       <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                         {summaryGroupBy === "week"
                           ? "Each week in this pay period"
-                          : summaryGroupBy === "paycode"
-                            ? "Hours by the code they will be paid under"
-                            : "Everything in this pay period"}
+                          : "Hours by the code they will be paid under"}
                       </span>
                     </div>
                     <div className="flex-1" />
@@ -3911,14 +3927,11 @@ export function TimecardViewer({
                         ariaLabel="Group the summary by"
                         value={summaryGroupBy}
                         onChange={(next) =>
-                          setSummaryGroupBy(next as "total" | "week" | "paycode")
+                          setSummaryGroupBy(next as "week" | "paycode")
                         }
                         items={[
-                          { value: "total", label: "Total" },
+                          { value: "paycode", label: "Pay code" },
                           { value: "week", label: "Week" },
-                          ...(payCodes.length > 0
-                            ? [{ value: "paycode", label: "Pay code" }]
-                            : []),
                         ]}
                       />
                     </div>
@@ -3931,11 +3944,7 @@ export function TimecardViewer({
                       <THead>
                         <TR>
                           <TH>
-                            {summaryGroupBy === "week"
-                              ? "Week"
-                              : summaryGroupBy === "paycode"
-                                ? "Pay code"
-                                : "Hours"}
+                            {summaryGroupBy === "week" ? "Week" : "Pay code"}
                           </TH>
                           <TH numeric>Regular</TH>
                           <TH numeric>Overtime</TH>
@@ -3966,43 +3975,69 @@ export function TimecardViewer({
                           // Days with a missed punch are left out of every grouping.
                           const missingPunchDates = missedPunchDays;
 
-                          if (summaryGroupBy === "total") {
-                            // The same figures as the line under the name.
-                            const { reg, ot, dt, total, premium } = periodTotals;
-                            return (
-                              <SummaryRow
-                                label="Totals"
-                                reg={reg}
-                                ot={ot}
-                                dt={dt}
-                                total={total}
-                                rate={rate}
-                                premium={premium}
-                                showPremium={premium > 0}
-                                isBold
-                              />
+                          // Hours by the code they will be paid under: one line per
+                          // pay code and their sum. Both views count with it, so a
+                          // week's lines add up to the same figures as the whole
+                          // period's (the week view used to leave paid leave out of
+                          // Regular while the pay code view counted it).
+                          type CodeLine = { label: string; reg: number; ot: number; dt: number; total: number; premium: number };
+                          const byPayCode = (segs: TimecardSegment[]) => {
+                            const byCode: Record<string, CodeLine> = {};
+                            for (const seg of segs) {
+                              if (!seg.isPaid) continue;
+                              const eb = (seg.payBucketOverride && !["REG", "OT", "DT"].includes(seg.payBucketOverride))
+                                ? seg.payBucketOverride
+                                : seg.payBucket;
+                              const key =
+                                seg.payCode
+                                  ? payCodeOption(seg.payCode)
+                                  : PAY_BUCKET_LABEL[eb as PayBucketValue] ?? eb;
+                              const line = (byCode[key] = byCode[key] ?? { label: key, reg: 0, ot: 0, dt: 0, total: 0, premium: 0 });
+                              if (seg.segmentType === "MEAL_PREMIUM") { line.premium += seg.durationMinutes; continue; }
+                              line.total += seg.durationMinutes;
+                              if (eb === "REG" || PAID_LEAVE_BUCKETS.has(eb)) line.reg += seg.durationMinutes;
+                              else if (eb === "OT") line.ot += seg.durationMinutes;
+                              else if (eb === "DT") line.dt += seg.durationMinutes;
+                            }
+                            const lines = Object.values(byCode);
+                            const sum = lines.reduce<CodeLine>(
+                              (a, e) => ({ label: "", reg: a.reg + e.reg, ot: a.ot + e.ot, dt: a.dt + e.dt, total: a.total + e.total, premium: a.premium + e.premium }),
+                              { label: "", reg: 0, ot: 0, dt: 0, total: 0, premium: 0 },
                             );
-                          }
+                            return { lines, sum };
+                          };
+                          // Missed-punch days stay out: their hours are not reliable yet.
+                          const countedSegs = (timecard?.segments ?? []).filter(
+                            (seg) => !missingPunchDates.has(format(parseUtcDate(seg.segmentDate), "yyyy-MM-dd")),
+                          );
+                          const showPremium = periodTotals.premium > 0;
+                          const line = (e: CodeLine, key: string, extra: { label?: string; isBold?: boolean; indent?: boolean; subtotal?: boolean } = {}) => (
+                            <SummaryRow
+                              key={key}
+                              label={extra.label ?? e.label}
+                              reg={e.reg}
+                              ot={e.ot}
+                              dt={e.dt}
+                              total={e.total}
+                              rate={rate}
+                              premium={e.premium}
+                              showPremium={showPremium}
+                              isBold={extra.isBold}
+                              indent={extra.indent}
+                              subtotal={extra.subtotal}
+                            />
+                          );
 
                           if (summaryGroupBy === "week") {
-                            // Split by week within the pay period
+                            // Split by week within the pay period, and each week by pay code
                             const periodEntry = timecard ? timecard.payPeriod : sortedPeriods.find((p) => p.id === selectedPeriodId);
                             if (!periodEntry) return null;
                             const ppStart = parseUtcDate(periodEntry.startDate);
                             const ppEnd = lastDayOf(periodEntry.endDate);
-                            const weeks: {
-                              label: string;
-                              start: Date;
-                              end: Date;
-                            }[] = [];
+                            const weeks: { label: string; start: Date; end: Date }[] = [];
                             let wStart = ppStart;
                             while (wStart <= ppEnd) {
-                              const wEnd = new Date(
-                                Math.min(
-                                  wStart.getTime() + 6 * 86400000,
-                                  ppEnd.getTime()
-                                )
-                              );
+                              const wEnd = new Date(Math.min(wStart.getTime() + 6 * 86400000, ppEnd.getTime()));
                               weeks.push({
                                 label: `${format(wStart, "MM/dd/yyyy")} – ${format(wEnd, "MM/dd/yyyy")}`,
                                 start: wStart,
@@ -4010,135 +4045,60 @@ export function TimecardViewer({
                               });
                               wStart = new Date(wEnd.getTime() + 86400000);
                             }
+                            // Label, Regular, Overtime, Double, [Meal premium], Total, [5 pay columns]
+                            const columns = 5 + (showPremium ? 1 : 0) + (rate !== null ? 5 : 0);
 
-                            let grandReg = 0,
-                              grandOt = 0,
-                              grandDt = 0,
-                              grandTotal = 0,
-                              grandPremium = 0;
-
+                            const grand: CodeLine = { label: "", reg: 0, ot: 0, dt: 0, total: 0, premium: 0 };
                             return (
                               <>
                                 {weeks.map((week) => {
-                                  const weekSegs = (timecard?.segments ?? []).filter(
-                                    (s) => {
-                                      const sd = parseUtcDate(s.segmentDate);
-                                      return sd >= week.start && sd <= week.end
-                                        && !missingPunchDates.has(format(sd, "yyyy-MM-dd"));
-                                    }
+                                  const { lines, sum } = byPayCode(
+                                    countedSegs.filter((seg) => {
+                                      const sd = parseUtcDate(seg.segmentDate);
+                                      return sd >= week.start && sd <= week.end;
+                                    }),
                                   );
-                                  const weekBuckets: Record<string, number> =
-                                    {};
-                                  let weekPremium = 0;
-                                  for (const s of weekSegs) {
-                                    if (s.isPaid && s.segmentType === "MEAL_PREMIUM") weekPremium += s.durationMinutes;
-                                    else if (s.isPaid) {
-                                      const eb = (s.payBucketOverride && !["REG", "OT", "DT"].includes(s.payBucketOverride))
-                                        ? s.payBucketOverride
-                                        : s.payBucket;
-                                      weekBuckets[eb] =
-                                        (weekBuckets[eb] ?? 0) +
-                                        s.durationMinutes;
-                                    }
-                                  }
-                                  const reg = weekBuckets["REG"] ?? 0;
-                                  const ot = weekBuckets["OT"] ?? 0;
-                                  const dt = weekBuckets["DT"] ?? 0;
-                                  const total = Object.values(
-                                    weekBuckets
-                                  ).reduce((a, b) => a + b, 0);
-                                  grandReg += reg;
-                                  grandOt += ot;
-                                  grandDt += dt;
-                                  grandTotal += total;
-                                  grandPremium += weekPremium;
+                                  grand.reg += sum.reg;
+                                  grand.ot += sum.ot;
+                                  grand.dt += sum.dt;
+                                  grand.total += sum.total;
+                                  grand.premium += sum.premium;
                                   return (
-                                    <SummaryRow
-                                      key={week.label}
-                                      label={week.label}
-                                      reg={reg}
-                                      ot={ot}
-                                      dt={dt}
-                                      total={total}
-                                      rate={rate}
-                                      premium={weekPremium}
-                                      showPremium={periodTotals.premium > 0}
-                                    />
+                                    <React.Fragment key={week.label}>
+                                      <tr style={{ borderTop: "1px solid var(--stroke-secondary)" }}>
+                                        <td
+                                          colSpan={columns}
+                                          style={{ padding: "10px 12px 4px", font: "var(--type-body2)", fontWeight: "var(--weight-semibold)", color: "var(--text-secondary)" }}
+                                        >
+                                          {week.label}
+                                        </td>
+                                      </tr>
+                                      {lines.length === 0 ? (
+                                        <tr>
+                                          <td colSpan={columns} style={{ padding: "4px 12px 8px 28px", font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                                            No paid hours this week
+                                          </td>
+                                        </tr>
+                                      ) : (
+                                        <>
+                                          {lines.map((e) => line(e, `${week.label}|${e.label}`, { indent: true }))}
+                                          {line(sum, `${week.label}|total`, { label: "Week total", subtotal: true })}
+                                        </>
+                                      )}
+                                    </React.Fragment>
                                   );
                                 })}
-                                <SummaryRow
-                                  label="Totals"
-                                  reg={grandReg}
-                                  ot={grandOt}
-                                  dt={grandDt}
-                                  total={grandTotal}
-                                  rate={rate}
-                                  premium={grandPremium}
-                                  showPremium={periodTotals.premium > 0}
-                                  isBold
-                                />
+                                {line(grand, "totals", { label: "Totals", isBold: true })}
                               </>
                             );
                           }
 
                           // Pay code grouping
-                          const byCode: Record<
-                            string,
-                            { label: string; reg: number; ot: number; dt: number; total: number; premium: number }
-                          > = {};
-                          for (const seg of (timecard?.segments ?? [])) {
-                            if (!seg.isPaid) continue;
-                            const sd = format(parseUtcDate(seg.segmentDate), "yyyy-MM-dd");
-                            if (missingPunchDates.has(sd)) continue;
-                            const eb = (seg.payBucketOverride && !["REG", "OT", "DT"].includes(seg.payBucketOverride))
-                              ? seg.payBucketOverride
-                              : seg.payBucket;
-                            const key =
-                              seg.payCode
-                                ? payCodeOption(seg.payCode)
-                                : PAY_BUCKET_LABEL[eb as PayBucketValue] ?? eb;
-                            byCode[key] = byCode[key] ?? { label: key, reg: 0, ot: 0, dt: 0, total: 0, premium: 0 };
-                            if (seg.segmentType === "MEAL_PREMIUM") { byCode[key].premium += seg.durationMinutes; continue; }
-                            byCode[key].total += seg.durationMinutes;
-                            if (eb === "REG" || PAID_LEAVE_BUCKETS.has(eb)) {
-                              byCode[key].reg += seg.durationMinutes;
-                            } else if (eb === "OT") {
-                              byCode[key].ot += seg.durationMinutes;
-                            } else if (eb === "DT") {
-                              byCode[key].dt += seg.durationMinutes;
-                            }
-                          }
-                          let grandReg = 0, grandOt = 0, grandDt = 0, grandTotal = 0, grandPremium = 0;
-                          for (const e of Object.values(byCode)) {
-                            grandReg += e.reg; grandOt += e.ot; grandDt += e.dt; grandTotal += e.total; grandPremium += e.premium;
-                          }
-
+                          const { lines, sum } = byPayCode(countedSegs);
                           return (
                             <>
-                              {Object.values(byCode).map((entry) => (
-                                <SummaryRow
-                                  key={entry.label}
-                                  label={entry.label}
-                                  reg={entry.reg}
-                                  ot={entry.ot}
-                                  dt={entry.dt}
-                                  total={entry.total}
-                                  rate={rate}
-                                  premium={entry.premium}
-                                  showPremium={periodTotals.premium > 0}
-                                />
-                              ))}
-                              <SummaryRow
-                                label="Totals"
-                                reg={grandReg}
-                                ot={grandOt}
-                                dt={grandDt}
-                                total={grandTotal}
-                                rate={rate}
-                                premium={grandPremium}
-                                showPremium={periodTotals.premium > 0}
-                                isBold
-                              />
+                              {lines.map((e) => line(e, e.label))}
+                              {line(sum, "totals", { label: "Totals", isBold: true })}
                             </>
                           );
                         })()}
@@ -4463,12 +4423,15 @@ export function TimecardViewer({
                       type="number"
                       min="0"
                       max="24"
-                      step="0.25"
+                      step="0.01"
                       value={newEntryHours}
                       onChange={(e) => setNewEntryHours(e.target.value)}
                       placeholder="8.00"
                       required
-                      hint="For example 8 or 7.5, up to 24. Enter 0 with a pay code to mark the day without adding hours."
+                      hint={
+                        roundedHoursNote(newEntryHours) ??
+                        "For example 8 or 7.76, up to 24. Enter 0 with a pay code to mark the day without adding hours."
+                      }
                     />
                   </div>
                 )}

@@ -15,8 +15,12 @@ import type { ExceptionType, PayBucket, Prisma } from "@prisma/client";
  *   is written under its own export code, even when it sits on worked hours.
  *   The export code is the pay code's ADP code, or its Express code when it
  *   has none, which the preview lists so a code ADP does not know is caught;
- * - regular-type pay codes (Regular Hours, Salary...) and uncoded hours go to
- *   Reg Hours, O/T Hours, or the double time code by the segment's bucket;
+ * - regular-type pay codes with no ADP code (Regular Hours...) and uncoded
+ *   hours go to Reg Hours, O/T Hours, or the double time code by the segment's
+ *   bucket; one with an ADP code of its own (Salary: SD) goes under that code
+ *   for its regular hours;
+ * - a pay code whose ADP code is HR, ADP's regular hours code, goes to Reg
+ *   Hours whatever its kind (PTO Payout);
  * - unpaid time (unpaid meals, unpaid time off) is left out.
  * File # is the employee's Badge ID. A person with no Badge ID is skipped.
  *
@@ -24,6 +28,9 @@ import type { ExceptionType, PayBucket, Prisma } from "@prisma/client";
  * the preview. Only `excludeMissedPunches` leaves out a timecard with an open
  * missed punch, for a run that pays everyone else first.
  */
+
+/** ADP's code for regular hours: written in the Reg Hours column, never as a code line. */
+const ADP_REGULAR_HOURS = "HR";
 
 /** Each list narrows the run to those values; an empty list means all. */
 export type EpiFilters = {
@@ -252,10 +259,25 @@ export async function buildAdpEpi(opts: {
         else mpMissing.add(pc ? `${pc.code} ${pc.label}` : "no pay code");
         continue;
       }
+      // ADP's own regular hours code: the hours go in the Reg Hours column,
+      // where ADP takes regular hours, whatever kind of pay code carries
+      // them (PTO Payout pays out PTO hours as regular pay, and keeps its PTO
+      // kind so it still comes off the PTO balance).
+      if (pc?.adpCode?.trim().toUpperCase() === ADP_REGULAR_HOURS) {
+        person.reg += m;
+        continue;
+      }
       if (pc && pc.payBucket && pc.payBucket !== "REG") {
         if (pc.payBucket === "UNPAID") continue;
         if (exportCode(pc)) addPayCode(pc, m);
         else leave(`${pc.label} (pay code ${pc.code} has no ADP or Express code)`, m);
+        continue;
+      }
+      // A regular-type pay code with an ADP code of its own (Salary: SD,
+      // Regular Hr Retro: RET) goes under that code; overtime and double time
+      // on it still go to their own columns below.
+      if (pc && bucket === "REG" && pc.adpCode?.trim()) {
+        addPayCode(pc, m);
         continue;
       }
       if (bucket === "REG") person.reg += m;
