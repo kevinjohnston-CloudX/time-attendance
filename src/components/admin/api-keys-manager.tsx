@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState, useTransition, type CSSProperties, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { EllipsisVertical, KeyRound } from "lucide-react";
+import { Check, Copy, EllipsisVertical, KeyRound } from "lucide-react";
 import { format } from "date-fns";
 import { createApiKey, revokeApiKey, regenerateApiKey } from "@/actions/api-key.actions";
 import { Badge, Banner, Button, ConfirmDialog, Input, Toast, useToast } from "@/components/ui";
 import { CopyButton } from "@/components/admin/api-documentation";
+import styles from "./integrations.module.css";
 
 /**
  * The API Keys panel from the Integrations handoff: the key list with a menu
@@ -56,7 +57,7 @@ function RowMenu({ onRegenerate, onRevoke, disabled }: { onRegenerate: () => voi
         aria-expanded={open}
         aria-label="Key actions"
         title="Key actions"
-        className="ta-icon-btn h-[30px] w-[30px]"
+        className={`ta-icon-btn h-[30px] w-[30px] ${styles.menuButton}`}
         style={{ borderRadius: 8, color: "var(--icon-tertiary)", background: open ? "var(--fill-hover)" : undefined }}
       >
         <EllipsisVertical className="h-4 w-4" />
@@ -64,7 +65,7 @@ function RowMenu({ onRegenerate, onRevoke, disabled }: { onRegenerate: () => voi
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-[calc(100%+4px)] z-50 w-[180px] p-1.5"
+          className={`absolute right-0 top-[calc(100%+4px)] z-50 w-[180px] p-1.5 ${styles.menu}`}
           style={{ borderRadius: 12, background: "var(--surface-card)", boxShadow: "var(--ta-menu-shadow)" }}
         >
           <button
@@ -135,7 +136,7 @@ function NewKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
   };
 
   return (
-    <div className="fixed inset-0 z-[58] flex items-start justify-center px-4 pb-4 pt-[18vh]">
+    <div className="ta-sheet-scrim fixed inset-0 z-[58] flex items-start justify-center px-4 pb-4 pt-[18vh]">
       <div className="absolute inset-0" style={{ background: "var(--wms-overlay-modal)" }} onClick={() => !pending && onClose()} />
       <form
         ref={ref}
@@ -143,8 +144,8 @@ function NewKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-key-title"
-        className="ta-modal relative w-[520px] max-w-full px-[22px] pb-[18px] pt-5"
-        style={{ borderRadius: 18 }}
+        className="ta-modal ta-sheet relative w-[520px] max-w-full px-[22px] pb-[18px] pt-5"
+        style={{ borderRadius: 18, ["--ta-sheet-pad" as string]: "18px" }}
       >
         <div className="mb-4 flex items-center gap-3">
           <span className="grid h-9 w-9 flex-none place-items-center" style={{ borderRadius: 10, background: "var(--surface-info)", color: "var(--icon-accent)" }}>
@@ -171,7 +172,7 @@ function NewKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
             <Banner tone="error" title="The key was not created" body={error} />
           </div>
         )}
-        <div className="mt-1 flex justify-end gap-2 pt-1">
+        <div className={`ta-sheet-actions mt-1 flex justify-end gap-2 pt-1 ${styles.sheetFoot}`}>
           <Button type="button" hierarchy="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
@@ -184,6 +185,30 @@ function NewKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
   );
 }
 
+/** The phone's way to copy the key: a full size button beside Done. */
+function CopyKeyButton({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+  const copy = () => {
+    navigator.clipboard?.writeText(text).then(
+      () => {
+        setDone(true);
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => setDone(false), 1800);
+      },
+      () => {}
+    );
+  };
+  return (
+    <Button hierarchy="secondary" onClick={copy} leadingIcon={done ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}>
+      {done ? "Copied" : "Copy key"}
+    </Button>
+  );
+}
+
 /** Shown once, straight after the server generated the key. */
 function RevealDialog({ name, fullKey, onClose }: { name: string; fullKey: string; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -191,14 +216,14 @@ function RevealDialog({ name, fullKey, onClose }: { name: string; fullKey: strin
     ref.current?.querySelector<HTMLElement>("[data-done]")?.focus();
   }, []);
   return (
-    <div className="fixed inset-0 z-[60] grid place-items-center p-4" style={{ background: "var(--wms-overlay-modal)" }}>
+    <div className="ta-sheet-scrim fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: "var(--wms-overlay-modal)" }}>
       <div
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-labelledby="reveal-title"
-        className="ta-modal w-full max-w-[520px] px-[22px] pb-[18px] pt-[22px]"
-        style={{ borderRadius: 18 }}
+        className="ta-modal ta-sheet w-full max-w-[520px] px-[22px] pb-[18px] pt-[22px]"
+        style={{ borderRadius: 18, ["--ta-sheet-pad" as string]: "18px" }}
       >
         <div className="flex items-center gap-3">
           <span className="grid h-[42px] w-[42px] flex-none place-items-center" style={{ borderRadius: 12, background: "var(--surface-success)", color: "var(--icon-success)" }}>
@@ -214,15 +239,20 @@ function RevealDialog({ name, fullKey, onClose }: { name: string; fullKey: strin
           </span>
         </div>
         <div className="mt-4">
-          <Banner tone="warning" body="Copy this key now. Only its hash is stored, so closing this dialog is the last time anyone can read it." />
+          <Banner tone="warning" body="Copy this key now. Only its hash is stored, so closing this window is the last time anyone can read it." />
         </div>
         <div className="mt-3 flex items-center gap-2 py-2.5 pl-3.5 pr-2" style={{ borderRadius: 12, background: "var(--ta-code-bg)" }}>
           <code className="min-w-0 flex-1 break-all" style={{ fontFamily: MONO, fontSize: 12.5, lineHeight: 1.6, color: "var(--ta-code-fg)" }}>
             {fullKey}
           </code>
-          <CopyButton text={fullKey} label="Copy" dark />
+          <span className={styles.codeCopy}>
+            <CopyButton text={fullKey} label="Copy" dark />
+          </span>
         </div>
-        <div className="mt-[18px] flex justify-end">
+        <div className={`mt-[18px] flex justify-end gap-2 ${styles.revealFoot}`}>
+          <span className="ta-phone-only">
+            <CopyKeyButton text={fullKey} />
+          </span>
           <Button data-done onClick={onClose}>
             Done
           </Button>
@@ -311,10 +341,10 @@ export function ApiKeysManager({
             </span>
           </div>
         ) : (
-          <div className="ta-scroll overflow-x-auto">
+          <div className={`ta-scroll overflow-x-auto ${styles.scroller}`}>
             <div className="min-w-[640px]">
               <div
-                className={`mx-1.5 grid h-[38px] items-center gap-x-3 whitespace-nowrap px-3.5 ${COLS}`}
+                className={`mx-1.5 grid h-[38px] items-center gap-x-3 whitespace-nowrap px-3.5 ${COLS} ${styles.listHead}`}
                 style={{
                   borderRadius: 12,
                   background: "var(--ta-well)",
@@ -333,7 +363,7 @@ export function ApiKeysManager({
               </div>
               <div className="flex flex-col gap-0.5 px-1.5 py-1">
                 {shown.map((k) => (
-                  <div key={k.id} className={`ta-row-btn grid min-h-14 items-center gap-x-3 px-3.5 py-2 ${COLS}`} style={{ cursor: "default" }}>
+                  <div key={k.id} className={`ta-row-btn grid min-h-14 items-center gap-x-3 px-3.5 py-2 ${COLS} ${styles.row}`} style={{ cursor: "default" }}>
                     <span className="flex min-w-0 items-center gap-3">
                       <span
                         className="grid h-[34px] w-[34px] flex-none place-items-center"

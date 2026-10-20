@@ -15,6 +15,7 @@ import {
 import { useCondensingBar } from "@/components/layout/use-condensing-bar";
 import { ApiKeysManager, type ApiKey, type KeyFilter } from "@/components/admin/api-keys-manager";
 import { ApiDocumentation, CopyButton, MethodBadge, type DocSection } from "@/components/admin/api-documentation";
+import styles from "./integrations.module.css";
 
 /**
  * Integrations, from the page handoff: a pinned title and toolbar (the two
@@ -110,13 +111,13 @@ export function IntegrationsClient({
           condensed={condensed}
           actions={
             <>
-              <LinkButton href="/admin" hierarchy="tertiary" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
+              <LinkButton href="/admin" hierarchy="tertiary" className="ta-phone-hide" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
                 Administration
               </LinkButton>
               {/* Only on the keys tab. A "New Key" button above the API
                   reference would make something you cannot see. */}
               {onKeys && (
-                <Button leadingIcon={<Plus className="h-4 w-4" />} onClick={() => setCreateOpen(true)}>
+                <Button className="ta-header-primary" leadingIcon={<Plus className="h-4 w-4" />} onClick={() => setCreateOpen(true)}>
                   New Key
                 </Button>
               )}
@@ -124,14 +125,14 @@ export function IntegrationsClient({
           }
         />
         <div
-          className="flex min-h-12 flex-wrap items-center gap-2 py-1.5 pl-2 pr-1.5"
+          className={`flex min-h-12 flex-wrap items-center gap-2 py-1.5 pl-2 pr-1.5 ${styles.toolbar}`}
           style={{ background: "var(--surface-card)", borderRadius: 14, boxShadow: "var(--ta-toolbar-shadow)" }}
         >
           <SegmentedLinks items={TABS} active={tab} ariaLabel="Integrations view" />
-          <span className="flex-1" />
+          <span className={`flex-1 ${styles.toolbarGap}`} />
           {onKeys ? (
-            <span className="flex items-center gap-2">
-              <span className="whitespace-nowrap" style={{ font: "var(--weight-medium) 13px/1 var(--font-sans)", color: "var(--text-tertiary)" }}>
+            <span className={`flex items-center gap-2 ${styles.filter}`}>
+              <span className={`whitespace-nowrap ${styles.filterLabel}`} style={{ font: "var(--weight-medium) 13px/1 var(--font-sans)", color: "var(--text-tertiary)" }}>
                 Status
               </span>
               <SegmentedControl

@@ -1,0 +1,110 @@
+/* Integrations on a phone (integrations-client.tsx and api-keys-manager.tsx).
+
+   The key list is a six column grid wider than a phone. Here each key is a
+   short block: its name and menu, then its prefix and status, then when it
+   was made and last used. The New Key and "API key created" windows open as
+   sheets from the bottom edge. Inline styles are why some lines need
+   !important. */
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* ---- The bar under the title: the two views across, the filter under ---- */
+  .toolbar {
+    padding: 6px !important;
+  }
+  .toolbar > :global(.ta-seg-track) {
+    flex: 1 1 100%;
+  }
+  .toolbar > :global(.ta-seg-track) > :global(.wms-seg) {
+    flex: 1 0 auto !important;
+  }
+  .toolbarGap {
+    display: none;
+  }
+  .filter {
+    flex: 1 1 100%;
+  }
+  .filter > :global(.ta-seg-track) {
+    flex: 1 1 auto;
+  }
+  .filter > :global(.ta-seg-track) > :global(.wms-seg) {
+    flex: 1 0 auto !important;
+  }
+  /* The three choices say what they filter. */
+  .filterLabel {
+    display: none;
+  }
+
+  /* ---- The key list ---- */
+  .scroller {
+    overflow: visible !important;
+  }
+  .scroller > div {
+    min-width: 0 !important;
+  }
+  .listHead {
+    display: none !important;
+  }
+  .row {
+    grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1fr) 40px !important;
+    grid-template-areas:
+      "key key key menu"
+      ". prefix status ."
+      ". created used .";
+    row-gap: 6px;
+    column-gap: 12px !important;
+    padding-top: 12px !important;
+    padding-bottom: 12px !important;
+  }
+  .row > :nth-child(1) { grid-area: key; }
+  .row > :nth-child(2) {
+    grid-area: prefix;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .row > :nth-child(2) > code {
+    display: block !important;
+    max-width: 100%;
+    overflow: hidden;
+    line-height: 24px;
+    text-overflow: ellipsis;
+  }
+  .row > :nth-child(3) { grid-area: created; }
+  .row > :nth-child(4) { grid-area: used; }
+  .row > :nth-child(5) { grid-area: status; align-self: center; }
+  .row > :nth-child(6) { grid-area: menu; }
+  .row > :nth-child(3)::before,
+  .row > :nth-child(4)::before {
+    display: block;
+    margin-bottom: 1px;
+    font: var(--type-caption1);
+    color: var(--text-tertiary);
+  }
+  .row > :nth-child(3)::before { content: "Created"; }
+  .row > :nth-child(4)::before { content: "Last used"; }
+
+  /* The menu on each key: a thumb sized button and thumb sized choices. */
+  .menuButton {
+    width: 40px !important;
+    height: 40px !important;
+  }
+  .menu {
+    width: 200px !important;
+  }
+  .menu > button {
+    height: 44px !important;
+    font-size: 15px !important;
+  }
+
+  /* ---- The two windows ---- */
+  .sheetFoot {
+    margin-top: 12px !important;
+  }
+  /* The key is copied with a full width button beside Done, so the small
+     one inside the code box is not needed. */
+  .codeCopy {
+    display: none;
+  }
+  .revealFoot :global(.wms-btn) {
+    flex: 1 1 0;
+  }
+}
