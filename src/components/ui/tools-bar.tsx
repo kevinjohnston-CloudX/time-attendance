@@ -80,6 +80,8 @@ function PhoneToolsBar({ lead, search, children, end, className }: ToolsBarProps
   const appliedRef = useRef<HTMLSpanElement | null>(null);
   const hasFilters = hasContent(children);
   const hasEnd = hasContent(end);
+  // A bar whose end is only the count has nothing for a Filters sheet.
+  const sheetEnd = hasEnd && !(isValidElement(end) && (end as ReactElement).type === ToolsCount);
 
   // How many filters are on, read from the pills themselves, since each
   // screen marks its own.
@@ -116,7 +118,7 @@ function PhoneToolsBar({ lead, search, children, end, className }: ToolsBarProps
               {search}
             </span>
           )}
-          {(hasFilters || hasEnd) && (
+          {(hasFilters || sheetEnd) && (
             <button
               type="button"
               className="ta-tools-filter-btn"
@@ -152,7 +154,7 @@ function PhoneToolsBar({ lead, search, children, end, className }: ToolsBarProps
                 </button>
               </div>
               {hasFilters && <div className="ta-filter-sheet-group">{children}</div>}
-              {hasEnd && <div className="ta-filter-sheet-group ta-filter-sheet-end">{end}</div>}
+              {sheetEnd && <div className="ta-filter-sheet-group ta-filter-sheet-end">{end}</div>}
               <div className="ta-sheet-actions ta-filter-sheet-foot">
                 <Button hierarchy="primary" onClick={() => setOpen(false)}>
                   Show results

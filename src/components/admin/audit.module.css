@@ -108,3 +108,12 @@
     animation: none;
   }
 }
+
+/* The time on a phone reads in the app's own figures, not a code font. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .row > span:first-child {
+    font-family: var(--font-sans) !important;
+    font-size: 15px !important;
+    font-variant-numeric: tabular-nums;
+  }
+}

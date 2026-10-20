@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ChevronRight, LayoutGrid } from "lucide-react";
-import { Button, EmptyState, SearchInput, ToolsBar, ToolsCount } from "@/components/ui";
+import { Button, EmptyState, FilterSelectChip, SearchInput, ToolsBar, ToolsCount } from "@/components/ui";
+import { usePhoneLayout } from "@/lib/phone";
 
 /**
  * The Administration hub, from the portal design.
@@ -51,6 +52,7 @@ export function AdminHub({ groups }: { groups: HubGroup[] }) {
   const [query, setQuery] = useState("");
   /** null is "all areas" — a sentinel string could collide with a group label. */
   const [area, setArea] = useState<string | null>(null);
+  const phone = usePhoneLayout();
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -75,7 +77,9 @@ export function AdminHub({ groups }: { groups: HubGroup[] }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <section className="ta-card flex flex-col gap-2.5 rounded-xl p-4">
+      {/* A phone picks the area in the Filters sheet instead (below): this
+          box of six buttons stood between the title and the settings. */}
+      <section className="ta-phone-hide ta-card flex flex-col gap-2.5 rounded-xl p-4">
         <span className="wms-overline">Settings areas</span>
         <div className="grid gap-1 [grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))]">
           {areas.map((a) => {
@@ -127,7 +131,17 @@ export function AdminHub({ groups }: { groups: HubGroup[] }) {
       <ToolsBar
         search={<SearchInput value={query} onValueChange={setQuery} placeholder="Filter settings" width={320} />}
         end={<ToolsCount>{shown} {shown === 1 ? "settings page" : "settings pages"}</ToolsCount>}
-      />
+      >
+        {phone && (
+          <FilterSelectChip
+            label="Area"
+            value={area ?? ""}
+            options={groups.map((g) => ({ id: g.label, name: g.label }))}
+            onChange={(v) => setArea(v || null)}
+            allLabel="All settings"
+          />
+        )}
+      </ToolsBar>
 
       {shown === 0 ? (
         <div className="ta-card rounded-xl">

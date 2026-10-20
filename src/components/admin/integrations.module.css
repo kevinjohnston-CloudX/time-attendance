@@ -44,16 +44,20 @@
   .listHead {
     display: none !important;
   }
+  /* A key: its name with its status and menu, then a line each for the
+     key's start, when it was made and when it was last used, the name on
+     the left and the value on the right. */
   .row {
-    grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1fr) 40px !important;
+    grid-template-columns: 34px minmax(0, 1fr) auto 40px !important;
     grid-template-areas:
-      "key key key menu"
-      ". prefix status ."
-      ". created used .";
-    row-gap: 6px;
+      "key key status menu"
+      ". prefix prefix ."
+      ". created created ."
+      ". used used .";
+    row-gap: 0;
     column-gap: 12px !important;
     padding-top: 12px !important;
-    padding-bottom: 12px !important;
+    padding-bottom: 10px !important;
   }
   .row > :nth-child(1) { grid-area: key; }
   .row > :nth-child(2) {
@@ -63,7 +67,7 @@
   }
   .row > :nth-child(2) > code {
     display: block !important;
-    max-width: 100%;
+    max-width: 60%;
     overflow: hidden;
     line-height: 24px;
     text-overflow: ellipsis;
@@ -72,13 +76,29 @@
   .row > :nth-child(4) { grid-area: used; }
   .row > :nth-child(5) { grid-area: status; align-self: center; }
   .row > :nth-child(6) { grid-area: menu; }
+  .row > :nth-child(2),
+  .row > :nth-child(3),
+  .row > :nth-child(4) {
+    display: flex !important;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 0;
+    border-top: 1px solid var(--stroke-divider);
+    font: var(--weight-medium) 15px/20px var(--font-sans) !important;
+    text-align: right;
+  }
+  .row > :nth-child(2) {
+    margin-top: 8px;
+  }
+  .row > :nth-child(2)::before,
   .row > :nth-child(3)::before,
   .row > :nth-child(4)::before {
-    display: block;
-    margin-bottom: 1px;
-    font: var(--type-caption1);
-    color: var(--text-tertiary);
+    flex: none;
+    font: var(--weight-regular) 15px/20px var(--font-sans);
+    color: var(--text-secondary);
   }
+  .row > :nth-child(2)::before { content: "Key"; }
   .row > :nth-child(3)::before { content: "Created"; }
   .row > :nth-child(4)::before { content: "Last used"; }
 

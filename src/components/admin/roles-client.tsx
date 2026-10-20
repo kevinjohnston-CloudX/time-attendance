@@ -194,12 +194,17 @@ export function RolesClient({
                         <span style={{ fontWeight: "var(--weight-medium)" }}>{role.name}</span>
                       </span>
                     </TD>
-                    <TD data-wide="true" style={{ color: "var(--text-secondary)" }}>{role.description ?? "—"}</TD>
+                    {/* Capped and wrapping: the table is as wide as its widest
+                        line, and a long description (Agency, View Only) pushed
+                        Rank, Employees, Type and Status off the side. */}
+                    <TD data-wide="true" style={{ color: "var(--text-secondary)" }}>
+                      <div style={{ maxWidth: 480, whiteSpace: "normal" }}>{role.description ?? "—"}</div>
+                    </TD>
                     {/* Rank is the hierarchy check: a role may only act on roles
                         below its own number, so it is read down the column. */}
                     <TD numeric style={{ color: "var(--text-secondary)" }}>{role.rank}</TD>
                     <TD numeric style={{ color: "var(--text-secondary)" }}>
-                      {role._count.employees}
+                      {role._count.employees.toLocaleString()}
                     </TD>
                     <TD align="center">
                       {role.isSystem ? (
@@ -211,9 +216,12 @@ export function RolesClient({
                       )}
                     </TD>
                     <TD align="center">
-                      <Badge tone={statusTone(role.isActive ? "ACTIVE" : "INACTIVE")} size="sm">
-                        {role.isActive ? "Active" : "Inactive"}
-                      </Badge>
+                      {/* Marked as the usual state, which a phone leaves off. */}
+                      <span data-status={role.isActive ? "active" : undefined}>
+                        <Badge tone={statusTone(role.isActive ? "ACTIVE" : "INACTIVE")} size="sm">
+                          {role.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </span>
                     </TD>
                     <TD align="right" data-foot="true">
                       <Button
