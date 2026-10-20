@@ -6,6 +6,7 @@ import { findOnSitePeople } from "@/actions/presence.actions";
 import type { PickablePerson } from "@/lib/presence/people-search.service";
 import { Face } from "./face";
 import { initialsOf } from "./presence-meta";
+import { usePhoneLayout } from "@/lib/phone";
 import styles from "./on-site.module.css";
 
 /**
@@ -53,6 +54,7 @@ export function PeopleSearch({
   onBadgeHolders?: (forText: string, ids: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const phone = usePhoneLayout();
   const [found, setFound] = useState<{ for: string; people: PickablePerson[] }>({ for: "", people: [] });
   const [active, setActive] = useState(0);
   const [note, setNote] = useState<Note>(null);
@@ -222,7 +224,7 @@ export function PeopleSearch({
           data-bwignore="true"
           data-form-type="other"
           value={text}
-          placeholder={picked.length ? "Add another person" : "Name, employee code or badge"}
+          placeholder={picked.length ? "Add another person" : phone ? "Name or badge" : "Name, employee code or badge"}
           className={styles.psInput}
           onChange={(e) => {
             onTextChange(e.target.value);

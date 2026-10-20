@@ -1649,6 +1649,12 @@
   min-width: 0;
 }
 
+/* The phone's two line row (see Phones); a computer has the columns. */
+.mvPhonePill,
+.mvPhoneLine {
+  display: none;
+}
+
 .mvLine {
   display: grid;
   grid-template-columns: var(--mv-lines);
@@ -5041,20 +5047,51 @@
     top: auto !important;
   }
 
-  /* The building leads the line of buttons and takes what is left of it. */
+  /* The header, as a phone app's: the title with Export beside it, then the
+     building as a line you tap to change it, then the three views. The
+     actions box steps aside so its buttons can sit in that order. */
+  .boardActions {
+    display: contents !important;
+  }
+  .boardTitle {
+    min-width: 0 !important;
+    flex: 1 1 0 !important;
+  }
+  .exportPhone {
+    order: 1;
+    align-self: flex-start;
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 22px !important;
+  }
   :global(.ta-header-actions) > span:has(> .siteBtn) {
-    flex: 1 1 auto;
+    order: 2;
+    flex: 1 1 100%;
     min-width: 0;
+    margin: -8px 0 -4px;
+  }
+  .boardActions > :global(.ta-seg-track) {
+    order: 3;
+    flex: 1 1 100%;
+  }
+  .boardActions > :global(.ta-seg-track) > :global(.wms-seg) {
+    flex: 1 1 0 !important;
   }
   .siteBtn {
-    width: 100%;
+    max-width: 100%;
     min-width: 0;
-    height: 40px !important;
+    height: 44px !important;
+    gap: 6px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    font: var(--weight-medium) 17px/22px var(--font-sans) !important;
+    color: var(--text-accent) !important;
   }
-  /* Three situations after the lead figure: the third takes the full width
-     under the first two rather than leaving a hole beside it. */
-  .summaryMain[data-cards="3"] > .summaryCard:last-child {
-    grid-column: 1 / -1;
+  .siteBtn > svg {
+    color: var(--icon-accent) !important;
   }
 
   /* Search across the full width; the filters one row that swipes; the count,
@@ -5098,10 +5135,6 @@
     flex: none;
     transform: translateY(-1px);
   }
-  .summaryHero,
-  .summaryCard {
-    padding: 16px 16px 18px;
-  }
   /* The statuses swipe sideways in one row, as the filters do, instead of
      stacking six lines deep. */
   .summaryMore {
@@ -5125,39 +5158,98 @@
   .summaryMore > .summaryEmpty {
     padding: 0 16px;
   }
-  /* Movements: three facts to a line, each under its own small label,
-     since the column headings are not drawn on a phone. */
+  /* Movements: a person is two lines, as a phone's lists are. The name
+     with their status at the end, then their day in a few words ("In since
+     6:54 AM, 3 hr 12 min on the clock") and the first thing worth a look.
+     The columns, the day ribbon and the fold out arrow are the computer's;
+     a tap opens the person, whose panel holds all of it. */
   .mvRow,
   .mvRow[data-gate="false"] {
-    position: relative;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px 10px;
+    display: flex;
+    min-height: 72px;
+    gap: 12px;
+    padding: 10px 14px 10px 16px;
+  }
+  .mvRow > :not(.mvWho) {
+    display: none !important;
   }
   .mvRow > .mvWho {
+    flex: 1;
+  }
+  .mvRow[data-selected="true"] {
+    background: transparent;
+  }
+  .mvPhoto {
+    width: 44px;
+    height: 48px;
+    border-radius: 10px;
+  }
+  /* The status is in words at the end of the row. */
+  .mvPhoto > .stripe {
+    display: none;
+  }
+  .mvIdentity {
+    display: grid;
+    flex: 1;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 2px;
+  }
+  .mvIdentity > .meta,
+  .mvIdentity > .mvBadges {
+    display: none;
+  }
+  .mvNameButton {
+    font: var(--weight-semibold) 17px/22px var(--font-sans);
+  }
+  .mvPhonePill {
+    display: inline-flex;
+    justify-self: end;
+  }
+  .mvPhoneLine {
+    display: flex;
+    min-width: 0;
     grid-column: 1 / -1;
-    padding-right: 40px;
+    align-items: baseline;
+    gap: 8px;
+    font: var(--weight-regular) 15px/20px var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
   }
-  /* The expand arrow sits in the row's corner, so it takes no column. */
-  .mvRow > .mvToggleCell {
-    position: absolute;
-    top: 12px;
-    right: 8px;
+  .mvPhoneFlag {
+    min-width: 0;
+    max-width: 55%;
+    flex: none;
+    overflow: hidden;
+    font: var(--weight-medium) 13px/18px var(--font-sans);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .mvRow > .mvFact::before {
-    content: attr(data-label);
-    font: var(--weight-medium) 12px/16px var(--font-sans);
+  .mvPhoneFlag[data-tone="warning"] {
+    color: var(--text-warning);
+  }
+  .mvPhoneFlag[data-tone="error"] {
+    color: var(--text-error);
+  }
+  .mvPhoneFlag[data-tone="neutral"] {
     color: var(--text-tertiary);
   }
-  .mvRow > .mvFact {
-    white-space: normal;
+  /* The rows sit under a hairline that starts where the text does. */
+  .mvList > li + li {
+    border-top: 0;
   }
-  .mvRow {
-    align-items: start !important;
+  .mvList > li {
+    position: relative;
   }
-  /* With a gate there are five facts: the last line holds two, so the time
-     on the clock takes both free columns and its "Inside" line stays whole. */
-  .mvRow:not([data-gate="false"]) > .mvFact[data-label="On the clock"] {
-    grid-column: span 2;
+  .mvList > li + li::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 72px;
+    height: 1px;
+    background: var(--stroke-divider);
   }
   /* The person panel: the day's six figures fit their thirds ("8 hr 50
      min" whole), a long shift name wraps, and the chart's hour marks thin
@@ -5219,14 +5311,53 @@
   .tools :global(.ta-tools-end) :global(.ta-tools-count) {
     padding: 0 6px 0 8px !important;
   }
-  /* Four situations after the lead figure: two by two under it, not four
-     squeezed into one row. */
-  .summaryMain[data-cards="4"],
-  .summaryMain[data-cards="3"] {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .summaryChip {
     height: 36px;
     font-size: 14px;
+  }
+
+  /* The day at a glance as tiles across, figure first and its name under
+     it, as a phone's stats read: three across, or two by two for four. */
+  .summaryMain,
+  .summaryMain[data-cards="2"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .summaryMain[data-cards="1"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .summaryMain[data-cards="3"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .summaryMain[data-cards="3"] > :nth-child(3) {
+    border-left: 0;
+  }
+  .summaryMain[data-cards="3"] > :nth-child(n + 3) {
+    border-top: 1px solid var(--stroke-divider);
+  }
+  .summaryHero,
+  .summaryCard {
+    gap: 2px;
+    padding: 12px 12px 14px 14px;
+  }
+  .summaryHero {
+    grid-column: auto;
+    border-bottom: 0;
+  }
+  .summaryCard {
+    margin-top: 0;
+    border-top: 0;
+  }
+  .summaryHeroFigure,
+  .summaryFigure {
+    order: -1;
+    font: var(--weight-semibold) 28px/34px var(--font-sans);
+    letter-spacing: -0.02em;
+  }
+  .summaryLabel {
+    gap: 6px;
+    font: var(--weight-medium) 13px/17px var(--font-sans);
+  }
+  .summarySub {
+    display: none;
   }
 }

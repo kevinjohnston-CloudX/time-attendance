@@ -812,15 +812,33 @@ export function OnSiteBoard({
       )}
       {/* Everyone who can open the page, Loss Prevention included: they print
           the In the building roll call at the door. */}
-      <Button
-        hierarchy="secondary"
-        leadingIcon={<Download className="h-4 w-4" aria-hidden="true" />}
-        onClick={() => setExportOpen(true)}
-        disabled={!board}
-        aria-haspopup="dialog"
-      >
-        Export
-      </Button>
+      <span className="ta-desktop-only">
+        <Button
+          hierarchy="secondary"
+          leadingIcon={<Download className="h-4 w-4" aria-hidden="true" />}
+          onClick={() => setExportOpen(true)}
+          disabled={!board}
+          aria-haspopup="dialog"
+        >
+          Export
+        </Button>
+      </span>
+      {/* On a phone, an icon beside the title, as a phone app's share is. */}
+      <span className="ta-phone-only">
+        <Button
+          hierarchy="secondary"
+          iconOnly
+          className={styles.exportPhone}
+          onClick={() => setExportOpen(true)}
+          disabled={!board}
+          aria-haspopup="dialog"
+          aria-label="Export"
+        >
+          <Download className="h-5 w-5" aria-hidden="true" />
+        </Button>
+      </span>
+      {/* A wall screen's tool; a phone has no use for it. */}
+      <span className="ta-phone-hide contents">
       {fullscreen ? (
         <Button
           hierarchy="secondary"
@@ -842,6 +860,7 @@ export function OnSiteBoard({
           <Maximize2 className="h-4 w-4" aria-hidden="true" />
         </Button>
       )}
+      </span>
     </>
   );
 
@@ -865,10 +884,10 @@ export function OnSiteBoard({
           className="flex flex-wrap items-center gap-x-4 gap-y-3"
           style={{ paddingTop: condensed ? 8 : 0, paddingBottom: condensed ? 8 : 14, transition: "padding 140ms ease" }}
         >
-          <div className="flex min-w-[260px] flex-1 flex-col gap-0.5">
+          <div className={`${styles.boardTitle} flex min-w-[260px] flex-1 flex-col gap-0.5`}>
             <div className="flex min-w-0 flex-wrap items-center gap-x-3.5 gap-y-1">
               <h1
-                className="truncate"
+                className="ta-page-title truncate"
                 style={{
                   margin: 0,
                   fontSize: condensed ? 20 : 30,
@@ -955,7 +974,7 @@ export function OnSiteBoard({
           </div>
           {/* Wraps rather than running off a narrow window, and stays on the
               right when it does, as every page header does. */}
-          <div className="ta-header-actions ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">{actions}</div>
+          <div className={`${styles.boardActions} ta-header-actions ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2`}>{actions}</div>
         </div>
 
         {/* Row two, how you are looking at it: search first, then who, then

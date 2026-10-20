@@ -379,6 +379,30 @@ function PersonRow({
     <span className={styles.mvWarn}>Never scanned out</span>
   ) : null;
 
+  // On a phone the row is two lines (on-site.module.css, Phones): the name
+  // with its status, then the day in a few words in place of the columns.
+  const statusBadge = meta && status && (
+    <Badge tone={meta.badge} size="sm" dot>
+      {status === "ON_MEAL" ? (v.now.clock === "BREAK" ? "On break" : "On meal") : meta.label}
+    </Badge>
+  );
+  const inAt = v.firstIn ?? lanes.clockIn;
+  const worked = seen && t.workMin > 0 ? fmtDuration(t.workMin) : null;
+  const phoneDay =
+    inAt !== null
+      ? present || (where.leftAt === null && !unclosed)
+        ? `In since ${time(inAt)}${worked ? `, ${worked} on the clock` : ""}`
+        : where.leftAt !== null
+          ? `${time(inAt)} – ${time(where.leftAt)}${worked ? `, ${worked}` : ""}`
+          : `In ${time(inAt)}, never scanned out`
+      : carried || lanes.clock.length > 0
+        ? "In since yesterday"
+        : p.onLeave
+          ? "On leave"
+          : v.schedule
+            ? `${isToday && now < v.schedule.start ? "Due" : "Was due"} ${time(v.schedule.start)}`
+            : metaLine;
+
   return (
     // Open, the row and its detail share one surface, so the detail reads as
     // the row unfolding rather than as a card placed under it.
@@ -450,6 +474,16 @@ function PersonRow({
                 >
                   +{chips.length - ROW_CHIPS}
                 </button>
+              )}
+            </span>
+            <span className={styles.mvPhonePill}>{statusBadge}</span>
+            <span className={styles.mvPhoneLine}>
+              <span className="truncate">{phoneDay}</span>
+              {chips[0] && (
+                <span className={styles.mvPhoneFlag} data-tone={chips[0].tone}>
+                  {chips[0].label}
+                  {chips.length > 1 ? ` +${chips.length - 1}` : ""}
+                </span>
               )}
             </span>
           </span>
