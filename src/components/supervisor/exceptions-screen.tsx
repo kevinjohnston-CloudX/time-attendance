@@ -573,7 +573,7 @@ export function ExceptionsScreen({
                   className="px-3.5 py-4 text-center"
                   style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}
                 >
-                  No match
+                  No one matching “{query.trim()}”.
                 </p>
               )}
               {people
