@@ -1250,9 +1250,11 @@ option {
   }
   /* A page's main action leads its header on a line of its own, full width,
      and the rest share the line under it. */
-  /* A label too long to share a line takes one of its own, full width. */
-  .ta-header-actions:has(> .ta-header-primary) > *,
-  .ta-header-actions:has(> .ta-header-even) > * {
+  /* A label too long to share a line takes one of its own, full width.
+     Not a window the button opens, which renders beside it in the same row:
+     max-content on a fixed overlay made it wider than the screen. */
+  .ta-header-actions:has(> .ta-header-primary) > :not(.fixed):not(.ta-sheet-scrim),
+  .ta-header-actions:has(> .ta-header-even) > :not(.fixed):not(.ta-sheet-scrim) {
     flex: 1 1 0;
     min-width: max-content;
   }
