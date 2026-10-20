@@ -84,6 +84,8 @@
   --ta-wordmark-cloud: var(--text-primary);
   --ta-rail:      rgb(3, 7, 18);
   --ta-row-hover: rgb(31, 41, 55);
+  --ta-press:     rgba(255, 255, 255, 0.08);
+  --ta-grabber:   var(--wms-color-gray-600);
   --ta-track:     rgb(55, 65, 81);
   --ta-text-on-inverse: rgb(17, 24, 39);
   --ta-skeleton:        rgb(45, 56, 72);

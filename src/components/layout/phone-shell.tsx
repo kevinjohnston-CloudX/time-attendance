@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
-import { ChevronRight, Eye, LogOut, Menu as MenuIcon, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, LogOut, Menu as MenuIcon, Search, X } from "lucide-react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { SegmentedControl } from "@/components/ui";
@@ -13,6 +13,7 @@ import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
 import { BrandTile, CloudTimeWordmark } from "./cloudtime-logo";
 import { openCommandPalette } from "./command-palette";
 import { NotificationBell } from "./notification-bell";
+import { usePhoneBackState } from "./phone-back";
 import { Avatar } from "./sidebar";
 import {
   APPROVALS_HREF,
@@ -40,15 +41,34 @@ const noSubscribe = () => () => {};
 const useHydrated = () => useSyncExternalStore(noSubscribe, () => true, () => false);
 
 export function PhoneTopBar({ waiting }: { waiting: WaitingItem[] }) {
+  const pathname = usePathname();
+  const back = usePhoneBackState();
+  const { title, folded, scrolled } = useFoldingTitle(pathname);
+  const home = pathname === "/dashboard";
   return (
     <div className="ta-phone-only">
-      <header className={styles.top}>
-        <Link href="/dashboard" className={styles.brand} aria-label="CloudTime home">
-          <span className={styles.brandTile}>
-            <BrandTile size={30} />
-          </span>
-          <CloudTimeWordmark size={19} />
-        </Link>
+      <header className={styles.top} data-scrolled={scrolled ? "true" : undefined}>
+        <div className={styles.topStart}>
+          {back ? (
+            <button type="button" className={styles.back} onClick={back.onBack}>
+              <ChevronLeft className={styles.backIcon} aria-hidden="true" />
+              <span className={styles.backLabel}>{back.label}</span>
+            </button>
+          ) : (
+            home && (
+              <Link href="/dashboard" className={styles.brand} aria-label="CloudTime home">
+                <span className={styles.brandTile}>
+                  <BrandTile size={30} />
+                </span>
+                <CloudTimeWordmark size={19} />
+              </Link>
+            )
+          )}
+        </div>
+        {/* The page's own title, once it has scrolled up under this bar. */}
+        <div className={styles.topTitle} data-on={folded && title ? "true" : undefined} aria-hidden="true">
+          {title}
+        </div>
         <div className={styles.topActions}>
           <button type="button" className={styles.iconBtn} onClick={openCommandPalette} aria-label="Search pages">
             <Search className="h-5 w-5" aria-hidden="true" />
@@ -60,6 +80,52 @@ export function PhoneTopBar({ waiting }: { waiting: WaitingItem[] }) {
       </header>
     </div>
   );
+}
+
+/**
+ * The page's title, and whether it has scrolled up out of sight, so the top
+ * bar can take it over as a phone app's does. Read from the page's first
+ * visible h1, so no page has to report its own title.
+ */
+function useFoldingTitle(pathname: string) {
+  const [state, setState] = useState<{ title: string | null; folded: boolean; scrolled: boolean }>({
+    title: null,
+    folded: false,
+    scrolled: false,
+  });
+  useEffect(() => {
+    const main = document.querySelector<HTMLElement>("main.ta-page-scroll");
+    if (!main) return;
+    let h1: HTMLElement | null = null;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      if (!h1 || !h1.isConnected || h1.offsetParent === null) {
+        h1 = Array.from(main.querySelectorAll<HTMLElement>("h1")).find((e) => e.offsetParent !== null) ?? null;
+      }
+      const title = h1?.textContent?.trim() || null;
+      const folded = h1 ? h1.getBoundingClientRect().bottom < main.getBoundingClientRect().top + 4 : false;
+      const scrolled = main.scrollTop > 2;
+      setState((s) => (s.title === title && s.folded === folded && s.scrolled === scrolled ? s : { title, folded, scrolled }));
+    };
+    const soon = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    const changed = () => {
+      h1 = null;
+      soon();
+    };
+    measure();
+    main.addEventListener("scroll", soon, { passive: true });
+    const watch = new MutationObserver(changed);
+    watch.observe(main, { childList: true, subtree: true, characterData: true });
+    return () => {
+      main.removeEventListener("scroll", soon);
+      watch.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [pathname]);
+  return state;
 }
 
 type PhoneNavProps = {

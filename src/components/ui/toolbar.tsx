@@ -198,6 +198,9 @@ export function FilterSelectChip({
       }}
     >
       <span>{label}</span>
+      {/* Shown only in a phone's Filters sheet, where every filter is a line
+          that says what it is set to. */}
+      {!applied && <span className="ta-chip-none">All</span>}
       {applied && (
         // Site and shift names are free text the customer can make as long as
         // they like, so the value truncates rather than stretching the pill

@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
 import { PhoneNav, PhoneTopBar } from "@/components/layout/phone-shell";
+import { SheetGestures } from "@/components/layout/sheet-gestures";
 import { CommandPalette, type Destination } from "@/components/layout/command-palette";
 import { SECTIONS, ADMIN_GROUPS, INACTIVE_ALLOWED_HREFS } from "@/components/layout/nav-model";
 import { InactiveRouteGuard } from "@/components/layout/inactive-route-guard";
@@ -327,6 +328,8 @@ export default async function PortalLayout({
         </div>
       </div>
 
+      {/* Phones: a sheet can be dragged down to close it. */}
+      <SheetGestures />
       {/* Phones: the bottom bar and Menu, in place of the sidebar. Fed the
           same permissions, so a phone reaches exactly what a computer does. */}
       <PhoneNav

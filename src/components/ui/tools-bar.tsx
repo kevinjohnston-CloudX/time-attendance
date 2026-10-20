@@ -1,6 +1,20 @@
 "use client";
 
-import { Children, Fragment, isValidElement, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import {
+  Children,
+  Fragment,
+  isValidElement,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
+import { SlidersHorizontal, X } from "lucide-react";
+import { usePhoneLayout } from "@/lib/phone";
+import { Button } from "./button";
 
 /**
  * The white tools bar from the Live Attendance handoff, for every list screen
@@ -38,13 +52,7 @@ function outerWidth(el: Element) {
   return el.getBoundingClientRect().width + (parseFloat(cs.marginLeft) || 0) + (parseFloat(cs.marginRight) || 0);
 }
 
-export function ToolsBar({
-  lead,
-  search,
-  children,
-  end,
-  className,
-}: {
+type ToolsBarProps = {
   /** Drawn before the search, on the top line (a date range and Today). */
   lead?: ReactNode;
   search?: ReactNode;
@@ -53,7 +61,112 @@ export function ToolsBar({
   end?: ReactNode;
   /** Extra classes, for a screen that styles its own controls inside the bar. */
   className?: string;
-}) {
+};
+
+export function ToolsBar(props: ToolsBarProps) {
+  return usePhoneLayout() ? <PhoneToolsBar {...props} /> : <WideToolsBar {...props} />;
+}
+
+/**
+ * The bar on a phone: the search and a Filters button on one line, so the
+ * list starts near the top of the screen. The filters, the sort and the
+ * view choices open in a sheet. A filter that is on stays in sight under
+ * the search with its own ✕, because a filter you cannot see is one nobody
+ * takes off. The count sits under the bar.
+ */
+function PhoneToolsBar({ lead, search, children, end, className }: ToolsBarProps) {
+  const [open, setOpen] = useState(false);
+  const [applied, setApplied] = useState(0);
+  const appliedRef = useRef<HTMLSpanElement | null>(null);
+  const hasFilters = hasContent(children);
+  const hasEnd = hasContent(end);
+
+  // How many filters are on, read from the pills themselves, since each
+  // screen marks its own.
+  useEffect(() => {
+    const row = appliedRef.current;
+    if (!row) return;
+    const count = () => setApplied(row.querySelectorAll('[data-applied="true"]').length);
+    count();
+    const mo = new MutationObserver(count);
+    mo.observe(row, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-applied"] });
+    return () => mo.disconnect();
+  }, [hasFilters]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  return (
+    <>
+      <div className={`ta-tools ta-tools-phone${className ? ` ${className}` : ""}`}>
+        {hasContent(lead) && (
+          <span data-part="lead" className="ta-tools-group">
+            {lead}
+          </span>
+        )}
+        <span className="ta-tools-line">
+          {hasContent(search) && (
+            <span data-part="search" className="ta-tools-search">
+              {search}
+            </span>
+          )}
+          {(hasFilters || hasEnd) && (
+            <button
+              type="button"
+              className="ta-tools-filter-btn"
+              data-applied={applied > 0 ? "true" : undefined}
+              aria-haspopup="dialog"
+              onClick={() => setOpen(true)}
+            >
+              <SlidersHorizontal className="h-[18px] w-[18px]" aria-hidden="true" />
+              <span>Filters</span>
+              {applied > 0 && <span className="ta-tools-filter-count tabular">{applied}</span>}
+            </button>
+          )}
+        </span>
+        {hasFilters && (
+          <span ref={appliedRef} data-part="filters" className="ta-tools-filters" data-any={applied > 0 ? "true" : undefined}>
+            {children}
+          </span>
+        )}
+      </div>
+      {hasEnd && <span className="ta-tools-under">{end}</span>}
+      {open &&
+        createPortal(
+          <div
+            className="ta-sheet-scrim fixed inset-0 z-[60] flex"
+            style={{ background: "var(--wms-overlay-modal)" }}
+            onClick={(e) => e.target === e.currentTarget && setOpen(false)}
+          >
+            <div className="ta-sheet ta-filter-sheet" role="dialog" aria-modal="true" aria-label="Filters">
+              <div className="ta-filter-sheet-head">
+                <h2>Filters</h2>
+                <button type="button" className="ta-filter-sheet-close" aria-label="Close" onClick={() => setOpen(false)}>
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </div>
+              {hasFilters && <div className="ta-filter-sheet-group">{children}</div>}
+              {hasEnd && <div className="ta-filter-sheet-group ta-filter-sheet-end">{end}</div>}
+              <div className="ta-sheet-actions ta-filter-sheet-foot">
+                <Button hierarchy="primary" onClick={() => setOpen(false)}>
+                  Show results
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
+function WideToolsBar({ lead, search, children, end, className }: ToolsBarProps) {
   const barRef = useRef<HTMLDivElement | null>(null);
   // Filters are usually conditional ({sites.length > 1 && ...}), so a list of
   // falses must not draw an empty group and a divider in front of it.

@@ -118,6 +118,10 @@
   --ta-wordmark-cloud: var(--ta-brand-blue);
   --ta-rail:      var(--wms-color-gray-900);
   --ta-row-hover: var(--wms-color-gray-25);
+  /* A finger on a row or button (phones): a wash over whatever is there. */
+  --ta-press:     rgba(17, 24, 39, 0.07);
+  /* The handle at the top of a phone sheet. */
+  --ta-grabber:   var(--wms-color-gray-300);
   --ta-track:     var(--wms-color-gray-100);
   /* Text that sits on --surface-inverse. That surface flips with the
      theme, so its text has to flip with it; white is only correct while
@@ -1244,7 +1248,7 @@ option {
     overscroll-behavior: contain;
     border-radius: 20px 20px 0 0 !important;
     padding-bottom: calc(var(--ta-sheet-pad, 0px) + env(safe-area-inset-bottom)) !important;
-    animation: ta-sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: ta-sheet-up 420ms cubic-bezier(0.32, 0.72, 0, 1);
   }
 
   /* Gone on a phone, where the bottom bar and Menu already reach it (a link
@@ -1274,8 +1278,7 @@ option {
 }
 @keyframes ta-sheet-up {
   from {
-    transform: translateY(32px);
-    opacity: 0.4;
+    transform: translateY(100%);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1439,5 +1442,359 @@ option {
      left like everything else in the block. */
   .ta-rates[data-mode="read"] td > .flex {
     align-items: flex-start !important;
+  }
+}
+
+/* ---- Phones: the feel (mobile/phone-rulebook-2026-10-20.md) ----
+   What makes the phone version read as an app rather than a shrunk page:
+   things answer the finger, sheets have a handle, screens slide in from the
+   side they came from, and every list on a phone uses one row shape. */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* No double tap zoom on controls, no copy menu on a long press, and no
+     text selection when a thumb rests on a button or a tab. */
+  a,
+  button,
+  summary,
+  label,
+  [role="button"],
+  [role="tab"],
+  .ta-pressable {
+    touch-action: manipulation;
+    -webkit-touch-callout: none;
+  }
+  button,
+  summary,
+  [role="button"],
+  [role="tab"],
+  .ta-pressable {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  /* A wash under the finger on anything that can be tapped, over whatever
+     background it already has. */
+  :where(a[href], button:not(:disabled), summary, [role="button"], [role="tab"], .ta-pressable):active {
+    background-image: linear-gradient(var(--ta-press), var(--ta-press));
+  }
+  .wms-btn {
+    transition: transform 120ms ease;
+  }
+  .wms-btn:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  /* The handle at the top of every sheet, which can be dragged down to
+     close it (layout/sheet-gestures.tsx). Drawn as a background so it
+     needs nothing in each sheet's markup and stays put while the sheet's
+     content scrolls. */
+  .ta-sheet {
+    background-image:
+      radial-gradient(circle, var(--ta-grabber) 2.5px, transparent 3px),
+      radial-gradient(circle, var(--ta-grabber) 2.5px, transparent 3px),
+      linear-gradient(var(--ta-grabber), var(--ta-grabber)) !important;
+    background-size: 6px 6px, 6px 6px, 30px 5px !important;
+    background-position: calc(50% - 15px) 5.5px, calc(50% + 15px) 5.5px, 50% 6px !important;
+    background-repeat: no-repeat !important;
+  }
+  .ta-sheet[data-dragging] {
+    animation: none;
+  }
+
+  /* A screen pushed on top of a list comes in from the right, and the list
+     comes back from the left. Backwards fill only: a transform left on
+     the view after it lands would trap its sheets inside it. */
+  .ta-push-in {
+    animation: ta-push-in 320ms cubic-bezier(0.32, 0.72, 0, 1) backwards;
+  }
+  .ta-pop-in {
+    animation: ta-pop-in 320ms cubic-bezier(0.32, 0.72, 0, 1) backwards;
+  }
+}
+@keyframes ta-push-in {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+}
+@keyframes ta-pop-in {
+  from {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+}
+@keyframes ta-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ta-push-in,
+  .ta-pop-in {
+    animation: ta-fade-in 150ms ease-out backwards;
+  }
+  .wms-btn:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+/* ---- The phone list ----
+   One row shape for every list on a phone, after the Menu: white groups on
+   the grey page, a row with an optional face or icon, a title, one line
+   of the most useful fact, and something at the end. Separators start
+   where the text starts. Only ever drawn inside phone markup. */
+.ta-list {
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+}
+.ta-list-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  padding: 0 4px 8px;
+  font: var(--weight-semibold) 13px/18px var(--font-sans);
+  color: var(--text-tertiary);
+}
+.ta-list-row {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px 10px 16px;
+  text-align: left;
+  color: var(--text-primary);
+}
+.ta-list-row + .ta-list-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: var(--ta-row-inset, 16px);
+  height: 1px;
+  background: var(--stroke-divider);
+}
+.ta-list-row[data-lead="face"] {
+  --ta-row-inset: 68px;
+  min-height: 72px;
+}
+.ta-list-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+.ta-list-title {
+  overflow: hidden;
+  font: var(--weight-medium) 17px/22px var(--font-sans);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ta-list-sub {
+  overflow: hidden;
+  font: var(--weight-regular) 15px/20px var(--font-sans);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ta-list-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  font: var(--weight-regular) 15px/20px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.ta-list-chevron {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--icon-tertiary);
+}
+
+/* ---- Phones: the large title ----
+   A screen opens on its name at the iOS large title size; once it scrolls
+   up under the top bar, the bar shows it small (phone-shell.tsx). */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .ta-page-title {
+    font-size: 32px !important;
+    font-weight: var(--weight-bold) !important;
+    line-height: 38px !important;
+    letter-spacing: -0.02em !important;
+  }
+  .ta-page-sub {
+    font: var(--weight-regular) 15px/20px var(--font-sans) !important;
+  }
+}
+
+.ta-chip-none {
+  display: none;
+}
+/* ---- Phones: the search bar and its Filters sheet (ui/tools-bar.tsx) ----
+   One line: the search and a Filters button. Filters that are on show
+   under it with their own ✕; the rest live in the sheet. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .ta-tools.ta-tools-phone {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0 !important;
+    padding: 6px !important;
+  }
+  .ta-tools-phone > .ta-tools-group {
+    padding: 0 0 6px;
+  }
+  .ta-tools-line {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+  }
+  .ta-tools-phone .ta-tools-search {
+    flex: 1 1 auto !important;
+  }
+  .ta-tools-filter-btn {
+    display: inline-flex;
+    flex: none;
+    height: 44px;
+    align-items: center;
+    gap: 7px;
+    padding: 0 12px;
+    border-radius: 12px;
+    background: var(--ta-well);
+    font: var(--weight-medium) 15px/20px var(--font-sans);
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  .ta-tools-filter-btn[data-applied="true"] {
+    background: var(--surface-info);
+    color: var(--text-accent);
+  }
+  .ta-tools-filter-count {
+    display: inline-flex;
+    min-width: 20px;
+    height: 20px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+    border-radius: 10px;
+    background: var(--fill-accent);
+    font: var(--weight-semibold) 12px/1 var(--font-sans);
+    color: var(--text-on-accent);
+  }
+  /* Only the filters that are on, each with its ✕, in a row that swipes. */
+  .ta-tools-phone .ta-tools-filters {
+    display: none !important;
+  }
+  .ta-tools-phone .ta-tools-filters[data-any="true"] {
+    display: flex !important;
+    margin: 6px -6px 0 !important;
+    padding: 6px 6px 0 !important;
+  }
+  .ta-tools-phone .ta-tools-filters > :not([data-applied="true"]) {
+    display: none !important;
+  }
+  /* Under the bar: the count, quietly. The sort and the rest are in the sheet. */
+  .ta-tools-under {
+    display: flex;
+    min-height: 20px;
+    align-items: center;
+    padding: 10px 4px 0;
+  }
+  .ta-tools-under > :not(.ta-tools-count) {
+    display: none !important;
+  }
+  .ta-tools-under > .ta-tools-count {
+    padding: 0 !important;
+    font: var(--weight-regular) 13px/18px var(--font-sans) !important;
+    color: var(--text-tertiary);
+  }
+
+  .ta-filter-sheet {
+    --ta-sheet-pad: 0px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 22px 16px 0 !important;
+    background-color: var(--surface-card);
+  }
+  .ta-filter-sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .ta-filter-sheet-head > h2 {
+    margin: 0;
+    font: var(--weight-semibold) 20px/25px var(--font-sans);
+    color: var(--text-primary);
+  }
+  .ta-filter-sheet-close {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    flex: none;
+    place-items: center;
+    margin-right: -4px;
+    border-radius: 18px;
+    background: var(--ta-well);
+    color: var(--icon-secondary);
+  }
+  /* Each filter is a full width line: its name on the left, what is
+     picked and the arrow on the right. */
+  .ta-filter-sheet-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .ta-filter-sheet-group > *,
+  .ta-filter-sheet-group .ta-chip {
+    display: flex !important;
+    width: 100% !important;
+  }
+  .ta-filter-sheet .ta-chip > span:first-of-type {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: left;
+  }
+  .ta-filter-sheet .ta-chip {
+    height: 50px !important;
+    max-width: 100% !important;
+    padding: 0 14px 0 16px !important;
+    border: 0 !important;
+    border-radius: 12px !important;
+    background: var(--ta-well) !important;
+    font: var(--weight-medium) 15px/20px var(--font-sans) !important;
+  }
+  .ta-filter-sheet .ta-chip[data-applied="true"] {
+    background: var(--surface-info) !important;
+    box-shadow: inset 0 0 0 1px var(--stroke-accent);
+  }
+  .ta-filter-sheet .ta-chip-none {
+    display: inline;
+    font-weight: var(--weight-regular);
+    color: var(--text-tertiary);
+  }
+  .ta-filter-sheet .ta-tools-count {
+    display: none !important;
+  }
+  .ta-filter-sheet-foot {
+    display: flex;
+    position: sticky;
+    bottom: 0;
+    margin: 0 -16px;
+    padding: 8px 16px 16px;
+    background: var(--surface-card);
+  }
+  .ta-filter-sheet-foot > .wms-btn {
+    height: 50px !important;
   }
 }

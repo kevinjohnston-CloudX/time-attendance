@@ -32,6 +32,7 @@ export function PageHeader({
     <div className={`flex flex-wrap gap-4 ${condensed ? "items-center" : "items-end"}`}>
       <div className="flex min-w-[240px] flex-1 flex-col gap-0.5">
         <h1
+          className="ta-page-title"
           style={{
             margin: 0,
             font: "var(--type-h1)",
@@ -47,7 +48,9 @@ export function PageHeader({
           {title}
         </h1>
         {subtitle && !condensed && (
-          <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>{subtitle}</p>
+          <p className="ta-page-sub" style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
+            {subtitle}
+          </p>
         )}
       </div>
       {/* Kept right when a narrow window wraps them under the title. */}
