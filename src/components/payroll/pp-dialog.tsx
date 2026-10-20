@@ -22,7 +22,7 @@ export function PpDialog({
 }: {
   icon: ReactNode;
   title: string;
-  subtitle: string;
+  subtitle: ReactNode;
   width?: number;
   pending?: boolean;
   onClose: () => void;
@@ -53,14 +53,17 @@ export function PpDialog({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-[58] flex items-start justify-center px-4 pb-4 pt-[14vh]">
+    <div className="ta-sheet-scrim fixed inset-0 z-[58] flex items-start justify-center px-4 pb-4 pt-[14vh]">
       <div className="absolute inset-0" style={{ background: "var(--wms-overlay-modal)" }} onClick={() => !pending && onClose()} />
       <section
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-labelledby="pp-dialog-title"
-        className="ta-modal relative max-w-full"
+        // On a phone it rises from the bottom (ta-sheet), and a long body
+        // scrolls between the header and the buttons rather than pushing
+        // the buttons off the screen.
+        className="ta-sheet ta-modal relative flex max-w-full flex-col"
         style={{ width, borderRadius: 18 }}
       >
         <div className="flex items-start gap-3 pb-3.5 pl-[22px] pr-[18px] pt-5">
@@ -82,8 +85,8 @@ export function PpDialog({
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <div className="flex flex-col gap-3.5 px-[22px] pb-[18px] pt-1">{children}</div>
-        <div className="flex justify-end gap-2 px-[18px] pb-4 pt-3" style={{ boxShadow: "inset 0 1px 0 var(--ta-well-ring)" }}>
+        <div className="flex min-h-0 flex-col gap-3.5 overflow-y-auto px-[22px] pb-[18px] pt-1">{children}</div>
+        <div className="ta-sheet-actions flex flex-none justify-end gap-2 px-[18px] pb-4 pt-3" style={{ boxShadow: "inset 0 1px 0 var(--ta-well-ring)" }}>
           {footer}
         </div>
       </section>

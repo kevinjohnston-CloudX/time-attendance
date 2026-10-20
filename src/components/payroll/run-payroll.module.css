@@ -1,0 +1,51 @@
+/* Run Payroll on a phone (run-payroll-screen.tsx, multi-select-filter.tsx).
+   Inline styles are why some lines need !important. */
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* The four figures two by two rather than one tall column. */
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  /* The missed punches list is part of the page, not a box scrolling
+     inside it. */
+  .missed {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  /* A filter's button is a field: as tall as the others on a phone. */
+  .filterButton {
+    height: 44px !important;
+  }
+
+  /* The filter window's list: one row per item, ticked or not. */
+  .choices {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--stroke-secondary);
+    border-radius: 12px;
+    background: var(--surface-card);
+    overflow: hidden;
+  }
+  .choice {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    padding: 0 14px;
+  }
+  /* The whole row is the tap target, not only the box and its words. */
+  .choice > label {
+    flex: 1 1 auto;
+    align-self: stretch;
+    display: flex !important;
+    align-items: center;
+  }
+  .choice + .choice {
+    border-top: 1px solid var(--stroke-divider);
+  }
+  .choiceTools {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+}

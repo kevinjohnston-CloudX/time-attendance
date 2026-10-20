@@ -17,6 +17,7 @@ import {
 } from "@/actions/payroll-run.actions";
 import type { EpiSummary } from "@/lib/payroll/adp-epi";
 import { missingAdpCodes } from "@/lib/payroll/adp-codes";
+import styles from "./run-payroll.module.css";
 import { Banner, Button, Card, Checkbox, ConfirmDialog, Input, PageHeader, Select, StatCard, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
 
 type Option = { id: string; name: string };
@@ -157,7 +158,7 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
             >
               Download draft file
             </Button>
-            <Button tone="success" onClick={() => setConfirming(true)} disabled={isPending || !preview} leadingIcon={<Play className="h-4 w-4" aria-hidden="true" />}>
+            <Button tone="success" className="ta-header-primary" onClick={() => setConfirming(true)} disabled={isPending || !preview} leadingIcon={<Play className="h-4 w-4" aria-hidden="true" />}>
               Process
             </Button>
           </>
@@ -236,7 +237,7 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
 
       {summary && (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: 12 }}>
+          <div className={styles.stats} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: 12 }}>
             <StatCard label="Employees" value={summary.employees.toLocaleString("en-US")} sub={`${summary.rows} rows in the file`} />
             <StatCard label="Regular hours" value={hrs(summary.regMinutes)} />
             <StatCard label="Overtime hours" value={hrs(summary.otMinutes)} />
@@ -291,7 +292,8 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
                 ))}
               </div>
               {summary.missedPunches.length > 0 && (
-                <div style={{ maxHeight: 360, overflowY: "auto", borderTop: "1px solid var(--stroke-divider)" }}>
+                // One labelled block per person on a phone (globals.css).
+                <div className={`${styles.missed} ta-rates`} data-mode="read" style={{ maxHeight: 360, overflowY: "auto", borderTop: "1px solid var(--stroke-divider)" }}>
                   <Table>
                     <THead>
                       <TR><TH>Employee</TH><TH>Badge ID</TH><TH numeric>Missed punches</TH><TH>In the file</TH><TH><span className="sr-only">Timecard</span></TH></TR>
@@ -300,10 +302,10 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
                       {summary.missedPunches.map((m) => (
                         <TR key={m.timesheetId}>
                           <TD>{m.name}</TD>
-                          <TD>{m.file}</TD>
-                          <TD numeric>{m.count}</TD>
-                          <TD>{m.excluded ? "Left out" : "Yes"}</TD>
-                          <TD>
+                          <TD data-label="Badge ID">{m.file}</TD>
+                          <TD numeric data-label="Missed punches">{m.count}</TD>
+                          <TD data-label="In the file">{m.excluded ? "Left out" : "Yes"}</TD>
+                          <TD className="ta-rates-note">
                             <Link
                               href={`/payroll/timecards?periodId=${m.payPeriodId}&employeeId=${m.employeeId}`}
                               target="_blank"

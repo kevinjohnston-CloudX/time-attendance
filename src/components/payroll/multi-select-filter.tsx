@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ListFilter } from "lucide-react";
-import { Button } from "@/components/ui";
+import { Button, Checkbox } from "@/components/ui";
+import styles from "./run-payroll.module.css";
 import { PpDialog } from "@/components/payroll/pp-dialog";
 
 type Option = { id: string; name: string };
@@ -68,7 +69,7 @@ export function MultiSelectFilter({
         type="button"
         onClick={openDialog}
         title={names.length > 2 ? names.join(", ") : undefined}
-        className="ta-field flex h-8 w-full items-center justify-between gap-2 rounded-md px-2.5 text-left"
+        className={`${styles.filterButton} ta-field flex h-8 w-full items-center justify-between gap-2 rounded-md px-2.5 text-left`}
         style={{
           border: "1px solid var(--stroke-default)",
           background: "var(--surface-card)",
@@ -84,7 +85,12 @@ export function MultiSelectFilter({
         <PpDialog
           icon={<ListFilter className="h-[18px] w-[18px]" aria-hidden />}
           title={`${label} filter`}
-          subtitle="Move items to Selected to filter by them. Leave Selected empty to include all."
+          subtitle={
+            <>
+              <span className="ta-desktop-only">Move items to Selected to filter by them. Leave Selected empty to include all.</span>
+              <span className="ta-phone-only">Tick the ones to filter by. Leave all unticked to include everyone.</span>
+            </>
+          }
           width={680}
           onClose={() => setOpen(false)}
           footer={
@@ -94,6 +100,35 @@ export function MultiSelectFilter({
             </>
           }
         >
+          {/* Two lists and arrows on a computer. A phone draws a multiple
+              select as one picker button and has no Ctrl, Shift or double
+              click, so there it is one list of ticks over the same draft. */}
+          <div className="ta-phone-only">
+            <div className={styles.choiceTools}>
+              {heading("Selected", selected.length)}
+              <span className="flex gap-1">
+                <Button size="sm" hierarchy="link" disabled={!available.length} onClick={() => add(available.map((o) => o.id))}>
+                  Select all
+                </Button>
+                <Button size="sm" hierarchy="link" disabled={!selected.length} onClick={() => remove(selected.map((o) => o.id))}>
+                  Clear
+                </Button>
+              </span>
+            </div>
+            <div className={styles.choices} role="group" aria-label={label}>
+              {options.map((o) => (
+                <div key={o.id} className={styles.choice}>
+                  <Checkbox
+                    checked={chosen.has(o.id)}
+                    onChange={(on) => (on ? add([o.id]) : remove([o.id]))}
+                    label={o.name}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="ta-desktop-only">
           <div className="grid items-center gap-3" style={{ gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr)" }}>
             <label className="flex min-w-0 flex-col gap-1.5">
               {heading("Available", available.length)}
@@ -133,6 +168,7 @@ export function MultiSelectFilter({
           <p className="m-0 mt-2" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
             Ctrl or Shift click to highlight several. Double-click an item to move it.
           </p>
+          </div>
         </PpDialog>
       )}
     </div>
