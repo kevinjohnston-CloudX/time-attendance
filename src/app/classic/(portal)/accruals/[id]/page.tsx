@@ -1,5 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import { getSubordinateIds } from "@/lib/get-subordinate-ids";
+import { siteLimit } from "@/lib/rbac/scope";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
@@ -31,6 +32,17 @@ export default async function EmployeeAccrualsPage({
     if (!session.user.employeeId) redirect("/accruals");
     const subordinateIds = await getSubordinateIds(session.user.employeeId, session.user.tenantId ?? null);
     if (!subordinateIds.includes(id)) redirect("/accruals");
+  }
+  // Seeing everyone's is everyone in the company, and for a Payroll Admin
+  // held to some sites, everyone at those sites: the list offers no one else,
+  // and an id typed into the address goes back to it.
+  if (canViewAny && session.user.employeeId !== id) {
+    const siteIds = await siteLimit({ employeeId: session.user.employeeId ?? "", role: session.user.role ?? "" });
+    const reachable = await db.employee.findFirst({
+      where: { id, tenantId: session.user.tenantId ?? "__no_company__", ...(siteIds ? { siteId: { in: siteIds } } : {}) },
+      select: { id: true },
+    });
+    if (!reachable) redirect("/accruals");
   }
 
   const canManageEmployee = await userHasPermission(session.user, "EMPLOYEE_MANAGE");

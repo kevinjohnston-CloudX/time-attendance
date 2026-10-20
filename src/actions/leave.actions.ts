@@ -172,7 +172,7 @@ export const createLeaveRequestForEmployee = withRBAC(
         throw new Error("You can only submit leave for your direct or indirect reports.");
       }
     }
-    await assertNotSenior(ctx, targetEmployeeId);
+    await assertNotSenior(ctx, targetEmployeeId, "LEAVE_REQUEST_ANY");
 
     // Create DRAFT → submit → supervisor-approve (moves to PENDING_HR)
     const request = await createLeaveRequestCore(targetEmployeeId, { leaveTypeId, selectedDays, note });
@@ -219,7 +219,7 @@ async function reviewableRequest(
   });
   if (!request) throw new NotFoundError("Leave request not found");
   if (request.employeeId === ctx.employeeId) throw new Error("You can't review your own leave request");
-  await assertNotSenior(ctx, request.employeeId);
+  await assertNotSenior(ctx, request.employeeId, "LEAVE_APPROVE_ANY");
   return request;
 }
 

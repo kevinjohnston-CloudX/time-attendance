@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { z } from "zod";
-import { assertEmployeeInScope, timesheetInScope } from "@/lib/rbac/scope";
+import { assertEmployeeInScope, siteLimit, timesheetInScope } from "@/lib/rbac/scope";
 import { timecardList } from "@/lib/timecards/timecard-list";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
 
@@ -18,14 +18,18 @@ type ListInput = { siteId?: string | null; departmentId?: string | null; payPeri
 
 export const getActiveEmployeesForTimecards = withRBAC(
   ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"],
-  async ({ tenantId }, input: ListInput) => {
+  async (ctx, input: ListInput) => {
+    const { tenantId } = ctx;
     const { siteId, departmentId, payPeriodId } = listInputSchema.parse(input);
+    // A Payroll Admin held to some sites is offered the people at those sites
+    // only; a site picked outside them finds nobody.
+    const sites = await siteLimit(ctx);
     // Scoped by tenant as well. It was filtered on isActive alone, which read
     // the employee table across tenants.
     return timecardList(
       {
         ...(tenantId ? { tenantId } : {}),
-        ...(siteId ? { siteId } : {}),
+        ...(sites ? { siteId: { in: siteId ? sites.filter((s) => s === siteId) : sites } } : siteId ? { siteId } : {}),
         ...(departmentId ? { departmentId } : {}),
       },
       tenantId,

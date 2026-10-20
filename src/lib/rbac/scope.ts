@@ -38,20 +38,57 @@ export async function reachesCompany(ctx: Ctx, companyWide: Wide): Promise<boole
   return false;
 }
 
+/**
+ * The sites a Payroll or HR Admin is held to, set on their employee record
+ * (Site access); null when they reach every site, which no rows means. Other
+ * roles are never held to sites here.
+ */
+export async function siteLimit(ctx: { employeeId: string; role: string }): Promise<string[] | null> {
+  if ((ctx.role !== "PAYROLL_ADMIN" && ctx.role !== "HR_ADMIN") || !ctx.employeeId) return null;
+  const rows = await db.hrSiteAccess.findMany({ where: { employeeId: ctx.employeeId }, select: { siteId: true } });
+  return rows.length > 0 ? rows.map((r) => r.siteId) : null;
+}
+
+/**
+ * Timecard access a site limit narrows: a Payroll Admin held to some sites
+ * sees and changes the timecards of people at those sites only, and an id
+ * from anywhere else answers "not found", as the list never offers it. The
+ * screens that check punch editing alone (exceptions, missed punches) list
+ * every site still, so their actions are not narrowed either.
+ */
+const SITE_LIMITED: Permission[] = ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"];
+
 export async function employeeScope(ctx: Ctx, companyWide: Wide): Promise<Prisma.EmployeeWhereInput> {
   const company: Prisma.EmployeeWhereInput = { tenantId: ctx.tenantId ?? "__no_company__" };
-  if (await reachesCompany(ctx, companyWide)) return company;
+  if (await reachesCompany(ctx, companyWide)) {
+    const wide = Array.isArray(companyWide) ? companyWide : [companyWide];
+    const sites = wide.some((p) => SITE_LIMITED.includes(p)) ? await siteLimit(ctx) : null;
+    return sites ? { ...company, siteId: { in: sites } } : company;
+  }
   const team = ctx.employeeId ? await getSubordinateIds(ctx.employeeId, ctx.tenantId) : [];
   return { ...company, id: { in: team } };
 }
 
 /**
- * Nobody changes the records of someone ranked above them (a Payroll Admin
- * cannot touch an HR Admin's timecard or leave). Peers and juniors are fine;
- * seeing a senior's records is not affected.
+ * Company-wide permissions that reach everyone's hours whatever their rank:
+ * editing every timecard, and entering or approving everyone's leave. HR
+ * coordinators holding them were refused a senior's timecard and PTO ("You
+ * can't change the records of someone ranked above you"), which their job
+ * needs. A senior's profile, role and access keep the rank rule.
  */
-export async function assertNotSenior(ctx: Ctx, targetEmployeeId: string): Promise<void> {
+export const RANK_EXEMPT: Permission[] = [...TIMECARD_EDITORS_COMPANY, "LEAVE_REQUEST_ANY", "LEAVE_APPROVE_ANY"];
+
+/**
+ * Nobody changes the records of someone ranked above them (a Payroll Admin
+ * cannot touch an HR Admin's profile). Peers and juniors are fine; seeing a
+ * senior's records is not affected. `companyWide` is the action's own
+ * company-wide permission: holding one of the {@link RANK_EXEMPT} ones lifts
+ * the rule for that action.
+ */
+export async function assertNotSenior(ctx: Ctx, targetEmployeeId: string, companyWide?: Wide): Promise<void> {
   if (ctx.role === "SUPER_ADMIN" || !ctx.tenantId) return;
+  const exempt = (Array.isArray(companyWide) ? companyWide : companyWide ? [companyWide] : []).filter((p) => RANK_EXEMPT.includes(p));
+  for (const p of exempt) if (await checkPermission(p)) return;
   const [mine, theirs] = await Promise.all([
     ctx.viewAsRank !== undefined
       ? Promise.resolve(ctx.viewAsRank)
@@ -82,7 +119,7 @@ export async function assertEmployeeInScope(ctx: Ctx, employeeId: string, compan
   });
   if (!found) throw new NotFoundError("Employee not found");
   if (forChange && !allowInactive) assertActiveForChange(found.isActive);
-  if (forChange) await assertNotSenior(ctx, employeeId);
+  if (forChange) await assertNotSenior(ctx, employeeId, companyWide);
 }
 
 /** The timesheet's employee and status, if the caller may act on it. */
@@ -94,7 +131,7 @@ export async function timesheetInScope(ctx: Ctx, timesheetId: string, companyWid
   if (!found) throw new NotFoundError("Timesheet not found");
   const { employee, ...ts } = found;
   if (forChange && !allowInactive) assertActiveForChange(employee.isActive);
-  if (forChange) await assertNotSenior(ctx, ts.employeeId);
+  if (forChange) await assertNotSenior(ctx, ts.employeeId, companyWide);
   return ts;
 }
 
@@ -118,7 +155,7 @@ export async function punchInScope(ctx: Ctx, punchId: string, companyWide: Wide)
   if (!found) throw new NotFoundError("Punch not found");
   const { employee, ...punch } = found;
   assertActiveForChange(employee.isActive);
-  await assertNotSenior(ctx, punch.employeeId);
+  await assertNotSenior(ctx, punch.employeeId, companyWide);
   return punch;
 }
 
