@@ -1,0 +1,147 @@
+/* My Timesheet on a phone (timesheet-viewer.tsx).
+
+   The grid's eleven columns become one short block per day: the date and
+   its total, the four punches across, the hours, then the pay code and
+   reason when there are any. A day with nothing on it (one still to come,
+   or a weekend off) is just its date. The columns never change here, so a
+   cell is found by its place in the row:
+   1 date, 2 in, 3 meal out, 4 meal in, 5 out, 6 regular, 7 overtime,
+   8 double, 9 total, 10 pay code, 11 reason. Inline styles are why some
+   lines need !important. */
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .cycle {
+    flex: 1 1 100% !important;
+    width: auto !important;
+  }
+
+  .days {
+    display: block;
+    min-width: 0 !important;
+  }
+  .days > thead {
+    display: none;
+  }
+  .days > tbody,
+  .days > tfoot {
+    display: block;
+  }
+
+  .days tr[data-row="day"],
+  .days tr[data-row="foot"] {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    column-gap: 10px;
+    padding: 10px 16px;
+  }
+  .days tr[data-row] > td {
+    min-width: 0;
+    padding: 2px 0 !important;
+    border-left: 0 !important;
+    text-align: left !important;
+    white-space: normal !important;
+  }
+  .days tr[data-row] > td:empty {
+    display: none;
+  }
+  .days tr[data-row] > td::before {
+    display: block;
+    margin-bottom: 1px;
+    font: var(--type-caption1);
+    color: var(--text-tertiary);
+  }
+
+  .days tr[data-row="day"] {
+    grid-template-areas:
+      "date date date total"
+      "in mout min out"
+      "reg ot dt ."
+      "pay pay reason reason";
+  }
+  .days tr[data-row="day"] > td:nth-child(1) { grid-area: date; }
+  .days tr[data-row="day"] > td:nth-child(2) { grid-area: in; }
+  .days tr[data-row="day"] > td:nth-child(3) { grid-area: mout; }
+  .days tr[data-row="day"] > td:nth-child(4) { grid-area: min; }
+  .days tr[data-row="day"] > td:nth-child(5) { grid-area: out; }
+  .days tr[data-row="day"] > td:nth-child(6) { grid-area: reg; }
+  .days tr[data-row="day"] > td:nth-child(7) { grid-area: ot; }
+  .days tr[data-row="day"] > td:nth-child(8) { grid-area: dt; }
+  .days tr[data-row="day"] > td:nth-child(9) {
+    grid-area: total;
+    justify-self: end;
+    text-align: right !important;
+  }
+  .days tr[data-row="day"] > td:nth-child(10) { grid-area: pay; }
+  .days tr[data-row="day"] > td:nth-child(11) { grid-area: reason; }
+
+  .days tr[data-row="day"] > td:nth-child(2)::before { content: "Clock in"; }
+  .days tr[data-row="day"] > td:nth-child(3)::before { content: "Meal out"; }
+  .days tr[data-row="day"] > td:nth-child(4)::before { content: "Meal in"; }
+  .days tr[data-row="day"] > td:nth-child(5)::before { content: "Clock out"; }
+  .days tr[data-row="day"] > td:nth-child(6)::before { content: "Regular"; }
+  .days tr[data-row="day"] > td:nth-child(7)::before { content: "Overtime"; }
+  .days tr[data-row="day"] > td:nth-child(8)::before { content: "Double"; }
+  .days tr[data-row="day"] > td:nth-child(10):not(:empty)::before { content: "Pay code"; }
+  .days tr[data-row="day"] > td:nth-child(11):not(:empty)::before { content: "Reason"; }
+
+  /* A punch is read here, not typed, so it reads as text rather than as a
+     row of disabled boxes. */
+  .days tr[data-row="day"] input {
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    font-size: 15px !important;
+    text-align: left !important;
+  }
+
+  /* Hours with no punches behind them (salary, leave, an absence): four
+     empty times say nothing. */
+  .days tr[data-row="day"][data-no-punches] {
+    grid-template-areas:
+      "date date date total"
+      "reg ot dt ."
+      "pay pay reason reason";
+  }
+  .days tr[data-row="day"][data-no-punches] > td:nth-child(n + 2):nth-child(-n + 5) {
+    display: none;
+  }
+
+  /* Nothing on the day: only its date and the dash for its total. */
+  .days tr[data-row="day"][data-quiet] {
+    grid-template-areas: "date date date total";
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .days tr[data-row="day"][data-quiet] > td:not(:nth-child(1)):not(:nth-child(9)) {
+    display: none;
+  }
+
+  /* The week's total: its label, then the four figures. */
+  .days tr[data-row="foot"] {
+    grid-template-areas:
+      "label label label label"
+      "reg ot dt total";
+  }
+  .days tr[data-row="foot"] > td:nth-child(1) { grid-area: label; }
+  .days tr[data-row="foot"] > td:nth-child(2),
+  .days tr[data-row="foot"] > td:nth-child(7) { display: none; }
+  .days tr[data-row="foot"] > td:nth-child(3) { grid-area: reg; }
+  .days tr[data-row="foot"] > td:nth-child(4) { grid-area: ot; }
+  .days tr[data-row="foot"] > td:nth-child(5) { grid-area: dt; }
+  .days tr[data-row="foot"] > td:nth-child(6) { grid-area: total; }
+  .days tr[data-row="foot"] > td:nth-child(3)::before { content: "Regular"; }
+  .days tr[data-row="foot"] > td:nth-child(4)::before { content: "Overtime"; }
+  .days tr[data-row="foot"] > td:nth-child(5)::before { content: "Double"; }
+  .days tr[data-row="foot"] > td:nth-child(6)::before { content: "Total"; }
+
+  .days tr[data-row="wide"] {
+    display: block;
+  }
+  .days tr[data-row="wide"] > td {
+    display: block;
+    padding: 10px 16px !important;
+    overflow-x: auto;
+  }
+}

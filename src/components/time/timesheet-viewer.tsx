@@ -26,6 +26,7 @@ import { minutesToHoursDecimal } from "@/lib/utils/duration";
 import { PUNCH_TYPE_LABEL, TIMESHEET_STATUS_LABEL } from "@/lib/state-machines/labels";
 import { SegmentTimeline } from "@/components/time/segment-timeline";
 import type { WorkSegment } from "@prisma/client";
+import styles from "./timesheet.module.css";
 
 /**
  * The timecard grid, as the portal design draws Template C.
@@ -428,7 +429,7 @@ export function TimesheetViewer({
           className="flex flex-wrap items-center gap-3 px-4 py-3"
           style={{ borderBottom: "1px solid var(--stroke-divider)" }}
         >
-          <label className="flex w-[240px] flex-none flex-col gap-1.5">
+          <label className={`${styles.cycle} flex w-[240px] flex-none flex-col gap-1.5`}>
             <span className="wms-label">Pay Cycle</span>
             <Select
               value={selectedPayPeriodId ?? ""}
@@ -497,7 +498,8 @@ export function TimesheetViewer({
           />
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", minWidth: 880, borderCollapse: "collapse" }}>
+            {/* One block per day on a phone (timesheet.module.css). */}
+            <table className={styles.days} style={{ width: "100%", minWidth: 880, borderCollapse: "collapse" }}>
               <thead>
                 <tr>
                   <th style={{ borderBottom: 0 }} />
@@ -533,6 +535,9 @@ export function TimesheetViewer({
                     <Fragment key={row.key}>
                       <tr
                         className="ta-row"
+                        data-row="day"
+                        data-quiet={!row.hasActivity && !row.isAbsent && !row.missingOut ? "true" : undefined}
+                        data-no-punches={!row.punchIn && !row.mealOut && !row.mealIn && !row.punchOut ? "true" : undefined}
                         style={{
                           borderBottom: "1px solid var(--stroke-divider)",
                           background: rowBackground(row),
@@ -614,7 +619,7 @@ export function TimesheetViewer({
                       </tr>
 
                       {expanded && row.hasActivity && (
-                        <tr style={{ background: "var(--surface-secondary)" }}>
+                        <tr data-row="wide" style={{ background: "var(--surface-secondary)" }}>
                           <td
                             colSpan={COLUMN_COUNT}
                             style={{
@@ -664,6 +669,7 @@ export function TimesheetViewer({
 
               <tfoot>
                 <tr
+                  data-row="foot"
                   style={{
                     background: "var(--surface-tertiary)",
                     fontWeight: "var(--weight-semibold)",
@@ -702,7 +708,7 @@ export function TimesheetViewer({
               textWrap: "pretty",
             }}
           >
-            Click a day to see its segments · Hours are what the rules engine produced, with
+            Open a day to see its segments · Hours are what the rules engine produced, with
             rounding and meal deductions already applied
           </div>
         )}
@@ -737,6 +743,9 @@ export function TimesheetViewer({
             </div>
           </div>
 
+          {/* One labelled block per row on a phone, like an employee's pay
+              rates (globals.css, .ta-rates). */}
+          <div className="ta-rates" data-mode="read">
           <Table>
             <THead>
               <TR>
@@ -755,6 +764,7 @@ export function TimesheetViewer({
               )}
             </TBody>
           </Table>
+          </div>
         </Card>
       )}
 
@@ -925,14 +935,14 @@ function SummaryRow({
   return (
     <TR style={emphasis ? { background: "var(--surface-tertiary)" } : undefined}>
       <TD style={emphasis ? { fontWeight: "var(--weight-semibold)" } : undefined}>{label}</TD>
-      <TD numeric style={strong}>{reg > 0 ? fmt(reg) : "—"}</TD>
-      <TD numeric style={ot > 0 ? { color: "var(--text-warning)", fontWeight: "var(--weight-semibold)" } : strong}>
+      <TD numeric data-label="Regular" style={strong}>{reg > 0 ? fmt(reg) : "—"}</TD>
+      <TD numeric data-label="Overtime" style={ot > 0 ? { color: "var(--text-warning)", fontWeight: "var(--weight-semibold)" } : strong}>
         {ot > 0 ? fmt(ot) : "—"}
       </TD>
-      <TD numeric style={dt > 0 ? { color: "var(--text-error)", fontWeight: "var(--weight-semibold)" } : strong}>
+      <TD numeric data-label="Double" style={dt > 0 ? { color: "var(--text-error)", fontWeight: "var(--weight-semibold)" } : strong}>
         {dt > 0 ? fmt(dt) : "—"}
       </TD>
-      <TD numeric style={{ fontWeight: "var(--weight-semibold)" }}>{total > 0 ? fmt(total) : "—"}</TD>
+      <TD numeric data-label="Total" style={{ fontWeight: "var(--weight-semibold)" }}>{total > 0 ? fmt(total) : "—"}</TD>
     </TR>
   );
 }
