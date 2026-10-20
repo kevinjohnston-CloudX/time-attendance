@@ -82,3 +82,64 @@
     background: var(--ta-row-hover);
   }
 }
+
+/* "Jump to a month" (pay-periods-rail.tsx). A 236px popover beside the
+   calendar button on a computer; on a phone a sheet from the bottom edge
+   with a title, a thumb sized year switch and month buttons. */
+.monthHead {
+  display: none;
+}
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .monthCatcher {
+    z-index: 60 !important;
+    background: var(--wms-overlay-modal);
+  }
+  .monthSheet {
+    position: fixed !important;
+    top: auto !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    z-index: 61 !important;
+    width: auto !important;
+    padding: 8px 16px calc(16px + env(safe-area-inset-bottom)) !important;
+    border-radius: 20px 20px 0 0 !important;
+    animation: monthUp 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .monthHead {
+    display: block;
+    padding: 8px 0 4px;
+    font: var(--weight-semibold) 17px/22px var(--font-sans);
+    color: var(--text-primary);
+  }
+  .monthSheet :global(.ta-icon-btn) {
+    width: 44px !important;
+    height: 44px !important;
+  }
+  .monthYear {
+    font-size: 16px !important;
+  }
+  .monthGrid {
+    gap: 8px !important;
+  }
+  .monthGrid > button {
+    height: 48px !important;
+    font-size: 15px !important;
+  }
+  .monthToday {
+    height: 48px !important;
+    margin-top: 12px !important;
+    font-size: 15px !important;
+  }
+}
+@keyframes monthUp {
+  from {
+    transform: translateY(32px);
+    opacity: 0.4;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .monthSheet {
+    animation: none;
+  }
+}

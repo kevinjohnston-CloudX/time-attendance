@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { ArrowUpRight, Calendar, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { Badge, SegmentedControl, type BadgeTone } from "@/components/ui";
 import { PpSelect } from "@/components/payroll/pp-select";
 import { isPhone } from "@/lib/phone";
+import ppStyles from "./pay-periods.module.css";
 
 /**
  * The Pay Periods list, from the page handoff: the scope, a stepper through
@@ -62,6 +64,13 @@ function monthKeysOf(p: RailPeriod): string[] {
 
 function inMonth(p: RailPeriod, month: string): boolean {
   return monthKeysOf(p).includes(month);
+}
+
+/** On a phone the month picker is a sheet, drawn at the page root so the
+ *  rail's own layer cannot hold it under the tab bar; on a computer it stays
+ *  beside the button it drops from. */
+function inPlaceOrOnTop(node: React.ReactNode) {
+  return isPhone() ? createPortal(node, document.body) : node;
 }
 
 function IconBtn({ onClick, label, disabled, children, pressed }: { onClick: () => void; label: string; disabled?: boolean; children: React.ReactNode; pressed?: boolean }) {
@@ -274,69 +283,71 @@ export function PayPeriodsRail({
             >
               <Calendar className="h-4 w-4" />
             </IconBtn>
-            {picker && (
-              <>
-                <span className="fixed inset-0 z-40" onClick={() => setPicker(false)} />
-                <div
-                  role="dialog"
-                  aria-label="Jump to a month"
-                  className="absolute right-[-4px] top-[calc(100%+6px)] z-50 w-[236px] p-2.5"
-                  style={{ borderRadius: 12, background: "var(--surface-card)", boxShadow: "var(--ta-menu-shadow)" }}
-                >
-                  <div className="mb-2 flex items-center justify-between">
-                    <IconBtn label="Previous year" onClick={() => setYear((y) => y - 1)}>
-                      <ChevronLeft className="h-4 w-4" />
-                    </IconBtn>
-                    <span className="tabular" style={{ font: "var(--weight-semibold) 13px/1 var(--font-sans)", color: "var(--text-primary)" }}>
-                      {year}
-                    </span>
-                    <IconBtn label="Next year" onClick={() => setYear((y) => y + 1)}>
-                      <ChevronRight className="h-4 w-4" />
-                    </IconBtn>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1">
-                    {MONTHS.map((m, i) => {
-                      const key = `${year}-${String(i + 1).padStart(2, "0")}`;
-                      const on = key === month;
-                      const has = monthsWith.has(i);
-                      const now = key === todayKey.slice(0, 7);
-                      return (
-                        <button
-                          key={m}
-                          type="button"
-                          disabled={!has}
-                          title={has ? undefined : "No pay periods this month"}
-                          onClick={() => {
-                            setPicker(false);
-                            go({ month: key, id: periodForMonth(key)?.id });
-                          }}
-                          className={has && !on ? "ta-hoverable" : undefined}
-                          style={{
-                            height: 32,
-                            border: 0,
-                            borderRadius: 8,
-                            cursor: has ? "pointer" : "default",
-                            font: "var(--weight-medium) 13px/1 var(--font-sans)",
-                            background: on ? "var(--fill-accent)" : now && has ? "var(--surface-info)" : "transparent",
-                            color: on ? "var(--text-on-accent)" : !has ? "var(--text-disabled)" : now ? "var(--text-accent)" : "var(--text-primary)",
-                          }}
-                        >
-                          {m}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={goToday}
-                    className="ta-hoverable mt-2 grid h-[30px] w-full place-items-center"
-                    style={{ border: 0, borderRadius: 8, background: "var(--ta-well)", cursor: "pointer", font: "var(--weight-medium) 12px/1 var(--font-sans)", color: "var(--text-accent)" }}
+            {picker &&
+              inPlaceOrOnTop(
+                <>
+                  <span className={`fixed inset-0 z-40 ${ppStyles.monthCatcher}`} onClick={() => setPicker(false)} />
+                  <div
+                    role="dialog"
+                    aria-label="Jump to a month"
+                    className={`absolute right-[-4px] top-[calc(100%+6px)] z-50 w-[236px] p-2.5 ${ppStyles.monthSheet}`}
+                    style={{ borderRadius: 12, background: "var(--surface-card)", boxShadow: "var(--ta-menu-shadow)" }}
                   >
-                    Go to today
-                  </button>
-                </div>
-              </>
-            )}
+                    <div className={ppStyles.monthHead}>Jump to a month</div>
+                    <div className="mb-2 flex items-center justify-between">
+                      <IconBtn label="Previous year" onClick={() => setYear((y) => y - 1)}>
+                        <ChevronLeft className="h-4 w-4" />
+                      </IconBtn>
+                      <span className={`tabular ${ppStyles.monthYear}`} style={{ font: "var(--weight-semibold) 13px/1 var(--font-sans)", color: "var(--text-primary)" }}>
+                        {year}
+                      </span>
+                      <IconBtn label="Next year" onClick={() => setYear((y) => y + 1)}>
+                        <ChevronRight className="h-4 w-4" />
+                      </IconBtn>
+                    </div>
+                    <div className={`grid grid-cols-3 gap-1 ${ppStyles.monthGrid}`}>
+                      {MONTHS.map((m, i) => {
+                        const key = `${year}-${String(i + 1).padStart(2, "0")}`;
+                        const on = key === month;
+                        const has = monthsWith.has(i);
+                        const now = key === todayKey.slice(0, 7);
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            disabled={!has}
+                            title={has ? undefined : "No pay periods this month"}
+                            onClick={() => {
+                              setPicker(false);
+                              go({ month: key, id: periodForMonth(key)?.id });
+                            }}
+                            className={has && !on ? "ta-hoverable" : undefined}
+                            style={{
+                              height: 32,
+                              border: 0,
+                              borderRadius: 8,
+                              cursor: has ? "pointer" : "default",
+                              font: "var(--weight-medium) 13px/1 var(--font-sans)",
+                              background: on ? "var(--fill-accent)" : now && has ? "var(--surface-info)" : "transparent",
+                              color: on ? "var(--text-on-accent)" : !has ? "var(--text-disabled)" : now ? "var(--text-accent)" : "var(--text-primary)",
+                            }}
+                          >
+                            {m}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={goToday}
+                      className={`ta-hoverable mt-2 grid h-[30px] w-full place-items-center ${ppStyles.monthToday}`}
+                      style={{ border: 0, borderRadius: 8, background: "var(--ta-well)", cursor: "pointer", font: "var(--weight-medium) 12px/1 var(--font-sans)", color: "var(--text-accent)" }}
+                    >
+                      Go to today
+                    </button>
+                  </div>
+                </>
+              )}
           </span>
         </div>
 
