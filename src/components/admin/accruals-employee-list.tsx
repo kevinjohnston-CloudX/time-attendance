@@ -5,6 +5,7 @@ import { useRouter } from "@/components/layout/navigation-progress";
 import Link from "next/link";
 import { ChevronRight, Hourglass } from "lucide-react";
 import styles from "./accruals.module.css";
+import { usePhoneLayout } from "@/lib/phone";
 import {
   Badge,
   Button,
@@ -81,6 +82,7 @@ export function AccrualsEmployeeList({
   header?: ReactNode;
 }) {
   const router = useRouter();
+  const phone = usePhoneLayout();
 
   // Typing has to feel immediate, so the box is local and the URL catches up.
   const [searchValue, setSearchValue] = useState(filters.q);
@@ -132,7 +134,7 @@ export function AccrualsEmployeeList({
               <SearchInput
                 value={searchValue}
                 onValueChange={onSearchChange}
-                placeholder="Name, badge ID or department"
+                placeholder={phone ? "Name or badge" : "Name, badge ID or department"}
                 width={320}
               />
             }
@@ -256,7 +258,10 @@ export function AccrualsEmployeeList({
                       </TD>
                       <TD>
                         {emp.isActive ? (
-                          <Badge tone={statusTone("ACTIVE")} size="sm" dot>Active</Badge>
+                          // A phone says a status only when it is news.
+                          <span className="ta-phone-hide">
+                            <Badge tone={statusTone("ACTIVE")} size="sm" dot>Active</Badge>
+                          </span>
                         ) : (
                           // Neutral, which is Badge's default: statusTone has no
                           // employment branch and would answer "warning", and an
