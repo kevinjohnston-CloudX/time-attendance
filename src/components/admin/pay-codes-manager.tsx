@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
-import { GripVertical, Plus, Receipt } from "lucide-react";
+import { ChevronDown, ChevronUp, GripVertical, Plus, Receipt } from "lucide-react";
 import type { PayCode } from "@prisma/client";
 import { createPayCode, updatePayCode, reorderPayCodes } from "@/actions/pay-code.actions";
 import { Banner, Button, EmptyState, Input, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
@@ -85,13 +85,32 @@ export function PayCodesManager({ payCodes }: { payCodes: PayCode[] }) {
 
   function drop(targetId: string) {
     if (!dragId || dragId === targetId) return endDrag();
-    const before = items;
     const next = [...items];
     const [moved] = next.splice(next.findIndex((p) => p.id === dragId), 1);
     next.splice(next.findIndex((p) => p.id === targetId), 0, moved);
+    endDrag();
+    saveOrder(next);
+  }
+
+  /**
+   * One place up or down, past the next row on screen. A phone's way to
+   * reorder, where rows cannot be dragged.
+   */
+  function move(id: string, step: -1 | 1) {
+    const at = shown.findIndex((p) => p.id === id);
+    const neighbour = shown[at + step];
+    if (!neighbour) return;
+    const next = [...items];
+    const from = next.findIndex((p) => p.id === id);
+    const to = next.findIndex((p) => p.id === neighbour.id);
+    [next[from], next[to]] = [next[to], next[from]];
+    saveOrder(next);
+  }
+
+  function saveOrder(next: PayCode[]) {
+    const before = items;
     setItems(next);
     setOrderError(null);
-    endDrag();
     startOrdering(async () => {
       const result = await reorderPayCodes({ orderedIds: next.map((p) => p.id) });
       if (!result.success) {
@@ -139,7 +158,7 @@ export function PayCodesManager({ payCodes }: { payCodes: PayCode[] }) {
     <>
       <AreaPanel
         title="Pay codes"
-        hint="The payroll lines hours are posted to. Timecards list them in this order. Drag a row to move it."
+        hint="The payroll lines hours are posted to. Timecards list them in this order; move a row to change it."
         action={addButton}
         status={{ view, onChange: setView, counts }}
         search={items.length ? { value: query, onChange: setQuery, placeholder: "Code, name or bucket" } : undefined}
@@ -203,18 +222,48 @@ export function PayCodesManager({ payCodes }: { payCodes: PayCode[] }) {
                   }}
                 >
                   <TD>
-                    <span
-                      className="flex cursor-grab items-center active:cursor-grabbing"
-                      title="Drag to move"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <GripVertical className="h-4 w-4" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+                    <span className="ta-desktop-only">
+                      <span
+                        className="flex cursor-grab items-center active:cursor-grabbing"
+                        title="Drag to move"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <GripVertical className="h-4 w-4" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
+                      </span>
+                    </span>
+                    {/* A phone cannot drag a row, so it moves one place at a time. */}
+                    <span className="ta-phone-only">
+                      <span className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          type="button"
+                          hierarchy="secondary"
+                          size="sm"
+                          leadingIcon={<ChevronUp className="h-4 w-4" />}
+                          disabled={ordering || shown[0]?.id === p.id}
+                          onClick={() => move(p.id, -1)}
+                          aria-label={`Move ${p.label} up`}
+                        >
+                          Move up
+                        </Button>
+                        <Button
+                          type="button"
+                          hierarchy="secondary"
+                          size="sm"
+                          leadingIcon={<ChevronDown className="h-4 w-4" />}
+                          disabled={ordering || shown[shown.length - 1]?.id === p.id}
+                          onClick={() => move(p.id, 1)}
+                          aria-label={`Move ${p.label} down`}
+                        >
+                          Move down
+                        </Button>
+                      </span>
                     </span>
                   </TD>
                   <TD numeric style={{ fontWeight: "var(--weight-semibold)" }}>
                     {p.code}
                   </TD>
-                  <TD style={{ fontWeight: "var(--weight-medium)" }}>{p.label}</TD>
+                  {/* The block's heading on a phone (setup-ui useColumnLabels). */}
+                  <TD data-head="name" style={{ fontWeight: "var(--weight-medium)" }}>{p.label}</TD>
                   <TD style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>{p.expressCode || <Muted />}</TD>
                   <TD style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>{p.adpCode || <Muted />}</TD>
                   <TD style={{ color: "var(--text-secondary)" }}>
