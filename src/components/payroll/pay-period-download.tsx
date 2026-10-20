@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Download, FileSpreadsheet, Clock, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui";
+import styles from "./pay-period-download.module.css";
 
 /**
  * The three CSV reports a closed period is usually asked for.
@@ -68,7 +69,7 @@ export function PayPeriodDownload({ payPeriodId, label }: Props) {
       {/* A transparent catcher rather than an outside-click listener: the
           trigger sits inside the page header, and a document-level mousedown
           handler would close the menu on the same click that opened it. */}
-      {open && <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />}
+      {open && <div className={`fixed inset-0 z-40 ${styles.catcher}`} onClick={() => setOpen(false)} />}
 
       <div className="relative" ref={ref}>
         <Button
@@ -85,16 +86,20 @@ export function PayPeriodDownload({ payPeriodId, label }: Props) {
           <div
             role="menu"
             aria-label={`Reports for ${label}`}
-            className="absolute right-0 top-[calc(100%+6px)] z-50 w-80 p-1.5"
+            className={`absolute right-0 top-[calc(100%+6px)] z-50 w-80 p-1.5 ${styles.menu}`}
             style={{ borderRadius: 12, background: "var(--surface-card)", boxShadow: "var(--ta-menu-shadow)" }}
           >
+            <div className={styles.head}>
+              <span className={styles.headTitle}>Reports</span>
+              <span className={styles.headSub}>{label}</span>
+            </div>
             {OPTIONS.map(({ format, icon: Icon, title, description, color }) => (
               <button
                 key={format}
                 type="button"
                 role="menuitem"
                 onClick={() => handleDownload(format)}
-                className="ta-hoverable flex w-full items-start gap-2.5 p-2.5 text-left"
+                className={`ta-hoverable flex w-full items-start gap-2.5 p-2.5 text-left ${styles.option}`}
                 style={{ border: "none", borderRadius: 10, background: "transparent", cursor: "pointer" }}
               >
                 <span
@@ -104,10 +109,10 @@ export function PayPeriodDownload({ payPeriodId, label }: Props) {
                   <Icon className="h-4 w-4" style={{ color }} aria-hidden />
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span style={{ font: "var(--weight-medium) 13px/18px var(--font-sans)", color: "var(--text-primary)" }}>{title}</span>
+                  <span className={styles.optionTitle} style={{ font: "var(--weight-medium) 13px/18px var(--font-sans)", color: "var(--text-primary)" }}>{title}</span>
                   <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)", textWrap: "pretty" }}>{description}</span>
                 </span>
-                <Download className="mt-2 h-4 w-4 flex-none" style={{ color: "var(--icon-disabled)" }} aria-hidden />
+                <Download className={`mt-2 h-4 w-4 flex-none ${styles.optionIcon}`} style={{ color: "var(--icon-disabled)" }} aria-hidden />
               </button>
             ))}
             <p className="m-0 px-2.5 pb-1.5 pt-1" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
