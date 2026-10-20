@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useTransition, useEffect, useRef } from "react";
+import React, { useState, useTransition, useEffect, useLayoutEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { useRouter } from "@/components/layout/navigation-progress";
 import {
   format,
@@ -82,6 +83,8 @@ import {
 import { RefusedScansNotice } from "@/components/payroll/refused-scans-notice";
 import { TimecardLockControl } from "@/components/payroll/timecard-lock-control";
 import grid from "./timecard.module.css";
+import { phoneGridCss, type GridColumn } from "./timecard-phone-grid";
+import { isPhone } from "@/lib/phone";
 import { shiftMeal } from "@/lib/shift-meal";
 
 /**
@@ -590,18 +593,20 @@ function SummaryRow({
       }
     >
       <td style={{ ...cell, textAlign: "left", fontVariantNumeric: "normal" }}>{label}</td>
-      <td style={cell}>{reg > 0 ? fmt(reg) : "—"}</td>
-      <td style={emphasis(ot > 0, "var(--text-warning)")}>{ot > 0 ? fmt(ot) : "—"}</td>
-      <td style={emphasis(dt > 0, "var(--text-error)")}>{dt > 0 ? fmt(dt) : "—"}</td>
-      {showPremium && <td style={emphasis(premium > 0, "var(--text-warning)")}>{premium > 0 ? fmt(premium) : "—"}</td>}
-      <td style={isBold ? cell : strong}>{fmt(total)}</td>
+      {/* data-label: the caption each figure carries on a phone, where the
+          summary is one labelled block per row (globals.css, .ta-rates). */}
+      <td data-label="Regular" style={cell}>{reg > 0 ? fmt(reg) : "—"}</td>
+      <td data-label="Overtime" style={emphasis(ot > 0, "var(--text-warning)")}>{ot > 0 ? fmt(ot) : "—"}</td>
+      <td data-label="Double" style={emphasis(dt > 0, "var(--text-error)")}>{dt > 0 ? fmt(dt) : "—"}</td>
+      {showPremium && <td data-label="Meal premium" style={emphasis(premium > 0, "var(--text-warning)")}>{premium > 0 ? fmt(premium) : "—"}</td>}
+      <td data-label="Total hours" style={isBold ? cell : strong}>{fmt(total)}</td>
       {rate !== null && (
         <>
-          <td style={cell}>{fmtMoney(rate)}</td>
-          <td style={cell}>{regPay > 0 ? fmtMoney(regPay) : "—"}</td>
-          <td style={cell}>{otPay > 0 ? fmtMoney(otPay) : "—"}</td>
-          <td style={cell}>{dtPay > 0 ? fmtMoney(dtPay) : "—"}</td>
-          <td style={isBold ? cell : strong}>{fmtMoney(totalPay)}</td>
+          <td data-label="Rate" style={cell}>{fmtMoney(rate)}</td>
+          <td data-label="Regular pay" style={cell}>{regPay > 0 ? fmtMoney(regPay) : "—"}</td>
+          <td data-label="Overtime pay" style={cell}>{otPay > 0 ? fmtMoney(otPay) : "—"}</td>
+          <td data-label="Double pay" style={cell}>{dtPay > 0 ? fmtMoney(dtPay) : "—"}</td>
+          <td data-label="Total pay" style={isBold ? cell : strong}>{fmtMoney(totalPay)}</td>
         </>
       )}
     </tr>
@@ -626,7 +631,7 @@ function InlinePunchEdit({
   }, [error]);
   return (
     <div className="flex flex-col gap-0.5">
-      <div className="flex items-center gap-1">
+      <div className={`${grid.punchEdit} flex items-center gap-1`}>
         {/* .ta-cell is the design's grid cell: quiet until you touch it, so a
             week of rows reads as times rather than as a wall of boxes. The
             explicit width overrides the class's 100%, which would otherwise
@@ -715,6 +720,32 @@ export function TimecardViewer({
   siteTimezone,
 }: TimecardViewerProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  /**
+   * On a phone, whose timecard is showing instead of the list of people.
+   *
+   * <p>A phone shows the list and the timecard one after the other
+   * (timecard.module.css, "Phones"). The page always has somebody selected,
+   * the first person when the address names nobody, so the list is where a
+   * phone starts unless the address asked for a person: a "View timecard"
+   * link from Exceptions opens on that timecard.
+   */
+  const [phoneFor, setPhoneFor] = useState<string | null>(() => {
+    const asked = searchParams.get("employeeId");
+    return asked && asked === selectedEmployeeId ? asked : null;
+  });
+  const phoneView = phoneFor === null ? "list" : phoneFor === selectedEmployeeId ? "card" : "loading";
+  /** Where the list was scrolled to, so coming back lands there. */
+  const listScroll = useRef(0);
+  const scrollAfterSwitch = useRef<number | null>(null);
+  const pageScroller = () => document.querySelector<HTMLElement>("main.ta-page-scroll");
+  useLayoutEffect(() => {
+    if (scrollAfterSwitch.current === null) return;
+    pageScroller()?.scrollTo({ top: scrollAfterSwitch.current });
+    scrollAfterSwitch.current = null;
+  }, [phoneView]);
+
   // Times are the employee's site time, as the clock showed them, not the
   // viewer's: a 7:30 AM clock-in in California reads 7:30 AM in New Jersey.
   // atSite turns a stored moment into that wall clock time for showing and
@@ -1005,6 +1036,24 @@ export function TimecardViewer({
     if (sid) params.set("siteId", sid);
     if (did) params.set("departmentId", did);
     router.push(`/payroll/timecards?${params.toString()}`);
+  }
+
+  /** A person tapped in the list. On a phone it also opens their timecard. */
+  function openEmployee(employeeId: string) {
+    if (isPhone()) {
+      listScroll.current = pageScroller()?.scrollTop ?? 0;
+      scrollAfterSwitch.current = 0;
+      setPhoneFor(employeeId);
+      if (employeeId === selectedEmployeeId) return;
+    }
+    navigate(employeeId);
+  }
+
+  function backToList() {
+    // Unsaved edits would otherwise ride along, unseen, to the next person.
+    if (holdForUnsaved(backToList)) return;
+    scrollAfterSwitch.current = listScroll.current;
+    setPhoneFor(null);
   }
 
   function navigateCustomRange(start: Date, end: Date) {
@@ -1776,6 +1825,16 @@ export function TimecardViewer({
   // Column count for colSpan on expanded rows
   // Base: chevron + date + notes-icon + in + out + reg + ot + dt + total = 9
   // +1 if pay codes column exists, +1 if reason codes column exists, +1 if delete column shown
+  // The grid's columns in order, for the phone's one block per day
+  // (timecard-phone-grid.ts). Keep in step with the header row below.
+  const phoneColumns: GridColumn[] = [
+    "chev", "day", "in", "out", "reg", "ot", "dt", "total",
+    ...(showMealColumn ? (["meal"] as const) : []),
+    ...(payCodes.length > 0 ? (["pay"] as const) : []),
+    ...(reasonCodes.length > 0 ? (["reason"] as const) : []),
+    "notes",
+    ...(canDeleteManual ? (["del"] as const) : []),
+  ];
   const colCount = 9 + (payCodes.length > 0 ? 1 : 0) + (reasonCodes.length > 0 ? 1 : 0) + (showMealColumn ? 1 : 0) + (canDeleteManual ? 1 : 0);
 
 
@@ -1866,7 +1925,11 @@ export function TimecardViewer({
     // on top, then the people on the left and their timecard on the right,
     // each scrolling on its own. The page itself does not scroll, so the
     // person you are on never scrolls away from the hours you are reading.
-    <div className="flex flex-col gap-4" style={{ height: "calc(100vh - 5rem)", minHeight: 560 }}>
+    <div
+      className={`${grid.screen} flex flex-col gap-4`}
+      data-phone-view={phoneView}
+      style={{ height: "calc(100vh - 5rem)", minHeight: 560 }}
+    >
       {/* ── One title row ──────────────────────────────────────────
           The title and what it covers on the left; on the right, who is
           listed (site, department), which pay period, and the way out to
@@ -1879,7 +1942,9 @@ export function TimecardViewer({
             .filter(Boolean)
             .join(" · ")}
           actions={
-            <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className={`${grid.headActions} flex flex-wrap items-center justify-end gap-2`}>
+              {/* Who is listed: on a phone, only beside the list. */}
+              <span className={`${grid.listOnly} contents`}>
                 {sites.length > 0 && (
                   <FilterSelectChip
                     label="Site"
@@ -1897,10 +1962,13 @@ export function TimecardViewer({
                   onChange={(v) => navigate(selectedEmployeeId, selectedPeriodId, selectedSiteId, v || null)}
                 />
 
-              <span aria-hidden="true" className="mx-1 h-5 w-px flex-none" style={{ background: "var(--stroke-divider)" }} />
+              <span aria-hidden="true" className="ta-desktop-only">
+                <span className="mx-1 h-5 w-px flex-none" style={{ background: "var(--stroke-divider)" }} />
+              </span>
+              </span>
 
               <div
-                className="flex h-8 flex-none items-center gap-0.5 rounded-lg px-0.5"
+                className={`${grid.period} flex h-8 flex-none items-center gap-0.5 rounded-lg px-0.5`}
                 style={{ border: "1px solid var(--stroke-secondary)", background: "var(--surface-card)" }}
               >
                 <Button
@@ -1915,7 +1983,7 @@ export function TimecardViewer({
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
 
-                <div className="relative" ref={calendarRef}>
+                <div className={`${grid.periodLabel} relative`} ref={calendarRef}>
                   <button
                     type="button"
                     onClick={() => {
@@ -2021,16 +2089,23 @@ export function TimecardViewer({
                 </Button>
               </div>
 
-              {headerActions}
+              {/* A way out to another page, which Menu reaches on a phone. */}
+              <span className="ta-phone-hide contents">{headerActions}</span>
             </div>
           }
         />
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-4 [grid-template-columns:300px_minmax(0,1fr)]">
+      {phoneView === "loading" && (
+        <div className="ta-phone-only">
+          <p className={grid.loading} role="status">Opening timecard…</p>
+        </div>
+      )}
+
+      <div className={`${grid.panes} grid min-h-0 flex-1 gap-4 [grid-template-columns:300px_minmax(0,1fr)]`}>
         {/* ── Left: who ─────────────────────────────────────────────── */}
         <aside
-          className="flex min-h-0 flex-col overflow-hidden"
+          className={`${grid.listPane} flex min-h-0 flex-col overflow-hidden`}
           style={{ background: "var(--surface-card)", borderRadius: "var(--radius-l)", boxShadow: "var(--shadow-card)" }}
         >
           {/* A slim top, so the list gets the height: the title and count,
@@ -2046,7 +2121,7 @@ export function TimecardViewer({
               </span>
             </div>
             <div className="relative flex items-center gap-1.5" ref={filtersRef}>
-              <div className="flex min-w-0 flex-1">
+              <div className={`${grid.searchWrap} flex min-w-0 flex-1`}>
                 <SearchInput value={search} onValueChange={setSearch} placeholder="Search name or ID" width={196} />
               </div>
               <Button
@@ -2118,7 +2193,7 @@ export function TimecardViewer({
             />
           </div>
 
-          <div className="ta-scroll min-h-0 flex-1 overflow-y-auto pb-2">
+          <div className={`${grid.listScroll} ta-scroll min-h-0 flex-1 overflow-y-auto pb-2`}>
             {filteredEmployees.length === 0 && (
               // Says which of the two empty lists this is. "No employees" after
               // narrowing to Open reads as "this site is clean", and that
@@ -2168,12 +2243,12 @@ export function TimecardViewer({
                       return (
                         <div
                           key={emp.employeeId}
-                          onClick={() => navigate(emp.employeeId)}
-                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(emp.employeeId); }}
+                          onClick={() => openEmployee(emp.employeeId)}
+                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") openEmployee(emp.employeeId); }}
                           tabIndex={0}
                           role="button"
                           aria-current={isSelected ? "true" : undefined}
-                          className="ta-hoverable flex w-full cursor-pointer flex-col gap-1 rounded-lg px-3 py-2 text-left"
+                          className={`${grid.listRow} ta-hoverable flex w-full cursor-pointer flex-col gap-1 rounded-lg px-3 py-2 text-left`}
                           data-active={isSelected ? "true" : undefined}
                           style={{ background: isSelected ? "var(--surface-info)" : undefined }}
                         >
@@ -2234,9 +2309,15 @@ export function TimecardViewer({
 
         {/* ── Right: their timecard ─────────────────────────────────── */}
         <section
-          className="flex min-h-0 flex-col overflow-hidden"
+          className={`${grid.cardPane} flex min-h-0 flex-col overflow-hidden`}
           style={{ background: "var(--surface-card)", borderRadius: "var(--radius-l)", boxShadow: "var(--shadow-card)" }}
         >
+          <div className="ta-phone-only">
+            <button type="button" className={grid.back} onClick={backToList}>
+              <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+              Employees
+            </button>
+          </div>
           {!selectedEmployeeId || !days ? (
             <div className="flex flex-1 items-center justify-center">
               <EmptyState
@@ -2256,7 +2337,7 @@ export function TimecardViewer({
                 const displayPayType = timecard?.employee.payType ?? null;
                 return (
               <div
-                className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-5 py-4"
+                className={`${grid.cardHead} flex shrink-0 flex-wrap items-center justify-between gap-3 px-5 py-4`}
                 style={{ borderBottom: "1px solid var(--stroke-divider)" }}
               >
                 <div className="flex min-w-0 flex-col gap-1">
@@ -2352,7 +2433,7 @@ export function TimecardViewer({
                 </div>
 
                 {/* The decisions first, then the tools. */}
-                <div className="flex flex-wrap items-center gap-2">
+                <div className={`${grid.cardActions} flex flex-wrap items-center gap-2`}>
                   {actionError && (
                     <p className="m-0" style={{ font: "var(--type-body2)", color: "var(--text-error)" }}>
                       {actionError}
@@ -2436,8 +2517,9 @@ export function TimecardViewer({
               />
 
               {/* ── Scrollable timecard table + summary ──────────────── */}
-              <div className="flex-1 overflow-y-auto">
-                <table className="w-full text-sm">
+              <div className={`${grid.cardScroll} flex-1 overflow-y-auto`}>
+                <style>{phoneGridCss(grid.days, phoneColumns)}</style>
+                <table className={`${grid.days} w-full text-sm`}>
                   {/* Two header rows, as the timesheet template draws them. The
                       vertical rules are what make "Punches" and "Calculated
                       Hours" read as two different kinds of number rather than
@@ -2566,7 +2648,7 @@ export function TimecardViewer({
                           {/* The week a day belongs to, as a quiet label over its
                               first day rather than a heavy rule between weeks. */}
                           {startsWeek && (
-                            <tr>
+                            <tr data-row="week">
                               <td colSpan={colCount} className="px-4 pb-1.5 pt-4" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
                                 <span style={{ font: "var(--type-caption1)", fontWeight: "var(--weight-semibold)", color: "var(--text-secondary)" }}>
                                   Week {Math.floor(offset / 7) + 1}
@@ -2584,6 +2666,7 @@ export function TimecardViewer({
                               Today) rather than by tinting the whole row, which
                               needed a colour legend to be read at all. */}
                           <tr
+                            data-row="day"
                             className={`transition-colors ${isMainRowPendingDelete ? "opacity-40 line-through" : ""} ${
                               !isMainRowPendingDelete ? "hover:bg-[var(--ta-row-hover)]" : ""
                             } ${hasActivity ? "cursor-pointer" : ""}`}
@@ -3255,6 +3338,7 @@ export function TimecardViewer({
                             }) ?? null;
                             return (
                               <tr
+                                data-row="more"
                                 key={`${dayKey}-pair${pairIdx}`}
                                 style={{ borderBottom: "1px solid var(--stroke-divider)" }}
                               >
@@ -3482,6 +3566,7 @@ export function TimecardViewer({
                           {/* Leave rows — one per leave segment, shown only when expanded */}
                           {isExpanded && leaveSegments.map((seg) => (
                             <tr
+                              data-row="leave"
                               key={`${dayKey}-leave-${seg.id}`}
                               style={{
                                 borderBottom: "1px solid var(--stroke-divider)",
@@ -3573,6 +3658,7 @@ export function TimecardViewer({
                             const dim = { font: "var(--type-body1)", color: "var(--text-disabled)" } as const;
                             return (
                               <tr
+                                data-row="premium"
                                 key={`${dayKey}-premium-${seg.id}`}
                                 style={{ borderBottom: "1px solid var(--stroke-divider)", background: "var(--surface-secondary)" }}
                               >
@@ -3642,7 +3728,7 @@ export function TimecardViewer({
 
                           {/* Add entry form row */}
                           {addEntryDay === format(day, "yyyy-MM-dd") && (
-                            <tr key={`${dayKey}-add`}>
+                            <tr data-row="wide" key={`${dayKey}-add`}>
                               <td colSpan={colCount} className="px-4 py-2">
                                 <AddTimecardEntry
                                   timesheetId={timecard?.timesheetId ?? ""}
@@ -3663,6 +3749,7 @@ export function TimecardViewer({
                           {/* Expanded punch detail row — only when there are actual punches */}
                           {isExpanded && hasActivity && dayPunches.length > 0 && (
                             <tr
+                              data-row="wide"
                               key={`${dayKey}-detail`}
                               style={{
                                 borderBottom: "1px solid var(--stroke-divider)",
@@ -3793,8 +3880,9 @@ export function TimecardViewer({
                     </div>
                   </div>
 
-                  {/* Summary table */}
-                  <div className="overflow-x-auto">
+                  {/* Summary table. On a phone each row is a labelled block,
+                      the way an employee's pay rates are (globals.css). */}
+                  <div className="ta-rates overflow-x-auto" data-mode="read">
                     <table className="w-full text-sm">
                       <THead>
                         <TR>
@@ -4021,7 +4109,7 @@ export function TimecardViewer({
                   says how many are waiting. */}
               {canEdit && hasPendingChanges && (
                 <div
-                  className="flex shrink-0 flex-wrap items-center gap-3 px-5 py-3"
+                  className={`${grid.saveBar} flex shrink-0 flex-wrap items-center gap-3 px-5 py-3`}
                   style={{ borderTop: "1px solid var(--stroke-warning)", background: "var(--surface-warning)" }}
                   role="status"
                 >
@@ -4049,7 +4137,7 @@ export function TimecardViewer({
 
       {leaveTo && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: "rgba(0,0,0,0.5)" }}
           onClick={(e) => e.target === e.currentTarget && setLeaveTo(null)}
           onKeyDown={(e) => e.key === "Escape" && setLeaveTo(null)}
@@ -4059,7 +4147,7 @@ export function TimecardViewer({
             aria-modal="true"
             aria-labelledby="unsaved-title"
             aria-describedby="unsaved-body"
-            className="ta-modal flex w-full max-w-md flex-col"
+            className="ta-sheet ta-modal flex w-full max-w-md flex-col"
             style={{ borderRadius: "var(--radius-l)" }}
           >
             <div className="flex flex-col gap-1.5 px-5 pb-4 pt-5">
@@ -4073,7 +4161,7 @@ export function TimecardViewer({
                 {pendingChangeCount === 1 ? "it" : "them"}.
               </p>
             </div>
-            <div className="flex justify-end gap-2 px-5 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+            <div className="ta-sheet-actions flex justify-end gap-2 px-5 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
               <Button hierarchy="secondary" onClick={() => setLeaveTo(null)} autoFocus>
                 Keep editing
               </Button>
@@ -4088,11 +4176,11 @@ export function TimecardViewer({
       {/* Notes Modal */}
       {noteDay && timecard && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
           onClick={() => { setNoteDay(null); setNoteText(""); }}
         >
           <div
-            className="flex w-full max-w-lg flex-col rounded-xl ta-modal"
+            className="ta-sheet flex w-full max-w-lg flex-col rounded-xl ta-modal"
             style={{ maxHeight: "80vh" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -4210,11 +4298,11 @@ export function TimecardViewer({
       {/* Add Entry Modal */}
       {showAddEntryModal && canEdit && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
           onClick={() => { setShowAddEntryModal(false); setNewEntryError(null); }}
         >
           <div
-            className="w-full max-w-lg rounded-xl ta-modal"
+            className="ta-sheet w-full max-w-lg overflow-y-auto rounded-xl ta-modal"
             onClick={(e) => e.stopPropagation()}
           >
             <div
@@ -4389,7 +4477,7 @@ export function TimecardViewer({
               </div>
               {newEntryError && <Banner tone="error" body={newEntryError} />}
               <div
-                className="flex justify-end gap-2 pt-4"
+                className="ta-sheet-actions flex justify-end gap-2 pt-4"
                 style={{ borderTop: "1px solid var(--stroke-divider)" }}
               >
                 <Button

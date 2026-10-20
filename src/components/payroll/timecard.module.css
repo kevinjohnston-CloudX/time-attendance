@@ -18,3 +18,224 @@
   border-color: var(--stroke-secondary) !important;
   background: var(--surface-card) !important;
 }
+
+/* An open day lists the punches that are not in a clock in and out pair.
+   When every punch is paired there is nothing to list, and the open row was
+   an empty grey strip. */
+.days tr[data-row="wide"]:has(> td > div:empty:only-child) {
+  display: none;
+}
+
+/* ---- Phones ----
+   The screen shows one thing at a time, the way Exceptions does: the people,
+   then whoever was tapped (data-phone-view on .screen: "list", "card", or
+   "loading" while the tapped person's timecard is on its way). The page
+   scrolls rather than each pane, and the day grid becomes one block per day
+   (the block layout is built in timecard-phone-grid.ts, from the columns the
+   grid has). Inline styles are why some lines need !important. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .screen {
+    height: auto !important;
+    min-height: 0 !important;
+  }
+  .panes {
+    display: block !important;
+  }
+  .screen[data-phone-view="list"] .cardPane,
+  .screen[data-phone-view="card"] .listPane,
+  .screen[data-phone-view="loading"] .cardPane,
+  .screen[data-phone-view="loading"] .listPane,
+  .screen[data-phone-view="card"] .listOnly {
+    display: none !important;
+  }
+  /* clip, not hidden: the corners stay round and the page, not the pane,
+     is what scrolls, so the pinned group headings and save bar still pin. */
+  .listPane,
+  .cardPane {
+    overflow: clip !important;
+    min-height: 0 !important;
+  }
+  .listScroll,
+  .cardScroll {
+    overflow: visible !important;
+    min-height: 0 !important;
+  }
+  /* The search sets its own flex basis inline. */
+  .searchWrap > * {
+    flex: 1 1 auto !important;
+  }
+  .listScroll .listRow {
+    min-height: 60px;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* The header: the two list filters share a line, the pay period takes
+     the next one whole, its dates in the middle. */
+  .headActions {
+    justify-content: stretch !important;
+  }
+  .listOnly > * {
+    flex: 1 1 0;
+  }
+  .period {
+    flex: 1 1 100% !important;
+    height: auto !important;
+    padding: 2px !important;
+    border-radius: 12px !important;
+  }
+  .periodLabel {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .periodLabel > button {
+    width: 100%;
+    height: 40px !important;
+    justify-content: center;
+  }
+
+  .back {
+    display: inline-flex;
+    align-self: flex-start;
+    min-height: 44px;
+    align-items: center;
+    gap: 2px;
+    margin: 4px 0 0 8px;
+    padding: 0 10px 0 4px;
+    border-radius: 10px;
+    font: var(--weight-medium) 16px/22px var(--font-sans);
+    color: var(--text-accent);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .back:active {
+    background: var(--ta-row-hover);
+  }
+  .loading {
+    padding: 48px 16px;
+    text-align: center;
+    font: var(--type-body1);
+    color: var(--text-secondary);
+  }
+
+  /* The timecard's own header: name and status, then the facts, then the
+     actions sharing the width. */
+  .cardHead {
+    padding: 8px 16px 14px !important;
+  }
+  .cardActions {
+    width: 100%;
+  }
+  .cardActions > :global(.wms-btn) {
+    flex: 1 1 0;
+    min-width: max-content;
+  }
+
+  /* ---- The days ---- */
+  .days,
+  .days > tbody {
+    display: block;
+  }
+  .days > thead {
+    display: none;
+  }
+  .days tr[data-row] {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+    column-gap: 10px;
+    align-items: start;
+    padding: 10px 16px;
+  }
+  .days tr[data-row] > td {
+    min-width: 0;
+    width: auto !important;
+    padding: 3px 0 !important;
+    text-align: left !important;
+  }
+  .days tr[data-row] > td:empty {
+    display: none !important;
+  }
+  .days tr[data-row] > td::before {
+    display: block;
+    margin-bottom: 2px;
+    font: var(--type-caption1);
+    color: var(--text-tertiary);
+  }
+  .days tr[data-row="week"],
+  .days tr[data-row="wide"] {
+    display: block;
+    padding: 0;
+  }
+  .days tr[data-row="week"] > td,
+  .days tr[data-row="wide"] > td {
+    display: block;
+  }
+  .days tr[data-row="week"] > td {
+    padding: 16px 16px 6px !important;
+  }
+  .days tr[data-row="wide"] > td {
+    overflow-x: auto;
+    padding: 10px 16px !important;
+  }
+  /* A time being typed: the field, its AM or PM and the remove button at a
+     finger's size, the field taking what is left. */
+  .punchEdit {
+    gap: 4px !important;
+  }
+  .punchEdit > input {
+    flex: 1 1 0;
+    width: 0 !important;
+    min-width: 0;
+    height: 40px !important;
+    padding: 0 8px !important;
+    font-size: 16px !important;
+  }
+  .punchEdit > button {
+    flex: none;
+    min-width: 32px;
+    padding: 0 6px !important;
+    height: 40px !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px !important;
+  }
+  .punchEdit > button > svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  /* A picker inside a day is a field on a phone, where there is no hover to
+     reveal it. */
+  .days select {
+    width: 100% !important;
+    height: 40px !important;
+    min-height: 0 !important;
+  }
+  .days .ghostSelect {
+    border-color: var(--stroke-secondary) !important;
+    background: var(--surface-card) !important;
+  }
+
+  /* Unsaved changes stay at the bottom of the screen while the days scroll. */
+  .saveBar {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    box-shadow: 0 -6px 16px rgba(0, 0, 0, 0.08);
+  }
+  .saveBar {
+    gap: 8px 10px !important;
+    padding: 10px 16px 12px !important;
+  }
+  /* The count on its own line, the two buttons sharing the next. The
+     sentence under the count only repeats what the buttons say. */
+  .saveBar > span:first-child {
+    flex-basis: 100%;
+  }
+  .saveBar > span:first-child > span + span {
+    display: none;
+  }
+  .saveBar > :global(.wms-btn) {
+    flex: 1 1 0;
+  }
+}
