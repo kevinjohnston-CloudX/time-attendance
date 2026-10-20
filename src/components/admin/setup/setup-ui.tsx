@@ -103,7 +103,7 @@ type TileData = ReturnType<typeof useFacts>["tiles"][number];
 
 export function FactTiles({ tiles, onToggle }: { tiles: TileData[]; onToggle: (key: string) => void }) {
   return (
-    <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(120px,1fr))]">
+    <div className={`${phone.tiles} grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(120px,1fr))]`}>
       {tiles.map((t) => {
         const body = (
           <>
@@ -178,7 +178,7 @@ export function AreaPanel({
   return (
     <section
       aria-label={title}
-      className="ta-card flex min-w-0 flex-col"
+      className={`${phone.panel} ta-card flex min-w-0 flex-col`}
       style={{ borderRadius: "var(--radius-l)", overflow: "clip" }}
     >
       <header className={`${phone.panelHead} flex flex-wrap items-start gap-3 px-5 pb-3 pt-4`}>
@@ -254,6 +254,9 @@ export function useColumnLabels(ref: { current: HTMLElement | null }) {
             if (cell.colSpan > 1) return;
             const want = heads[i] ?? "";
             if (cell.dataset.label !== want) cell.dataset.label = want;
+            // A status of Active is the usual one, which a phone leaves off.
+            const quiet = cell.querySelector('[data-status="active"]') !== null;
+            if (quiet !== cell.hasAttribute("data-quiet")) cell.toggleAttribute("data-quiet", quiet);
             if (!own && i === headAt && cell.dataset.head !== "auto") cell.dataset.head = "auto";
           });
         }
@@ -282,10 +285,14 @@ export function matches(q: string, ...texts: (string | number | null | undefined
 export function StatusBadge({ active }: { active: boolean }) {
   // Neutral for inactive: statusTone answers amber for a value it does not
   // know, and amber reads as something to go and fix.
+  // Marked, so a phone can leave Active off (setup-phone.module.css): a
+  // status there says only what is not the usual.
   return active ? (
-    <Badge tone={statusTone("ACTIVE")} size="sm" dot>
-      Active
-    </Badge>
+    <span data-status="active">
+      <Badge tone={statusTone("ACTIVE")} size="sm" dot>
+        Active
+      </Badge>
+    </span>
   ) : (
     <Badge size="sm">Inactive</Badge>
   );

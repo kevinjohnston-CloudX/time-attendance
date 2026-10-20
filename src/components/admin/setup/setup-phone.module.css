@@ -37,9 +37,24 @@
     font: var(--type-body1);
     color: var(--text-primary);
   }
-  /* An area in the list, at a finger's height, with an arrow. */
+  /* An area in the list, at a finger's height, with an arrow. On the list
+     of areas nothing is picked yet, whatever a computer had open. */
   .areaLink {
-    height: 48px !important;
+    height: 50px !important;
+  }
+  .shell[data-phone-view="areas"] .areaLink[aria-current] {
+    background: transparent !important;
+  }
+  .shell[data-phone-view="areas"] .areaLink[aria-current] > * {
+    color: var(--text-primary) !important;
+    font-weight: var(--weight-medium) !important;
+  }
+  .shell[data-phone-view="areas"] .areaLink[aria-current] > svg:first-child {
+    color: var(--icon-tertiary) !important;
+  }
+  .shell[data-phone-view="areas"] .areaLink[aria-current] > :nth-last-child(2) {
+    color: var(--text-tertiary) !important;
+    font-weight: var(--weight-regular) !important;
   }
   .chevron {
     width: 18px;
@@ -91,9 +106,11 @@
     flex: 1 1 100% !important;
   }
 
-  /* Its list: one labelled block per record (labels come from the table's
-     own header row, useColumnLabels in setup-ui.tsx), the record's name on
-     top and the rest under their column names, two by two. */
+  /* Its list: one block per record, the record's name on top, then a line
+     per fact with its column name on the left and its value on the right
+     (the names come from the table's own header row, useColumnLabels in
+     setup-ui.tsx). Active says nothing on a list of active records, so only
+     Inactive shows. */
   .list table,
   .list tbody {
     display: block;
@@ -103,56 +120,124 @@
     display: none;
   }
   .list tbody > tr {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px 14px;
+    display: flex;
+    flex-direction: column;
     height: auto !important;
-    padding: 12px 16px;
+    padding: 12px 16px 8px;
   }
   .list tbody > tr + tr {
     border-top: 1px solid var(--stroke-divider);
   }
   .list tbody > tr > td {
-    display: block;
-    height: auto !important;
+    display: flex;
     min-width: 0;
-    padding: 0 !important;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    height: auto !important;
+    padding: 5px 0 !important;
     border: 0 !important;
-    text-align: left !important;
+    font: var(--weight-medium) 15px/20px var(--font-sans);
+    text-align: right !important;
     white-space: normal !important;
   }
   .list tbody > tr > td[data-head] {
     order: -1;
-    grid-column: 1 / -1;
-    font-weight: var(--weight-semibold);
+    display: block;
+    padding: 0 0 4px !important;
+    font: var(--weight-semibold) 17px/22px var(--font-sans) !important;
+    text-align: left !important;
   }
   .list tbody > tr > td[colspan] {
-    grid-column: 1 / -1;
+    display: block;
+    text-align: left !important;
   }
   .list tbody > tr > td[data-label]:not([data-label=""]):not([data-head])::before {
     content: attr(data-label);
-    display: block;
-    margin-bottom: 1px;
-    font: var(--type-caption1);
-    color: var(--text-tertiary);
+    flex: none;
+    max-width: 45%;
+    font: var(--weight-regular) 15px/20px var(--font-sans);
+    color: var(--text-secondary);
+    text-align: left;
   }
-  .list tbody > tr > td:empty {
+  .list tbody > tr > td:empty,
+  .list tbody > tr > td[data-quiet] {
     display: none;
+  }
+  /* A record with one fact left to say reads as one line: its name on the
+     left, the fact on the right ("Accounting ... 17 sites"), as a phone's
+     settings list does, without a caption naming the only column. */
+  .list
+    tbody
+    > tr:not(
+      :has(
+          > td[data-label]:not([data-label=""]):not([data-head]):not(:empty):not([data-quiet])
+            ~ td[data-label]:not([data-label=""]):not([data-head]):not(:empty):not([data-quiet])
+        )
+    ) {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 16px;
+    min-height: 52px;
+    padding: 14px 16px;
+  }
+  .list
+    tbody
+    > tr:not(
+      :has(
+          > td[data-label]:not([data-label=""]):not([data-head]):not(:empty):not([data-quiet])
+            ~ td[data-label]:not([data-label=""]):not([data-head]):not(:empty):not([data-quiet])
+        )
+    )
+    > td[data-head] {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 !important;
+    font-weight: var(--weight-medium) !important;
+  }
+  .list
+    tbody
+    > tr:not(
+      :has(
+          > td[data-label]:not([data-label=""]):not([data-head]):not(:empty):not([data-quiet])
+            ~ td[data-label]:not([data-label=""]):not([data-head]):not(:empty):not([data-quiet])
+        )
+    )
+    > td:not([data-head]) {
+    padding: 0 !important;
+    color: var(--text-secondary);
+  }
+  .list
+    tbody
+    > tr:not(
+      :has(
+          > td[data-label]:not([data-label=""]):not([data-head]):not(:empty):not([data-quiet])
+            ~ td[data-label]:not([data-label=""]):not([data-head]):not(:empty):not([data-quiet])
+        )
+    )
+    > td::before {
+    content: none !important;
   }
   /* A cell with no column name holds a row's own controls (Pay codes'
      Move up and Move down): across the foot of the block. */
   .list tbody > tr > td[data-label=""]:not([data-head]) {
     order: 99;
-    grid-column: 1 / -1;
+    justify-content: flex-start;
   }
-  /* A long text column (a role's description) across the block. */
+  /* A long text column (a role's description): under the name, in full. */
   .list tbody > tr > td[data-wide] {
-    grid-column: 1 / -1;
+    display: block;
+    text-align: left !important;
+    color: var(--text-secondary);
+  }
+  .list tbody > tr > td[data-wide]::before {
+    content: none !important;
   }
   /* A row's action (Edit) across the foot of the block, without a caption. */
   .list tbody > tr > td[data-foot] {
     order: 99;
-    grid-column: 1 / -1;
+    padding-top: 8px !important;
   }
   .list tbody > tr > td[data-foot]::before {
     content: none !important;
@@ -163,6 +248,42 @@
   /* Inner caps meant for a table cell's width. */
   .list tbody > tr > td * {
     max-width: none !important;
+  }
+
+  /* On an area, the hub's own title gives way to the area's, which takes
+     the large title's place; the list is a white group on the grey. */
+  .shell[data-phone-view="area"] > :global(.ta-pinned) {
+    display: none !important;
+  }
+  .panel {
+    overflow: visible !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  .panel > .panelHead {
+    padding: 0 0 14px !important;
+  }
+  .panel > .panelHead h2 {
+    font: var(--weight-bold) 32px/38px var(--font-sans) !important;
+    letter-spacing: -0.02em;
+  }
+  .panel > .panelHead p {
+    font-size: 15px !important;
+    line-height: 20px !important;
+  }
+  .panel > .tools {
+    padding: 0 0 12px !important;
+  }
+  .panel > div:not(.tools):not(.list) {
+    padding: 0 0 12px !important;
+  }
+  .panel > .list {
+    overflow: hidden;
+    border-top: 0 !important;
+    border-radius: 14px;
+    background: var(--surface-card);
+    box-shadow: var(--ta-raised);
   }
 
   /* A leave policy's tiers (leave-policy-editor.tsx): each tier a block
@@ -221,3 +342,29 @@
     background: var(--ta-row-hover);
   }
 }
+
+/* An area's figures on a phone: tiles in one white group, figure first,
+   as every set of figures reads on a phone. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+  .tiles > * {
+    border-radius: 14px !important;
+    padding: 12px 14px 14px !important;
+  }
+  .tiles > div {
+    background: var(--surface-card) !important;
+  }
+  .tiles > * > .tabular,
+  .tiles > * > :nth-child(2) {
+    order: -1;
+    font-size: 26px !important;
+    line-height: 32px !important;
+  }
+  .tiles > * > :first-child {
+    color: var(--text-secondary);
+  }
+}
+

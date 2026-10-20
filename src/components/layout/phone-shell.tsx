@@ -67,7 +67,8 @@ export function PhoneTopBar({ waiting }: { waiting: WaitingItem[] }) {
         </div>
         {/* The page's own title, once it has scrolled up under this bar. */}
         <div className={styles.topTitle} data-on={!back && !home && folded && title ? "true" : undefined} aria-hidden="true">
-          {title}
+          {/* Empty while hidden, so it takes no room from the back button. */}
+          {!back && !home && folded ? title : null}
         </div>
         <div className={styles.topActions}>
           <button type="button" className={styles.iconBtn} onClick={openCommandPalette} aria-label="Search pages">

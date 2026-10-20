@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore, type ElementType, type ReactNode } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 import { LinkButton, PageHeader, PinnedBar } from "@/components/ui";
-import { isPhone } from "@/lib/phone";
+import { isPhone, usePhoneLayout } from "@/lib/phone";
+import { usePhoneBack } from "@/components/layout/phone-back";
+import { useRouter } from "@/components/layout/navigation-progress";
 import phone from "./setup-phone.module.css";
 
 /**
@@ -117,6 +119,15 @@ export function SetupShell<T extends string>({
     requestAnimationFrame(() => scroller()?.scrollTo({ top: listScroll.current }));
   }
 
+  // On a phone the way back is the top bar's: from an area to the list of
+  // areas on a hub page, and from an editor to the list it was opened from.
+  const onPhone = usePhoneLayout();
+  const router = useRouter();
+  usePhoneBack(
+    !onPhone ? null : phoneList ? (phoneOpen ? (typeof title === "string" ? title : "Back") : null) : back.label,
+    () => (phoneList ? backToAreas() : router.push(back.href)),
+  );
+
   // The rail pins just under the header and reaches the bottom of the window.
   const barRef = useRef<HTMLDivElement | null>(null);
   const railRef = useRef<HTMLDivElement | null>(null);
@@ -171,7 +182,7 @@ export function SetupShell<T extends string>({
               <LinkButton
                 href={back.href}
                 hierarchy="tertiary"
-                className={phoneList ? "ta-phone-hide" : undefined}
+                className="ta-phone-hide"
                 leadingIcon={<ArrowLeft className="h-4 w-4" />}
               >
                 {back.label}
@@ -204,14 +215,7 @@ export function SetupShell<T extends string>({
         </nav>
 
         <div className={`${phone.area} flex w-full min-w-0 flex-1 flex-col gap-3`}>
-          {phoneList ? (
-            <div className="ta-phone-only">
-              <button type="button" className={phone.back} onClick={backToAreas}>
-                <ChevronLeft className="h-5 w-5" aria-hidden="true" />
-                {typeof title === "string" ? title : "Back"}
-              </button>
-            </div>
-          ) : (
+          {phoneList ? null : (
             <div className="ta-phone-only">
               <label className={phone.jump}>
                 <span>Jump to</span>
