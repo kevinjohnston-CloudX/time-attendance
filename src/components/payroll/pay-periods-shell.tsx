@@ -112,10 +112,6 @@ export function PayPeriodsShell({
     router.push(`${url.pathname}${url.search}`);
   }
 
-  // The way back to the list is the top bar's, as in any phone app.
-  const phone = usePhoneLayout();
-  usePhoneBack(phone && phoneView === "period" ? "Pay Periods" : null, () => backToList());
-
   function backToList() {
     const url = new URL(window.location.href);
     url.searchParams.delete("open");
@@ -123,6 +119,10 @@ export function PayPeriodsShell({
     // was left (the effect above).
     router.push(`${url.pathname}${url.search}`, { scroll: false });
   }
+
+  // The way back to the list is the top bar's, as in any phone app.
+  const phone = usePhoneLayout();
+  usePhoneBack(phone && phoneView === "period" ? "Pay Periods" : null, () => backToList());
 
   return (
     <div
