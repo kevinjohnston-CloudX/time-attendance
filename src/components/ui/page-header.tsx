@@ -14,12 +14,18 @@ import type { ReactNode, Ref } from "react";
 export function PageHeader({
   title,
   subtitle,
+  phoneTitle,
+  phoneSubtitle,
   actions,
   pinned = false,
   condensed = false,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
+  /** What a phone shows instead, where a screen reads differently: Home
+   *  greets the person rather than calling itself a dashboard. */
+  phoneTitle?: string;
+  phoneSubtitle?: ReactNode;
   actions?: ReactNode;
   /** Pin it to the top while the page scrolls. For a title alone; a page
    *  with filters under its title puts both in one PinnedBar instead. */
@@ -33,6 +39,7 @@ export function PageHeader({
       <div className="flex min-w-[240px] flex-1 flex-col gap-0.5">
         <h1
           className="ta-page-title"
+          data-bar-title={phoneTitle}
           style={{
             margin: 0,
             font: "var(--type-h1)",
@@ -45,11 +52,25 @@ export function PageHeader({
             transition: "font-size 140ms ease, line-height 140ms ease",
           }}
         >
-          {title}
+          {phoneTitle ? (
+            <>
+              <span className="ta-desktop-only">{title}</span>
+              <span className="ta-phone-only">{phoneTitle}</span>
+            </>
+          ) : (
+            title
+          )}
         </h1>
         {subtitle && !condensed && (
           <p className="ta-page-sub" style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
-            {subtitle}
+            {phoneSubtitle ? (
+              <>
+                <span className="ta-desktop-only">{subtitle}</span>
+                <span className="ta-phone-only">{phoneSubtitle}</span>
+              </>
+            ) : (
+              subtitle
+            )}
           </p>
         )}
       </div>

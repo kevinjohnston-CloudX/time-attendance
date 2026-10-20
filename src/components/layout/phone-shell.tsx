@@ -66,7 +66,7 @@ export function PhoneTopBar({ waiting }: { waiting: WaitingItem[] }) {
           )}
         </div>
         {/* The page's own title, once it has scrolled up under this bar. */}
-        <div className={styles.topTitle} data-on={!back && folded && title ? "true" : undefined} aria-hidden="true">
+        <div className={styles.topTitle} data-on={!back && !home && folded && title ? "true" : undefined} aria-hidden="true">
           {title}
         </div>
         <div className={styles.topActions}>
@@ -103,7 +103,7 @@ function useFoldingTitle(pathname: string) {
       if (!h1 || !h1.isConnected || h1.offsetParent === null) {
         h1 = Array.from(main.querySelectorAll<HTMLElement>("h1")).find((e) => e.offsetParent !== null) ?? null;
       }
-      const title = h1?.textContent?.trim() || null;
+      const title = h1?.dataset.barTitle || h1?.textContent?.trim() || null;
       const folded = h1 ? h1.getBoundingClientRect().bottom < main.getBoundingClientRect().top + 4 : false;
       const scrolled = main.scrollTop > 2;
       setState((s) => (s.title === title && s.folded === folded && s.scrolled === scrolled ? s : { title, folded, scrolled }));

@@ -1802,3 +1802,52 @@ html {
     height: 50px !important;
   }
 }
+
+/* ---- Phones: small labels and card links ----
+   Small labels over figures read in sentence case on a phone, as every
+   other label does, never in capitals. A card's way onward is a full width
+   button a thumb finds, not a small one in a corner. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .wms-overline {
+    font: var(--weight-medium) 13px/18px var(--font-sans) !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+  }
+  .ta-card-link,
+  .ta-card-links > * {
+    flex: 1 1 0;
+    width: 100%;
+    height: 44px !important;
+    justify-content: center;
+  }
+  /* Home's team figures: white tiles with the figure first and its name
+     under it, as the Live Attendance figures read, not tinted boxes. */
+  .ta-dash-presence {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0 !important;
+    overflow: hidden;
+    border: 1px solid var(--stroke-divider);
+    border-radius: 12px;
+  }
+  .ta-dash-stat {
+    flex-direction: column-reverse !important;
+    justify-content: flex-end;
+    padding: 12px 14px 14px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+  }
+  .ta-dash-stat:nth-child(even) {
+    border-left: 1px solid var(--stroke-divider) !important;
+  }
+  .ta-dash-stat:nth-child(n + 3) {
+    border-top: 1px solid var(--stroke-divider) !important;
+  }
+  .ta-dash-stat > .tabular {
+    font: var(--weight-semibold) 28px/34px var(--font-sans) !important;
+    letter-spacing: -0.02em;
+  }
+  .ta-dash-stat > .wms-overline {
+    color: var(--text-secondary);
+  }
+}

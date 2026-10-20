@@ -342,6 +342,8 @@ export default async function DashboardPage({
       <PageHeader pinned
         title="Dashboard"
         subtitle={subtitle}
+        phoneTitle={greeting(siteNow.getHours(), session?.user?.name)}
+        phoneSubtitle={format(siteNow, "EEEE, MMMM d")}
         actions={
           employeeId ? (
             <LinkButton href="/time/punch" hierarchy="secondary" className="ta-dash-punch">
@@ -523,6 +525,7 @@ export default async function DashboardPage({
                     href={`/time/timesheet/${currentTimesheet.id}`}
                     hierarchy="secondary"
                     size="sm"
+                    className="ta-card-link"
                   >
                     Open Timesheet
                   </LinkButton>
@@ -562,7 +565,7 @@ export default async function DashboardPage({
                 ))
               )}
               <div className="pt-2.5">
-                <LinkButton href="/supervisor/exceptions" hierarchy="secondary" size="sm">
+                <LinkButton href="/supervisor/exceptions" hierarchy="secondary" size="sm" className="ta-card-link">
                   Open Exceptions
                 </LinkButton>
               </div>
@@ -576,7 +579,7 @@ export default async function DashboardPage({
             subtitle={`Live · ${format(siteNow, "MMM d, h:mm a")}${me?.site?.name ? ` · ${me.site.name}` : ""}`}
           >
             <div className="flex flex-col gap-3">
-              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(126px,1fr))]">
+              <div className="ta-dash-presence grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(126px,1fr))]">
                 {[
                   { label: "On the clock", value: presence.onClock, bg: "var(--surface-success)", color: "var(--text-success)" },
                   { label: "On meal", value: presence.onMeal, bg: "var(--surface-warning)", color: "var(--text-warning)" },
@@ -585,7 +588,7 @@ export default async function DashboardPage({
                 ].map((p) => (
                   <div
                     key={p.label}
-                    className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5"
+                    className="ta-dash-stat flex flex-col gap-0.5 rounded-lg px-3 py-2.5"
                     style={{ border: "1px solid var(--stroke-divider)", background: p.bg }}
                   >
                     <span className="wms-overline">{p.label}</span>
@@ -684,7 +687,7 @@ export default async function DashboardPage({
                 </Badge>
               </div>
             ))}
-            <div className="flex gap-2 pt-2.5">
+            <div className="ta-card-links flex gap-2 pt-2.5">
               <LinkButton href="/leave" hierarchy="secondary" size="sm">
                 My Leave
               </LinkButton>
@@ -757,6 +760,13 @@ export default async function DashboardPage({
       )}
     </div>
   );
+}
+
+/** Home on a phone opens on the person, by the site's clock: "Good morning, Juan". */
+function greeting(hour: number, name: string | null | undefined): string {
+  const part = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const first = name?.trim().split(/\s+/)[0];
+  return first ? `${part}, ${first}` : part;
 }
 
 /** A line under one of the overview's three answers. */
