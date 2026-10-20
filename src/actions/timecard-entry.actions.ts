@@ -345,7 +345,7 @@ export const removePayrollLeaveEntry = withRBAC(
     if (!inScope) throw new NotFoundError("Leave request not found");
     assertActiveForChange(inScope.employee.isActive);
     if (inScope.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
-    await assertNotSenior(ctx, inScope.employeeId);
+    await assertNotSenior(ctx, inScope.employeeId, TIMECARD_EDITORS_COMPANY);
 
     // Find the leave request and verify the timesheet is editable
     const request = await db.leaveRequest.findUniqueOrThrow({
@@ -401,7 +401,7 @@ export const deleteManualPunchPair = withRBAC(
     assertActiveForChange(punches[0].employee.isActive);
     if (new Set(punches.map((p) => p.timesheetId)).size !== 1) throw new Error("Punches must be on one timecard.");
     if (punches[0].employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
-    await assertNotSenior(ctx, punches[0].employeeId);
+    await assertNotSenior(ctx, punches[0].employeeId, TIMECARD_EDITORS_COMPANY);
     const timesheetId = punches[0].timesheetId!;
 
     const ts = await db.timesheet.findUniqueOrThrow({ where: { id: timesheetId } });
