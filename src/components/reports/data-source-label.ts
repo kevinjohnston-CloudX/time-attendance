@@ -10,6 +10,7 @@ import {
   Timer,
   TriangleAlert,
   Users,
+  Wallet,
 } from "lucide-react";
 import type { ElementType } from "react";
 
@@ -37,6 +38,7 @@ const LABELS: Record<string, string> = {
   SECURITY_SCAN:     "Security scan report",
   TIME_CLOCK_SCAN:   "Time clock report",
   EMPLOYEES:         "Employees",
+  LABOR_COST:        "Labor cost",
 };
 
 /** One plain line on what each report shows, for the Standard reports cards. */
@@ -51,6 +53,7 @@ const DESCRIPTIONS: Record<string, string> = {
   SECURITY_SCAN:     "Each person's first gate arrival and last gate departure for the day, with the hours between them.",
   TIME_CLOCK_SCAN:   "Each person's first clock in and last clock out for the day, with the hours between them.",
   EMPLOYEES:         "Each employee's setup: site, department, agency, supervisor, rule set, shift, pay and dates, with their last punch.",
+  LABOR_COST:        "Each employee's hours priced at their pay rate and charge rate, day by day, for labor cost review and agency invoices.",
 };
 
 const ICONS: Record<string, ElementType> = {
@@ -64,6 +67,7 @@ const ICONS: Record<string, ElementType> = {
   SECURITY_SCAN:     ShieldCheck,
   TIME_CLOCK_SCAN:   Timer,
   EMPLOYEES:         Users,
+  LABOR_COST:        Wallet,
 };
 
 /** The order the Standard reports cards are laid out in: hours first, time off last. */
@@ -78,6 +82,7 @@ export const STANDARD_REPORTS = [
   "SECURITY_SCAN",
   "TIME_CLOCK_SCAN",
   "EMPLOYEES",
+  "LABOR_COST",
 ] as const;
 
 /** The one line under a report's name. */
@@ -131,6 +136,7 @@ const TONES: Record<string, { bg: string; fg: string }> = {
   SECURITY_SCAN:     { bg: "var(--surface-tertiary)", fg: "var(--icon-secondary)" },
   TIME_CLOCK_SCAN:   { bg: "var(--surface-info)", fg: "var(--icon-accent)" },
   EMPLOYEES:         { bg: "var(--surface-tertiary)", fg: "var(--icon-secondary)" },
+  LABOR_COST:        { bg: "var(--surface-success)", fg: "var(--icon-success)" },
 };
 
 export function dataSourceTone(id: string): { bg: string; fg: string } {
@@ -143,6 +149,7 @@ export const REPORT_GROUPS: { title: string; ids: readonly string[] }[] = [
   { title: "Time off", ids: ["LEAVE_SUMMARY", "LEAVE_BALANCE"] },
   { title: "Daily scans", ids: ["SECURITY_SCAN", "TIME_CLOCK_SCAN"] },
   { title: "People", ids: ["EMPLOYEES"] },
+  { title: "Pay", ids: ["LABOR_COST"] },
 ];
 
 /**

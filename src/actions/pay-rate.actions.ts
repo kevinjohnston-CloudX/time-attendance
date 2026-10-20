@@ -7,11 +7,14 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { currentIdentity } from "@/lib/rbac/current";
 import { employeeRank } from "@/lib/rbac/identity";
-import { dateKey, syncCurrentPayRates } from "@/lib/pay-rates";
+import { chargeFor, dateKey, syncCurrentPayRates } from "@/lib/pay-rates";
 
 /**
  * An employee's pay rate history, as NovaTime's Pay Rates table. Rate 1 is the
  * pay rate from its effective date; Rate 2 and Rate 3 are reference only.
+ * Each row also carries the charge rate billed for that pay: Rate 1 plus the
+ * markup, to the cent, or a charge rate set by hand (chargeManual) when an
+ * agency agreement does not follow the formula.
  * Changing pay follows the same rules as everywhere else: never your own, and
  * only for someone ranked below you.
  */
@@ -21,6 +24,10 @@ export type PayRateRow = {
   rate1: number;
   rate2: number | null;
   rate3: number | null;
+  /** Percent: 32 is 32%. */
+  markupPct: number | null;
+  chargeRate: number | null;
+  chargeManual: boolean;
   note: string | null;
 };
 
@@ -34,6 +41,9 @@ const saveSchema = z.object({
       rate1: money,
       rate2: money.nullable(),
       rate3: money.nullable(),
+      markupPct: z.number().min(0, "A markup can't be below 0%").max(1000).nullable().optional(),
+      chargeRate: money.nullable().optional(),
+      chargeManual: z.boolean().optional(),
       note: z.string().trim().max(500).nullable(),
     }))
     .max(200)
@@ -45,13 +55,33 @@ async function employeeInCompany(employeeId: string, tenantId: string | null) {
   if (!emp) throw new Error("Employee not found");
 }
 
-const toRow = (r: { effectiveDate: Date; rate1: unknown; rate2: unknown; rate3: unknown; note: string | null }): PayRateRow => ({
+const toRow = (r: {
+  effectiveDate: Date; rate1: unknown; rate2: unknown; rate3: unknown;
+  markupPct: unknown; chargeRate: unknown; chargeManual: boolean; note: string | null;
+}): PayRateRow => ({
   effectiveDate: dateKey(r.effectiveDate),
   rate1: Number(r.rate1),
   rate2: r.rate2 == null ? null : Number(r.rate2),
   rate3: r.rate3 == null ? null : Number(r.rate3),
+  markupPct: r.markupPct == null ? null : Number(r.markupPct),
+  chargeRate: r.chargeRate == null ? null : Number(r.chargeRate),
+  chargeManual: r.chargeManual,
   note: r.note,
 });
+
+/**
+ * The charge rate a row is saved with: worked out from Rate 1 and the markup
+ * here on the server, so the formula holds whatever the screen sent, unless
+ * the row says it was set by hand.
+ */
+function settleCharge(r: { rate1: number; markupPct?: number | null; chargeRate?: number | null; chargeManual?: boolean }) {
+  const markupPct = r.markupPct ?? null;
+  if (r.chargeManual) {
+    if (r.chargeRate == null) throw new Error("A charge rate set by hand needs an amount");
+    return { markupPct, chargeRate: r.chargeRate, chargeManual: true };
+  }
+  return { markupPct, chargeRate: chargeFor(r.rate1, markupPct), chargeManual: false };
+}
 
 export const getPayRates = withRBAC("EMPLOYEE_MANAGE", async ({ tenantId }, input: { employeeId: string }): Promise<PayRateRow[]> => {
   await employeeInCompany(input.employeeId, tenantId);
@@ -63,12 +93,19 @@ const describe = (rows: PayRateRow[]) =>
   rows.length
     ? [...rows]
         .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate))
-        .map((r) => `${r.effectiveDate}: $${r.rate1.toFixed(2)}${r.rate2 != null ? ` / $${r.rate2.toFixed(2)}` : ""}${r.rate3 != null ? ` / $${r.rate3.toFixed(2)}` : ""}${r.note ? ` (${r.note})` : ""}`)
+        .map((r) =>
+          `${r.effectiveDate}: ${r.rate1.toFixed(2)}${r.rate2 != null ? ` / ${r.rate2.toFixed(2)}` : ""}${r.rate3 != null ? ` / ${r.rate3.toFixed(2)}` : ""}` +
+          (r.chargeRate != null
+            ? `, charge ${r.chargeRate.toFixed(2)}${r.chargeManual ? " (set by hand)" : r.markupPct != null ? ` (${r.markupPct}% markup)` : ""}`
+            : "") +
+          (r.note ? ` (${r.note})` : ""))
         .join("; ")
     : "—";
 
 export const savePayRates = withRBAC("EMPLOYEE_MANAGE", async ({ tenantId, employeeId: actorId }, input: z.input<typeof saveSchema>): Promise<PayRateRow[]> => {
-  const { employeeId, rows } = saveSchema.parse(input);
+  const parsed = saveSchema.parse(input);
+  const { employeeId } = parsed;
+  const rows = parsed.rows.map((r) => ({ ...r, ...settleCharge(r) }));
   await employeeInCompany(employeeId, tenantId);
 
   const me = await currentIdentity();
@@ -90,12 +127,15 @@ export const savePayRates = withRBAC("EMPLOYEE_MANAGE", async ({ tenantId, emplo
         rate1: r.rate1,
         rate2: r.rate2,
         rate3: r.rate3,
+        markupPct: r.markupPct,
+        chargeRate: r.chargeRate,
+        chargeManual: r.chargeManual,
         note: r.note || null,
         createdById: actorId || null,
       })),
     }),
   ]);
-  if (rows.length === 0) await db.employee.update({ where: { id: employeeId }, data: { payRate: null } });
+  if (rows.length === 0) await db.employee.update({ where: { id: employeeId }, data: { payRate: null, chargeRate: null } });
   else await syncCurrentPayRates([employeeId]);
 
   const after = rows.map((r) => ({ ...r, note: r.note || null }));

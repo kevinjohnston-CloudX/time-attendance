@@ -10,12 +10,14 @@ export const getAgencies = withRBAC(
   async (ctx, _input: void) => {
     const tenantId = ctx.tenantId;
     if (!tenantId) return [];
-    return db.agency.findMany({
+    const agencies = await db.agency.findMany({
       where: { tenantId },
       // How many people have it, so the list can say so and a delete can be refused.
       include: { _count: { select: { employees: true } } },
       orderBy: { code: "asc" },
     });
+    // The default markup as a plain number: a Decimal does not cross to the browser.
+    return agencies.map((a) => ({ ...a, defaultMarkupPct: a.defaultMarkupPct == null ? null : Number(a.defaultMarkupPct) }));
   }
 );
 
@@ -23,7 +25,10 @@ const agencySchema = z.object({
   code:         z.number().int().min(0),
   description:  z.string().min(1).max(255),
   laborRate:    z.number().min(0).default(0),
-  chargeRate:   z.number().min(0).default(0),
+  // Kept for code already deployed; the screens send the markup instead.
+  chargeRate:   z.number().min(0).optional(),
+  /** Percent added to a person's hourly rate for the charge rate: 32 is 32%. */
+  defaultMarkupPct: z.number().min(0, "A markup can't be below 0%").max(1000).nullable().optional(),
   inactiveOn:   z.string().nullable().optional(),
   maxWorkHours: z.number().min(0).default(0),
 });
@@ -40,13 +45,14 @@ export const createAgency = withRBAC(
         code:         data.code,
         description:  data.description,
         laborRate:    data.laborRate,
-        chargeRate:   data.chargeRate,
+        ...(data.chargeRate !== undefined && { chargeRate: data.chargeRate }),
+        defaultMarkupPct: data.defaultMarkupPct ?? null,
         inactiveOn:   data.inactiveOn ? new Date(data.inactiveOn) : null,
         maxWorkHours: data.maxWorkHours,
       },
     });
     revalidatePath("/admin/site-settings");
-    return { success: true as const, data: agency };
+    return { success: true as const, data: { ...agency, defaultMarkupPct: agency.defaultMarkupPct == null ? null : Number(agency.defaultMarkupPct) } };
   }
 );
 
@@ -62,7 +68,8 @@ export const updateAgency = withRBAC(
         code:         data.code,
         description:  data.description,
         laborRate:    data.laborRate,
-        chargeRate:   data.chargeRate,
+        ...(data.chargeRate !== undefined && { chargeRate: data.chargeRate }),
+        ...(data.defaultMarkupPct !== undefined && { defaultMarkupPct: data.defaultMarkupPct }),
         inactiveOn:   data.inactiveOn ? new Date(data.inactiveOn) : null,
         maxWorkHours: data.maxWorkHours,
       },

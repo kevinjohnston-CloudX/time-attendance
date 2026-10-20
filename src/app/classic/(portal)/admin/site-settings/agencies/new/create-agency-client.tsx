@@ -21,7 +21,7 @@ export function CreateAgencyClient() {
         code: Number(fd.get("code")),
         description: (fd.get("description") as string).trim(),
         laborRate: Number(fd.get("laborRate")),
-        chargeRate: Number(fd.get("chargeRate")),
+        defaultMarkupPct: String(fd.get("defaultMarkupPct") ?? "").trim() === "" ? null : Number(fd.get("defaultMarkupPct")),
         maxWorkHours: Number(fd.get("maxWorkHours")),
         inactiveOn: (fd.get("inactiveOn") as string) || null,
       });

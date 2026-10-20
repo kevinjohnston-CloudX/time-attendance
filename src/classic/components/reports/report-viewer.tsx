@@ -32,6 +32,7 @@ const SOURCE_LABELS: Record<string, string> = {
   SECURITY_SCAN: "Security Scan Report",
   TIME_CLOCK_SCAN: "Time Clock Report",
   EMPLOYEES: "Employees",
+  LABOR_COST: "Labor Cost",
 };
 
 interface ReportData {

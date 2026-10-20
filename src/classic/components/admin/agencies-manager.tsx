@@ -9,6 +9,8 @@ type Agency = {
   description: string;
   laborRate: number | string;
   chargeRate: number | string;
+  /** Percent added to a person's hourly rate for their charge rate. */
+  defaultMarkupPct?: number | null;
   inactiveOn: string | null;
   maxWorkHours: number | string;
 };
@@ -63,15 +65,17 @@ export function AgencyFields({ initial, mode: _mode }: { initial?: Agency; mode?
         />
       </div>
       <div>
-        <label className="mb-1 block text-xs text-zinc-500">Charge Rate</label>
+        <label className="mb-1 block text-xs text-zinc-500">Default Markup %</label>
         <input
-          name="chargeRate"
+          name="defaultMarkupPct"
           type="number"
-          step="0.000001"
+          step="0.01"
           min={0}
-          defaultValue={Number(initial?.chargeRate ?? 0)}
+          placeholder="e.g. 32"
+          defaultValue={initial?.defaultMarkupPct ?? ""}
           className={inputCls}
         />
+        <p className="mt-1 text-xs text-zinc-400">Added to a person&apos;s hourly rate for their charge rate.</p>
       </div>
       <div>
         <label className="mb-1 block text-xs text-zinc-500">Max Allowed Work Hours</label>
@@ -180,7 +184,7 @@ export function AgenciesManager({ agencies }: Props) {
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-zinc-400">
-                  Labor: ${Number(a.laborRate).toFixed(6)} · Charge: ${Number(a.chargeRate).toFixed(6)}
+                  Labor: ${Number(a.laborRate).toFixed(6)} · Markup: {a.defaultMarkupPct != null ? `${Number(Number(a.defaultMarkupPct).toFixed(3))}%` : "not set"}
                 </span>
                 <span className={`rounded-full px-2 py-0.5 text-xs ${isActive(a) ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800"}`}>
                   {isActive(a) ? "Active" : "Inactive"}

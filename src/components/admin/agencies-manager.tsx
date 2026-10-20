@@ -39,6 +39,8 @@ interface Agency {
   /** Decimals arrive as strings once serialized for the client. */
   laborRate: number | string;
   chargeRate: number | string;
+  /** Percent added to a person's hourly rate for their charge rate. */
+  defaultMarkupPct?: number | null;
   maxWorkHours: number | string;
   inactiveOn: string | Date | null;
   _count?: { employees: number };
@@ -90,7 +92,7 @@ export function AgenciesManager({ agencies }: { agencies: Agency[] }) {
       code: Number(form.get("code")),
       description: String(form.get("description") ?? "").trim(),
       laborRate: num("laborRate"),
-      chargeRate: num("chargeRate"),
+      defaultMarkupPct: String(form.get("defaultMarkupPct") ?? "").trim() === "" ? null : Number(form.get("defaultMarkupPct")),
       maxWorkHours: num("maxWorkHours"),
       inactiveOn: String(form.get("inactiveOn") ?? "") || null,
     };
@@ -140,7 +142,7 @@ export function AgenciesManager({ agencies }: { agencies: Agency[] }) {
                 <TH numeric>No.</TH>
                 <TH>Agency</TH>
                 <TH numeric>Labor rate</TH>
-                <TH numeric>Charge rate</TH>
+                <TH numeric>Default markup</TH>
                 <TH numeric>Max hours</TH>
                 <TH numeric>Employees</TH>
                 <TH>Status</TH>
@@ -157,7 +159,7 @@ export function AgenciesManager({ agencies }: { agencies: Agency[] }) {
                     </TD>
                     <TD style={{ fontWeight: "var(--weight-medium)" }}>{a.description}</TD>
                     <TD numeric>{rate(a.laborRate) ?? <Muted>Not set</Muted>}</TD>
-                    <TD numeric>{rate(a.chargeRate) ?? <Muted>Not set</Muted>}</TD>
+                    <TD numeric>{a.defaultMarkupPct != null ? `${Number(a.defaultMarkupPct.toFixed(3))}%` : <Muted>Not set</Muted>}</TD>
                     <TD numeric>{max ? max.toLocaleString("en-US", { maximumFractionDigits: 2 }) : <Muted>No limit</Muted>}</TD>
                     <TD numeric style={{ color: people ? "var(--text-primary)" : "var(--text-tertiary)" }}>
                       {people.toLocaleString()}
@@ -224,7 +226,16 @@ function AgencyDialog({
       </div>
       <div className="grid gap-x-4 gap-y-3.5 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
         <Input label="Labor rate" name="laborRate" type="number" min={0} step="0.000001" defaultValue={numberValue(a?.laborRate)} placeholder="0.00" />
-        <Input label="Charge rate" name="chargeRate" type="number" min={0} step="0.000001" defaultValue={numberValue(a?.chargeRate)} placeholder="0.00" />
+        <Input
+          label="Default markup %"
+          name="defaultMarkupPct"
+          type="number"
+          min={0}
+          step="0.01"
+          defaultValue={a?.defaultMarkupPct != null ? String(a.defaultMarkupPct) : ""}
+          placeholder="e.g. 32"
+          hint="Added to a person's hourly rate for their charge rate. A new pay rate for one of this agency's people starts from it."
+        />
         <Input label="Max work hours" name="maxWorkHours" type="number" min={0} step="0.01" defaultValue={numberValue(a?.maxWorkHours)} placeholder="No limit" />
       </div>
       <Input

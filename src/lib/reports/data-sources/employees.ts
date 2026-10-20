@@ -5,6 +5,7 @@ import { periodDayRange } from "@/lib/pay-period-days";
 import { daysOf } from "../period";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
+import { rateInEffect, todayKey } from "@/lib/pay-rates";
 
 /**
  * Employees: one row per person, with their setup. The source HR's lists are
@@ -74,6 +75,8 @@ export const employeesSource: DataSourceDefinition = {
     { id: "flsaType", label: "FLSA type", type: "string" },
     { id: "payType", label: "Hourly or salary", type: "string" },
     { id: "payRate", label: "Pay rate", type: "number" },
+    { id: "markupPct", label: "Charge markup %", type: "number" },
+    { id: "chargeRate", label: "Charge rate", type: "number" },
     { id: "hireDate", label: "Hire date", type: "date", defaultVisible: true },
     { id: "adjustedHireDate", label: "Adjusted hire date", type: "date" },
     { id: "terminatedAt", label: "Termination date", type: "date" },
@@ -156,6 +159,7 @@ export const employeesSource: DataSourceDefinition = {
         holidayRule: { select: { name: true } },
         payCategory: { select: { number: true, description: true } },
         payTypeLookup: { select: { number: true, description: true } },
+        payRates: { select: { effectiveDate: true, rate1: true, markupPct: true, chargeRate: true } },
       },
       orderBy: { user: { name: "asc" } },
       take: config.limit,
@@ -187,8 +191,11 @@ export const employeesSource: DataSourceDefinition = {
     const lastBy = new Map(lastPunches.map((p) => [p.employeeId, p._max.punchTime]));
     const workedBy = new Map(worked.map((w) => [w.e, w]));
 
+    const today = todayKey();
     const rows = employees.map((e) => {
       const last = lastBy.get(e.id) ?? null;
+      // The pay rate row in effect today, for its markup and charge rate.
+      const rateRow = rateInEffect(e.payRates, today);
       const zone = personTimeZone(e);
       const w = workedBy.get(e.id);
       return {
@@ -208,6 +215,8 @@ export const employeesSource: DataSourceDefinition = {
         flsaType: e.payTypeLookup ? `${e.payTypeLookup.number} ${e.payTypeLookup.description ?? ""}`.trim() : null,
         payType: e.payType === "SALARY" ? "Salary" : e.payType === "HOURLY" ? "Hourly" : null,
         payRate: e.payRate != null ? Number(e.payRate) : null,
+        markupPct: rateRow?.markupPct != null ? Number(rateRow.markupPct) : null,
+        chargeRate: rateRow?.chargeRate != null ? Number(rateRow.chargeRate) : null,
         hireDate: day(e.hireDate),
         adjustedHireDate: day(e.adjustedHireDate),
         terminatedAt: day(e.terminatedAt),

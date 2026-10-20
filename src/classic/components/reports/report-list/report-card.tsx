@@ -24,6 +24,7 @@ const SOURCE_ICONS: Record<string, React.ElementType> = {
   SECURITY_SCAN: ShieldCheck,
   TIME_CLOCK_SCAN: Timer,
   EMPLOYEES: Users,
+  LABOR_COST: Wallet,
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -37,6 +38,7 @@ const SOURCE_LABELS: Record<string, string> = {
   SECURITY_SCAN: "Security Scan Report",
   TIME_CLOCK_SCAN: "Time Clock Report",
   EMPLOYEES: "Employees",
+  LABOR_COST: "Labor Cost",
 };
 
 interface ReportCardProps {

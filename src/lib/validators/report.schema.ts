@@ -98,6 +98,7 @@ export const DATA_SOURCES = [
   "SECURITY_SCAN",
   "TIME_CLOCK_SCAN",
   "EMPLOYEES",
+  "LABOR_COST",
 ] as const;
 
 export type DataSourceId = (typeof DATA_SOURCES)[number];

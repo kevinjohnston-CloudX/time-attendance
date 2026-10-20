@@ -1,19 +1,34 @@
 "use client";
 
 import type { PayRateRow } from "@/actions/pay-rate.actions";
-import { currentRow, money, noSubmitOnEnter, usDate, usePayRates } from "@/components/admin/use-pay-rates";
+import { currentRow, draftCharge, money, noSubmitOnEnter, percent, usDate, usePayRates } from "@/components/admin/use-pay-rates";
 
 const inputCls =
   "w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-white";
 const btn =
   "rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800";
+const th = "px-3 py-2 text-xs font-semibold text-zinc-600 dark:text-zinc-300";
 
-/** Pay rates from an effective date, as NovaTime's Pay Rates table, saved on its own. */
-export function PayRatesTable({ employeeId, initial, salary }: { employeeId: string; initial: PayRateRow[]; salary: boolean }) {
-  const { rows, draft, error, pending, edit, cancel, add, remove, update, save } = usePayRates(employeeId, initial);
+/**
+ * Pay rates from an effective date, as NovaTime's Pay Rates table, saved on its
+ * own. Each row's charge rate is Rate 1 plus the markup, or set by hand; a new
+ * row starts from the markup of the person's agency.
+ */
+export function PayRatesTable({
+  employeeId,
+  initial,
+  salary,
+  defaultMarkupPct = null,
+}: {
+  employeeId: string;
+  initial: PayRateRow[];
+  salary: boolean;
+  defaultMarkupPct?: number | null;
+}) {
+  const { rows, draft, error, pending, edit, cancel, add, remove, update, setManual, save } = usePayRates(employeeId, initial, defaultMarkupPct);
   const current = currentRow(rows);
 
-  const num = (key: string, field: "rate1" | "rate2" | "rate3", value: string, label: string) => (
+  const num = (key: string, field: "rate1" | "rate2" | "rate3" | "chargeRate", value: string, label: string) => (
     <input
       type="number"
       min="0.01"
@@ -33,8 +48,11 @@ export function PayRatesTable({ employeeId, initial, salary }: { employeeId: str
         <div>
           <p className="text-sm font-semibold text-zinc-900 dark:text-white">Pay Rates</p>
           <p className="text-xs text-zinc-500">
-            {current ? `Current: ${money(current.rate1)} ${salary ? "per year" : "per hour"}, since ${usDate(current.effectiveDate)}` : "No rate in effect yet"}
-            {" · "}Rate 1 is the pay rate; Rates 2 and 3 are for reference.
+            {current
+              ? `Current: ${money(current.rate1)} ${salary ? "per year" : "per hour"}${current.chargeRate != null ? `, charged at ${money(current.chargeRate)}` : ""}, since ${usDate(current.effectiveDate)}`
+              : "No rate in effect yet"}
+            {" · "}Rate 1 is the pay rate; Rates 2 and 3 are for reference. The charge rate is Rate 1 plus the markup
+            {defaultMarkupPct != null ? ` (agency default ${percent(defaultMarkupPct)})` : ""}, unless set manually.
           </p>
         </div>
         {draft ? (
@@ -61,32 +79,64 @@ export function PayRatesTable({ employeeId, initial, salary }: { employeeId: str
         <table className="w-full text-sm">
           <thead className="bg-zinc-100 dark:bg-zinc-800">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-600 dark:text-zinc-300">Date Effective</th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300">Rate 1</th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300">Rate 2</th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-600 dark:text-zinc-300">Rate 3</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-600 dark:text-zinc-300">Notes</th>
+              <th className={`${th} text-left`}>Date Effective</th>
+              <th className={`${th} text-right`}>Rate 1</th>
+              <th className={`${th} text-right`}>Markup</th>
+              <th className={`${th} text-right`}>Charge Rate</th>
+              <th className={`${th} text-right`}>Rate 2</th>
+              <th className={`${th} text-right`}>Rate 3</th>
+              <th className={`${th} text-left`}>Notes</th>
               {draft && <th className="w-10 px-2 py-2"><span className="sr-only">Remove</span></th>}
             </tr>
           </thead>
           <tbody>
             {draft
-              ? draft.map((r) => (
-                  <tr key={r.key} className="border-t border-zinc-100 dark:border-zinc-800">
-                    <td className="min-w-[150px] px-3 py-1.5">
-                      <input type="date" value={r.effectiveDate} onChange={(e) => update(r.key, "effectiveDate", e.target.value)} onKeyDown={noSubmitOnEnter} aria-label="Date effective" className={inputCls} />
-                    </td>
-                    <td className="min-w-[100px] px-3 py-1.5">{num(r.key, "rate1", r.rate1, "Rate 1")}</td>
-                    <td className="min-w-[100px] px-3 py-1.5">{num(r.key, "rate2", r.rate2, "Rate 2")}</td>
-                    <td className="min-w-[100px] px-3 py-1.5">{num(r.key, "rate3", r.rate3, "Rate 3")}</td>
-                    <td className="min-w-[180px] px-3 py-1.5">
-                      <input value={r.note} maxLength={500} onChange={(e) => update(r.key, "note", e.target.value)} onKeyDown={noSubmitOnEnter} placeholder="e.g. Annual increase" aria-label="Notes" className={inputCls} />
-                    </td>
-                    <td className="px-2 py-1.5 text-center">
-                      <button type="button" onClick={() => remove(r.key)} aria-label="Remove this rate" title="Remove this rate" className="text-zinc-400 hover:text-red-600">✕</button>
-                    </td>
-                  </tr>
-                ))
+              ? draft.map((r) => {
+                  const shown = draftCharge(r);
+                  return (
+                    <tr key={r.key} className="border-t border-zinc-100 dark:border-zinc-800">
+                      <td className="min-w-[150px] px-3 py-1.5">
+                        <input type="date" value={r.effectiveDate} onChange={(e) => update(r.key, "effectiveDate", e.target.value)} onKeyDown={noSubmitOnEnter} aria-label="Date effective" className={inputCls} />
+                      </td>
+                      <td className="min-w-[100px] px-3 py-1.5">{num(r.key, "rate1", r.rate1, "Rate 1")}</td>
+                      <td className="min-w-[90px] px-3 py-1.5">
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={r.markupPct}
+                            onChange={(e) => update(r.key, "markupPct", e.target.value)}
+                            onKeyDown={noSubmitOnEnter}
+                            placeholder="0"
+                            aria-label="Markup percent"
+                            className={`${inputCls} text-right tabular-nums`}
+                          />
+                          <span className="text-xs text-zinc-400">%</span>
+                        </div>
+                      </td>
+                      <td className="min-w-[140px] px-3 py-1.5">
+                        {r.chargeManual ? (
+                          num(r.key, "chargeRate", r.chargeRate, "Charge rate")
+                        ) : (
+                          <p className="py-1.5 text-right tabular-nums text-zinc-900 dark:text-white">{shown == null ? "—" : money(shown)}</p>
+                        )}
+                        <label className="mt-1 flex items-center justify-end gap-1.5 text-xs text-zinc-500">
+                          <input type="checkbox" checked={r.chargeManual} onChange={(e) => setManual(r.key, e.target.checked)} />
+                          Set manually
+                        </label>
+                      </td>
+                      <td className="min-w-[100px] px-3 py-1.5">{num(r.key, "rate2", r.rate2, "Rate 2")}</td>
+                      <td className="min-w-[100px] px-3 py-1.5">{num(r.key, "rate3", r.rate3, "Rate 3")}</td>
+                      <td className="min-w-[180px] px-3 py-1.5">
+                        <input value={r.note} maxLength={500} onChange={(e) => update(r.key, "note", e.target.value)} onKeyDown={noSubmitOnEnter} placeholder="e.g. Annual increase" aria-label="Notes" className={inputCls} />
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        <button type="button" onClick={() => remove(r.key)} aria-label="Remove this rate" title="Remove this rate" className="text-zinc-400 hover:text-red-600">✕</button>
+                      </td>
+                    </tr>
+                  );
+                })
               : rows.map((r) => (
                   <tr key={r.effectiveDate} className="border-t border-zinc-100 dark:border-zinc-800">
                     <td className="px-3 py-2 text-zinc-900 dark:text-white">
@@ -95,6 +145,13 @@ export function PayRatesTable({ employeeId, initial, salary }: { employeeId: str
                       {current && r.effectiveDate > current.effectiveDate && <span className="ml-2 text-xs text-blue-600 dark:text-blue-400">Upcoming</span>}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-zinc-900 dark:text-white">{money(r.rate1)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">{percent(r.markupPct) || "—"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-zinc-900 dark:text-white">
+                      {money(r.chargeRate) || "—"}
+                      {r.chargeManual && r.chargeRate != null && (
+                        <span className="ml-1.5 text-xs text-zinc-400" title="Set by hand, not worked out from the markup">Manual</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">{money(r.rate2) || "—"}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">{money(r.rate3) || "—"}</td>
                     <td className="max-w-[320px] truncate px-3 py-2 text-zinc-500" title={r.note ?? undefined}>{r.note || "—"}</td>
@@ -102,7 +159,7 @@ export function PayRatesTable({ employeeId, initial, salary }: { employeeId: str
                 ))}
             {!draft && rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-3 text-zinc-400">No pay rates yet. Use Edit Pay Rates to add one.</td>
+                <td colSpan={7} className="px-3 py-3 text-zinc-400">No pay rates yet. Use Edit Pay Rates to add one.</td>
               </tr>
             )}
           </tbody>
