@@ -713,3 +713,12 @@
     font-size: 15px;
   }
 }
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* A group's name inside a section (Emergency contact, Address) in
+     sentence case, as every heading reads on a phone. */
+  .groupTitle {
+    font: var(--weight-semibold) 13px/18px var(--font-sans) !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+  }
+}
