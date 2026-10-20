@@ -147,6 +147,7 @@ export function PayPeriodTimesheets({
             {subtitle}
           </span>
         </span>
+        <span className={ppStyles.issueSwitch}>
         <SegmentedControl
           size="sm"
           ariaLabel="Issues"
@@ -158,6 +159,7 @@ export function PayPeriodTimesheets({
             { value: "clear", label: "No issues" },
           ]}
         />
+        </span>
       </div>
       <div className={`${ppStyles.search} flex flex-wrap items-center gap-2 px-4 pb-3`}>
         <SearchInput value={query} onValueChange={setQuery} placeholder="Employee name" width={220} />
@@ -190,7 +192,7 @@ export function PayPeriodTimesheets({
         {groups.map((g) => (
           <div key={g.siteName}>
             <div className="flex items-center gap-2.5 px-3 pb-1.5 pt-2.5">
-              <span style={{ font: "var(--weight-semibold) 11px/14px var(--font-sans)", letterSpacing: ".07em", textTransform: "uppercase", color: "var(--text-tertiary)" }}>
+              <span className={ppStyles.siteHead} style={{ font: "var(--weight-semibold) 11px/14px var(--font-sans)", letterSpacing: ".07em", textTransform: "uppercase", color: "var(--text-tertiary)" }}>
                 {g.siteName}
               </span>
               <span className="tabular" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
@@ -236,9 +238,12 @@ export function PayPeriodTimesheets({
                           {ts.dt > 0 && <Chip k="DT" v={hours(ts.dt)} tone="dt" />}
                         </span>
                       </span>
-                      <Badge tone={done ? "success" : "neutral"} dot>
-                        {done ? "Locked" : "Open"}
-                      </Badge>
+                      {/* Open is the usual state: a phone shows Locked only. */}
+                      <span className={done ? undefined : "ta-phone-hide"}>
+                        <Badge tone={done ? "success" : "neutral"} dot>
+                          {done ? "Locked" : "Open"}
+                        </Badge>
+                      </span>
                     </Link>
                     {iss.length > 0 && (
                       <button

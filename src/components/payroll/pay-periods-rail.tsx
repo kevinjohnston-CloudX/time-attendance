@@ -222,8 +222,8 @@ export function PayPeriodsRail({
       style={PANEL}
       aria-label="Pay periods"
     >
-      <div className="flex flex-none items-center justify-between px-[18px] pb-3 pt-[18px]">
-        <h1 className="m-0 whitespace-nowrap" style={{ font: "var(--weight-bold) 20px/26px var(--font-sans)", letterSpacing: "-0.02em", color: "var(--text-primary)" }}>
+      <div className={`${ppStyles.railHead} flex flex-none items-center justify-between px-[18px] pb-3 pt-[18px]`}>
+        <h1 className="ta-page-title m-0 whitespace-nowrap" style={{ font: "var(--weight-bold) 20px/26px var(--font-sans)", letterSpacing: "-0.02em", color: "var(--text-primary)" }}>
           Pay Periods
         </h1>
         <Link
@@ -236,7 +236,7 @@ export function PayPeriodsRail({
         </Link>
       </div>
 
-      <div className="relative z-[5] flex flex-none flex-col gap-2.5 px-3.5 pb-3.5">
+      <div className={`${ppStyles.railTools} relative z-[5] flex flex-none flex-col gap-2.5 px-3.5 pb-3.5`}>
         <SegmentedControl
           size="sm"
           fullWidth
@@ -387,15 +387,17 @@ export function PayPeriodsRail({
         </div>
       </div>
 
-      <div ref={listRef} className="ta-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-2.5 pt-0.5" style={{ boxShadow: "inset 0 1px 0 var(--ta-well-ring)" }}>
+      <div ref={listRef} className={`${ppStyles.railList} ta-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-2.5 pt-0.5`} style={{ boxShadow: "inset 0 1px 0 var(--ta-well-ring)" }}>
         {ordered.map((g) => (
           <section key={g.name + g.rows[0].id} aria-label={g.name}>
-            <div className="sticky top-0 z-[2] flex items-baseline gap-1.5 px-2.5 pb-1.5 pt-3.5" style={{ background: "var(--surface-card)" }}>
+            <div className={`${ppStyles.groupHead} sticky top-0 z-[2] flex items-baseline gap-1.5 px-2.5 pb-1.5 pt-3.5`} style={{ background: "var(--surface-card)" }}>
               <span className="truncate" title={g.name} style={{ font: "var(--weight-semibold) 12px/16px var(--font-sans)", color: "var(--text-secondary)" }}>
                 {g.name}
               </span>
               {g.freq && <span className="flex-none" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{g.freq}</span>}
             </div>
+            {/* One white group per pay group on a phone (pay-periods.module.css). */}
+            <div className={ppStyles.groupRows}>
             {g.rows.map((p) => {
               const on = p.id === selectedId;
               return (
@@ -404,7 +406,7 @@ export function PayPeriodsRail({
                   href={href({ id: p.id })}
                   aria-current={on ? "page" : undefined}
                   data-active={on ? "true" : undefined}
-                  className="ta-hoverable flex flex-col gap-[7px] px-3 py-2.5"
+                  className={`${ppStyles.periodRow} ta-hoverable flex flex-col gap-[7px] px-3 py-2.5`}
                   style={{
                     borderRadius: 12,
                     textDecoration: "none",
@@ -437,6 +439,7 @@ export function PayPeriodsRail({
                 </Link>
               );
             })}
+            </div>
           </section>
         ))}
         {ordered.length === 0 && (

@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
-import { ChevronLeft } from "lucide-react";
 import { PinnedBar } from "@/components/ui";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "@/components/layout/navigation-progress";
-import { isPhone } from "@/lib/phone";
+import { isPhone, usePhoneLayout } from "@/lib/phone";
+import { usePhoneBack } from "@/components/layout/phone-back";
 import styles from "./pay-periods.module.css";
 
 /**
@@ -112,6 +112,10 @@ export function PayPeriodsShell({
     router.push(`${url.pathname}${url.search}`);
   }
 
+  // The way back to the list is the top bar's, as in any phone app.
+  const phone = usePhoneLayout();
+  usePhoneBack(phone && phoneView === "period" ? "Pay Periods" : null, () => backToList());
+
   function backToList() {
     const url = new URL(window.location.href);
     url.searchParams.delete("open");
@@ -130,12 +134,6 @@ export function PayPeriodsShell({
     >
       {rail}
       <div className={`${styles.detail} flex min-w-0 flex-1 flex-col gap-[18px]`}>
-        <div className="ta-phone-only">
-          <button type="button" className={styles.back} onClick={backToList}>
-            <ChevronLeft className="h-5 w-5" aria-hidden="true" />
-            Pay Periods
-          </button>
-        </div>
         {header && <PinnedBar barRef={barRef}>{header}</PinnedBar>}
         {children}
       </div>

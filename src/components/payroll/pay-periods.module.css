@@ -20,17 +20,61 @@
     overflow: visible !important;
   }
 
-  /* The period's four totals two by two, at a size two fit side by side. */
+  /* The period's totals: timesheets, locked and exceptions as three tiles
+     across, figure first, then the hours across the full width with what
+     they are made of. Two by two left the short cards stretched to the
+     height of the hours card, with their bars far below their figures. */
   .kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 10px !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px !important;
   }
   .kpis > * {
-    padding: 14px !important;
+    gap: 4px !important;
+    padding: 12px !important;
+    border-radius: 14px !important;
   }
-  .kpis > * > span:nth-child(2) > span:first-child {
+  .kpis > :nth-child(4) {
+    grid-column: 1 / -1;
+    gap: 8px !important;
+    padding: 14px 16px !important;
+  }
+  /* The icons are a computer's; the label wraps if it must. */
+  .kpis > * > span:first-child > span {
+    display: none !important;
+  }
+  .kpis > * > span:first-child {
+    white-space: normal !important;
+    font-size: 13px !important;
+  }
+  /* Figure, name, then the small print and the bar. */
+  .kpis > :not(:nth-child(4)) > span:nth-child(2) {
+    display: contents !important;
+  }
+  .kpis > :not(:nth-child(4)) > span:nth-child(2) > span:first-child {
+    order: -1;
     font-size: 26px !important;
-    line-height: 30px !important;
+    line-height: 32px !important;
+  }
+  .kpis > :not(:nth-child(4)) > span:nth-child(2) > span:last-child {
+    order: 1;
+    font-size: 12px !important;
+    line-height: 16px !important;
+  }
+  /* The bars line up along the bottom of the three. */
+  .kpis > :not(:nth-child(4)) > span:nth-child(3) {
+    order: 2;
+    margin-top: auto !important;
+  }
+  .kpis > :not(:nth-child(4)) > span:nth-child(2) > span:last-child {
+    margin-bottom: 6px;
+  }
+  .kpis > :nth-child(4) > span:nth-child(2) > span:first-child {
+    font-size: 30px !important;
+    line-height: 36px !important;
+  }
+  .kpis > :nth-child(4) > span:last-child {
+    font-size: 13px !important;
+    line-height: 18px !important;
   }
 
   /* A timesheet: the person and the arrow on one line, the issues under
@@ -143,3 +187,92 @@
     animation: none;
   }
 }
+
+/* Phones: the list of periods as a phone's list. The page's title on the
+   grey, large; the scope, the stepper and the status filter under it; then
+   one white group per pay group, its name above it, and a row per period
+   with its dates, its status and how many timesheets it holds. Nothing
+   reads as picked before anything is tapped. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .shell > :global(aside) {
+    background: transparent !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+  .railHead {
+    padding: 0 0 12px !important;
+  }
+  .railTools {
+    padding: 0 0 6px !important;
+  }
+  .railList {
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+  .groupHead {
+    position: static !important;
+    padding: 18px 4px 8px !important;
+    background: transparent !important;
+  }
+  .groupHead > :first-child {
+    font: var(--weight-semibold) 13px/18px var(--font-sans) !important;
+  }
+  .groupHead > :last-child {
+    font-size: 13px !important;
+  }
+  .groupRows {
+    overflow: hidden;
+    border-radius: 14px;
+    background: var(--surface-card);
+    box-shadow: var(--ta-raised);
+  }
+  .periodRow {
+    position: relative;
+    gap: 2px !important;
+    min-height: 64px;
+    justify-content: center;
+    padding: 10px 16px !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  .periodRow + .periodRow::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 16px;
+    height: 1px;
+    background: var(--stroke-divider);
+  }
+  .periodRow > span:first-child > span:first-child {
+    font: var(--weight-semibold) 17px/22px var(--font-sans) !important;
+    color: var(--text-primary) !important;
+  }
+  .periodRow > span:last-child > span:first-child {
+    font: var(--weight-regular) 15px/20px var(--font-sans) !important;
+    color: var(--text-secondary) !important;
+  }
+}
+
+/* A period's timesheets on a phone: the issue switch across the width, the
+   site's name in sentence case, as every heading reads on a phone. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .issueSwitch {
+    display: flex;
+    flex: 1 1 100%;
+  }
+  .issueSwitch > :global(.ta-seg-track) {
+    display: flex !important;
+    width: 100%;
+  }
+  .issueSwitch > :global(.ta-seg-track) > :global(.wms-seg) {
+    flex: 1 1 0 !important;
+  }
+  .siteHead {
+    font: var(--weight-semibold) 13px/18px var(--font-sans) !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+  }
+}
+
