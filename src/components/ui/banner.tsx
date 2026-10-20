@@ -76,6 +76,7 @@ export function Banner({
   return (
     <div
       role={tone === "error" ? "alert" : "status"}
+      className="ta-banner"
       style={{
         display: "flex",
         alignItems: "stretch",
@@ -89,7 +90,7 @@ export function Banner({
         boxSizing: "border-box",
       }}
     >
-      <span aria-hidden="true" style={{ flex: "none", width: 4, alignSelf: "stretch", background: t.rule }} />
+      <span aria-hidden="true" className="ta-banner-rule" style={{ flex: "none", width: 4, alignSelf: "stretch", background: t.rule }} />
       <div className="flex flex-1 flex-wrap items-center gap-3 px-3.5 py-3">
         <Icon className="h-[18px] w-[18px] flex-none self-start" style={{ color: t.icon }} aria-hidden="true" />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">

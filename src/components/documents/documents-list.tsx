@@ -190,8 +190,12 @@ export function DocumentsList({
                     <TD numeric align="left" className={styles.added} style={{ color: "var(--text-secondary)" }}>
                       {format(doc.uploadedAt, "MMM d, yyyy")}
                     </TD>
+                    {/* Some older records hold an account id here rather than
+                        a name; an id means nothing to anyone, so it is left out. */}
                     {showEmployee && (
-                      <TD className={styles.by} style={{ color: "var(--text-secondary)" }}>{doc.uploadedBy}</TD>
+                      <TD className={styles.by} style={{ color: "var(--text-secondary)" }}>
+                        {looksLikeId(doc.uploadedBy) ? "" : doc.uploadedBy}
+                      </TD>
                     )}
                     <TD align="right" className={styles.actions}>
                       <div className="flex items-center justify-end gap-2">
@@ -300,3 +304,9 @@ function DownloadLink({ id, title }: { id: string; title: string }) {
     </a>
   );
 }
+
+/** An internal record id (cuid) rather than a person's name. */
+function looksLikeId(value: string | null | undefined): boolean {
+  return !!value && /^c[a-z0-9]{20,}$/.test(value);
+}
+

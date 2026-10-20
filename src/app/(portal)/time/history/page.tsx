@@ -62,6 +62,7 @@ export default async function PunchHistoryPage() {
     <div className="flex flex-col gap-4">
       <PageHeader pinned
         title="Punch History"
+        phoneSubtitle={periodLabel ? `Pay period ${periodLabel}` : undefined}
         subtitle={
           periodLabel ? (
             <>Pay period {periodLabel} · every punch with its source and approval state</>
@@ -80,7 +81,9 @@ export default async function PunchHistoryPage() {
 
       {/* "punch record" rather than "punch": the toolbar pluralises by adding
           an s, and "12 punchs" is how a count stops being trusted. */}
-      <Toolbar count={punches.length} countLabel="punch record" />
+      {/* With nothing listed, the empty list says so; a 0 beside it said
+          the same thing twice. */}
+      {punches.length > 0 && <Toolbar count={punches.length} countLabel="punch record" />}
 
       <Card padding={0}>
         <PunchHistoryTable

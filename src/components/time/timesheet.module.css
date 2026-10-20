@@ -145,3 +145,73 @@
     overflow-x: auto;
   }
 }
+
+/* Phones: a day that is not open reads as its date and total, then one
+   line under it: the clock in and out times ("6:54 AM – 3:31 PM"), or the
+   pay code on a day with no punches. Opening it (the arrow) shows the
+   meal punches, the hours by kind and the reason, as above. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .days tr[data-row="day"]:not([data-open]):not([data-quiet]):not([data-no-punches]) {
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "date date date total"
+      "in out . .";
+    column-gap: 6px;
+    row-gap: 2px;
+  }
+  .days tr[data-row="day"][data-no-punches]:not([data-open]):not([data-quiet]) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "date total"
+      "pay pay";
+    row-gap: 2px;
+  }
+  .days tr[data-row="day"]:not([data-open]) > td:nth-child(3),
+  .days tr[data-row="day"]:not([data-open]) > td:nth-child(4),
+  .days tr[data-row="day"]:not([data-open]) > td:nth-child(6),
+  .days tr[data-row="day"]:not([data-open]) > td:nth-child(7),
+  .days tr[data-row="day"]:not([data-open]) > td:nth-child(8),
+  .days tr[data-row="day"]:not([data-open]) > td:nth-child(11),
+  .days tr[data-row="day"]:not([data-open]):not([data-no-punches]) > td:nth-child(10) {
+    display: none;
+  }
+  .days tr[data-row="day"]:not([data-open]) > td:nth-child(2)::before,
+  .days tr[data-row="day"]:not([data-open]) > td:nth-child(5)::before,
+  .days tr[data-row="day"]:not([data-open]) > td:nth-child(10)::before {
+    content: none;
+  }
+  .days tr[data-row="day"]:not([data-open]) > td:nth-child(2) input,
+  .days tr[data-row="day"]:not([data-open]) > td:nth-child(5) input {
+    width: 8ch !important;
+    color: var(--text-secondary) !important;
+  }
+  .days tr[data-row="day"]:not([data-open]):not([data-quiet]):not([data-no-punches]) > td:nth-child(2) {
+    display: flex;
+    align-items: baseline;
+  }
+  .days tr[data-row="day"]:not([data-open]):not([data-quiet]):not([data-no-punches]) > td:nth-child(2)::after {
+    content: "\2013";
+    margin-left: 6px;
+    color: var(--text-tertiary);
+  }
+  .days tr[data-row="day"]:not([data-open]) > td:nth-child(10) {
+    color: var(--text-secondary);
+  }
+}
+
+/* The weeks of the period share the width on a phone, as every switch does. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .weeks {
+    flex: 1 1 100%;
+    width: 100%;
+    align-self: stretch !important;
+  }
+  .weeks > :global(.ta-seg-track) {
+    display: flex !important;
+    width: 100%;
+  }
+  .weeks > :global(.ta-seg-track) > :global(.wms-seg) {
+    flex: 1 1 0 !important;
+  }
+}
+

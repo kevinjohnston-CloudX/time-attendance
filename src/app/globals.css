@@ -1405,6 +1405,37 @@ option {
   .ta-punch-actions > .wms-btn:first-child {
     flex-basis: 100%;
   }
+  /* Punch Clock: the four figures as tiles in one group, figure first, as
+     every set of figures reads on a phone. */
+  .ta-punch-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0 !important;
+    overflow: hidden;
+    border: 1px solid var(--stroke-divider);
+    border-radius: 12px;
+  }
+  .ta-punch-stat {
+    padding: 12px 14px 14px;
+  }
+  .ta-punch-stat:nth-child(even) {
+    border-left: 1px solid var(--stroke-divider);
+  }
+  .ta-punch-stat:nth-child(n + 3) {
+    border-top: 1px solid var(--stroke-divider);
+  }
+  .ta-punch-stat > .tabular {
+    order: -1;
+    font: var(--weight-semibold) 24px/30px var(--font-sans) !important;
+    letter-spacing: -0.02em;
+  }
+  .ta-punch-stat > .wms-overline {
+    color: var(--text-secondary);
+  }
+  .ta-punch-stat > :last-child {
+    font-size: 13px !important;
+    line-height: 18px !important;
+    color: var(--text-tertiary) !important;
+  }
   /* Punch Clock: the punches take the full width under the figures. */
   .ta-punch-hero-actions {
     width: 100% !important;
@@ -1935,3 +1966,31 @@ html {
     color: var(--text-secondary);
   }
 }
+
+/* ---- Phones: notices and figure cards ----
+   A notice is a soft tinted panel, rounded all round, with no colour bar
+   down its edge (a phone's notices do not use one; its icon and tint say
+   what kind it is). A figure card leads with its figure, as every set of
+   figures on a phone does. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .ta-banner {
+    border: 0 !important;
+    border-radius: 14px !important;
+  }
+  .ta-banner-rule {
+    display: none;
+  }
+  .ta-stat {
+    padding: 14px 16px 16px !important;
+  }
+  .ta-stat > .ta-stat-value {
+    order: -1;
+    margin: 0 0 2px !important;
+    font: var(--weight-semibold) 28px/34px var(--font-sans) !important;
+    letter-spacing: -0.02em;
+  }
+  .ta-stat > .wms-overline {
+    color: var(--text-secondary);
+  }
+}
+

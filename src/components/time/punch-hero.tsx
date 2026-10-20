@@ -87,14 +87,14 @@ export function PunchHero({
             color: "var(--text-primary)",
           }}
         >
-          {format(now, "hh:mm:ss a")}
+          {format(now, "h:mm:ss a")}
         </span>
         <span style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>{context}</span>
       </div>
 
-      <div className="grid min-w-[240px] flex-1 gap-5 [grid-template-columns:repeat(auto-fit,minmax(96px,1fr))]">
+      <div className="ta-punch-stats grid min-w-[240px] flex-1 gap-5 [grid-template-columns:repeat(auto-fit,minmax(96px,1fr))]">
         {stats.map((s) => (
-          <div key={s.label} className="flex flex-col gap-0.5">
+          <div key={s.label} className="ta-punch-stat flex flex-col gap-0.5">
             <span className="wms-overline">{s.label}</span>
             <span
               className="tabular"

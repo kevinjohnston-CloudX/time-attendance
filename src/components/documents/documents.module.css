@@ -56,11 +56,19 @@
   .actions > div {
     gap: 0 !important;
   }
-  /* Download as an icon, the size of the delete button beside it. */
+  /* Download as an icon, the size of the delete button beside it, without
+     a box of its own. */
   .download {
     width: 40px;
     justify-content: center;
     padding: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    color: var(--icon-accent) !important;
+  }
+  .by:empty {
+    display: none;
   }
   .download > span {
     position: absolute;

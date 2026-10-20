@@ -38,9 +38,9 @@ export function StatCard({
   children?: ReactNode;
 }) {
   return (
-    <div className="ta-card flex flex-col rounded-xl p-5">
+    <div className="ta-card ta-stat flex flex-col rounded-xl p-5">
       <p className="wms-overline">{label}</p>
-      <p className="tabular mt-1.5" style={{ margin: 0, font: "var(--type-h2)", color: TONE_COLOR[tone] }}>
+      <p className="ta-stat-value tabular mt-1.5" style={{ margin: 0, font: "var(--type-h2)", color: TONE_COLOR[tone] }}>
         {value}
       </p>
       {sub && (

@@ -81,7 +81,8 @@ export default async function DocumentsPage({
           page={page}
           showEmployee
           canDelete={canUpload}
-          searchPlaceholder="Employee or document name"
+          // Short enough to read whole in a phone's search field.
+          searchPlaceholder="Name or document"
           emptyTitle="No documents yet"
           emptyBody="Pay statements, policies and signed forms uploaded here appear on the employee's own Documents page."
         />

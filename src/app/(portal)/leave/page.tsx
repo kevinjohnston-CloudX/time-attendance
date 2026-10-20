@@ -176,7 +176,10 @@ export default async function MyLeavePage() {
                 <TR key={req.id}>
                   <TD className={styles.type} style={{ fontWeight: "var(--weight-medium)" }}>{req.leaveType.name}</TD>
                   <TD className={styles.dates} style={{ color: "var(--text-secondary)" }}>
-                    {fmtDate(req.startDate, "MMM d")} – {fmtDate(req.endDate, "MMM d, yyyy")}
+                    {/* One day is that day, not "Feb 20 – Feb 20". */}
+                    {fmtDate(req.startDate, "yyyy-MM-dd") === fmtDate(req.endDate, "yyyy-MM-dd")
+                      ? fmtDate(req.startDate, "EEE, MMM d, yyyy")
+                      : `${fmtDate(req.startDate, "MMM d")} – ${fmtDate(req.endDate, "MMM d, yyyy")}`}
                   </TD>
                   <TD numeric className={styles.hours}>{(req.durationMinutes / 60).toFixed(2)}</TD>
                   {/* createdAt is a real timestamp, not @db.Date, so it is

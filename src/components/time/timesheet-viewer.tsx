@@ -461,7 +461,7 @@ export function TimesheetViewer({
           </label>
 
           {weeks.length > 1 && (
-            <div className="self-end">
+            <div className={`${styles.weeks} self-end`}>
               <SegmentedControl
                 items={weeks.map((w, i) => ({ value: String(i), label: w.label }))}
                 value={String(activeWeek)}
@@ -536,6 +536,9 @@ export function TimesheetViewer({
                       <tr
                         className="ta-row"
                         data-row="day"
+                        // On a phone a closed day is read, not laid out as
+                        // columns (timesheet.module.css).
+                        data-open={expanded ? "true" : undefined}
                         data-quiet={!row.hasActivity && !row.isAbsent && !row.missingOut ? "true" : undefined}
                         data-no-punches={!row.punchIn && !row.mealOut && !row.mealIn && !row.punchOut ? "true" : undefined}
                         style={{
