@@ -36,6 +36,7 @@ import {
   History,
   KeyRound,
   Pencil,
+  ChevronRight,
   ScanLine,
   Wallet,
 } from "lucide-react";
@@ -741,6 +742,7 @@ export function EditEmployeeForm({
                   <LinkButton
                     href={`/admin/accruals/${employee.id}`}
                     hierarchy="secondary"
+                    className="ta-phone-hide"
                     leadingIcon={<Wallet className="h-4 w-4" aria-hidden="true" />}
                   >
                     View Accruals
@@ -748,6 +750,7 @@ export function EditEmployeeForm({
                   <LinkButton
                     href={`/admin/employees?copyFrom=${employee.id}`}
                     hierarchy="secondary"
+                    className="ta-phone-hide"
                     leadingIcon={<Copy className="h-4 w-4" aria-hidden="true" />}
                   >
                     Copy to new employee
@@ -862,6 +865,25 @@ export function EditEmployeeForm({
                 </Button>
               </div>
             </div>
+            {/* On a phone the header keeps only Edit; the other two ways on
+                from this record are lines under the profile, as a phone's
+                contact card lists its actions. */}
+            {!editing && (
+              <nav className="ta-phone-only" aria-label="More for this employee">
+                <div className={`ta-list ${styles.phoneLinks}`}>
+                  <Link href={`/admin/accruals/${employee.id}`} className="ta-list-row">
+                    <Wallet className={styles.phoneLinkIcon} aria-hidden="true" />
+                    <span className="ta-list-title">Accruals</span>
+                    <ChevronRight className="ta-list-chevron" aria-hidden="true" />
+                  </Link>
+                  <Link href={`/admin/employees?copyFrom=${employee.id}`} className="ta-list-row">
+                    <Copy className={styles.phoneLinkIcon} aria-hidden="true" />
+                    <span className="ta-list-title">Copy to a new employee</span>
+                    <ChevronRight className="ta-list-chevron" aria-hidden="true" />
+                  </Link>
+                </div>
+              </nav>
+            )}
           </aside>
 
           <div className={styles.main}>

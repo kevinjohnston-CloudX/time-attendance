@@ -20,6 +20,7 @@ import { Face } from "@/components/presence/face";
 import { LIST_COOKIE } from "./employees-list-cookie";
 import { LIST_KEYS, MISSING_OPTIONS, PAY_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS } from "./employees-list-options";
 import styles from "./employees.module.css";
+import { usePhoneLayout } from "@/lib/phone";
 
 /**
  * The employee list, in Live Attendance's language: one row of search and
@@ -94,6 +95,7 @@ export function EmployeesTable({
   const { barRef, markerRef, condensed, barHeight } = useCondensingBar();
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
+  const phone = usePhoneLayout();
   // Local state for search input so typing feels instant (debounced URL push)
   const [searchValue, setSearchValue] = useState(currentFilters.q);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -171,7 +173,7 @@ export function EmployeesTable({
             <SearchInput
               value={searchValue}
               onValueChange={onSearchChange}
-              placeholder="Name, employee ID or badge"
+              placeholder={phone ? "Name or badge" : "Name, employee ID or badge"}
               width={250}
             />
           }
@@ -303,8 +305,13 @@ export function EmployeesTable({
                         <span className={styles.cell}>
                           <span className={styles.name} title={name}>{name}</span>
                           {emp.user.email && (
-                            <span className={styles.sub} title={emp.user.email}>{emp.user.email}</span>
+                            <span className={`${styles.sub} ${styles.email}`} title={emp.user.email}>{emp.user.email}</span>
                           )}
+                          {/* A phone has no department or badge columns, so
+                              they read under the name instead of the email. */}
+                          <span className={`${styles.sub} ${styles.phoneSub}`}>
+                            {[emp.department.name, emp.wmsId ?? emp.employeeCode].filter(Boolean).join(", ")}
+                          </span>
                         </span>
                       </span>
                       <span className={`${styles.code} ${styles.wide}`} title={emp.wmsId ?? emp.employeeCode}>

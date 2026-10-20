@@ -260,3 +260,39 @@
     display: none;
   }
 }
+
+/* Under the name on a computer: the email. On a phone: department and badge. */
+.phoneSub {
+  display: none;
+}
+
+/* Phones: the phone's list. No column headings, the department and badge
+   under the name, and a status only when it is news (on leave, inactive):
+   "Active" on every one of 900 rows said nothing. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .head {
+    display: none !important;
+  }
+  .row {
+    min-height: 68px;
+  }
+  .avatar {
+    width: 40px;
+    height: 40px;
+  }
+  .name {
+    font: var(--weight-semibold) 17px/22px var(--font-sans);
+  }
+  .email {
+    display: none;
+  }
+  .phoneSub {
+    display: block;
+    font-size: 15px;
+    line-height: 20px;
+    color: var(--text-secondary);
+  }
+  .status[data-tone="active"] {
+    display: none;
+  }
+}

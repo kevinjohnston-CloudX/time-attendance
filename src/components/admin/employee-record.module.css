@@ -624,3 +624,92 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ── Phones: the record read as a phone's contact card ─────────────
+   Each fact a line, its name on the left and its value on the right, with
+   hairlines between, instead of a small label stacked over every value.
+   Editing keeps its fields as they are. */
+.phoneLinks {
+  margin-top: 12px;
+}
+.phoneLinkIcon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--icon-secondary);
+}
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .sectionBody:not(.editing) .grid {
+    display: block;
+    padding: 4px 0 8px;
+  }
+  .sectionBody:not(.editing) .grid > .field {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 0;
+  }
+  .sectionBody:not(.editing) .grid > .field + .field {
+    border-top: 1px solid var(--stroke-divider);
+  }
+  .sectionBody:not(.editing) .grid > .field > .label {
+    flex: none;
+    max-width: 45%;
+    font: var(--weight-regular) 15px/20px var(--font-sans);
+  }
+  /* A value too long to sit beside its name (an email) takes the line
+     under it, still on the right, rather than breaking mid word. */
+  .sectionBody:not(.editing) .grid > .field {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .sectionBody:not(.editing) .grid > .field > .valueCol {
+    flex: 1 0 auto;
+    max-width: 100%;
+    align-items: flex-end;
+    text-align: right;
+  }
+  .sectionBody:not(.editing) .grid > .field .value {
+    overflow-wrap: break-word;
+  }
+  /* A hint is as wide as the value above it, and never decides the width. */
+  .sectionBody:not(.editing) .grid > .field .hint {
+    width: 0;
+    min-width: 100%;
+  }
+  .sectionBody:not(.editing) .grid > .field .value {
+    font: var(--weight-medium) 15px/20px var(--font-sans);
+  }
+  .sectionBody:not(.editing) .grid > .field .hint {
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .sectionSub {
+    font-size: 13px;
+    line-height: 18px;
+  }
+
+  /* Badge ID, hire date and the rest: lines too, as they are on a computer. */
+  .facts {
+    display: block;
+    padding: 0 16px;
+  }
+  .fact {
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 0;
+  }
+  .fact + .fact {
+    border-top: 1px solid var(--stroke-divider);
+  }
+  .fact dt {
+    font: var(--weight-regular) 15px/20px var(--font-sans);
+    color: var(--text-secondary);
+  }
+  .fact dd {
+    text-align: right;
+    font-size: 15px;
+  }
+}

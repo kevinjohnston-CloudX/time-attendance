@@ -1487,6 +1487,37 @@ option {
   .ta-rates[data-mode="read"] td > .flex {
     align-items: flex-start !important;
   }
+
+  /* data-phone="lines": a block with few figures (an employee's pay rates)
+     reads as its first cell, then one line per figure, the name on the left
+     and the value on the right, as a phone's settings do. Long ledgers keep
+     the denser three across. */
+  .ta-rates[data-mode="read"][data-phone="lines"] tr {
+    display: block;
+    padding: 12px 14px 4px;
+  }
+  .ta-rates[data-mode="read"][data-phone="lines"] td:first-child {
+    padding-bottom: 6px !important;
+  }
+  .ta-rates[data-mode="read"][data-phone="lines"] td[data-label] {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0 !important;
+    border-top: 1px solid var(--stroke-divider) !important;
+    font: var(--weight-medium) 15px/20px var(--font-sans);
+    text-align: right !important;
+  }
+  .ta-rates[data-mode="read"][data-phone="lines"] td[data-label]::before {
+    flex: none;
+    font: var(--weight-regular) 15px/20px var(--font-sans);
+    color: var(--text-secondary);
+    text-align: left;
+  }
+  .ta-rates[data-mode="read"][data-phone="lines"] td > .flex {
+    align-items: flex-end !important;
+  }
 }
 
 /* ---- Phones: the feel (mobile/phone-rulebook-2026-10-20.md) ----
@@ -1627,6 +1658,11 @@ html {
   --ta-row-inset: 68px;
   min-height: 72px;
 }
+/* A one line row: the title takes the room and pushes the end over. */
+.ta-list-row > .ta-list-title {
+  min-width: 0;
+  flex: 1;
+}
 .ta-list-text {
   display: flex;
   min-width: 0;
@@ -1757,10 +1793,14 @@ html {
     align-items: center;
     padding: 10px 4px 0;
   }
-  .ta-tools-under > :not(.ta-tools-count) {
+  .ta-tools-under > :not(.ta-tools-count):not(:has(.ta-tools-count)),
+  .ta-tools-under :has(> .ta-tools-count) > :not(.ta-tools-count) {
     display: none !important;
   }
-  .ta-tools-under > .ta-tools-count {
+  .ta-tools-under:not(:has(.ta-tools-count)) {
+    display: none;
+  }
+  .ta-tools-under .ta-tools-count {
     padding: 0 !important;
     font: var(--weight-regular) 13px/18px var(--font-sans) !important;
     color: var(--text-tertiary);

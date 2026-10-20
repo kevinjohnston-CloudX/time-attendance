@@ -82,11 +82,13 @@ export function PayRatesTable({
 
       {error && <Banner tone="error" body={error} />}
 
-      {/* On a phone, read mode stacks each rate as a small labelled block
-          (globals.css, .ta-rates); editing keeps the grid, which swipes. */}
+      {/* On a phone, read mode shows each rate as its date, then one line
+          per figure (globals.css, .ta-rates, data-phone="lines"); editing
+          keeps the grid, which swipes. */}
       <div
         className="ta-rates overflow-x-auto rounded-lg"
         data-mode={draft ? "edit" : "read"}
+        data-phone="lines"
         style={{ border: "1px solid var(--stroke-divider)" }}
       >
         <Table>
