@@ -20,7 +20,7 @@ export default function ForgotPasswordPage() {
     >
       <Banner
         tone="info"
-        body="Ask your supervisor or the HR team. They can set you a new password, or send you a setup link that works for 24 hours."
+        body="Ask the HR or payroll team. They can give you a temporary password, and CloudTime asks you to choose your own the next time you sign in."
       />
     </AuthScreen>
   );
