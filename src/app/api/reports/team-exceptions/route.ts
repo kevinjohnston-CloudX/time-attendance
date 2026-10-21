@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { csvCell } from "@/lib/csv-cell";
 import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 import { getTeamExceptions } from "@/actions/supervisor.actions";
@@ -19,10 +20,6 @@ import { formatTimeOfDay } from "@/lib/utils/date";
  */
 
 /** RFC 4180: quote anything holding a comma, quote or newline, and double inner quotes. */
-function csvCell(value: unknown): string {
-  const s = value == null ? "" : String(value);
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 const EXCEPTION_LABEL: Record<string, string> = {
   MISSING_PUNCH:    "Missing Punch",

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { csvCell } from "@/lib/csv-cell";
 import { format } from "date-fns";
 import {
   getTeamLeaveRequests,
@@ -21,10 +22,6 @@ import {
  */
 
 /** RFC 4180: quote anything holding a comma, quote or newline, and double inner quotes. */
-function csvCell(value: unknown): string {
-  const s = value == null ? "" : String(value);
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 function isoDay(d: Date | string): string {
   return (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);

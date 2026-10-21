@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { csvCell } from "@/lib/csv-cell";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { EXPORT_ROW_CAP, loadPunchExport } from "@/lib/punch-history/punch-history-data";
@@ -16,10 +17,6 @@ import { EXPORT_ROW_CAP, loadPunchExport } from "@/lib/punch-history/punch-histo
  */
 
 /** RFC 4180: quote anything holding a comma, quote or newline, and double inner quotes. */
-function csvCell(value: unknown): string {
-  const s = value == null ? "" : String(value);
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
