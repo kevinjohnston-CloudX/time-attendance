@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cronAuthorized } from "@/lib/cron-auth";
+import { withCreatorSites } from "@/lib/reports/creator-sites";
 import { db } from "@/lib/db";
 import { getDataSource } from "@/lib/reports/data-sources";
 import { reportConfigSchema, type DataSourceId } from "@/lib/validators/report.schema";
@@ -68,7 +69,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
       const config = reportConfigSchema.parse(schedule.report.config);
       const source = getDataSource(schedule.report.dataSource as DataSourceId);
-      const result = await source.execute(config, schedule.report.tenantId, { timezone: schedule.timezone, now });
+      // Held to the sites its creator may see, as when it is opened.
+      const result = await source.execute(await withCreatorSites(config, schedule.report.ownerId), schedule.report.tenantId, { timezone: schedule.timezone, now });
 
       const format = schedule.format.toLowerCase();
       let fileBuffer: Buffer;

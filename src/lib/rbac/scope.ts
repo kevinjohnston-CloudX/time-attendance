@@ -5,6 +5,7 @@ import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import { TIMECARD_EDITORS_COMPANY, type Permission } from "./permissions";
 import { employeeRank } from "./identity";
 import { assertActiveForChange } from "@/lib/inactive-timecards";
+import { siteLimit } from "./site-limit";
 
 /**
  * Whose records an action may touch, for actions that take an id.
@@ -38,16 +39,7 @@ export async function reachesCompany(ctx: Ctx, companyWide: Wide): Promise<boole
   return false;
 }
 
-/**
- * The sites a Payroll or HR Admin is held to, set on their employee record
- * (Site access); null when they reach every site, which no rows means. Other
- * roles are never held to sites here.
- */
-export async function siteLimit(ctx: { employeeId: string; role: string }): Promise<string[] | null> {
-  if ((ctx.role !== "PAYROLL_ADMIN" && ctx.role !== "HR_ADMIN") || !ctx.employeeId) return null;
-  const rows = await db.hrSiteAccess.findMany({ where: { employeeId: ctx.employeeId }, select: { siteId: true } });
-  return rows.length > 0 ? rows.map((r) => r.siteId) : null;
-}
+export { siteLimit };
 
 /**
  * An employee record the caller may open or change on the Employees screens:

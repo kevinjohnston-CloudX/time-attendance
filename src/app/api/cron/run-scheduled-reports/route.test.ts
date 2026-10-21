@@ -5,6 +5,9 @@ const { db, execute, sendReportEmail, isEmailConfigured } = vi.hoisted(() => ({
   db: {
     reportSchedule: { findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
     reportRun: { create: vi.fn(), update: vi.fn(), count: vi.fn() },
+    // The report's creator, for the sites it may show: "ga-admin" is held to Georgia.
+    employee: { findUnique: vi.fn(async ({ where }: { where: { userId: string } }) => (where.userId === "ga-admin" ? { id: "e-ga", role: "PAYROLL_ADMIN" } : null)) },
+    hrSiteAccess: { findMany: vi.fn(async ({ where }: { where: { employeeId: string } }) => (where.employeeId === "e-ga" ? [{ siteId: "ga" }] : [])) },
   },
   execute: vi.fn(),
   sendReportEmail: vi.fn(),
@@ -157,5 +160,17 @@ describe("run-scheduled-reports", () => {
     expect(q.where).toMatchObject({ isActive: true });
     expect(q.orderBy).toEqual({ nextRunAt: "asc" });
     expect(q.take).toBe(10);
+  });
+
+  it("emails a Georgia-limited creator's report for Georgia only, whatever its own filters", async () => {
+    db.reportSchedule.findMany.mockResolvedValue([due({ report: { ...due().report, ownerId: "ga-admin" } })]);
+    await call();
+    expect(execute.mock.calls[0][0].filters).toEqual([{ field: "siteId", operator: "in", value: ["ga"] }]);
+  });
+
+  it("emails an unrestricted creator's report as they set it", async () => {
+    db.reportSchedule.findMany.mockResolvedValue([due({ report: { ...due().report, ownerId: "hr-admin" } })]);
+    await call();
+    expect(execute.mock.calls[0][0].filters ?? []).toEqual([]);
   });
 });
