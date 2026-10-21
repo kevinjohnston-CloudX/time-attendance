@@ -66,6 +66,27 @@ export async function assertRecordInReach(ctx: { employeeId: string; tenantId: s
 }
 
 /**
+ * A leave balance the caller may change: someone in their company and at
+ * their sites (as their record is), not ranked above them, and a leave type of
+ * this company. Their own only for HR and System Admins; a Payroll Admin could
+ * add hours to their own balance here, or to a senior's.
+ */
+export async function assertBalanceChangeAllowed(
+  actor: { employeeId: string; tenantId: string | null; role: string },
+  employeeId: string,
+  leaveTypeId: string,
+) {
+  await assertRecordInReach(actor, employeeId);
+  if (employeeId === actor.employeeId) {
+    if (!["HR_ADMIN", "SYSTEM_ADMIN", "SUPER_ADMIN"].includes(actor.role)) throw new Error("You can't change your own leave balance");
+  } else {
+    await assertNotSenior(actor, employeeId);
+  }
+  const leaveType = await db.leaveType.findFirst({ where: { id: leaveTypeId, tenantId: actor.tenantId ?? "__no_company__" }, select: { id: true } });
+  if (!leaveType) throw new Error("Leave type not found");
+}
+
+/**
  * Timecard access a site limit narrows: a Payroll Admin held to some sites
  * sees and changes the timecards of people at those sites only, and an id
  * from anywhere else answers "not found", as the list never offers it. The

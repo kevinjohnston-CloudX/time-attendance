@@ -22,7 +22,7 @@ import { ROLE_RANK, isValidRole, givesLiveAttendanceRoles } from "@/lib/rbac/rol
 import { todayKey } from "@/lib/pay-rates";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
-import { assertNotSenior, assertRecordInReach } from "@/lib/rbac/scope";
+import { assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach } from "@/lib/rbac/scope";
 
 // Maps system custom role names to their legacy enum values
 /**
@@ -1536,7 +1536,9 @@ export const deleteRuleSet = withRBAC(
 /** All active leave types merged with this employee's balances for a given year. */
 export const getEmployeeLeaveBalances = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ tenantId }, input: { employeeId: string; year?: number }) => {
+  async (actor, input: { employeeId: string; year?: number }) => {
+    const { tenantId } = actor;
+    await assertRecordInReach(actor, input.employeeId);
     const year = input.year ?? new Date().getFullYear();
     const [leaveTypes, balances] = await Promise.all([
       db.leaveType.findMany({ where: { isActive: true, tenantId: tenantId ?? undefined }, orderBy: { name: "asc" } }),
@@ -1559,9 +1561,11 @@ export const getEmployeeLeaveBalances = withRBAC(
 /** Admin sets a leave balance directly; writes an immutable ADJUSTMENT ledger entry. */
 export const adjustLeaveBalance = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId, tenantId }, input: AdjustLeaveBalanceInput) => {
+  async (actor, input: AdjustLeaveBalanceInput) => {
+    const { employeeId: actorId, tenantId } = actor;
     const { employeeId, leaveTypeId, year, mode, enteredMinutes, newBalanceMinutes, note } =
       adjustLeaveBalanceSchema.parse(input);
+    await assertBalanceChangeAllowed(actor, employeeId, leaveTypeId);
 
     const existing = await db.leaveBalance.upsert({
       where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear: year } },
@@ -1617,8 +1621,10 @@ export const adjustLeaveBalance = withRBAC(
 /** Post a delta ADJUSTMENT entry to correct a gap between expected and actual accrual. */
 export const postAccrualCorrection = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId, tenantId }, input: unknown) => {
+  async (actor, input: unknown) => {
+    const { employeeId: actorId, tenantId } = actor;
     const { employeeId, leaveTypeId, year, deltaMinutes, note } = postAccrualCorrectionSchema.parse(input);
+    await assertBalanceChangeAllowed(actor, employeeId, leaveTypeId);
 
     if (deltaMinutes === 0) return { success: true as const };
 
@@ -1670,10 +1676,14 @@ export const postAccrualCorrection = withRBAC(
 export const resetLeaveBalanceToAccrual = withRBAC(
   "EMPLOYEE_MANAGE",
   async (
-    { employeeId: actorId, tenantId },
+    actor,
     input: { employeeId: string; leaveTypeId: string; year: number },
   ) => {
-    const { employeeId, leaveTypeId, year } = input;
+    const { employeeId: actorId, tenantId } = actor;
+    const { employeeId, leaveTypeId, year } = z
+      .object({ employeeId: z.string(), leaveTypeId: z.string(), year: z.number().int() })
+      .parse(input);
+    await assertBalanceChangeAllowed(actor, employeeId, leaveTypeId);
 
     const yearStart = new Date(`${year}-01-01T00:00:00Z`);
     const yearEnd   = new Date(`${year + 1}-01-01T00:00:00Z`);
@@ -2175,7 +2185,8 @@ export const bulkCreateEmployees = withRBAC(
 
 export const postManualAccrualEntry = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId, tenantId }, input: unknown) => {
+  async (actor, input: unknown) => {
+    const { employeeId: actorId, tenantId } = actor;
     const { employeeId, leaveTypeId, year, effectiveDate, accrualMinutes, adjustEarnMinutes, adjustMinutes, note } =
       z.object({
         employeeId: z.string(),
@@ -2187,6 +2198,7 @@ export const postManualAccrualEntry = withRBAC(
         adjustMinutes: z.number().int(),
         note: z.string().min(1),
       }).parse(input);
+    await assertBalanceChangeAllowed(actor, employeeId, leaveTypeId);
 
     if (accrualMinutes === 0 && adjustEarnMinutes === 0 && adjustMinutes === 0) {
       return { success: false as const, error: "Enter a non-zero value for Accrual Hours, Adjust Earn Hours, or Adjust Hours." };
@@ -2374,10 +2386,11 @@ export type PastYearRow = {
 
 export const getAccrualYearSummary = withRBAC(
   "EMPLOYEE_MANAGE",
-  async (_ctx, input: unknown) => {
+  async (actor, input: unknown) => {
     const { employeeId, year } = z
       .object({ employeeId: z.string(), year: z.number().int() })
       .parse(input);
+    await assertRecordInReach(actor, employeeId);
 
     const yearStart = new Date(`${year}-01-01T00:00:00Z`);
     const yearEnd   = new Date(`${year + 1}-01-01T00:00:00Z`);
