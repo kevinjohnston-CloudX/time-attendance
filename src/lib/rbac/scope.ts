@@ -50,6 +50,22 @@ export async function siteLimit(ctx: { employeeId: string; role: string }): Prom
 }
 
 /**
+ * An employee record the caller may open or change on the Employees screens:
+ * in their company and, for a Payroll or HR Admin held to some sites, at one
+ * of those sites, as the Employees list offers them. Anyone else's answers
+ * "not found", as an unknown id does. The record page opened anyone's by id
+ * (date of birth, address, pay) while the list hid them.
+ */
+export async function assertRecordInReach(ctx: { employeeId: string; tenantId: string | null; role: string }, employeeId: string): Promise<void> {
+  const sites = await siteLimit(ctx);
+  const found = await db.employee.findFirst({
+    where: { id: employeeId, tenantId: ctx.tenantId ?? "__no_company__", ...(sites ? { siteId: { in: sites } } : {}) },
+    select: { id: true },
+  });
+  if (!found) throw new NotFoundError("Employee not found");
+}
+
+/**
  * Timecard access a site limit narrows: a Payroll Admin held to some sites
  * sees and changes the timecards of people at those sites only, and an id
  * from anywhere else answers "not found", as the list never offers it. The

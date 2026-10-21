@@ -70,3 +70,24 @@ describe("a Payroll Admin held to some sites", () => {
     expect(await employeeScope({ ...ctx, role: "SYSTEM_ADMIN" }, TIMECARD_EDITORS_COMPANY)).toEqual({ tenantId: "t" });
   });
 });
+
+describe("an employee record on the Employees screens", () => {
+  it("opens for a Payroll Admin at their own sites, and is not found elsewhere", async () => {
+    const { db } = (await import("@/lib/db")) as unknown as { db: Record<string, unknown> };
+    const seen: unknown[] = [];
+    db.employee = { findFirst: async (q: unknown) => { seen.push(q); return (q as { where: { id: string } }).where.id === "here" ? { id: "here" } : null; } };
+    const { assertRecordInReach } = await import("./scope");
+    await expect(assertRecordInReach(ctx, "here")).resolves.toBeUndefined();
+    expect(seen[0]).toEqual({ where: { id: "here", tenantId: "t", siteId: { in: ["rutherford"] } }, select: { id: true } });
+    await expect(assertRecordInReach(ctx, "elsewhere")).rejects.toThrow("Employee not found");
+  });
+
+  it("is held to the company only for an admin with no site limit", async () => {
+    const { db } = (await import("@/lib/db")) as unknown as { db: Record<string, unknown> };
+    const seen: unknown[] = [];
+    db.employee = { findFirst: async (q: unknown) => { seen.push(q); return { id: "x" }; } };
+    const { assertRecordInReach } = await import("./scope");
+    await assertRecordInReach({ ...ctx, employeeId: "other" }, "x");
+    expect(seen[0]).toEqual({ where: { id: "x", tenantId: "t" }, select: { id: true } });
+  });
+});

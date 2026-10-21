@@ -22,6 +22,7 @@ import { ROLE_RANK, isValidRole, givesLiveAttendanceRoles } from "@/lib/rbac/rol
 import { todayKey } from "@/lib/pay-rates";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
+import { assertNotSenior, assertRecordInReach } from "@/lib/rbac/scope";
 
 // Maps system custom role names to their legacy enum values
 /**
@@ -376,7 +377,8 @@ export const getEmployees = withRBAC(
 
 export const getEmployeeById = withRBAC(
   "EMPLOYEE_MANAGE",
-  async (_actor, input: { employeeId: string }) => {
+  async (actor, input: { employeeId: string }) => {
+    await assertRecordInReach(actor, input.employeeId);
     const emp = await db.employee.findUniqueOrThrow({
       where: { id: input.employeeId },
       include: {
@@ -518,7 +520,8 @@ export const createEmployee = withRBAC(
 
 export const updateEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId, tenantId }, input: UpdateEmployeeInput) => {
+  async (actor, input: UpdateEmployeeInput) => {
+    const { employeeId: actorId, tenantId } = actor;
     const {
       employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, payTypeId, isActive, onLeave, wmsId, barcode, adpWorkerId,
       adjustedHireDate, jobTitle, jobTitleId, agencyId, terminationReason, terminatedAt: terminatedAtInput, timeZone, payType, payRate, chargeRate, holidayRate, overtimeRate,
@@ -528,6 +531,7 @@ export const updateEmployee = withRBAC(
     } = updateEmployeeSchema.parse(input);
 
     if (!tenantId) throw new Error("Tenant context required");
+    await assertRecordInReach(actor, employeeId);
     const current = await db.employee.findFirst({
       where: { id: employeeId, tenantId },
       include: { user: true, customRole: { select: { name: true } } },
@@ -931,8 +935,10 @@ export const updateEmployee = withRBAC(
 
 export const getHrSiteAccess = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ tenantId }, { employeeId }: { employeeId: string }) => {
+  async (actor, { employeeId }: { employeeId: string }) => {
+    const { tenantId } = actor;
     if (!tenantId) throw new Error("NOT_FOUND");
+    await assertRecordInReach(actor, employeeId);
     // Held to the company: the id comes from the browser.
     const rows = await db.hrSiteAccess.findMany({
       where: { employeeId, employee: { tenantId } },
@@ -944,16 +950,20 @@ export const getHrSiteAccess = withRBAC(
 
 export const updateHrSiteAccess = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ tenantId, employeeId: actorEmpId, role: actorRole }, input: { employeeId: string; siteIds: string[] }) => {
+  async (actor, input: { employeeId: string; siteIds: string[] }) => {
+    const { tenantId, role: actorRole } = actor;
     const { employeeId, siteIds } = input;
-    if (actorRole !== "SYSTEM_ADMIN" && actorRole !== "HR_ADMIN" && actorRole !== "PAYROLL_ADMIN") {
-      throw new Error("Only HR_ADMIN, PAYROLL_ADMIN, or SYSTEM_ADMIN can manage site access");
+    // HR and System Admins only, their own record included. A Payroll Admin
+    // could clear their own site limit here, or anyone's, which undid it.
+    if (actorRole !== "SYSTEM_ADMIN" && actorRole !== "HR_ADMIN" && actorRole !== "SUPER_ADMIN") {
+      throw new Error("Only HR Admin or System Admin users can edit site access.");
     }
     if (!tenantId) throw new Error("NOT_FOUND");
     // The person whose access is replaced has to be in this company too, not
     // only the sites: the id comes from the browser.
-    const own = await db.employee.findFirst({ where: { id: employeeId, tenantId }, select: { id: true } });
-    if (!own) throw new Error("NOT_FOUND");
+    await assertRecordInReach(actor, employeeId);
+    // Nor someone ranked above them: an HR Admin does not set a System Admin's.
+    await assertNotSenior(actor, employeeId);
 
     // Verify siteIds belong to this tenant
     const validSites = await db.site.findMany({
@@ -984,8 +994,10 @@ export const updateHrSiteAccess = withRBAC(
  */
 export const getAdditionalSupervisors = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ tenantId }, { employeeId }: { employeeId: string }) => {
+  async (actor, { employeeId }: { employeeId: string }) => {
+    const { tenantId } = actor;
     if (!tenantId) throw new Error("NOT_FOUND");
+    await assertRecordInReach(actor, employeeId);
     // Held to the company: the id comes from the browser.
     const rows = await db.employeeSupervisor.findMany({
       where: { employeeId, employee: { tenantId } },
@@ -999,9 +1011,11 @@ export const getAdditionalSupervisors = withRBAC(
 
 export const updateAdditionalSupervisors = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ tenantId, employeeId: actorId }, input: { employeeId: string; supervisorIds: string[] }) => {
+  async (actor, input: { employeeId: string; supervisorIds: string[] }) => {
+    const { tenantId, employeeId: actorId } = actor;
     const { employeeId } = input;
     if (!tenantId) throw new Error("NOT_FOUND");
+    await assertRecordInReach(actor, employeeId);
     const own = await db.employee.findFirst({ where: { id: employeeId, tenantId }, select: { id: true, supervisorId: true } });
     if (!own) throw new Error("NOT_FOUND");
 
@@ -1049,7 +1063,9 @@ export const updateAdditionalSupervisors = withRBAC(
 
 export const getEmployeeAuditLogs = withRBAC(
   "EMPLOYEE_MANAGE",
-  async (_actor, { employeeId }: { employeeId: string }) => {
+  async (actor, { employeeId }: { employeeId: string }) => {
+    // In the company, and at the admin's sites: this filtered on the id alone.
+    await assertRecordInReach(actor, employeeId);
     const logs = await db.auditLog.findMany({
       where: { entityType: "EMPLOYEE", entityId: employeeId, action: { in: ["EMPLOYEE_CREATED", "EMPLOYEE_UPDATED"] } },
       orderBy: { createdAt: "desc" },
@@ -1083,7 +1099,8 @@ export const getEmployeeAuditLogs = withRBAC(
 
 export const getEmployeeLeaveLog = withRBAC(
   "EMPLOYEE_MANAGE",
-  async (_actor, { employeeId }: { employeeId: string }) => {
+  async (actor, { employeeId }: { employeeId: string }) => {
+    await assertRecordInReach(actor, employeeId);
     const [employee, ledgerEntries] = await Promise.all([
       db.employee.findUnique({
         where: { id: employeeId },
