@@ -60,3 +60,58 @@ describe("typing a first time for someone with no timecard", () => {
     vi.useRealTimers();
   });
 });
+
+// Ma Concepcion Plancarte Garcia's period: 8 hours worked on 10/12, and 8
+// hours of Unpaid Time Off on 10/19 and on 10/20. The summary left the unpaid
+// hours out, so it did not show every coded hour in the period.
+describe("the summary of a period with unpaid leave", () => {
+  it("lists the unpaid hours under their own code, in Total hours but never in pay", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-21T16:00:00Z"));
+    const regular = { id: "pc0", code: 0, label: "Regular hours" };
+    const uto = { id: "pc13", code: 13, label: "Unpaid time off" };
+    const seg = (id: string, day: string, type: string, minutes: number, isPaid: boolean, payBucket: string, payCode: typeof regular) => ({
+      id, segmentType: type, startTime: `${day}T11:00:00.000Z`, endTime: `${day}T19:00:00.000Z`, durationMinutes: minutes,
+      segmentDate: `${day}T00:00:00.000Z`, payBucket, payBucketOverride: null, isPaid, payCode,
+    });
+    render(
+      <TimecardViewer
+        payPeriods={[{ id: "p1", startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: "OPEN" }]}
+        selectedPeriodId="p1"
+        employees={[{ employeeId: "e1", name: "Test Person", employeeCode: "T1", wmsId: "605247", department: "Vas", siteId: "s1", siteName: "Site", isActive: true, payType: "HOURLY" }]}
+        selectedEmployeeId="e1"
+        timecard={{
+          timesheetId: "t1", status: "OPEN", otAuthorized: false, exceptionCount: 0, exceptions: [],
+          payPeriod: { startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: "OPEN" },
+          employee: {
+            user: { name: "Test Person" }, department: { name: "Vas" }, employeeCode: "T1", wmsId: "605247", payRate: 15, payType: "HOURLY", shift: null,
+            ruleSet: { overtimeRequiresAuth: false, allowTimesheetOtAuth: false, defaultPayCodeId: null },
+          },
+          punches: [],
+          segments: [
+            seg("w1", "2026-10-12", "WORK", 480, true, "REG", regular),
+            seg("l1", "2026-10-19", "LEAVE", 480, false, "UNPAID", uto),
+            seg("l2", "2026-10-20", "LEAVE", 480, false, "UNPAID", uto),
+          ],
+          overtimeBuckets: [], mealWaivers: [], mealPremiumWaivers: [], notes: [], dayReasons: [],
+        }}
+        payFrequency="BIWEEKLY"
+        payCodes={[regular, uto]}
+        reasonCodes={[]}
+        sites={[]}
+        selectedSiteId={null}
+        departments={[]}
+        selectedDepartmentId={null}
+        userRole="SYSTEM_ADMIN"
+        siteTimezone="America/New_York"
+      />,
+    );
+    const rows = screen.getAllByRole("row");
+    const cells = (label: RegExp) => [...rows.find((r) => r.querySelector("td") && label.test(r.querySelector("td")!.textContent ?? ""))!.querySelectorAll("td")].map((c) => c.textContent);
+    expect(screen.getAllByText("Unpaid").length).toBeGreaterThan(0);
+    // Label, Regular, Overtime, Double, Unpaid, Total hours, Rate, Regular pay, Overtime pay, Double pay, Total pay
+    expect(cells(/^Unpaid time off/)).toEqual(["Unpaid time off (13)", "—", "—", "—", "16.00", "16.00", "$15.00", "—", "—", "—", "$0.00"]);
+    expect(cells(/^Totals$/)).toEqual(["Totals", "8.00", "—", "—", "16.00", "24.00", "$15.00", "$120.00", "—", "—", "$120.00"]);
+    vi.useRealTimers();
+  });
+});
