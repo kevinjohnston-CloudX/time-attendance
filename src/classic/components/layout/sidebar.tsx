@@ -44,11 +44,11 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Punch Clock", href: "/time/punch", icon: Clock },
+  { label: "Punch Clock", href: "/time/punch", icon: Clock, permission: "PUNCH_OWN" },
   { label: "My Timesheets", href: "/time/timesheet", icon: ClipboardList },
   { label: "Punch History", href: "/time/history", icon: CalendarDays },
-  { label: "My Leave", href: "/leave", icon: CalendarDays },
-  { label: "Documents", href: "/documents", icon: FileText },
+  { label: "My Leave", href: "/leave", icon: CalendarDays, permission: "LEAVE_REQUEST_OWN" },
+  { label: "Documents", href: "/documents", icon: FileText, permission: ["DOCUMENT_VIEW_OWN", "DOCUMENT_VIEW_ANY"] },
   { label: "Accruals", href: "/accruals", icon: Hourglass, permission: ["ACCRUAL_VIEW_OWN", "ACCRUAL_VIEW_TEAM", "ACCRUAL_VIEW_ANY"] },
   { label: "Payroll", href: "/payroll", icon: DollarSign, permission: "PAY_PERIOD_MANAGE" },
   { label: "Run Payroll", href: "/payroll/run", icon: FileOutput, permission: "PAYROLL_RUN" },
