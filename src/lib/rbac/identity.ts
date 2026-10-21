@@ -29,6 +29,8 @@ export interface LiveIdentity {
   /** An employee record marked active, as the rest of the app reads it. True for a super admin. */
   isActive: boolean;
   mustChangePassword: boolean;
+  /** When the password was last set or reset; a sign in from before it is ended. */
+  passwordChangedAt: Date | null;
 }
 
 const TTL_MS = 10_000;
@@ -44,6 +46,7 @@ export async function liveIdentity(userId: string): Promise<LiveIdentity | null>
       id: true,
       isSuperAdmin: true,
       mustChangePassword: true,
+      passwordChangedAt: true,
       employee: {
         select: {
           id: true,
@@ -70,6 +73,7 @@ export async function liveIdentity(userId: string): Promise<LiveIdentity | null>
       canViewAs: false,
       isActive: true,
       mustChangePassword: false,
+      passwordChangedAt: user.passwordChangedAt,
     };
   } else if (user) {
     const e = user.employee;
@@ -88,6 +92,7 @@ export async function liveIdentity(userId: string): Promise<LiveIdentity | null>
       canViewAs: custom?.canViewAs ?? false,
       isActive: !!e && e.isActive,
       mustChangePassword: user.mustChangePassword,
+      passwordChangedAt: user.passwordChangedAt,
     };
   }
   cache.set(userId, { at: Date.now(), value });

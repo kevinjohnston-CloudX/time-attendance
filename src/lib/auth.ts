@@ -178,6 +178,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token.sub) {
         const live = await liveIdentity(token.sub);
         if (!live) return null;
+        // A sign in from before the password was last set or reset ends
+        // here, so an administrator's reset (a temporary password, a setup
+        // link) reaches a browser left signed in, not only the next sign in.
+        // A second's slack for the token's whole-second issue time.
+        if (live.passwordChangedAt && typeof token.iat === "number" && token.iat * 1000 < live.passwordChangedAt.getTime() - 1000) return null;
         token.role = live.role;
         token.employeeId = live.employeeId ?? undefined;
         token.tenantId = live.tenantId;
