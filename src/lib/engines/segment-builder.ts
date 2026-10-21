@@ -762,6 +762,17 @@ async function ensureSalarySegments(
 }
 
 /**
+ * How long a meal was, in whole minutes of the clock: the seconds of the two
+ * punches are dropped first, as NovaTime keeps punches and as the timecard
+ * shows them. Measured to the second, 11:33:21 to 12:03:04 was 29.72 minutes,
+ * short of a 30-minute meal, and drew a premium for a lunch the timecard shows
+ * as 11:33 to 12:03. Exported for its test.
+ */
+export function mealMinutes(startMs: number, endMs: number): number {
+  return Math.floor(endMs / 60_000) - Math.floor(startMs / 60_000);
+}
+
+/**
  * Compute meal break premium segments for days where a qualifying meal was not taken.
  *
  * For each active MealPremiumRow, the rule triggers when:
@@ -909,7 +920,7 @@ export function computeMealPremiums(
           const me = dayPunches.find(p => p.punchType === "MEAL_END" && p.punchTime > ms.punchTime);
           if (!me) continue;
           const gapMins = ruleSet.mealPremiumUseActualForMinimum
-            ? (me.punchTime.getTime() - ms.punchTime.getTime()) / 60_000
+            ? mealMinutes(ms.punchTime.getTime(), me.punchTime.getTime())
             : (mealSegs.find(s => Math.abs(s.startTime.getTime() - ms.roundedTime.getTime()) < 2 * 60_000)?.durationMinutes ?? 0);
           if (gapMins >= row.minimumMealMinutes) { hasQualifyingMeal = true; break; }
         }
@@ -935,7 +946,7 @@ export function computeMealPremiums(
               .sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime())[0];
             if (!nextCi) continue;
             const gapEndMs = ruleSet.mealPremiumUseActualForWindow ? nextCi.punchTime.getTime() : nextCi.roundedTime.getTime();
-            const gapMins = (gapEndMs - gapStartMs) / 60_000;
+            const gapMins = mealMinutes(gapStartMs, gapEndMs);
             if (gapMins >= row.minimumMealMinutes) { hasQualifyingMeal = true; break; }
           }
         }
