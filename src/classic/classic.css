@@ -27,6 +27,17 @@
 .dark {
   --background: #0a0a0a;
   --foreground: #ededed;
+  /* The browser's own parts (a dropdown's list, a date picker, scrollbars)
+     drawn dark too. Without it a dropdown opened as a white list with the
+     page's light text on it, hard to read. The New design has had this since
+     its dark theme (styles/wms/dark.css); this sheet never had it. */
+  color-scheme: dark;
+}
+
+/* A dropdown's options take the page's own colours in both themes. */
+option {
+  background-color: var(--background);
+  color: var(--foreground);
 }
 
 body {
