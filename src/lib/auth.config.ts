@@ -103,6 +103,13 @@ export const authConfig = {
       if (nextUrl.pathname === CLASSIC_PREFIX || nextUrl.pathname.startsWith(`${CLASSIC_PREFIX}/`)) {
         return Response.redirect(new URL(`${safeNext(nextUrl.pathname)}${nextUrl.search}`, nextUrl));
       }
+      // The mobile app's API is off until the app is being built: its checks
+      // are weaker than the web's (the built-in role only, no forced password
+      // change, refresh tokens stored readable) and nobody uses it. Set
+      // MOBILE_API_ENABLED=true to open it again, once those are fixed.
+      if ((nextUrl.pathname === "/api/mobile" || nextUrl.pathname.startsWith("/api/mobile/")) && process.env.MOBILE_API_ENABLED !== "true") {
+        return Response.json({ success: false, error: "The mobile app is not available." }, { status: 404 });
+      }
       const isLoggedIn = !!auth?.user;
       const isSuperAdmin = auth?.user?.role === "SUPER_ADMIN";
       const isOnSuperAdmin = nextUrl.pathname.startsWith("/super-admin");
