@@ -81,7 +81,7 @@ export default async function DashboardPage({
   // Three rounds, each waiting only on what it needs: what is open now and who
   // this is, then everything that hangs off the open period, then the counts
   // for the period the overview is showing.
-  const [payPeriod, allLeaveBalances, myLeaveRequests, me, hasPayrollAccess, canApproveTeam] = await Promise.all([
+  const [payPeriod, allLeaveBalances, myLeaveRequests, me, hasPayrollAccess, canApproveTeam, canPunch, canRequestLeave] = await Promise.all([
     tenantId
       ? db.payPeriod.findFirst({
           where: {
@@ -121,6 +121,10 @@ export default async function DashboardPage({
     // ── What this person is allowed to see ──────────────────────────────────
     session?.user ? userHasPermission(session.user, "PAY_PERIOD_MANAGE") : false,
     session?.user ? userHasPermission(session.user, "TIMESHEET_APPROVE_TEAM") : false,
+    // A view-only role (an agency viewer) has no punch of its own, so no
+    // Punch Clock or Clock In: the punch itself would only be refused.
+    session?.user ? userHasPermission(session.user, "PUNCH_OWN") : false,
+    session?.user ? userHasPermission(session.user, "LEAVE_REQUEST_OWN") : false,
   ]);
 
   // The building's own clock, for the dates and times this page prints. The
@@ -345,7 +349,7 @@ export default async function DashboardPage({
         phoneTitle={greeting(siteNow.getHours(), session?.user?.name)}
         phoneSubtitle={format(siteNow, "EEEE, MMMM d")}
         actions={
-          employeeId ? (
+          employeeId && canPunch ? (
             <LinkButton href="/time/punch" hierarchy="secondary" className="ta-dash-punch">
               Punch Clock
             </LinkButton>
@@ -390,7 +394,7 @@ export default async function DashboardPage({
                 {today.since}
               </p>
 
-              <TodayPunchActions state={today.state as PunchStateValue} />
+              {canPunch && <TodayPunchActions state={today.state as PunchStateValue} />}
 
               {today.punches.length > 0 && (
                 <div
@@ -687,16 +691,20 @@ export default async function DashboardPage({
                 </Badge>
               </div>
             ))}
-            <div className="ta-card-links flex gap-2 pt-2.5">
-              <LinkButton href="/leave" hierarchy="secondary" size="sm">
-                My Leave
-              </LinkButton>
-              {canApproveTeam && (
-                <LinkButton href="/supervisor/leave" hierarchy="tertiary" size="sm">
-                  Team Calendar
-                </LinkButton>
-              )}
-            </div>
+            {(canRequestLeave || canApproveTeam) && (
+              <div className="ta-card-links flex gap-2 pt-2.5">
+                {canRequestLeave && (
+                  <LinkButton href="/leave" hierarchy="secondary" size="sm">
+                    My Leave
+                  </LinkButton>
+                )}
+                {canApproveTeam && (
+                  <LinkButton href="/supervisor/leave" hierarchy="tertiary" size="sm">
+                    Team Calendar
+                  </LinkButton>
+                )}
+              </div>
+            )}
           </div>
         </Card>
       )}

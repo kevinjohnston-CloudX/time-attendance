@@ -94,11 +94,11 @@ export const SECTIONS: NavSection[] = [
     prefixes: ["/dashboard", "/time", "/leave", "/documents", "/accruals"],
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { label: "Punch Clock", href: "/time/punch", icon: Clock },
+      { label: "Punch Clock", href: "/time/punch", icon: Clock, permission: "PUNCH_OWN" },
       { label: "My Timesheet", href: "/time/timesheet", icon: ClipboardList },
       { label: "Punch History", href: "/time/history", icon: History },
-      { label: "My Leave", href: "/leave", icon: CalendarDays },
-      { label: "My Documents", href: "/documents", icon: FileText },
+      { label: "My Leave", href: "/leave", icon: CalendarDays, permission: "LEAVE_REQUEST_OWN" },
+      { label: "My Documents", href: "/documents", icon: FileText, permission: ["DOCUMENT_VIEW_OWN", "DOCUMENT_VIEW_ANY"] },
       {
         label: "Accruals",
         href: "/accruals",
