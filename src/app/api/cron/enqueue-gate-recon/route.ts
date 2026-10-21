@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cronAuthorized } from "@/lib/cron-auth";
 import { db } from "@/lib/db";
 import { GATE_SCAN_RECON_KIND, enqueueBridgeJob } from "@/lib/services/bridge.service";
 
@@ -24,8 +25,7 @@ export const dynamic = "force-dynamic";
 const RECON_DAYS = 1;
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!cronAuthorized(req)) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 

@@ -1,5 +1,5 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { cronAuthorized } from "@/lib/cron-auth";
 import { db } from "@/lib/db";
 import { getDataSource } from "@/lib/reports/data-sources";
 import { reportConfigSchema, type DataSourceId } from "@/lib/validators/report.schema";
@@ -27,16 +27,8 @@ const BATCH = 10;
 const RETRY_AFTER_MS = 30 * 60_000;
 const MAX_FAILURES_PER_DAY = 3;
 
-function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const given = Buffer.from(req.headers.get("authorization") ?? "");
-  const wanted = Buffer.from(`Bearer ${secret}`);
-  return given.length === wanted.length && timingSafeEqual(given, wanted);
-}
-
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  if (!authorized(req)) return new NextResponse("Unauthorized", { status: 401 });
+  if (!cronAuthorized(req)) return new NextResponse("Unauthorized", { status: 401 });
 
   const now = new Date();
   const due = await db.reportSchedule.findMany({
