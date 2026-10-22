@@ -14,6 +14,7 @@ import { ScheduleForm } from "./schedule-form";
 import { describeSchedule } from "@/lib/reports/schedule-words";
 import { dataSourceIcon, dataSourceLabel, isScanReport } from "./data-source-label";
 import { runReport, deleteReport, duplicateReport, toggleSchedule } from "@/actions/report.actions";
+import { describePrint, type PrintLayout } from "@/lib/reports/grouping";
 import type { ReportResult } from "@/lib/reports/data-sources";
 import type { DateRange, FilterDef } from "@/lib/validators/report.schema";
 import phone from "./reports-phone.module.css";
@@ -102,7 +103,13 @@ const OPERATOR_WORDS: Record<string, string> = {
 
 const FORMAT_NAME: Record<string, string> = { xlsx: "Excel", csv: "CSV", pdf: "PDF" };
 
-function savedConfig(config: unknown): { dateRange?: DateRange; filters?: FilterDef[]; columns?: string[]; groupBy?: string[] } {
+function savedConfig(config: unknown): {
+  dateRange?: DateRange;
+  filters?: FilterDef[];
+  columns?: string[];
+  groupBy?: string[];
+  layout?: PrintLayout;
+} {
   return config && typeof config === "object" ? (config as Record<string, never>) : {};
 }
 
@@ -188,6 +195,7 @@ export function ReportViewer({
     return `${label} ${op} ${valueName(f.field, f.value)}${tail}`;
   });
   const groupWords = (cfg.groupBy ?? []).map((id) => source?.columns.find((c) => c.id === id)?.label ?? id);
+  const printWords = describePrint(cfg.layout, (id) => source?.columns.find((c) => c.id === id)?.label ?? id);
 
   const details: { label: string; value: ReactNode }[] = [
     { label: "Type", value: sourceLabel },
@@ -197,6 +205,7 @@ export function ReportViewer({
     },
     { label: "Who is included", value: filterWords.length ? filterWords.join(". ") : "Everyone in the dates" },
     ...(groupWords.length ? [{ label: "Grouped by", value: groupWords.join(", then ") }] : []),
+    ...(printWords ? [{ label: "Printed", value: printWords }] : []),
     { label: "Saved dates", value: describeRange(cfg.dateRange, payPeriods, filterOptions?.weekStart) },
     { label: "Owner", value: isOwner ? "You" : report.owner.name ?? "Unknown" },
     {

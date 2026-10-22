@@ -12,12 +12,14 @@ import { ColumnPicker } from "./column-picker";
 import { FilterBuilder } from "./filter-builder";
 import { DateRangePicker, defaultPayPeriodRange, describeRange } from "./date-range-picker";
 import { GroupSortConfig } from "./group-sort-config";
+import { PrintLayoutConfig } from "./print-layout-config";
 import { ResultsTable } from "../report-results/results-table";
 import { dataSourceDescription, dataSourceLabel, isScanReport } from "../data-source-label";
 import { runReport, createReport, updateReport } from "@/actions/report.actions";
 import type { DataSourceId, FilterDef, SortDef, DateRange, ReportConfig } from "@/lib/validators/report.schema";
 import type { ReportResult } from "@/lib/reports/data-sources";
 import type { StandardReport } from "@/lib/reports/standard-reports";
+import type { PrintLayout } from "@/lib/reports/grouping";
 import phone from "../reports-phone.module.css";
 
 /**
@@ -119,6 +121,7 @@ export function ReportBuilder({
         groupBy: standard.groupBy ?? [],
         sortBy: standard.sortBy ?? [],
         dateRange: standardRange(standard.dates, filterOptions.payPeriods) ?? undefined,
+        layout: standard.layout,
       }
     : editing?.config;
   // The standard report's name stays at the top until the type is changed.
@@ -136,7 +139,10 @@ export function ReportBuilder({
   const [dateRange, setDateRange] = useState<DateRange>(() => saved?.dateRange ?? defaultRangeFor(initialSource));
   const [groupBy, setGroupBy] = useState<string[]>(() => saved?.groupBy ?? []);
   const [sortBy, setSortBy] = useState<SortDef[]>(() => saved?.sortBy ?? []);
-  const [showMore, setShowMore] = useState(() => Boolean(saved?.groupBy?.length || saved?.sortBy?.length));
+  const [layout, setLayout] = useState<PrintLayout>(() => saved?.layout ?? {});
+  const [showMore, setShowMore] = useState(() =>
+    Boolean(saved?.groupBy?.length || saved?.sortBy?.length || saved?.layout?.pageBreak || saved?.layout?.signature)
+  );
 
   const [previewResult, setPreviewResult] = useState<ReportResult | null>(null);
   const [previewedWith, setPreviewedWith] = useState<string | null>(null);
@@ -177,6 +183,8 @@ export function ReportBuilder({
     setFilters([]);
     setGroupBy([]);
     setSortBy([]);
+    // The groups are gone, so there is nothing to start a page on; the signature stays.
+    setLayout((l) => ({ signature: l.signature }));
     // Pay periods are for the pay period reports and calendar periods for the
     // scan reports, so moving between the two puts the dates somewhere that
     // the new report can read them.
@@ -189,7 +197,10 @@ export function ReportBuilder({
   // A filter with no value picked yet is left out rather than sent: it
   // matched nothing and crashed the preview with a database error.
   const readyFilters = filters.filter(isFilterReady);
-  const config = { columns: selectedColumns, filters: readyFilters, dateRange, groupBy, sortBy };
+  // A new page only for a field still grouped by; nothing at all when nothing is set.
+  const pageBreak = layout.pageBreak && groupBy.includes(layout.pageBreak) ? layout.pageBreak : undefined;
+  const printLayout = pageBreak || layout.signature ? { pageBreak, signature: layout.signature } : undefined;
+  const config = { columns: selectedColumns, filters: readyFilters, dateRange, groupBy, sortBy, layout: printLayout };
   const configKey = JSON.stringify([dataSource, config]);
   const stale = previewResult !== null && previewedWith !== configKey;
   const canPreview = selectedColumns.length > 0 && isRangeReady(dateRange);
@@ -298,7 +309,8 @@ export function ReportBuilder({
     });
   }
 
-  const moreCount = groupBy.length + sortBy.length;
+  const moreCount = groupBy.length + sortBy.length + (pageBreak ? 1 : 0) + (layout.signature ? 1 : 0);
+  const labelOf = (id: string) => currentSource?.columns.find((c) => c.id === id)?.label ?? id;
   const summary = [
     dataSourceLabel(dataSource),
     describeRange(dateRange, filterOptions.payPeriods, filterOptions.weekStart),
@@ -418,16 +430,18 @@ export function ReportBuilder({
                   onClick={() => setShowMore((v) => !v)}
                 >
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="wms-overline">Group and sort</span>
+                    <span className="wms-overline">Group, sort and print</span>
                     <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
                       {moreCount > 0
                         ? [
-                            groupBy.length && `Grouped by ${groupBy.length}`,
+                            groupBy.length && `Grouped by ${groupBy.map(labelOf).join(", then ")}`,
                             sortBy.length && `sorted by ${sortBy.length}`,
+                            pageBreak && `a page for each ${labelOf(pageBreak).toLowerCase()}`,
+                            layout.signature && "signature lines",
                           ]
                             .filter(Boolean)
                             .join(", ")
-                        : "Optional. Group rows by department or site, or change their order."}
+                        : "Optional. Group rows, change their order, or print a page for each group with signature lines."}
                     </span>
                   </span>
                   <ChevronDown
@@ -446,6 +460,13 @@ export function ReportBuilder({
                       sortBy={sortBy}
                       onSortByChange={setSortBy}
                     />
+                    <div className="mt-5 pt-5" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+                      <PrintLayoutConfig
+                        groupFields={groupBy.map((id) => ({ id, label: labelOf(id) }))}
+                        layout={layout}
+                        onChange={setLayout}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -566,6 +587,7 @@ export function ReportBuilder({
 /** Where a standard report opens its dates: a moving pay period, or yesterday. */
 function standardRange(dates: StandardReport["dates"], payPeriods: FilterOptions["payPeriods"]): DateRange | null {
   if (dates === "yesterday") return { type: "yesterday" };
+  if (dates === "currentWeek") return { type: "calendar", unit: "week", which: "this" };
   const range = defaultPayPeriodRange(payPeriods);
   if (!range || range.type !== "payPeriod") return null;
   return { ...range, moving: dates === "previousPayPeriod" ? "previous" : "current" };

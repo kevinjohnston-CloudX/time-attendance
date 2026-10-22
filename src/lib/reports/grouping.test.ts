@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupRows, type ReportLine } from "./grouping";
+import { describePrint, groupRows, type ReportLine } from "./grouping";
 
 const columns = [
   { id: "employeeName", label: "Employee", type: "string" },
@@ -20,7 +20,15 @@ const rows = [
 
 const kinds = (lines: ReportLine[]) =>
   lines.map((l) =>
-    l.kind === "row" ? `row:${l.index}` : l.kind === "group" ? `group${l.level}:${l.label}` : l.kind === "subtotal" ? `sub${l.level}:${l.label}` : "total"
+    l.kind === "row"
+      ? `row:${l.index}`
+      : l.kind === "group"
+        ? `${l.newPage ? "page:" : ""}group${l.level}:${l.label}`
+        : l.kind === "subtotal"
+          ? `sub${l.level}:${l.label}`
+          : l.kind === "signature"
+            ? "sign"
+            : "total"
   );
 
 describe("groupRows", () => {
@@ -82,5 +90,65 @@ describe("groupRows", () => {
 
   it("leaves a report with nothing to add up and no groups untouched", () => {
     expect(groupRows(rows, columns.slice(0, 3), [], { complete: true })).toBeNull();
+  });
+
+  it("keeps two people with one name apart, by their badge", () => {
+    const r = [
+      { employeeName: "Juan Rosas", employeeCode: "104139", regMinutes: 60 },
+      { employeeName: "Juan Rosas", employeeCode: "106382", regMinutes: 120 },
+    ];
+    const out = groupRows(r, columns, ["employeeName"], { complete: true })!;
+    expect(out.groups.lines.filter((l) => l.kind === "group").map((l) => (l as { label: string }).label)).toEqual([
+      "Juan Rosas (104139)",
+      "Juan Rosas (106382)",
+    ]);
+  });
+
+  it("orders weeks by their first day, not by their name", () => {
+    const r = [
+      { employeeName: "A", week: "Week of Oct 4, 2026", weekStart: "2026-10-04", regMinutes: 1 },
+      { employeeName: "A", week: "Week of Sep 27, 2026", weekStart: "2026-09-27", regMinutes: 1 },
+    ];
+    const out = groupRows(r, [...columns, { id: "week", label: "Week", type: "string" }], ["week"], {
+      complete: true,
+      groupOrder: { week: "weekStart" },
+    })!;
+    expect(out.rows.map((x) => x.week)).toEqual(["Week of Sep 27, 2026", "Week of Oct 4, 2026"]);
+  });
+
+  it("starts a page for each group and signs each one under its total", () => {
+    const signature = { text: "I certify.", employee: true, supervisor: true };
+    const out = groupRows(rows.slice(0, 4), columns, ["site", "department"], {
+      complete: true,
+      layout: { pageBreak: "department", signature },
+    })!;
+    expect(kinds(out.groups.lines)).toEqual([
+      "group0:0299 Rutherford", "group1:Returns", "row:0", "sub1:Returns", "sign", "sub0:0299 Rutherford",
+      "page:group0:5903 Nj", "group1:Packing", "row:1", "row:2", "sub1:Packing", "sign",
+      "page:group1:Vas", "row:3", "sub1:Vas", "sign", "sub0:5903 Nj",
+      "total",
+    ]);
+  });
+
+  it("signs once at the end with no new pages, even with nothing to group or total", () => {
+    const signature = { text: "", employee: false, supervisor: true };
+    const out = groupRows(rows.slice(0, 2), columns.slice(0, 3), [], { complete: true, layout: { signature } })!;
+    expect(kinds(out.groups.lines)).toEqual(["row:0", "row:1", "sign"]);
+  });
+
+  it("ignores a new page for a field the rows are not grouped by", () => {
+    const out = groupRows(rows.slice(0, 4), columns, ["site"], { complete: true, layout: { pageBreak: "department" } })!;
+    expect(out.groups.lines.some((l) => l.kind === "group" && l.newPage)).toBe(false);
+  });
+
+  it("says how it prints in a sentence", () => {
+    const label = (id: string) => ({ employeeName: "Employee" })[id] ?? id;
+    expect(describePrint({ pageBreak: "employeeName", signature: { text: "x", employee: true, supervisor: true } }, label)).toBe(
+      "A page for each employee, with signature lines for the employee and supervisor to sign."
+    );
+    expect(describePrint({ signature: { text: "x", employee: false, supervisor: true } }, label)).toBe(
+      "Signature lines for the supervisor to sign."
+    );
+    expect(describePrint(undefined, label)).toBeNull();
   });
 });

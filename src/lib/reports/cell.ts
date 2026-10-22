@@ -32,3 +32,22 @@ export function cellText(value: unknown, col: Column): string {
   if (typeof v === "number" && isHoursColumn(col)) return v.toFixed(2);
   return String(v);
 }
+
+/**
+ * The value as a person reads it, on screen and in the PDF: a day as
+ * "Mon, Sep 28, 2026" for a day worked, or "Jul 10, 2023" for any other date.
+ * The CSV and Excel files keep 2026-09-28, which sorts and imports as a date.
+ */
+export function displayText(value: unknown, col: Column): string {
+  const text = cellText(value, col);
+  if (col.type !== "date" || !/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const at = new Date(`${text}T12:00:00Z`);
+  if (Number.isNaN(at.getTime())) return text;
+  return at.toLocaleDateString("en-US", {
+    ...(col.id === "date" ? { weekday: "short" as const } : {}),
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}

@@ -1,4 +1,5 @@
 import type { DataSourceId, FilterDef, SortDef } from "@/lib/validators/report.schema";
+import type { PrintLayout } from "./grouping";
 
 /**
  * The ready-made reports: NovaTime's report templates that CloudTime's report
@@ -18,6 +19,7 @@ import type { DataSourceId, FilterDef, SortDef } from "@/lib/validators/report.s
 export type StandardDates =
   | "currentPayPeriod"
   | "previousPayPeriod"
+  | "currentWeek"
   | "yesterday";
 
 export interface StandardReport {
@@ -38,6 +40,8 @@ export interface StandardReport {
   filters?: FilterDef[];
   groupBy?: string[];
   sortBy?: SortDef[];
+  /** A page per group and signature lines, for the reports people sign. */
+  layout?: PrintLayout;
   dates: StandardDates;
 }
 
@@ -47,7 +51,7 @@ export type StandardFolder = (typeof STANDARD_FOLDERS)[number];
 /** The Detail report's columns, the same in both folders. */
 const DETAIL_COLUMNS = [
   "employeeName", "employeeCode", "date", "segmentType", "startTime", "endTime",
-  "payCodeLabel", "reasonCode", "regularMinutes", "overtimeMinutes", "doubletimeMinutes", "durationMinutes",
+  "payCodeLabel", "reasonCode", "regularMinutes", "overtimeMinutes", "doubletimeMinutes", "paidMinutes",
 ];
 const EXCEPTION_COLUMNS = ["employeeName", "employeeCode", "exceptionType", "description", "occurredAt", "resolved"];
 const BY_SITE_AND_DEPARTMENT = ["site", "department"];
@@ -55,6 +59,11 @@ const BY_NAME_THEN_DAY: SortDef[] = [
   { field: "employeeName", direction: "asc" },
   { field: "date", direction: "asc" },
 ];
+/** NovaTime's statement on its timesheets. */
+const CERTIFY = "I certify the above information to be correct.";
+/** A timesheet: each day with its clock times and hours. */
+const TIMESHEET_COLUMNS = ["date", "clockIn", "clockOut", "regMinutes", "otMinutes", "dtMinutes", "totalMinutes", "payCodes"];
+const BY_DAY: SortDef[] = [{ field: "date", direction: "asc" }];
 
 export const STANDARD_REPORTS: StandardReport[] = [
   // ── Time and attendance ────────────────────────────────────────────────
@@ -101,6 +110,58 @@ export const STANDARD_REPORTS: StandardReport[] = [
     source: "HOURS_SUMMARY",
     columns: ["employeeName", "employeeCode", "regMinutes", "otMinutes", "dtMinutes", "totalMinutes", "status"],
     groupBy: ["department", "status"],
+    dates: "currentPayPeriod",
+  },
+  {
+    id: "weekly-timesheet",
+    folder: "Time and attendance",
+    name: "Weekly timesheet",
+    novaTimeName: "Weekly TimeSheet",
+    description: "A page for each employee with this week's clock in and clock out times and hours by day, and a line for them to sign.",
+    source: "DAILY_HOURS",
+    columns: TIMESHEET_COLUMNS,
+    groupBy: ["employeeName"],
+    sortBy: BY_DAY,
+    layout: { pageBreak: "employeeName", signature: { text: CERTIFY, employee: true, supervisor: false } },
+    dates: "currentWeek",
+  },
+  {
+    id: "biweekly-timesheet",
+    folder: "Time and attendance",
+    name: "Bi-weekly timesheet",
+    novaTimeName: "Bi-Weekly TimeSheet",
+    description: "A page for each employee with the pay period's days, a total for each week and the two weeks, and lines for the employee and supervisor to sign.",
+    source: "DAILY_HOURS",
+    columns: TIMESHEET_COLUMNS,
+    groupBy: ["employeeName", "week"],
+    sortBy: BY_DAY,
+    layout: { pageBreak: "employeeName", signature: { text: CERTIFY, employee: true, supervisor: true } },
+    dates: "currentPayPeriod",
+  },
+  {
+    id: "timecard",
+    folder: "Time and attendance",
+    name: "Employee timecard",
+    novaTimeName: "Employee Timecard",
+    description: "A page for each employee with every punch, meal and time off line in the pay period, its pay code and hours, and lines to sign.",
+    source: "ATTENDANCE_DETAIL",
+    columns: ["date", "segmentType", "startTime", "endTime", "payCodeLabel", "reasonCode", "department", "regularMinutes", "overtimeMinutes", "paidMinutes"],
+    groupBy: ["employeeName"],
+    sortBy: BY_DAY,
+    layout: { pageBreak: "employeeName", signature: { text: CERTIFY, employee: true, supervisor: true } },
+    dates: "currentPayPeriod",
+  },
+  {
+    id: "detail-signoff",
+    folder: "Time and attendance",
+    name: "Detail signoff report",
+    novaTimeName: "Detail Signoff Report.TA",
+    description: "The Detail report with a page for each department, its totals, and a line for the supervisor to sign it off.",
+    source: "ATTENDANCE_DETAIL",
+    columns: DETAIL_COLUMNS,
+    groupBy: BY_SITE_AND_DEPARTMENT,
+    sortBy: BY_NAME_THEN_DAY,
+    layout: { pageBreak: "department", signature: { text: CERTIFY, employee: false, supervisor: true } },
     dates: "currentPayPeriod",
   },
   {
@@ -222,6 +283,20 @@ export const STANDARD_REPORTS: StandardReport[] = [
     columns: DETAIL_COLUMNS,
     groupBy: BY_SITE_AND_DEPARTMENT,
     sortBy: BY_NAME_THEN_DAY,
+    dates: "previousPayPeriod",
+  },
+  {
+    id: "payroll-detail-signoff",
+    folder: "Payroll",
+    name: "Detail signoff report",
+    saveName: "Payroll detail signoff report",
+    novaTimeName: "Detail Signoff Report.PR",
+    description: "The last pay period's Detail report with a page for each department, its totals, and a line for the supervisor to sign it off.",
+    source: "ATTENDANCE_DETAIL",
+    columns: DETAIL_COLUMNS,
+    groupBy: BY_SITE_AND_DEPARTMENT,
+    sortBy: BY_NAME_THEN_DAY,
+    layout: { pageBreak: "department", signature: { text: CERTIFY, employee: false, supervisor: true } },
     dates: "previousPayPeriod",
   },
   {

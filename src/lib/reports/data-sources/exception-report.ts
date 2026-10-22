@@ -49,7 +49,7 @@ export const exceptionReportSource: DataSourceDefinition = {
         { value: "ABSENT", label: "Absent" },
       ] },
   ],
-  groupableFields: ["department", "exceptionType"],
+  groupableFields: ["employeeName", "department", "exceptionType"],
   fieldMap,
 
   async execute(config: ReportConfig, tenantId: string): Promise<ReportResult> {

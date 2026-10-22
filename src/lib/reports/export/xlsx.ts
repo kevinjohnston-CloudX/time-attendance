@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import type { ReportResult } from "../data-sources";
 import { cellValue, isHoursColumn } from "../cell";
+import { signers, type Signature } from "../grouping";
 
 export async function generateXlsx(
   result: ReportResult,
@@ -50,6 +51,33 @@ export async function generateXlsx(
     r.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
   };
 
+  // The statement across the sheet, then a line to sign and one to date
+  // for each signer, the way the PDF prints them.
+  const last = result.columns.length;
+  const addSignature = (signature: Signature) => {
+    sheet.addRow([]);
+    if (signature.text) {
+      const r = sheet.addRow([signature.text]);
+      sheet.mergeCells(r.number, 1, r.number, Math.max(1, last));
+      r.alignment = { wrapText: true, vertical: "top" };
+      r.height = 30;
+      sheet.addRow([]);
+    }
+    for (const who of signers(signature)) {
+      const r = sheet.addRow([]);
+      r.height = 28;
+      const line = { bottom: { style: "thin" as const } };
+      const sign = r.getCell(1);
+      sign.border = line;
+      const date = r.getCell(Math.min(last, 3));
+      if (date.col !== sign.col) date.border = line;
+      const caption = sheet.addRow([]);
+      caption.getCell(1).value = who;
+      if (date.col !== sign.col) caption.getCell(date.col).value = "Date";
+      caption.font = { size: 9, color: { argb: "FF52525B" } };
+    }
+  };
+
   const groups = result.groups;
   if (!groups) {
     for (const row of result.rows) addData(row);
@@ -57,10 +85,17 @@ export async function generateXlsx(
     for (const line of groups.lines) {
       if (line.kind === "row") addData(result.rows[line.index]);
       else if (line.kind === "group") {
+        // A printed page per group: the break goes under the last line of the one before.
+        if (line.newPage) sheet.lastRow?.addPageBreak();
         const r = sheet.addRow({ [result.columns[0].id]: `${line.fieldLabel}: ${line.label}` });
         r.font = { bold: true, size: 10 };
       } else if (line.kind === "subtotal") addTotal(`Total for ${line.label}`, line.values, "FFFAFAFA");
-      else addTotal("Grand total", line.values, "FFF4F4F5");
+      else if (line.kind === "total") {
+        // A page per group: the grand total on a page of its own, as in the PDF.
+        if (groups.lines.some((l) => l.kind === "group" && l.newPage)) sheet.lastRow?.addPageBreak();
+        addTotal("Grand total", line.values, "FFF4F4F5");
+      }
+      else addSignature(line.signature);
     }
   }
 
