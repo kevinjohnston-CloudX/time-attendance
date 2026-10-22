@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { getSiteTablets } from "@/lib/presence/reads";
 import type { BuildingTablets } from "@/lib/presence/tablets.service";
+import { codeOf } from "@/lib/action-errors";
 
 const REFRESH_MS = 60_000;
 
@@ -32,7 +33,7 @@ export function useSiteTablets(siteId: string | null, enabled: boolean) {
           data: r.success ? r.data : prev?.siteId === siteId ? prev.data : null,
           error: r.success
             ? null
-            : r.error === "FORBIDDEN"
+            : codeOf(r) === "FORBIDDEN"
               ? "Your role does not include the tablet list."
               : "The tablet list did not load. Check your connection and try again.",
           at: Date.now(),

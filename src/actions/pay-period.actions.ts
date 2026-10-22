@@ -64,12 +64,12 @@ export const getPayPeriodDetail = withRBAC(
 
     // Scoped to the caller's company in the query itself: an id from another
     // tenant finds nothing, the same as an id that does not exist.
-    if (!tenantId) throw new Error("Pay period not found");
+    if (!tenantId) throw new Error("This pay period isn't available. Reload the page and try again.");
     const inScope = await db.payPeriod.findFirst({
       where: { id: payPeriodId, tenantId },
       select: { id: true },
     });
-    if (!inScope) throw new Error("Pay period not found");
+    if (!inScope) throw new Error("This pay period isn't available. Reload the page and try again.");
 
     const [payPeriod, validation] = await Promise.all([
       db.payPeriod.findUniqueOrThrow({
@@ -109,9 +109,9 @@ export const getPayPeriodDetail = withRBAC(
  * appear in links and the audit log) would be locked or reopened from this one.
  */
 async function findPeriodInScope(payPeriodId: string, tenantId: string | null) {
-  if (!tenantId) throw new Error("Pay period not found");
+  if (!tenantId) throw new Error("This pay period isn't available. Reload the page and try again.");
   const payPeriod = await db.payPeriod.findFirst({ where: { id: payPeriodId, tenantId } });
-  if (!payPeriod) throw new Error("Pay period not found");
+  if (!payPeriod) throw new Error("This pay period isn't available. Reload the page and try again.");
   return payPeriod;
 }
 
@@ -207,7 +207,7 @@ export const updateTenantSettings = withRBAC(
     // Append T12:00:00 so the date string is parsed as local noon, not UTC midnight.
     // Parsing a bare "YYYY-MM-DD" as UTC midnight shifts it back one day for US timezones.
     const anchor = new Date(input.payPeriodAnchorDate + "T12:00:00");
-    if (isNaN(anchor.getTime())) throw new Error("Invalid anchor date");
+    if (isNaN(anchor.getTime())) throw new Error("The first period's start date isn't a valid date.");
     const before = await db.tenant.findUniqueOrThrow({
       where: { id: tenantId },
       select: { payFrequency: true, payPeriodAnchorDate: true },

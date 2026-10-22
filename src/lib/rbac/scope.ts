@@ -54,7 +54,7 @@ export async function assertRecordInReach(ctx: { employeeId: string; tenantId: s
     where: { id: employeeId, tenantId: ctx.tenantId ?? "__no_company__", ...(sites ? { siteId: { in: sites } } : {}) },
     select: { id: true },
   });
-  if (!found) throw new NotFoundError("Employee not found");
+  if (!found) throw new NotFoundError("This employee isn't available to you. They may be outside the sites you can see. Reload the page and try again.");
 }
 
 /**
@@ -146,7 +146,7 @@ export async function assertEmployeeInScope(ctx: Ctx, employeeId: string, compan
     where: { AND: [{ id: employeeId }, await employeeScope(ctx, companyWide)] },
     select: { id: true, isActive: true },
   });
-  if (!found) throw new NotFoundError("Employee not found");
+  if (!found) throw new NotFoundError("This employee isn't available to you. They may be outside the sites you can see. Reload the page and try again.");
   if (forChange && !allowInactive) assertActiveForChange(found.isActive);
   if (forChange) await assertNotSenior(ctx, employeeId, companyWide);
 }
@@ -157,7 +157,7 @@ export async function timesheetInScope(ctx: Ctx, timesheetId: string, companyWid
     where: { id: timesheetId, employee: await employeeScope(ctx, companyWide) },
     select: { id: true, employeeId: true, status: true, employee: { select: { isActive: true } } },
   });
-  if (!found) throw new NotFoundError("Timesheet not found");
+  if (!found) throw new NotFoundError("This timecard isn't available to you. It may have been removed, or be outside the sites you can see. Reload the page and try again.");
   const { employee, ...ts } = found;
   if (forChange && !allowInactive) assertActiveForChange(employee.isActive);
   if (forChange) await assertNotSenior(ctx, ts.employeeId, companyWide);
@@ -181,7 +181,7 @@ export async function punchInScope(ctx: Ctx, punchId: string, companyWide: Wide)
     where: { id: punchId, employee: await employeeScope(ctx, companyWide) },
     select: { id: true, employeeId: true, timesheetId: true, employee: { select: { isActive: true } } },
   });
-  if (!found) throw new NotFoundError("Punch not found");
+  if (!found) throw new NotFoundError("This punch isn't available to you. It may have been removed, or be outside the sites you can see. Reload the page and try again.");
   const { employee, ...punch } = found;
   assertActiveForChange(employee.isActive);
   await assertNotSenior(ctx, punch.employeeId, companyWide);
@@ -191,6 +191,6 @@ export async function punchInScope(ctx: Ctx, punchId: string, companyWide: Wide)
 /** Timesheets payroll has approved or locked are not edited by anyone. */
 export function assertEditable(status: string): void {
   if (status === "LOCKED" || status === "PAYROLL_APPROVED") {
-    throw new Error("Cannot modify a locked or approved timesheet.");
+    throw new Error("This timecard is locked or approved by payroll, so it can't be changed. Unlock it first, then make the correction.");
   }
 }

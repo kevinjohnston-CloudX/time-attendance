@@ -243,7 +243,7 @@ export const ensureTimesheet = withRBAC(
     }).parse(input);
     await assertEmployeeInScope(ctx, employeeId, ["TIMECARD_EDIT_ANY"]);
     const period = await db.payPeriod.findFirst({ where: { id: periodId, tenantId: ctx.tenantId ?? "" }, select: { id: true } });
-    if (!period) throw new Error("Pay period not found");
+    if (!period) throw new Error("This pay period isn't available. Reload the page and try again.");
 
     const ts = await db.timesheet.upsert({
       where: { employeeId_payPeriodId: { employeeId, payPeriodId: periodId } },

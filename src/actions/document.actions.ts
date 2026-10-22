@@ -5,7 +5,8 @@ import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { withRBAC } from "@/lib/rbac/guard";
+import { failure, publicError, withRBAC, type Failure } from "@/lib/rbac/guard";
+import { zodMessage } from "@/lib/zod-message";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { uploadToStorage, deleteFromStorage } from "@/lib/supabase-storage";
@@ -24,12 +25,12 @@ import {
 
 export async function uploadDocument(
   formData: FormData
-): Promise<{ success: true; data: { documentId: string } } | { success: false; error: string }> {
+): Promise<{ success: true; data: { documentId: string } } | Failure> {
   try {
     const session = await auth();
-    if (!session?.user) return { success: false, error: "UNAUTHENTICATED" };
+    if (!session?.user) return failure("UNAUTHENTICATED");
     if (!(await userHasPermission(session.user, "DOCUMENT_UPLOAD")))
-      return { success: false, error: "FORBIDDEN" };
+      return failure("FORBIDDEN");
 
     // Resolve tenantId (with SUPER_ADMIN cookie override)
     let tenantId = session.user.tenantId ?? null;
@@ -38,7 +39,7 @@ export async function uploadDocument(
       const override = cookieStore.get(SUPER_ADMIN_TENANT_COOKIE)?.value;
       if (override) tenantId = override;
     }
-    if (!tenantId) return { success: false, error: "No tenant context" };
+    if (!tenantId) return failure("NO_COMPANY");
 
     // Extract + validate metadata
     const rawEmployeeId = formData.get("employeeId");
@@ -46,14 +47,14 @@ export async function uploadDocument(
     const file = formData.get("file");
 
     if (!(file instanceof File) || file.size === 0)
-      return { success: false, error: "No file provided" };
+      return { success: false, error: "Choose a file to upload." };
 
     const meta = uploadDocumentMetaSchema.safeParse({
       employeeId: rawEmployeeId,
       title: rawTitle,
     });
     if (!meta.success)
-      return { success: false, error: meta.error.issues[0]?.message ?? "Invalid input" };
+      return { success: false, error: zodMessage(meta.error) };
 
     const { employeeId, title } = meta.data;
 
@@ -61,15 +62,14 @@ export async function uploadDocument(
     if (!isAllowedMime(file.type))
       return { success: false, error: "File type not allowed. Use PDF, JPG, PNG, DOC, or DOCX." };
     if (file.size > MAX_FILE_SIZE_BYTES)
-      return { success: false, error: "File exceeds 10 MB limit." };
+      return { success: false, error: "That file is over the 10 MB limit. Choose a smaller one." };
 
     // Tenant-scope guard: verify the employee belongs to this tenant
     const employee = await db.employee.findUnique({
       where: { id: employeeId },
       select: { tenantId: true },
     });
-    if (!employee) return { success: false, error: "Employee not found" };
-    if (employee.tenantId !== tenantId) return { success: false, error: "FORBIDDEN" };
+    if (!employee || employee.tenantId !== tenantId) return failure("NOT_FOUND");
 
     // Build storage path and upload
     const ext = mimeToExt(file.type);
@@ -109,8 +109,8 @@ export async function uploadDocument(
     revalidatePath("/documents");
     return { success: true, data: { documentId: doc.id } };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Upload failed";
-    return { success: false, error: message };
+    // A storage or database failure is logged with a reference, not shown.
+    return publicError(err);
   }
 }
 

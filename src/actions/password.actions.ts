@@ -11,6 +11,7 @@ import { currentIdentity } from "@/lib/rbac/current";
 import { getEffectiveRole } from "@/lib/rbac/check-permission";
 import { forgetIdentity } from "@/lib/rbac/identity";
 import { revokeAllUserTokens } from "@/lib/mobile-auth";
+import { zodMessage } from "@/lib/zod-message";
 
 const LOGIN_MANAGERS = ["SYSTEM_ADMIN", "HR_ADMIN", "PAYROLL_ADMIN", "SUPER_ADMIN"];
 
@@ -24,25 +25,25 @@ const LOGIN_MANAGERS = ["SYSTEM_ADMIN", "HR_ADMIN", "PAYROLL_ADMIN", "SUPER_ADMI
  */
 async function manageableLogin(employeeId: string) {
   const session = await auth();
-  if (!session?.user?.id) return { error: "Not authenticated" } as const;
+  if (!session?.user?.id) return { error: "Your session has ended. Sign in again, then try once more." } as const;
   // Rank and role as View as sets them, so viewing as a junior role cannot reset logins it could not.
   const caller = await currentIdentity();
   const viewedRole = await getEffectiveRole(session.user);
   if (!caller || !caller.isActive || !LOGIN_MANAGERS.includes(caller.role) || !LOGIN_MANAGERS.includes(viewedRole)) {
-    return { error: "Insufficient permissions" } as const;
+    return { error: "You don't have permission to manage sign-ins." } as const;
   }
   const target = await db.employee.findFirst({
     where: { id: employeeId, ...(caller.isSuperAdmin ? {} : { tenantId: caller.tenantId ?? "" }) },
     select: { id: true, tenantId: true, userId: true, user: { select: { id: true, name: true, email: true } } },
   });
-  if (!target) return { error: "Employee not found" } as const;
+  if (!target) return { error: "This employee isn't available to you. Reload the page and try again." } as const;
   if (!caller.isSuperAdmin) {
     if (target.id === caller.employeeId) {
-      return { error: "Use Change password to change your own password" } as const;
+      return { error: "To change your own password, use Change password in your profile." } as const;
     }
     const rank = await employeeRank(target.id, target.tenantId);
     if (rank === null || rank >= caller.rank) {
-      return { error: "Only someone more senior can reset this person's password" } as const;
+      return { error: "Only someone more senior than this person can reset their password." } as const;
     }
   }
   return { target } as const;
@@ -84,7 +85,7 @@ export async function sendPasswordInvite(employeeId: string): Promise<{ success:
   const employee = allowed.target;
 
   if (!employee?.user?.email) {
-    return { success: false, message: "Employee has no email address configured" };
+    return { success: false, message: "This employee has no email address, so no invite can be sent. Add one to their profile, or set a temporary password instead." };
   }
 
   const rawToken = generateToken();
@@ -138,7 +139,7 @@ export async function setTemporaryPassword(
 ): Promise<{ success: boolean; message: string }> {
   const parsed = tempPasswordSchema.safeParse({ employeeId, tempPassword });
   if (!parsed.success) {
-    return { success: false, message: parsed.error.issues[0]?.message ?? "Invalid input" };
+    return { success: false, message: zodMessage(parsed.error) };
   }
 
   const strengthError = validatePasswordStrength(tempPassword);
@@ -149,7 +150,7 @@ export async function setTemporaryPassword(
   const employee = allowed.target;
 
   if (!employee.userId) {
-    return { success: false, message: "Employee not found" };
+    return { success: false, message: "This employee isn't available to you. Reload the page and try again." };
   }
 
   const passwordHash = await bcrypt.hash(tempPassword, 12);
@@ -176,7 +177,7 @@ export async function setupPasswordFromToken(
 ): Promise<{ success: boolean; message: string }> {
   const parsed = setupSchema.safeParse({ token, password });
   if (!parsed.success) {
-    return { success: false, message: parsed.error.issues[0]?.message ?? "Invalid input" };
+    return { success: false, message: zodMessage(parsed.error) };
   }
 
   const tokenHash = sha256(token);
@@ -186,9 +187,9 @@ export async function setupPasswordFromToken(
     include: { user: { select: { id: true } } },
   });
 
-  if (!record) return { success: false, message: "Invalid or expired link" };
-  if (record.usedAt) return { success: false, message: "This link has already been used" };
-  if (record.expiresAt < new Date()) return { success: false, message: "This link has expired" };
+  if (!record) return { success: false, message: "This link isn't valid. Ask HR for a new one." };
+  if (record.usedAt) return { success: false, message: "This link was already used. If you didn't set the password, ask HR for a new link." };
+  if (record.expiresAt < new Date()) return { success: false, message: "This link has expired. Ask HR for a new one." };
 
   const strengthError = validatePasswordStrength(password);
   if (strengthError) return { success: false, message: strengthError };
@@ -225,7 +226,7 @@ export async function changePassword(
   confirmPassword: string
 ): Promise<{ success: boolean; message: string }> {
   const session = await auth();
-  if (!session?.user?.id) return { success: false, message: "Not authenticated" };
+  if (!session?.user?.id) return { success: false, message: "Your session has ended. Sign in again, then try once more." };
   // Only the forced change after a temporary password. Otherwise anyone at a
   // screen left signed in could set the password without knowing it, and keep
   // the account after the session ended.
@@ -236,7 +237,7 @@ export async function changePassword(
 
   const parsed = changeSchema.safeParse({ newPassword, confirmPassword });
   if (!parsed.success) {
-    return { success: false, message: parsed.error.issues[0]?.message ?? "Invalid input" };
+    return { success: false, message: zodMessage(parsed.error) };
   }
 
   const strengthError = validatePasswordStrength(newPassword);

@@ -233,8 +233,9 @@ export function ScheduleForm({
 
     startTransition(async () => {
       try {
-        if (existingSchedule) {
-          await updateSchedule({
+        // A refusal comes back as a result, not a throw: it used to close the form as if saved.
+        const res = existingSchedule
+          ? await updateSchedule({
             id: existingSchedule.id,
             data: {
               reportId,
@@ -243,20 +244,22 @@ export function ScheduleForm({
               format,
               recipients,
             },
-          });
-        } else {
-          await createSchedule({
+          })
+          : await createSchedule({
             reportId,
             cronExpr,
             timezone,
             format,
             recipients,
           });
+        if (!res.success) {
+          setError(res.error);
+          return;
         }
         onSaved();
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Failed to save schedule.",
+          err instanceof Error ? err.message : "The schedule could not be saved. Try again.",
         );
       }
     });
@@ -268,11 +271,15 @@ export function ScheduleForm({
 
     startTransition(async () => {
       try {
-        await deleteSchedule({ id: existingSchedule.id });
+        const res = await deleteSchedule({ id: existingSchedule.id });
+        if (!res.success) {
+          setError(res.error);
+          return;
+        }
         onSaved();
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Failed to delete schedule.",
+          err instanceof Error ? err.message : "The schedule could not be removed. Try again.",
         );
       }
     });

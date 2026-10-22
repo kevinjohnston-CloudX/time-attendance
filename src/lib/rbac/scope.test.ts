@@ -79,7 +79,7 @@ describe("an employee record on the Employees screens", () => {
     const { assertRecordInReach } = await import("./scope");
     await expect(assertRecordInReach(ctx, "here")).resolves.toBeUndefined();
     expect(seen[0]).toEqual({ where: { id: "here", tenantId: "t", siteId: { in: ["rutherford"] } }, select: { id: true } });
-    await expect(assertRecordInReach(ctx, "elsewhere")).rejects.toThrow("Employee not found");
+    await expect(assertRecordInReach(ctx, "elsewhere")).rejects.toThrow("This employee isn't available to you");
   });
 
   it("is held to the company only for an admin with no site limit", async () => {

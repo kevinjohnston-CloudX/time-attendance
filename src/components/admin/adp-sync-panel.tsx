@@ -7,6 +7,7 @@ import { testAdpConnection, syncAdpEmployees } from "@/actions/adp.actions";
 import { parseUtcDate } from "@/lib/utils/date";
 import { Badge, Banner, Button, Card, LinkButton, PageHeader, Select, Table, THead, TBody, TR, TH, TD } from "@/components/ui";
 import styles from "./adp-sync.module.css";
+import { codeOf } from "@/lib/action-errors";
 
 /**
  * ADP Sync: both directions of the ADP link on one page, in the Dashboard's
@@ -288,7 +289,7 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
     startTransition(async () => {
       const result = await syncAdpEmployees({ defaultSiteId: siteId, defaultDeptId: deptId, defaultRuleSetId: ruleSetId });
       if (!result.success) {
-        setError(SYNC_ERRORS[result.error] ?? result.error);
+        setError(SYNC_ERRORS[codeOf(result)] ?? result.error);
       } else {
         setSyncResult(result.data);
         setSyncedAt(new Date());

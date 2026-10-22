@@ -32,7 +32,10 @@ export function validatePayPeriodTransition(
   if (newStatus === undefined) {
     return {
       valid: false,
-      error: `Cannot ${event} a pay period in ${currentStatus} status`,
+      error:
+        event === "LOCK"
+          ? "This pay period is already locked. Reload the page to see where it stands."
+          : "This pay period is already open. Reload the page to see where it stands.",
     };
   }
   return { valid: true, newStatus };

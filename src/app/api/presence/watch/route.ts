@@ -5,6 +5,7 @@ import { userHasPermission } from "@/lib/rbac/check-permission";
 import { canViewSite } from "@/lib/presence/pulse.service";
 import { parseWatchEvent, recordWatchEvent, siteOfEvent } from "@/lib/presence/watch.service";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
+import { codeOf } from "@/lib/action-errors";
 
 /**
  * POST /api/presence/watch  { events: [...] }
@@ -61,8 +62,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (events.length === 0) return new NextResponse(null, { status: 204 });
   try {
     const res = await record({ events });
-    if (!res.success && res.error === "UNAUTHENTICATED") return new NextResponse(null, { status: 401 });
-    if (!res.success && res.error !== "FORBIDDEN" && res.error !== "NOT_FOUND") {
+    if (!res.success && codeOf(res) === "UNAUTHENTICATED") return new NextResponse(null, { status: 401 });
+    if (!res.success && codeOf(res) !== "FORBIDDEN" && codeOf(res) !== "NOT_FOUND") {
       gateLog("failed", { at: "screen report", error: res.error }, "warn");
     }
   } catch (err) {

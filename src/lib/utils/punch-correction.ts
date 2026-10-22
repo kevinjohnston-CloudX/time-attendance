@@ -52,7 +52,7 @@ export async function createCorrectionPunch(
   if (original.timesheetId) {
     const sheet = await tx.timesheet.findUniqueOrThrow({ where: { id: original.timesheetId }, select: { status: true } });
     if (sheet.status === "LOCKED" || sheet.status === "PAYROLL_APPROVED") {
-      throw new Error("Cannot modify a locked or approved timesheet.");
+      throw new Error("This timecard is locked or approved by payroll, so it can't be changed. Unlock it first, then make the correction.");
     }
   }
 

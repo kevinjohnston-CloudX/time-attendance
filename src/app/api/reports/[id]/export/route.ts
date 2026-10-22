@@ -4,6 +4,7 @@ import { generateCsv } from "@/lib/reports/export/csv";
 import { generatePdf } from "@/lib/reports/export/pdf";
 import { generateXlsx } from "@/lib/reports/export/xlsx";
 import { reportFileStem } from "@/lib/reports/file-name";
+import { codeOf } from "@/lib/action-errors";
 
 /**
  * A saved report as a file: CSV, Excel or PDF.
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const res = await getReportForExport({ id, dateRange });
   if (!res.success) {
-    if (res.error === "UNAUTHENTICATED") return new NextResponse("Sign in to download this report.", { status: 401 });
+    if (codeOf(res) === "UNAUTHENTICATED") return new NextResponse("Sign in to download this report.", { status: 401 });
     // Forbidden and not yours both read as not found, so a link does not
     // confirm that a report exists.
     return new NextResponse("Report not found", { status: 404 });

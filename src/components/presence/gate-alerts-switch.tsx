@@ -7,6 +7,7 @@ import { Badge, Banner, Switch } from "@/components/ui";
 import { setGateAlerts, type GateAlertsSetting } from "@/actions/gate-refusals.actions";
 import { BuildingWindow } from "./building-window";
 import styles from "./building-windows.module.css";
+import { codeOf } from "@/lib/action-errors";
 
 type Site = GateAlertsSetting["sites"][number];
 
@@ -47,9 +48,9 @@ export function GateAlertsWindow({
       if (r.success) onChanged(site, r.data.onSince);
       else
         setError(
-          r.error === "FORBIDDEN"
+          codeOf(r) === "FORBIDDEN"
             ? "Only System Admins can change gate alerts."
-            : r.error === "NOT_FOUND"
+            : codeOf(r) === "NOT_FOUND"
               ? "That building is no longer on your list. Reload the page and try again."
               : "The change was not saved. Try again.",
         );

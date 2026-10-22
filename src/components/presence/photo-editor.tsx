@@ -13,6 +13,7 @@ import { Button } from "@/components/ui";
 import { updateEmployeePhoto } from "@/actions/presence.actions";
 import { initialsOf } from "./presence-meta";
 import styles from "./on-site.module.css";
+import { codeOf } from "@/lib/action-errors";
 
 /**
  * Update photo: a new picture for a person, from a file or the camera,
@@ -312,7 +313,7 @@ export function PhotoEditor({
       const res = await updateEmployeePhoto(form);
       if (!res.success) {
         setError(
-          SAVE_ERRORS[res.error] ?? "The photo could not be saved. Try again.",
+          SAVE_ERRORS[codeOf(res)] ?? res.error,
         );
         setSaving(false);
         return;

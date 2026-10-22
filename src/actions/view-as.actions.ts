@@ -10,29 +10,29 @@ const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
 export async function setViewAsRole(targetCustomRoleId: string) {
   const session = await auth();
-  if (!session?.user) throw new Error("Not authenticated");
+  if (!session?.user) throw new Error("Your session has ended. Sign in again, then try once more.");
 
   const realRole = session.user.role ?? "EMPLOYEE";
   const isPrivileged = PRIVILEGED_ROLES.includes(realRole);
   const canViewAs = session.user.canViewAs ?? false;
 
-  if (!isPrivileged && !canViewAs) throw new Error("Not authorized");
+  if (!isPrivileged && !canViewAs) throw new Error("You don't have permission to view as another role.");
 
   // Validate target role exists, in the company they are working in
   const cookieStore = await cookies();
   const tenantId =
     realRole === "SUPER_ADMIN" ? cookieStore.get(SUPER_ADMIN_TENANT_COOKIE)?.value ?? null : session.user.tenantId ?? null;
-  if (!tenantId) throw new Error("Role not found");
+  if (!tenantId) throw new Error("This role isn't available to view as. Reload the page and pick another.");
   const targetRole = await db.customRole.findFirst({
     where: { id: targetCustomRoleId, tenantId },
     select: { rank: true, name: true, isActive: true },
   });
-  if (!targetRole?.isActive) throw new Error("Role not found");
+  if (!targetRole?.isActive) throw new Error("This role isn't available to view as. Reload the page and pick another.");
 
   // Non-privileged canViewAs users can only view-as roles with a lower rank
   if (!isPrivileged) {
     const userCustomRoleId = session.user.customRoleId ?? null;
-    if (!userCustomRoleId) throw new Error("No role assigned");
+    if (!userCustomRoleId) throw new Error("You need a role of your own before you can view as another one.");
     const userRole = await db.customRole.findUnique({
       where: { id: userCustomRoleId },
       select: { rank: true },

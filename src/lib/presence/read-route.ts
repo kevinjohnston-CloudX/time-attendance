@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { codeOf } from "@/lib/action-errors";
 
 /**
  * The GET routes Live Attendance reads through while it is open: the board,
@@ -42,7 +43,7 @@ export function presenceRead<I>(action: (input: I) => Promise<ActionResult>) {
     const res = await action(input as I);
     if (res.success) return NextResponse.json(res, { headers });
     const status =
-      res.error === "UNAUTHENTICATED" ? 401 : res.error === "FORBIDDEN" || res.error === "NOT_FOUND" ? 404 : 500;
+      codeOf(res) === "UNAUTHENTICATED" ? 401 : codeOf(res) === "FORBIDDEN" || codeOf(res) === "NOT_FOUND" ? 404 : 500;
     return NextResponse.json(res, { status, headers });
   };
 }

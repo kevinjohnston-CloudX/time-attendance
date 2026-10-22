@@ -7,6 +7,7 @@ import { addToTodaysSchedule } from "@/actions/presence.actions";
 import { parseTimeOfDay, toHHmm, type Meridiem } from "@/lib/utils/time-of-day";
 import { formatTimeOfDay } from "@/lib/utils/date";
 import styles from "./on-site.module.css";
+import { codeOf } from "@/lib/action-errors";
 
 /**
  * Add to schedule: a shift for today, for somebody who has none.
@@ -113,7 +114,7 @@ export function ScheduleDayDialog({
         mealMinutes: meal ? Number(meal) : null,
       });
       if (res.success) onSaved();
-      else setError(SAVE_ERRORS[res.error] ?? "The schedule could not be saved. Try again.");
+      else setError(SAVE_ERRORS[codeOf(res)] ?? res.error);
     } catch {
       setError("The schedule could not be saved. Try again.");
     } finally {

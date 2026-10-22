@@ -9,12 +9,14 @@ import { INACTIVE_PERMISSIONS } from "./identity";
 import { randomBytes } from "crypto";
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
+import { ACTION_ERROR_TEXT, codeOfMessage, textOfCode, type ActionErrorCode } from "@/lib/action-errors";
+import { zodMessage } from "@/lib/zod-message";
 
 /**
  * What the browser is told when an action fails.
  *
- * <p>Actions throw plain sentences on purpose ("Cannot modify a locked or
- * approved timesheet."), and those pass through. A database or internal
+ * <p>Actions throw plain sentences on purpose ("This timecard is locked or
+ * approved by payroll, so it can't be changed."), and those pass through. A database or internal
  * error never does: its text names tables, fields, queries and file paths,
  * which anyone can read in devtools. That is logged here with a short
  * reference, and the browser gets the reference only.
@@ -51,10 +53,28 @@ export function alreadyInUse(err: Prisma.PrismaClientKnownRequestError): string 
   return label ? `That ${label} is already in use.` : "One of these details is already in use on another record.";
 }
 
-function publicError(err: unknown): string {
-  if (err instanceof ZodError) return err.issues[0]?.message ?? "Some of the details are not valid";
-  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") return "Not found";
-  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") return alreadyInUse(err);
+export type Failure = { success: false; error: string; code?: ActionErrorCode };
+
+/** A failure as a sentence, with its code when it stands for one (see action-errors). */
+export function failure(code: ActionErrorCode, text: string = textOfCode(code)): Failure {
+  return { success: false, error: text, code };
+}
+
+/** A thrown error as the browser may see it; for actions that check permissions themselves. */
+export function publicError(err: unknown): Failure {
+  if (err instanceof ZodError) return { success: false, error: zodMessage(err) };
+  // The record is gone: changed or removed by someone else since the page loaded.
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") return failure("NOT_FOUND");
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") return { success: false, error: alreadyInUse(err) };
+  // A code thrown as a message ("FORBIDDEN", "Tenant context required") is said in words.
+  const code = err instanceof Error ? codeOfMessage(err.message) : null;
+  if (code) return failure(code);
+  // An out-of-scope record keeps its own sentence ("Employee not found"), and its code.
+  if (err instanceof Error && err.name === "NotFoundError") return { success: false, error: err.message, code: "NOT_FOUND" };
+  return { success: false, error: internalOrMessage(err) };
+}
+
+function internalOrMessage(err: unknown): string {
   const internal =
     err instanceof Prisma.PrismaClientKnownRequestError ||
     err instanceof Prisma.PrismaClientUnknownRequestError ||
@@ -63,7 +83,8 @@ function publicError(err: unknown): string {
     err instanceof Prisma.PrismaClientRustPanicError ||
     !(err instanceof Error) ||
     /[Pp]risma|invocation|\n|\bat \/|\bSELECT\b|\bINSERT INTO\b|\bUPDATE "|\bDELETE FROM\b|violates|ECONNREFUSED|ETIMEDOUT/.test(err.message) ||
-    err.message.length > 200;
+    // A sentence or two of our own; anything longer is a dump. Two missing ADP code notes run past 200.
+    err.message.length > 400;
   if (!internal) return (err as Error).message;
   const ref = randomBytes(4).toString("hex").toUpperCase();
   console.error(`[action error ${ref}]`, err);
@@ -72,7 +93,7 @@ function publicError(err: unknown): string {
 
 type ActionResult<T> =
   | { success: true; data: T }
-  | { success: false; error: string };
+  | Failure;
 
 /**
  * Wraps a Server Action with RBAC enforcement.
@@ -90,20 +111,20 @@ export function withRBAC<TInput, TOutput>(
     const session = await auth();
 
     if (!session?.user) {
-      return { success: false, error: "UNAUTHENTICATED" };
+      return failure("UNAUTHENTICATED");
     }
 
     // Somebody who must replace a temporary password can do nothing else
     // until they have. The page layout sends them to the form; this is the
     // same rule for a direct call.
-    if (session.user.mustChangePassword) return { success: false, error: "FORBIDDEN" };
+    if (session.user.mustChangePassword) return failure("FORBIDDEN", ACTION_ERROR_TEXT.MUST_CHANGE_PASSWORD);
 
     // An inactive employee keeps only their own documents, balances and
     // last timesheet, whatever their role was. The menu already shows only
     // those; this is what makes it true for a direct call.
     const perms = Array.isArray(permission) ? permission : [permission];
     if (session.user.isActive === false && !perms.some((p) => (INACTIVE_PERMISSIONS as readonly string[]).includes(p))) {
-      return { success: false, error: "FORBIDDEN" };
+      return failure("FORBIDDEN", ACTION_ERROR_TEXT.INACTIVE);
     }
 
     const realRole = session.user.role ?? "EMPLOYEE";
@@ -120,7 +141,7 @@ export function withRBAC<TInput, TOutput>(
         : customRoleId
           ? await Promise.all(perms.map((p) => hasPermissionByLegacy(customRoleId, p))).then((r) => r.some(Boolean))
           : perms.some((p) => hasPermission(effectiveRole, p));
-      if (!allowed) return { success: false, error: "FORBIDDEN" };
+      if (!allowed) return failure("FORBIDDEN");
     }
 
     try {
@@ -144,7 +165,7 @@ export function withRBAC<TInput, TOutput>(
       );
       return { success: true, data };
     } catch (err) {
-      return { success: false, error: publicError(err) };
+      return publicError(err);
     }
   };
 }

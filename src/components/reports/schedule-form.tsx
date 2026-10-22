@@ -21,6 +21,7 @@ import {
 import { nextRun } from "@/lib/reports/schedule-time";
 import { MONTH_NAMES, timezoneAbbr } from "@/lib/reports/schedule-words";
 import phone from "./reports-phone.module.css";
+import { codeOf } from "@/lib/action-errors";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -289,7 +290,7 @@ export function ScheduleForm({
             recipients,
           });
         if (!res.success) {
-          setError(friendlyError(res.error, "The schedule could not be saved. Try again."));
+          setError(friendlyError(res));
           return;
         }
         onSaved();
@@ -313,7 +314,7 @@ export function ScheduleForm({
       try {
         const res = await deleteSchedule({ id: existingSchedule.id });
         if (!res.success) {
-          setError(friendlyError(res.error, "The schedule could not be deleted. Try again."));
+          setError(friendlyError(res));
           setConfirmingDelete(false);
           return;
         }
@@ -759,11 +760,14 @@ function Field({
   );
 }
 
-/** A server refusal in words, rather than FORBIDDEN or a database message. */
-function friendlyError(code: string, fallback: string): string {
+/**
+ * A server refusal in words. The server already says it in a sentence (a
+ * database error arrives as a reference only); a few are said for reports.
+ */
+function friendlyError(res: { error: string; code?: string }): string {
+  const code = codeOf(res);
   if (code === "FORBIDDEN") return "You do not have permission to schedule reports.";
-  if (code === "UNAUTHENTICATED") return "Your session ended. Sign in again, then try once more.";
-  if (/No .* found|Record to update not found/i.test(code)) return "This report is no longer available to you.";
-  if (/cron/i.test(code)) return "That custom schedule could not be read. Check the five values.";
-  return fallback;
+  if (code === "NOT_FOUND" || /No .* found|Record to update not found/i.test(res.error)) return "This report is no longer available to you.";
+  if (/cron/i.test(res.error)) return "That custom schedule could not be read. Check the five values.";
+  return res.error;
 }

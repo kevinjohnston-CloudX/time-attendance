@@ -206,7 +206,7 @@ export const deletePunch = withRBAC(
 
     const ts = await db.timesheet.findUniqueOrThrow({ where: { id: original.timesheetId! } });
     if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
-      throw new Error("Cannot modify a locked or approved timesheet.");
+      throw new Error("This timecard is locked or approved by payroll, so it can't be changed. Unlock it first, then make the correction.");
     }
 
     // Create a tombstone record to satisfy the FK on correctedById, but mark it

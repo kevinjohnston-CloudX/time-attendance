@@ -368,10 +368,10 @@ export async function POST(req: NextRequest) {
   }
 
   if (activeTimesheetStatus === "LOCKED") {
-    await saveRejectedPunch({ employeeId: employee.id, timesheetId: activeTimesheetId, punchType: "CLOCK_IN", source: "KIOSK", stateBefore, rejectionReason: "Timesheet is locked for this pay period" });
-    await settle("PUNCH_REJECTED", { rejectionReason: "Timesheet is locked for this pay period" });
+    await saveRejectedPunch({ employeeId: employee.id, timesheetId: activeTimesheetId, punchType: "CLOCK_IN", source: "KIOSK", stateBefore, rejectionReason: "Timecard locked for this pay period" });
+    await settle("PUNCH_REJECTED", { rejectionReason: "Timecard locked for this pay period" });
     return NextResponse.json(
-      { success: false, error: "Timesheet is locked for this pay period" },
+      { success: false, error: "This pay period's timecard is locked, so the punch wasn't recorded. Contact payroll." },
       { status: 409 }
     );
   }
