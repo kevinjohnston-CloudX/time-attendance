@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cronAuthorized } from "@/lib/cron-auth";
 import { runDailyAccruals } from "@/lib/engines/accrual-engine";
 
 export async function GET(req: NextRequest) {
-  if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!cronAuthorized(req)) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest) {
  * Useful for manual catch-up runs if the cron was missed.
  */
 export async function POST(req: NextRequest) {
-  if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!cronAuthorized(req)) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 

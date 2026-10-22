@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { PageScrollReveal } from "@/components/layout/page-scroll-reveal";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Sidebar } from "@/classic/components/layout/sidebar";
@@ -12,7 +12,8 @@ import { validViewAsId } from "@/lib/rbac/check-permission";
 import { getPermissions } from "@/lib/rbac/permissions";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { getLegacyPermissions, isLiveAttendanceOnly } from "@/lib/rbac/permission-resolver";
-import { LIVE_ATTENDANCE_HREF } from "@/lib/constants";
+import { LIVE_ATTENDANCE_HREF, REQUEST_PATH_HEADER } from "@/lib/constants";
+import { INACTIVE_PATHS } from "@/lib/rbac/identity";
 import { classicDesignUntil, parseSwitchSpot, switchHref, SWITCH_SPOT_COOKIE } from "@/lib/design-switch";
 
 const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
@@ -40,6 +41,13 @@ export default async function PortalLayout({
       select: { isActive: true },
     });
     isEmployeeActive = emp?.isActive ?? true;
+  }
+  // An inactive employee keeps three pages. The browser guard below sent them
+  // back from any other, but only after the server had built that page with
+  // its data; the server decides here, as in the New design.
+  if (!isEmployeeActive) {
+    const path = (await headers()).get(REQUEST_PATH_HEADER) ?? "";
+    if (!INACTIVE_PATHS.some((p) => path === p || path.startsWith(`${p}/`))) redirect("/time/timesheet");
   }
 
   let tenantBannerName: string | null = null;

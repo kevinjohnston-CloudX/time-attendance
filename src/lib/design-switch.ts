@@ -144,16 +144,32 @@ export function designFromCookie(value: string | null | undefined): Design {
   return parseDesign(value) ?? DEFAULT_DESIGN;
 }
 
+const HERE = "http://cloudtime.invalid";
+
 /**
  * Where to send somebody once a design is set: a path on this site only.
  * Anything else (another host, "//host", a scheme) falls back to the
  * dashboard, so the switch can never be turned into an open redirect.
+ *
+ * <p>Read the way the browser will read it, not by how the text starts: a
+ * browser drops tabs and line breaks and takes "\" for "/", so "/%09/evil.com"
+ * passed a check on its first characters and arrived at evil.com. The path is
+ * resolved against this site, kept only if it is still here, and returned as
+ * resolved, so what is sent on is what was checked.
  */
 export function safeNext(next: string | null | undefined): string {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) return "/dashboard";
+  if (!next || !next.startsWith("/")) return "/dashboard";
+  let url: URL;
+  try {
+    url = new URL(next, HERE);
+  } catch {
+    return "/dashboard";
+  }
+  if (url.origin !== HERE) return "/dashboard";
+  const path = `${url.pathname}${url.search}${url.hash}`;
   // Never land on the hidden folder itself; the proxy serves it at the plain address.
-  if (next === CLASSIC_PREFIX || next.startsWith(`${CLASSIC_PREFIX}/`)) return next.slice(CLASSIC_PREFIX.length) || "/dashboard";
-  return next;
+  if (path === CLASSIC_PREFIX || path.startsWith(`${CLASSIC_PREFIX}/`)) return path.slice(CLASSIC_PREFIX.length) || "/dashboard";
+  return path;
 }
 
 /** The address that sets a design and continues to `next`, for plain links. */

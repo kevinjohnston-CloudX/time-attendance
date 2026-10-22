@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cronAuthorized } from "@/lib/cron-auth";
 import { PunchState } from "@prisma/client";
 import { db } from "@/lib/db";
 import { endOfDayInTz, computeShiftExpiry } from "@/lib/utils/date";
@@ -16,8 +17,7 @@ import { personTimeZone } from "@/lib/utils/person-time-zone";
 //   stamped at the END of that day — never at shift end (see below).
 // Without expansion: auto-close fires at 23:59:59 local time (legacy behavior).
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!cronAuthorized(req)) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 

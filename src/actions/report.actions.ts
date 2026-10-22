@@ -19,6 +19,7 @@ import {
 import type { ReportResult } from "@/lib/reports/data-sources";
 import { dayKey, periodLastDay } from "@/lib/pay-period-display";
 import { nextRun } from "@/lib/reports/schedule-time";
+import { creatorSites, withCreatorSites } from "@/lib/reports/creator-sites";
 
 // ─── Data Sources (metadata only, no execution) ────────────────────────────
 
@@ -277,12 +278,15 @@ export const runReport = withRBAC(
 
     let dataSourceId: DataSourceId;
     let config: ReportConfig;
+    // A preview is the person building it; a saved report is its creator's.
+    let creator = session;
 
     if (input.reportId) {
       // Run a saved report
       const report = await db.reportDefinition.findFirstOrThrow({
         where: { id: input.reportId, ...viewableWhere(tenantId, session) },
       });
+      creator = report.ownerId;
       dataSourceId = report.dataSource as DataSourceId;
       config = reportConfigSchema.parse(report.config);
 
@@ -315,7 +319,8 @@ export const runReport = withRBAC(
       : null;
 
     try {
-      const result = await source.execute(config, tenantId);
+      // Held to the sites its creator may see (see creator-sites).
+      const result = await source.execute(await withCreatorSites(config, creator), tenantId);
 
       if (run) {
         await db.reportRun.update({
@@ -372,7 +377,8 @@ export const getReportForExport = withRBAC(
       config = { ...config, dateRange: dateRangeSchema.parse(input.dateRange) };
     }
     const source = getDataSource(report.dataSource as DataSourceId);
-    const result = await source.execute(config, tenantId);
+    // Held to the sites its creator may see, as when it is opened.
+    const result = await source.execute(await withCreatorSites(config, report.ownerId), tenantId);
     return { name: report.name, brand: source.brand ?? null, result };
   }
 );
@@ -641,10 +647,12 @@ export const getFilterOptions = withRBAC(
   "REPORT_MANAGE",
   async ({ tenantId }) => {
     if (!tenantId) throw new Error("Tenant context required");
+    // Someone held to some sites is offered only those: their reports show no others.
+    const mySites = await creatorSites(await getSessionUserId());
 
     const [sites, departments, payPeriods, leaveTypes, payCodes] = await Promise.all([
       db.site.findMany({
-        where: { tenantId, isActive: true },
+        where: { tenantId, isActive: true, ...(mySites ? { id: { in: mySites } } : {}) },
         select: { id: true, name: true },
         orderBy: { name: "asc" },
       }),

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cronAuthorized } from "@/lib/cron-auth";
 import { db } from "@/lib/db";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 
 export async function GET(req: NextRequest) {
-  if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!cronAuthorized(req)) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 

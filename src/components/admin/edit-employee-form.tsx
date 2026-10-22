@@ -346,7 +346,8 @@ export function EditEmployeeForm({
   // Site access is shown for HR_ADMIN, PAYROLL_ADMIN and SYSTEM_ADMIN
   const employeeIsHrOrSysAdmin = ["HR_ADMIN", "PAYROLL_ADMIN", "SYSTEM_ADMIN"].includes(employee.role);
   // Only HR_ADMIN / PAYROLL_ADMIN / SYSTEM_ADMIN actors can manage site access
-  const canManageSiteAccess = ["HR_ADMIN", "PAYROLL_ADMIN", "SYSTEM_ADMIN"].includes(actorRole);
+  // Payroll Admins see it but do not change it, their own included.
+  const canManageSiteAccess = ["HR_ADMIN", "SYSTEM_ADMIN", "SUPER_ADMIN"].includes(actorRole);
 
   // The role the record is on: its custom role, else the system role of the
   // same name. The select has no empty option, so this is also what it shows.

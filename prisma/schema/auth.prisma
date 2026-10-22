@@ -8,6 +8,10 @@ model User {
   passwordHash  String?
   isSuperAdmin        Boolean   @default(false)
   mustChangePassword  Boolean   @default(false)
+  /// When the password was last set, by the person or by an administrator.
+  /// A sign in from before it is ended at its next request, so a reset
+  /// reaches every browser and the mobile app, not only the next sign in.
+  passwordChangedAt   DateTime?
   /// "classic" or "new": which design this person sees. Empty means they
   /// never picked, which is Classic. See lib/design-switch.
   designPreference    String?

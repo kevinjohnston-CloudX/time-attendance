@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { createSignedUrl } from "@/lib/supabase-storage";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 
@@ -31,12 +31,13 @@ export async function GET(
     if (override) tenantId = override;
   }
 
-  // Permission gate
-  if (hasPermission(session.user.role, "DOCUMENT_VIEW_ANY")) {
+  // Permission gate: the live check, so the custom role and an inactive
+  // employee's limits apply. The built-in role alone ignored both.
+  if (await userHasPermission(session.user, "DOCUMENT_VIEW_ANY")) {
     if (doc.employee.tenantId !== tenantId) {
       return new NextResponse("Forbidden", { status: 403 });
     }
-  } else if (hasPermission(session.user.role, "DOCUMENT_VIEW_OWN")) {
+  } else if (await userHasPermission(session.user, "DOCUMENT_VIEW_OWN")) {
     if (doc.employeeId !== session.user.employeeId) {
       return new NextResponse("Forbidden", { status: 403 });
     }

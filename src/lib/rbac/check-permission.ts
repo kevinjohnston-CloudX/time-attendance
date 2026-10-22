@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { hasPermission, type Permission } from "./permissions";
 import { hasPermissionByLegacy } from "./permission-resolver";
 import { SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
-import { liveIdentity } from "./identity";
+import { INACTIVE_PERMISSIONS, liveIdentity } from "./identity";
 import { ROLE_RANK, isValidRole } from "./roles";
 
 const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
@@ -105,6 +105,7 @@ export async function requirePermission(permission: Permission): Promise<{
   if (!session?.user) {
     throw new Error("UNAUTHENTICATED");
   }
+  if (inactiveRefused(session.user, permission)) throw new Error("FORBIDDEN");
 
   if (session.user.role === "SUPER_ADMIN" || session.user.role === "SYSTEM_ADMIN") {
     return {
@@ -142,12 +143,23 @@ export async function checkViewAsPermission(viewAsId: string, permission: Permis
 }
 
 /**
+ * An inactive employee keeps their own documents, balances and last
+ * timesheet, and nothing else, as withRBAC already holds server actions to.
+ * Pages and downloads asked here and got the old role's permissions, so a
+ * deactivated supervisor or admin still read their team's or the company's.
+ */
+function inactiveRefused(user: { isActive?: boolean }, permission: Permission): boolean {
+  return user.isActive === false && !(INACTIVE_PERMISSIONS as readonly string[]).includes(permission);
+}
+
+/**
  * Returns true/false — use in Server Components to conditionally render UI.
  * Respects the view-as cookie so admins and canViewAs users see the simulated role's permissions.
  */
 export async function checkPermission(permission: Permission): Promise<boolean> {
   const session = await auth();
   if (!session?.user) return false;
+  if (inactiveRefused(session.user, permission)) return false;
   const realRole = session.user.role ?? "EMPLOYEE";
   const viewAsId = await resolveViewAsId({ ...session.user, role: realRole });
 
@@ -165,9 +177,10 @@ export async function checkPermission(permission: Permission): Promise<boolean> 
  * Respects the view-as cookie.
  */
 export async function userHasPermission(
-  user: { id?: string; role: string; customRoleId?: string | null; canViewAs?: boolean },
+  user: { id?: string; role: string; customRoleId?: string | null; canViewAs?: boolean; isActive?: boolean },
   permission: Permission
 ): Promise<boolean> {
+  if (inactiveRefused(user, permission)) return false;
   const realRole = user.role ?? "EMPLOYEE";
   const viewAsId = await resolveViewAsId({ ...user, role: realRole });
 

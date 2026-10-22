@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
+import { csvCell } from "@/lib/csv-cell";
 import { db } from "@/lib/db";
 import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 
-function esc(val: unknown): string {
-  const s = val == null ? "" : String(val);
-  return s.includes(",") || s.includes('"') || s.includes("\n")
-    ? `"${s.replace(/"/g, '""')}"`
-    : s;
-}
+// Text that would run as a formula in Excel is made plain (see csvCell).
+const esc = csvCell;
 
 function toCsv(headers: string[], rows: unknown[][]): string {
   return [headers, ...rows].map((r) => r.map(esc).join(",")).join("\r\n");
@@ -27,7 +24,9 @@ export async function GET(
   const { id } = await params;
   const session = await auth();
   if (!session?.user) return new NextResponse("Unauthorized", { status: 401 });
-  if (!hasPermission(session.user.role, "PAY_PERIOD_MANAGE")) {
+  // The live check, so the custom role and an inactive employee's limits
+  // apply: a deactivated payroll admin could still download every timecard.
+  if (!(await userHasPermission(session.user, "PAY_PERIOD_MANAGE"))) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 

@@ -7,6 +7,7 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { currentIdentity } from "@/lib/rbac/current";
 import { employeeRank } from "@/lib/rbac/identity";
+import { assertRecordInReach } from "@/lib/rbac/scope";
 import { chargeFor, dateKey, syncCurrentPayRates } from "@/lib/pay-rates";
 
 /**
@@ -50,11 +51,6 @@ const saveSchema = z.object({
     .refine((rows) => new Set(rows.map((r) => r.effectiveDate)).size === rows.length, "Two rows have the same effective date"),
 });
 
-async function employeeInCompany(employeeId: string, tenantId: string | null) {
-  const emp = await db.employee.findFirst({ where: { id: employeeId, tenantId: tenantId ?? "__none__" }, select: { id: true } });
-  if (!emp) throw new Error("Employee not found");
-}
-
 const toRow = (r: {
   effectiveDate: Date; rate1: unknown; rate2: unknown; rate3: unknown;
   markupPct: unknown; chargeRate: unknown; chargeManual: boolean; note: string | null;
@@ -83,8 +79,9 @@ function settleCharge(r: { rate1: number; markupPct?: number | null; chargeRate?
   return { markupPct, chargeRate: chargeFor(r.rate1, markupPct), chargeManual: false };
 }
 
-export const getPayRates = withRBAC("EMPLOYEE_MANAGE", async ({ tenantId }, input: { employeeId: string }): Promise<PayRateRow[]> => {
-  await employeeInCompany(input.employeeId, tenantId);
+export const getPayRates = withRBAC("EMPLOYEE_MANAGE", async (actor, input: { employeeId: string }): Promise<PayRateRow[]> => {
+  // In the company, and at the admin's sites, as the employee's record is.
+  await assertRecordInReach(actor, input.employeeId);
   const rows = await db.employeePayRate.findMany({ where: { employeeId: input.employeeId }, orderBy: { effectiveDate: "desc" } });
   return rows.map(toRow);
 });
@@ -102,11 +99,12 @@ const describe = (rows: PayRateRow[]) =>
         .join("; ")
     : "—";
 
-export const savePayRates = withRBAC("EMPLOYEE_MANAGE", async ({ tenantId, employeeId: actorId }, input: z.input<typeof saveSchema>): Promise<PayRateRow[]> => {
+export const savePayRates = withRBAC("EMPLOYEE_MANAGE", async (actor, input: z.input<typeof saveSchema>): Promise<PayRateRow[]> => {
+  const { tenantId, employeeId: actorId } = actor;
   const parsed = saveSchema.parse(input);
   const { employeeId } = parsed;
   const rows = parsed.rows.map((r) => ({ ...r, ...settleCharge(r) }));
-  await employeeInCompany(employeeId, tenantId);
+  await assertRecordInReach(actor, employeeId);
 
   const me = await currentIdentity();
   if (!me) throw new Error("FORBIDDEN");

@@ -58,17 +58,16 @@ export const exceptionReportSource: DataSourceDefinition = {
 
     // The pay period lives on the timesheet too, so the two are merged: this
     // key used to replace the date filter's, and a report run for one pay
-    // period returned every pay period on file.
+    // period returned every pay period on file. The filters sit beside the
+    // company scope, not inside it: one filter (Site, say) was spread into
+    // the employee as employee.employee.siteId, and the report failed.
     const where = {
       ...dateFilter,
-      ...filterWhere,
       timesheet: {
         ...((dateFilter.timesheet as Record<string, unknown>) ?? {}),
-        employee: {
-          tenantId,
-          ...(filterWhere.timesheet as Record<string, unknown> ?? {}),
-        },
+        employee: { tenantId },
       },
+      ...(Object.keys(filterWhere).length > 0 ? { AND: [filterWhere] } : {}),
     };
 
     const orderBy =

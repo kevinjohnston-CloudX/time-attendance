@@ -9,6 +9,8 @@ import { sendPasswordInviteEmail } from "@/lib/email/send-invite";
 import { employeeRank } from "@/lib/rbac/identity";
 import { currentIdentity } from "@/lib/rbac/current";
 import { getEffectiveRole } from "@/lib/rbac/check-permission";
+import { forgetIdentity } from "@/lib/rbac/identity";
+import { revokeAllUserTokens } from "@/lib/mobile-auth";
 
 const LOGIN_MANAGERS = ["SYSTEM_ADMIN", "HR_ADMIN", "PAYROLL_ADMIN", "SUPER_ADMIN"];
 
@@ -16,7 +18,7 @@ const LOGIN_MANAGERS = ["SYSTEM_ADMIN", "HR_ADMIN", "PAYROLL_ADMIN", "SUPER_ADMI
  * The employee whose login the caller may reset, or why not.
  *
  * <p>Only an admin, only inside their own company, never their own login
- * (that is Change password, which asks for the current one), and only for
+ * (another admin resets it), and only for
  * somebody junior to them. Without the last rule a payroll admin could set a
  * system admin's password and sign in as them. A super admin may reset anyone.
  */
@@ -62,6 +64,18 @@ function generateToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
+/**
+ * Ends every sign in the person has: browsers at their next request (see
+ * the jwt callback in auth.ts) and the mobile app at its next refresh. Run
+ * whenever their password is set or reset, so a reset after a lost or shared
+ * login takes the old sessions with it.
+ */
+async function endSignIns(userId: string) {
+  await db.user.update({ where: { id: userId }, data: { passwordChangedAt: new Date() } });
+  await revokeAllUserTokens(userId);
+  forgetIdentity(userId);
+}
+
 // ── Send invite / reset email ──────────────────────────────────────────────
 
 export async function sendPasswordInvite(employeeId: string): Promise<{ success: boolean; message: string }> {
@@ -89,6 +103,7 @@ export async function sendPasswordInvite(employeeId: string): Promise<{ success:
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     },
   });
+  await endSignIns(employee.user.id);
 
   const appUrl = process.env.NEXTAUTH_URL ?? process.env.APP_URL ?? "http://localhost:3000";
 
@@ -143,6 +158,7 @@ export async function setTemporaryPassword(
     where: { id: employee.userId },
     data: { passwordHash, mustChangePassword: true },
   });
+  await endSignIns(employee.userId);
 
   return { success: true, message: "Temporary password set" };
 }
@@ -189,6 +205,7 @@ export async function setupPasswordFromToken(
       data: { usedAt: new Date() },
     }),
   ]);
+  await endSignIns(record.userId);
 
   return { success: true, message: "Password set successfully" };
 }
@@ -209,6 +226,13 @@ export async function changePassword(
 ): Promise<{ success: boolean; message: string }> {
   const session = await auth();
   if (!session?.user?.id) return { success: false, message: "Not authenticated" };
+  // Only the forced change after a temporary password. Otherwise anyone at a
+  // screen left signed in could set the password without knowing it, and keep
+  // the account after the session ended.
+  const user = await db.user.findUnique({ where: { id: session.user.id }, select: { mustChangePassword: true } });
+  if (!user?.mustChangePassword) {
+    return { success: false, message: "Your password can be changed here only after signing in with a temporary password. Ask HR for a reset link." };
+  }
 
   const parsed = changeSchema.safeParse({ newPassword, confirmPassword });
   if (!parsed.success) {
@@ -224,6 +248,8 @@ export async function changePassword(
     where: { id: session.user.id },
     data: { passwordHash, mustChangePassword: false },
   });
+  // This browser signs out next (the page does it) and signs in again.
+  await endSignIns(session.user.id);
 
   return { success: true, message: "Password changed successfully" };
 }

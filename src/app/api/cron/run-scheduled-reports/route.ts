@@ -1,5 +1,6 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { cronAuthorized } from "@/lib/cron-auth";
+import { withCreatorSites } from "@/lib/reports/creator-sites";
 import { db } from "@/lib/db";
 import { getDataSource } from "@/lib/reports/data-sources";
 import { reportConfigSchema, type DataSourceId } from "@/lib/validators/report.schema";
@@ -27,16 +28,8 @@ const BATCH = 10;
 const RETRY_AFTER_MS = 30 * 60_000;
 const MAX_FAILURES_PER_DAY = 3;
 
-function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const given = Buffer.from(req.headers.get("authorization") ?? "");
-  const wanted = Buffer.from(`Bearer ${secret}`);
-  return given.length === wanted.length && timingSafeEqual(given, wanted);
-}
-
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  if (!authorized(req)) return new NextResponse("Unauthorized", { status: 401 });
+  if (!cronAuthorized(req)) return new NextResponse("Unauthorized", { status: 401 });
 
   const now = new Date();
   const due = await db.reportSchedule.findMany({
@@ -76,7 +69,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
       const config = reportConfigSchema.parse(schedule.report.config);
       const source = getDataSource(schedule.report.dataSource as DataSourceId);
-      const result = await source.execute(config, schedule.report.tenantId, { timezone: schedule.timezone, now });
+      // Held to the sites its creator may see, as when it is opened.
+      const result = await source.execute(await withCreatorSites(config, schedule.report.ownerId), schedule.report.tenantId, { timezone: schedule.timezone, now });
 
       const format = schedule.format.toLowerCase();
       let fileBuffer: Buffer;

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cronAuthorized } from "@/lib/cron-auth";
 import { db } from "@/lib/db";
 import type { SyncKind } from "@prisma/client";
 import { BRIDGE_AGENT, BRIDGE_JOB_KINDS } from "@/lib/services/bridge.service";
@@ -54,8 +55,7 @@ const SCHEDULE_MIN_SHARE = 0.5;
 type Finding = { check: string; detail: string };
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!cronAuthorized(req)) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 

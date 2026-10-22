@@ -547,6 +547,8 @@ function SummaryRow({
   isBold,
   premium = 0,
   showPremium = false,
+  unpaid = 0,
+  showUnpaid = false,
   indent = false,
   subtotal = false,
 }: {
@@ -564,6 +566,9 @@ function SummaryRow({
   /** Meal premium minutes: paid at the regular rate, but not hours worked, so outside Regular and Total hours. */
   premium?: number;
   showPremium?: boolean;
+  /** Unpaid leave minutes: in Total hours, never in pay. */
+  unpaid?: number;
+  showUnpaid?: boolean;
 }) {
   const fmt = (m: number) => minutesToHoursDecimal(m);
   const fmtMoney = (v: number) =>
@@ -608,6 +613,7 @@ function SummaryRow({
       <td data-label="Regular" style={cell}>{reg > 0 ? fmt(reg) : "—"}</td>
       <td data-label="Overtime" style={emphasis(ot > 0, "var(--text-warning)")}>{ot > 0 ? fmt(ot) : "—"}</td>
       <td data-label="Double" style={emphasis(dt > 0, "var(--text-error)")}>{dt > 0 ? fmt(dt) : "—"}</td>
+      {showUnpaid && <td data-label="Unpaid" style={cell}>{unpaid > 0 ? fmt(unpaid) : "—"}</td>}
       {showPremium && <td data-label="Meal premium" style={emphasis(premium > 0, "var(--text-warning)")}>{premium > 0 ? fmt(premium) : "—"}</td>}
       <td data-label="Total hours" style={isBold ? cell : strong}>{fmt(total)}</td>
       {rate !== null && (
@@ -981,6 +987,12 @@ export function TimecardViewer({
     (timecard?.exceptions ?? [])
       .filter((e) => e.exceptionType === "MISSING_PUNCH")
       .map((e) => format(atSite(e.occurredAt), "yyyy-MM-dd"))
+  );
+  // Unpaid leave in the period (on days not left out for a missed punch): the
+  // summary then shows an Unpaid column, so every coded hour is accounted for.
+  const hasUnpaidLeave = (timecard?.segments ?? []).some(
+    (s) => !s.isPaid && (s.segmentType === "LEAVE" || s.segmentType === "HOLIDAY") && s.durationMinutes > 0 &&
+      !missedPunchDays.has(format(parseUtcDate(s.segmentDate), "yyyy-MM-dd")),
   );
   const periodTotals = (() => {
     const byBucket: Record<string, number> = {};
@@ -3994,6 +4006,7 @@ export function TimecardViewer({
                           <TH numeric>Regular</TH>
                           <TH numeric>Overtime</TH>
                           <TH numeric>Double</TH>
+                          {hasUnpaidLeave && <TH numeric>Unpaid</TH>}
                           {periodTotals.premium > 0 && <TH numeric>Meal premium</TH>}
                           <TH numeric>Total hours</TH>
                           {rate !== null && (
@@ -4025,11 +4038,15 @@ export function TimecardViewer({
                           // week's lines add up to the same figures as the whole
                           // period's (the week view used to leave paid leave out of
                           // Regular while the pay code view counted it).
-                          type CodeLine = { label: string; reg: number; ot: number; dt: number; total: number; premium: number };
+                          type CodeLine = { label: string; reg: number; ot: number; dt: number; total: number; premium: number; unpaid: number };
                           const byPayCode = (segs: TimecardSegment[]) => {
                             const byCode: Record<string, CodeLine> = {};
                             for (const seg of segs) {
-                              if (!seg.isPaid) continue;
+                              // Unpaid leave (Unpaid Time Off) has its line too, under Unpaid
+                              // and in Total hours, so the summary accounts for every coded
+                              // hour in the period. It adds hours, never pay. Meal breaks are
+                              // unpaid but carry no pay code, and stay out.
+                              if (!seg.isPaid && ((seg.segmentType !== "LEAVE" && seg.segmentType !== "HOLIDAY") || seg.durationMinutes <= 0)) continue;
                               const eb = (seg.payBucketOverride && !["REG", "OT", "DT"].includes(seg.payBucketOverride))
                                 ? seg.payBucketOverride
                                 : seg.payBucket;
@@ -4037,8 +4054,9 @@ export function TimecardViewer({
                                 seg.payCode
                                   ? payCodeOption(seg.payCode)
                                   : PAY_BUCKET_LABEL[eb as PayBucketValue] ?? eb;
-                              const line = (byCode[key] = byCode[key] ?? { label: key, reg: 0, ot: 0, dt: 0, total: 0, premium: 0 });
+                              const line = (byCode[key] = byCode[key] ?? { label: key, reg: 0, ot: 0, dt: 0, total: 0, premium: 0, unpaid: 0 });
                               if (seg.segmentType === "MEAL_PREMIUM") { line.premium += seg.durationMinutes; continue; }
+                              if (!seg.isPaid) { line.unpaid += seg.durationMinutes; line.total += seg.durationMinutes; continue; }
                               line.total += seg.durationMinutes;
                               if (eb === "REG" || PAID_LEAVE_BUCKETS.has(eb)) line.reg += seg.durationMinutes;
                               else if (eb === "OT") line.ot += seg.durationMinutes;
@@ -4046,8 +4064,8 @@ export function TimecardViewer({
                             }
                             const lines = Object.values(byCode);
                             const sum = lines.reduce<CodeLine>(
-                              (a, e) => ({ label: "", reg: a.reg + e.reg, ot: a.ot + e.ot, dt: a.dt + e.dt, total: a.total + e.total, premium: a.premium + e.premium }),
-                              { label: "", reg: 0, ot: 0, dt: 0, total: 0, premium: 0 },
+                              (a, e) => ({ label: "", reg: a.reg + e.reg, ot: a.ot + e.ot, dt: a.dt + e.dt, total: a.total + e.total, premium: a.premium + e.premium, unpaid: a.unpaid + e.unpaid }),
+                              { label: "", reg: 0, ot: 0, dt: 0, total: 0, premium: 0, unpaid: 0 },
                             );
                             return { lines, sum };
                           };
@@ -4067,6 +4085,8 @@ export function TimecardViewer({
                               rate={rate}
                               premium={e.premium}
                               showPremium={showPremium}
+                              unpaid={e.unpaid}
+                              showUnpaid={hasUnpaidLeave}
                               isBold={extra.isBold}
                               indent={extra.indent}
                               subtotal={extra.subtotal}
@@ -4090,10 +4110,10 @@ export function TimecardViewer({
                               });
                               wStart = new Date(wEnd.getTime() + 86400000);
                             }
-                            // Label, Regular, Overtime, Double, [Meal premium], Total, [5 pay columns]
-                            const columns = 5 + (showPremium ? 1 : 0) + (rate !== null ? 5 : 0);
+                            // Label, Regular, Overtime, Double, [Unpaid], [Meal premium], Total, [5 pay columns]
+                            const columns = 5 + (hasUnpaidLeave ? 1 : 0) + (showPremium ? 1 : 0) + (rate !== null ? 5 : 0);
 
-                            const grand: CodeLine = { label: "", reg: 0, ot: 0, dt: 0, total: 0, premium: 0 };
+                            const grand: CodeLine = { label: "", reg: 0, ot: 0, dt: 0, total: 0, premium: 0, unpaid: 0 };
                             return (
                               <>
                                 {weeks.map((week) => {
@@ -4108,6 +4128,7 @@ export function TimecardViewer({
                                   grand.dt += sum.dt;
                                   grand.total += sum.total;
                                   grand.premium += sum.premium;
+                                  grand.unpaid += sum.unpaid;
                                   return (
                                     <React.Fragment key={week.label}>
                                       <tr style={{ borderTop: "1px solid var(--stroke-secondary)" }}>

@@ -7,9 +7,10 @@ import { CreateEmployeeForm } from "@/classic/components/admin/create-employee-f
 import { toCopyFromEmployee } from "@/lib/employee-copy";
 import { CsvUploadForm } from "@/classic/components/admin/csv-upload-form";
 import { EmployeesTable } from "@/classic/components/admin/employees-table";
+import { PERIOD_OPTIONS, pick } from "@/components/admin/employees-list-options";
 
 interface Props {
-  searchParams?: Promise<{ page?: string; q?: string; site?: string; dept?: string; role?: string; inactive?: string; copyFrom?: string }>;
+  searchParams?: Promise<{ page?: string; q?: string; site?: string; dept?: string; role?: string; period?: string; inactive?: string; copyFrom?: string }>;
 }
 
 export default async function EmployeesPage({ searchParams }: Props) {
@@ -23,12 +24,13 @@ export default async function EmployeesPage({ searchParams }: Props) {
   const site         = sp?.site ?? "";
   const dept         = sp?.dept ?? "";
   const role         = sp?.role ?? "";
+  const period       = pick(PERIOD_OPTIONS, sp?.period);
   const showInactive = sp?.inactive === "1";
   const copyFromId   = sp?.copyFrom ?? "";
 
   const [employeesResult, refDataResult, copySourceResult] = await Promise.all([
     // The shared list opens on current employees; "Show inactive" asks it for everyone.
-    getEmployees({ page, q: q || undefined, site: site || undefined, dept: dept || undefined, role: role || undefined, status: showInactive ? "all" : undefined }),
+    getEmployees({ page, q: q || undefined, site: site || undefined, dept: dept || undefined, role: role || undefined, period, status: showInactive ? "all" : undefined }),
     getAdminRefData(),
     copyFromId ? getEmployeeById({ employeeId: copyFromId }) : Promise.resolve(null),
   ]);
@@ -84,7 +86,7 @@ export default async function EmployeesPage({ searchParams }: Props) {
         pageSize={pageSize}
         sites={[...new Set(sites.map((s) => s.name))].sort()}
         departments={[...new Set(departments.map((d) => d.name))].sort()}
-        currentFilters={{ q, site, dept, role, showInactive }}
+        currentFilters={{ q, site, dept, role, period, showInactive }}
       />
     </div>
   );

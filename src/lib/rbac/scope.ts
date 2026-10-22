@@ -5,6 +5,7 @@ import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import { TIMECARD_EDITORS_COMPANY, type Permission } from "./permissions";
 import { employeeRank } from "./identity";
 import { assertActiveForChange } from "@/lib/inactive-timecards";
+import { siteLimit } from "./site-limit";
 
 /**
  * Whose records an action may touch, for actions that take an id.
@@ -38,15 +39,43 @@ export async function reachesCompany(ctx: Ctx, companyWide: Wide): Promise<boole
   return false;
 }
 
+export { siteLimit };
+
 /**
- * The sites a Payroll or HR Admin is held to, set on their employee record
- * (Site access); null when they reach every site, which no rows means. Other
- * roles are never held to sites here.
+ * An employee record the caller may open or change on the Employees screens:
+ * in their company and, for a Payroll or HR Admin held to some sites, at one
+ * of those sites, as the Employees list offers them. Anyone else's answers
+ * "not found", as an unknown id does. The record page opened anyone's by id
+ * (date of birth, address, pay) while the list hid them.
  */
-export async function siteLimit(ctx: { employeeId: string; role: string }): Promise<string[] | null> {
-  if ((ctx.role !== "PAYROLL_ADMIN" && ctx.role !== "HR_ADMIN") || !ctx.employeeId) return null;
-  const rows = await db.hrSiteAccess.findMany({ where: { employeeId: ctx.employeeId }, select: { siteId: true } });
-  return rows.length > 0 ? rows.map((r) => r.siteId) : null;
+export async function assertRecordInReach(ctx: { employeeId: string; tenantId: string | null; role: string }, employeeId: string): Promise<void> {
+  const sites = await siteLimit(ctx);
+  const found = await db.employee.findFirst({
+    where: { id: employeeId, tenantId: ctx.tenantId ?? "__no_company__", ...(sites ? { siteId: { in: sites } } : {}) },
+    select: { id: true },
+  });
+  if (!found) throw new NotFoundError("Employee not found");
+}
+
+/**
+ * A leave balance the caller may change: someone in their company and at
+ * their sites (as their record is), not ranked above them, and a leave type of
+ * this company. Their own only for HR and System Admins; a Payroll Admin could
+ * add hours to their own balance here, or to a senior's.
+ */
+export async function assertBalanceChangeAllowed(
+  actor: { employeeId: string; tenantId: string | null; role: string },
+  employeeId: string,
+  leaveTypeId: string,
+) {
+  await assertRecordInReach(actor, employeeId);
+  if (employeeId === actor.employeeId) {
+    if (!["HR_ADMIN", "SYSTEM_ADMIN", "SUPER_ADMIN"].includes(actor.role)) throw new Error("You can't change your own leave balance");
+  } else {
+    await assertNotSenior(actor, employeeId);
+  }
+  const leaveType = await db.leaveType.findFirst({ where: { id: leaveTypeId, tenantId: actor.tenantId ?? "__no_company__" }, select: { id: true } });
+  if (!leaveType) throw new Error("Leave type not found");
 }
 
 /**

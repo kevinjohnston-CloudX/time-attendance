@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
-import { hasPermission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { uploadToStorage, deleteFromStorage } from "@/lib/supabase-storage";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
@@ -28,7 +28,7 @@ export async function uploadDocument(
   try {
     const session = await auth();
     if (!session?.user) return { success: false, error: "UNAUTHENTICATED" };
-    if (!hasPermission(session.user.role, "DOCUMENT_UPLOAD"))
+    if (!(await userHasPermission(session.user, "DOCUMENT_UPLOAD")))
       return { success: false, error: "FORBIDDEN" };
 
     // Resolve tenantId (with SUPER_ADMIN cookie override)

@@ -4,7 +4,7 @@ process.env.TZ = "UTC";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/db", () => ({ db: {} }));
-import { computeMealPremiums } from "./segment-builder";
+import { computeMealPremiums, mealMinutes } from "./segment-builder";
 
 // California, as configured: a meal starting by minute 299, at least 30 minutes; 1 hour premium.
 const ruleSet = {
@@ -115,5 +115,39 @@ describe("California meal premium, NovaTime's setup", () => {
   });
   it("holds a first meal waiver, which has no hours limit", () => {
     expect(run([["08:00", "14:00"]], (_, row) => row === 0)).toEqual([]);
+  });
+});
+
+// Mary Navarro, 10/19: in 7:00:03, out 11:33:21, back 12:03:04, out 3:30:04.
+// The timecard shows a lunch of 11:33 to 12:03, 30 minutes, as NovaTime counts
+// it; measured to the second it was 29:43 and drew a premium.
+describe("a meal measured in whole minutes, as the timecard shows it", () => {
+  const sec = (hhmmss: string) => new Date(`2026-10-13T${hhmmss}-07:00`);
+  const navarro = () => {
+    const ps = [["CLOCK_IN", "07:00:03"], ["CLOCK_OUT", "11:33:21"], ["CLOCK_IN", "12:03:04"], ["CLOCK_OUT", "15:30:04"]].map(([punchType, t]) => ({ punchType, punchTime: sec(t), roundedTime: sec(t) }));
+    const segs = [
+      { timesheetId: "t", segmentType: "WORK", startTime: sec("07:00:03"), endTime: sec("11:33:21"), durationMinutes: 273, segmentDate: day, isPaid: true, payBucket: "REG", isSplit: false },
+      { timesheetId: "t", segmentType: "WORK", startTime: sec("12:03:04"), endTime: sec("15:30:04"), durationMinutes: 207, segmentDate: day, isPaid: true, payBucket: "REG", isSplit: false },
+    ];
+    return computeMealPremiums("t", segs as never, ps as never, ruleSet, TZ);
+  };
+
+  it("counts 11:33:21 to 12:03:04 as the 30-minute meal it shows as", () => {
+    expect(navarro()).toEqual([]);
+  });
+
+  it("drops the seconds of both punches, never rounding up", () => {
+    expect(mealMinutes(sec("11:33:21").getTime(), sec("12:03:04").getTime())).toBe(30);
+    expect(mealMinutes(sec("11:33:59").getTime(), sec("12:03:00").getTime())).toBe(30);
+    expect(mealMinutes(sec("11:33:00").getTime(), sec("12:02:59").getTime())).toBe(29);
+  });
+
+  it("still finds a meal of 29 whole minutes too short", () => {
+    const ps = [["CLOCK_IN", "07:00:00"], ["CLOCK_OUT", "11:33:00"], ["CLOCK_IN", "12:02:00"], ["CLOCK_OUT", "15:30:00"]].map(([punchType, t]) => ({ punchType, punchTime: sec(t), roundedTime: sec(t) }));
+    const segs = [
+      { timesheetId: "t", segmentType: "WORK", startTime: sec("07:00:00"), endTime: sec("11:33:00"), durationMinutes: 273, segmentDate: day, isPaid: true, payBucket: "REG", isSplit: false },
+      { timesheetId: "t", segmentType: "WORK", startTime: sec("12:02:00"), endTime: sec("15:30:00"), durationMinutes: 208, segmentDate: day, isPaid: true, payBucket: "REG", isSplit: false },
+    ];
+    expect(computeMealPremiums("t", segs as never, ps as never, ruleSet, TZ).length).toBe(1);
   });
 });

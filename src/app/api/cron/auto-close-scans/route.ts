@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cronAuthorized } from "@/lib/cron-auth";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
@@ -75,8 +76,7 @@ function lastCloseBoundary(now: Date, timezone: string): Date {
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!cronAuthorized(req)) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 

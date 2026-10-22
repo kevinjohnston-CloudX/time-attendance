@@ -7,7 +7,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { authConfig } from "@/lib/auth.config";
 import { liveIdentity } from "@/lib/rbac/identity";
-import { clientAddress, isLockedOut, recordFailedLogin } from "@/lib/login-limit";
+import { DUMMY_PASSWORD_HASH, clientAddress, isLockedOut, loginKey, recordFailedLogin } from "@/lib/login-limit";
 import { findLoginUserId } from "@/lib/login-lookup";
 
 /** Too many wrong passwords: the sign-in page says to wait rather than "wrong password". */
@@ -55,16 +55,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             })
           : null;
 
-        if (!user?.passwordHash) return null;
+        // An email with no password login goes through the same steps as a
+        // real one, the lock and the password check included, so neither the
+        // time taken nor "too many attempts" tells the two apart.
+        const key = loginKey(user?.passwordHash ? user.id : null, parsed.data.username);
 
         // Checked before the password, so a locked account says nothing
         // about whether the guess was right.
         const address = clientAddress(request?.headers);
-        if (await isLockedOut(user.id, address)) throw new LockedOut();
+        if (await isLockedOut(key, address)) throw new LockedOut();
 
-        const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
-        if (!valid) {
-          await recordFailedLogin(user.id, user.employee?.tenantId, address, "web");
+        const valid = await bcrypt.compare(parsed.data.password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
+        if (!user?.passwordHash || !valid) {
+          await recordFailedLogin(key, user?.employee?.tenantId, address, "web");
           return null;
         }
 
@@ -178,6 +181,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token.sub) {
         const live = await liveIdentity(token.sub);
         if (!live) return null;
+        // A sign in from before the password was last set or reset ends
+        // here, so an administrator's reset (a temporary password, a setup
+        // link) reaches a browser left signed in, not only the next sign in.
+        // A second's slack for the token's whole-second issue time.
+        if (live.passwordChangedAt && typeof token.iat === "number" && token.iat * 1000 < live.passwordChangedAt.getTime() - 1000) return null;
         token.role = live.role;
         token.employeeId = live.employeeId ?? undefined;
         token.tenantId = live.tenantId;

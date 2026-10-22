@@ -8,6 +8,7 @@ import { ShareDialog } from "./report-list/share-dialog";
 import { ScheduleForm } from "./schedule-form";
 import { runReport, deleteReport, duplicateReport } from "@/actions/report.actions";
 import type { ReportResult } from "@/lib/reports/data-sources";
+import { csvCell } from "@/lib/csv-cell";
 import type { DateRange } from "@/lib/validators/report.schema";
 import {
   Play,
@@ -133,15 +134,12 @@ export function ReportViewer({
 
   function handleExportCsv() {
     if (!result) return;
-    const headers = result.columns.map((c) => c.label);
+    const headers = result.columns.map((c) => csvCell(c.label));
     const csvRows = result.rows.map((row) =>
       result.columns
         .map((col) => {
-          const val = row[col.id];
-          const str = val === null || val === undefined ? "" : String(val);
-          return str.includes(",") || str.includes('"')
-            ? `"${str.replace(/"/g, '""')}"`
-            : str;
+          // Text that would run as a formula in Excel is made plain.
+          return csvCell(row[col.id]);
         })
         .join(",")
     );

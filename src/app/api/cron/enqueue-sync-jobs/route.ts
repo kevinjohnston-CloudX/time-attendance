@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cronAuthorized } from "@/lib/cron-auth";
 import { db } from "@/lib/db";
 import {
   GATE_STATE_DAYS,
@@ -23,8 +24,7 @@ import { runScheduleStandIn } from "@/lib/services/schedule-stand-in.service";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!cronAuthorized(req)) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 

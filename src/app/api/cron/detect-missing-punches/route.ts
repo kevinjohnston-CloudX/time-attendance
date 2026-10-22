@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cronAuthorized } from "@/lib/cron-auth";
 import { db } from "@/lib/db";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 
@@ -7,8 +8,7 @@ import { rebuildSegments } from "@/lib/engines/segment-builder";
 // which will detect any day before today where an employee clocked in but
 // never clocked out and create a MISSING_PUNCH exception.
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!cronAuthorized(req)) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
