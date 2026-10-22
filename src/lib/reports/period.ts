@@ -61,8 +61,9 @@ export function daysOf(
       return { start: y, end: y };
     }
     case "relative":
-      // The last N days, ending today, the way the other reports count them.
-      return { start: addDays(today, -range.relativeDays), end: today };
+      // The last N days, today included: "the last 7 days" is 7 days. It was
+      // today and the N before it, 8 days for 7.
+      return { start: addDays(today, -(range.relativeDays - 1)), end: today };
     case "custom":
       return { start: range.startDate, end: range.endDate };
     case "calendar": {

@@ -128,8 +128,12 @@ function withCalendarDates(def: DataSourceDefinition): DataSourceDefinition {
         const resolved = await resolveMovingPayPeriod(range, tenantId, today);
         return def.execute({ ...config, dateRange: resolved }, tenantId, ctx);
       }
-      if (range.type !== "calendar") return def.execute(config, tenantId, ctx);
-      const weekStart = range.unit === "week" ? await tenantWeekStart(tenantId) : 1;
+      // Today, yesterday and the last N days too: each report used to work
+      // them out its own way, some on UTC's clock, so they disagreed.
+      if (range.type !== "calendar" && range.type !== "relative" && range.type !== "today" && range.type !== "yesterday") {
+        return def.execute(config, tenantId, ctx);
+      }
+      const weekStart = range.type === "calendar" && range.unit === "week" ? await tenantWeekStart(tenantId) : 1;
       const { start, end } = daysOf(range, ctx?.timezone, ctx?.now, weekStart);
       return def.execute({ ...config, dateRange: { type: "custom", startDate: start, endDate: end } }, tenantId, ctx);
     },

@@ -9,6 +9,7 @@ import { format } from "date-fns";
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "timesheet.employee.user.name",       type: "string" },
   employeeCode:  { prismaPath: "timesheet.employee.wmsId",           type: "string" },
+  status:        { prismaPath: "timesheet.status",                    type: "string" },
   department:    { prismaPath: "timesheet.employee.department.name",  type: "string" },
   departmentId:  { prismaPath: "timesheet.employee.departmentId",     type: "string" },
   siteId:        { prismaPath: "timesheet.employee.siteId",           type: "string" },
@@ -38,7 +39,12 @@ export const exceptionReportSource: DataSourceDefinition = {
     { id: "departmentId", label: "Department", type: "string", operators: ["eq", "in"] },
     { id: "siteId", label: "Site", type: "string", operators: ["eq", "in"] },
     { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
-    { id: "exceptionType", label: "Exception", type: "string", operators: ["eq", "in"],
+    { id: "status", label: "Timesheet status", type: "string", operators: ["eq", "in"],
+      options: [
+        { value: "OPEN", label: "Open" },
+        { value: "LOCKED", label: "Locked" },
+      ] },
+    { id: "exceptionType", label: "Exception", type: "string", operators: ["eq", "in", "neq", "notIn"],
       options: [
         { value: "MISSING_PUNCH", label: "Missing punch" },
         { value: "LONG_SHIFT", label: "Long shift" },
@@ -47,6 +53,9 @@ export const exceptionReportSource: DataSourceDefinition = {
         { value: "UNSCHEDULED_OT", label: "Unscheduled overtime" },
         { value: "CONSECUTIVE_DAYS", label: "Consecutive days" },
         { value: "ABSENT", label: "Absent" },
+        { value: "LATE_IN", label: "Late in" },
+        { value: "EARLY_OUT", label: "Early out" },
+        { value: "SCAN_DISCREPANCY", label: "Scan discrepancy" },
       ] },
   ],
   groupableFields: ["employeeName", "department", "exceptionType"],

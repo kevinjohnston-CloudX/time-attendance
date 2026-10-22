@@ -138,14 +138,27 @@ export const employeesSource: DataSourceDefinition = {
           : { ...f, operator: "eq" as const, value: "0001-01-01" }
         : f
     );
-    const filterWhere = buildWhereClause(filters, fieldMap);
+    // A date filter covers its last day whole: the dates are stored at the
+    // company's midnight (04:00 UTC), so "to Oct 24" missed Oct 24.
+    const wholeDays = filters.map((f) =>
+      (f.field === "hireDate" || f.field === "terminatedAt") && (f.operator === "between" || f.operator === "lte")
+        ? f.operator === "between"
+          ? { ...f, value2: `${String(f.value2).slice(0, 10)}T23:59:59.999Z` }
+          : { ...f, value: `${String(f.value).slice(0, 10)}T23:59:59.999Z` }
+        : f
+    );
+    const filterWhere = buildWhereClause(wholeDays, fieldMap);
     // Columns worked out below (last punch, days worked) are filtered and
     // sorted after they are, so the row limit can only be applied then:
     // taken first, a preview kept the first 100 by name and filtered those.
     const afterwards =
       config.sortBy.length > 0 || filters.some((f) => !fieldMap[f.field]);
-    // Current employees unless the Status filter says otherwise.
-    const statusFiltered = config.filters.some((f) => f.field === "isActive");
+    // Current employees unless the Status filter says otherwise, or the
+    // report is about hires or leavers: a hire who has since left was still
+    // hired in those dates (174 of 469 since Jul 1 were missing).
+    const statusFiltered = config.filters.some(
+      (f) => f.field === "isActive" || f.field === "hireDate" || f.field === "terminatedAt"
+    );
 
     const employees = await db.employee.findMany({
       where: { tenantId, ...(statusFiltered ? {} : { isActive: true }), ...filterWhere },
