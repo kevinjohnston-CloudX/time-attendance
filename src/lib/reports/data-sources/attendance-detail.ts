@@ -7,6 +7,10 @@ import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from 
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { tenantWeekStart } from "../moving-period";
+import { rateInEffect } from "@/lib/pay-rates";
+
+/** What an hour pays in each bucket, against the rate: as Labor cost prices it. */
+const MULTIPLIER: Record<string, number> = { REG: 1, OT: 1.5, DT: 2 };
 
 /**
  * A clock time where the person works. Formatted with the server's own zone,
@@ -56,6 +60,12 @@ export const attendanceDetailSource: DataSourceDefinition = {
     { id: "overtimeMinutes",   label: "Overtime",        type: "number",  defaultVisible: false },
     { id: "doubletimeMinutes", label: "Double time",        type: "number",  defaultVisible: false },
     { id: "paidMinutes",       label: "Paid hours",         type: "number",  defaultVisible: false },
+    // Pay, for NovaTime's Wage and Upload reports: the Rate 1 in effect that
+    // day, the bucket's multiplier, and the two together over the paid hours.
+    { id: "agency",            label: "Agency",             type: "string",  defaultVisible: false },
+    { id: "payRate",           label: "Pay rate",           type: "number",  defaultVisible: false },
+    { id: "multiplier",        label: "Pay multiplier",     type: "number",  defaultVisible: false },
+    { id: "payAmount",         label: "Pay",                type: "number",  defaultVisible: false, total: true },
     { id: "isPaid",          label: "Paid",           type: "boolean", defaultVisible: false },
   ],
   filters: [
@@ -128,7 +138,13 @@ export const attendanceDetailSource: DataSourceDefinition = {
         payCode: { select: { code: true, label: true } },
         timesheet: {
           include: {
-            employee: { include: { user: true, department: true, site: true } },
+            employee: {
+              include: {
+                user: true, department: true, site: true,
+                agencyRef: { select: { code: true, description: true } },
+                payRates: { select: { effectiveDate: true, rate1: true } },
+              },
+            },
             dayReasons: { include: { reasonCode: { select: { code: true, label: true } } } },
           },
         },
@@ -159,6 +175,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
         // Paid time, as the timecard totals it: an unpaid meal is not in it,
         // and a meal premium is an hour of pay, not an hour worked.
         paidMinutes: seg.isPaid && seg.segmentType !== "MEAL_PREMIUM" ? seg.durationMinutes : null,
+        ...pay(seg, seg.timesheet.employee),
         payBucket: readable("payBucket", seg.payBucket),
         payCode: seg.payCode?.code ?? null,
         payCodeLabel: seg.payCode?.label ?? null,
@@ -225,4 +242,18 @@ async function resolveDateFilter(
       return { segmentDate: { gte: start, lte: end } };
     }
   }
+}
+
+/** The pay columns of one line: agency, the rate that day, the multiplier, and the pay. */
+function pay(
+  seg: { isPaid: boolean; segmentType: string; payBucket: string; durationMinutes: number; segmentDate: Date },
+  employee: { agencyRef: { code: number; description: string } | null; payRates: { effectiveDate: Date; rate1: unknown }[] }
+) {
+  const agency = employee.agencyRef ? `${employee.agencyRef.code} ${employee.agencyRef.description}`.trim() : null;
+  const paid = seg.isPaid && seg.segmentType !== "MEAL_PREMIUM";
+  const rateRow = rateInEffect(employee.payRates, seg.segmentDate.toISOString().slice(0, 10));
+  const rate = rateRow?.rate1 != null ? Number(rateRow.rate1) : null;
+  const multiplier = paid ? (MULTIPLIER[seg.payBucket] ?? 1) : null;
+  const amount = paid && rate != null && multiplier != null ? Math.round((seg.durationMinutes / 60) * rate * multiplier * 100) / 100 : null;
+  return { agency, payRate: rate, multiplier, payAmount: amount };
 }
