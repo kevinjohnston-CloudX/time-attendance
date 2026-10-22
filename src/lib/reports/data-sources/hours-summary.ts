@@ -50,7 +50,7 @@ export const hoursSummarySource: DataSourceDefinition = {
         { value: "LOCKED", label: "Locked" },
       ] },
   ],
-  groupableFields: ["department", "site"],
+  groupableFields: ["department", "site", "status"],
   fieldMap,
 
   async execute(config: ReportConfig, tenantId: string, ctx?: ExecuteContext): Promise<ReportResult> {
@@ -83,7 +83,9 @@ export const hoursSummarySource: DataSourceDefinition = {
         overtimeBuckets: true,
       },
       orderBy,
-      take: config.limit,
+      // No limit here: a weekly person's two timesheets become one line
+      // below, so the limit is applied to people, after that. Taken here, a
+      // preview of 100 timesheets came back as 97 people and read as complete.
     });
 
     // Get PTO balances for the relevant employees. This is what each person
@@ -102,8 +104,8 @@ export const hoursSummarySource: DataSourceDefinition = {
         : [];
     const premiumByTimesheet = new Map(premiums.map((p) => [p.timesheetId, p._sum.durationMinutes ?? 0]));
 
-    // Build rows
-    const rows = timesheets.map((ts) => {
+    // Build rows: one per timesheet, then one per person, below.
+    const perTimesheet = timesheets.map((ts) => {
       const buckets: Record<string, number> = {};
       for (const b of ts.overtimeBuckets) {
         buckets[b.bucket] = b.totalMinutes;
@@ -129,9 +131,27 @@ export const hoursSummarySource: DataSourceDefinition = {
         holidayMinutes: holiday,
         totalMinutes: reg + ot + dt,
         premiumMinutes: premiumByTimesheet.get(ts.id) ?? 0,
-        status: readable("timesheetStatus", ts.status),
+        status: readable("timesheetStatus", ts.status) ?? "",
       };
     });
+
+    // A pay period across every pay group holds two weekly timesheets for
+    // someone paid weekly, which listed them twice. Their hours are added
+    // together into one line, in the order the first one came.
+    const byPerson = new Map<string, (typeof perTimesheet)[number]>();
+    perTimesheet.forEach((row, i) => {
+      const person = timesheets[i].employeeId;
+      const seen = byPerson.get(person);
+      if (!seen) {
+        byPerson.set(person, { ...row });
+        return;
+      }
+      for (const k of ["regMinutes", "otMinutes", "dtMinutes", "sickMinutes", "holidayMinutes", "totalMinutes", "premiumMinutes"] as const) {
+        seen[k] += row[k];
+      }
+      if (!seen.status.split(" and ").includes(row.status)) seen.status = [seen.status, row.status].sort().join(" and ");
+    });
+    const rows = [...byPerson.values()];
 
     // In-memory sort for computed columns (regMinutes, otMinutes, etc.)
     const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
@@ -146,7 +166,7 @@ export const hoursSummarySource: DataSourceDefinition = {
         label: c.label,
         type: c.type,
       })),
-      rows: sortedRows,
+      rows: config.limit ? sortedRows.slice(0, config.limit) : sortedRows,
       totalRows: sortedRows.length,
     };
   },
