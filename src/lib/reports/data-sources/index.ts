@@ -47,6 +47,8 @@ export interface ReportResult {
   columns: { id: string; label: string; type: string; exportLabel?: string; total?: boolean }[];
   /** Rows were combined from a report that stopped at its limit, so they are short. */
   truncated?: boolean;
+  /** Each row drawn as a card, its columns one under another. */
+  cards?: boolean;
   rows: Record<string, unknown>[];
   totalRows: number;
   /** The days the rows cover, for reports that work them out themselves. */
@@ -150,7 +152,8 @@ function withGroups(def: DataSourceDefinition): DataSourceDefinition {
           layout: config.layout,
         }
       );
-      return grouped ? { ...result, rows: grouped.rows, groups: grouped.groups } : result;
+      const cards = config.layout?.cards ? { cards: true } : {};
+      return grouped ? { ...result, ...cards, rows: grouped.rows, groups: grouped.groups } : { ...result, ...cards };
     },
   };
 }

@@ -49,7 +49,8 @@ export function signers(signature: Signature): string[] {
  */
 export function describePrint(layout: PrintLayout | undefined, labelOf: (id: string) => string): string | null {
   const parts: string[] = [];
-  if (layout?.pageBreak) parts.push(`A page for each ${labelOf(layout.pageBreak).toLowerCase()}`);
+  if (layout?.cards) parts.push("Each row as a card");
+  if (layout?.pageBreak) parts.push(`${parts.length ? "a" : "A"} page for each ${labelOf(layout.pageBreak).toLowerCase()}`);
   const who = layout?.signature ? signers(layout.signature).map((s) => s.replace(" signature", "").toLowerCase()) : [];
   if (layout?.signature) {
     const whom = who.length ? ` for the ${who.join(" and ")} to sign` : "";
@@ -62,6 +63,8 @@ export function describePrint(layout: PrintLayout | undefined, labelOf: (id: str
 export interface PrintLayout {
   /** The grouped field each new page starts at. */
   pageBreak?: string;
+  /** Each row as a card, its columns one under another (an employee profile). */
+  cards?: boolean;
   signature?: Signature;
 }
 

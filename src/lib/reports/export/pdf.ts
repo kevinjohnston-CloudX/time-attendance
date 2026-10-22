@@ -106,9 +106,41 @@ export async function generatePdf(
     ],
   });
 
+  // A card: each column's name beside its value, kept whole on its page.
+  const card = (row: Record<string, unknown>): Content => ({
+    unbreakable: true,
+    margin: [0, 2, 0, 12],
+    table: {
+      widths: [150, "*"],
+      body: result.columns.map((col) => [
+        { text: col.label, fontSize: 8, color: "#71717a" },
+        { text: displayText(row[col.id], col), fontSize: 9 },
+      ]),
+    },
+    layout: { ...tableLayout, vLineWidth: () => 0, hLineColor: () => "#f4f4f5" },
+  });
+
   // Rows past the limit are left out, and so are the totals, which would be
   // short by them, and the signatures, which would sign for rows not shown.
-  if (!result.groups) {
+  if (result.cards) {
+    // Cards are not a table: headings, cards and signatures, one after another.
+    const lines = result.groups?.lines ?? result.rows.map((_, index) => ({ kind: "row" as const, index }));
+    for (const line of lines) {
+      if (line.kind === "row") {
+        if (line.index < MAX_PDF_ROWS) blocks.push(card(result.rows[line.index]));
+      } else if (line.kind === "group") {
+        blocks.push({
+          text: `${line.fieldLabel}: ${line.label}`,
+          fontSize: line.level === 0 ? 11 : 10,
+          bold: true,
+          margin: [line.level * 8, 6, 0, 4],
+          ...(line.newPage ? { pageBreak: "before" as const } : {}),
+        });
+      } else if (line.kind === "signature" && !cut) {
+        blocks.push(signatureBlock(line.signature));
+      }
+    }
+  } else if (!result.groups) {
     for (const row of result.rows.slice(0, MAX_PDF_ROWS)) body.push(dataRow(row));
   } else {
     const lines = result.groups.lines;
@@ -156,7 +188,7 @@ export async function generatePdf(
 
   const docDefinition: TDocumentDefinitions = {
     defaultStyle: { font: "Helvetica" },
-    pageOrientation: result.columns.length > 6 ? "landscape" : "portrait",
+    pageOrientation: result.columns.length > 6 && !result.cards ? "landscape" : "portrait",
     pageSize: "LETTER",
     pageMargins: [30, 40, 30, 40],
     // Every page after the first says what it is, so a printed stack of
