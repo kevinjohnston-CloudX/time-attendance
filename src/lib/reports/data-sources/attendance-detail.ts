@@ -31,6 +31,7 @@ const fieldMap: FieldMap = {
   payBucket:     { prismaPath: "payBucket",                           type: "string" },
   payCodeLabel:  { prismaPath: "payCode.label",                       type: "string" },
   segmentDate:   { prismaPath: "segmentDate",                         type: "date" },
+  status:        { prismaPath: "timesheet.status",                    type: "string" },
   // The Date column, sorted in the database with the rest: sorted in memory
   // after the database sorted by name, it undid the name order.
   date:          { prismaPath: "segmentDate",                         type: "date" },
@@ -55,6 +56,11 @@ export const attendanceDetailSource: DataSourceDefinition = {
     { id: "payBucket",       label: "Hours type",     type: "string",  defaultVisible: true, across: true },
     { id: "payCode",           label: "Pay code number", type: "string",  defaultVisible: true },
     { id: "payCodeLabel",      label: "Pay code",        type: "string",  defaultVisible: false, across: true },
+    // The pay code with its hours type, so overtime on the Regular code reads as overtime.
+    { id: "payCodeHours",      label: "Pay code and hours type", type: "string", defaultVisible: false, across: true },
+    { id: "expressCode",       label: "Express code",    type: "string",  defaultVisible: false },
+    { id: "adpCode",           label: "ADP code",        type: "string",  defaultVisible: false },
+    { id: "status",            label: "Timesheet status", type: "string", defaultVisible: false },
     { id: "reasonCode",        label: "Reason code",     type: "string",  defaultVisible: false },
     { id: "regularMinutes",    label: "Regular",       type: "number",  defaultVisible: false },
     { id: "overtimeMinutes",   label: "Overtime",        type: "number",  defaultVisible: false },
@@ -96,6 +102,11 @@ export const attendanceDetailSource: DataSourceDefinition = {
       ] },
     { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
     { id: "payCodeLabel", label: "Pay code", type: "string", operators: ["eq", "neq"] },
+    { id: "status", label: "Timesheet status", type: "string", operators: ["eq", "in"],
+      options: [
+        { value: "OPEN", label: "Open" },
+        { value: "LOCKED", label: "Locked" },
+      ] },
   ],
   groupableFields: ["employeeName", "department", "site", "segmentType"],
   fieldMap,
@@ -135,7 +146,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
     const segments = await db.workSegment.findMany({
       where,
       include: {
-        payCode: { select: { code: true, label: true } },
+        payCode: { select: { code: true, label: true, expressCode: true, adpCode: true } },
         timesheet: {
           include: {
             employee: {
@@ -169,8 +180,11 @@ export const attendanceDetailSource: DataSourceDefinition = {
         // The company's first day of the week first, for spreading the days across columns.
         weekdayOrder: (seg.segmentDate.getUTCDay() - weekStart + 7) % 7,
         segmentType: readable("segmentType", seg.segmentType),
-        startTime: clockAt(seg.startTime, personTimeZone(seg.timesheet.employee)),
-        endTime: clockAt(seg.endTime, personTimeZone(seg.timesheet.employee)),
+        // Worked lines, meals and breaks have real times. Time off, holidays and
+        // meal premiums are amounts placed on the day, and their times were
+        // made up (PTO read 5:00 AM to 1:00 PM), so they show none.
+        startTime: timed(seg.segmentType) ? clockAt(seg.startTime, personTimeZone(seg.timesheet.employee)) : null,
+        endTime: timed(seg.segmentType) ? clockAt(seg.endTime, personTimeZone(seg.timesheet.employee)) : null,
         durationMinutes: seg.durationMinutes,
         // Paid time, as the timecard totals it: an unpaid meal is not in it,
         // and a meal premium is an hour of pay, not an hour worked.
@@ -179,10 +193,17 @@ export const attendanceDetailSource: DataSourceDefinition = {
         payBucket: readable("payBucket", seg.payBucket),
         payCode: seg.payCode?.code ?? null,
         payCodeLabel: seg.payCode?.label ?? null,
+        payCodeHours: seg.payCode
+          ? `${seg.payCode.label}${seg.segmentType === "WORK" && seg.payBucket === "OT" ? " (overtime)" : seg.segmentType === "WORK" && seg.payBucket === "DT" ? " (double time)" : ""}`
+          : null,
+        expressCode: seg.payCode?.expressCode ?? null,
+        adpCode: seg.payCode?.adpCode ?? null,
+        status: readable("timesheetStatus", seg.timesheet.status),
         reasonCode: dayReason ? `${dayReason.reasonCode.code} (${dayReason.reasonCode.label})` : null,
-        regularMinutes: seg.payBucket === "REG" ? seg.durationMinutes : null,
-        overtimeMinutes: seg.payBucket === "OT" ? seg.durationMinutes : null,
-        doubletimeMinutes: seg.payBucket === "DT" ? seg.durationMinutes : null,
+        // Hours worked only: a meal premium is an hour of pay, and time off is not worked.
+        regularMinutes: seg.segmentType === "WORK" && seg.payBucket === "REG" ? seg.durationMinutes : null,
+        overtimeMinutes: seg.segmentType === "WORK" && seg.payBucket === "OT" ? seg.durationMinutes : null,
+        doubletimeMinutes: seg.segmentType === "WORK" && seg.payBucket === "DT" ? seg.durationMinutes : null,
         isPaid: seg.isPaid,
       };
     });
@@ -250,10 +271,16 @@ function pay(
   employee: { agencyRef: { code: number; description: string } | null; payRates: { effectiveDate: Date; rate1: unknown }[] }
 ) {
   const agency = employee.agencyRef ? `${employee.agencyRef.code} ${employee.agencyRef.description}`.trim() : null;
-  const paid = seg.isPaid && seg.segmentType !== "MEAL_PREMIUM";
+  // A meal premium is an hour of pay at the rate: paid, though not hours worked.
+  const paid = seg.isPaid;
   const rateRow = rateInEffect(employee.payRates, seg.segmentDate.toISOString().slice(0, 10));
   const rate = rateRow?.rate1 != null ? Number(rateRow.rate1) : null;
   const multiplier = paid ? (MULTIPLIER[seg.payBucket] ?? 1) : null;
   const amount = paid && rate != null && multiplier != null ? Math.round((seg.durationMinutes / 60) * rate * multiplier * 100) / 100 : null;
   return { agency, payRate: rate, multiplier, payAmount: amount };
+}
+
+/** Lines with real clock times: work, meals and breaks. */
+function timed(segmentType: string): boolean {
+  return segmentType === "WORK" || segmentType === "MEAL" || segmentType === "BREAK";
 }

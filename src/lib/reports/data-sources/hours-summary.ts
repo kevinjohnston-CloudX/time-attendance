@@ -35,7 +35,13 @@ export const hoursSummarySource: DataSourceDefinition = {
     { id: "ptoMinutes",    label: "PTO balance",         type: "number",  defaultVisible: true },
     { id: "sickMinutes",   label: "Sick",        type: "number",  defaultVisible: false },
     { id: "holidayMinutes",label: "Holiday",     type: "number",  defaultVisible: false },
-    { id: "totalMinutes",  label: "Total",       type: "number",  defaultVisible: true },
+    { id: "vacationMinutes", label: "PTO taken",  type: "number",  defaultVisible: false },
+    { id: "otherLeaveMinutes", label: "Other paid leave", type: "number", defaultVisible: false },
+    { id: "unpaidMinutes", label: "Unpaid time off", type: "number", defaultVisible: false },
+    // Hours worked: regular, overtime and double time. NovaTime's "Work Hr Total".
+    { id: "totalMinutes",  label: "Worked total", type: "number",  defaultVisible: true },
+    // Everything paid: worked, paid time off and holidays. NovaTime's "Total Hrs".
+    { id: "paidTotalMinutes", label: "Total paid", type: "number", defaultVisible: false },
     { id: "premiumMinutes", label: "Meal premium", type: "number", defaultVisible: false },
     { id: "status",        label: "Timesheet status",      type: "string",  defaultVisible: true },
   ],
@@ -104,6 +110,22 @@ export const hoursSummarySource: DataSourceDefinition = {
         : [];
     const premiumByTimesheet = new Map(premiums.map((p) => [p.timesheetId, p._sum.durationMinutes ?? 0]));
 
+    // Time off taken, by kind and whether it is paid, from the lines.
+    const leave =
+      timesheetIds.length > 0
+        ? await db.workSegment.groupBy({
+            by: ["timesheetId", "payBucket", "isPaid"],
+            where: { timesheetId: { in: timesheetIds }, segmentType: "LEAVE" },
+            _sum: { durationMinutes: true },
+          })
+        : [];
+    const leaveByTimesheet = new Map<string, LeaveHours>();
+    for (const l of leave) {
+      const t = leaveByTimesheet.get(l.timesheetId) ?? { vacation: 0, other: 0, unpaid: 0 };
+      addLeave(t, l.payBucket, l.isPaid, l._sum.durationMinutes ?? 0);
+      leaveByTimesheet.set(l.timesheetId, t);
+    }
+
     // Build rows: one per timesheet, then one per person, below.
     const perTimesheet = timesheets.map((ts) => {
       const buckets: Record<string, number> = {};
@@ -129,6 +151,7 @@ export const hoursSummarySource: DataSourceDefinition = {
         ptoMinutes: pto,
         sickMinutes: sick,
         holidayMinutes: holiday,
+        ...leaveColumns(leaveByTimesheet.get(ts.id), reg + ot + dt, sick, holiday),
         totalMinutes: reg + ot + dt,
         premiumMinutes: premiumByTimesheet.get(ts.id) ?? 0,
         status: readable("timesheetStatus", ts.status) ?? "",
@@ -146,7 +169,10 @@ export const hoursSummarySource: DataSourceDefinition = {
         byPerson.set(person, { ...row });
         return;
       }
-      for (const k of ["regMinutes", "otMinutes", "dtMinutes", "sickMinutes", "holidayMinutes", "totalMinutes", "premiumMinutes"] as const) {
+      for (const k of [
+        "regMinutes", "otMinutes", "dtMinutes", "sickMinutes", "holidayMinutes", "totalMinutes", "premiumMinutes",
+        "vacationMinutes", "otherLeaveMinutes", "unpaidMinutes", "paidTotalMinutes",
+      ] as const) {
         seen[k] += row[k];
       }
       if (!seen.status.split(" and ").includes(row.status)) seen.status = [seen.status, row.status].sort().join(" and ");
@@ -249,15 +275,19 @@ async function hoursOnDays(config: ReportConfig, tenantId: string, span: DaySpan
 
   // The same lines the pay period totals are built from: worked time by its
   // bucket, sick leave, holidays, and paid meal premiums on their own.
-  const hours = new Map<string, { reg: number; ot: number; dt: number; sick: number; holiday: number; premium: number }>();
+  const blank = () => ({ reg: 0, ot: 0, dt: 0, sick: 0, holiday: 0, premium: 0, leave: { vacation: 0, other: 0, unpaid: 0 } as LeaveHours });
+  const hours = new Map<string, ReturnType<typeof blank>>();
   for (const s of sums) {
-    const h = hours.get(s.employeeId) ?? { reg: 0, ot: 0, dt: 0, sick: 0, holiday: 0, premium: 0 };
+    const h = hours.get(s.employeeId) ?? blank();
     const m = Number(s.minutes) || 0;
     if (s.segmentType === "WORK") {
       if (s.payBucket === "REG") h.reg += m;
       else if (s.payBucket === "OT") h.ot += m;
       else if (s.payBucket === "DT") h.dt += m;
-    } else if (s.segmentType === "LEAVE" && s.payBucket === "SICK") h.sick += m;
+    } else if (s.segmentType === "LEAVE") {
+      if (s.payBucket === "SICK" && s.isPaid) h.sick += m;
+      addLeave(h.leave, s.payBucket, s.isPaid, m);
+    }
     else if (s.segmentType === "HOLIDAY") h.holiday += m;
     else if (s.segmentType === "MEAL_PREMIUM" && s.isPaid) h.premium += m;
     hours.set(s.employeeId, h);
@@ -266,7 +296,7 @@ async function hoursOnDays(config: ReportConfig, tenantId: string, span: DaySpan
   const pto = await ptoBalances(ids);
 
   const rows = people.map((p) => {
-    const h = hours.get(p.id) ?? { reg: 0, ot: 0, dt: 0, sick: 0, holiday: 0, premium: 0 };
+    const h = hours.get(p.id) ?? blank();
     const states = [...new Set(p.timesheets.map((t) => readable("timesheetStatus", t.status)))].sort();
     return {
       employeeName: p.user?.name ?? p.employeeCode,
@@ -279,6 +309,7 @@ async function hoursOnDays(config: ReportConfig, tenantId: string, span: DaySpan
       ptoMinutes: pto[p.id] ?? 0,
       sickMinutes: h.sick,
       holidayMinutes: h.holiday,
+      ...leaveColumns(h.leave, h.reg + h.ot + h.dt, h.sick, h.holiday),
       totalMinutes: h.reg + h.ot + h.dt,
       premiumMinutes: h.premium,
       // The days can cross two timesheets, one locked and one still open.
@@ -312,4 +343,24 @@ async function ptoBalances(employeeIds: string[]): Promise<Record<string, number
   const out: Record<string, number> = {};
   for (const b of balances) out[b.employeeId] = (out[b.employeeId] ?? 0) + b.balanceMinutes;
   return out;
+}
+
+/** Time off taken: paid PTO, other paid leave (sick has its own column), and unpaid. */
+type LeaveHours = { vacation: number; other: number; unpaid: number };
+
+function addLeave(t: LeaveHours, bucket: string, isPaid: boolean, minutes: number) {
+  if (!isPaid) t.unpaid += minutes;
+  else if (bucket === "PTO") t.vacation += minutes;
+  else if (bucket !== "SICK") t.other += minutes;
+}
+
+/** The time off columns, and the paid total: worked, paid time off and holidays. */
+function leaveColumns(l: LeaveHours | undefined, worked: number, sick: number, holiday: number) {
+  const t = l ?? { vacation: 0, other: 0, unpaid: 0 };
+  return {
+    vacationMinutes: t.vacation,
+    otherLeaveMinutes: t.other,
+    unpaidMinutes: t.unpaid,
+    paidTotalMinutes: worked + sick + t.vacation + t.other + holiday,
+  };
 }
