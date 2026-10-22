@@ -129,22 +129,32 @@ export function SetupShell<T extends string>({
   );
 
   // The rail pins just under the header and reaches the bottom of the window.
+  // A computer window too narrow for the rail beside the form pins an
+  // editor's Jump to picker there instead, and a section then stops under
+  // both. The width is the stylesheet's own (lg, 64rem, which grows with the
+  // browser's text size), so the two never disagree about which is showing.
   const barRef = useRef<HTMLDivElement | null>(null);
   const railRef = useRef<HTMLDivElement | null>(null);
-  const [rail, setRail] = useState<{ top: number; height: number } | null>(null);
+  const jumpRef = useRef<HTMLLabelElement | null>(null);
+  const [rail, setRail] = useState<{ bar: number; top: number; height: number } | null>(null);
   useEffect(() => {
     let frame = 0;
     const read = () => {
       frame = 0;
       const bar = barRef.current;
       const el = railRef.current;
-      if (!bar || !el) return;
-      if (!window.matchMedia("(min-width: 1024px) and (min-height: 600px)").matches) return setRail(null);
+      if (!bar || !el || isPhone()) return setRail(null);
       // At rest the rail sits 4px under the bar: the bar's 12px bottom
       // padding comes back as a -12px margin, then the 16px gap.
-      const top = Math.round(bar.getBoundingClientRect().height) + 4;
-      const height = Math.max(280, Math.floor(window.innerHeight - Math.max(el.getBoundingClientRect().top, top + 40) - 24));
-      setRail((prev) => (prev && prev.top === top && prev.height === height ? prev : { top, height }));
+      // In a narrow or short window the bar scrolls away (globals.css), so
+      // nothing of it stays above.
+      const under = getComputedStyle(bar).position === "sticky" ? Math.round(bar.getBoundingClientRect().height) + 4 : 0;
+      const jump = jumpRef.current?.getBoundingClientRect().height ?? 0;
+      const top = under + Math.round(jump);
+      const height = window.matchMedia("(width >= 64rem) and (min-height: 600px)").matches
+        ? Math.max(280, Math.floor(window.innerHeight - Math.max(el.getBoundingClientRect().top, top + 40) - 24))
+        : 0;
+      setRail((prev) => (prev && prev.bar === under && prev.top === top && prev.height === height ? prev : { bar: under, top, height }));
     };
     const onChange = () => {
       if (!frame) frame = requestAnimationFrame(read);
@@ -169,7 +179,7 @@ export function SetupShell<T extends string>({
       ref={rootRef}
       className={`${phone.shell} flex flex-col gap-4`}
       data-phone-view={phoneList ? (phoneOpen ? "area" : "areas") : "sections"}
-      style={{ ["--shell-top" as string]: `${rail?.top ?? 96}px` }}
+      style={{ ["--shell-top" as string]: `${rail?.top ?? 96}px`, ["--shell-bar" as string]: `${rail?.bar ?? 96}px` }}
     >
       <PinnedBar barRef={barRef}>
         <PageHeader
@@ -198,7 +208,7 @@ export function SetupShell<T extends string>({
           ref={railRef}
           aria-label={railLabel ?? (typeof title === "string" ? `${title} areas` : "Areas")}
           className={`${phone.rail} ta-card ta-scroll w-full flex-none overflow-y-auto lg:sticky lg:w-[248px]`}
-          style={{ top: rail?.top, maxHeight: rail?.height, borderRadius: "var(--radius-l)" }}
+          style={{ top: rail?.bar, maxHeight: rail?.height || undefined, borderRadius: "var(--radius-l)" }}
         >
           {groups.map((g, i) => (
             <div
@@ -216,8 +226,8 @@ export function SetupShell<T extends string>({
 
         <div className={`${phone.area} flex w-full min-w-0 flex-1 flex-col gap-3`}>
           {phoneList ? null : (
-            <div className="ta-phone-only">
-              <label className={phone.jump}>
+            <div className={`ta-phone-only ${phone.jumpWrap}`}>
+              <label ref={jumpRef} className={phone.jump}>
                 <span>Jump to</span>
                 <select
                   className="ta-field"
