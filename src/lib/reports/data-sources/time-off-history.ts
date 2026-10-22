@@ -142,6 +142,13 @@ const summaryColumns = [
   { id: "adjustedMinutes", label: "Adjusted", type: "number" as const, defaultVisible: true, exportLabel: "Adjusted (every other change)" },
   { id: "endBalanceMinutes", label: "Balance at end", type: "number" as const, defaultVisible: true, total: false },
   { id: "usedThisYearMinutes", label: "Used this year", type: "number" as const, defaultVisible: true },
+  // By quarter of the year the dates end in, inside the dates: NovaTime's Annual Accrued vs. Used.
+  ...[1, 2, 3, 4].flatMap((q) => [
+    { id: `earnedQ${q}Minutes`, label: `Earned Q${q}`, type: "number" as const, defaultVisible: false },
+    { id: `usedQ${q}Minutes`, label: `Used Q${q}`, type: "number" as const, defaultVisible: false },
+  ]),
+  { id: "earnedThisYearMinutes", label: "Earned this year", type: "number" as const, defaultVisible: false },
+  { id: "forecastMinutes", label: "Forecast at year end", type: "number" as const, defaultVisible: false, total: false },
 ];
 
 export const timeOffSummarySource: DataSourceDefinition = {
@@ -168,7 +175,8 @@ export const timeOffSummarySource: DataSourceDefinition = {
     // entry up to the end of the dates.
     const sums = await db.$queryRaw<{
       employeeId: string; leaveType: string; startBalance: number | null; endBalance: number;
-      earned: number; used: number; adjusted: number; usedYear: number; inDates: number;
+      earned: number; used: number; adjusted: number; usedYear: number; earnedYear: number; inDates: number;
+      [quarter: string]: unknown;
     }[]>`
       SELECT l."employeeId", t.name AS "leaveType",
         (array_agg(l."balanceAfter" ORDER BY l."createdAt" DESC, l.id DESC) FILTER (WHERE l."createdAt" < ${from}))[1] AS "startBalance",
@@ -177,6 +185,13 @@ export const timeOffSummarySource: DataSourceDefinition = {
         COALESCE(-SUM(l."deltaMinutes") FILTER (WHERE l."createdAt" >= ${from} AND l.action::text = ANY(${USED})), 0)::int AS used,
         COALESCE(SUM(l."deltaMinutes") FILTER (WHERE l."createdAt" >= ${from} AND NOT (l.action::text = ANY(${[...EARNED, ...USED]}))), 0)::int AS adjusted,
         COALESCE(-SUM(l."deltaMinutes") FILTER (WHERE l."createdAt" >= ${yearFrom} AND l.action::text = ANY(${USED})), 0)::int AS "usedYear",
+        COALESCE(SUM(l."deltaMinutes") FILTER (WHERE l."createdAt" >= ${yearFrom} AND l.action::text = ANY(${EARNED})), 0)::int AS "earnedYear",
+        ${Prisma.join(
+          [1, 2, 3, 4].flatMap((q) => [
+            Prisma.sql`COALESCE(SUM(l."deltaMinutes") FILTER (WHERE l."createdAt" >= ${from} AND l."createdAt" >= ${yearFrom} AND EXTRACT(QUARTER FROM l."createdAt" AT TIME ZONE ${REPORT_ZONE}) = ${q} AND l.action::text = ANY(${EARNED})), 0)::int AS ${Prisma.raw(`"earnedQ${q}"`)}`,
+            Prisma.sql`COALESCE(-SUM(l."deltaMinutes") FILTER (WHERE l."createdAt" >= ${from} AND l."createdAt" >= ${yearFrom} AND EXTRACT(QUARTER FROM l."createdAt" AT TIME ZONE ${REPORT_ZONE}) = ${q} AND l.action::text = ANY(${USED})), 0)::int AS ${Prisma.raw(`"usedQ${q}"`)}`,
+          ])
+        )},
         COUNT(*) FILTER (WHERE l."createdAt" >= ${from})::int AS "inDates"
       FROM leave_accrual_ledger l
       JOIN leave_types t ON t.id = l."leaveTypeId"
@@ -185,6 +200,10 @@ export const timeOffSummarySource: DataSourceDefinition = {
         ${types ? Prisma.sql`AND l."leaveTypeId" = ANY(${types})` : Prisma.empty}
       GROUP BY 1, 2`;
 
+    // The year so far, for the forecast: what was earned a day, for the days left.
+    const yearOf = Number(span.end.slice(0, 4));
+    const dayOfYear = (Date.parse(`${span.end}T12:00:00Z`) - Date.UTC(yearOf, 0, 1, 12)) / 86_400_000 + 1;
+    const daysInYear = (Date.UTC(yearOf + 1, 0, 1) - Date.UTC(yearOf, 0, 1)) / 86_400_000;
     const rows: Record<string, unknown>[] = sums.map((s) => {
       const start = s.startBalance ?? 0;
       return {
@@ -197,6 +216,10 @@ export const timeOffSummarySource: DataSourceDefinition = {
         adjustedMinutes: s.endBalance - start - s.earned + s.used,
         endBalanceMinutes: s.endBalance,
         usedThisYearMinutes: s.usedYear,
+        ...Object.fromEntries([1, 2, 3, 4].flatMap((q) => [[`earnedQ${q}Minutes`, s[`earnedQ${q}`]], [`usedQ${q}Minutes`, s[`usedQ${q}`]]])),
+        earnedThisYearMinutes: s.earnedYear,
+        // The balance now, plus what this year's pace earns in the days left.
+        forecastMinutes: Math.round(s.endBalance + (s.earnedYear / dayOfYear) * (daysInYear - dayOfYear)),
       };
     });
     rows.sort((a, b) => String(a.employeeName).localeCompare(String(b.employeeName)) || String(a.leaveType).localeCompare(String(b.leaveType)));

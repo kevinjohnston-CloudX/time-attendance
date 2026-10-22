@@ -14,6 +14,7 @@ import { timesheetNotesSource } from "./timesheet-notes";
 import { timeOffHistorySource, timeOffSummarySource } from "./time-off-history";
 import { scheduledHoursSource } from "./scheduled-hours";
 import { scansNotRecordedSource } from "./scans-not-recorded";
+import { attendanceSummarySource, hoursToDateSource, weeklyOvertimeSource } from "./calculated";
 import { daysOf, REPORT_ZONE, todayIn } from "../period";
 import { spreadAcross } from "../across";
 import { groupRows, type ReportGroups } from "../grouping";
@@ -105,6 +106,9 @@ const sources: Record<DataSourceId, DataSourceDefinition> = {
   TIME_OFF_SUMMARY: timeOffSummarySource,
   SCHEDULED_HOURS: scheduledHoursSource,
   SCANS_NOT_RECORDED: scansNotRecordedSource,
+  HOURS_TO_DATE: hoursToDateSource,
+  WEEKLY_OVERTIME: weeklyOvertimeSource,
+  ATTENDANCE_SUMMARY: attendanceSummarySource,
 };
 
 /**
