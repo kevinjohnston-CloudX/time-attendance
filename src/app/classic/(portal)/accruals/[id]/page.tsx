@@ -55,8 +55,9 @@ export default async function EmployeeAccrualsPage({
   const [empResult, leaveTypes, leaveBalanceRows, accrualSums, timecardDeductionEntries, approvedRequests, postedRequests, pastYearRows] =
     await Promise.all([
       getEmployeeById({ employeeId: id }),
+      // The employee's own company's leave types, not every company's.
       db.leaveType.findMany({
-        where: { isActive: true },
+        where: { isActive: true, tenant: { employees: { some: { id } } } },
         orderBy: { name: "asc" },
         select: { id: true, name: true, category: true, accrualTracked: true },
       }),

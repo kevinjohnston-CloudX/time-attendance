@@ -79,14 +79,17 @@ interface Props {
 const BALANCE_COLS = 9;
 
 /**
- * Minutes as decimal hours.
- *
- * <p>Rounds a sub-second negative to zero rather than to "-0.00", which is
- * what a balance that has been credited and debited the same amount produces.
+ * Minutes as hours and minutes ("1h 32m", "-3h 49m", "8h"), as the classic
+ * page shows them; HR asked for these over decimal hours, which read 1h 32m
+ * as 1.53 and a NovaTime 6.16 h posting as 6.17.
  */
 function hrs(minutes: number): string {
-  const v = minutes / 60;
-  return (Math.abs(v) < 0.005 ? 0 : v).toFixed(2);
+  const total = Math.round(Math.abs(minutes));
+  if (total === 0) return "0h";
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  const val = m === 0 ? `${h}h` : h === 0 ? `${m}m` : `${h}h ${m}m`;
+  return minutes < 0 ? `-${val}` : val;
 }
 
 /** A change rather than a level: the sign is the whole meaning, so it is kept. */
@@ -332,7 +335,6 @@ function AddEntryForm({
             >
               {hrs(previewBalance)}
             </span>
-            {" h"}
           </span>
           {accrualMinutes !== 0 && (
             <span className="tabular" style={{ color: "var(--text-tertiary)" }}>
@@ -412,9 +414,9 @@ function CorrectionForm({
       <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
         Posts an ADJUSTMENT of{" "}
         <span className="tabular" style={{ fontWeight: "var(--weight-semibold)", color: deltaColor(gap) }}>
-          {delta(gap)} h
+          {delta(gap)}
         </span>{" "}
-        to bring accrued hours to {hrs(row.expectedAccrualMinutes ?? 0)} h.
+        to bring accrued hours to {hrs(row.expectedAccrualMinutes ?? 0)}.
       </span>
 
       <div className="flex flex-wrap items-end gap-2">
@@ -524,8 +526,8 @@ function LedgerCard({
     row.policyAnnualHours == null
       ? "—"
       : row.policyRateMode === "PER_POSTING"
-        ? `${row.policyAnnualHours.toFixed(2)} / period`
-        : `${row.policyAnnualHours.toFixed(2)} / year`;
+        ? `${hrs(row.policyAnnualHours * 60)} / period`
+        : `${hrs(row.policyAnnualHours * 60)} / year`;
 
   const available = availableMinutes(row);
 
@@ -533,17 +535,17 @@ function LedgerCard({
   // does not hold — a balance cap and the next posting date — replaced by the
   // two it does: what has accrued this year, and what is actually spendable.
   const summary: { label: string; value: string; color?: string }[] = [
-    { label: "Current Balance", value: `${hrs(row.balanceMinutes)} h` },
+    { label: "Current Balance", value: `${hrs(row.balanceMinutes)}` },
     { label: "Accrual Rate", value: rateLabel },
-    { label: "Accrued This Year", value: `${hrs(row.accruedMinutes)} h` },
+    { label: "Accrued This Year", value: `${hrs(row.accruedMinutes)}` },
     isFiltered && toDate
       ? {
           label: `Balance as at ${fmtDate(toDate)}`,
-          value: result ? `${hrs(asOfBalance)} h` : "—",
+          value: result ? `${hrs(asOfBalance)}` : "—",
         }
       : {
           label: "Available",
-          value: `${hrs(available)} h`,
+          value: `${hrs(available)}`,
           color: available < 0 ? "var(--text-error)" : undefined,
         },
   ];
@@ -611,8 +613,8 @@ function LedgerCard({
           <Banner
             tone="warning"
             title="Accrual does not match the policy"
-            body={`The policy should have posted ${hrs(row.expectedAccrualMinutes ?? 0)} h by now, but the ledger shows ${hrs(row.accruedMinutes)} h.`}
-            meta={`Difference ${delta(gap)} h`}
+            body={`The policy should have posted ${hrs(row.expectedAccrualMinutes ?? 0)} by now, but the ledger shows ${hrs(row.accruedMinutes)}.`}
+            meta={`Difference ${delta(gap)}`}
             actions={
               canManage && !fixOpen ? (
                 <Button size="sm" hierarchy="secondary" onClick={() => { setFixOpen(true); setAddOpen(false); }}>
@@ -651,7 +653,7 @@ function LedgerCard({
             title={isFiltered ? "No activity in this date range" : `No activity in ${selectedYear}`}
             body={
               isFiltered
-                ? `Nothing posted, used or adjusted between the dates you chose. The balance carried into the range was ${hrs(openingBalance)} h.`
+                ? `Nothing posted, used or adjusted between the dates you chose. The balance carried into the range was ${hrs(openingBalance)}.`
                 : "Postings, leave taken and adjustments all appear here as they happen."
             }
           />
@@ -787,7 +789,7 @@ function BalanceTableRow({
 
       <TD numeric data-label="Rate" style={{ color: "var(--text-secondary)" }}>
         {row.policyAnnualHours != null
-          ? row.policyAnnualHours.toFixed(2)
+          ? hrs(row.policyAnnualHours * 60)
           : <span style={{ color: "var(--text-tertiary)" }}>—</span>}
       </TD>
 
