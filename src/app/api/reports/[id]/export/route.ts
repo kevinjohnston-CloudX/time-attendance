@@ -57,7 +57,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     });
   }
   if (format === "pdf") {
-    const pdf = await generatePdf(result, name);
+    let pdf: Buffer;
+    try {
+      pdf = await generatePdf(result, name);
+    } catch (e) {
+      // A plain answer rather than a blank page; the detail only in development.
+      console.error("[report pdf]", e);
+      const detail = process.env.NODE_ENV === "development" && e instanceof Error ? ` (${e.message})` : "";
+      return new NextResponse(`The PDF could not be made. Download Excel or CSV instead.${detail}`, { status: 500 });
+    }
     return new NextResponse(new Uint8Array(pdf), {
       headers: {
         "Content-Type": "application/pdf",

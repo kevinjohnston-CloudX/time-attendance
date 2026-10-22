@@ -26,8 +26,18 @@ const devTunnelOrigins = ["localhost:3000", "*.devtunnels.ms"];
  */
 const localDevHosts = ["127.0.0.1"];
 
+/**
+ * Loaded from node_modules as they are, never bundled. pdfkit (under pdfmake)
+ * reads its built-in font files from beside its own code; bundled, that path
+ * became /ROOT/node_modules/... and every report PDF failed with ENOENT on
+ * Helvetica-Bold.afm. Found Oct 22, 2026: the download and the scheduled
+ * email both make their PDF here.
+ */
+const unbundled = ["pdfmake", "pdfkit"];
+
 const nextConfig: NextConfig = {
   allowedDevOrigins: localDevHosts,
+  serverExternalPackages: unbundled,
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",
