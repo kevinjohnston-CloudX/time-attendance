@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useTransition, type ReactNode } from "reac
 import { useRouter } from "@/components/layout/navigation-progress";
 import { usePhoneBack } from "@/components/layout/phone-back";
 import { usePhoneLayout } from "@/lib/phone";
-import { ArrowLeft, ChevronDown, Play, RefreshCw, Save, Table2, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, Play, RefreshCw, Save, Table2 } from "lucide-react";
 import { Banner, Button, EmptyState, Input, LinkButton, PageHeader, Textarea } from "@/components/ui";
 import { ReportTypeIcon } from "../report-type-icon";
 import { ReportTypeDialog } from "../report-type-dialog";
@@ -13,6 +13,7 @@ import { FilterBuilder } from "./filter-builder";
 import { DateRangePicker, defaultPayPeriodRange, describeRange } from "./date-range-picker";
 import { GroupSortConfig } from "./group-sort-config";
 import { PrintLayoutConfig } from "./print-layout-config";
+import { ReportWindow, WindowBlock, WindowCard } from "../window/report-window";
 import { AcrossConfig } from "./across-config";
 import type { AcrossSpec } from "@/lib/reports/across";
 import { ResultsTable } from "../report-results/results-table";
@@ -692,85 +693,48 @@ function SaveDialog({
   onSave: () => void;
   onClose: () => void;
 }) {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const closeRef = useRef(onClose);
-  useEffect(() => {
-    closeRef.current = onClose;
-  }, [onClose]);
-
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    const input = dialogRef.current?.querySelector<HTMLInputElement>("input");
-    input?.focus();
-    input?.select();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      closeRef.current();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-      opener?.focus?.();
-    };
-  }, []);
-
   return (
-    <div
-      className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.5)" }}
-      onClick={(e) => e.target === e.currentTarget && !pending && onClose()}
-    >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="save-report-title"
-        className="ta-sheet ta-modal flex w-full max-w-md flex-col overflow-y-auto"
-        style={{ borderRadius: "var(--radius-l)" }}
-      >
-        <header className="flex items-center gap-3 px-5 py-3.5" style={{ borderBottom: "1px solid var(--stroke-divider)" }}>
-          <h2 id="save-report-title" className="min-w-0 flex-1" style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
-            {editing ? "Save changes" : "Save report"}
-          </h2>
-          <Button hierarchy="tertiary" iconOnly onClick={onClose} disabled={pending} aria-label="Close" title="Close">
-            <X className="h-4 w-4" />
-          </Button>
-        </header>
-        <form
-          className="flex flex-col gap-3 px-5 py-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (name.trim() && !pending) onSave();
-          }}
-        >
-          <Input label="Name" required value={name} onChange={(e) => onName(e.target.value)} placeholder="Overtime by department" />
-          <Textarea
-            label="Description"
-            rows={2}
-            value={description}
-            onChange={(e) => onDescription(e.target.value)}
-            placeholder="Optional. What it is for, so others know"
-          />
-          {error && (
-            <Banner tone="error" title={editing ? "The changes were not saved" : "The report was not saved"} body={error} />
-          )}
-          <button type="submit" hidden />
-        </form>
-        <footer className={`${phone.saveFoot} flex items-center gap-2 px-5 py-3`} style={{ borderTop: "1px solid var(--stroke-divider)" }}>
-          <span className="min-w-0 flex-1" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-            {editing
-              ? "Everyone it is shared with, and its emails, get the changes."
-              : "Only you can see it until you share it."}
-          </span>
+    <ReportWindow
+      icon={Save}
+      title={editing ? "Save changes" : "Save report"}
+      subtitle={editing ? "Everyone it is shared with, and its emails, get the changes." : "Keep these settings to run again, share or email."}
+      size="sm"
+      onClose={onClose}
+      closeDisabled={pending}
+      hint={error ? error : editing ? undefined : "Only you can see it until you share it."}
+      hintTone={error ? "error" : undefined}
+      actions={
+        <>
           <Button hierarchy="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
           <Button hierarchy="primary" onClick={onSave} disabled={!name.trim() || pending} leadingIcon={<Save className="h-4 w-4" />}>
             {pending ? "Saving" : editing ? "Save changes" : "Save report"}
           </Button>
-        </footer>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <WindowCard>
+        <WindowBlock>
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (name.trim() && !pending) onSave();
+            }}
+          >
+            <Input label="Name" required value={name} onChange={(e) => onName(e.target.value)} placeholder="Overtime by department" />
+            <Textarea
+              label="Description"
+              rows={2}
+              value={description}
+              onChange={(e) => onDescription(e.target.value)}
+              placeholder="Optional. What it is for, so others know"
+            />
+            <button type="submit" hidden />
+          </form>
+        </WindowBlock>
+      </WindowCard>
+    </ReportWindow>
   );
 }

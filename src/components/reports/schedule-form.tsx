@@ -2,16 +2,8 @@
 
 import { useState, useTransition, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
-import { Mail, Plus, Trash2, X } from "lucide-react";
-import {
-  Badge,
-  Banner,
-  Button,
-  Input,
-  SegmentedControl,
-  Select,
-  statusTone,
-} from "@/components/ui";
+import { Mail, Plus, Trash2 } from "lucide-react";
+import { Banner, Button, Input, SegmentedControl, Select } from "@/components/ui";
 import {
   createSchedule,
   updateSchedule,
@@ -20,7 +12,7 @@ import {
 } from "@/actions/report.actions";
 import { nextRun } from "@/lib/reports/schedule-time";
 import { MONTH_NAMES, timezoneAbbr } from "@/lib/reports/schedule-words";
-import phone from "./reports-phone.module.css";
+import { ReportWindow, WindowBlock, WindowCard } from "./window/report-window";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -364,46 +356,45 @@ export function ScheduleForm({
   /* ---- Render ---- */
 
   return (
-    <div
-      className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.5)" }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={existingSchedule ? "Email schedule" : "Email this report"}
-        className="ta-sheet ta-modal flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden"
-        style={{ borderRadius: "var(--radius-l)" }}
-      >
-        <header
-          className="flex flex-none items-center gap-3 px-5 py-3.5"
-          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-        >
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <h2 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
-              {existingSchedule ? "Email schedule" : "Email this report"}
-            </h2>
-            <p style={{ margin: 0, font: "var(--type-subtitle)", color: "var(--text-secondary)" }}>
-              Sent automatically to the people below, with the file attached
-            </p>
-          </div>
-          {existingSchedule && (
-            // ACTIVE and OPEN are the shared helper's own words for "running"
-            // and "sitting there doing nothing", which is exactly the
-            // difference between a live schedule and a paused one.
-            <Badge tone={statusTone(existingSchedule.isActive ? "ACTIVE" : "OPEN")} size="sm">
-              {existingSchedule.isActive ? "Active" : "Paused"}
-            </Badge>
-          )}
-          <Button hierarchy="tertiary" iconOnly onClick={onClose} aria-label="Close" title="Close">
-            <X className="h-4 w-4" />
+    <ReportWindow
+      icon={Mail}
+      title={existingSchedule ? "Email schedule" : "Email this report"}
+      subtitle={
+        existingSchedule
+          ? `${existingSchedule.isActive ? "Active" : "Paused"}. Sent automatically with the file attached.`
+          : "Sent automatically to the people below, with the file attached."
+      }
+      size="md"
+      onClose={onClose}
+      closeDisabled={isPending}
+      hint={
+        existingSchedule && !confirmingDelete ? (
+          <Button hierarchy="link" tone="error" disabled={isPending} onClick={handleDelete}>
+            Delete schedule
           </Button>
-        </header>
-
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
+        ) : existingSchedule && confirmingDelete ? (
+          <span className="flex flex-wrap items-center gap-2">
+            <span>Stop emailing this report?</span>
+            <Button size="sm" hierarchy="primary" tone="error" disabled={isPending} onClick={handleDelete}>
+              Yes, delete schedule
+            </Button>
+            <Button size="sm" hierarchy="tertiary" disabled={isPending} onClick={() => setConfirmingDelete(false)}>
+              Keep it
+            </Button>
+          </span>
+        ) : undefined
+      }
+      actions={
+        <>
+          <Button hierarchy="secondary" disabled={isPending} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button hierarchy="primary" disabled={isPending} onClick={handleSave}>
+            {isPending ? "Saving" : existingSchedule ? "Save changes" : "Save schedule"}
+          </Button>
+        </>
+      }
+    >
           {emailConfigured === false && (
             <Banner
               tone="warning"
@@ -414,6 +405,8 @@ export function ScheduleForm({
 
           {error && <Banner tone="error" title="The schedule was not saved" body={error} />}
 
+      <WindowCard>
+        <WindowBlock label="When">
           <Field label="Frequency" htmlFor="sched-frequency">
             <Select
               id="sched-frequency"
@@ -594,6 +587,8 @@ export function ScheduleForm({
             )}
           </div>
 
+        </WindowBlock>
+        <WindowBlock label="File">
           <Field label="Send as">
             <SegmentedControl
               items={FORMATS.map((f) => ({ value: f.value, label: f.label }))}
@@ -603,7 +598,8 @@ export function ScheduleForm({
               ariaLabel="Attachment format"
             />
           </Field>
-
+        </WindowBlock>
+        <WindowBlock label="Recipients">
           <div className="flex flex-col gap-2">
             <div className="flex items-end gap-2">
               <div className="min-w-0 flex-1">
@@ -690,38 +686,9 @@ export function ScheduleForm({
               </ul>
             )}
           </div>
-        </div>
-
-        <footer
-          className={`${phone.schedFoot} flex flex-none flex-wrap items-center gap-2 px-5 py-3`}
-          style={{ borderTop: "1px solid var(--stroke-divider)" }}
-        >
-          {existingSchedule && !confirmingDelete && (
-            <Button hierarchy="link" tone="error" disabled={isPending} onClick={handleDelete}>
-              Delete schedule
-            </Button>
-          )}
-          {existingSchedule && confirmingDelete && (
-            <span className="flex flex-wrap items-center gap-2">
-              <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>Stop emailing this report?</span>
-              <Button size="sm" hierarchy="primary" tone="error" disabled={isPending} onClick={handleDelete}>
-                Yes, delete schedule
-              </Button>
-              <Button size="sm" hierarchy="tertiary" disabled={isPending} onClick={() => setConfirmingDelete(false)}>
-                Keep it
-              </Button>
-            </span>
-          )}
-          <div className="flex-1" />
-          <Button hierarchy="secondary" disabled={isPending} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button hierarchy="primary" disabled={isPending} onClick={handleSave}>
-            {isPending ? "Saving" : existingSchedule ? "Save changes" : "Save schedule"}
-          </Button>
-        </footer>
-      </div>
-    </div>
+        </WindowBlock>
+      </WindowCard>
+    </ReportWindow>
   );
 }
 

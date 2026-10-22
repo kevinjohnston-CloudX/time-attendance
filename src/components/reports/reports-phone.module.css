@@ -125,18 +125,6 @@
     z-index: 3 !important;
   }
 
-  /* The email schedule window's foot: Delete schedule on its own line,
-     Cancel and Save sharing the next. */
-  .schedFoot > div.flex-1 {
-    display: none;
-  }
-  .schedFoot > :first-child:not(:global(.wms-btn):not(.wms-btn-link)) {
-    flex-basis: 100%;
-  }
-  .schedFoot > :global(.wms-btn):not(:global(.wms-btn-link)) {
-    flex: 1 1 0;
-  }
-
   /* ---- The builder ---- */
   /* Columns move with their arrows on a phone; dragging needs a mouse. */
   .grip {
@@ -147,17 +135,6 @@
     white-space: normal !important;
     overflow: visible !important;
   }
-  /* The Save window's line over its two buttons. */
-  .saveFoot {
-    flex-wrap: wrap;
-  }
-  .saveFoot > span:first-child {
-    flex-basis: 100%;
-  }
-  .saveFoot > :global(.wms-btn) {
-    flex: 1 1 0;
-  }
-
   /* Rename and delete show on hover on a computer; a phone has no hover. */
   .folderActions {
     opacity: 1 !important;
