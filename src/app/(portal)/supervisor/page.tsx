@@ -369,9 +369,10 @@ function Tile({ label, value, dot }: { label: string; value: number; dot: string
       <span className="tabular" style={{ font: "var(--weight-semibold) 22px/28px var(--font-sans)", color: "var(--text-primary)" }}>
         {value.toLocaleString()}
       </span>
-      <span className="flex items-center gap-1.5 whitespace-nowrap" style={{ font: "var(--weight-medium) 13px/18px var(--font-sans)", color: "var(--text-secondary)" }}>
-        <span className="inline-block h-2 w-2 flex-none rounded-full" style={{ background: dot }} aria-hidden="true" />
-        <span className="truncate">{label}</span>
+      {/* The label wraps rather than being cut ("On meal or br..."). */}
+      <span className="flex items-baseline gap-1.5" style={{ font: "var(--weight-medium) 13px/18px var(--font-sans)", color: "var(--text-secondary)" }}>
+        <span className="inline-block h-2 w-2 flex-none -translate-y-px rounded-full" style={{ background: dot }} aria-hidden="true" />
+        <span className="min-w-0">{label}</span>
       </span>
     </div>
   );

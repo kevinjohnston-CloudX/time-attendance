@@ -101,20 +101,27 @@ export function useFacts<T>(rows: T[], facts: Fact<T>[]) {
 
 type TileData = ReturnType<typeof useFacts>["tiles"][number];
 
+/**
+ * The area's figures. Each tile spans three rows of the grid (label, figure,
+ * note) on a shared subgrid, so a label that wraps to two lines moves the
+ * whole row's figures together rather than leaving one lower than the rest.
+ */
 export function FactTiles({ tiles, onToggle }: { tiles: TileData[]; onToggle: (key: string) => void }) {
   return (
     <div className={`${phone.tiles} grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(120px,1fr))]`}>
       {tiles.map((t) => {
         const body = (
           <>
-            <span className="wms-overline truncate">{t.label}</span>
+            {/* Label and note wrap rather than being cut ("Covered by these
+                pol..."), since they say what the figure counts. */}
+            <span className="wms-overline">{t.label}</span>
             <span
               className="tabular"
               style={{ font: "var(--weight-semibold) 22px/28px var(--font-sans)", color: t.pressed ? "var(--text-accent)" : "var(--text-primary)" }}
             >
               {t.count.toLocaleString()}
             </span>
-            <span className="truncate" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }} title={t.note}>
+            <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
               {t.note}
             </span>
           </>
@@ -126,7 +133,7 @@ export function FactTiles({ tiles, onToggle }: { tiles: TileData[]; onToggle: (k
             aria-pressed={t.pressed}
             title={t.pressed ? "Show all" : `Show only these: ${t.label.toLowerCase()}`}
             onClick={() => onToggle(t.key)}
-            className={`flex min-w-0 cursor-pointer flex-col gap-0.5 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+            className={`row-span-3 grid min-w-0 cursor-pointer grid-rows-subgrid gap-y-0.5 rounded-lg border px-3 py-2.5 text-left transition-colors ${
               t.pressed
                 ? "border-[var(--stroke-accent)] bg-[var(--surface-info)]"
                 : "border-[var(--stroke-divider)] bg-[var(--surface-card)] hover:border-[var(--stroke-hover)]"
@@ -137,7 +144,7 @@ export function FactTiles({ tiles, onToggle }: { tiles: TileData[]; onToggle: (k
         ) : (
           <div
             key={t.key}
-            className="flex min-w-0 flex-col gap-0.5 rounded-lg border border-[var(--stroke-divider)] bg-[var(--surface-secondary)] px-3 py-2.5"
+            className="row-span-3 grid min-w-0 grid-rows-subgrid gap-y-0.5 rounded-lg border border-[var(--stroke-divider)] bg-[var(--surface-secondary)] px-3 py-2.5"
           >
             {body}
           </div>

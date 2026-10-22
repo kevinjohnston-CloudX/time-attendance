@@ -2308,14 +2308,25 @@
   outline-offset: -2px;
 }
 
+/* A long label ("In building, out time clock") wraps onto a second line
+   rather than being cut to "In building, out ti...", which lost what the
+   figure counts; the figure keeps to the foot of the card so the row lines
+   up whatever its labels do. */
 .summaryLabel {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
   max-width: 100%;
   font: var(--weight-medium) 14px/20px var(--font-sans);
   color: var(--text-secondary);
-  white-space: nowrap;
+}
+.summaryLabel > :global(.truncate) {
+  overflow: visible;
+  white-space: normal;
+}
+.summaryLabel > .dot {
+  flex: none;
+  transform: translateY(-1px);
 }
 
 .summaryHeroFigure {
@@ -2325,6 +2336,7 @@
 }
 
 .summaryFigure {
+  margin-top: auto;
   font: var(--weight-semibold) 32px/48px var(--font-sans);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -5120,23 +5132,9 @@
     background: var(--surface-info) !important;
   }
 
-  /* A situation's name wraps rather than being cut ("Scheduled, out of the
-     building"), and the summary's quiet note takes a line of its own under
-     the status chips instead of running over them. */
-  .summaryLabel {
-    white-space: normal;
-    align-items: baseline;
-  }
-  .summaryLabel > :global(.truncate) {
-    overflow: visible;
-    white-space: normal;
-  }
-  .summaryLabel > .dot {
-    flex: none;
-    transform: translateY(-1px);
-  }
   /* The statuses swipe sideways in one row, as the filters do, instead of
-     stacking six lines deep. */
+     stacking six lines deep; the summary's quiet note takes a line of its
+     own under them instead of running over them. */
   .summaryMore {
     padding: 12px 0;
   }
