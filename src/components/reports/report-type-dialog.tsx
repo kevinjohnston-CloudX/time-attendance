@@ -304,7 +304,7 @@ function ListRow({
       onClick={onSelect}
       onDoubleClick={onConfirm}
       onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), onConfirm())}
-      className={`flex h-11 w-full items-center gap-2.5 rounded-lg px-2.5 text-left ${on ? "" : "ta-hoverable"}`}
+      className={`flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left ${on ? "" : "ta-hoverable"}`}
       style={{
         border: 0,
         cursor: "pointer",
@@ -313,8 +313,10 @@ function ListRow({
       }}
     >
       <ReportTypeIcon id={icon} size={28} />
+      {/* A long name ("Annual accrued vs. used summary") takes a second line
+          rather than being cut, in a list the width of a third of the window. */}
       <span
-        className="min-w-0 flex-1 truncate"
+        className="min-w-0 flex-1"
         style={{
           font: `${on ? "var(--weight-semibold)" : "var(--weight-medium)"} 14px/20px var(--font-sans)`,
           color: on ? "var(--text-primary)" : "var(--text-secondary)",
