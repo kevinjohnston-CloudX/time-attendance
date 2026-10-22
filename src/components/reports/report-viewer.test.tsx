@@ -63,9 +63,8 @@ describe("saved scan report page", () => {
     expect(screen.queryByRole("button", { name: "Pay period" })).toBeNull();
   });
 
-  it("runs with the dates on screen", async () => {
+  it("runs as it opens, with the dates on screen", async () => {
     open();
-    fireEvent.click(screen.getAllByRole("button", { name: /Run report/ })[0]);
     await waitFor(() => expect(runReport).toHaveBeenCalled());
     expect(runReport.mock.calls[0][0]).toEqual({ reportId: "r1", dateRangeOverride: { type: "calendar", unit: "month", which: "last" } });
   });
