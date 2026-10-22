@@ -64,6 +64,9 @@ export function FolderTree({
   const [isPending, startTransition] = useTransition();
 
   const createInputRef = useRef<HTMLInputElement>(null);
+  // Enter saves, and the field losing focus saves too: both fired, and one
+  // Enter made two folders. Only the first save of a name goes through.
+  const savingRef = useRef(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -100,18 +103,27 @@ export function FolderTree({
   }
 
   function handleCreateSubmit() {
+    if (savingRef.current) return;
     const name = newFolderName.trim();
     if (!name) {
       setIsCreating(false);
       return;
     }
+    savingRef.current = true;
     startTransition(async () => {
-      await createFolder(
-        creatingParentId ? { name, parentId: creatingParentId } : { name }
-      );
+      try {
+        await createFolder(
+          creatingParentId ? { name, parentId: creatingParentId } : { name }
+        );
+      } finally {
+        savingRef.current = false;
+      }
       setIsCreating(false);
       setNewFolderName("");
       setCreatingParentId(null);
+      // The list comes from the server: without this a new folder only
+      // appeared after a reload, and a deleted one stayed on screen.
+      router.refresh();
     });
   }
 
@@ -121,16 +133,22 @@ export function FolderTree({
   }
 
   function handleRenameSubmit() {
-    if (!renamingId) return;
+    if (!renamingId || savingRef.current) return;
     const name = renameValue.trim();
     if (!name) {
       setRenamingId(null);
       return;
     }
+    savingRef.current = true;
     startTransition(async () => {
-      await renameFolder({ id: renamingId!, data: { name } });
+      try {
+        await renameFolder({ id: renamingId!, data: { name } });
+      } finally {
+        savingRef.current = false;
+      }
       setRenamingId(null);
       setRenameValue("");
+      router.refresh();
     });
   }
 
@@ -142,6 +160,7 @@ export function FolderTree({
       // list filtered to a folder that no longer exists — an empty list with
       // no visible reason. Go back to everything.
       if (selectedFolderId === folderId) router.replace(allHref);
+      else router.refresh();
     });
   }
 
