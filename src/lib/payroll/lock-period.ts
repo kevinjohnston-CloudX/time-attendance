@@ -16,9 +16,9 @@ export async function lockPeriod(
   actor: { tenantId: string | null; employeeId: string | null },
   keepOpen: string[] = [],
 ): Promise<void> {
-  if (!actor.tenantId) throw new Error("Pay period not found");
+  if (!actor.tenantId) throw new Error("This pay period isn't available. Reload the page and try again.");
   const payPeriod = await db.payPeriod.findFirst({ where: { id: payPeriodId, tenantId: actor.tenantId } });
-  if (!payPeriod) throw new Error("Pay period not found");
+  if (!payPeriod) throw new Error("This pay period isn't available. Reload the page and try again.");
 
   const transition = validatePayPeriodTransition(payPeriod.status, "LOCK");
   if (!transition.valid) throw new Error(transition.error);
@@ -63,8 +63,11 @@ async function autoPostApprovedLeave(
   });
 
   for (const req of requests) {
-    await db.leaveRequest.update({ where: { id: req.id }, data: { status: "POSTED", postedAt: new Date() } });
-    await postLeaveUsage(req.id);
+    // Posted and debited together; one HR already debited at approval is not debited again.
+    await db.$transaction(async (tx) => {
+      await tx.leaveRequest.update({ where: { id: req.id }, data: { status: "POSTED", postedAt: new Date() } });
+      await postLeaveUsage(req.id, tx);
+    });
     await writeAuditLog({
       tenantId: payPeriod.tenantId,
       actorId,

@@ -145,8 +145,11 @@ type PolicyForValidation = {
 export async function validateBalanceForApproval(leaveRequestId: string): Promise<void> {
   const request = await db.leaveRequest.findUniqueOrThrow({
     where: { id: leaveRequestId },
-    select: { employeeId: true, leaveTypeId: true, durationMinutes: true, startDate: true },
+    select: { employeeId: true, leaveTypeId: true, durationMinutes: true, startDate: true, leaveType: { select: { accrualTracked: true } } },
   });
+  // Leave that keeps no balance (Bereavement) has none to run short of. It
+  // used to be read as 0 hours available, and refused.
+  if (!request.leaveType.accrualTracked) return;
 
   const { employeeId, leaveTypeId, durationMinutes, startDate } = request;
   const accrualYear = getYear(startDate);
@@ -283,7 +286,7 @@ export async function submitLeaveRequestCore(
   });
 
   if (request.employeeId !== employeeId)
-    throw new Error("Cannot submit another employee's leave request");
+    throw new Error("You can only submit your own leave requests.");
 
   const transition = validateLeaveTransition(request.status, "SUBMIT");
   if (!transition.valid) throw new Error(transition.error);
@@ -315,7 +318,7 @@ export async function cancelLeaveRequestCore(
   });
 
   if (request.employeeId !== employeeId)
-    throw new Error("Cannot cancel another employee's leave request");
+    throw new Error("You can only cancel your own leave requests.");
 
   const transition = validateLeaveTransition(request.status, "CANCEL");
   if (!transition.valid) throw new Error(transition.error);

@@ -88,9 +88,11 @@ const LEAVE_BUCKET_VALUES: PayBucket[] = [
  * 3. If the request is in any other status, stops after deletion.
  */
 export async function syncLeaveSegments(
-  leaveRequestId: string
+  leaveRequestId: string,
+  /** The caller's transaction, when the request's status changes in the same one. */
+  outer?: TxClient
 ): Promise<void> {
-  await db.$transaction(async (tx) => {
+  const run = async (tx: TxClient) => {
     // An inactive employee's timecards are closed: leave neither comes off nor
     // goes on them. A request with nothing on a timecard (rejected, cancelled)
     // has nothing to change and passes; one that would change one is refused.
@@ -272,7 +274,9 @@ export async function syncLeaveSegments(
     for (const tsId of newTimesheetIds) {
       await refreshLeaveBuckets(tsId, tx);
     }
-  });
+  };
+  if (outer) return run(outer);
+  await db.$transaction(run);
 }
 
 /**
