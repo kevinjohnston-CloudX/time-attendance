@@ -3,11 +3,12 @@
 import { addMonths, addYears, differenceInMonths } from "date-fns";
 import { generatePeriodsForRuleSet } from "@/lib/pay-period-utils";
 import { moveTimecardsToRuleSet } from "@/lib/timesheet-migration";
-import { z } from "zod";
+import { z, type ZodError } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { Prisma, type AuditEntityType } from "@prisma/client";
-import { withRBAC } from "@/lib/rbac/guard";
+import { publicError, withRBAC } from "@/lib/rbac/guard";
+import { zodMessage } from "@/lib/zod-message";
 import { photoUrls } from "@/lib/presence/photos";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
 import { looksLikeBadge } from "@/lib/presence/people-search.service";
@@ -537,7 +538,7 @@ export const updateEmployee = withRBAC(
       include: { user: true, customRole: { select: { name: true } } },
     });
     await assertOwnAssignments(tenantId, jobTitleId, agencyId);
-    if (!current) throw new Error("Employee not found");
+    if (!current) throw new Error("NOT_FOUND");
 
     // The termination date follows the status. Made inactive: the date given,
     // or today at their site. Made active again: cleared, since the time clock
@@ -1948,7 +1949,7 @@ export const bulkCreateEmployees = withRBAC(
     for (let i = 0; i < input.rows.length; i++) {
       const result = csvEmployeeRowSchema.safeParse(input.rows[i]);
       if (!result.success) {
-        const msgs = result.error.issues.map((iss) => iss.message).join("; ");
+        const msgs = result.error.issues.map((iss) => zodMessage({ issues: [iss] } as ZodError)).join("; ");
         rowErrors.push({ row: i + 2, message: msgs }); // +2 for 1-indexed + header
       } else {
         parsed.push(result.data);
@@ -1995,6 +1996,34 @@ export const bulkCreateEmployees = withRBAC(
     const seenEmails = new Set<string>();
     const seenCodes = new Set<string>();
 
+    // Who already holds an email or Badge ID in the file (both are unique across
+    // every company) or an employee code (unique in this one). Checked here so
+    // each clash shows on its row, naming the person who has it; the database
+    // refusal it used to wait for named the row's own person instead.
+    const fileEmails = parsed.map((r) => r.email?.trim()).filter((e): e is string => !!e);
+    const fileBadges = parsed.map((r) => r.wmsId?.trim()).filter((w): w is string => !!w);
+    const [emailHolders, badgeHolders] = await Promise.all([
+      db.user.findMany({
+        where: { email: { in: fileEmails, mode: "insensitive" } },
+        select: { email: true, name: true, employee: { select: { tenantId: true, employeeCode: true } } },
+      }),
+      db.employee.findMany({
+        where: { wmsId: { in: fileBadges } },
+        select: { wmsId: true, tenantId: true, employeeCode: true, user: { select: { name: true } } },
+      }),
+    ]);
+    // Somebody in another company is not named.
+    const holder = (tenant: string | null | undefined, name: string | null | undefined, code: string | null | undefined) =>
+      tenant === tenantId ? `${name ?? "another employee"}${code ? ` (employee code ${code})` : ""}` : "an account in another company";
+    const emailHolder = new Map(emailHolders.map((u) => [u.email!.toLowerCase(), holder(u.employee?.tenantId ?? null, u.name, u.employee?.employeeCode)]));
+    const badgeHolder = new Map(badgeHolders.map((e) => [e.wmsId!, holder(e.tenantId, e.user.name, e.employeeCode)]));
+    const codeHolderName = new Map(
+      (await db.employee.findMany({
+        where: { tenantId, employeeCode: { in: parsed.map((r) => r.employeeCode) } },
+        select: { employeeCode: true, user: { select: { name: true } } },
+      })).map((e) => [e.employeeCode, e.user.name ?? "another employee"]),
+    );
+
     for (let i = 0; i < parsed.length; i++) {
       const r = parsed[i];
       const errors: string[] = [];
@@ -2010,15 +2039,24 @@ export const bulkCreateEmployees = withRBAC(
 
       if (r.email) {
         if (seenEmails.has(r.email.toLowerCase())) {
-          errors.push(`Duplicate email "${r.email}" in CSV`);
+          errors.push(`The email "${r.email}" is on another row of this file too`);
         }
         seenEmails.add(r.email.toLowerCase());
+        const has = emailHolder.get(r.email.trim().toLowerCase());
+        if (has) errors.push(`The email "${r.email}" is already used by ${has}`);
       }
 
       if (seenCodes.has(r.employeeCode)) {
-        errors.push(`Duplicate employee code "${r.employeeCode}" in CSV`);
+        errors.push(`The employee code "${r.employeeCode}" is on another row of this file too`);
       }
       seenCodes.add(r.employeeCode);
+      const codeHas = codeHolderName.get(r.employeeCode);
+      if (codeHas) errors.push(`The employee code "${r.employeeCode}" already belongs to ${codeHas}`);
+
+      if (r.wmsId?.trim()) {
+        const badgeHas = badgeHolder.get(r.wmsId.trim());
+        if (badgeHas) errors.push(`The Badge ID "${r.wmsId}" already belongs to ${badgeHas}`);
+      }
 
       // Resolve role: customRole column takes precedence, then role column
       // role column accepts built-in roles (case-insensitive) or custom role names
@@ -2085,7 +2123,7 @@ export const bulkCreateEmployees = withRBAC(
           } catch (createErr: unknown) {
             const msg = createErr instanceof Error ? createErr.message : String(createErr);
             if (msg.includes("Unique constraint") && r.email) {
-              throw new Error(`The email "${r.email}" already belongs to ${r.name} (employee ${r.employeeCode}).`);
+              throw new Error(`The email "${r.email}" (for ${r.name}) is already used by another account. Nothing was imported.`);
             }
             throw createErr;
           }
@@ -2116,10 +2154,10 @@ export const bulkCreateEmployees = withRBAC(
           } catch (empErr: unknown) {
             const msg = empErr instanceof Error ? empErr.message : String(empErr);
             if (msg.includes("Unique constraint") && msg.includes("wmsId")) {
-              throw new Error(`The WMS ID "${r.wmsId}" already belongs to ${r.name} (employee ${r.employeeCode}).`);
+              throw new Error(`The Badge ID "${r.wmsId}" (for ${r.name}) already belongs to another employee. Nothing was imported.`);
             }
             if (msg.includes("Unique constraint") && msg.includes("employeeCode")) {
-              throw new Error(`Employee code already in use: "${r.employeeCode}" (${r.name})`);
+              throw new Error(`The employee code "${r.employeeCode}" (for ${r.name}) already belongs to another employee. Nothing was imported.`);
             }
             throw empErr;
           }
@@ -2175,8 +2213,8 @@ export const bulkCreateEmployees = withRBAC(
       revalidatePath("/admin/employees");
       return { created, errors: [] };
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error during import";
-      return { created: 0, errors: [{ row: 0, message }] };
+      // Our own sentences pass; a database error is logged with a reference, not shown.
+      return { created: 0, errors: [{ row: 0, message: publicError(err).error }] };
     }
   }
 );
