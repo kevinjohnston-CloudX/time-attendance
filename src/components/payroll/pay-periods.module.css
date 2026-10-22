@@ -15,6 +15,7 @@
   /* The list as tall as it needs, in the page's own scroll. */
   .shell > :global(aside) {
     height: auto !important;
+    max-height: none !important;
   }
   .shell > :global(aside) > :last-child {
     overflow: visible !important;

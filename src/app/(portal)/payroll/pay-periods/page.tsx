@@ -400,52 +400,56 @@ function PeriodBody({
 
   return (
     <>
-      <div className={`${ppStyles.kpis} grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]`}>
-        <Kpi
-          icon={<Files className="h-4 w-4" aria-hidden />}
-          label="Total timesheets"
-          tile={{ bg: "var(--ta-well)", fg: "var(--icon-tertiary)" }}
-          value={n(T)}
-          sub={`${freqLabel.toLowerCase()} period`}
-          bar={<span className="block h-full w-full rounded-full" style={{ background: "var(--ta-ring-strong)" }} />}
-        />
-        <Kpi
-          icon={<CircleCheck className="h-4 w-4" aria-hidden />}
-          label="Locked"
-          tile={{ bg: "var(--surface-success)", fg: "var(--icon-success)" }}
-          value={n(locked)}
-          valueColor={locked ? "var(--text-success)" : undefined}
-          sub={T ? `${n(open)} open` : "no timesheets"}
-          bar={<span className="block h-full rounded-full" style={{ width: `${T ? (locked / T) * 100 : 0}%`, background: "var(--fill-success)" }} />}
-        />
-        <Kpi
-          icon={<CircleAlert className="h-4 w-4" aria-hidden />}
-          label="Exceptions"
-          tile={exceptions ? { bg: "var(--surface-warning)", fg: "var(--icon-warning)" } : { bg: "var(--ta-well)", fg: "var(--icon-tertiary)" }}
-          value={n(exceptions)}
-          valueColor={exceptions ? "var(--text-warning)" : undefined}
-          sub={`on ${n(sheetsWithExceptions)} ${sheetsWithExceptions === 1 ? "timesheet" : "timesheets"}`}
-          bar={<span className="block h-full rounded-full" style={{ width: `${T ? Math.min(100, (sheetsWithExceptions / T) * 100) : 0}%`, background: "var(--fill-warning)" }} />}
-        />
-        <Kpi
-          icon={<Clock className="h-4 w-4" aria-hidden />}
-          label="Total hours"
-          tile={{ bg: "var(--surface-info)", fg: "var(--icon-accent)" }}
-          value={hoursOf(allMin)}
-          sub="hours"
-          bar={hoursBar.map((s, i) => (
-            <span key={i} className="block h-full" style={{ width: `${(s.min / allMin) * 100}%`, background: s.color }} />
-          ))}
-        >
-          {/* Named, not dropped, so the figures add up to the total: other
-              pay codes are PTO, holiday and the like. */}
-          <span className="tabular flex flex-wrap gap-x-3 gap-y-1" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-            <span>Regular <b style={{ fontWeight: 600, color: "var(--text-secondary)" }}>{hoursOf(regMin)}</b></span>
-            <span>Overtime <b style={{ fontWeight: 600, color: otMin ? "var(--text-warning)" : "var(--text-secondary)" }}>{hoursOf(otMin)}</b></span>
-            <span>Double <b style={{ fontWeight: 600, color: dtMin ? "var(--text-error)" : "var(--text-secondary)" }}>{hoursOf(dtMin)}</b></span>
-            <span>Other pay codes <b style={{ fontWeight: 600, color: "var(--text-secondary)" }}>{hoursOf(otherMin)}</b></span>
-          </span>
-        </Kpi>
+      {/* Four across when they fit at 190px each, otherwise two by two:
+          filling a row automatically left "Total hours" alone under three. */}
+      <div className="@container">
+        <div className={`${ppStyles.kpis} grid grid-cols-2 gap-3 @min-[796px]:grid-cols-4`}>
+          <Kpi
+            icon={<Files className="h-4 w-4" aria-hidden />}
+            label="Total timesheets"
+            tile={{ bg: "var(--ta-well)", fg: "var(--icon-tertiary)" }}
+            value={n(T)}
+            sub={`${freqLabel.toLowerCase()} period`}
+            bar={<span className="block h-full w-full rounded-full" style={{ background: "var(--ta-ring-strong)" }} />}
+          />
+          <Kpi
+            icon={<CircleCheck className="h-4 w-4" aria-hidden />}
+            label="Locked"
+            tile={{ bg: "var(--surface-success)", fg: "var(--icon-success)" }}
+            value={n(locked)}
+            valueColor={locked ? "var(--text-success)" : undefined}
+            sub={T ? `${n(open)} open` : "no timesheets"}
+            bar={<span className="block h-full rounded-full" style={{ width: `${T ? (locked / T) * 100 : 0}%`, background: "var(--fill-success)" }} />}
+          />
+          <Kpi
+            icon={<CircleAlert className="h-4 w-4" aria-hidden />}
+            label="Exceptions"
+            tile={exceptions ? { bg: "var(--surface-warning)", fg: "var(--icon-warning)" } : { bg: "var(--ta-well)", fg: "var(--icon-tertiary)" }}
+            value={n(exceptions)}
+            valueColor={exceptions ? "var(--text-warning)" : undefined}
+            sub={`on ${n(sheetsWithExceptions)} ${sheetsWithExceptions === 1 ? "timesheet" : "timesheets"}`}
+            bar={<span className="block h-full rounded-full" style={{ width: `${T ? Math.min(100, (sheetsWithExceptions / T) * 100) : 0}%`, background: "var(--fill-warning)" }} />}
+          />
+          <Kpi
+            icon={<Clock className="h-4 w-4" aria-hidden />}
+            label="Total hours"
+            tile={{ bg: "var(--surface-info)", fg: "var(--icon-accent)" }}
+            value={hoursOf(allMin)}
+            sub="hours"
+            bar={hoursBar.map((s, i) => (
+              <span key={i} className="block h-full" style={{ width: `${(s.min / allMin) * 100}%`, background: s.color }} />
+            ))}
+          >
+            {/* Named, not dropped, so the figures add up to the total: other
+                pay codes are PTO, holiday and the like. */}
+            <span className="tabular flex flex-wrap gap-x-3 gap-y-1" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+              <span>Regular <b style={{ fontWeight: 600, color: "var(--text-secondary)" }}>{hoursOf(regMin)}</b></span>
+              <span>Overtime <b style={{ fontWeight: 600, color: otMin ? "var(--text-warning)" : "var(--text-secondary)" }}>{hoursOf(otMin)}</b></span>
+              <span>Double <b style={{ fontWeight: 600, color: dtMin ? "var(--text-error)" : "var(--text-secondary)" }}>{hoursOf(dtMin)}</b></span>
+              <span>Other pay codes <b style={{ fontWeight: 600, color: "var(--text-secondary)" }}>{hoursOf(otherMin)}</b></span>
+            </span>
+          </Kpi>
+        </div>
       </div>
 
       {/* Where the close stands in one sentence with the way to what to look

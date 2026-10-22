@@ -216,9 +216,12 @@ export function PayPeriodsRail({
 
   const monthsWith = new Set(allMonths.filter((k) => k.startsWith(`${year}-`)).map((k) => Number(k.slice(5)) - 1));
 
+  // Beside the period it reaches the bottom of the window; above it, in a
+  // narrow window, it is as tall as its periods, up to 480px, rather than a
+  // fixed box that left most of the first screen empty for a single period.
   return (
     <aside
-      className="flex h-[480px] w-full flex-col lg:sticky lg:top-[var(--ta-page-top)] lg:h-[var(--pp-rail-h)] lg:w-auto lg:min-w-[240px] lg:flex-[0_1_300px]"
+      className="flex max-h-[480px] w-full flex-col lg:sticky lg:max-h-none lg:top-[var(--ta-page-top)] lg:h-[var(--pp-rail-h)] lg:w-auto lg:min-w-[240px] lg:flex-[0_1_300px]"
       style={PANEL}
       aria-label="Pay periods"
     >
