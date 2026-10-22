@@ -483,6 +483,7 @@ export function ReportBuilder({
                 columns={previewResult?.columns ?? []}
                 rows={previewResult?.rows ?? []}
                 totalRows={previewResult?.totalRows ?? 0}
+                groups={previewResult?.groups}
                 isLoading={isRunning}
                 fill
               />

@@ -85,8 +85,8 @@ export const employeesSource: DataSourceDefinition = {
     { id: "email", label: "Email", type: "string" },
     { id: "lastPunch", label: "Last punch", type: "string" },
     { id: "daysSinceLastPunch", label: "Days since last punch", type: "number", exportLabel: "Days since last punch (or hire, if never)" },
-    { id: "hoursInRange", label: "Hours worked in these dates", type: "number" },
-    { id: "daysWorkedInRange", label: "Days worked in these dates", type: "number" },
+    { id: "hoursInRange", label: "Hours worked in these dates", type: "number", total: true },
+    { id: "daysWorkedInRange", label: "Days worked in these dates", type: "number", total: true },
   ],
   filters: [
     { id: "employeeName", label: "Employee name", type: "string", operators: ["contains", "eq"] },

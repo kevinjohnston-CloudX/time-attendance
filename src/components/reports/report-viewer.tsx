@@ -278,6 +278,7 @@ export function ReportViewer({
             columns={result?.columns ?? []}
             rows={result?.rows ?? []}
             totalRows={result?.totalRows ?? 0}
+            groups={result?.groups}
             isLoading={isRunning}
           />
         ) : (

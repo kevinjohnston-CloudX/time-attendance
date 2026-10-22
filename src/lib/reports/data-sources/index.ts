@@ -11,6 +11,7 @@ import { securityScanSource, timeClockScanSource } from "./scan-report";
 import { employeesSource } from "./employees";
 import { laborCostSource } from "./labor-cost";
 import { daysOf } from "../period";
+import { groupRows, type ReportGroups } from "../grouping";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,8 @@ export interface ColumnDef {
   defaultVisible?: boolean;
   /** The heading in a CSV or Excel download, when it differs from the screen's. */
   exportLabel?: string;
+  /** Adds up in group totals and the grand total. Hours columns always do. */
+  total?: boolean;
 }
 
 export interface FilterFieldDef {
@@ -40,6 +43,8 @@ export interface ReportResult {
   totalRows: number;
   /** The days the rows cover, for reports that work them out themselves. */
   period?: { start: string; end: string; label: string };
+  /** The rows in their groups, with totals; `rows` are already in group order. */
+  groups?: ReportGroups;
 }
 
 /** What a run needs to know besides the report: where "yesterday" is, and when "now" is. */
@@ -100,8 +105,34 @@ function withCalendarDates(def: DataSourceDefinition): DataSourceDefinition {
   };
 }
 
+/**
+ * Groups and totals, added to every report after it runs (see grouping.ts),
+ * so the screen and every download read the same lines. A report that came
+ * back with exactly its row limit is taken as cut short, and draws no totals.
+ */
+function withGroups(def: DataSourceDefinition): DataSourceDefinition {
+  return {
+    ...def,
+    execute: async (config, tenantId, ctx) => {
+      const result = await def.execute(config, tenantId, ctx);
+      const groupBy = (config.groupBy ?? []).filter((id) => def.groupableFields.includes(id));
+      const totalOf = new Map(def.columns.map((c) => [c.id, c.total]));
+      const grouped = groupRows(
+        result.rows,
+        result.columns.map((c) => ({ ...c, total: totalOf.get(c.id) })),
+        groupBy,
+        {
+          complete: !(config.limit && result.rows.length >= config.limit),
+          fieldLabels: Object.fromEntries(def.columns.map((c) => [c.id, c.label])),
+        }
+      );
+      return grouped ? { ...result, rows: grouped.rows, groups: grouped.groups } : result;
+    },
+  };
+}
+
 const dataSources = Object.fromEntries(
-  Object.entries(sources).map(([id, def]) => [id, withCalendarDates(def)])
+  Object.entries(sources).map(([id, def]) => [id, withGroups(withCalendarDates(def))])
 ) as Record<DataSourceId, DataSourceDefinition>;
 
 export function getDataSource(id: DataSourceId): DataSourceDefinition {
