@@ -48,6 +48,10 @@
     display: block !important;
     overflow-y: auto;
   }
+  /* The list's card, then the picked one's, stacked with the frame between. */
+  .typeBody > * + * {
+    margin-top: 12px;
+  }
   .typeRail,
   .typeRail > [role="listbox"] {
     overflow: visible !important;
