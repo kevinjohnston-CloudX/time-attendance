@@ -133,7 +133,9 @@ export function ReportViewer({
   usePhoneBack(onPhone ? "Reports" : null, () => router.push("/reports"));
   const [isToggling, startToggle] = useTransition();
   const [result, setResult] = useState<ReportResult | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
+  // Running from the start: it runs as it opens, and "did not run" flashed
+  // for the moment before the first run began.
+  const [isRunning, setIsRunning] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<"share" | "schedule" | "copy" | "delete" | null>(null);
 
