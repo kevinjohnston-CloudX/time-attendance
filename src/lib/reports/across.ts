@@ -64,6 +64,17 @@ export function spreadAcross(
       if (!seen.has(day)) seen.set(day, day);
     }
   }
+  // A week has seven days whether or not anyone worked them all.
+  if (across.id === "weekday" && across.groupOrder) {
+    const sample = result.rows.find((r) => typeof r[across.groupOrder!] === "number" && typeof r.weekday === "string");
+    const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    if (sample) {
+      const offset = (names.indexOf(String(sample.weekday)) - Number(sample[across.groupOrder]) + 7) % 7;
+      names.forEach((n, i) => {
+        if (!seen.has(n)) seen.set(n, String((i - offset + 7) % 7));
+      });
+    }
+  }
   const values = [...seen.keys()].sort((a, b) => {
     if (a === blank || b === blank) return a === blank ? 1 : -1;
     return (seen.get(a) ?? a).localeCompare(seen.get(b) ?? b, "en-US", { numeric: true, sensitivity: "base" });

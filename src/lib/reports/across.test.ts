@@ -22,7 +22,8 @@ describe("spreadAcross", () => {
       { employeeName: "Ben", employeeCode: "2", week: "W1", weekday: "Mon", weekdayOrder: 1, totalMinutes: 120, regMinutes: 120 },
     ];
     const out = spreadAcross({ columns: cols(["employeeName", "week", "totalMinutes", "regMinutes"]), rows }, def, { field: "weekday", value: "totalMinutes" })!;
-    expect(out.columns.map((c) => c.label)).toEqual(["Employee", "Week", "Sun", "Mon", "Total", "Regular"]);
+    // All seven days, the company's first day first (Sunday here), worked or not.
+    expect(out.columns.map((c) => c.label)).toEqual(["Employee", "Week", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Total", "Regular"]);
     expect(out.rows).toHaveLength(2);
     expect(out.rows[0]).toMatchObject({ a0_totalMinutes: 60, a1_totalMinutes: 510, total_totalMinutes: 570, regMinutes: 540 });
     expect(out.rows[1]).toMatchObject({ a0_totalMinutes: 0, a1_totalMinutes: 120, total_totalMinutes: 120 });
