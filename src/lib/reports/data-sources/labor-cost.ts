@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, filterRowsInMemory, sortRowsInMemory, type FieldMap } from "../query-builder";
@@ -72,6 +73,11 @@ export const laborCostSource: DataSourceDefinition = {
     { id: "unchargedMinutes", label: "Worked hours with no charge rate", type: "number", defaultVisible: false },
   ],
   filters: [
+    { id: "status", label: "Timesheet status", type: "string", operators: ["eq", "in"],
+      options: [
+        { value: "OPEN", label: "Open" },
+        { value: "LOCKED", label: "Locked" },
+      ] },
     { id: "employeeName", label: "Employee name", type: "string", operators: ["contains", "eq"] },
     { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
     { id: "agencyId", label: "Agency", type: "string", operators: ["eq", "in"] },
@@ -116,6 +122,10 @@ export const laborCostSource: DataSourceDefinition = {
     });
     if (employees.length === 0) return empty;
 
+    // Timesheet status, for the payroll reports that read locked timesheets only.
+    const statusFilter = config.filters.find((f) => f.field === "status");
+    const statuses = statusFilter ? (Array.isArray(statusFilter.value) ? statusFilter.value : [statusFilter.value]).map(String) : null;
+
     // Paid hours by person, day and kind: the engine's bucket for worked
     // time, LEAVE for paid time off and holidays, PREMIUM for meal premiums.
     const hours = await db.$queryRaw<{ e: string; d: string; k: string; m: number }[]>`
@@ -129,6 +139,7 @@ export const laborCostSource: DataSourceDefinition = {
         and w."segmentType" in ('WORK', 'LEAVE', 'HOLIDAY', 'MEAL_PREMIUM')
         and w."segmentDate" between ${span.first}::date and ${span.last}::date
         and t."employeeId" = any(${employees.map((e) => e.id)})
+        ${statuses ? Prisma.sql`and t.status::text = any(${statuses})` : Prisma.empty}
       group by 1, 2, 3`;
 
     const byEmployee = new Map<string, typeof hours>();
@@ -186,7 +197,8 @@ export const laborCostSource: DataSourceDefinition = {
 
     // By agency, then name, unless the report says otherwise.
     rows.sort((a, b) => (a.agency ?? "").localeCompare(b.agency ?? "") || a.employeeName.localeCompare(b.employeeName));
-    const filtered = filterRowsInMemory(rows, config.filters, fieldMap);
+    // Timesheet status was applied to the hours above.
+    const filtered = filterRowsInMemory(rows, config.filters.filter((f) => f.field !== "status"), fieldMap);
     const sorted = sortRowsInMemory(filtered, config.sortBy, fieldMap);
     const limited = config.limit ? sorted.slice(0, config.limit) : sorted;
     return { columns: visible.map((c) => ({ id: c.id, label: c.label, type: c.type })), rows: limited, totalRows: limited.length };
