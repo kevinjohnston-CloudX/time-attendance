@@ -88,8 +88,13 @@ const PREVIEW_ROWS = 100;
  */
 const savedLimit = (id: string) => (isScanReport(id) ? 50000 : 5000);
 
-/** Where the rail and the preview sit side by side, the same test the pinned bar uses. */
-const SIDE_BY_SIDE = "(min-width: 1024px) and (min-height: 600px)";
+/**
+ * Where the rail and the preview sit side by side and each reaches the
+ * bottom of the window. The width is the layout's own (lg, 64rem, which
+ * grows with the browser's text size); in pixels, a larger text setting left
+ * the two stacked yet each held to the window's height, a box in a box.
+ */
+const SIDE_BY_SIDE = "(width >= 64rem) and (min-height: 600px)";
 
 export function ReportBuilder({
   dataSources,
