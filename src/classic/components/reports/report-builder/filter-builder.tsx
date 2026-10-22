@@ -30,6 +30,7 @@ const OPERATOR_LABELS: Record<string, string> = {
   lte: "<=",
   between: "between",
   contains: "contains",
+  inRange: "in the report dates",
 };
 
 const inputCls =

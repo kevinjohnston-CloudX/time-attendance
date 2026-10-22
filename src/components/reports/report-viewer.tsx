@@ -97,6 +97,7 @@ const OPERATOR_WORDS: Record<string, string> = {
   lte: "is at most",
   between: "is between",
   contains: "contains",
+  inRange: "is in the report dates",
 };
 
 const FORMAT_NAME: Record<string, string> = { xlsx: "Excel", csv: "CSV", pdf: "PDF" };
@@ -182,6 +183,7 @@ export function ReportViewer({
   const filterWords = (cfg.filters ?? []).map((f) => {
     const label = source?.filters.find((x) => x.id === f.field)?.label ?? f.field;
     const op = OPERATOR_WORDS[f.operator] ?? f.operator;
+    if (f.operator === "inRange") return `${label} ${op}`;
     const tail = f.operator === "between" ? ` and ${valueName(f.field, f.value2)}` : "";
     return `${label} ${op} ${valueName(f.field, f.value)}${tail}`;
   });

@@ -4,6 +4,7 @@ import { Banner, LinkButton, PageHeader } from "@/components/ui";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getDataSourceDefinitions, getFilterOptions } from "@/actions/report.actions";
 import { ReportBuilder } from "@/components/reports/report-builder/report-builder";
+import { standardReport } from "@/lib/reports/standard-reports";
 
 /**
  * The report builder route.
@@ -16,7 +17,7 @@ import { ReportBuilder } from "@/components/reports/report-builder/report-builde
 export default async function NewReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ source?: string }>;
+  searchParams: Promise<{ source?: string; standard?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -45,12 +46,21 @@ export default async function NewReportPage({
     );
   }
 
-  // The type is picked in the New report window before this page opens. With
-  // no type, or one that is not on offer, that window is where it goes back
-  // to, rather than a builder with nothing to build.
-  const { source } = (await searchParams) ?? {};
-  const initialSource = dsResult.data.find((ds) => ds.id === source)?.id;
+  // The type, or a standard report built on one, is picked in the New report
+  // window before this page opens. With neither, or one that is not on offer,
+  // that window is where it goes back to, rather than a builder with nothing
+  // to build.
+  const params = (await searchParams) ?? {};
+  const standard = standardReport(params.standard);
+  const initialSource = dsResult.data.find((ds) => ds.id === (standard?.source ?? params.source))?.id;
   if (!initialSource) redirect("/reports?new=1");
 
-  return <ReportBuilder dataSources={dsResult.data} filterOptions={filterResult.data} initialSource={initialSource} />;
+  return (
+    <ReportBuilder
+      dataSources={dsResult.data}
+      filterOptions={filterResult.data}
+      initialSource={initialSource}
+      standard={standard?.source === initialSource ? standard : undefined}
+    />
+  );
 }

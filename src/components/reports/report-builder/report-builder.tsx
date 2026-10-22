@@ -17,6 +17,7 @@ import { dataSourceDescription, dataSourceLabel, isScanReport } from "../data-so
 import { runReport, createReport, updateReport } from "@/actions/report.actions";
 import type { DataSourceId, FilterDef, SortDef, DateRange, ReportConfig } from "@/lib/validators/report.schema";
 import type { ReportResult } from "@/lib/reports/data-sources";
+import type { StandardReport } from "@/lib/reports/standard-reports";
 import phone from "../reports-phone.module.css";
 
 /**
@@ -36,6 +37,9 @@ import phone from "../reports-phone.module.css";
  * <p>Given a saved report (`editing`), the same page edits it: everything
  * starts from what was saved, and Save changes that report in place rather
  * than adding another. Only the person who made it gets here.
+ *
+ * <p>Given a standard report (`standard`), a new report starts set up the
+ * way that NovaTime template was, under its name, and saves as a new report.
  */
 
 /** A saved report opened for editing. */
@@ -86,6 +90,7 @@ export function ReportBuilder({
   filterOptions,
   initialSource,
   editing,
+  standard,
 }: {
   dataSources: DataSourceMeta[];
   filterOptions: FilterOptions;
@@ -93,6 +98,8 @@ export function ReportBuilder({
   initialSource: DataSourceId;
   /** The saved report being edited. Absent for a new report. */
   editing?: EditingReport;
+  /** The standard report a new report starts from. */
+  standard?: StandardReport;
 }) {
   const router = useRouter();
   // On a phone the way out is the top bar's: back to the report being
@@ -104,7 +111,18 @@ export function ReportBuilder({
 
   const defaultsFor = (id: DataSourceId) =>
     dataSources.find((ds) => ds.id === id)?.columns.filter((c) => c.defaultVisible).map((c) => c.id) ?? [];
-  const saved = editing?.config;
+  // A standard report starts the same way a saved one does, from its settings.
+  const saved: Partial<ReportConfig> | undefined = standard
+    ? {
+        columns: standard.columns,
+        filters: standard.filters ?? [],
+        groupBy: standard.groupBy ?? [],
+        sortBy: standard.sortBy ?? [],
+        dateRange: standardRange(standard.dates, filterOptions.payPeriods) ?? undefined,
+      }
+    : editing?.config;
+  // The standard report's name stays at the top until the type is changed.
+  const [startedFrom, setStartedFrom] = useState(standard);
 
   const [dataSource, setDataSource] = useState<DataSourceId>(initialSource);
   const [changingSource, setChangingSource] = useState(false);
@@ -128,9 +146,11 @@ export function ReportBuilder({
   // A name is filled in from the report picked, and follows it when the
   // report changes, until somebody types their own.
   const [saving, setSaving] = useState(false);
-  const [reportName, setReportName] = useState(() => editing?.name ?? dataSourceLabel(initialSource));
+  const [reportName, setReportName] = useState(
+    () => editing?.name ?? (standard ? standard.saveName ?? standard.name : dataSourceLabel(initialSource))
+  );
   const [nameTouched, setNameTouched] = useState(Boolean(editing));
-  const [reportDesc, setReportDesc] = useState(editing?.description ?? "");
+  const [reportDesc, setReportDesc] = useState(editing?.description ?? standard?.description ?? "");
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const currentSource = dataSources.find((ds) => ds.id === dataSource);
@@ -148,6 +168,7 @@ export function ReportBuilder({
     setChangingSource(false);
     if (id === dataSource) return;
     setDataSource(id);
+    setStartedFrom(undefined);
     // The link follows, so a reload opens on the type now showing. Without a
     // navigation: nothing on the server needs to answer for it. An edit keeps
     // its own link; the new type is only kept once it is saved.
@@ -307,7 +328,7 @@ export function ReportBuilder({
     <div className="flex flex-col gap-4">
       <PageHeader
         pinned
-        title={editing ? `Edit ${editing.name}` : "New report"}
+        title={editing ? `Edit ${editing.name}` : startedFrom ? startedFrom.saveName ?? startedFrom.name : "New report"}
         subtitle={summary}
         actions={
           <>
@@ -542,7 +563,16 @@ export function ReportBuilder({
 }
 
 /** A filter that has everything it needs to narrow the report. */
+/** Where a standard report opens its dates: a moving pay period, or yesterday. */
+function standardRange(dates: StandardReport["dates"], payPeriods: FilterOptions["payPeriods"]): DateRange | null {
+  if (dates === "yesterday") return { type: "yesterday" };
+  const range = defaultPayPeriodRange(payPeriods);
+  if (!range || range.type !== "payPeriod") return null;
+  return { ...range, moving: dates === "previousPayPeriod" ? "previous" : "current" };
+}
+
 export function isFilterReady(f: FilterDef): boolean {
+  if (f.operator === "inRange") return true;
   const blank = (v: unknown) => v === undefined || v === null || String(v).trim() === "";
   return !blank(f.value) && (f.operator !== "between" || !blank(f.value2));
 }

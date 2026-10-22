@@ -62,6 +62,35 @@ describe("New report window", () => {
     fireEvent.click(screen.getByRole("button", { name: /Set up this report/ }));
     expect(onPick).toHaveBeenCalledWith("TIME_CLOCK_SCAN");
   });
+
+  it("opens on the standard reports for a new report, and opens the one picked", () => {
+    const onPick = vi.fn();
+    const onPickStandard = vi.fn();
+    render(
+      <ReportTypeDialog
+        sources={[{ id: "HOURS_SUMMARY", label: "Hours summary", description: "d", icon: "x" }]}
+        standards={[
+          { id: "summary", folder: "Time and attendance", name: "Summary report", novaTimeName: "Summary Report.TA", description: "Hours", source: "HOURS_SUMMARY", columns: ["employeeName"], dates: "currentPayPeriod" },
+          { id: "payroll-summary", folder: "Payroll", name: "Summary report", saveName: "Payroll summary report", novaTimeName: "Summary Report.PR", description: "Pay", source: "HOURS_SUMMARY", columns: ["employeeName"], dates: "previousPayPeriod" },
+        ]}
+        onPick={onPick}
+        onPickStandard={onPickStandard}
+        onClose={() => {}}
+      />
+    );
+    expect(screen.getByRole("listbox", { name: "Standard reports" })).toBeTruthy();
+    expect(screen.getByText("Payroll")).toBeTruthy();
+    expect(screen.getByText("Summary Report.TA")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("option", { name: "Summary report" })[1]);
+    expect(screen.getByText("Summary Report.PR")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Open this report/ }));
+    expect(onPickStandard).toHaveBeenCalledWith("payroll-summary");
+
+    // Blank report is the report types, as before.
+    fireEvent.click(screen.getByRole("button", { name: "Blank report" }));
+    fireEvent.click(screen.getByRole("button", { name: /Set up this report/ }));
+    expect(onPick).toHaveBeenCalledWith("HOURS_SUMMARY");
+  });
 });
 
 describe("Report builder on a scan report", () => {
@@ -103,5 +132,25 @@ describe("Report builder on a scan report", () => {
     expect(runReport.mock.calls[0][0].config.dateRange).toMatchObject({ type: "payPeriod", moving: "current" });
     expect(screen.getByRole("button", { name: "Pay period" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Calendar" })).toBeTruthy();
+  });
+
+  it("opens a standard report set up as NovaTime had it, under its name", async () => {
+    render(
+      <ReportBuilder
+        dataSources={sources as never}
+        filterOptions={options as never}
+        initialSource={"HOURS_SUMMARY" as never}
+        standard={{
+          id: "payroll-summary", folder: "Payroll", name: "Summary report", saveName: "Payroll summary report",
+          novaTimeName: "Summary Report.PR", description: "Pay", source: "HOURS_SUMMARY",
+          columns: ["employeeName"], groupBy: ["department"], dates: "previousPayPeriod",
+        }}
+      />
+    );
+    await waitFor(() => expect(runReport).toHaveBeenCalled());
+    const { config } = runReport.mock.calls[0][0];
+    expect(config.dateRange).toMatchObject({ type: "payPeriod", moving: "previous" });
+    expect(config.groupBy).toEqual(["department"]);
+    expect(screen.getByRole("heading", { name: "Payroll summary report" })).toBeTruthy();
   });
 });
