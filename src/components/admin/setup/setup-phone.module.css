@@ -368,3 +368,53 @@
   }
 }
 
+
+/* A computer window too narrow for an editor's rail beside its form (under
+   lg, 64rem, the width setup-shell.tsx sets the two side by side from): the
+   rail would stack across the whole width above the form, so the editor
+   gets the phone's Jump to picker instead, pinned under the header. A phone
+   held sideways keeps its own rules above. */
+@media (min-width: 768px) and (width < 64rem) and (pointer: fine),
+  (min-width: 768px) and (width < 64rem) and (min-height: 501px) {
+  .shell[data-phone-view="sections"] .rail {
+    display: none !important;
+  }
+  .jumpWrap {
+    display: contents !important;
+  }
+  .jump {
+    position: sticky;
+    top: calc(var(--shell-bar) - 4px);
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0 8px;
+    background: var(--ta-canvas);
+    font: var(--weight-medium) 14px/20px var(--font-sans);
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  .jump > select {
+    flex: 0 1 360px;
+    min-width: 0;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--stroke-secondary);
+    border-radius: 10px;
+    background-color: var(--surface-card);
+    font: var(--type-body2);
+    color: var(--text-primary);
+  }
+}
+/* Where the header scrolls away with the page (globals.css, .ta-pinned),
+   the picker pins to the top of the window on its own. */
+@media (min-width: 768px) and (max-width: 1023px) and (pointer: fine),
+  (min-width: 768px) and (max-width: 1023px) and (min-height: 501px),
+  (min-width: 768px) and (width < 64rem) and (max-height: 599px) and (pointer: fine),
+  (min-width: 768px) and (width < 64rem) and (min-height: 501px) and (max-height: 599px) {
+  .jump {
+    top: 0;
+    padding-top: 8px;
+  }
+}
