@@ -46,6 +46,10 @@ export const dateRangeSchema = z.discriminatedUnion("type", [
     // one's group. Absent on reports saved before it existed, which keep
     // their one pay period.
     allGroups: z.boolean().optional(),
+    // "Always the current (or previous) pay period": the pay period above
+    // only says which pay group to follow, and the one running on the day the
+    // report runs is used (see moving-period.ts). Absent: that one period.
+    moving: z.enum(["current", "previous"]).optional(),
   }),
   z.object({
     type: z.literal("custom"),

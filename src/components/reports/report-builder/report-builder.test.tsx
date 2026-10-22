@@ -77,13 +77,13 @@ describe("Report builder on a scan report", () => {
     expect(sent.config.columns).toEqual(SCAN_COLUMNS.map((c) => c.id));
     expect(screen.getAllByText(/Yesterday/).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Pay period" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Week, month or year" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Calendar" })).toBeTruthy();
   });
 
   it("saves with room for a month of rows and the period as a moving choice", async () => {
     open();
     await waitFor(() => expect(runReport).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: "Week, month or year" }));
+    fireEvent.change(screen.getByLabelText("Which days"), { target: { value: "last-month" } });
     fireEvent.click(screen.getByRole("button", { name: "Save report" }));
     // The window that asks for a name has its own Save report button, last on the page.
     await waitFor(() => expect(screen.getAllByRole("button", { name: "Save report" }).length).toBe(2));
@@ -99,8 +99,9 @@ describe("Report builder on a scan report", () => {
   it("keeps the usual limit and pay period start for other reports", async () => {
     render(<ReportBuilder dataSources={sources as never} filterOptions={options as never} initialSource={"HOURS_SUMMARY" as never} />);
     await waitFor(() => expect(runReport).toHaveBeenCalled());
-    expect(runReport.mock.calls[0][0].config.dateRange.type).toBe("payPeriod");
+    // NovaTime's default: always the current pay period.
+    expect(runReport.mock.calls[0][0].config.dateRange).toMatchObject({ type: "payPeriod", moving: "current" });
     expect(screen.getByRole("button", { name: "Pay period" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Week, month or year" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Calendar" })).toBeTruthy();
   });
 });

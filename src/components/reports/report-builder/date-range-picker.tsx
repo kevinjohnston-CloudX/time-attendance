@@ -15,56 +15,50 @@ import { daysOf, describeSpan } from "@/lib/reports/period";
  * <p>The range belongs to the builder's unsaved state, not to the URL.
  */
 
+/**
+ * Three ways to say when, the way NovaTime lists them: a pay period, a run of
+ * calendar days that moves on by itself (today, this week, last month, the
+ * last 30 days), or two dates. A saved "Last month" is always the month just
+ * gone, whenever the report runs.
+ */
 const RANGE_KINDS = [
   { value: "payPeriod", label: "Pay period" },
+  { value: "calendar", label: "Calendar" },
   { value: "custom", label: "Pick dates" },
-  { value: "relative", label: "Recent days" },
 ];
 
-/**
- * The scan reports count calendar days, so they have no pay period, and add a
- * choice for a whole week, month or year that moves on by itself: a report
- * saved as "Last month" is always the month just gone, whenever it is run.
- */
-const SCAN_RANGE_KINDS = [
-  { value: "custom", label: "Pick dates" },
-  { value: "relative", label: "Recent days" },
-  { value: "calendar", label: "Week, month or year" },
-];
+/** The scan reports count calendar days, so they have no pay period. */
+const SCAN_RANGE_KINDS = RANGE_KINDS.filter((k) => k.value !== "payPeriod");
 
 type Calendar = Extract<DateRange, { type: "calendar" }>;
 
-const CALENDAR_CHOICES: { value: string; label: string; range: Calendar }[] = (
-  [
-    ["this", "week", "This week"],
-    ["last", "week", "Last week"],
-    ["this", "month", "This month"],
-    ["last", "month", "Last month"],
-    ["this", "year", "This year"],
-    ["last", "year", "Last year"],
-  ] as const
-).map(([which, unit, label]) => ({ value: `${which}-${unit}`, label, range: { type: "calendar", unit, which } }));
-
-const calendarValue = (r: Calendar) => `${r.which}-${r.unit}`;
-
 const RELATIVE_DAYS = [7, 14, 30, 60, 90];
 
-/** Today and Yesterday lead the recent choices, as John added them. */
-const RECENT: { value: string; label: string; wide: string }[] = [
-  { value: "today", label: "Today", wide: "Today" },
-  { value: "yesterday", label: "Yesterday", wide: "Yesterday" },
-  ...RELATIVE_DAYS.map((d) => ({ value: String(d), label: `The last ${d} days`, wide: `${d} days` })),
+/** Every calendar choice, in the order NovaTime lists them. */
+const CALENDAR_CHOICES: { value: string; label: string; range: DateRange }[] = [
+  { value: "today", label: "Today", range: { type: "today" } },
+  { value: "yesterday", label: "Yesterday", range: { type: "yesterday" } },
+  ...(
+    [
+      ["this", "week", "This week"],
+      ["last", "week", "Last week"],
+      ["this", "month", "This month"],
+      ["last", "month", "Last month"],
+      ["this", "year", "This year"],
+      ["last", "year", "Last year"],
+    ] as const
+  ).map(([which, unit, label]) => ({ value: `${which}-${unit}`, label, range: { type: "calendar", unit, which } as Calendar })),
+  ...RELATIVE_DAYS.map((d) => ({ value: `days-${d}`, label: `The last ${d} days`, range: { type: "relative", relativeDays: d } as DateRange })),
 ];
 
-function recentValue(range: DateRange): string {
+function calendarValue(range: DateRange): string {
   if (range.type === "today" || range.type === "yesterday") return range.type;
-  return range.type === "relative" ? String(range.relativeDays) : "";
+  if (range.type === "relative") return `days-${range.relativeDays}`;
+  if (range.type === "calendar") return `${range.which}-${range.unit}`;
+  return "";
 }
 
-function fromRecent(v: string): DateRange {
-  if (v === "today" || v === "yesterday") return { type: v };
-  return { type: "relative", relativeDays: Number(v) };
-}
+const WEEKDAY = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 const STATUS_WORD: Record<string, string> = { OPEN: "Open", READY: "Ready to close", LOCKED: "Closed" };
 
@@ -208,31 +202,55 @@ function optionText(p: { startDate: string | Date; endDate: string | Date; lastD
   return `${day(p.startDate, false)} to ${day(last, true)} · ${tag}${who}`;
 }
 
-/** The dates in words: "Sep 13 to Sep 26, 2026 · All pay groups". */
-export function describeRange(range: DateRange | undefined, payPeriods: PayPeriodOption[]): string {
+/**
+ * The pay period a moving choice stands for today, in the saved period's pay
+ * group: the same choice the server makes when the report runs
+ * (moving-period.ts), so the words on screen name the dates it will use.
+ */
+export function movingPeriod(
+  range: Extract<DateRange, { type: "payPeriod" }>,
+  payPeriods: PayPeriodOption[]
+): PayPeriodOption | undefined {
+  const anchor = payPeriods.find((p) => p.id === range.payPeriodId);
+  if (!range.moving || !anchor) return anchor;
+  const group = anchor.groupName ?? NO_GROUP;
+  const today = todayKey();
+  const started = payPeriods
+    .filter((p) => (p.groupName ?? NO_GROUP) === group && dayKey(p.startDate) <= today)
+    .sort((a, b) => dayKey(a.startDate).localeCompare(dayKey(b.startDate)));
+  const current = started.find((p) => lastDayKey(p) >= today) ?? started.at(-1);
+  if (range.moving === "current" || !current) return current;
+  return started.filter((p) => lastDayKey(p) < dayKey(current.startDate)).at(-1);
+}
+
+const MOVING_WORDS = { current: "Current pay period", previous: "Previous pay period" } as const;
+
+/** The dates in words: "Current pay period · Oct 11 to Oct 24, 2026 · All pay groups". */
+export function describeRange(range: DateRange | undefined, payPeriods: PayPeriodOption[], weekStart = 1): string {
   if (!range) return "Not set";
-  if (range.type === "calendar") {
-    const label = CALENDAR_CHOICES.find((c) => c.value === calendarValue(range))?.label ?? "A calendar period";
-    return `${label} · ${describeSpan(daysOf(range))}`;
-  }
-  if (range.type === "relative") return `The last ${range.relativeDays} days`;
-  if (range.type === "today") return "Today";
-  if (range.type === "yesterday") return "Yesterday";
   if (range.type === "custom") {
     if (!range.startDate || !range.endDate) return "Dates not picked yet";
     return `${day(range.startDate, false)} to ${day(range.endDate, true)}`;
   }
-  const pp = payPeriods.find((p) => p.id === range.payPeriodId);
+  if (range.type !== "payPeriod") {
+    const label = CALENDAR_CHOICES.find((c) => c.value === calendarValue(range))?.label ?? "Calendar days";
+    return `${label} · ${describeSpan(daysOf(range, undefined, undefined, weekStart))}`;
+  }
+  const pp = movingPeriod(range, payPeriods);
   if (!pp) return "A pay period that is no longer on file";
   const last = lastDayKey(pp);
   const who = range.allGroups ? "All pay groups" : pp.groupName ?? "One pay group";
-  return `${day(pp.startDate, false)} to ${day(last, true)} · ${who}`;
+  const lead = range.moving ? `${MOVING_WORDS[range.moving]} · ` : "";
+  return `${lead}${day(pp.startDate, false)} to ${day(last, true)} · ${who}`;
 }
 
-/** The range to open on: every pay group, over the current pay period's dates. */
+/**
+ * The range to open on: every pay group, always the current pay period, as
+ * NovaTime opens a report. Saved like that, it moves on with the calendar.
+ */
 export function defaultPayPeriodRange(payPeriods: PayPeriodOption[]): DateRange | null {
   const pp = currentPayPeriod(payPeriods);
-  return pp ? { type: "payPeriod", payPeriodId: pp.id, allGroups: true } : null;
+  return pp ? { type: "payPeriod", payPeriodId: pp.id, allGroups: true, moving: "current" } : null;
 }
 
 export function DateRangePicker({
@@ -241,36 +259,36 @@ export function DateRangePicker({
   payPeriods,
   stacked = false,
   scan = false,
+  weekStart = 1,
 }: {
   value: DateRange;
   onChange: (range: DateRange) => void;
   payPeriods: PayPeriodOption[];
-  /** A scan report: calendar days, no pay periods, and whole weeks, months and years. */
+  /** A scan report: calendar days, no pay periods. */
   scan?: boolean;
   /** Every control the full width of a narrow column, as in the builder's side rail. */
   stacked?: boolean;
+  /** The day the company's week starts, 0 Sunday to 6 Saturday. */
+  weekStart?: number;
 }) {
   const current = currentPayPeriod(payPeriods);
+  const kind = value.type === "payPeriod" || value.type === "custom" ? value.type : "calendar";
 
-  function pickKind(kind: string) {
-    if (kind === "payPeriod" && current) {
-      onChange({ type: "payPeriod", payPeriodId: current.id, allGroups: true });
-    } else if (kind === "custom") {
+  function pickKind(next: string) {
+    if (next === "payPeriod" && current) {
+      onChange({ type: "payPeriod", payPeriodId: current.id, allGroups: true, moving: "current" });
+    } else if (next === "custom") {
       onChange({ type: "custom", startDate: "", endDate: "" });
-    } else if (kind === "calendar") {
-      onChange({ type: "calendar", unit: "month", which: "last" });
-    } else if (scan) {
-      onChange({ type: "yesterday" });
     } else {
-      onChange({ type: "relative", relativeDays: 14 });
+      onChange(scan ? { type: "yesterday" } : { type: "calendar", unit: "week", which: "last" });
     }
   }
 
   return (
     <div className="flex flex-col gap-3">
       <SegmentedControl
-        items={scan ? SCAN_RANGE_KINDS : payPeriods.length ? RANGE_KINDS : RANGE_KINDS.filter((k) => k.value !== "payPeriod")}
-        value={value.type === "today" || value.type === "yesterday" ? "relative" : value.type}
+        items={scan || !payPeriods.length ? SCAN_RANGE_KINDS : RANGE_KINDS}
+        value={kind}
         onChange={pickKind}
         ariaLabel="How to pick the dates"
         fullWidth={stacked}
@@ -303,14 +321,14 @@ export function DateRangePicker({
         </div>
       )}
 
-      {value.type === "calendar" && (
+      {kind === "calendar" && (
         <Select
           value={calendarValue(value)}
           onChange={(e) => {
             const pick = CALENDAR_CHOICES.find((c) => c.value === e.target.value);
             if (pick) onChange(pick.range);
           }}
-          aria-label="Which period"
+          aria-label="Which days"
           style={stacked ? undefined : { maxWidth: 260 }}
         >
           {CALENDAR_CHOICES.map((c) => (
@@ -321,30 +339,13 @@ export function DateRangePicker({
         </Select>
       )}
 
-      {value.type === "calendar" && (
+      {kind === "calendar" && (
         <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-          {describeSpan(daysOf(value))}{value.unit === "week" ? ". Weeks run Monday to Sunday." : ""}
+          Today that is {describeSpan(daysOf(value, undefined, undefined, weekStart))}, and it moves on by itself.
+          {value.type === "calendar" && value.unit === "week"
+            ? ` Weeks run ${WEEKDAY[weekStart]} to ${WEEKDAY[(weekStart + 6) % 7]}.`
+            : ""}
         </span>
-      )}
-
-      {/* Seven choices do not fit a narrow column side by side. */}
-      {recentValue(value) && stacked && (
-        <Select value={recentValue(value)} onChange={(e) => onChange(fromRecent(e.target.value))} aria-label="Which days">
-          {RECENT.map((r) => (
-            <option key={r.value} value={r.value}>
-              {r.label}
-            </option>
-          ))}
-        </Select>
-      )}
-
-      {recentValue(value) && !stacked && (
-        <SegmentedControl
-          items={RECENT.map((r) => ({ value: r.value, label: r.wide }))}
-          value={recentValue(value)}
-          onChange={(v) => onChange(fromRecent(v))}
-          ariaLabel="Which days"
-        />
       )}
     </div>
   );
@@ -367,7 +368,9 @@ function PayPeriodFields({
   payPeriods: PayPeriodOption[];
   stacked: boolean;
 }) {
-  const selected = payPeriods.find((p) => p.id === value.payPeriodId);
+  const anchor = payPeriods.find((p) => p.id === value.payPeriodId);
+  // A moving choice shows the period it stands for today.
+  const selected = movingPeriod(value, payPeriods) ?? anchor;
   const group = value.allGroups ? "" : selected?.groupName ?? NO_GROUP;
   const all = byWhen(spans(payPeriods));
   const selectedSpan = selected ? `${dayKey(selected.startDate)}|${dayKey(selected.endDate)}` : "";
@@ -383,7 +386,23 @@ function PayPeriodFields({
     // Stay on the same dates when the group has them, else its current one.
     const same = mine.find((p) => `${dayKey(p.startDate)}|${dayKey(p.endDate)}` === selectedSpan);
     const next = same ?? currentPayPeriod(mine) ?? mine[0];
-    if (next) onChange({ type: "payPeriod", payPeriodId: next.id, allGroups: false });
+    if (next) onChange({ type: "payPeriod", payPeriodId: next.id, allGroups: false, moving: value.moving });
+  }
+
+  // The list's value: a moving choice, or the one pay period picked.
+  const fixedValue = group ? value.payPeriodId : all.find((x) => x.key === selectedSpan)?.rep.id ?? value.payPeriodId;
+  const listValue = value.moving ? `moving:${value.moving}` : fixedValue;
+
+  function pickPeriod(v: string) {
+    if (v.startsWith("moving:")) {
+      const moving = v.slice("moving:".length) as "current" | "previous";
+      // Anchored on the group's current period, which says which group to follow.
+      const pool = group ? payPeriods.filter((p) => (p.groupName ?? NO_GROUP) === group) : payPeriods;
+      const now = currentPayPeriod(pool) ?? selected;
+      if (now) onChange({ type: "payPeriod", payPeriodId: now.id, allGroups: !group, moving });
+      return;
+    }
+    onChange({ type: "payPeriod", payPeriodId: v, allGroups: !group });
   }
 
   return (
@@ -398,11 +417,13 @@ function PayPeriodFields({
           ))}
         </Select>
         <Select
-          value={group ? value.payPeriodId : all.find((x) => x.key === selectedSpan)?.rep.id ?? value.payPeriodId}
-          onChange={(e) => onChange({ type: "payPeriod", payPeriodId: e.target.value, allGroups: !group })}
+          value={listValue}
+          onChange={(e) => pickPeriod(e.target.value)}
           aria-label="Pay period"
           style={stacked ? undefined : { flex: "1 1 320px", maxWidth: 400 }}
         >
+          <option value="moving:current">Current pay period</option>
+          <option value="moving:previous">Previous pay period</option>
           {group
             ? inGroup.map((pp) => (
                 <option key={pp.id} value={pp.id}>
@@ -417,6 +438,9 @@ function PayPeriodFields({
         </Select>
       </div>
       <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+        {value.moving && selected
+          ? `Today that is ${day(selected.startDate, false)} to ${day(lastDayKey(selected), true)}, and it moves on by itself. `
+          : ""}
         {group
           ? "Only the people in this pay group."
           : "Everyone whose pay period falls inside these dates, in every pay group."}

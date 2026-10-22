@@ -59,7 +59,7 @@ describe("saved scan report page", () => {
   it("shows the saved dates in words and offers the scan choices, not pay periods", () => {
     open();
     expect(screen.getAllByText(/^Last month · /).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "Week, month or year" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Calendar" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Pay period" })).toBeNull();
   });
 
