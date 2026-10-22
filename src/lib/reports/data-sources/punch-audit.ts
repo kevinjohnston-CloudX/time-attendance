@@ -61,7 +61,7 @@ export const punchAuditSource: DataSourceDefinition = {
     { id: "isApproved", label: "Approved", type: "boolean", operators: ["eq"] },
     { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
   ],
-  groupableFields: ["department", "punchType", "source"],
+  groupableFields: ["employeeName", "department", "punchType", "source"],
   fieldMap,
 
   async execute(config: ReportConfig, tenantId: string): Promise<ReportResult> {

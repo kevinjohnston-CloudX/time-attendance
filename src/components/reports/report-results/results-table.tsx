@@ -2,8 +2,8 @@
 
 import { EmptyState, Table, TableFooter, TBody, TD, TFoot, TH, THead, TR } from "@/components/ui";
 import { Loader2, SearchX } from "lucide-react";
-import { cellText } from "@/lib/reports/cell";
-import type { ReportGroups } from "@/lib/reports/grouping";
+import { cellText, displayText } from "@/lib/reports/cell";
+import { signers, type ReportGroups, type Signature } from "@/lib/reports/grouping";
 import phone from "../reports-phone.module.css";
 
 interface Column {
@@ -14,7 +14,7 @@ interface Column {
 
 /** A cell on screen: the shared formatting, with a dash for nothing. */
 function formatCell(value: unknown, type: string, id: string): string {
-  return cellText(value, { id, type }) || "—";
+  return displayText(value, { id, type }) || "—";
 }
 
 /**
@@ -79,6 +79,7 @@ export function ResultsTable({
                 if (line.kind === "group") return <GroupRow key={i} line={line} span={columns.length} />;
                 if (line.kind === "subtotal")
                   return <TotalRow key={i} label={`Total for ${line.label}`} values={line.values} columns={columns} indent={line.level} />;
+                if (line.kind === "signature") return <SignatureRow key={i} signature={line.signature} span={columns.length} />;
                 return null;
               })
             : rows.map((row, i) => <DataRow key={i} row={row} columns={columns} />)}
@@ -91,9 +92,14 @@ export function ResultsTable({
       </Table>
 
       {/* A total short by the rows the limit left out is worse than none. */}
-      {groups && !groups.totalsShown && groups.totalColumns.length > 0 && (
+      {groups && ((!groups.totalsShown && groups.totalColumns.length > 0) || groups.signaturesLeftOut) && (
         <p style={{ margin: 0, padding: "8px 14px 0", font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-          Totals are left out because only the first {rows.length.toLocaleString("en-US")} rows are shown.
+          {!groups.totalsShown && groups.totalColumns.length > 0
+            ? groups.signaturesLeftOut
+              ? "Totals and signature lines"
+              : "Totals"
+            : "Signature lines"}{" "}
+          are left out because only the first {rows.length.toLocaleString("en-US")} rows are shown.
         </p>
       )}
 
@@ -124,8 +130,13 @@ function DataRow({ row, columns }: { row: Record<string, unknown>; columns: Colu
   );
 }
 
-/** The start of a group: the field in quiet text, then the group's name. */
+/**
+ * The start of a group: the field in quiet text, then the group's name. One
+ * that starts a new printed page says so on the right, so the screen shows
+ * where the PDF will turn the page.
+ */
 function GroupRow({ line, span }: { line: Extract<ReportGroups["lines"][number], { kind: "group" }>; span: number }) {
+  const top = line.level === 0 || line.newPage;
   return (
     <TR>
       <TD
@@ -133,14 +144,53 @@ function GroupRow({ line, span }: { line: Extract<ReportGroups["lines"][number],
         style={{
           whiteSpace: "nowrap",
           paddingLeft: 14 + line.level * 20,
-          background: line.level === 0 ? "var(--fill-hover)" : undefined,
-          borderTop: line.level === 0 ? "1px solid var(--stroke-secondary)" : undefined,
+          background: top ? "var(--fill-hover)" : undefined,
+          borderTop: line.newPage ? "2px solid var(--stroke-default)" : top ? "1px solid var(--stroke-secondary)" : undefined,
         }}
       >
-        <span style={{ color: "var(--text-secondary)", marginRight: 8 }}>{line.fieldLabel}</span>
-        <span style={{ fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>{line.label}</span>
+        <span className="flex items-baseline gap-2">
+          <span style={{ color: "var(--text-secondary)" }}>{line.fieldLabel}</span>
+          <span className="min-w-0 flex-1" style={{ fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+            {line.label}
+          </span>
+          {line.newPage && (
+            <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>New page when printed</span>
+          )}
+        </span>
       </TD>
     </TR>
+  );
+}
+
+/** The statement and the lines to sign, as they print under a page group or the report. */
+function SignatureRow({ signature, span }: { signature: Signature; span: number }) {
+  return (
+    <TR>
+      <TD colSpan={span} style={{ padding: "16px 14px 20px" }}>
+        <div className="flex flex-col gap-5" style={{ maxWidth: 640 }}>
+          {signature.text && (
+            <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-primary)", whiteSpace: "normal" }}>
+              {signature.text}
+            </p>
+          )}
+          {signers(signature).map((who) => (
+            <div key={who} className="flex gap-6">
+              <SignLine label={who} width={280} />
+              <SignLine label="Date" width={140} />
+            </div>
+          ))}
+        </div>
+      </TD>
+    </TR>
+  );
+}
+
+function SignLine({ label, width }: { label: string; width: number }) {
+  return (
+    <span className="flex flex-col gap-1" style={{ width }}>
+      <span style={{ height: 22, borderBottom: "1px solid var(--stroke-default)" }} />
+      <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{label}</span>
+    </span>
   );
 }
 

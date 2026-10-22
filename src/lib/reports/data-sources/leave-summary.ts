@@ -54,7 +54,7 @@ export const leaveSummarySource: DataSourceDefinition = {
         { value: "POSTED", label: "Posted" },
       ] },
   ],
-  groupableFields: ["department", "leaveType", "status"],
+  groupableFields: ["employeeName", "department", "leaveType", "status"],
   fieldMap,
 
   async execute(config: ReportConfig, tenantId: string): Promise<ReportResult> {

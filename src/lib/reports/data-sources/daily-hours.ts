@@ -5,6 +5,7 @@ import { buildWhereClause, sortRowsInMemory, type FieldMap } from "../query-buil
 import { periodDayRange } from "@/lib/pay-period-days";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { tenantWeekStart } from "../moving-period";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "timesheet.employee.user.name",       type: "string" },
@@ -28,6 +29,8 @@ export const dailyHoursSource: DataSourceDefinition = {
     { id: "department",      label: "Department",     type: "string",  defaultVisible: true },
     { id: "site",            label: "Site",           type: "string",  defaultVisible: false },
     { id: "date",            label: "Date",           type: "date",    defaultVisible: true },
+    // For grouping a timesheet by week; weeks start on the company's day.
+    { id: "week",            label: "Week",           type: "string",  defaultVisible: false, groupOrder: "weekStart" },
     { id: "clockIn",         label: "Clock in",       type: "string",  defaultVisible: true },
     { id: "clockOut",        label: "Clock out",      type: "string",  defaultVisible: true },
     { id: "regMinutes",      label: "Regular",      type: "number",  defaultVisible: true },
@@ -50,7 +53,7 @@ export const dailyHoursSource: DataSourceDefinition = {
         { value: "SALARY", label: "Salary" },
       ] },
   ],
-  groupableFields: ["department", "site"],
+  groupableFields: ["employeeName", "week", "department", "site"],
   fieldMap,
 
   async execute(config: ReportConfig, tenantId: string): Promise<ReportResult> {
@@ -85,7 +88,11 @@ export const dailyHoursSource: DataSourceDefinition = {
           },
         },
       },
-      orderBy: [{ segmentDate: "asc" }, { startTime: "asc" }],
+      // By person first when the report is, so the lines it keeps are whole
+      // timesheets rather than the first days of everybody.
+      orderBy: config.sortBy[0]?.field === "employeeName"
+        ? [{ timesheet: { employee: { user: { name: config.sortBy[0].direction } } } }, { segmentDate: "asc" }, { startTime: "asc" }]
+        : [{ segmentDate: "asc" }, { startTime: "asc" }],
       take: config.limit ? config.limit * 25 : undefined, // over-fetch since we collapse to day rows
     });
 
@@ -185,6 +192,7 @@ export const dailyHoursSource: DataSourceDefinition = {
     }
 
     await fillClockTimes(dayMap);
+    const weekStart = await tenantWeekStart(tenantId);
 
     const rows = Array.from(dayMap.values()).map((day) => ({
       employeeName:  day.employeeName,
@@ -192,6 +200,7 @@ export const dailyHoursSource: DataSourceDefinition = {
       department:    day.department,
       site:          day.site,
       date:          day.date,
+      ...weekOf(day.date, weekStart),
       clockIn:       day.clockIn ? siteClock(day.clockIn, day.timezone) : null,
       clockOut:      day.clockOut ? siteClock(day.clockOut, day.timezone) : null,
       regMinutes:    day.regMinutes,
@@ -222,6 +231,16 @@ export const dailyHoursSource: DataSourceDefinition = {
     };
   },
 };
+
+/** The week a day falls in, "Sep 27 – Oct 3, 2026", with its first day to order weeks by. */
+function weekOf(day: string, weekStart: number): { week: string; weekStart: string } {
+  const at = Date.parse(day + "T12:00:00Z");
+  const back = (new Date(at).getUTCDay() - weekStart + 7) % 7;
+  const first = new Date(at - back * 86_400_000);
+  const last = new Date(first.getTime() + 6 * 86_400_000);
+  const short = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  return { week: `${short(first)} – ${short(last)}, ${last.getUTCFullYear()}`, weekStart: first.toISOString().slice(0, 10) };
+}
 
 /** One employee's day, while the report is being put together. */
 type DayRow = {

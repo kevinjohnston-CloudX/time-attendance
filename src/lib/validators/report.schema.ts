@@ -77,6 +77,24 @@ export const dateRangeSchema = z.discriminatedUnion("type", [
 
 // ─── Report config (stored as JSON in DB) ───────────────────────────────────
 
+// ─── Print layout ───────────────────────────────────────────────────────────
+
+/**
+ * How a report prints: a new page for each group of one grouped field (a
+ * timesheet per employee), and a statement with signature lines under each
+ * page group, or once under the report. Absent on reports saved before it.
+ */
+export const printLayoutSchema = z.object({
+  pageBreak: z.string().min(1).max(64).optional(),
+  signature: z
+    .object({
+      text: z.string().trim().max(600),
+      employee: z.boolean(),
+      supervisor: z.boolean(),
+    })
+    .optional(),
+});
+
 export const reportConfigSchema = z.object({
   columns: z.array(z.string().min(1)).min(1),
   filters: z.array(filterDefSchema).default([]),
@@ -84,6 +102,7 @@ export const reportConfigSchema = z.object({
   sortBy: z.array(sortDefSchema).default([]),
   dateRange: dateRangeSchema,
   limit: z.number().int().min(1).max(50000).default(5000),
+  layout: printLayoutSchema.optional(),
 });
 
 export type ReportConfig = z.infer<typeof reportConfigSchema>;

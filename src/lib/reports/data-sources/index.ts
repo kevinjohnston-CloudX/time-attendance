@@ -26,6 +26,8 @@ export interface ColumnDef {
   exportLabel?: string;
   /** Adds up in group totals and the grand total. Hours columns always do. */
   total?: boolean;
+  /** Groups on this column are ordered by this other row field (a week by its first day). */
+  groupOrder?: string;
 }
 
 export interface FilterFieldDef {
@@ -123,8 +125,14 @@ function withGroups(def: DataSourceDefinition): DataSourceDefinition {
   return {
     ...def,
     execute: async (config, tenantId, ctx) => {
-      const result = await def.execute(config, tenantId, ctx);
       const groupBy = (config.groupBy ?? []).filter((id) => def.groupableFields.includes(id));
+      // Rows come back in group order before the row limit cuts them, so a
+      // preview of 100 shows whole groups (a timesheet with all its days)
+      // rather than the first day of everyone.
+      const groupSort = groupBy
+        .filter((id) => !config.sortBy.some((s) => s.field === id))
+        .map((field) => ({ field, direction: "asc" as const }));
+      const result = await def.execute({ ...config, sortBy: [...groupSort, ...config.sortBy] }, tenantId, ctx);
       const totalOf = new Map(def.columns.map((c) => [c.id, c.total]));
       const grouped = groupRows(
         result.rows,
@@ -133,6 +141,8 @@ function withGroups(def: DataSourceDefinition): DataSourceDefinition {
         {
           complete: !(config.limit && result.rows.length >= config.limit),
           fieldLabels: Object.fromEntries(def.columns.map((c) => [c.id, c.label])),
+          groupOrder: Object.fromEntries(def.columns.filter((c) => c.groupOrder).map((c) => [c.id, c.groupOrder!])),
+          layout: config.layout,
         }
       );
       return grouped ? { ...result, rows: grouped.rows, groups: grouped.groups } : result;

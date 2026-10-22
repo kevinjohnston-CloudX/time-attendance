@@ -6,6 +6,7 @@ import { Button, SegmentedControl } from "@/components/ui";
 import { REPORT_GROUPS, dataSourceDescription, dataSourceLabel } from "./data-source-label";
 import { ReportTypeIcon } from "./report-type-icon";
 import { STANDARD_FOLDERS, type StandardReport } from "@/lib/reports/standard-reports";
+import { describePrint } from "@/lib/reports/grouping";
 import type { DataSourceId } from "@/lib/validators/report.schema";
 import phone from "./reports-phone.module.css";
 
@@ -332,6 +333,7 @@ function ListRow({
 const STANDARD_DATES: Record<StandardReport["dates"], string> = {
   currentPayPeriod: "Current pay period, moving on by itself",
   previousPayPeriod: "Previous pay period, moving on by itself",
+  currentWeek: "This week, moving on by itself",
   yesterday: "Yesterday, moving on by itself",
 };
 
@@ -384,6 +386,7 @@ function StandardDetail({ report, type }: { report: StandardReport; type?: Repor
         {groups.length > 0 && <DetailRow title="Grouped by">{groups.join(", then ")}, with totals</DetailRow>}
         {sorts.length > 0 && <DetailRow title="Sorted by">{sorts.join(", then ")}</DetailRow>}
         {filters.length > 0 && <DetailRow title="Filter">{filters.join(". ")}</DetailRow>}
+        {report.layout && <DetailRow title="Printed">{describePrint(report.layout, (id) => labelOf.get(id) ?? id)}</DetailRow>}
         <DetailRow title="Built on">{dataSourceLabel(report.source)}</DetailRow>
         <DetailRow title="In NovaTime">{report.novaTimeName}</DetailRow>
       </div>
