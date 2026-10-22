@@ -409,7 +409,9 @@ const GRID_HEAD: React.CSSProperties = {
  * time ever lit up under the cursor, on the one screen where knowing a cell is
  * editable is the whole point.
  */
-const gridCellButtonClass = "ta-hoverable rounded bg-transparent px-1 py-0.5";
+// A time stays on one line ("6:49 AM", never "6:49" over "AM"), which a
+// larger browser text size otherwise broke in the narrow clock columns.
+const gridCellButtonClass = "ta-hoverable whitespace-nowrap rounded bg-transparent px-1 py-0.5";
 
 /**
  * A punch time sitting in the grid.
