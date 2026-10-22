@@ -6,6 +6,7 @@ import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { tenantWeekStart } from "../moving-period";
 
 /**
  * A clock time where the person works. Formatted with the server's own zone,
@@ -41,14 +42,15 @@ export const attendanceDetailSource: DataSourceDefinition = {
     { id: "employeeCode",    label: "Badge ID",      type: "string",  defaultVisible: false },
     { id: "department",      label: "Department",     type: "string",  defaultVisible: true },
     { id: "site",            label: "Site",           type: "string",  defaultVisible: false },
-    { id: "date",            label: "Date",           type: "date",    defaultVisible: true },
-    { id: "segmentType",     label: "Type",   type: "string",  defaultVisible: true },
+    { id: "date",            label: "Date",           type: "date",    defaultVisible: true, across: true },
+    { id: "weekday",         label: "Day of the week", type: "string", defaultVisible: false, groupOrder: "weekdayOrder", across: true },
+    { id: "segmentType",     label: "Type",   type: "string",  defaultVisible: true, across: true },
     { id: "startTime",       label: "Start",     type: "string",  defaultVisible: true },
     { id: "endTime",         label: "End",       type: "string",  defaultVisible: true },
     { id: "durationMinutes", label: "Length", type: "number",  defaultVisible: true },
-    { id: "payBucket",       label: "Hours type",     type: "string",  defaultVisible: true },
+    { id: "payBucket",       label: "Hours type",     type: "string",  defaultVisible: true, across: true },
     { id: "payCode",           label: "Pay code number", type: "string",  defaultVisible: true },
-    { id: "payCodeLabel",      label: "Pay code",        type: "string",  defaultVisible: false },
+    { id: "payCodeLabel",      label: "Pay code",        type: "string",  defaultVisible: false, across: true },
     { id: "reasonCode",        label: "Reason code",     type: "string",  defaultVisible: false },
     { id: "regularMinutes",    label: "Regular",       type: "number",  defaultVisible: false },
     { id: "overtimeMinutes",   label: "Overtime",        type: "number",  defaultVisible: false },
@@ -135,6 +137,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
       take: config.limit,
     });
 
+    const weekStart = await tenantWeekStart(tenantId);
     const rows = segments.map((seg) => {
       const dayStr = seg.segmentDate.toISOString().slice(0, 10);
       const dayReason = seg.timesheet.dayReasons.find(
@@ -146,6 +149,9 @@ export const attendanceDetailSource: DataSourceDefinition = {
         department: seg.timesheet.employee.department.name,
         site: seg.timesheet.employee.site.name,
         date: seg.segmentDate.toISOString().slice(0, 10),
+        weekday: seg.segmentDate.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }),
+        // The company's first day of the week first, for spreading the days across columns.
+        weekdayOrder: (seg.segmentDate.getUTCDay() - weekStart + 7) % 7,
         segmentType: readable("segmentType", seg.segmentType),
         startTime: clockAt(seg.startTime, personTimeZone(seg.timesheet.employee)),
         endTime: clockAt(seg.endTime, personTimeZone(seg.timesheet.employee)),

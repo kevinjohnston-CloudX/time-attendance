@@ -109,6 +109,7 @@ function savedConfig(config: unknown): {
   columns?: string[];
   groupBy?: string[];
   layout?: PrintLayout;
+  across?: { field: string; value: string };
 } {
   return config && typeof config === "object" ? (config as Record<string, never>) : {};
 }
@@ -195,7 +196,8 @@ export function ReportViewer({
     return `${label} ${op} ${valueName(f.field, f.value)}${tail}`;
   });
   const groupWords = (cfg.groupBy ?? []).map((id) => source?.columns.find((c) => c.id === id)?.label ?? id);
-  const printWords = describePrint(cfg.layout, (id) => source?.columns.find((c) => c.id === id)?.label ?? id);
+  const colLabel = (id: string) => source?.columns.find((c) => c.id === id)?.label ?? id;
+  const printWords = describePrint(cfg.layout, colLabel);
 
   const details: { label: string; value: ReactNode }[] = [
     { label: "Type", value: sourceLabel },
@@ -206,6 +208,12 @@ export function ReportViewer({
     { label: "Who is included", value: filterWords.length ? filterWords.join(". ") : "Everyone in the dates" },
     ...(groupWords.length ? [{ label: "Grouped by", value: groupWords.join(", then ") }] : []),
     ...(printWords ? [{ label: "Printed", value: printWords }] : []),
+    ...(cfg.across
+      ? [{
+          label: "Across",
+          value: `A column for each ${colLabel(cfg.across.field).toLowerCase()}, showing ${colLabel(cfg.across.value).toLowerCase()}`,
+        }]
+      : []),
     { label: "Saved dates", value: describeRange(cfg.dateRange, payPeriods, filterOptions?.weekStart) },
     { label: "Owner", value: isOwner ? "You" : report.owner.name ?? "Unknown" },
     {

@@ -103,6 +103,9 @@ export const reportConfigSchema = z.object({
   dateRange: dateRangeSchema,
   limit: z.number().int().min(1).max(50000).default(5000),
   layout: printLayoutSchema.optional(),
+  // One field spread across the columns, each holding a number added up:
+  // a column for each day of the week, date or pay code.
+  across: z.object({ field: z.string().min(1).max(64), value: z.string().min(1).max(64) }).optional(),
 });
 
 export type ReportConfig = z.infer<typeof reportConfigSchema>;

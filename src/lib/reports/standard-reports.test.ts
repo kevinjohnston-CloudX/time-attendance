@@ -19,10 +19,15 @@ describe("standard reports", () => {
       expect(filter, `filter ${f.field}`).toBeDefined();
       expect(filter!.operators).toContain(f.operator);
     }
+    if (r.across) {
+      expect(def.columns.find((c) => c.id === r.across!.field)?.across, `across ${r.across.field}`).toBe(true);
+      expect(def.columns.find((c) => c.id === r.across!.value)?.type, `across value ${r.across.value}`).toBe("number");
+    }
+    if (r.layout?.pageBreak) expect(r.groupBy ?? [], "page break is grouped").toContain(r.layout.pageBreak);
     // And what it opens with is a report the server accepts.
     const dateRange = { type: "payPeriod", payPeriodId: "pp1", allGroups: true, moving: "current" };
     expect(() =>
-      reportConfigSchema.parse({ columns: r.columns, filters: r.filters ?? [], groupBy: r.groupBy ?? [], sortBy: r.sortBy ?? [], dateRange })
+      reportConfigSchema.parse({ columns: r.columns, filters: r.filters ?? [], groupBy: r.groupBy ?? [], sortBy: r.sortBy ?? [], dateRange, layout: r.layout, across: r.across })
     ).not.toThrow();
   });
 
