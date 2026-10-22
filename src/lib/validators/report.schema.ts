@@ -129,6 +129,11 @@ export const DATA_SOURCES = [
   "TIME_CLOCK_SCAN",
   "EMPLOYEES",
   "LABOR_COST",
+  "TIMESHEET_NOTES",
+  "TIME_OFF_HISTORY",
+  "TIME_OFF_SUMMARY",
+  "SCHEDULED_HOURS",
+  "SCANS_NOT_RECORDED",
 ] as const;
 
 export type DataSourceId = (typeof DATA_SOURCES)[number];
