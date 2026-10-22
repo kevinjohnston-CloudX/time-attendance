@@ -1,7 +1,10 @@
+import { Prisma, type PayFrequency } from "@prisma/client";
 import { db } from "@/lib/db";
+import { periodDayRange } from "@/lib/pay-period-days";
 import { readable } from "../readable";
-import { dayAfter, payPeriodsInside, timesheetPayPeriodWhere } from "../date-scope";
-import type { DataSourceDefinition, ReportResult } from "./index";
+import { timesheetPayPeriodWhere } from "../date-scope";
+import { daysOf, describeSpan, type DaySpan } from "../period";
+import type { DataSourceDefinition, ExecuteContext, ReportResult } from "./index";
 import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 
@@ -50,9 +53,13 @@ export const hoursSummarySource: DataSourceDefinition = {
   groupableFields: ["department", "site"],
   fieldMap,
 
-  async execute(config: ReportConfig, tenantId: string): Promise<ReportResult> {
-    // Build date-based where clause
-    const dateWhere = await resolveDateRange(config.dateRange, tenantId);
+  async execute(config: ReportConfig, tenantId: string, ctx?: ExecuteContext): Promise<ReportResult> {
+    // Dates rather than a pay period: the hours worked on those days.
+    if (config.dateRange.type !== "payPeriod") {
+      return hoursOnDays(config, tenantId, daysOf(config.dateRange, ctx?.timezone, ctx?.now));
+    }
+
+    const dateWhere = await timesheetPayPeriodWhere(config.dateRange, tenantId);
     const filterWhere = buildWhereClause(config.filters, fieldMap);
 
     const where = {
@@ -81,19 +88,7 @@ export const hoursSummarySource: DataSourceDefinition = {
 
     // Get PTO balances for the relevant employees. This is what each person
     // has left this year, not PTO taken in the period, hence "PTO balance".
-    const employeeIds = timesheets.map((ts) => ts.employeeId);
-    const year = new Date().getFullYear();
-
-    const ptoBalances =
-      employeeIds.length > 0
-        ? await db.leaveBalance.findMany({
-            where: {
-              employeeId: { in: employeeIds },
-              leaveType: { category: "PTO" },
-              accrualYear: year,
-            },
-          })
-        : [];
+    const ptoByEmployee = await ptoBalances(timesheets.map((ts) => ts.employeeId));
 
     // Meal premiums: an hour of pay each, not hours worked, so not in Regular or Total.
     const timesheetIds = timesheets.map((ts) => ts.id);
@@ -106,12 +101,6 @@ export const hoursSummarySource: DataSourceDefinition = {
           })
         : [];
     const premiumByTimesheet = new Map(premiums.map((p) => [p.timesheetId, p._sum.durationMinutes ?? 0]));
-
-    const ptoByEmployee: Record<string, number> = {};
-    for (const bal of ptoBalances) {
-      ptoByEmployee[bal.employeeId] =
-        (ptoByEmployee[bal.employeeId] ?? 0) + bal.balanceMinutes;
-    }
 
     // Build rows
     const rows = timesheets.map((ts) => {
@@ -163,53 +152,144 @@ export const hoursSummarySource: DataSourceDefinition = {
   },
 };
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Hours on chosen days ───────────────────────────────────────────────────
 
-async function resolveDateRange(
-  dateRange: ReportConfig["dateRange"],
-  tenantId: string
-): Promise<Record<string, unknown>> {
-  switch (dateRange.type) {
-    case "calendar":
-      // Turned into plain dates before any report runs (see data-sources/index).
-      throw new Error("A calendar period reached a report that reads dates.");
-    case "payPeriod":
-      return timesheetPayPeriodWhere(dateRange, tenantId);
+const DAY_MS = 86_400_000;
+const utcDate = (day: string) => new Date(`${day}T00:00:00.000Z`);
 
-    case "custom": {
-      // Pay periods inside the picked days. A period's stored end is the day
-      // after its last day, so it is held against the day after the last
-      // picked day: "Sep 13 to Sep 26" used to leave out Sep 13 to Sep 26.
-      return { payPeriod: payPeriodsInside(tenantId, new Date(dateRange.startDate), dayAfter(dateRange.endDate)) };
-    }
+/**
+ * The hours worked on a run of days, one row per person, however their pay
+ * periods fall. "Last week" used to count only the pay periods that fit
+ * inside it, which left out everyone paid every two weeks. The hours are the
+ * timecard's own lines added up by the day they are dated, as Daily hours
+ * counts them, so the two reports agree on any run of days.
+ *
+ * <p>Who is in: everyone with a timesheet whose pay period touches the days,
+ * so a person with no hours shows with zeros, as they do for a pay period.
+ * Overtime is the overtime earned on those days; a week's overtime that
+ * started on a day outside them is not in.
+ */
+async function hoursOnDays(config: ReportConfig, tenantId: string, span: DaySpan): Promise<ReportResult> {
+  const filterWhere = buildWhereClause(config.filters, fieldMap) as Record<string, unknown>;
+  const employeeFilter = (filterWhere.employee as Record<string, unknown>) ?? {};
+  const statuses = statusesOf(filterWhere.status);
+  const period = { start: span.start, end: span.end, label: describeSpan(span) };
+  const colById = Object.fromEntries(hoursSummarySource.columns.map((c) => [c.id, c]));
+  const columns = config.columns
+    .map((id) => colById[id])
+    .filter(Boolean)
+    .map((c) => ({ id: c.id, label: c.label, type: c.type }));
 
-    case "relative": {
-      const now = new Date();
-      const start = new Date(now);
-      start.setDate(start.getDate() - dateRange.relativeDays);
-      return {
-        payPeriod: {
-          tenantId,
-          startDate: { gte: start },
-          endDate: { lte: now },
-        },
-      };
-    }
-    case "today": {
-      const start = new Date();
-      start.setHours(0, 0, 0, 0);
-      const end = new Date();
-      end.setHours(23, 59, 59, 999);
-      return { payPeriod: { tenantId, startDate: { gte: start }, endDate: { lte: end } } };
-    }
-    case "yesterday": {
-      const start = new Date();
-      start.setDate(start.getDate() - 1);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date();
-      end.setDate(end.getDate() - 1);
-      end.setHours(23, 59, 59, 999);
-      return { payPeriod: { tenantId, startDate: { gte: start }, endDate: { lte: end } } };
-    }
+  // The pay periods that touch the days. Their stored dates do not say their
+  // last day on their own (see pay-period-days), so they are read here.
+  const candidates = await db.payPeriod.findMany({
+    where: {
+      tenantId,
+      startDate: { lt: new Date(utcDate(span.end).getTime() + DAY_MS) },
+      endDate: { gte: new Date(utcDate(span.start).getTime() - DAY_MS) },
+    },
+    select: { id: true, startDate: true, endDate: true, ruleSet: { select: { payFrequency: true } }, tenant: { select: { payFrequency: true } } },
+  });
+  const periodIds = candidates
+    .filter((p) => {
+      const { firstDay, lastDay } = periodDayRange(p, (p.ruleSet?.payFrequency ?? p.tenant.payFrequency) as PayFrequency);
+      return firstDay <= span.end && lastDay >= span.start;
+    })
+    .map((p) => p.id);
+  if (periodIds.length === 0) return { columns, rows: [], totalRows: 0, period };
+
+  const timesheetWhere = {
+    payPeriodId: { in: periodIds },
+    ...(filterWhere.status !== undefined ? { status: filterWhere.status } : {}),
+  } as Prisma.TimesheetWhereInput;
+
+  const people = await db.employee.findMany({
+    where: { tenantId, ...employeeFilter, timesheets: { some: timesheetWhere } } as Prisma.EmployeeWhereInput,
+    select: {
+      id: true, wmsId: true, employeeCode: true,
+      user: { select: { name: true } },
+      department: { select: { name: true } },
+      site: { select: { name: true } },
+      timesheets: { where: timesheetWhere, select: { status: true } },
+    },
+  });
+  if (people.length === 0) return { columns, rows: [], totalRows: 0, period };
+  const ids = people.map((p) => p.id);
+
+  // Added up in the database, by person and kind of hours.
+  const sums = await db.$queryRaw<{ employeeId: string; segmentType: string; payBucket: string; isPaid: boolean; minutes: number }[]>`
+    SELECT t."employeeId", s."segmentType"::text AS "segmentType", s."payBucket"::text AS "payBucket", s."isPaid",
+           SUM(s."durationMinutes")::float8 AS minutes
+    FROM work_segments s
+    JOIN timesheets t ON t.id = s."timesheetId"
+    WHERE s."segmentDate" BETWEEN ${utcDate(span.start)}::date AND ${utcDate(span.end)}::date
+      AND t."employeeId" = ANY(${ids})
+      ${statuses ? Prisma.sql`AND t.status::text = ANY(${statuses})` : Prisma.empty}
+    GROUP BY 1, 2, 3, 4`;
+
+  // The same lines the pay period totals are built from: worked time by its
+  // bucket, sick leave, holidays, and paid meal premiums on their own.
+  const hours = new Map<string, { reg: number; ot: number; dt: number; sick: number; holiday: number; premium: number }>();
+  for (const s of sums) {
+    const h = hours.get(s.employeeId) ?? { reg: 0, ot: 0, dt: 0, sick: 0, holiday: 0, premium: 0 };
+    const m = Number(s.minutes) || 0;
+    if (s.segmentType === "WORK") {
+      if (s.payBucket === "REG") h.reg += m;
+      else if (s.payBucket === "OT") h.ot += m;
+      else if (s.payBucket === "DT") h.dt += m;
+    } else if (s.segmentType === "LEAVE" && s.payBucket === "SICK") h.sick += m;
+    else if (s.segmentType === "HOLIDAY") h.holiday += m;
+    else if (s.segmentType === "MEAL_PREMIUM" && s.isPaid) h.premium += m;
+    hours.set(s.employeeId, h);
   }
+
+  const pto = await ptoBalances(ids);
+
+  const rows = people.map((p) => {
+    const h = hours.get(p.id) ?? { reg: 0, ot: 0, dt: 0, sick: 0, holiday: 0, premium: 0 };
+    const states = [...new Set(p.timesheets.map((t) => readable("timesheetStatus", t.status)))].sort();
+    return {
+      employeeName: p.user?.name ?? p.employeeCode,
+      employeeCode: p.wmsId ?? p.employeeCode,
+      department: p.department.name,
+      site: p.site.name,
+      regMinutes: h.reg,
+      otMinutes: h.ot,
+      dtMinutes: h.dt,
+      ptoMinutes: pto[p.id] ?? 0,
+      sickMinutes: h.sick,
+      holidayMinutes: h.holiday,
+      totalMinutes: h.reg + h.ot + h.dt,
+      premiumMinutes: h.premium,
+      // The days can cross two timesheets, one locked and one still open.
+      status: states.join(" and "),
+    };
+  });
+
+  rows.sort((a, b) => String(a.employeeName).localeCompare(String(b.employeeName)));
+  const sorted = sortRowsInMemory(rows, config.sortBy, {});
+  const limited = config.limit ? sorted.slice(0, config.limit) : sorted;
+  return { columns, rows: limited, totalRows: sorted.length, period };
+}
+
+/** The statuses a Timesheet status filter keeps, or null for no filter. */
+function statusesOf(where: unknown): string[] | null {
+  if (where === undefined) return null;
+  if (typeof where === "string") return [where];
+  const list = (where as { in?: unknown }).in;
+  if (Array.isArray(list)) return list.map(String);
+  // Only "is" and "is any of" are offered for status.
+  throw new Error("Unsupported timesheet status filter.");
+}
+
+/** What each person has left of their PTO this year, in minutes. */
+async function ptoBalances(employeeIds: string[]): Promise<Record<string, number>> {
+  if (employeeIds.length === 0) return {};
+  const balances = await db.leaveBalance.findMany({
+    where: { employeeId: { in: employeeIds }, leaveType: { category: "PTO" }, accrualYear: new Date().getFullYear() },
+    select: { employeeId: true, balanceMinutes: true },
+  });
+  const out: Record<string, number> = {};
+  for (const b of balances) out[b.employeeId] = (out[b.employeeId] ?? 0) + b.balanceMinutes;
+  return out;
 }
