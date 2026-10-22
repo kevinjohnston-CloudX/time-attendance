@@ -5,7 +5,15 @@ import { timesheetPayPeriodWhere } from "../date-scope";
 import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
-import { format } from "date-fns";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
+
+/**
+ * A clock time where the person works. Formatted with the server's own zone,
+ * as it was, every time is 4 hours out on a server kept on UTC.
+ */
+function clockAt(instant: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true }).format(instant);
+}
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "timesheet.employee.user.name",       type: "string" },
@@ -18,6 +26,9 @@ const fieldMap: FieldMap = {
   payBucket:     { prismaPath: "payBucket",                           type: "string" },
   payCodeLabel:  { prismaPath: "payCode.label",                       type: "string" },
   segmentDate:   { prismaPath: "segmentDate",                         type: "date" },
+  // The Date column, sorted in the database with the rest: sorted in memory
+  // after the database sorted by name, it undid the name order.
+  date:          { prismaPath: "segmentDate",                         type: "date" },
 };
 
 export const attendanceDetailSource: DataSourceDefinition = {
@@ -34,14 +45,15 @@ export const attendanceDetailSource: DataSourceDefinition = {
     { id: "segmentType",     label: "Type",   type: "string",  defaultVisible: true },
     { id: "startTime",       label: "Start",     type: "string",  defaultVisible: true },
     { id: "endTime",         label: "End",       type: "string",  defaultVisible: true },
-    { id: "durationMinutes", label: "Hours", type: "number",  defaultVisible: true },
+    { id: "durationMinutes", label: "Length", type: "number",  defaultVisible: true },
     { id: "payBucket",       label: "Hours type",     type: "string",  defaultVisible: true },
-    { id: "payCode",           label: "Pay Code",        type: "string",  defaultVisible: true },
-    { id: "payCodeLabel",      label: "Pay Code Label",  type: "string",  defaultVisible: false },
-    { id: "reasonCode",        label: "Reason Code",     type: "string",  defaultVisible: false },
+    { id: "payCode",           label: "Pay code number", type: "string",  defaultVisible: true },
+    { id: "payCodeLabel",      label: "Pay code",        type: "string",  defaultVisible: false },
+    { id: "reasonCode",        label: "Reason code",     type: "string",  defaultVisible: false },
     { id: "regularMinutes",    label: "Regular",       type: "number",  defaultVisible: false },
     { id: "overtimeMinutes",   label: "Overtime",        type: "number",  defaultVisible: false },
     { id: "doubletimeMinutes", label: "Double time",        type: "number",  defaultVisible: false },
+    { id: "paidMinutes",       label: "Paid hours",         type: "number",  defaultVisible: false },
     { id: "isPaid",          label: "Paid",           type: "boolean", defaultVisible: false },
   ],
   filters: [
@@ -73,7 +85,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
     { id: "employeeCode", label: "Badge ID", type: "string", operators: ["contains", "eq"] },
     { id: "payCodeLabel", label: "Pay code", type: "string", operators: ["eq", "neq"] },
   ],
-  groupableFields: ["department", "site", "segmentType"],
+  groupableFields: ["employeeName", "department", "site", "segmentType"],
   fieldMap,
 
   async execute(config: ReportConfig, tenantId: string): Promise<ReportResult> {
@@ -105,7 +117,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
 
     const orderBy =
       config.sortBy.length > 0
-        ? buildOrderBy(config.sortBy, fieldMap)
+        ? [...buildOrderBy(config.sortBy, fieldMap), { segmentDate: "asc" as const }, { startTime: "asc" as const }]
         : [{ segmentDate: "asc" as const }, { startTime: "asc" as const }];
 
     const segments = await db.workSegment.findMany({
@@ -135,9 +147,12 @@ export const attendanceDetailSource: DataSourceDefinition = {
         site: seg.timesheet.employee.site.name,
         date: seg.segmentDate.toISOString().slice(0, 10),
         segmentType: readable("segmentType", seg.segmentType),
-        startTime: format(seg.startTime, "h:mm a"),
-        endTime: format(seg.endTime, "h:mm a"),
+        startTime: clockAt(seg.startTime, personTimeZone(seg.timesheet.employee)),
+        endTime: clockAt(seg.endTime, personTimeZone(seg.timesheet.employee)),
         durationMinutes: seg.durationMinutes,
+        // Paid time, as the timecard totals it: an unpaid meal is not in it,
+        // and a meal premium is an hour of pay, not an hour worked.
+        paidMinutes: seg.isPaid && seg.segmentType !== "MEAL_PREMIUM" ? seg.durationMinutes : null,
         payBucket: readable("payBucket", seg.payBucket),
         payCode: seg.payCode?.code ?? null,
         payCodeLabel: seg.payCode?.label ?? null,
