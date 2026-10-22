@@ -615,6 +615,8 @@ function standardRange(dates: StandardReport["dates"], payPeriods: FilterOptions
   if (dates === "yesterday") return { type: "yesterday" };
   if (dates === "currentWeek") return { type: "calendar", unit: "week", which: "this" };
   if (dates === "previousMonth") return { type: "calendar", unit: "month", which: "last" };
+  if (dates === "currentMonth") return { type: "calendar", unit: "month", which: "this" };
+  if (dates === "currentYear") return { type: "calendar", unit: "year", which: "this" };
   const range = defaultPayPeriodRange(payPeriods);
   if (!range || range.type !== "payPeriod") return null;
   return { ...range, moving: dates === "previousPayPeriod" ? "previous" : "current" };

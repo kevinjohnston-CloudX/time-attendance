@@ -10,6 +10,10 @@ import { exceptionReportSource } from "./exception-report";
 import { securityScanSource, timeClockScanSource } from "./scan-report";
 import { employeesSource } from "./employees";
 import { laborCostSource } from "./labor-cost";
+import { timesheetNotesSource } from "./timesheet-notes";
+import { timeOffHistorySource, timeOffSummarySource } from "./time-off-history";
+import { scheduledHoursSource } from "./scheduled-hours";
+import { scansNotRecordedSource } from "./scans-not-recorded";
 import { daysOf, REPORT_ZONE, todayIn } from "../period";
 import { spreadAcross } from "../across";
 import { groupRows, type ReportGroups } from "../grouping";
@@ -96,6 +100,11 @@ const sources: Record<DataSourceId, DataSourceDefinition> = {
   TIME_CLOCK_SCAN: timeClockScanSource,
   EMPLOYEES: employeesSource,
   LABOR_COST: laborCostSource,
+  TIMESHEET_NOTES: timesheetNotesSource,
+  TIME_OFF_HISTORY: timeOffHistorySource,
+  TIME_OFF_SUMMARY: timeOffSummarySource,
+  SCHEDULED_HOURS: scheduledHoursSource,
+  SCANS_NOT_RECORDED: scansNotRecordedSource,
 };
 
 /**

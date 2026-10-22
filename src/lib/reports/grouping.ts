@@ -23,7 +23,7 @@ export interface GroupColumn {
   id: string;
   label: string;
   type: string;
-  /** Adds up in a total. Hours columns always do; others say so. */
+  /** Adds up in a total. Hours columns do unless they say false (a balance); others say true. */
   total?: boolean;
   /** Groups on this column are put in the order of another row field (a week by its first day). */
   groupOrder?: string;
@@ -94,6 +94,8 @@ export interface ReportGroups {
 
 /** Whether a column adds up: hours, and the numbers a report marks as totals. */
 export function addsUp(col: GroupColumn): boolean {
+  // A balance is hours, but adding two people's balances means nothing.
+  if (col.total === false) return false;
   return isHoursColumn(col) || (col.type === "number" && col.total === true);
 }
 
