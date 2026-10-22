@@ -230,6 +230,22 @@ export const STANDARD_REPORTS: StandardReport[] = [
     dates: "currentPayPeriod",
   },
   {
+    id: "employee-profile",
+    folder: "Human resources",
+    name: "Employee profile",
+    novaTimeName: "Employee Profile",
+    description: "A page for each current employee with their whole setup: site, department, agency, supervisor, pay rules, pay and dates.",
+    source: "EMPLOYEES",
+    columns: [
+      "employeeName", "employeeCode", "status", "site", "department", "agency", "jobTitle", "supervisor", "role",
+      "ruleSet", "shift", "holidayRule", "payCategory", "flsaType", "payType", "payRate", "markupPct", "chargeRate",
+      "hireDate", "adjustedHireDate", "terminatedAt", "terminationReason", "timeZone", "email", "lastPunch",
+    ],
+    groupBy: ["employeeName"],
+    layout: { pageBreak: "employeeName", cards: true },
+    dates: "currentPayPeriod",
+  },
+  {
     id: "supervisor-list",
     folder: "Human resources",
     name: "Supervisor employee list",

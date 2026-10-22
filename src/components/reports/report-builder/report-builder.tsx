@@ -146,7 +146,12 @@ export function ReportBuilder({
   const [across, setAcross] = useState<AcrossSpec | undefined>(() => saved?.across);
   const [showMore, setShowMore] = useState(() =>
     Boolean(
-      saved?.groupBy?.length || saved?.sortBy?.length || saved?.layout?.pageBreak || saved?.layout?.signature || saved?.across
+      saved?.groupBy?.length ||
+        saved?.sortBy?.length ||
+        saved?.layout?.pageBreak ||
+        saved?.layout?.signature ||
+        saved?.layout?.cards ||
+        saved?.across
     )
   );
 
@@ -190,7 +195,7 @@ export function ReportBuilder({
     setGroupBy([]);
     setSortBy([]);
     // The groups are gone, so there is nothing to start a page on; the signature stays.
-    setLayout((l) => ({ signature: l.signature }));
+    setLayout((l) => ({ signature: l.signature, cards: l.cards }));
     setAcross(undefined);
     // Pay periods are for the pay period reports and calendar periods for the
     // scan reports, so moving between the two puts the dates somewhere that
@@ -206,7 +211,8 @@ export function ReportBuilder({
   const readyFilters = filters.filter(isFilterReady);
   // A new page only for a field still grouped by; nothing at all when nothing is set.
   const pageBreak = layout.pageBreak && groupBy.includes(layout.pageBreak) ? layout.pageBreak : undefined;
-  const printLayout = pageBreak || layout.signature ? { pageBreak, signature: layout.signature } : undefined;
+  const printLayout =
+    pageBreak || layout.signature || layout.cards ? { pageBreak, signature: layout.signature, cards: layout.cards } : undefined;
   const config = { columns: selectedColumns, filters: readyFilters, dateRange, groupBy, sortBy, layout: printLayout, across };
   const configKey = JSON.stringify([dataSource, config]);
   const stale = previewResult !== null && previewedWith !== configKey;
@@ -316,7 +322,8 @@ export function ReportBuilder({
     });
   }
 
-  const moreCount = groupBy.length + sortBy.length + (pageBreak ? 1 : 0) + (layout.signature ? 1 : 0) + (across ? 1 : 0);
+  const moreCount =
+    groupBy.length + sortBy.length + (pageBreak ? 1 : 0) + (layout.signature ? 1 : 0) + (layout.cards ? 1 : 0) + (across ? 1 : 0);
   const labelOf = (id: string) => currentSource?.columns.find((c) => c.id === id)?.label ?? id;
   const summary = [
     dataSourceLabel(dataSource),
@@ -445,6 +452,7 @@ export function ReportBuilder({
                             groupBy.length && `grouped by ${groupBy.map(labelOf).join(", then ")}`,
                             sortBy.length && `sorted by ${sortBy.map((s) => labelOf(s.field)).join(", then ")}`,
                             pageBreak && `a page for each ${labelOf(pageBreak).toLowerCase()}`,
+                            layout.cards && "rows as cards",
                             layout.signature && "signature lines",
                           ]
                             .filter(Boolean)
@@ -545,6 +553,7 @@ export function ReportBuilder({
                 rows={previewResult?.rows ?? []}
                 totalRows={previewResult?.totalRows ?? 0}
                 groups={previewResult?.groups}
+                cards={previewResult?.cards}
                 isLoading={isRunning}
                 fill
               />

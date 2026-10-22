@@ -125,7 +125,7 @@ export const employeesSource: DataSourceDefinition = {
     { id: "daysWorkedInRange", label: "Days worked in these dates", type: "number", operators: ["gte", "lte", "between"] },
     { id: "hoursInRange", label: "Hours worked in these dates", type: "number", operators: ["gte", "lte", "between"] },
   ],
-  groupableFields: ["status", "site", "department", "agency", "supervisor", "ruleSet", "shift", "payCategory", "payType"],
+  groupableFields: ["employeeName", "status", "site", "department", "agency", "supervisor", "ruleSet", "shift", "payCategory", "payType"],
   fieldMap,
 
   async execute(config: ReportConfig, tenantId: string): Promise<ReportResult> {

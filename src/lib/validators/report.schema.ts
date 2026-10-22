@@ -86,6 +86,8 @@ export const dateRangeSchema = z.discriminatedUnion("type", [
  */
 export const printLayoutSchema = z.object({
   pageBreak: z.string().min(1).max(64).optional(),
+  // Each row drawn as a card, its columns one under another, like a profile.
+  cards: z.boolean().optional(),
   signature: z
     .object({
       text: z.string().trim().max(600),

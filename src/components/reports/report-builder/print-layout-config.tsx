@@ -52,6 +52,17 @@ export function PrintLayoutConfig({
         )}
       </label>
 
+      <div className="flex flex-col gap-1 pt-1.5">
+        <Checkbox
+          checked={!!layout.cards}
+          onChange={(on) => onChange({ ...layout, cards: on || undefined })}
+          label="Show each row as a card"
+        />
+        <span className="pl-7" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+          Each row&rsquo;s columns listed one under another, like a profile.
+        </span>
+      </div>
+
       <div className="pt-1.5">
         <Checkbox
           checked={!!signature}

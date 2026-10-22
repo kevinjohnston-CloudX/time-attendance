@@ -300,6 +300,7 @@ export function ReportViewer({
             rows={result?.rows ?? []}
             totalRows={result?.totalRows ?? 0}
             groups={result?.groups}
+            cards={result?.cards}
             isLoading={isRunning}
           />
         ) : (

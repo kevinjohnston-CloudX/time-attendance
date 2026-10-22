@@ -29,6 +29,7 @@ export function ResultsTable({
   rows,
   totalRows,
   groups,
+  cards = false,
   isLoading,
   fill = false,
 }: {
@@ -37,6 +38,8 @@ export function ResultsTable({
   totalRows: number;
   /** The rows in their groups with totals, worked out with the report (grouping.ts). */
   groups?: ReportGroups;
+  /** Each row as a card, its columns one under another, as it prints. */
+  cards?: boolean;
   isLoading?: boolean;
   /** Fill a panel of fixed height: the rows scroll inside it under a pinned
    *  header, and the count stays at the bottom. */
@@ -63,26 +66,35 @@ export function ResultsTable({
   return (
     <div className={`${fill ? "flex min-h-0 flex-1 flex-col" : "contents"} ${phone.results}`}>
       <Table style={fill ? { flex: 1, minHeight: 0 } : undefined}>
-        <THead>
-          <TR>
-            {columns.map((col) => (
-              <TH key={col.id} numeric={col.type === "number"}>
-                {col.label}
-              </TH>
-            ))}
-          </TR>
-        </THead>
+        {!cards && (
+          <THead>
+            <TR>
+              {columns.map((col) => (
+                <TH key={col.id} numeric={col.type === "number"}>
+                  {col.label}
+                </TH>
+              ))}
+            </TR>
+          </THead>
+        )}
         <TBody>
           {groups
             ? groups.lines.map((line, i) => {
-                if (line.kind === "row") return <DataRow key={i} row={rows[line.index]} columns={columns} />;
+                if (line.kind === "row")
+                  return cards ? (
+                    <CardRow key={i} row={rows[line.index]} columns={columns} />
+                  ) : (
+                    <DataRow key={i} row={rows[line.index]} columns={columns} />
+                  );
                 if (line.kind === "group") return <GroupRow key={i} line={line} span={columns.length} />;
                 if (line.kind === "subtotal")
                   return <TotalRow key={i} label={`Total for ${line.label}`} values={line.values} columns={columns} indent={line.level} />;
                 if (line.kind === "signature") return <SignatureRow key={i} signature={line.signature} span={columns.length} />;
                 return null;
               })
-            : rows.map((row, i) => <DataRow key={i} row={row} columns={columns} />)}
+            : rows.map((row, i) =>
+                cards ? <CardRow key={i} row={row} columns={columns} /> : <DataRow key={i} row={row} columns={columns} />
+              )}
         </TBody>
         {grand && (
           <TFoot>
@@ -126,6 +138,26 @@ function DataRow({ row, columns }: { row: Record<string, unknown>; columns: Colu
           {formatCell(row[col.id], col.type, col.id)}
         </TD>
       ))}
+    </TR>
+  );
+}
+
+/** A row as a card: each column's name over its value, filling the width. */
+function CardRow({ row, columns }: { row: Record<string, unknown>; columns: Column[] }) {
+  return (
+    <TR>
+      <TD colSpan={columns.length} style={{ padding: "14px 14px 16px" }}>
+        <dl className="m-0 grid gap-x-6 gap-y-3 [grid-template-columns:repeat(auto-fill,minmax(180px,1fr))]">
+          {columns.map((col) => (
+            <div key={col.id} className="flex min-w-0 flex-col gap-0.5">
+              <dt style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{col.label}</dt>
+              <dd className="m-0 truncate" style={{ font: "var(--type-body2)", color: "var(--text-primary)" }} title={formatCell(row[col.id], col.type, col.id)}>
+                {formatCell(row[col.id], col.type, col.id)}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </TD>
     </TR>
   );
 }
