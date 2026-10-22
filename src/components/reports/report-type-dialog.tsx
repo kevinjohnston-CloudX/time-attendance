@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, Check, X } from "lucide-react";
+import { ArrowRight, Check, FilePlus2, X } from "lucide-react";
 import { Button, SegmentedControl } from "@/components/ui";
 import { REPORT_GROUPS, dataSourceDescription, dataSourceLabel } from "./data-source-label";
 import { ReportTypeIcon } from "./report-type-icon";
@@ -136,7 +136,7 @@ export function ReportTypeDialog({
   return (
     <div
       className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.5)" }}
+      style={{ background: "var(--wms-overlay-modal)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
@@ -144,18 +144,22 @@ export function ReportTypeDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="report-type-title"
-        className={`${phone.typeSheet} ta-sheet ta-modal flex max-h-[calc(100dvh-2rem)] w-full max-w-[880px] flex-col overflow-hidden`}
-        style={{ borderRadius: "var(--radius-l)", height: 600 }}
+        className={`${phone.typeSheet} ta-sheet flex max-h-[calc(100dvh-2rem)] w-full max-w-[920px] flex-col overflow-hidden`}
+        style={{ borderRadius: "var(--radius-l)", height: 640, background: "var(--ta-canvas)", boxShadow: "var(--shadow-modal)" }}
       >
-        <header
-          className="flex flex-none items-center gap-3 px-6 py-4"
-          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-        >
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <h2 id="report-type-title" style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
+        <header className="flex flex-none items-center gap-3 py-4 pl-5 pr-4">
+          <span
+            className="grid h-9 w-9 flex-none place-items-center rounded-[10px]"
+            style={{ background: "var(--surface-card)", boxShadow: "var(--ta-raised)", color: "var(--icon-accent)" }}
+            aria-hidden="true"
+          >
+            <FilePlus2 className="h-[18px] w-[18px]" />
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <h2 id="report-type-title" style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>
               {changing ? "Change report type" : "New report"}
             </h2>
-            <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+            <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
               {changing ? "Pick the report to switch to." : "Pick the report to start from."}
             </span>
           </span>
@@ -164,11 +168,11 @@ export function ReportTypeDialog({
           </Button>
         </header>
 
-        <div className={`${phone.typeBody} grid min-h-0 flex-1 [grid-template-columns:272px_minmax(0,1fr)]`}>
+        <div className={`${phone.typeBody} grid min-h-0 flex-1 gap-3 px-4 [grid-template-columns:288px_minmax(0,1fr)]`}>
           {/* ── The types ─────────────────────────────────────────── */}
           <div
             className={`${phone.typeRail} flex min-h-0 flex-col`}
-            style={{ background: "var(--surface-secondary)", borderRight: "1px solid var(--stroke-divider)" }}
+            style={{ background: "var(--surface-card)", borderRadius: 14, boxShadow: "var(--ta-raised)", overflow: "hidden" }}
           >
             {offerStandards && (
               <div className="flex-none px-3 pt-3">
@@ -232,11 +236,8 @@ export function ReportTypeDialog({
             : current && <TypeDetail type={current} />}
         </div>
 
-        <footer
-          className={`${phone.typeFoot} flex flex-none items-center gap-2 px-6 py-3.5`}
-          style={{ borderTop: "1px solid var(--stroke-divider)" }}
-        >
-          <span className="min-w-0 flex-1" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+        <footer className={`${phone.typeFoot} flex flex-none items-center gap-2 py-3.5 pl-5 pr-4`}>
+          <span className="min-w-0 flex-1" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
             {changing
               ? "Switching starts the columns and filters over. The dates stay."
               : showingStandards
@@ -367,7 +368,10 @@ function StandardDetail({ report, type }: { report: StandardReport; type?: Repor
   );
 
   return (
-    <div className="ta-scroll flex min-h-0 flex-col overflow-y-auto px-8 py-7">
+    <div
+      className="ta-scroll flex min-h-0 flex-col overflow-y-auto px-7 py-6"
+      style={{ background: "var(--surface-card)", borderRadius: 14, boxShadow: "var(--ta-raised)" }}
+    >
       <div className="flex items-start gap-4">
         <ReportTypeIcon id={report.source} size={48} />
         <span className="flex min-w-0 flex-col gap-1 pt-0.5">
@@ -432,7 +436,10 @@ function TypeDetail({ type }: { type: ReportTypeOption }) {
   const filters = (type.filters ?? []).map((f) => f.label);
 
   return (
-    <div className="ta-scroll flex min-h-0 flex-col overflow-y-auto px-8 py-7">
+    <div
+      className="ta-scroll flex min-h-0 flex-col overflow-y-auto px-7 py-6"
+      style={{ background: "var(--surface-card)", borderRadius: 14, boxShadow: "var(--ta-raised)" }}
+    >
       <div className="flex items-start gap-4">
         <ReportTypeIcon id={type.id} size={48} />
         <span className="flex min-w-0 flex-col gap-1 pt-0.5">
