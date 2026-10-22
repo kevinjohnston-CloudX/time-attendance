@@ -15,6 +15,7 @@ import { GroupSortConfig } from "./group-sort-config";
 import { PrintLayoutConfig } from "./print-layout-config";
 import { ReportWindow, WindowBlock, WindowCard } from "../window/report-window";
 import { AcrossConfig } from "./across-config";
+import { LayoutPresets } from "./layout-presets";
 import type { AcrossSpec } from "@/lib/reports/across";
 import { ResultsTable } from "../report-results/results-table";
 import { dataSourceDescription, dataSourceLabel, isScanReport } from "../data-source-label";
@@ -238,12 +239,18 @@ export function ReportBuilder({
     setIsRunning(false);
   }
 
-  // The first preview runs by itself, on open and on a new type, so the page
-  // never opens on an empty table. The settings it uses are this render's.
+  // The preview runs by itself: at once on open and on a new type, so the
+  // page never opens on an empty table, and a moment after any other change,
+  // so ticking through settings runs it once rather than on every tick. It
+  // used to mark itself out of date and wait for Run again.
+  const previewedType = useRef<string | null>(null);
   useEffect(() => {
-    void handleRunPreview(false);
+    const now = previewedType.current !== dataSource;
+    previewedType.current = dataSource;
+    const t = setTimeout(() => void handleRunPreview(false), now ? 0 : 900);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataSource]);
+  }, [configKey]);
 
   /**
    * Both panes end at the bottom of the window, measured rather than
@@ -340,7 +347,7 @@ export function ReportBuilder({
       ? "Pick at least one column to see rows."
       : "Pick both dates to see rows."
     : stale
-      ? "The settings changed since this preview."
+      ? "Updating with your changes"
       : previewResult
         ? previewResult.rows.length >= PREVIEW_ROWS
           ? `The first ${PREVIEW_ROWS} rows. The saved report returns up to ${savedLimit(dataSource).toLocaleString("en-US")}.`
@@ -436,6 +443,20 @@ export function ReportBuilder({
                 <ColumnPicker columns={currentSource.columns} selected={selectedColumns} onChange={setSelectedColumns} />
               </RailSection>
 
+              <RailSection title="How it looks" hint="Pick one, then fine tune it below if you need to.">
+                <LayoutPresets
+                  columns={currentSource.columns}
+                  groupable={currentSource.groupableFields}
+                  value={{ groupBy, layout, across }}
+                  onChange={(next) => {
+                    setGroupBy(next.groupBy);
+                    setLayout(next.layout);
+                    setAcross(next.across);
+                    if (next.columns) setSelectedColumns(next.columns);
+                  }}
+                />
+              </RailSection>
+
               <div style={{ borderTop: "1px solid var(--stroke-divider)" }}>
                 <button
                   type="button"
@@ -445,7 +466,9 @@ export function ReportBuilder({
                   onClick={() => setShowMore((v) => !v)}
                 >
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="wms-overline">Layout</span>
+                    <span style={{ font: "var(--weight-semibold) 14px/20px var(--font-sans)", color: "var(--text-primary)" }}>
+                      More layout options
+                    </span>
                     <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
                       {moreCount > 0
                         ? [
@@ -459,7 +482,7 @@ export function ReportBuilder({
                             .filter(Boolean)
                             .join(", ")
                             .replace(/^./, (c) => c.toUpperCase())
-                        : "Optional. Columns across, groups and totals, order, and a page for each group with signature lines."}
+                        : "Groups and totals, order, columns across, pages and signature lines."}
                     </span>
                   </span>
                   <ChevronDown
@@ -651,7 +674,7 @@ function RailSection({
     <section className="flex flex-col gap-3 px-5 py-4" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
       <header className="flex flex-col gap-0.5">
         <span className="flex items-center gap-2">
-          <h3 className="wms-overline min-w-0 flex-1" style={{ margin: 0 }}>
+          <h3 className="min-w-0 flex-1" style={{ margin: 0, font: "var(--weight-semibold) 14px/20px var(--font-sans)", color: "var(--text-primary)" }}>
             {title}
           </h3>
           {meta && (
