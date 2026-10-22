@@ -5,6 +5,8 @@ import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { format } from "date-fns";
+import { localMoment } from "../scope";
+import { REPORT_ZONE } from "../period";
 import { parseUtcDate } from "@/lib/utils/date";
 
 const fieldMap: FieldMap = {
@@ -31,6 +33,7 @@ export const leaveSummarySource: DataSourceDefinition = {
     { id: "leaveType",       label: "Time off type",      type: "string",  defaultVisible: true },
     { id: "status",          label: "Status",          type: "string",  defaultVisible: true },
     { id: "startDate",       label: "Start date",      type: "date",    defaultVisible: true },
+    { id: "month",           label: "Month",           type: "string",  defaultVisible: false, groupOrder: "monthKey", across: true },
     { id: "endDate",         label: "End date",        type: "date",    defaultVisible: true },
     { id: "durationMinutes", label: "Hours",  type: "number",  defaultVisible: true },
     { id: "note",            label: "Note",            type: "string",  defaultVisible: false },
@@ -54,7 +57,7 @@ export const leaveSummarySource: DataSourceDefinition = {
         { value: "POSTED", label: "Posted" },
       ] },
   ],
-  groupableFields: ["employeeName", "department", "leaveType", "status"],
+  groupableFields: ["employeeName", "department", "leaveType", "status", "month"],
   fieldMap,
 
   async execute(config: ReportConfig, tenantId: string): Promise<ReportResult> {
@@ -96,8 +99,13 @@ export const leaveSummarySource: DataSourceDefinition = {
       durationMinutes: r.durationMinutes,
       note: r.note,
       reviewNote: r.reviewNote,
-      submittedAt: r.submittedAt ? format(r.submittedAt, "yyyy-MM-dd h:mm a") : null,
-      reviewedAt: r.reviewedAt ? format(r.reviewedAt, "yyyy-MM-dd h:mm a") : null,
+      // On the company's clock: formatted with the server's, they were 4
+      // hours out on a server kept on UTC.
+      submittedAt: r.submittedAt ? localMoment(r.submittedAt, REPORT_ZONE) : null,
+      reviewedAt: r.reviewedAt ? localMoment(r.reviewedAt, REPORT_ZONE) : null,
+      // For spreading time off across the months of a year.
+      month: format(parseUtcDate(r.startDate), "MMM yyyy"),
+      monthKey: format(parseUtcDate(r.startDate), "yyyy-MM"),
     }));
 
     // In-memory sort for computed columns (endDate, durationMinutes, etc.)
