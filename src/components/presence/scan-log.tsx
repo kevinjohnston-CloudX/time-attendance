@@ -11,6 +11,7 @@ import styles from "./on-site.module.css";
 import { Face } from "./face";
 import { SummarySkeleton } from "./movements-view";
 import { useOnPulseChange } from "./use-site-pulse";
+import { codeOf } from "@/lib/action-errors";
 
 /**
  * The scan log: every security gate and time clock scan at the site today,
@@ -156,7 +157,7 @@ export function useScanLog({
         setState({ page: res.data, rows: res.data.rows, failure: null, loadingMore: false });
         setLastOk(Date.now());
       } else {
-        setState((s) => ({ ...s, failure: res.error === "FORBIDDEN" || res.error === "NOT_FOUND" ? "access" : "error" }));
+        setState((s) => ({ ...s, failure: codeOf(res) === "FORBIDDEN" || codeOf(res) === "NOT_FOUND" ? "access" : "error" }));
       }
     } catch {
       if (keyRef.current === forKey) setState((s) => ({ ...s, failure: "error" }));

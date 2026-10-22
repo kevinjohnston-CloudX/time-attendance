@@ -301,7 +301,7 @@ export const runReport = withRBAC(
       dataSourceId = input.dataSource as DataSourceId;
       config = reportConfigSchema.parse(input.config);
     } else {
-      throw new Error("Either reportId or dataSource+config required");
+      throw new Error("Pick a report, or a data source and columns, then run it again.");
     }
 
     const source = getDataSource(dataSourceId);
@@ -765,7 +765,7 @@ function editableWhere(tenantId: string, userId: string): Prisma.ReportDefinitio
 
 async function getSessionUserId(): Promise<string> {
   const session = await auth();
-  if (!session?.user?.id) throw new Error("Not authenticated");
+  if (!session?.user?.id) throw new Error("UNAUTHENTICATED");
   return session.user.id;
 }
 
@@ -775,7 +775,7 @@ function validateColumnsAgainstSource(
 ) {
   const invalid = requestedColumns.filter((c) => !availableColumnIds.includes(c));
   if (invalid.length > 0) {
-    throw new Error(`Invalid columns: ${invalid.join(", ")}`);
+    throw new Error(`Some columns aren't available for this report: ${invalid.join(", ")}. Remove them, then save again.`);
   }
 }
 

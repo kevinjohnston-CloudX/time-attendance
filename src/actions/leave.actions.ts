@@ -159,7 +159,7 @@ export const createLeaveRequestForEmployee = withRBAC(
       where: { id: targetEmployeeId },
       select: { supervisorId: true, tenantId: true },
     });
-    if (target.tenantId !== tenantId) throw new Error("Employee not found.");
+    if (target.tenantId !== tenantId) throw new Error("NOT_FOUND");
 
     // For team scope: must be in the subordinate tree. For any scope: bypass.
     const session = await auth();
@@ -217,7 +217,7 @@ async function reviewableRequest(
   const request = await db.leaveRequest.findFirst({
     where: { id: leaveRequestId, employee: await employeeScope(ctx, "LEAVE_APPROVE_ANY") },
   });
-  if (!request) throw new NotFoundError("Leave request not found");
+  if (!request) throw new NotFoundError("This leave request isn't available to you. It may have been removed, or be outside the sites you can see. Reload the page and try again.");
   if (request.employeeId === ctx.employeeId) throw new Error("You can't review your own leave request");
   await assertNotSenior(ctx, request.employeeId, "LEAVE_APPROVE_ANY");
   return request;
@@ -236,7 +236,7 @@ export const approveLeaveRequest = withRBAC(
     // The supervisor's step only: Pending to waiting for HR. The final
     // approval is HR's, through hrApproveLeaveRequest, which also checks the
     // balance. Calling this twice used to skip HR altogether.
-    if (request.status !== "PENDING") throw new Error("This request is waiting for HR");
+    if (request.status === "PENDING_HR") throw new Error("A supervisor already approved this request; it's waiting for HR. Reload the page to see where it stands.");
 
     const transition = validateLeaveTransition(request.status, "APPROVE");
     if (!transition.valid) throw new Error(transition.error);
@@ -281,15 +281,30 @@ export const hrApproveLeaveRequest = withRBAC(
     const transition = validateLeaveTransition(request.status, "APPROVE");
     if (!transition.valid) throw new Error(transition.error);
 
-    await db.leaveRequest.update({
-      where: { id: leaveRequestId },
-      data: {
-        status: transition.newStatus,
-        reviewedAt: new Date(),
-        reviewedById: reviewerId,
-        reviewNote,
+    // The balance is checked before anything changes. It used to be checked
+    // after the request was saved as approved, so a refusal left it approved
+    // with nothing off the balance and nothing on the timecard.
+    await validateBalanceForApproval(leaveRequestId);
+
+    // Approved, debited and on the timecard together, or none of them.
+    await db.$transaction(
+      async (tx) => {
+        const { count } = await tx.leaveRequest.updateMany({
+          where: { id: leaveRequestId, status: request.status },
+          data: {
+            status: transition.newStatus,
+            reviewedAt: new Date(),
+            reviewedById: reviewerId,
+            reviewNote,
+          },
+        });
+        // Somebody else acted on it in the meantime.
+        if (count === 0) throw new Error("This request was changed by someone else just now. Reload the page to see where it stands.");
+        await postLeaveUsage(leaveRequestId, tx);
+        await syncLeaveSegments(leaveRequestId, tx);
       },
-    });
+      { timeout: 30_000 },
+    );
 
     await writeAuditLog({
       tenantId,
@@ -299,10 +314,6 @@ export const hrApproveLeaveRequest = withRBAC(
       action: "APPROVED",
       changes: { before: request.status, after: transition.newStatus },
     });
-
-    await validateBalanceForApproval(leaveRequestId);
-    await postLeaveUsage(leaveRequestId);
-    await syncLeaveSegments(leaveRequestId);
 
     revalidatePath("/supervisor/leave");
     revalidatePath("/leave");
@@ -419,12 +430,14 @@ export const postLeaveRequest = withRBAC(
     const transition = validateLeaveTransition(request.status, "POST");
     if (!transition.valid) throw new Error(transition.error);
 
-    await db.leaveRequest.update({
-      where: { id: leaveRequestId },
-      data: { status: transition.newStatus, postedAt: new Date() },
+    // Posted and debited together: a request already debited at approval is not debited again.
+    await db.$transaction(async (tx) => {
+      await tx.leaveRequest.update({
+        where: { id: leaveRequestId },
+        data: { status: transition.newStatus, postedAt: new Date() },
+      });
+      await postLeaveUsage(leaveRequestId, tx);
     });
-
-    await postLeaveUsage(leaveRequestId);
 
     await writeAuditLog({
       tenantId,

@@ -281,10 +281,15 @@ export async function reconcileLeaveDeductions(
 
   const activePunchIds = new Set(activePunches.map((p) => p.id));
 
+  // Only the leave this timecard's punches own. Every punch-owned request the
+  // employee had was read here, against this timecard's punches alone, so
+  // recalculating one timecard cancelled (and refunded) the leave on another
+  // open one, and that one's recalculation took it again: a new request and
+  // debit every night for each such day while two pay periods were open.
+  const ownedHere = { employeeId, sourcePunch: { timesheetId }, status: { notIn: ["CANCELLED" as const] } };
+
   // Cancel leave requests whose originating punch was corrected/tombstoned
-  const openRequests = await db.leaveRequest.findMany({
-    where: { employeeId, sourcePunchId: { not: null }, status: { notIn: ["CANCELLED"] } },
-  });
+  const openRequests = await db.leaveRequest.findMany({ where: ownedHere });
 
   for (const req of openRequests) {
     if (req.sourcePunchId && !activePunchIds.has(req.sourcePunchId)) {
@@ -307,7 +312,7 @@ export async function reconcileLeaveDeductions(
 
   // Refresh after orphan cancellations
   const stillOpen = await db.leaveRequest.findMany({
-    where: { employeeId, sourcePunchId: { not: null }, status: { notIn: ["CANCELLED"] } },
+    where: ownedHere,
     select: { id: true, sourcePunchId: true, status: true, durationMinutes: true, leaveTypeId: true, startDate: true },
   });
   const requestByPunch = new Map(stillOpen.map((r) => [r.sourcePunchId!, r]));

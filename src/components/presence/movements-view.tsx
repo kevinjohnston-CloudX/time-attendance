@@ -19,6 +19,7 @@ import { leftBuilding } from "@/lib/presence/lanes";
 import styles from "./on-site.module.css";
 import { ZoomableFace } from "./face";
 import { useOnPulseChange } from "./use-site-pulse";
+import { codeOf } from "@/lib/action-errors";
 
 /**
  * Movements: one block per person, their photo and name on the left, and on
@@ -70,7 +71,7 @@ export function useSiteDay({
         });
         if (keyRef.current !== forKey) return;
         if (!res.success) {
-          setFailure(res.error === "FORBIDDEN" || res.error === "NOT_FOUND" ? "access" : "error");
+          setFailure(codeOf(res) === "FORBIDDEN" || codeOf(res) === "NOT_FOUND" ? "access" : "error");
           return;
         }
         setFailure(null);

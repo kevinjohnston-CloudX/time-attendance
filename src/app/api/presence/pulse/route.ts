@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { withRBAC } from "@/lib/rbac/guard";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { canViewSite, getSitePulse, type SitePulse } from "@/lib/presence/pulse.service";
+import { codeOf } from "@/lib/action-errors";
 
 /**
  * GET /api/presence/pulse?site=<id>[&alerts=1]
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const res = await pulse({ siteId, alerts: req.nextUrl.searchParams.get("alerts") === "1" });
   const headers = { "Cache-Control": "no-store" };
   if (res.success) return NextResponse.json(res.data, { headers });
-  const status = res.error === "UNAUTHENTICATED" ? 401 : res.error === "FORBIDDEN" || res.error === "NOT_FOUND" ? 404 : 500;
+  const status = codeOf(res) === "UNAUTHENTICATED" ? 401 : codeOf(res) === "FORBIDDEN" || codeOf(res) === "NOT_FOUND" ? 404 : 500;
   const error = status === 401 ? "Unauthorized" : status === 404 ? "Not found" : res.error;
   return NextResponse.json({ error }, { status, headers });
 }

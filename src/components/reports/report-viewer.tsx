@@ -425,7 +425,7 @@ export function ReportViewer({
                     onClick={() =>
                       startToggle(async () => {
                         const res = await toggleSchedule({ id: schedule.id, isActive: !schedule.isActive });
-                        if (!res.success) setError("The schedule could not be changed. You may not have permission.");
+                        if (!res.success) setError(res.error);
                         router.refresh();
                       })
                     }

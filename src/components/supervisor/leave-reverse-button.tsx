@@ -28,7 +28,7 @@ export function LeaveReverseButton({ leaveRequestId, label = "Reverse Approval" 
     setError(null);
     startTransition(async () => {
       const result = await reverseLeaveApproval({ leaveRequestId });
-      if (!result.success) setError("Failed to reverse approval.");
+      if (!result.success) setError(result.error);
       else setConfirm(false);
     });
   }

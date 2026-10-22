@@ -102,6 +102,7 @@ import { dayWords, fileStamp, linesTable, movementsLines, stampLine, type Export
 import styles from "./on-site.module.css";
 import { usePhoneLayout } from "@/lib/phone";
 import { Face } from "./face";
+import { codeOf } from "@/lib/action-errors";
 
 /**
  * The On Site board: who is in one building right now.
@@ -381,7 +382,7 @@ export function OnSiteBoard({
           setLastOk(Date.now());
           setFailure(null);
         } else {
-          setFailure(res.error === "FORBIDDEN" || res.error === "NOT_FOUND" ? "access" : "error");
+          setFailure(codeOf(res) === "FORBIDDEN" || codeOf(res) === "NOT_FOUND" ? "access" : "error");
         }
       } catch {
         if (siteRef.current === forSite) setFailure("error");

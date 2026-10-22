@@ -71,8 +71,11 @@ export default async function EmployeeAccrualsPage({
   const [empResult, leaveTypes, leaveBalanceRows, accrualSums, timecardDeductionEntries, approvedRequests, postedRequests, pastYearRows] =
     await Promise.all([
       getEmployeeById({ employeeId: id }),
+      // The employee's own company's leave types. Every company's were listed,
+      // so a second company (CloudTime Demo, a copy of the first) showed each
+      // leave type twice, the copy as "No policy" with nothing on it.
       db.leaveType.findMany({
-        where: { isActive: true },
+        where: { isActive: true, tenant: { employees: { some: { id } } } },
         orderBy: { name: "asc" },
         select: { id: true, name: true, category: true, accrualTracked: true },
       }),

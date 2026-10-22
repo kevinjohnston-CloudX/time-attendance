@@ -23,7 +23,7 @@ export const recalculateSegments = withRBAC(
     });
 
     if (timesheet.employeeId !== employeeId)
-      throw new Error("Cannot access another employee's timesheet.");
+      throw new Error("You can only see your own timecard.");
     // An inactive person keeps their last timesheet to look at, not to change.
     assertActiveForChange(timesheet.employee.isActive);
 
@@ -66,8 +66,8 @@ export const unlockTimesheet = withRBAC(
     // Locking and unlocking still reach an inactive person's timecard: payroll
     // closes out their final one. Nothing else changes it.
     const sheet = await timesheetInScope(ctx, timesheetId, "PAYROLL_RUN", { allowInactive: true });
-    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't unlock your own timecard");
-    if (sheet.status !== "LOCKED") throw new Error("This timecard is not locked.");
+    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't unlock your own timecard. Ask another admin to do it.");
+    if (sheet.status !== "LOCKED") throw new Error("This timecard isn't locked. Reload the page to see where it stands.");
 
     await db.$transaction(async (tx) => {
       await tx.timesheet.update({ where: { id: timesheetId }, data: { status: "OPEN", lockedAt: null } });
@@ -94,8 +94,8 @@ export const lockTimesheet = withRBAC(
     // Locking and unlocking still reach an inactive person's timecard: payroll
     // closes out their final one. Nothing else changes it.
     const sheet = await timesheetInScope(ctx, timesheetId, "PAYROLL_RUN", { allowInactive: true });
-    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't lock your own timecard");
-    if (sheet.status === "LOCKED") throw new Error("This timecard is already locked.");
+    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't lock your own timecard. Ask another admin to do it.");
+    if (sheet.status === "LOCKED") throw new Error("This timecard is already locked. Reload the page to see where it stands.");
 
     // Only to re-lock a card inside a locked period; an open period is locked as a whole.
     const { payPeriod } = await db.timesheet.findUniqueOrThrow({
@@ -167,7 +167,7 @@ export const toggleMealWaiver = withRBAC(
     const { employeeId: actorId, tenantId } = ctx;
     const { timesheetId, segmentDate } = mealWaiverSchema.parse(input);
     const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
-    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timesheet");
+    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timecard. Ask another admin to do it.");
     assertEditable(sheet.status);
 
     const dateObj = new Date(segmentDate + "T00:00:00.000Z");
@@ -232,7 +232,7 @@ export const toggleMealPremiumWaiver = withRBAC(
     const { employeeId: actorId, tenantId } = ctx;
     const { timesheetId, segmentDate, segmentStart } = mealPremiumWaiverSchema.parse(input);
     const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
-    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timesheet");
+    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timecard. Ask another admin to do it.");
     assertEditable(sheet.status);
 
     const dateObj = new Date(segmentDate + "T00:00:00.000Z");
@@ -341,7 +341,7 @@ export const authorizeTimecardOt = withRBAC(
     const { employeeId: actorId, tenantId } = ctx;
     const { timesheetId } = timesheetIdSchema.parse(input);
     const sheet = await timesheetInScope(ctx, timesheetId, "TIMESHEET_APPROVE_ANY");
-    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timesheet");
+    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timecard. Ask another admin to do it.");
 
     await db.$transaction(async (tx) => {
       await tx.timesheet.update({

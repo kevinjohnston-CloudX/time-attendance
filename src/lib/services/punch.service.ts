@@ -45,8 +45,8 @@ export async function recordPunchCore(
   const stateBefore = await getCurrentPunchState(employeeId);
 
   if (timesheet.status === "LOCKED") {
-    await saveRejectedPunch({ employeeId, timesheetId: timesheet.id, punchType, source, stateBefore, rejectionReason: "Timesheet is locked for this pay period" });
-    throw new Error("Timesheet is locked for this pay period.");
+    await saveRejectedPunch({ employeeId, timesheetId: timesheet.id, punchType, source, stateBefore, rejectionReason: "Timecard locked for this pay period" });
+    throw new Error("This pay period's timecard is locked, so the punch wasn't recorded. Contact payroll.");
   }
 
   const transition = validateTransition(stateBefore, punchType);

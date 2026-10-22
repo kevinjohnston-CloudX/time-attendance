@@ -1,6 +1,7 @@
 import { getYear, differenceInMonths, addDays } from "date-fns";
 import { AccrualPostingFreq, AccrualRateMode, ServiceMonthBasis } from "@prisma/client";
 import { db } from "@/lib/db";
+import type { TxClient } from "@/types/prisma";
 import { parseUtcDate } from "@/lib/utils/date";
 
 /** Derive how many pay periods fit in a year from a single period's date range. */
@@ -994,48 +995,67 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
 }
 
 /**
- * Debit leave balance when a leave request is POSTED.
+ * Debit leave balance for an approved request, once.
  * Appends an immutable USAGE ledger entry.
+ *
+ * <p>HR approval debits, and so does posting when the pay period locks; a
+ * request already debited is left alone, or it would come off twice. One
+ * reversed since (back to pending, then approved again) is debited again. A leave
+ * type that tracks no balance (Bereavement) is not debited at all: it has no
+ * balance row, and looking for one used to stop the approval, and the lock,
+ * with "Not found". A balance that may go negative but has no row yet starts
+ * one at zero.
  */
-export async function postLeaveUsage(leaveRequestId: string): Promise<void> {
-  const request = await db.leaveRequest.findUniqueOrThrow({
+export async function postLeaveUsage(leaveRequestId: string, tx?: TxClient): Promise<void> {
+  if (!tx) return db.$transaction((t) => postLeaveUsage(leaveRequestId, t));
+
+  const request = await tx.leaveRequest.findUniqueOrThrow({
     where: { id: leaveRequestId },
+    include: { leaveType: { select: { accrualTracked: true } } },
   });
+  if (!request.leaveType.accrualTracked) return;
+  if ((await debitedMinutes(tx, leaveRequestId)) > 0) return;
 
   const accrualYear = getYear(request.startDate);
-
-  const balance = await db.leaveBalance.findUniqueOrThrow({
-    where: {
-      employeeId_leaveTypeId_accrualYear: {
-        employeeId: request.employeeId,
-        leaveTypeId: request.leaveTypeId,
-        accrualYear,
-      },
-    },
+  const key = { employeeId: request.employeeId, leaveTypeId: request.leaveTypeId, accrualYear };
+  const balance = await tx.leaveBalance.upsert({
+    where: { employeeId_leaveTypeId_accrualYear: key },
+    create: key,
+    update: {},
   });
 
   const delta = -request.durationMinutes;
   const newBalance = balance.balanceMinutes + delta;
 
-  await db.$transaction([
-    db.leaveBalance.update({
-      where: { id: balance.id },
-      data: {
-        balanceMinutes: newBalance,
-        usedMinutes: { increment: request.durationMinutes },
-      },
-    }),
-    db.leaveAccrualLedger.create({
-      data: {
-        employeeId: request.employeeId,
-        leaveTypeId: request.leaveTypeId,
-        action: "USAGE",
-        deltaMinutes: delta,
-        balanceAfter: newBalance,
-        leaveRequestId: request.id,
-      },
-    }),
-  ]);
+  await tx.leaveBalance.update({
+    where: { id: balance.id },
+    data: {
+      balanceMinutes: newBalance,
+      usedMinutes: { increment: request.durationMinutes },
+    },
+  });
+  await tx.leaveAccrualLedger.create({
+    data: {
+      employeeId: request.employeeId,
+      leaveTypeId: request.leaveTypeId,
+      action: "USAGE",
+      deltaMinutes: delta,
+      balanceAfter: newBalance,
+      leaveRequestId: request.id,
+    },
+  });
+}
+
+/**
+ * What is off the balance for a request now: its debits less what was put
+ * back (a reversal is an ADJUSTMENT on the same request).
+ */
+async function debitedMinutes(client: TxClient | typeof db, leaveRequestId: string): Promise<number> {
+  const net = await client.leaveAccrualLedger.aggregate({
+    where: { leaveRequestId, action: { in: ["USAGE", "TIMECARD_DEDUCTION", "ADJUSTMENT"] } },
+    _sum: { deltaMinutes: true },
+  });
+  return -(net._sum.deltaMinutes ?? 0);
 }
 
 /**
@@ -1047,6 +1067,9 @@ export async function reverseLeaveUsage(leaveRequestId: string): Promise<void> {
     where: { leaveRequestId, action: "USAGE" },
   });
   if (!usageEntry) return;
+  // Only what is still off: reversing twice used to put the hours back twice.
+  const outstanding = await debitedMinutes(db, leaveRequestId);
+  if (outstanding <= 0) return;
 
   const accrualYear = getYear(
     (await db.leaveRequest.findUniqueOrThrow({ where: { id: leaveRequestId } })).startDate
@@ -1062,7 +1085,7 @@ export async function reverseLeaveUsage(leaveRequestId: string): Promise<void> {
     },
   });
 
-  const reversal = -usageEntry.deltaMinutes; // deltaMinutes was negative, reversal is positive
+  const reversal = outstanding;
   const newBalance = balance.balanceMinutes + reversal;
 
   await db.$transaction([

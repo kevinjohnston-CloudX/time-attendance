@@ -48,7 +48,7 @@ export const addManualPunchPair = withRBAC(
     const outDate = new Date(outTime);
 
     if (outDate <= inDate) {
-      throw new Error("Out time must be after In time.");
+      throw new Error("The out time must be after the in time.");
     }
 
     // Load timesheet to verify editability
@@ -66,7 +66,7 @@ export const addManualPunchPair = withRBAC(
     });
 
     if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
-      throw new Error("Cannot modify a locked or approved timesheet.");
+      throw new Error("This timecard is locked or approved by payroll, so it can't be changed. Unlock it first, then make the correction.");
     }
 
     const { ruleSet, shift } = ts.employee;
@@ -203,7 +203,7 @@ export const addSingleManualPunch = withRBAC(
     });
 
     if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
-      throw new Error("Cannot modify a locked or approved timesheet.");
+      throw new Error("This timecard is locked or approved by payroll, so it can't be changed. Unlock it first, then make the correction.");
     }
 
     const { ruleSet, shift } = ts.employee;
@@ -288,7 +288,7 @@ export const addPayrollLeaveEntry = withRBAC(
     });
 
     if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
-      throw new Error("Cannot modify a locked or approved timesheet.");
+      throw new Error("This timecard is locked or approved by payroll, so it can't be changed. Unlock it first, then make the correction.");
     }
 
     const leaveDate = new Date(date + "T00:00:00.000Z");
@@ -336,13 +336,13 @@ export const removePayrollLeaveEntry = withRBAC(
     const { employeeId: actorId, tenantId } = ctx;
     const { leaveRequestId } = (input as { leaveRequestId: string });
 
-    if (!leaveRequestId) throw new Error("leaveRequestId is required.");
+    if (!leaveRequestId) throw new Error("Pick the leave request to change.");
     // Only leave of someone in the caller's company, and never their own.
     const inScope = await db.leaveRequest.findFirst({
       where: { id: leaveRequestId, employee: await employeeScope(ctx, TIMECARD_EDITORS_COMPANY) },
       select: { employeeId: true, employee: { select: { isActive: true } } },
     });
-    if (!inScope) throw new NotFoundError("Leave request not found");
+    if (!inScope) throw new NotFoundError("This leave request isn't available to you. It may have been removed, or be outside the sites you can see. Reload the page and try again.");
     assertActiveForChange(inScope.employee.isActive);
     if (inScope.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
     await assertNotSenior(ctx, inScope.employeeId, TIMECARD_EDITORS_COMPANY);
@@ -359,7 +359,7 @@ export const removePayrollLeaveEntry = withRBAC(
     if (timesheetId) {
       const ts = await db.timesheet.findUnique({ where: { id: timesheetId } });
       if (ts && (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED")) {
-        throw new Error("Cannot modify a locked or approved timesheet.");
+        throw new Error("This timecard is locked or approved by payroll, so it can't be changed. Unlock it first, then make the correction.");
       }
     }
 
@@ -397,16 +397,16 @@ export const deleteManualPunchPair = withRBAC(
       include: { employee: { include: { ruleSet: true } } },
     });
 
-    if (punches.length !== new Set(punchIds).size) throw new NotFoundError("Punches not found.");
+    if (punches.length !== new Set(punchIds).size) throw new NotFoundError("These punches isn't available to you. It may have been removed, or be outside the sites you can see. Reload the page and try again.");
     assertActiveForChange(punches[0].employee.isActive);
-    if (new Set(punches.map((p) => p.timesheetId)).size !== 1) throw new Error("Punches must be on one timecard.");
+    if (new Set(punches.map((p) => p.timesheetId)).size !== 1) throw new Error("These punches are on different timecards. Change them one timecard at a time.");
     if (punches[0].employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
     await assertNotSenior(ctx, punches[0].employeeId, TIMECARD_EDITORS_COMPANY);
     const timesheetId = punches[0].timesheetId!;
 
     const ts = await db.timesheet.findUniqueOrThrow({ where: { id: timesheetId } });
     if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
-      throw new Error("Cannot modify a locked or approved timesheet.");
+      throw new Error("This timecard is locked or approved by payroll, so it can't be changed. Unlock it first, then make the correction.");
     }
 
     for (const punch of punches) {
@@ -573,7 +573,7 @@ export const addManualHoursEntry = withRBAC(
     });
 
     if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
-      throw new Error("Cannot modify a locked or approved timesheet.");
+      throw new Error("This timecard is locked or approved by payroll, so it can't be changed. Unlock it first, then make the correction.");
     }
 
     // Determine if this pay code maps to a leave type.

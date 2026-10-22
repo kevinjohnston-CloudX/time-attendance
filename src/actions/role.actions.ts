@@ -46,7 +46,7 @@ export const getRoleById = withRBAC(
         _count: { select: { employees: true } },
       },
     });
-    if (!role) throw new Error("Role not found");
+    if (!role) throw new Error("This role isn't available. It may have been deleted. Reload the page and try again.");
     return role;
   }
 );
@@ -102,11 +102,11 @@ export const updateRole = withRBAC(
       where: { id: data.id, tenantId },
       include: { permissions: true },
     });
-    if (!existing) throw new Error("Role not found");
+    if (!existing) throw new Error("This role isn't available. It may have been deleted. Reload the page and try again.");
 
     // Block rename of system roles
     if (existing.isSystem && data.name && data.name !== existing.name) {
-      throw new Error("Cannot rename system roles");
+      throw new Error("Built-in roles keep their names. To use a different name, copy the role and rename the copy.");
     }
     // The built-in roles carry whole departments; limiting one to a single
     // page would lock out every HR admin or supervisor at once.
@@ -169,8 +169,8 @@ export const deleteRole = withRBAC(
       where: { id: input.id, tenantId },
       include: { _count: { select: { employees: true } } },
     });
-    if (!role) throw new Error("Role not found");
-    if (role.isSystem) throw new Error("Cannot delete system roles");
+    if (!role) throw new Error("This role isn't available. It may have been deleted. Reload the page and try again.");
+    if (role.isSystem) throw new Error("Built-in roles can't be deleted.");
     if (role._count.employees > 0) {
       throw new Error(
         `The role "${role.name}" cannot be deleted while ${role._count.employees} ${role._count.employees === 1 ? "employee is" : "employees are"} assigned to it.`
@@ -203,7 +203,7 @@ export const duplicateRole = withRBAC(
       where: { id: input.id, tenantId },
       include: { permissions: true },
     });
-    if (!source) throw new Error("Source role not found");
+    if (!source) throw new Error("The role to copy isn't available. It may have been deleted. Reload the page and try again.");
 
     const role = await db.customRole.create({
       data: {

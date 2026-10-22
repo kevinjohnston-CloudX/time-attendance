@@ -15,6 +15,7 @@ import { ScheduleDayDialog } from "./schedule-day-dialog";
 import { useOnPulseChange } from "./use-site-pulse";
 import { newWatchId, noteAlertCheck, screenId, sendWatch } from "./screen-watch";
 import styles from "./on-site.module.css";
+import { codeOf } from "@/lib/action-errors";
 
 /**
  * The gate alert: somebody the gate just turned away for having no shift
@@ -244,14 +245,14 @@ export function GateRefusalAlert({
     try {
       const r = await dismissOnSiteGateRefusals({ siteId, refusalIds: ids });
       // NOT_FOUND is somebody else having settled it first: gone either way.
-      if (r.success || r.error === "NOT_FOUND") {
+      if (r.success || codeOf(r) === "NOT_FOUND") {
         for (const id of ids) closing.current.set(id, r.success ? "DISMISSED" : "GONE");
         settle(ids);
         setConfirmingAll(false);
       } else {
         gateLog("failed", { at: "dismiss", site: siteId, error: r.error }, "warn");
         setError(
-          r.error === "FORBIDDEN"
+          codeOf(r) === "FORBIDDEN"
             ? "You do not have permission to dismiss these alerts."
             : "The alert could not be dismissed. Try again.",
         );

@@ -6,6 +6,7 @@ import { Badge, Banner, Button, Select } from "@/components/ui";
 import { getTimecardRefusedScans, recoverTimecardRefusedScans } from "@/actions/refused-scans.actions";
 import type { RefusedScan } from "@/lib/services/refused-scans.service";
 import styles from "./refused-scans.module.css";
+import { codeOf } from "@/lib/action-errors";
 
 /**
  * On a timecard: the time clock scans that were refused because this person
@@ -161,7 +162,7 @@ function ReviewDialog({
     });
     setSaving(false);
     if (!r.success) {
-      setError(r.error === "FORBIDDEN" ? "You do not have permission to add punches." : r.error === "NOT_FOUND" ? "This timecard could not be found. Reload the page." : r.error);
+      setError(codeOf(r) === "FORBIDDEN" ? "You do not have permission to add punches." : codeOf(r) === "NOT_FOUND" ? "This timecard could not be found. Reload the page." : r.error);
       return;
     }
     onAdded(r.data.added);

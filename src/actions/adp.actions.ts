@@ -119,7 +119,7 @@ export const testAdpConnection = withRBAC(
   "EMPLOYEE_MANAGE",
   async () => {
     const config = getAdpConfig();
-    if (!config) throw new Error("ADP is not configured. Set ADP environment variables.");
+    if (!config) throw new Error("ADP isn't connected yet, so nothing can be sent. Ask a system admin to set up the ADP connection.");
 
     const client = new AdpClient(config);
     const result = await client.testConnection();
@@ -157,7 +157,7 @@ export const syncAdpEmployees = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: SyncInput) => {
     if (!tenantId) throw new Error("Tenant context required");
     const config = getAdpConfig();
-    if (!config) throw new Error("ADP is not configured. Set ADP environment variables.");
+    if (!config) throw new Error("ADP isn't connected yet, so nothing can be sent. Ask a system admin to set up the ADP connection.");
 
     // Every new hire is written with these three, so each has to be the
     // company's own and still in use, checked before ADP is even called.
@@ -332,7 +332,7 @@ export const pushPayrollToAdp = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: { payPeriodId: string }) => {
     if (!tenantId) throw new Error("NOT_FOUND");
     const config = getAdpConfig();
-    if (!config) throw new Error("ADP is not configured. Set ADP environment variables.");
+    if (!config) throw new Error("ADP isn't connected yet, so nothing can be sent. Ask a system admin to set up the ADP connection.");
 
     // Validate pay period is LOCKED. Found inside the caller's company, so a
     // pay period id from another company is simply not found.
@@ -341,7 +341,7 @@ export const pushPayrollToAdp = withRBAC(
     });
     if (!payPeriod) throw new Error("NOT_FOUND");
     if (payPeriod.status !== "LOCKED") {
-      throw new Error("Pay period must be locked before pushing to ADP.");
+      throw new Error("Lock this pay period before sending it to ADP.");
     }
 
     // Check for existing push
@@ -350,7 +350,7 @@ export const pushPayrollToAdp = withRBAC(
     });
     if (existingRun?.exportedAt) {
       throw new Error(
-        `Payroll was already pushed on ${existingRun.exportedAt.toISOString()}.`
+        `This pay period was already sent to ADP on ${existingRun.exportedAt.toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" })} ET. It can't be sent twice.`
       );
     }
 
@@ -404,7 +404,7 @@ export const pushPayrollToAdp = withRBAC(
         result.pushed = new Set(allEntries.map((e) => e.associateOID)).size;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        throw new Error(`ADP payroll push failed: ${msg}`);
+        throw new Error(`ADP didn't accept the payroll: ${msg}`);
       }
     }
 

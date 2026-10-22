@@ -1057,7 +1057,7 @@ export function TimecardViewer({
       if (!timesheetId) {
         const ensureResult = await ensureTimesheet({ employeeId: selectedEmployeeId!, periodId: selectedPeriodId! });
         if (!ensureResult.success) {
-          setNewEntryError("Failed to create timesheet");
+          setNewEntryError(ensureResult.error);
           return;
         }
         timesheetId = ensureResult.data.timesheetId;
@@ -1129,7 +1129,7 @@ export function TimecardViewer({
       let timesheetId: string = timecard?.timesheetId ?? "";
       if (!timesheetId) {
         const ensureResult = await ensureTimesheet({ employeeId: selectedEmployeeId!, periodId: selectedPeriodId! });
-        if (!ensureResult.success) { setNewEntryError("Failed to create timesheet"); return; }
+        if (!ensureResult.success) { setNewEntryError(ensureResult.error); return; }
         timesheetId = ensureResult.data.timesheetId;
       }
       const result = await addManualHoursEntry({
@@ -1270,7 +1270,7 @@ export function TimecardViewer({
         let timesheetId = timecard?.timesheetId ?? null;
         if (!timesheetId && selectedEmployeeId && selectedPeriodId) {
           const ts = await ensureTimesheet({ employeeId: selectedEmployeeId, periodId: selectedPeriodId });
-          if (!ts.success) { setActionError(ts.error ?? "Failed to create timesheet"); return; }
+          if (!ts.success) { setActionError(ts.error); return; }
           timesheetId = ts.data.timesheetId;
         }
         if (!timesheetId) return;
@@ -1343,45 +1343,69 @@ export function TimecardViewer({
         }
         // ─────────────────────────────────────────────────────────────
 
-        const ops: Promise<unknown>[] = [];
+        // Each change sent, with how to take it off the pending list once it
+        // is saved. When some fail, the saved ones come off and only the
+        // failed ones stay: leaving them all pending meant saving again
+        // repeated the ones already kept (a punch added twice, a waiver
+        // toggled back off).
+        const ops: { run: Promise<unknown>; saved: () => void }[] = [];
+        const dropKey = <K, V>(set: (f: (m: Map<K, V>) => Map<K, V>) => void, key: K) => () =>
+          set((m) => { const n = new Map(m); n.delete(key); return n; });
+        const dropItem = <T,>(set: (f: (a: T[]) => T[]) => void, item: T) => () => set((a) => a.filter((x) => x !== item));
         for (const [key, payCodeId] of pendingPayCodes.entries()) {
           if (key.startsWith("absent:")) {
             const segDate = key.slice(7);
             // Skip: addManualHoursEntry will handle the pay code for this day
             if (pendingHoursEntries.some((e) => e.dayKey === segDate)) continue;
-            ops.push(setAbsentDayPayCode({ timesheetId, segmentDate: segDate, payCodeId: payCodeId || null }));
+            ops.push({ run: setAbsentDayPayCode({ timesheetId, segmentDate: segDate, payCodeId: payCodeId || null }), saved: dropKey(setPendingPayCodes, key) });
           } else {
-            ops.push(setSegmentPayCode({ segmentId: key, payCodeId: payCodeId || null }));
+            ops.push({ run: setSegmentPayCode({ segmentId: key, payCodeId: payCodeId || null }), saved: dropKey(setPendingPayCodes, key) });
           }
         }
         for (const [segmentDate, reasonCodeId] of pendingReasonCodes.entries()) {
-          ops.push(setDayReasonCode({ timesheetId, segmentDate, reasonCodeId: reasonCodeId || null }));
+          ops.push({ run: setDayReasonCode({ timesheetId, segmentDate, reasonCodeId: reasonCodeId || null }), saved: dropKey(setPendingReasonCodes, segmentDate) });
         }
         for (const [punchId, newDate] of pendingPunchEdits.entries()) {
-          ops.push(correctPunch({ originalPunchId: punchId, newPunchTime: toMoment(newDate).toISOString() }));
+          ops.push({ run: correctPunch({ originalPunchId: punchId, newPunchTime: toMoment(newDate).toISOString() }), saved: dropKey(setPendingPunchEdits, punchId) });
         }
-        for (const { punchType, punchDate } of pendingNewPunches) {
-          ops.push(addSingleManualPunch({ timesheetId, punchType, punchTime: toMoment(punchDate).toISOString() }));
+        for (const entry of pendingNewPunches) {
+          ops.push({ run: addSingleManualPunch({ timesheetId, punchType: entry.punchType, punchTime: toMoment(entry.punchDate).toISOString() }), saved: dropItem(setPendingNewPunches, entry) });
         }
         for (const segmentDate of pendingWaiverToggles) {
-          ops.push(toggleMealWaiver({ timesheetId, segmentDate }));
+          ops.push({
+            run: toggleMealWaiver({ timesheetId, segmentDate }),
+            saved: () => setPendingWaiverToggles((t) => { const n = new Set(t); n.delete(segmentDate); return n; }),
+          });
         }
         for (const [segmentStart, segmentDate] of pendingPremiumWaiverToggles) {
-          ops.push(toggleMealPremiumWaiver({ timesheetId, segmentDate, segmentStart }));
+          ops.push({ run: toggleMealPremiumWaiver({ timesheetId, segmentDate, segmentStart }), saved: dropKey(setPendingPremiumWaiverToggles, segmentStart) });
         }
-        for (const { punchIds } of pendingDeletions) {
-          ops.push(deleteManualPunchPair({ punchIds }));
+        for (const entry of pendingDeletions) {
+          ops.push({ run: deleteManualPunchPair({ punchIds: entry.punchIds }), saved: dropItem(setPendingDeletions, entry) });
         }
-        for (const { dayKey, hours, payCodeId } of pendingHoursEntries) {
-          ops.push(addManualHoursEntry({ timesheetId, date: dayKey, hours, ...(payCodeId ? { payCodeId } : {}) }));
+        for (const entry of pendingHoursEntries) {
+          const { dayKey, hours, payCodeId } = entry;
+          ops.push({
+            run: addManualHoursEntry({ timesheetId, date: dayKey, hours, ...(payCodeId ? { payCodeId } : {}) }),
+            // The day's pay code went with the hours.
+            saved: () => { dropItem(setPendingHoursEntries, entry)(); dropKey(setPendingPayCodes, "absent:" + dayKey)(); },
+          });
         }
-        const results = await Promise.all(ops);
-        const firstFailure = results.find(
-          (r): r is { success: false; error: string } =>
-            typeof r === "object" && r !== null && (r as { success: boolean }).success === false
-        );
-        if (firstFailure) {
-          setActionError(firstFailure.error ?? "Failed to save changes");
+        const settled = await Promise.allSettled(ops.map((o) => o.run));
+        const failures: string[] = [];
+        settled.forEach((r, i) => {
+          const refused = r.status === "fulfilled" && typeof r.value === "object" && r.value !== null && (r.value as { success?: boolean }).success === false;
+          if (r.status === "rejected") failures.push(r.reason instanceof Error ? r.reason.message : "A change could not be saved.");
+          else if (refused) failures.push((r.value as { error: string }).error);
+          else ops[i].saved();
+        });
+        if (failures.length) {
+          const reasons = [...new Set(failures)].join(" ");
+          const count = ops.length === 1
+            ? "The change wasn't saved."
+            : `${failures.length} of ${ops.length} changes weren't saved; the others were. Only the ones not saved are still pending.`;
+          setActionError(`${count} ${reasons}`);
+          router.refresh();
           return;
         }
 
@@ -1405,7 +1429,7 @@ export function TimecardViewer({
         setPendingHoursEntries([]);
         router.refresh();
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Failed to save changes");
+        setActionError(err instanceof Error ? err.message : "The changes could not be saved. Reload the page and try again.");
       }
     });
   }
