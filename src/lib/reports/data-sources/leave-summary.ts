@@ -51,6 +51,7 @@ export const leaveSummarySource: DataSourceDefinition = {
       options: [
         { value: "DRAFT", label: "Draft" },
         { value: "PENDING", label: "Pending" },
+        { value: "PENDING_HR", label: "Pending HR" },
         { value: "APPROVED", label: "Approved" },
         { value: "REJECTED", label: "Rejected" },
         { value: "CANCELLED", label: "Cancelled" },
