@@ -18,7 +18,8 @@ import {
   ToolsBar,
   ToolsCount,
 } from "@/components/ui";
-import { STANDARD_REPORTS, dataSourceDescription, dataSourceLabel } from "./data-source-label";
+import { REPORT_TYPE_CARDS, dataSourceDescription, dataSourceLabel } from "./data-source-label";
+import { STANDARD_REPORTS as STANDARD_REPORT_LIST } from "@/lib/reports/standard-reports";
 import { FolderTree, type FolderNode } from "./report-list/folder-tree";
 import { ReportTypeIcon } from "./report-type-icon";
 import { ReportTypeDialog, type ReportTypeOption } from "./report-type-dialog";
@@ -366,7 +367,9 @@ export function ReportsList({
       {picking && (
         <ReportTypeDialog
           sources={sources}
+          standards={STANDARD_REPORT_LIST}
           onPick={(id) => router.push(`/reports/new?source=${id}`)}
+          onPickStandard={(id) => router.push(`/reports/new?standard=${id}`)}
           onClose={() => {
             setPicking(false);
             if (openNew) router.replace(listHref({}), { scroll: false });
@@ -467,7 +470,7 @@ function FirstReport() {
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {STANDARD_REPORTS.map((id) => (
+        {REPORT_TYPE_CARDS.map((id) => (
           <Link
             key={id}
             href={`/reports/new?source=${id}`}

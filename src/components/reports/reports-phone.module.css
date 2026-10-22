@@ -48,7 +48,8 @@
     display: block !important;
     overflow-y: auto;
   }
-  .typeBody > [role="listbox"] {
+  .typeRail,
+  .typeRail > [role="listbox"] {
     overflow: visible !important;
     border-right: 0 !important;
   }

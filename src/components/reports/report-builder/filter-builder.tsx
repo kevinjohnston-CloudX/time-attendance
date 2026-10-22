@@ -37,6 +37,7 @@ const OPERATOR_LABELS: Record<string, string> = {
   lte: "is at most",
   between: "is between",
   contains: "contains",
+  inRange: "is in the report dates",
 };
 
 function offeredOperators(operators: string[], current: string): string[] {
@@ -128,9 +129,12 @@ export function FilterBuilder({
       {filters.map((filter, index) => {
         const fieldDef = filterFields.find((f) => f.id === filter.field);
         const valueOptions = getValueOptions(filter.field);
+        // "In the report dates" takes its dates from the report, so there is no value to pick.
+        const datesOfReport = filter.operator === "inRange";
         const skipped =
-          String(filter.value ?? "").trim() === "" ||
-          (filter.operator === "between" && String(filter.value2 ?? "").trim() === "");
+          !datesOfReport &&
+          (String(filter.value ?? "").trim() === "" ||
+            (filter.operator === "between" && String(filter.value2 ?? "").trim() === ""));
 
         return (
           // One condition as one small block: what, how, then the value, so
@@ -172,7 +176,7 @@ export function FilterBuilder({
                   updateFilter(index, { operator: e.target.value as FilterDef["operator"] })
                 }
                 aria-label="Condition"
-                style={{ flex: "0 0 128px" }}
+                style={datesOfReport ? { flex: 1, minWidth: 0 } : { flex: "0 0 128px" }}
               >
                 {offeredOperators(fieldDef?.operators ?? ["eq"], filter.operator).map((op) => (
                   <option key={op} value={op}>
@@ -181,7 +185,7 @@ export function FilterBuilder({
                 ))}
               </Select>
 
-              {valueOptions ? (
+              {datesOfReport ? null : valueOptions ? (
                 <Select
                   value={String(filter.value)}
                   onChange={(e) => updateFilter(index, { value: e.target.value })}

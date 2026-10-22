@@ -41,7 +41,7 @@ const LABELS: Record<string, string> = {
   LABOR_COST:        "Labor cost",
 };
 
-/** One plain line on what each report shows, for the Standard reports cards. */
+/** One plain line on what each report shows, for the report type cards. */
 const DESCRIPTIONS: Record<string, string> = {
   HOURS_SUMMARY:     "Regular, overtime and double time hours for each employee, with their PTO balance.",
   ATTENDANCE_DETAIL: "Each day's clock in and clock out times, meals and hours worked.",
@@ -70,8 +70,8 @@ const ICONS: Record<string, ElementType> = {
   LABOR_COST:        Wallet,
 };
 
-/** The order the Standard reports cards are laid out in: hours first, time off last. */
-export const STANDARD_REPORTS = [
+/** The order the report type cards are laid out in: hours first, time off last. */
+export const REPORT_TYPE_CARDS = [
   "HOURS_SUMMARY",
   "ATTENDANCE_DETAIL",
   "DAILY_HOURS",

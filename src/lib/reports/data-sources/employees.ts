@@ -119,15 +119,31 @@ export const employeesSource: DataSourceDefinition = {
       ],
     },
     { id: "jobTitle", label: "Job title", type: "string", operators: ["contains", "eq"] },
-    { id: "hireDate", label: "Hire date", type: "date", operators: ["between", "gte", "lte"] },
-    { id: "terminatedAt", label: "Termination date", type: "date", operators: ["between", "gte", "lte"] },
+    { id: "hireDate", label: "Hire date", type: "date", operators: ["inRange", "between", "gte", "lte"] },
+    { id: "terminatedAt", label: "Termination date", type: "date", operators: ["inRange", "between", "gte", "lte"] },
     { id: "daysSinceLastPunch", label: "Days since last punch", type: "number", operators: ["gte", "lte", "between"] },
+    { id: "daysWorkedInRange", label: "Days worked in these dates", type: "number", operators: ["gte", "lte", "between"] },
+    { id: "hoursInRange", label: "Hours worked in these dates", type: "number", operators: ["gte", "lte", "between"] },
   ],
   groupableFields: ["status", "site", "department", "agency", "supervisor", "ruleSet", "shift", "payCategory", "payType"],
   fieldMap,
 
   async execute(config: ReportConfig, tenantId: string): Promise<ReportResult> {
-    const filterWhere = buildWhereClause(config.filters, fieldMap);
+    const span = await rangeDays(config.dateRange, tenantId);
+    // "Hire date is in the report dates": the report's own days, read now.
+    const filters = config.filters.map((f) =>
+      f.operator === "inRange"
+        ? span
+          ? { ...f, operator: "between" as const, value: span.first, value2: span.last }
+          : { ...f, operator: "eq" as const, value: "0001-01-01" }
+        : f
+    );
+    const filterWhere = buildWhereClause(filters, fieldMap);
+    // Columns worked out below (last punch, days worked) are filtered and
+    // sorted after they are, so the row limit can only be applied then:
+    // taken first, a preview kept the first 100 by name and filtered those.
+    const afterwards =
+      config.sortBy.length > 0 || filters.some((f) => !fieldMap[f.field]);
     // Current employees unless the Status filter says otherwise.
     const statusFiltered = config.filters.some((f) => f.field === "isActive");
 
@@ -162,7 +178,7 @@ export const employeesSource: DataSourceDefinition = {
         payRates: { select: { effectiveDate: true, rate1: true, markupPct: true, chargeRate: true } },
       },
       orderBy: { user: { name: "asc" } },
-      take: config.limit,
+      take: afterwards ? undefined : config.limit,
     });
     const ids = employees.map((e) => e.id);
 
@@ -177,7 +193,6 @@ export const employeesSource: DataSourceDefinition = {
           })
         : Promise.resolve([]),
       (async () => {
-        const span = await rangeDays(config.dateRange, tenantId);
         if (!span || !ids.length) return [] as { e: string; m: number; d: number }[];
         return db.$queryRaw<{ e: string; m: number; d: number }[]>`
           select t."employeeId" e, sum(w."durationMinutes")::int m, count(distinct w."segmentDate")::int d
@@ -234,15 +249,18 @@ export const employeesSource: DataSourceDefinition = {
       };
     });
 
-    // Days since the last punch is worked out above, so its filter is applied here.
-    const filtered = filterRowsInMemory(rows, config.filters, fieldMap);
-    const sorted = sortRowsInMemory(filtered, config.sortBy, fieldMap);
+    // Days since the last punch is worked out above, so its filter is applied
+    // here. Every sort is too: the rows are built, so a hire date sorts as
+    // readily as a name, where the database sort only ever used the name.
+    const filtered = filterRowsInMemory(rows, filters, fieldMap);
+    const sorted = sortRowsInMemory(filtered, config.sortBy, {});
+    const limited = config.limit ? sorted.slice(0, config.limit) : sorted;
 
     const colById = Object.fromEntries(employeesSource.columns.map((c) => [c.id, c]));
     const visible = config.columns.map((id) => colById[id]).filter(Boolean);
     return {
       columns: visible.map((c) => ({ id: c.id, label: c.label, type: c.type })),
-      rows: sorted,
+      rows: limited,
       totalRows: sorted.length,
     };
   },

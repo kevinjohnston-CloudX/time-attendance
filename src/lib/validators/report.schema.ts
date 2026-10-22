@@ -14,6 +14,9 @@ export const filterOperatorSchema = z.enum([
   "lte",
   "between",
   "contains",
+  // A date that falls in the report's own dates, so a saved "hired in these
+  // dates" moves with them. Only the Employees report offers it.
+  "inRange",
 ]);
 
 export const filterDefSchema = z.object({
@@ -62,10 +65,9 @@ export const dateRangeSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("today") }),
   z.object({ type: z.literal("yesterday") }),
-  // A whole calendar week (Monday to Sunday), month or year, this one or the
-  // last one. Only the scan reports offer it: they read it themselves, in
-  // the time zone of the schedule, so the dates are worked out when the
-  // report runs and a saved report keeps meaning "last month" every month.
+  // A whole calendar week, month or year, this one or the last one, worked
+  // out when the report runs, so a saved report keeps meaning "last month"
+  // every month. Weeks start on the company's day (see tenantWeekStart).
   z.object({
     type: z.literal("calendar"),
     unit: z.enum(["week", "month", "year"]),
