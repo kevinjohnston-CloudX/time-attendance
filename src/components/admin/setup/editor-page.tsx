@@ -81,14 +81,17 @@ export function Section({
   );
 }
 
-/** One setting: its name and a quiet line on the left, the control on the right. */
+/**
+ * One setting: its name and a quiet line on the left, the control on the
+ * right. A control wider than the room beside the name (a row of long
+ * choices in a narrow window) drops onto its own line under the name rather
+ * than running out of the card: the control keeps its natural width as its
+ * smallest, so the row wraps instead of squeezing it.
+ */
 export function Row({ label, hint, unused, children }: { label: string; hint?: string; unused?: boolean; children: ReactNode }) {
   return (
-    <div
-      className="grid gap-x-6 gap-y-2 px-5 py-3.5 md:[grid-template-columns:240px_minmax(0,1fr)]"
-      style={{ borderTop: "1px solid var(--stroke-divider)" }}
-    >
-      <span className="flex min-w-0 flex-col gap-0.5 pt-1.5">
+    <div className="flex flex-wrap gap-x-6 gap-y-2 px-5 py-3.5" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+      <span className="flex w-full min-w-0 flex-col gap-0.5 pt-1.5 md:w-[240px] md:flex-none">
         <span className="flex flex-wrap items-center gap-2">
           <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-primary)" }}>
             {label}
@@ -97,7 +100,7 @@ export function Row({ label, hint, unused, children }: { label: string; hint?: s
         </span>
         {hint && <span style={caption}>{hint}</span>}
       </span>
-      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-2">{children}</span>
+      <span className="flex max-w-full flex-1 flex-wrap items-center gap-x-2 gap-y-2">{children}</span>
     </div>
   );
 }

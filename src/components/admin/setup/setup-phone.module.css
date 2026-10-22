@@ -369,17 +369,21 @@
 }
 
 
-/* A computer window too narrow for an editor's rail beside its form (under
-   lg, 64rem, the width setup-shell.tsx sets the two side by side from): the
-   rail would stack across the whole width above the form, so the editor
-   gets the phone's Jump to picker instead, pinned under the header. A phone
-   held sideways keeps its own rules above. */
+/* A computer window too narrow for the rail beside the page (under lg,
+   64rem, the width setup-shell.tsx sets the two side by side from): the
+   rail would stack across the whole width above it, so an editor gets the
+   phone's Jump to picker instead, and a hub an Area picker, pinned under
+   the header. A phone held sideways keeps its own rules above. */
+.areaPickWrap {
+  display: none;
+}
 @media (min-width: 768px) and (width < 64rem) and (pointer: fine),
   (min-width: 768px) and (width < 64rem) and (min-height: 501px) {
-  .shell[data-phone-view="sections"] .rail {
+  .shell .rail {
     display: none !important;
   }
-  .jumpWrap {
+  .jumpWrap,
+  .areaPickWrap {
     display: contents !important;
   }
   .jump {

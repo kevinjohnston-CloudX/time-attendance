@@ -225,7 +225,32 @@ export function SetupShell<T extends string>({
         </nav>
 
         <div className={`${phone.area} flex w-full min-w-0 flex-1 flex-col gap-3`}>
-          {phoneList ? null : (
+          {phoneList ? (
+            // A computer window too narrow for the list of areas beside the
+            // area picks one here instead (setup-phone.module.css); a phone
+            // has its own list of areas.
+            <div className={phone.areaPickWrap}>
+              <label ref={jumpRef} className={phone.jump}>
+                <span>Area</span>
+                <select
+                  className="ta-field"
+                  value={active}
+                  onChange={(e) => pick(e.target.value as T)}
+                  aria-label={railLabel ?? (typeof title === "string" ? `${title} areas` : "Areas")}
+                >
+                  {groups.map((g) => (
+                    <optgroup key={g.title} label={g.title}>
+                      {g.areas.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.count != null && a.count !== "" ? `${a.label} (${a.count})` : a.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : (
             <div className={`ta-phone-only ${phone.jumpWrap}`}>
               <label ref={jumpRef} className={phone.jump}>
                 <span>Jump to</span>
