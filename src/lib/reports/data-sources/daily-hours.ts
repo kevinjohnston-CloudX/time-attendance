@@ -6,6 +6,7 @@ import { periodDayRange } from "@/lib/pay-period-days";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { tenantWeekStart } from "../moving-period";
+import { timesheetPayPeriodWhere } from "../date-scope";
 import { filterRowsInMemory } from "../query-builder";
 import { textFilter } from "../scope";
 import { readable } from "../readable";
@@ -25,7 +26,7 @@ const fieldMap: FieldMap = {
 export const dailyHoursSource: DataSourceDefinition = {
   id: "DAILY_HOURS",
   label: "Daily hours",
-  description: "One row per employee per day showing REG, OT, and DT hours alongside first clock-in and last clock-out. Time off and holiday hours count as Regular, as they do on the timecard; meal premiums are their own column.",
+  description: "One row per employee per day: clock in and clock out, regular, overtime and double time worked, time off and holiday hours, and the day's paid total.",
   icon: "CalendarClock",
   columns: [
     { id: "employeeName",    label: "Employee",       type: "string",  defaultVisible: true },
@@ -38,10 +39,15 @@ export const dailyHoursSource: DataSourceDefinition = {
     { id: "weekday",         label: "Day of the week", type: "string", defaultVisible: false, groupOrder: "weekdayOrder", across: true },
     { id: "clockIn",         label: "Clock in",       type: "string",  defaultVisible: true },
     { id: "clockOut",        label: "Clock out",      type: "string",  defaultVisible: true },
+    { id: "punchPairs",      label: "Punches",        type: "string",  defaultVisible: false },
+    { id: "notes",           label: "Notes",          type: "string",  defaultVisible: false },
     { id: "regMinutes",      label: "Regular",      type: "number",  defaultVisible: true },
     { id: "otMinutes",       label: "Overtime",       type: "number",  defaultVisible: true },
     { id: "dtMinutes",       label: "Double time",       type: "number",  defaultVisible: true },
-    { id: "totalMinutes",    label: "Total",    type: "number",  defaultVisible: true },
+    { id: "timeOffMinutes",  label: "Time off",       type: "number",  defaultVisible: false },
+    { id: "holidayMinutes",  label: "Holiday",        type: "number",  defaultVisible: false },
+    { id: "unpaidMinutes",   label: "Unpaid time off", type: "number", defaultVisible: false },
+    { id: "totalMinutes",    label: "Total paid",     type: "number",  defaultVisible: true },
     { id: "premiumMinutes",  label: "Meal premium", type: "number", defaultVisible: false },
     { id: "payType",         label: "Pay type",       type: "string",  defaultVisible: false },
     { id: "payCodes",        label: "Pay codes",      type: "string",  defaultVisible: false },
@@ -72,7 +78,7 @@ export const dailyHoursSource: DataSourceDefinition = {
   fieldMap,
 
   async execute(config: ReportConfig, tenantId: string): Promise<ReportResult> {
-    const dateFilter = resolveDateFilter(config.dateRange);
+    const dateFilter = await resolveDateFilter(config.dateRange, tenantId);
     const filterWhere = buildWhereClause(config.filters, fieldMap);
 
     const dateTimesheetFilter = (dateFilter.timesheet as Record<string, unknown>) ?? {};
@@ -174,13 +180,14 @@ export const dailyHoursSource: DataSourceDefinition = {
         seg.payBucketOverride && !["REG", "OT", "DT"].includes(seg.payBucketOverride)
           ? seg.payBucketOverride
           : seg.payBucket;
-      const column =
-        seg.segmentType === "HOLIDAY" || seg.segmentType === "LEAVE"
-          ? "REG"
-          : bucket;
-      if (column === "REG")      day.regMinutes += seg.durationMinutes;
-      else if (column === "OT")  day.otMinutes  += seg.durationMinutes;
-      else if (column === "DT")  day.dtMinutes  += seg.durationMinutes;
+      // Regular, overtime and double time are hours worked. Time off and
+      // holidays have their own columns: counted as Regular, as the
+      // timecard shows them, a week of vacation read as a week worked.
+      if (seg.segmentType === "WORK") {
+        if (bucket === "REG")      day.regMinutes += seg.durationMinutes;
+        else if (bucket === "OT")  day.otMinutes  += seg.durationMinutes;
+        else if (bucket === "DT")  day.dtMinutes  += seg.durationMinutes;
+      }
       if (seg.isPaid) day.paidMinutes += seg.durationMinutes;
       if (seg.segmentType === "WORK") day.workMinutes = (day.workMinutes ?? 0) + seg.durationMinutes;
       else if (seg.segmentType === "LEAVE") {
@@ -228,9 +235,13 @@ export const dailyHoursSource: DataSourceDefinition = {
       ...weekOf(day.date, weekStart),
       clockIn:       day.clockIn ? siteClock(day.clockIn, day.timezone) : null,
       clockOut:      day.clockOut ? siteClock(day.clockOut, day.timezone) : null,
+      punchPairs:    day.punchPairs ?? null,
       regMinutes:    day.regMinutes,
       otMinutes:     day.otMinutes,
       dtMinutes:     day.dtMinutes,
+      timeOffMinutes: (day.leaveMinutes ?? 0) - (day.unpaidLeaveMinutes ?? 0),
+      holidayMinutes: day.holidayMinutes ?? 0,
+      unpaidMinutes: day.unpaidLeaveMinutes ?? 0,
       totalMinutes:  day.paidMinutes,
       premiumMinutes: day.premiumMinutes,
       payType:       day.payType,
@@ -305,6 +316,8 @@ type DayRow = {
   leaveMinutes?: number;
   unpaidLeaveMinutes?: number;
   holidayMinutes?: number;
+  /** Each shift's clock in and clock out. */
+  punchPairs?: string;
 };
 
 /**
@@ -325,22 +338,26 @@ const CLOCK_PUNCH_WHERE = {
 const nextDayStr = (day: string, n = 1) => new Date(Date.parse(day + "T12:00:00Z") + n * 86_400_000).toISOString().slice(0, 10);
 
 /**
- * The days the report covers, as "yyyy-MM-dd", and for a pay period the
- * period itself, which also limits who is in it to that period's pay group.
+ * The days the report covers, as "yyyy-MM-dd", and for a pay period which
+ * timesheets are in it: that one period, or with All pay groups every
+ * period inside its dates.
  */
 async function reportDays(
   dateRange: ReportConfig["dateRange"],
   tenantId: string,
-): Promise<{ firstDay: string; lastDay: string; payPeriodId?: string } | null> {
+): Promise<{ firstDay: string; lastDay: string; timesheetWhere?: Record<string, unknown> } | null> {
   if (dateRange.type === "payPeriod") {
     const period = await db.payPeriod.findFirst({
       where: { id: dateRange.payPeriodId, tenantId },
       select: { startDate: true, endDate: true, ruleSet: { select: { payFrequency: true } }, tenant: { select: { payFrequency: true } } },
     });
     if (!period) return null;
-    return { ...periodDayRange(period, period.ruleSet?.payFrequency ?? period.tenant.payFrequency), payPeriodId: dateRange.payPeriodId };
+    return {
+      ...periodDayRange(period, period.ruleSet?.payFrequency ?? period.tenant.payFrequency),
+      timesheetWhere: await timesheetPayPeriodWhere(dateRange, tenantId),
+    };
   }
-  const span = resolveDateFilter(dateRange).segmentDate as { gte: Date; lte: Date } | undefined;
+  const span = (await resolveDateFilter(dateRange, tenantId)).segmentDate as { gte: Date; lte: Date } | undefined;
   if (!span) return null;
   return { firstDay: span.gte.toISOString().slice(0, 10), lastDay: span.lte.toISOString().slice(0, 10) };
 }
@@ -366,7 +383,7 @@ async function addDaysWithoutHours(
     where: {
       tenantId,
       ...employeeFilter,
-      ...(days.payPeriodId ? { timesheets: { some: { payPeriodId: days.payPeriodId } } } : {}),
+      ...(days.timesheetWhere ? { timesheets: { some: days.timesheetWhere } } : {}),
     } as Prisma.EmployeeWhereInput,
     select: {
       id: true, wmsId: true, employeeCode: true, payType: true,
@@ -402,7 +419,7 @@ async function addDaysWithoutHours(
     where: {
       exceptionType: "ABSENT",
       occurredAt: { gte: new Date(days.firstDay + "T00:00:00Z"), lt: new Date(nextDayStr(days.lastDay) + "T00:00:00Z") },
-      timesheet: { employeeId: { in: employees.map((e) => e.id) }, ...(days.payPeriodId ? { payPeriodId: days.payPeriodId } : {}) },
+      timesheet: { employeeId: { in: employees.map((e) => e.id) }, ...(days.timesheetWhere ?? {}) },
     },
     select: { occurredAt: true, timesheet: { select: { employeeId: true } } },
   });
@@ -500,16 +517,30 @@ async function fillClockTimes(dayMap: Map<string, DayRow>) {
     // out on file belongs to a later shift.
     const next = list.find((p) => p.roundedTime > lastIn);
     day.clockOut = next?.punchType === "CLOCK_OUT" ? next.roundedTime : null;
+    // Every shift of the day, as a timesheet prints them: in to out, each pair.
+    day.punchPairs = ins
+      .map((i) => {
+        const after = list.find((p) => p.roundedTime > i.roundedTime);
+        const out = after?.punchType === "CLOCK_OUT" ? siteClock(after.roundedTime, day.timezone) : "no clock out";
+        return `${siteClock(i.roundedTime, day.timezone)} – ${out}`;
+      })
+      .join(", ");
   }
 }
 
-function resolveDateFilter(dateRange: ReportConfig["dateRange"]): Record<string, unknown> {
+/**
+ * Which hour lines the dates take in. A pay period is its timesheets: the
+ * one period, or with All pay groups every period inside its dates. Reading
+ * only the period picked left out everyone in the other pay groups, about 4
+ * in 10 people on Oct 11 to 24, 2026, from every timesheet report.
+ */
+async function resolveDateFilter(dateRange: ReportConfig["dateRange"], tenantId: string): Promise<Record<string, unknown>> {
   switch (dateRange.type) {
     case "calendar":
       // Turned into plain dates before any report runs (see data-sources/index).
       throw new Error("A calendar period reached a report that reads dates.");
     case "payPeriod":
-      return { timesheet: { payPeriodId: dateRange.payPeriodId } };
+      return { timesheet: await timesheetPayPeriodWhere(dateRange, tenantId) };
     case "custom":
       return {
         segmentDate: {
@@ -570,7 +601,12 @@ async function fillAttendance(dayMap: Map<string, DayRow>): Promise<Map<string, 
   const last = dates[dates.length - 1];
   const sixBefore = nextDayStr(first, -6);
 
-  const [shifts, schedules, exceptions, worked] = await Promise.all([
+  const [notes, shifts, schedules, exceptions, worked] = await Promise.all([
+    db.timesheetNote.findMany({
+      where: { timesheet: { employeeId: { in: ids } }, noteDate: { gte: new Date(`${first}T00:00:00Z`), lte: new Date(`${last}T00:00:00Z`) } },
+      select: { noteDate: true, note: true, timesheet: { select: { employeeId: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
     db.employee.findMany({ where: { id: { in: ids } }, select: { id: true, shift: { select: { startTime: true } } } }),
     db.scheduleDay.findMany({
       where: { employeeId: { in: ids }, workDate: { gte: new Date(`${first}T00:00:00Z`), lte: new Date(`${last}T00:00:00Z`) }, isWorkday: true },
@@ -604,6 +640,11 @@ async function fillAttendance(dayMap: Map<string, DayRow>): Promise<Map<string, 
     excByKey.get(key)!.add(readable("exceptionType", e.exceptionType) ?? e.exceptionType);
   }
   const workedBy = new Map(worked.map((w) => [`${w.employeeId}|${w.day.toISOString().slice(0, 10)}`, w.minutes]));
+  const notesBy = new Map<string, string[]>();
+  for (const n of notes) {
+    const key = `${n.timesheet.employeeId}|${n.noteDate.toISOString().slice(0, 10)}`;
+    notesBy.set(key, [...(notesBy.get(key) ?? []), n.note]);
+  }
 
   for (const d of days) {
     const key = `${d.employeeId}|${d.date}`;
@@ -633,6 +674,7 @@ async function fillAttendance(dayMap: Map<string, DayRow>): Promise<Map<string, 
       lateBy,
       exceptions: excs?.size ? [...excs].sort().join(", ") : null,
       rolling7Minutes: rolling,
+      notes: notesBy.get(key)?.join(" | ") ?? null,
       paidLeaveMinutes: (d.leaveMinutes ?? 0) - (d.unpaidLeaveMinutes ?? 0),
       unpaidLeaveMinutes: d.unpaidLeaveMinutes ?? 0,
       rolling7Hours: Math.round((rolling / 60) * 100) / 100,
