@@ -41,6 +41,18 @@ export const getDataSourceDefinitions = withRBAC(
 
 // ─── Report CRUD ────────────────────────────────────────────────────────────
 
+/**
+ * A folder is its owner's: a report goes only into a folder of the person
+ * moving it, in their company. The id comes from the browser, and nothing
+ * checked it, so any folder id at all, another company's included, was
+ * written onto a report.
+ */
+async function assertOwnFolder(folderId: string | null | undefined, tenantId: string, ownerId: string) {
+  if (!folderId) return;
+  const folder = await db.reportFolder.findFirst({ where: { id: folderId, tenantId, ownerId }, select: { id: true } });
+  if (!folder) throw new Error("That folder is not one of yours.");
+}
+
 export const createReport = withRBAC(
   "REPORT_MANAGE",
   async ({ tenantId }, input: unknown) => {
@@ -52,6 +64,7 @@ export const createReport = withRBAC(
     validateColumnsAgainstSource(parsed.config.columns, source.columns.map((c) => c.id));
 
     const session = await getSessionUserId();
+    await assertOwnFolder(parsed.folderId, tenantId, session);
 
     const report = await db.reportDefinition.create({
       data: {
@@ -108,6 +121,12 @@ export const updateReport = withRBAC(
     if (parsed.config) {
       const source = getDataSource(dataSource);
       validateColumnsAgainstSource(parsed.config.columns, source.columns.map((c) => c.id));
+    }
+
+    // Filing it in a folder is the owner's, in a folder of theirs.
+    if (parsed.folderId !== undefined) {
+      if (existing.ownerId !== session) throw new Error("Only the person who saved this report can file it in a folder.");
+      await assertOwnFolder(parsed.folderId, tenantId, session);
     }
 
     const report = await db.reportDefinition.update({
@@ -458,9 +477,13 @@ export const moveReport = withRBAC(
     if (!tenantId) throw new Error("Tenant context required");
 
     const session = await getSessionUserId();
+    // Folders are personal, so only the report's owner files it, in one of
+    // their own folders. A shared editor moved it into theirs, out of the
+    // owner's sight.
     await db.reportDefinition.findFirstOrThrow({
-      where: { id: input.reportId, ...editableWhere(tenantId, session) },
+      where: { id: input.reportId, tenantId, ownerId: session },
     });
+    await assertOwnFolder(input.folderId, tenantId, session);
 
     return db.reportDefinition.update({
       where: { id: input.reportId },

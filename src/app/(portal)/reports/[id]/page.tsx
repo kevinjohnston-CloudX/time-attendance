@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
-import { getDataSourceDefinitions, getReport, getFilterOptions, getTenantUsers } from "@/actions/report.actions";
+import { getDataSourceDefinitions, getMyFolders, getReport, getFilterOptions, getTenantUsers } from "@/actions/report.actions";
 import { ReportViewer } from "@/components/reports/report-viewer";
 import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { FileSearch } from "lucide-react";
@@ -16,11 +16,12 @@ export default async function ReportDetailPage({
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "REPORT_MANAGE")) redirect("/dashboard");
 
-  const [reportResult, filterResult, usersResult, sourcesResult] = await Promise.all([
+  const [reportResult, filterResult, usersResult, sourcesResult, foldersResult] = await Promise.all([
     getReport({ id }),
     getFilterOptions(undefined as never),
     getTenantUsers(undefined as never),
     getDataSourceDefinitions(undefined as never),
+    getMyFolders(undefined as never),
   ]);
 
   if (!reportResult.success) {
@@ -53,6 +54,7 @@ export default async function ReportDetailPage({
       filterOptions={filterResult.success ? filterResult.data : null}
       tenantUsers={usersResult.success ? usersResult.data : []}
       source={sourcesResult.success ? sourcesResult.data.find((ds) => ds.id === reportResult.data.dataSource) ?? null : null}
+      folders={foldersResult.success ? foldersResult.data.map((f) => ({ id: f.id, name: f.name })) : []}
     />
   );
 }

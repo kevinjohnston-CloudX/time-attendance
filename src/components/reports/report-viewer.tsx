@@ -6,14 +6,14 @@ import { usePhoneBack } from "@/components/layout/phone-back";
 import { usePhoneLayout } from "@/lib/phone";
 import { format } from "date-fns";
 import { ArrowLeft, Copy, Download, Mail, Pause, Pencil, Play, RefreshCw, Share2, Trash2, type LucideIcon } from "lucide-react";
-import { Badge, Banner, Button, EmptyState, Input, LinkButton, PageHeader } from "@/components/ui";
+import { Badge, Banner, Button, EmptyState, Input, LinkButton, PageHeader, Select } from "@/components/ui";
 import { ResultsTable } from "./report-results/results-table";
 import { DateRangePicker, defaultPayPeriodRange, describeRange, type PayPeriodOption } from "./report-builder/date-range-picker";
 import { ShareDialog } from "./report-list/share-dialog";
 import { ScheduleForm } from "./schedule-form";
 import { describeSchedule } from "@/lib/reports/schedule-words";
 import { dataSourceIcon, dataSourceLabel, isScanReport } from "./data-source-label";
-import { runReport, deleteReport, duplicateReport, toggleSchedule } from "@/actions/report.actions";
+import { runReport, deleteReport, duplicateReport, moveReport, toggleSchedule } from "@/actions/report.actions";
 import { describePrint, type PrintLayout } from "@/lib/reports/grouping";
 import { ReportWindow, WindowBlock, WindowCard, WindowNote } from "./window/report-window";
 import type { ReportResult } from "@/lib/reports/data-sources";
@@ -42,6 +42,7 @@ interface ReportData {
   dataSource: string;
   config: unknown;
   visibility: string;
+  folderId?: string | null;
   isTemplate: boolean;
   updatedAt?: string | Date;
   owner: { id: string; name: string | null };
@@ -120,8 +121,11 @@ export function ReportViewer({
   filterOptions,
   tenantUsers,
   source,
+  folders = [],
 }: {
   report: ReportData;
+  /** The viewer's own folders, for filing a report of theirs. */
+  folders?: { id: string; name: string }[];
   filterOptions: FilterOptions | null;
   tenantUsers?: { id: string; name: string | null; email: string | null }[];
   /** The report type's columns and filters, to put its settings in words. */
@@ -217,6 +221,35 @@ export function ReportViewer({
 
   const details: { label: string; value: ReactNode }[] = [
     { label: "Type", value: sourceLabel },
+    ...(isOwner && !report.isTemplate
+      ? [{
+          label: "Folder",
+          value: folders.length ? (
+            <Select
+              value={report.folderId ?? ""}
+              disabled={isToggling}
+              aria-label="Folder"
+              onChange={(e) =>
+                startToggle(async () => {
+                  const res = await moveReport({ reportId: report.id, folderId: e.target.value || null });
+                  if (!res.success) setError("The report could not be moved to that folder.");
+                  router.refresh();
+                })
+              }
+              style={{ maxWidth: 260 }}
+            >
+              <option value="">No folder</option>
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </Select>
+          ) : (
+            "No folders yet. Create one on the Reports page, on the left."
+          ),
+        }]
+      : []),
     {
       label: "Columns",
       value: columnNames.length ? columnNames.join(", ") : "None",
