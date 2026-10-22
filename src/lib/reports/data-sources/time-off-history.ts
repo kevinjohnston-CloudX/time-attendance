@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { DataSourceDefinition, ExecuteContext, ReportResult } from "./index";
 import { sortRowsInMemory } from "../query-builder";
-import { describeSpan, REPORT_ZONE } from "../period";
+import { describeSpan, REPORT_ZONE, todayIn } from "../period";
 import {
   localDay, peopleFor, PERSON_FIELDS, PERSON_FILTERS, personCells, reportSpan, spanMoments, textFilter, visible,
 } from "../scope";
@@ -200,9 +200,12 @@ export const timeOffSummarySource: DataSourceDefinition = {
         ${types ? Prisma.sql`AND l."leaveTypeId" = ANY(${types})` : Prisma.empty}
       GROUP BY 1, 2`;
 
-    // The year so far, for the forecast: what was earned a day, for the days left.
-    const yearOf = Number(span.end.slice(0, 4));
-    const dayOfYear = (Date.parse(`${span.end}T12:00:00Z`) - Date.UTC(yearOf, 0, 1, 12)) / 86_400_000 + 1;
+    // The year so far, for the forecast: what was earned a day, for the days
+    // left. "This year" runs to Dec 31, so the year so far ends today.
+    const today = todayIn(ctx?.timezone ?? REPORT_ZONE, ctx?.now);
+    const asOf = span.end < today ? span.end : today;
+    const yearOf = Number(asOf.slice(0, 4));
+    const dayOfYear = (Date.parse(`${asOf}T12:00:00Z`) - Date.UTC(yearOf, 0, 1, 12)) / 86_400_000 + 1;
     const daysInYear = (Date.UTC(yearOf + 1, 0, 1) - Date.UTC(yearOf, 0, 1)) / 86_400_000;
     const rows: Record<string, unknown>[] = sums.map((s) => {
       const start = s.startBalance ?? 0;

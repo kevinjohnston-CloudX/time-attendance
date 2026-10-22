@@ -611,7 +611,8 @@ async function fillAttendance(dayMap: Map<string, DayRow>): Promise<Map<string, 
     const onDuty = start.has(key) || (d.workMinutes ?? 0) > 0 || !!d.clockIn;
     const startTime = (onDuty ? shiftStart.get(d.employeeId) : null) ?? start.get(key);
     const scheduledAt = startTime && /^\d{1,2}:\d{2}$/.test(startTime) ? snapToLocalTime(startTime, d.date, d.timezone) : null;
-    const late = scheduledAt && d.clockIn ? Math.round((d.clockIn.getTime() - scheduledAt.getTime()) / 60000) : 0;
+    // Whole minutes, as the clock shows them: 7:02 against 7:00 is 2, whatever its seconds.
+    const late = scheduledAt && d.clockIn ? Math.floor((d.clockIn.getTime() - scheduledAt.getTime()) / 60000) : 0;
     const lateBy = late > 0 && late < 12 * 60 ? late : 0;
     const excs = excByKey.get(key);
     // A clock in with no clock out yet today is a shift still running, not a missed punch.
