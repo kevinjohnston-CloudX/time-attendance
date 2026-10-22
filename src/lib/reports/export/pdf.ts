@@ -1,7 +1,7 @@
 import { cellText } from "../cell";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const PdfPrinter = require("pdfmake");
-import type { TDocumentDefinitions, TFontDictionary } from "pdfmake/interfaces";
+import type { TableCell, TDocumentDefinitions, TFontDictionary } from "pdfmake/interfaces";
 import type { ReportResult } from "../data-sources";
 
 const fonts: TFontDictionary = {
@@ -38,17 +38,53 @@ export async function generatePdf(
     fillColor: "#f4f4f5",
   }));
 
-  const shownRows = result.rows.slice(0, MAX_PDF_ROWS);
   const cut = result.rows.length > MAX_PDF_ROWS;
-  const body = shownRows.map((row) =>
-    result.columns.map((col) => {
-      return {
-        text: cellText(row[col.id], col),
-        fontSize: 7,
-        alignment: (col.type === "number" ? "right" : "left") as "right" | "left",
-      };
-    })
-  );
+  const align = (col: { type: string }) => (col.type === "number" ? "right" : "left") as "right" | "left";
+  const dataRow = (row: Record<string, unknown>): TableCell[] =>
+    result.columns.map((col) => ({ text: cellText(row[col.id], col), fontSize: 7, alignment: align(col) }));
+  const totalRow = (label: string, sums: Record<string, number>, fill: string): TableCell[] =>
+    result.columns.map((col, i) => ({
+      text: col.id in sums ? cellText(sums[col.id], col) || "0" : i === 0 ? label : "",
+      fontSize: 7,
+      bold: true,
+      fillColor: fill,
+      alignment: align(col),
+    }));
+  // A group's heading runs the width of the table.
+  const groupRow = (text: string, level: number): TableCell[] => [
+    { text, fontSize: 8, bold: true, colSpan: result.columns.length, margin: [level * 8, 2, 0, 0] as [number, number, number, number], fillColor: level === 0 ? "#f4f4f5" : undefined },
+    ...result.columns.slice(1).map(() => ({ text: "" })),
+  ];
+
+  // Rows past the limit are left out, and so are the totals, which would be
+  // short by them.
+  const body: TableCell[][] = [];
+  if (!result.groups) {
+    for (const row of result.rows.slice(0, MAX_PDF_ROWS)) body.push(dataRow(row));
+  } else {
+    const lines = result.groups.lines;
+    // A group heading is kept when its first row made it in.
+    const firstRowAfter = (i: number) => {
+      for (let j = i + 1; j < lines.length; j++) {
+        const l = lines[j];
+        if (l.kind === "row") return l.index;
+      }
+      return Infinity;
+    };
+    lines.forEach((line, i) => {
+      if (line.kind === "row") {
+        if (line.index < MAX_PDF_ROWS) body.push(dataRow(result.rows[line.index]));
+      } else if (line.kind === "group") {
+        if (firstRowAfter(i) < MAX_PDF_ROWS) body.push(groupRow(`${line.fieldLabel}: ${line.label}`, line.level));
+      } else if (cut) {
+        return;
+      } else if (line.kind === "subtotal") {
+        body.push(totalRow(`Total for ${line.label}`, line.values, "#fafafa"));
+      } else {
+        body.push(totalRow("Grand total", line.values, "#f4f4f5"));
+      }
+    });
+  }
 
   const docDefinition: TDocumentDefinitions = {
     defaultStyle: { font: "Helvetica" },

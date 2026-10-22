@@ -30,17 +30,43 @@ export async function generateXlsx(
     fgColor: { argb: "FFF4F4F5" },
   };
 
-  // Data rows
-  for (const row of result.rows) {
+  const addData = (row: Record<string, unknown>) => {
     const values: Record<string, unknown> = {};
     for (const col of result.columns) {
       values[col.id] = cellValue(row[col.id], col) ?? "";
     }
     sheet.addRow(values);
+  };
+  // A total's label in the first column and its sums under the columns that
+  // add up, as numbers, so Excel can check them.
+  const addTotal = (label: string, sums: Record<string, number>, fill: string) => {
+    const values: Record<string, unknown> = {};
+    result.columns.forEach((col, i) => {
+      if (col.id in sums) values[col.id] = cellValue(sums[col.id], col) ?? 0;
+      else if (i === 0) values[col.id] = label;
+    });
+    const r = sheet.addRow(values);
+    r.font = { bold: true, size: 10 };
+    r.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
+  };
+
+  const groups = result.groups;
+  if (!groups) {
+    for (const row of result.rows) addData(row);
+  } else {
+    for (const line of groups.lines) {
+      if (line.kind === "row") addData(result.rows[line.index]);
+      else if (line.kind === "group") {
+        const r = sheet.addRow({ [result.columns[0].id]: `${line.fieldLabel}: ${line.label}` });
+        r.font = { bold: true, size: 10 };
+      } else if (line.kind === "subtotal") addTotal(`Total for ${line.label}`, line.values, "FFFAFAFA");
+      else addTotal("Grand total", line.values, "FFF4F4F5");
+    }
   }
 
-  // Auto-filter
-  if (result.rows.length > 0) {
+  // Auto-filter, on a plain list only: heading and total lines inside a
+  // grouped sheet would be sorted in among the rows they sum.
+  if (result.rows.length > 0 && !groups?.lines.some((l) => l.kind !== "row")) {
     sheet.autoFilter = {
       from: { row: 1, column: 1 },
       to: { row: result.rows.length + 1, column: result.columns.length },
