@@ -19,7 +19,7 @@ import {
   ToolsCount,
 } from "@/components/ui";
 import { REPORT_TYPE_CARDS, dataSourceDescription, dataSourceLabel } from "./data-source-label";
-import { STANDARD_REPORTS as STANDARD_REPORT_LIST } from "@/lib/reports/standard-reports";
+import { STANDARD_FOLDERS, STANDARD_REPORTS as STANDARD_REPORT_LIST, type StandardReport } from "@/lib/reports/standard-reports";
 import { FolderTree, type FolderNode } from "./report-list/folder-tree";
 import { ReportTypeIcon } from "./report-type-icon";
 import { ReportTypeDialog, type ReportTypeOption } from "./report-type-dialog";
@@ -70,6 +70,7 @@ type Access = keyof typeof ACCESS_LABEL;
 /** The view tabs, and which of the three lists each one keeps. */
 const VIEWS = [
   { value: "", label: "All", keep: null },
+  { value: "standard", label: "Standard reports", keep: null },
   { value: "mine", label: "Mine", keep: "owned" },
   { value: "shared", label: "Shared with me", keep: "shared" },
   { value: "everyone", label: "Everyone", keep: "tenantWide" },
@@ -120,7 +121,10 @@ export function ReportsList({
   const [query, setQuery] = useState(q);
   const [picking, setPicking] = useState(openNew && sources.length > 0);
   const { barRef, markerRef, condensed, barHeight } = useCondensingBar();
-  const activeView = VIEWS.find((v) => v.value === view) ?? VIEWS[0];
+  const anySaved = reports.owned.length + reports.shared.length + reports.tenantWide.length > 0;
+  // Nothing saved yet: the standard reports are the place to start.
+  const activeView = VIEWS.find((v) => v.value === view) ?? (anySaved ? VIEWS[0] : VIEWS[1]);
+  const library = activeView.value === "standard";
 
   const listHref = (over: Partial<Record<Params, string>>) => {
     const sp = new URLSearchParams();
@@ -145,7 +149,7 @@ export function ReportsList({
     ...reports.shared.map((r) => ({ report: r, access: "shared" as Access })),
     ...reports.tenantWide.map((r) => ({ report: r, access: "tenantWide" as Access })),
   ];
-  const inView = activeView.keep ? rows.filter((r) => r.access === activeView.keep) : rows;
+  const inView = library ? [] : activeView.keep ? rows.filter((r) => r.access === activeView.keep) : rows;
 
   // Derived from the rows rather than fixed, so neither pill can offer a
   // value that returns nothing.
@@ -157,6 +161,13 @@ export function ReportsList({
     .map((y) => ({ id: String(y), name: String(y) }));
 
   const needle = query.trim().toLowerCase();
+  // The standard reports the library shows: by folder, and by name, NovaTime's
+  // name or what it shows.
+  const libraryMatches = STANDARD_REPORT_LIST.filter(
+    (r) =>
+      (!folder || r.folder === folder) &&
+      (!needle || `${r.name} ${r.saveName ?? ""} ${r.novaTimeName} ${r.description}`.toLowerCase().includes(needle))
+  );
   const filtered = inView.filter(({ report }) => {
     // The owner is searchable because it is on the row: "Dana" has to find
     // the reports that say they are Dana's.
@@ -213,18 +224,24 @@ export function ReportsList({
             <>
               {/* The views sit in the title row, as on Live Attendance, so the
                   bar below gets its own full line. */}
-              {rows.length > 0 && (
-                <SegmentedLinks
-                  ariaLabel="Whose reports"
-                  active={activeView.value}
-                  items={VIEWS.map((v) => ({
-                    value: v.value,
-                    label: v.label,
-                    href: listHref({ view: v.value }),
-                    count: v.keep ? rows.filter((r) => r.access === v.keep).length : rows.length,
-                  }))}
-                />
-              )}
+              <SegmentedLinks
+                ariaLabel="Which reports"
+                active={activeView.value}
+                items={[...VIEWS]
+                  .sort((a, b) => Number(b.value === "standard") - Number(a.value === "standard"))
+                  .filter((v) => v.value === "standard" || rows.length > 0)
+                  .map((v) => ({
+                  value: v.value,
+                  label: v.label,
+                  href: listHref({ view: v.value, folder: "", type: "", year: "" }),
+                  count:
+                    v.value === "standard"
+                      ? STANDARD_REPORT_LIST.length
+                      : v.keep
+                        ? rows.filter((r) => r.access === v.keep).length
+                        : rows.length,
+                }))}
+              />
               <Button
                 hierarchy="primary"
                 className="ta-header-primary"
@@ -238,7 +255,23 @@ export function ReportsList({
             </>
           }
         />
-        {rows.length > 0 && (
+        {library && (
+          <div>
+            <ToolsBar
+              search={<SearchInput value={query} onValueChange={setQuery} placeholder="Report name, or its NovaTime name" width={300} />}
+              end={<ToolsCount>{`${libraryMatches.length.toLocaleString()} of ${STANDARD_REPORT_LIST.length} standard reports`}</ToolsCount>}
+            >
+              <FilterSelectChip
+                label="Folder"
+                allLabel="Every folder"
+                value={folder}
+                options={STANDARD_FOLDERS.map((f) => ({ id: f, name: f }))}
+                onChange={(v) => router.replace(listHref({ folder: v }), { scroll: false })}
+              />
+            </ToolsBar>
+          </div>
+        )}
+        {!library && rows.length > 0 && (
           <div>
             <ToolsBar
               search={<SearchInput value={query} onValueChange={setQuery} placeholder="Report name or owner" width={300} />}
@@ -288,6 +321,9 @@ export function ReportsList({
         />
       )}
 
+      {library ? (
+        <StandardLibrary reports={libraryMatches} />
+      ) : (
       <div className="flex flex-col items-start gap-4 lg:flex-row">
         {showRail && rows.length > 0 && (
           // Pinned exactly where it already sits: the bar's 12px of bottom
@@ -363,6 +399,7 @@ export function ReportsList({
           )}
         </section>
       </div>
+      )}
 
       {picking && (
         <ReportTypeDialog
@@ -494,6 +531,71 @@ function FirstReport() {
           </Link>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The standard reports, in their folders: each opens set up in the builder,
+ * to run as it is or change and save. Named as HR knew them in NovaTime,
+ * which each one also says, so the old name finds the new report.
+ */
+function StandardLibrary({ reports }: { reports: StandardReport[] }) {
+  const folders = STANDARD_FOLDERS.map((f) => ({ name: f, items: reports.filter((r) => r.folder === f) })).filter((f) => f.items.length > 0);
+  if (folders.length === 0) {
+    return (
+      <section className="ta-card" style={{ borderRadius: "var(--radius-l)" }}>
+        <EmptyState
+          icon={<FileText className="h-8 w-8" />}
+          title="No standard report matches"
+          body="Try another word, or every folder. Build your own with New report."
+        />
+      </section>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-4">
+      {folders.map((f) => (
+        <section
+          key={f.name}
+          aria-label={f.name}
+          style={{ background: "var(--surface-card)", borderRadius: "var(--radius-l)", boxShadow: "var(--shadow-card)", overflow: "clip" }}
+        >
+          <header className="flex items-baseline gap-2 px-5 pb-2 pt-4">
+            <h2 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>{f.name}</h2>
+            <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+              {f.items.length}
+            </span>
+          </header>
+          <ul className="m-0 grid list-none gap-px p-0 md:grid-cols-2" style={{ background: "var(--stroke-divider)", borderTop: "1px solid var(--stroke-divider)" }}>
+            {f.items.map((r) => (
+              <li key={r.id} style={{ background: "var(--surface-card)" }}>
+                <Link
+                  href={`/reports/new?standard=${r.id}`}
+                  className="ta-hoverable group flex h-full items-start gap-3 px-5 py-3.5"
+                  style={{ textDecoration: "none" }}
+                >
+                  <ReportTypeIcon id={r.source} />
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)" }}>
+                      {r.name}
+                    </span>
+                    <span className="line-clamp-2" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                      {r.description}
+                    </span>
+                    <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>In NovaTime: {r.novaTimeName}</span>
+                  </span>
+                  <ChevronRight
+                    className="mt-2.5 h-4 w-4 flex-none transition-transform group-hover:translate-x-0.5"
+                    style={{ color: "var(--icon-tertiary)" }}
+                    aria-hidden="true"
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
     </div>
   );
 }
