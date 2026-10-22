@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { rateInEffect } from "@/lib/pay-rates";
 import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, sortRowsInMemory, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
@@ -34,6 +35,9 @@ export const leaveBalanceSource: DataSourceDefinition = {
     { id: "remainingMinutes", label: "Remaining", type: "number", defaultVisible: true, total: false },
     { id: "balanceMinutes", label: "Balance (same as Remaining)", type: "number", defaultVisible: false, total: false },
     { id: "status",         label: "Status",    type: "string",  defaultVisible: false },
+    // What the hours left are worth at today's Rate 1: NovaTime's Liability.
+    // Hourly people only; a salaried Rate 1 may be a yearly amount.
+    { id: "liability",      label: "Value at pay rate", type: "number", defaultVisible: false, total: true },
   ],
   filters: [
     { id: "employeeName", label: "Employee name", type: "string", operators: ["contains", "eq"] },
@@ -70,7 +74,7 @@ export const leaveBalanceSource: DataSourceDefinition = {
     const balances = await db.leaveBalance.findMany({
       where,
       include: {
-        employee: { include: { user: true, department: true, site: true } },
+        employee: { include: { user: true, department: true, site: true, payRates: { select: { effectiveDate: true, rate1: true } } } },
         leaveType: true,
       },
       orderBy: [
@@ -106,6 +110,7 @@ export const leaveBalanceSource: DataSourceDefinition = {
       usedMinutes: b.usedMinutes,
       remainingMinutes: b.balanceMinutes,
       status: b.employee.isActive ? "Active" : "Inactive",
+      liability: liabilityOf(b.balanceMinutes, b.employee),
     }));
 
     // Every sort in memory, then the limit: taken in the database first, a
@@ -123,3 +128,10 @@ export const leaveBalanceSource: DataSourceDefinition = {
     };
   },
 };
+
+function liabilityOf(minutes: number, e: { payType: string | null; payRates: { effectiveDate: Date; rate1: unknown }[] }): number | null {
+  if (e.payType === "SALARY") return null;
+  const row = rateInEffect(e.payRates, new Date().toISOString().slice(0, 10));
+  if (row?.rate1 == null) return null;
+  return Math.round((minutes / 60) * Number(row.rate1) * 100) / 100;
+}

@@ -526,7 +526,7 @@ export const STANDARD_REPORTS: StandardReport[] = [
     novaTimeName: "Request Time-Off Report",
     description: "Time off requested for days in the pay period, with its type, hours, status and when it was asked for and answered.",
     source: "LEAVE_SUMMARY",
-    columns: ["employeeName", "employeeCode", "leaveType", "startDate", "endDate", "durationMinutes", "status", "submittedAt", "reviewedAt"],
+    columns: ["employeeName", "employeeCode", "leaveType", "startDate", "endDate", "durationMinutes", "status", "submittedAt", "reviewedBy", "reviewedAt"],
     sortBy: [{ field: "startDate", direction: "asc" }],
     dates: "currentPayPeriod",
   },

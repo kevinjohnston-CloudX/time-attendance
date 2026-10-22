@@ -78,6 +78,11 @@ export const employeesSource: DataSourceDefinition = {
     { id: "markupPct", label: "Charge markup %", type: "number" },
     { id: "chargeRate", label: "Charge rate", type: "number" },
     { id: "hireDate", label: "Hire date", type: "date", defaultVisible: true },
+    { id: "birthDate", label: "Birthdate", type: "date" },
+    { id: "birthday", label: "Birthday", type: "string", groupOrder: "birthdayKey" },
+    { id: "raiseDate", label: "Last raise date", type: "date" },
+    { id: "badgeCard", label: "Badge card number", type: "string" },
+    { id: "adpWorkerId", label: "ADP worker ID", type: "string" },
     { id: "adjustedHireDate", label: "Adjusted hire date", type: "date" },
     { id: "terminatedAt", label: "Termination date", type: "date" },
     { id: "terminationReason", label: "Termination reason", type: "string" },
@@ -171,6 +176,9 @@ export const employeesSource: DataSourceDefinition = {
         payType: true,
         payRate: true,
         hireDate: true,
+        dateOfBirth: true,
+        barcode: true,
+        adpWorkerId: true,
         adjustedHireDate: true,
         terminatedAt: true,
         terminationReason: true,
@@ -246,6 +254,16 @@ export const employeesSource: DataSourceDefinition = {
         markupPct: rateRow?.markupPct != null ? Number(rateRow.markupPct) : null,
         chargeRate: rateRow?.chargeRate != null ? Number(rateRow.chargeRate) : null,
         hireDate: day(e.hireDate),
+        birthDate: day(e.dateOfBirth),
+        // Month and day only, for a birthday list; ordered through the year.
+        birthday: e.dateOfBirth
+          ? e.dateOfBirth.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+          : null,
+        birthdayKey: e.dateOfBirth ? e.dateOfBirth.toISOString().slice(5, 10) : null,
+        // The newest pay rate that has taken effect.
+        raiseDate: rateRow ? day(rateRow.effectiveDate) : null,
+        badgeCard: e.barcode ?? null,
+        adpWorkerId: e.adpWorkerId ?? null,
         adjustedHireDate: day(e.adjustedHireDate),
         terminatedAt: day(e.terminatedAt),
         terminationReason: e.terminationReason ?? null,

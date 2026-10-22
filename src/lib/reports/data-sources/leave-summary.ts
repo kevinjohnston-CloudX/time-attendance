@@ -40,6 +40,7 @@ export const leaveSummarySource: DataSourceDefinition = {
     { id: "reviewNote",      label: "Reviewer note",     type: "string",  defaultVisible: false },
     { id: "submittedAt",     label: "Submitted",       type: "date",    defaultVisible: false },
     { id: "reviewedAt",      label: "Reviewed",        type: "date",    defaultVisible: false },
+    { id: "reviewedBy",      label: "Reviewed by",     type: "string",  defaultVisible: false },
   ],
   filters: [
     { id: "employeeName", label: "Employee name", type: "string", operators: ["contains", "eq"] },
@@ -89,6 +90,13 @@ export const leaveSummarySource: DataSourceDefinition = {
       take: config.limit,
     });
 
+    // Who reviewed each request (stored as their employee id), by name.
+    const reviewerIds = [...new Set(requests.map((r) => r.reviewedById).filter((x): x is string => !!x))];
+    const reviewers = reviewerIds.length
+      ? await db.employee.findMany({ where: { id: { in: reviewerIds }, tenantId }, select: { id: true, user: { select: { name: true } } } })
+      : [];
+    const reviewerName = new Map(reviewers.map((e) => [e.id, e.user?.name ?? null]));
+
     const rows = requests.map((r) => ({
       employeeName: r.employee.user?.name ?? r.employee.employeeCode,
       employeeCode: r.employee.wmsId ?? r.employee.employeeCode,
@@ -104,6 +112,7 @@ export const leaveSummarySource: DataSourceDefinition = {
       // hours out on a server kept on UTC.
       submittedAt: r.submittedAt ? localMoment(r.submittedAt, REPORT_ZONE) : null,
       reviewedAt: r.reviewedAt ? localMoment(r.reviewedAt, REPORT_ZONE) : null,
+      reviewedBy: r.reviewedById ? reviewerName.get(r.reviewedById) ?? null : null,
       // For spreading time off across the months of a year.
       month: format(parseUtcDate(r.startDate), "MMM yyyy"),
       monthKey: format(parseUtcDate(r.startDate), "yyyy-MM"),

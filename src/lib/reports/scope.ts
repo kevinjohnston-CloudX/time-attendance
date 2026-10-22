@@ -40,6 +40,8 @@ export const PERSON_FIELDS: FieldMap = {
   employeeCode: { prismaPath: "wmsId", type: "string" },
   departmentId: { prismaPath: "departmentId", type: "string" },
   siteId: { prismaPath: "siteId", type: "string" },
+  isActive: { prismaPath: "isActive", type: "boolean" },
+  supervisorId: { prismaPath: "supervisorId", type: "string" },
 };
 
 export const PERSON_FILTERS = [
@@ -47,6 +49,11 @@ export const PERSON_FILTERS = [
   { id: "employeeCode", label: "Badge ID", type: "string" as const, operators: ["contains", "eq"] },
   { id: "departmentId", label: "Department", type: "string" as const, operators: ["eq", "in"] },
   { id: "siteId", label: "Site", type: "string" as const, operators: ["eq", "in"] },
+  {
+    id: "isActive", label: "Status", type: "boolean" as const, operators: ["eq"],
+    options: [{ value: "true", label: "Active" }, { value: "false", label: "Inactive" }],
+  },
+  { id: "supervisorId", label: "Supervisor", type: "string" as const, operators: ["eq", "in"] },
 ];
 
 export interface Person {
