@@ -91,10 +91,11 @@ export const timeOffHistorySource: DataSourceDefinition = {
     const { from, until } = spanMoments(span);
     const types = leaveTypesOf(config);
 
+    // A day either side, then each entry is kept by its posting day.
     const entries = await db.leaveAccrualLedger.findMany({
       where: {
         employeeId: { in: [...byId.keys()] },
-        createdAt: { gte: from, lt: until },
+        createdAt: { gte: new Date(from.getTime() - 2 * 86_400_000), lt: new Date(until.getTime() + 2 * 86_400_000) },
         ...(types ? { leaveTypeId: { in: types } } : {}),
       },
       select: {
@@ -104,12 +105,15 @@ export const timeOffHistorySource: DataSourceDefinition = {
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
 
-    let rows: Record<string, unknown>[] = entries.map((e) => {
+    let rows: Record<string, unknown>[] = entries
+      .map((e) => ({ e, day: postingDay(e) }))
+      .filter(({ day }) => day >= span.start && day <= span.end)
+      .map(({ e, day }) => {
       const p = byId.get(e.employeeId)!;
       return {
         ...personCells(p),
         leaveType: e.leaveType.name,
-        postedOn: localDay(e.createdAt, REPORT_ZONE),
+        postedOn: day,
         entry: ENTRY_LABEL[e.action] ?? e.action,
         earnedMinutes: EARNED.includes(e.action) ? e.deltaMinutes : 0,
         usedMinutes: USED.includes(e.action) ? -e.deltaMinutes : 0,
@@ -118,7 +122,7 @@ export const timeOffHistorySource: DataSourceDefinition = {
         payPeriodEnd: e.payPeriodEnd ? e.payPeriodEnd.toISOString().slice(0, 10) : null,
         note: e.note,
       };
-    });
+      });
     rows = textFilter(rows, config.filters, ["entry"]);
     // Each person's entries together, oldest first, so the balance reads down.
     rows.sort((a, b) => String(a.employeeName).localeCompare(String(b.employeeName)) || String(a.leaveType).localeCompare(String(b.leaveType)));
@@ -167,36 +171,38 @@ export const timeOffSummarySource: DataSourceDefinition = {
     const people = await peopleFor(config.filters, tenantId);
     if (!span || people.length === 0) return { columns: cols, rows: [], totalRows: 0 };
     const byId = new Map(people.map((p) => [p.id, p]));
-    const { from, until } = spanMoments(span);
-    const yearFrom = spanMoments({ start: `${span.end.slice(0, 4)}-01-01`, end: span.end }).from;
     const types = leaveTypesOf(config);
 
     // Added up in the database: one line per person and type, from every
     // entry up to the end of the dates.
+    const POST_DAY = Prisma.sql`COALESCE(l."payPeriodEnd", (l."createdAt" AT TIME ZONE ${REPORT_ZONE})::date)`;
+    const first = new Date(`${span.start}T00:00:00Z`);
+    const last = new Date(`${span.end}T00:00:00Z`);
+    const yearFirst = new Date(`${span.end.slice(0, 4)}-01-01T00:00:00Z`);
     const sums = await db.$queryRaw<{
       employeeId: string; leaveType: string; startBalance: number | null; endBalance: number;
       earned: number; used: number; adjusted: number; usedYear: number; earnedYear: number; inDates: number;
       [quarter: string]: unknown;
     }[]>`
       SELECT l."employeeId", t.name AS "leaveType",
-        (array_agg(l."balanceAfter" ORDER BY l."createdAt" DESC, l.id DESC) FILTER (WHERE l."createdAt" < ${from}))[1] AS "startBalance",
-        (array_agg(l."balanceAfter" ORDER BY l."createdAt" DESC, l.id DESC))[1] AS "endBalance",
-        COALESCE(SUM(l."deltaMinutes") FILTER (WHERE l."createdAt" >= ${from} AND l.action::text = ANY(${EARNED})), 0)::int AS earned,
-        COALESCE(-SUM(l."deltaMinutes") FILTER (WHERE l."createdAt" >= ${from} AND l.action::text = ANY(${USED})), 0)::int AS used,
-        COALESCE(SUM(l."deltaMinutes") FILTER (WHERE l."createdAt" >= ${from} AND NOT (l.action::text = ANY(${[...EARNED, ...USED]}))), 0)::int AS adjusted,
-        COALESCE(-SUM(l."deltaMinutes") FILTER (WHERE l."createdAt" >= ${yearFrom} AND l.action::text = ANY(${USED})), 0)::int AS "usedYear",
-        COALESCE(SUM(l."deltaMinutes") FILTER (WHERE l."createdAt" >= ${yearFrom} AND l.action::text = ANY(${EARNED})), 0)::int AS "earnedYear",
+        (array_agg(l."balanceAfter" ORDER BY ${POST_DAY} DESC, l."createdAt" DESC, l.id DESC) FILTER (WHERE ${POST_DAY} < ${first}::date))[1] AS "startBalance",
+        (array_agg(l."balanceAfter" ORDER BY ${POST_DAY} DESC, l."createdAt" DESC, l.id DESC))[1] AS "endBalance",
+        COALESCE(SUM(l."deltaMinutes") FILTER (WHERE ${POST_DAY} >= ${first}::date AND l.action::text = ANY(${EARNED})), 0)::int AS earned,
+        COALESCE(-SUM(l."deltaMinutes") FILTER (WHERE ${POST_DAY} >= ${first}::date AND l.action::text = ANY(${USED})), 0)::int AS used,
+        COALESCE(SUM(l."deltaMinutes") FILTER (WHERE ${POST_DAY} >= ${first}::date AND NOT (l.action::text = ANY(${[...EARNED, ...USED]}))), 0)::int AS adjusted,
+        COALESCE(-SUM(l."deltaMinutes") FILTER (WHERE ${POST_DAY} >= ${yearFirst}::date AND l.action::text = ANY(${USED})), 0)::int AS "usedYear",
+        COALESCE(SUM(l."deltaMinutes") FILTER (WHERE ${POST_DAY} >= ${yearFirst}::date AND l.action::text = ANY(${EARNED})), 0)::int AS "earnedYear",
         ${Prisma.join(
           [1, 2, 3, 4].flatMap((q) => [
-            Prisma.sql`COALESCE(SUM(l."deltaMinutes") FILTER (WHERE l."createdAt" >= ${from} AND l."createdAt" >= ${yearFrom} AND EXTRACT(QUARTER FROM l."createdAt" AT TIME ZONE ${REPORT_ZONE}) = ${q} AND l.action::text = ANY(${EARNED})), 0)::int AS ${Prisma.raw(`"earnedQ${q}"`)}`,
-            Prisma.sql`COALESCE(-SUM(l."deltaMinutes") FILTER (WHERE l."createdAt" >= ${from} AND l."createdAt" >= ${yearFrom} AND EXTRACT(QUARTER FROM l."createdAt" AT TIME ZONE ${REPORT_ZONE}) = ${q} AND l.action::text = ANY(${USED})), 0)::int AS ${Prisma.raw(`"usedQ${q}"`)}`,
+            Prisma.sql`COALESCE(SUM(l."deltaMinutes") FILTER (WHERE ${POST_DAY} >= ${first}::date AND ${POST_DAY} >= ${yearFirst}::date AND EXTRACT(QUARTER FROM ${POST_DAY}) = ${q} AND l.action::text = ANY(${EARNED})), 0)::int AS ${Prisma.raw(`"earnedQ${q}"`)}`,
+            Prisma.sql`COALESCE(-SUM(l."deltaMinutes") FILTER (WHERE ${POST_DAY} >= ${first}::date AND ${POST_DAY} >= ${yearFirst}::date AND EXTRACT(QUARTER FROM ${POST_DAY}) = ${q} AND l.action::text = ANY(${USED})), 0)::int AS ${Prisma.raw(`"usedQ${q}"`)}`,
           ])
         )},
-        COUNT(*) FILTER (WHERE l."createdAt" >= ${from})::int AS "inDates"
+        COUNT(*) FILTER (WHERE ${POST_DAY} >= ${first}::date)::int AS "inDates"
       FROM leave_accrual_ledger l
       JOIN leave_types t ON t.id = l."leaveTypeId"
       WHERE l."employeeId" = ANY(${[...byId.keys()]})
-        AND l."createdAt" < ${until}
+        AND ${POST_DAY} <= ${last}::date
         ${types ? Prisma.sql`AND l."leaveTypeId" = ANY(${types})` : Prisma.empty}
       GROUP BY 1, 2`;
 
@@ -237,4 +243,15 @@ function leaveTypesOf(config: ReportConfig): string[] | null {
   const f = config.filters.find((x) => x.field === "leaveTypeId");
   if (!f) return null;
   return (Array.isArray(f.value) ? f.value : [f.value]).map(String);
+}
+
+/**
+ * The day an entry was posted. A scheduled posting (earned, used, carried
+ * over, a year end reset) is stamped at midnight UTC on its pay period end,
+ * which read in Eastern time fell on the evening before: every date was a
+ * day early and Jan 1 fell out of "this year". Its pay period end is its
+ * day; an entry made by hand is dated where it was made.
+ */
+function postingDay(e: { payPeriodEnd: Date | null; createdAt: Date }): string {
+  return e.payPeriodEnd ? e.payPeriodEnd.toISOString().slice(0, 10) : localDay(e.createdAt, REPORT_ZONE);
 }
