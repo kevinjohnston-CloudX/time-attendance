@@ -134,6 +134,9 @@ export const DATA_SOURCES = [
   "TIME_OFF_SUMMARY",
   "SCHEDULED_HOURS",
   "SCANS_NOT_RECORDED",
+  "HOURS_TO_DATE",
+  "WEEKLY_OVERTIME",
+  "ATTENDANCE_SUMMARY",
 ] as const;
 
 export type DataSourceId = (typeof DATA_SOURCES)[number];

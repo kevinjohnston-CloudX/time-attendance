@@ -1,6 +1,8 @@
 import {
   CalendarCheck,
   CalendarClock,
+  CalendarSearch,
+  Clock4,
   CalendarDays,
   CalendarRange,
   Clock,
@@ -12,6 +14,7 @@ import {
   ShieldCheck,
   StickyNote,
   Timer,
+  TrendingUp,
   TriangleAlert,
   Users,
   Wallet,
@@ -48,6 +51,9 @@ const LABELS: Record<string, string> = {
   TIME_OFF_SUMMARY:  "Time off summary",
   SCHEDULED_HOURS:   "Scheduled and worked hours",
   SCANS_NOT_RECORDED: "Scans not recorded",
+  HOURS_TO_DATE:     "Hours year to date",
+  WEEKLY_OVERTIME:   "Weekly overtime",
+  ATTENDANCE_SUMMARY: "Attendance summary",
 };
 
 /** One plain line on what each report shows, for the report type cards. */
@@ -68,6 +74,9 @@ const DESCRIPTIONS: Record<string, string> = {
   TIME_OFF_SUMMARY:  "For each employee and type of time off: the balance at the start, earned, used, adjusted, the balance at the end, and used this year.",
   SCHEDULED_HOURS:   "Each employee's scheduled hours up to today against the hours they worked, with their time off and last punch.",
   SCANS_NOT_RECORDED: "Scans that did not become a punch, and why: a badge nobody has, a scan the clock turned down, or someone the gate turned away.",
+  HOURS_TO_DATE:     "Each employee's hours in the dates beside their hours this year, with the average a week and a day they worked.",
+  WEEKLY_OVERTIME:   "Each employee's overtime by week, with their pay rate and the OBBB amount: half the rate for each overtime hour.",
+  ATTENDANCE_SUMMARY: "Each employee's month: days worked, days late, absences with and without a reason, missed punches and time off taken.",
 };
 
 const ICONS: Record<string, ElementType> = {
@@ -87,6 +96,9 @@ const ICONS: Record<string, ElementType> = {
   TIME_OFF_SUMMARY:  ListChecks,
   SCHEDULED_HOURS:   CalendarCheck,
   SCANS_NOT_RECORDED: ScanLine,
+  HOURS_TO_DATE:     TrendingUp,
+  WEEKLY_OVERTIME:   Clock4,
+  ATTENDANCE_SUMMARY: CalendarSearch,
 };
 
 /** The order the report type cards are laid out in: hours first, time off last. */
@@ -161,6 +173,9 @@ const TONES: Record<string, { bg: string; fg: string }> = {
   TIME_OFF_SUMMARY:  { bg: "var(--surface-success)", fg: "var(--icon-success)" },
   SCHEDULED_HOURS:   { bg: "var(--surface-info)", fg: "var(--icon-accent)" },
   SCANS_NOT_RECORDED: { bg: "var(--surface-warning)", fg: "var(--icon-warning)" },
+  HOURS_TO_DATE:     { bg: "var(--surface-info)", fg: "var(--icon-accent)" },
+  WEEKLY_OVERTIME:   { bg: "var(--surface-success)", fg: "var(--icon-success)" },
+  ATTENDANCE_SUMMARY: { bg: "var(--surface-warning)", fg: "var(--icon-warning)" },
 };
 
 export function dataSourceTone(id: string): { bg: string; fg: string } {
@@ -171,12 +186,15 @@ export function dataSourceTone(id: string): { bg: string; fg: string } {
 export const REPORT_GROUPS: { title: string; ids: readonly string[] }[] = [
   {
     title: "Hours and attendance",
-    ids: ["HOURS_SUMMARY", "ATTENDANCE_DETAIL", "DAILY_HOURS", "SCHEDULED_HOURS", "EXCEPTION_REPORT", "PUNCH_AUDIT", "TIMESHEET_NOTES"],
+    ids: [
+      "HOURS_SUMMARY", "ATTENDANCE_DETAIL", "DAILY_HOURS", "HOURS_TO_DATE", "SCHEDULED_HOURS", "ATTENDANCE_SUMMARY",
+      "EXCEPTION_REPORT", "PUNCH_AUDIT", "TIMESHEET_NOTES",
+    ],
   },
   { title: "Time off", ids: ["LEAVE_SUMMARY", "LEAVE_BALANCE", "TIME_OFF_HISTORY", "TIME_OFF_SUMMARY"] },
   { title: "Daily scans", ids: ["SECURITY_SCAN", "TIME_CLOCK_SCAN", "SCANS_NOT_RECORDED"] },
   { title: "People", ids: ["EMPLOYEES"] },
-  { title: "Pay", ids: ["LABOR_COST"] },
+  { title: "Pay", ids: ["LABOR_COST", "WEEKLY_OVERTIME"] },
 ];
 
 /**

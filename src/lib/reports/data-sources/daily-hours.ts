@@ -6,6 +6,10 @@ import { periodDayRange } from "@/lib/pay-period-days";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { tenantWeekStart } from "../moving-period";
+import { filterRowsInMemory } from "../query-builder";
+import { textFilter } from "../scope";
+import { readable } from "../readable";
+import { snapToLocalTime } from "@/lib/utils/date";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "timesheet.employee.user.name",       type: "string" },
@@ -42,6 +46,12 @@ export const dailyHoursSource: DataSourceDefinition = {
     { id: "payType",         label: "Pay type",       type: "string",  defaultVisible: false },
     { id: "payCodes",        label: "Pay codes",      type: "string",  defaultVisible: false },
     { id: "reasonCode",      label: "Reason code",    type: "string",  defaultVisible: false },
+    // Attendance, for NovaTime's attendance logs and 7-day reviews (fillAttendance).
+    { id: "dayType",         label: "Day type",       type: "string",  defaultVisible: false, across: true },
+    { id: "scheduledStart",  label: "Scheduled start", type: "string", defaultVisible: false },
+    { id: "lateBy",          label: "Late by (minutes)", type: "number", defaultVisible: false, total: true },
+    { id: "exceptions",      label: "Exceptions",     type: "string",  defaultVisible: false },
+    { id: "rolling7Minutes", label: "Worked in 7 days", type: "number", defaultVisible: false, total: false },
   ],
   filters: [
     { id: "employeeName", label: "Employee name", type: "string", operators: ["contains", "eq"] },
@@ -53,6 +63,10 @@ export const dailyHoursSource: DataSourceDefinition = {
         { value: "HOURLY", label: "Hourly" },
         { value: "SALARY", label: "Salary" },
       ] },
+    { id: "dayType", label: "Day type", type: "string", operators: ["eq", "in", "neq"],
+      options: ["Worked", "Late", "Missed punch", "Absent", "Time off", "Holiday", "No hours"].map((v) => ({ value: v, label: v })) },
+    { id: "lateBy", label: "Late by, in minutes", type: "number", operators: ["gte", "lte", "between"] },
+    { id: "rolling7Hours", label: "Worked in 7 days, in hours", type: "number", operators: ["gte", "lte", "between"] },
   ],
   groupableFields: ["employeeName", "week", "department", "site"],
   fieldMap,
@@ -96,6 +110,9 @@ export const dailyHoursSource: DataSourceDefinition = {
         : [{ segmentDate: "asc" }, { startTime: "asc" }],
       take: config.limit ? config.limit * 25 : undefined, // over-fetch since we collapse to day rows
     });
+    // Stopped at the cap: the days read are short of some lines, so the
+    // report says so rather than total them as if they were whole.
+    const cutShort = !!config.limit && segments.length >= config.limit * 25;
 
     // Group segments by employee + date.
     // Pass 1: build day entries and count hours and pay codes from non-zero segments.
@@ -165,6 +182,12 @@ export const dailyHoursSource: DataSourceDefinition = {
       else if (column === "OT")  day.otMinutes  += seg.durationMinutes;
       else if (column === "DT")  day.dtMinutes  += seg.durationMinutes;
       if (seg.isPaid) day.paidMinutes += seg.durationMinutes;
+      if (seg.segmentType === "WORK") day.workMinutes = (day.workMinutes ?? 0) + seg.durationMinutes;
+      else if (seg.segmentType === "LEAVE") {
+        day.leaveMinutes = (day.leaveMinutes ?? 0) + seg.durationMinutes;
+        if (!seg.isPaid) day.unpaidLeaveMinutes = (day.unpaidLeaveMinutes ?? 0) + seg.durationMinutes;
+      }
+      else if (seg.segmentType === "HOLIDAY") day.holidayMinutes = (day.holidayMinutes ?? 0) + seg.durationMinutes;
 
       if (seg.payCode && seg.segmentType !== "MEAL") {
         day.payCodeSet.add(`${seg.payCode.label} (${seg.payCode.code})`);
@@ -194,6 +217,7 @@ export const dailyHoursSource: DataSourceDefinition = {
 
     await fillClockTimes(dayMap);
     const weekStart = await tenantWeekStart(tenantId);
+    const attendance = await fillAttendance(dayMap);
 
     const rows = Array.from(dayMap.values()).map((day) => ({
       employeeName:  day.employeeName,
@@ -212,12 +236,18 @@ export const dailyHoursSource: DataSourceDefinition = {
       payType:       day.payType,
       payCodes:      day.payCodeSet.size > 0 ? Array.from(day.payCodeSet).join(", ") : null,
       reasonCode:    day.reasonCode,
+      ...attendance.get(`${day.employeeId}|${day.date}`),
     }));
 
     // By date and then name unless the report says otherwise. Every column is
     // worked out here rather than read from one table, so the sort is too.
     rows.sort((a, b) => a.date.localeCompare(b.date) || a.employeeName.localeCompare(b.employeeName));
-    const sortedRows = sortRowsInMemory(rows, config.sortBy, {});
+    const sortedRows = sortRowsInMemory(
+      // Filters on what is worked out here: the day type, minutes late, 7 days worked.
+      filterRowsInMemory(textFilter(rows, config.filters, ["dayType"]), config.filters.filter((f) => f.field !== "dayType"), fieldMap),
+      config.sortBy,
+      {}
+    );
 
     // Apply row limit after collapsing
     const limitedRows = config.limit ? sortedRows.slice(0, config.limit) : sortedRows;
@@ -229,6 +259,7 @@ export const dailyHoursSource: DataSourceDefinition = {
       columns: visibleColumns.map((c) => ({ id: c.id, label: c.label, type: c.type })),
       rows: limitedRows,
       totalRows: limitedRows.length,
+      ...(cutShort ? { truncated: true } : {}),
     };
   },
 };
@@ -269,6 +300,11 @@ type DayRow = {
   payType: string;
   payCodeSet: Set<string>;
   reasonCode: string | null;
+  /** Minutes of each kind, for the day type. */
+  workMinutes?: number;
+  leaveMinutes?: number;
+  unpaidLeaveMinutes?: number;
+  holidayMinutes?: number;
 };
 
 /**
@@ -505,4 +541,101 @@ function resolveDateFilter(dateRange: ReportConfig["dateRange"]): Record<string,
       return { segmentDate: { gte: start, lte: end } };
     }
   }
+}
+
+/**
+ * What a day was, for the attendance reports: its scheduled start, how late
+ * the clock in was against it, its exceptions, a day type, and the hours
+ * worked that day and the 6 before it.
+ *
+ * <p>Late is the clock in as the timecard shows it, rounded by the person's
+ * pay rule, against the start of their shift, so a clock in the rule rounds
+ * to the start is not late. The shift, not the day's schedule: on Oct 22,
+ * 2026 the schedules synced from Oracle gave another start on 4,956 of
+ * 8,507 days (07:00 for people whose 9:00 shift matches their clock ins),
+ * and the shift is what the timecard itself rounds to. A day's schedule
+ * stands in only for someone with no shift. The day type reads, in order: worked days are Late
+ * when late, Missed punch with no clock out, otherwise Worked; days with no
+ * work are Holiday, Time off, Missed punch, Absent (an Absent exception), or
+ * No hours. The 7 days count paid work only, by the day it is dated, so a
+ * week of time off does not read as a long week.
+ */
+async function fillAttendance(dayMap: Map<string, DayRow>): Promise<Map<string, Record<string, unknown>>> {
+  const out = new Map<string, Record<string, unknown>>();
+  const days = [...dayMap.values()];
+  if (days.length === 0) return out;
+  const ids = [...new Set(days.map((d) => d.employeeId))];
+  const dates = days.map((d) => d.date).sort();
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  const sixBefore = nextDayStr(first, -6);
+
+  const [shifts, schedules, exceptions, worked] = await Promise.all([
+    db.employee.findMany({ where: { id: { in: ids } }, select: { id: true, shift: { select: { startTime: true } } } }),
+    db.scheduleDay.findMany({
+      where: { employeeId: { in: ids }, workDate: { gte: new Date(`${first}T00:00:00Z`), lte: new Date(`${last}T00:00:00Z`) }, isWorkday: true },
+      select: { employeeId: true, workDate: true, startTime: true },
+    }),
+    db.exception.findMany({
+      where: {
+        timesheet: { employeeId: { in: ids } },
+        occurredAt: { gte: new Date(`${nextDayStr(first, -1)}T00:00:00Z`), lt: new Date(`${nextDayStr(last, 2)}T00:00:00Z`) },
+      },
+      select: { exceptionType: true, occurredAt: true, timesheet: { select: { employeeId: true } } },
+    }),
+    db.$queryRaw<{ employeeId: string; day: Date; minutes: number }[]>`
+      SELECT t."employeeId", s."segmentDate" AS day, SUM(s."durationMinutes")::int AS minutes
+      FROM work_segments s JOIN timesheets t ON t.id = s."timesheetId"
+      WHERE t."employeeId" = ANY(${ids}) AND s."segmentType" = 'WORK' AND s."isPaid"
+        AND s."segmentDate" BETWEEN ${new Date(`${sixBefore}T00:00:00Z`)}::date AND ${new Date(`${last}T00:00:00Z`)}::date
+      GROUP BY 1, 2`,
+  ]);
+
+  const tzOf = new Map(days.map((d) => [d.employeeId, d.timezone]));
+  const start = new Map(schedules.map((s) => [`${s.employeeId}|${s.workDate.toISOString().slice(0, 10)}`, s.startTime]));
+  const shiftStart = new Map(shifts.map((e) => [e.id, e.shift?.startTime ?? null]));
+  const excByKey = new Map<string, Set<string>>();
+  for (const e of exceptions) {
+    const tz = tzOf.get(e.timesheet.employeeId) ?? "America/New_York";
+    // An absence is stamped at noon UTC on its day; anything else happened at a moment on the site's clock.
+    const day = e.exceptionType === "ABSENT" ? e.occurredAt.toISOString().slice(0, 10) : siteDay(e.occurredAt, tz);
+    const key = `${e.timesheet.employeeId}|${day}`;
+    if (!excByKey.has(key)) excByKey.set(key, new Set());
+    excByKey.get(key)!.add(readable("exceptionType", e.exceptionType) ?? e.exceptionType);
+  }
+  const workedBy = new Map(worked.map((w) => [`${w.employeeId}|${w.day.toISOString().slice(0, 10)}`, w.minutes]));
+
+  for (const d of days) {
+    const key = `${d.employeeId}|${d.date}`;
+    // Their shift's start on a day they were scheduled or worked; else the day's schedule.
+    const onDuty = start.has(key) || (d.workMinutes ?? 0) > 0 || !!d.clockIn;
+    const startTime = (onDuty ? shiftStart.get(d.employeeId) : null) ?? start.get(key);
+    const scheduledAt = startTime && /^\d{1,2}:\d{2}$/.test(startTime) ? snapToLocalTime(startTime, d.date, d.timezone) : null;
+    const late = scheduledAt && d.clockIn ? Math.round((d.clockIn.getTime() - scheduledAt.getTime()) / 60000) : 0;
+    const lateBy = late > 0 && late < 12 * 60 ? late : 0;
+    const excs = excByKey.get(key);
+    // A clock in with no clock out yet today is a shift still running, not a missed punch.
+    const missed = !!d.clockIn && !d.clockOut && d.date < siteDay(new Date(), d.timezone);
+    const dayType =
+      (d.workMinutes ?? 0) > 0
+        ? missed ? "Missed punch" : lateBy > 0 ? "Late" : "Worked"
+        : (d.holidayMinutes ?? 0) > 0 ? "Holiday"
+        : (d.leaveMinutes ?? 0) > 0 ? "Time off"
+        : missed ? "Missed punch"
+        : excs?.has(readable("exceptionType", "ABSENT") ?? "Absent") ? "Absent"
+        : "No hours";
+    let rolling = 0;
+    for (let i = 0; i < 7; i++) rolling += workedBy.get(`${d.employeeId}|${nextDayStr(d.date, -i)}`) ?? 0;
+    out.set(key, {
+      dayType,
+      scheduledStart: scheduledAt ? siteClock(scheduledAt, d.timezone) : null,
+      lateBy,
+      exceptions: excs?.size ? [...excs].sort().join(", ") : null,
+      rolling7Minutes: rolling,
+      paidLeaveMinutes: (d.leaveMinutes ?? 0) - (d.unpaidLeaveMinutes ?? 0),
+      unpaidLeaveMinutes: d.unpaidLeaveMinutes ?? 0,
+      rolling7Hours: Math.round((rolling / 60) * 100) / 100,
+    });
+  }
+  return out;
 }

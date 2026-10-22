@@ -337,6 +337,7 @@ const STANDARD_DATES: Record<StandardReport["dates"], string> = {
   currentMonth: "This month, moving on by itself",
   previousMonth: "Last month, moving on by itself",
   currentYear: "This year, moving on by itself",
+  last7Days: "The last 7 days, moving on by itself",
   yesterday: "Yesterday, moving on by itself",
 };
 
