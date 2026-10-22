@@ -63,6 +63,8 @@ interface FilterOptions {
   leaveTypes: { id: string; name: string }[];
   payCodes: { code: number; label: string }[];
   lookups?: Record<string, { value: string; label: string }[]>;
+  /** The day the company's week starts, 0 Sunday to 6 Saturday. */
+  weekStart?: number;
 }
 
 /** A preview stops here; the report only counts the rows it returned, so a
@@ -278,7 +280,7 @@ export function ReportBuilder({
   const moreCount = groupBy.length + sortBy.length;
   const summary = [
     dataSourceLabel(dataSource),
-    describeRange(dateRange, filterOptions.payPeriods),
+    describeRange(dateRange, filterOptions.payPeriods, filterOptions.weekStart),
     readyFilters.length === 0
       ? "Everyone"
       : `${readyFilters.length} ${readyFilters.length === 1 ? "filter" : "filters"}`,
@@ -367,7 +369,7 @@ export function ReportBuilder({
           {currentSource && (
             <div className="ta-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
               <RailSection title="Dates" hint="You can pick other dates each time you run it.">
-                <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={filterOptions.payPeriods} scan={isScanReport(dataSource)} stacked />
+                <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={filterOptions.payPeriods} scan={isScanReport(dataSource)} weekStart={filterOptions.weekStart} stacked />
               </RailSection>
 
               <RailSection

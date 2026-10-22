@@ -10,8 +10,9 @@ import { exceptionReportSource } from "./exception-report";
 import { securityScanSource, timeClockScanSource } from "./scan-report";
 import { employeesSource } from "./employees";
 import { laborCostSource } from "./labor-cost";
-import { daysOf } from "../period";
+import { daysOf, REPORT_ZONE, todayIn } from "../period";
 import { groupRows, type ReportGroups } from "../grouping";
+import { resolveMovingPayPeriod, tenantWeekStart } from "../moving-period";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -96,10 +97,18 @@ const sources: Record<DataSourceId, DataSourceDefinition> = {
 function withCalendarDates(def: DataSourceDefinition): DataSourceDefinition {
   return {
     ...def,
-    execute: (config, tenantId, ctx) => {
+    execute: async (config, tenantId, ctx) => {
       const range = config.dateRange;
+      // "Always the current pay period": the one running today, in the saved
+      // period's pay group.
+      if (range.type === "payPeriod" && range.moving) {
+        const today = todayIn(ctx?.timezone ?? REPORT_ZONE, ctx?.now);
+        const resolved = await resolveMovingPayPeriod(range, tenantId, today);
+        return def.execute({ ...config, dateRange: resolved }, tenantId, ctx);
+      }
       if (range.type !== "calendar") return def.execute(config, tenantId, ctx);
-      const { start, end } = daysOf(range, ctx?.timezone, ctx?.now);
+      const weekStart = range.unit === "week" ? await tenantWeekStart(tenantId) : 1;
+      const { start, end } = daysOf(range, ctx?.timezone, ctx?.now, weekStart);
       return def.execute({ ...config, dateRange: { type: "custom", startDate: start, endDate: end } }, tenantId, ctx);
     },
   };

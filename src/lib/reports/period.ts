@@ -7,7 +7,8 @@ import { zonedParts } from "./schedule-time";
  * <p>Every answer is whole calendar days in a named time zone, as yyyy-mm-dd
  * strings with both ends included. "Yesterday" is therefore yesterday where
  * the people are, not yesterday in UTC, which for an evening shift is already
- * tomorrow. Weeks run Monday to Sunday.
+ * tomorrow. Weeks start on the company's day (Sunday at Bergen), Monday when
+ * none is given.
  */
 
 export interface DaySpan {
@@ -42,7 +43,13 @@ export function todayIn(timeZone: string, now: Date = new Date()): string {
  * The days a date range stands for. A pay period is not one of them: it is
  * measured per pay group, and these reports are about scans on days.
  */
-export function daysOf(range: DateRange, timeZone: string = REPORT_ZONE, now: Date = new Date()): DaySpan {
+export function daysOf(
+  range: DateRange,
+  timeZone: string = REPORT_ZONE,
+  now: Date = new Date(),
+  /** The day a week starts, 0 Sunday to 6 Saturday: the company's (see tenantWeekStart). */
+  weekStart: number = 1,
+): DaySpan {
   const today = todayIn(timeZone, now);
   const [ty, tm, td] = today.split("-").map(Number);
 
@@ -62,8 +69,8 @@ export function daysOf(range: DateRange, timeZone: string = REPORT_ZONE, now: Da
       const last = range.which === "last";
       if (range.unit === "week") {
         const weekday = new Date(Date.UTC(ty, tm - 1, td)).getUTCDay(); // 0 = Sunday
-        const monday = addDays(today, -((weekday + 6) % 7) - (last ? 7 : 0));
-        return { start: monday, end: addDays(monday, 6) };
+        const first = addDays(today, -((weekday - weekStart + 7) % 7) - (last ? 7 : 0));
+        return { start: first, end: addDays(first, 6) };
       }
       if (range.unit === "month") {
         const first = Date.UTC(ty, tm - 1 - (last ? 1 : 0), 1);

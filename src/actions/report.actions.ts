@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { tenantWeekStart } from "@/lib/reports/moving-period";
 import { Prisma } from "@prisma/client";
 import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
@@ -706,6 +707,8 @@ export const getFilterOptions = withRBAC(
       leaveTypes,
       payCodes,
       lookups: await employeeLookups(tenantId),
+      // The day the company's week starts, for "This week" and "Last week".
+      weekStart: await tenantWeekStart(tenantId),
     };
   }
 );

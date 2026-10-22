@@ -63,6 +63,8 @@ interface SourceMeta {
 
 interface FilterOptions {
   payPeriods: PayPeriodOption[];
+  /** The day the company's week starts, 0 Sunday to 6 Saturday. */
+  weekStart?: number;
   sites?: { id: string; name: string }[];
   departments?: { id: string; name: string }[];
   leaveTypes?: { id: string; name: string }[];
@@ -193,7 +195,7 @@ export function ReportViewer({
     },
     { label: "Who is included", value: filterWords.length ? filterWords.join(". ") : "Everyone in the dates" },
     ...(groupWords.length ? [{ label: "Grouped by", value: groupWords.join(", then ") }] : []),
-    { label: "Saved dates", value: describeRange(cfg.dateRange, payPeriods) },
+    { label: "Saved dates", value: describeRange(cfg.dateRange, payPeriods, filterOptions?.weekStart) },
     { label: "Owner", value: isOwner ? "You" : report.owner.name ?? "Unknown" },
     {
       label: "Who can open it",
@@ -247,7 +249,7 @@ export function ReportViewer({
         title="Dates"
         subtitle="Run report and the downloads use these dates. The report keeps its saved dates for next time."
       >
-        <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={payPeriods} scan={isScanReport(report.dataSource)} />
+        <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={payPeriods} scan={isScanReport(report.dataSource)} weekStart={filterOptions?.weekStart} />
       </Panel>
 
       {/* ── Results ─────────────────────────────────────────────────── */}
@@ -258,7 +260,7 @@ export function ReportViewer({
           stale
             ? "You changed the dates. Run the report again to see the new rows."
             : result
-              ? `${result.totalRows.toLocaleString("en-US")} ${result.totalRows === 1 ? "row" : "rows"} · ${describeRange(dateRange, payPeriods)}`
+              ? `${result.totalRows.toLocaleString("en-US")} ${result.totalRows === 1 ? "row" : "rows"} · ${describeRange(dateRange, payPeriods, filterOptions?.weekStart)}`
               : "Run the report to see the rows here."
         }
         subtitleTone={stale ? "warning" : undefined}
@@ -471,7 +473,7 @@ export function ReportViewer({
           coverage={
             cfg.dateRange
               ? {
-                  text: describeRange(cfg.dateRange, filterOptions?.payPeriods ?? []),
+                  text: describeRange(cfg.dateRange, filterOptions?.payPeriods ?? [], filterOptions?.weekStart),
                   moves: ["today", "yesterday", "relative", "calendar"].includes(cfg.dateRange.type),
                 }
               : undefined
