@@ -24,6 +24,7 @@ import { zodMessage } from "@/lib/zod-message";
 /** What a unique field is called on screen. Keys and company ids are left out of the sentence. */
 const UNIQUE_FIELD_LABEL: Record<string, string> = {
   email: "email",
+  workEmail: "work email",
   employeeCode: "Badge ID",
   wmsId: "Badge ID",
   barcode: "badge barcode",
@@ -66,6 +67,15 @@ export function publicError(err: unknown): Failure {
   // The record is gone: changed or removed by someone else since the page loaded.
   if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") return failure("NOT_FOUND");
   if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") return { success: false, error: alreadyInUse(err) };
+  // The database's one address, one person rule (users_login_email_unique),
+  // for a save that reached it without the action's own check first.
+  // Only a database error: the actions' own sentences (which name who has it) pass through.
+  if (
+    (err instanceof Prisma.PrismaClientKnownRequestError || err instanceof Prisma.PrismaClientUnknownRequestError) &&
+    /already used by another person|work email and the personal email are the same address/.test(err.message)
+  ) {
+    return { success: false, error: "That email is already in use." };
+  }
   // A code thrown as a message ("FORBIDDEN", "Tenant context required") is said in words.
   const code = err instanceof Error ? codeOfMessage(err.message) : null;
   if (code) return failure(code);

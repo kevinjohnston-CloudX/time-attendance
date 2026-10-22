@@ -9,6 +9,21 @@ import { authConfig } from "@/lib/auth.config";
 import { liveIdentity } from "@/lib/rbac/identity";
 import { DUMMY_PASSWORD_HASH, clientAddress, isLockedOut, loginKey, recordFailedLogin } from "@/lib/login-limit";
 import { findLoginUserId } from "@/lib/login-lookup";
+import { mailAddress } from "@/lib/login-email";
+import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
+import { cookies } from "next/headers";
+
+/**
+ * The company a super admin has entered, from its cookie. Null when there is
+ * none or the cookie cannot be read where this runs.
+ */
+async function enteredCompany(): Promise<string | null> {
+  try {
+    return (await cookies()).get(SUPER_ADMIN_TENANT_COOKIE)?.value ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /** Too many wrong passwords: the sign-in page says to wait rather than "wrong password". */
 class LockedOut extends CredentialsSignin {
@@ -46,7 +61,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const parsed = credentialsSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
-        // Email, or username for super-admin accounts, ignoring capitals
+        // Either email (work or personal), or username for super-admin accounts, ignoring capitals
         const userId = await findLoginUserId(parsed.data.username, { email: true, username: true });
         const user = userId
           ? await db.user.findUnique({
@@ -75,7 +90,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return {
             id: user.id,
             name: user.name,
-            email: user.email,
+            email: mailAddress(user),
             role: "SUPER_ADMIN",
             employeeId: undefined,
             tenantId: null,
@@ -86,7 +101,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return {
           id: user.id,
           name: user.name,
-          email: user.email,
+          email: mailAddress(user),
           role: user.employee?.role ?? "EMPLOYEE",
           employeeId: user.employee?.id ?? undefined,
           tenantId: user.employee?.tenantId ?? null,
@@ -108,7 +123,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return false;
         }
         // Only allow Google sign-in for users the admin has already registered,
-        // ignoring capitals: Google sends the address lowercase, the record may not be.
+        // by either of their two emails, ignoring capitals: Google sends the
+        // address lowercase, the record may not be.
         const existingId = await findLoginUserId(email, { email: true });
         if (!existingId) return false;
 
@@ -193,6 +209,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.canViewAs = live.canViewAs;
         token.isActive = live.isActive;
         token.mustChangePassword = live.mustChangePassword;
+        // A super admin who is also an employee, inside their own company,
+        // is that employee there as well: their own pages work and what they
+        // do carries their name. Still a super admin; anywhere else, or with
+        // the record inactive, nothing changes. Read per request, because
+        // the company cookie changes without a new sign in.
+        if (live.isSuperAdmin && live.ownEmployeeId && live.ownTenantId && (await enteredCompany()) === live.ownTenantId) {
+          token.employeeId = live.ownEmployeeId;
+          token.tenantId = live.ownTenantId;
+        }
       }
       return token;
     },

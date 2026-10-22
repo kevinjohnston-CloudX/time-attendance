@@ -1,7 +1,11 @@
 model User {
   id            String    @id @default(cuid())
   name          String?
+  /// The personal email. Either this or workEmail signs the person in, by
+  /// password or Google; no address belongs to two people across both.
   email         String?   @unique
+  /// The work email, saved lowercase. Mail to the person goes here first.
+  workEmail     String?   @unique
   emailVerified DateTime?
   image         String?
   username      String?   @unique
@@ -15,6 +19,9 @@ model User {
   /// "classic" or "new": which design this person sees. Empty means they
   /// never picked, which is Classic. See lib/design-switch.
   designPreference    String?
+  /// A super admin's last company, entered again by itself at the next sign
+  /// in. Not a relation on purpose: a removed company is simply skipped.
+  lastTenantId        String?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { mailAddress } from "@/lib/email-address";
 import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, filterRowsInMemory, sortRowsInMemory, type FieldMap } from "../query-builder";
 import { periodDayRange } from "@/lib/pay-period-days";
@@ -87,7 +88,11 @@ export const employeesSource: DataSourceDefinition = {
     { id: "terminatedAt", label: "Termination date", type: "date" },
     { id: "terminationReason", label: "Termination reason", type: "string" },
     { id: "timeZone", label: "Time zone", type: "string" },
+    // The person's main address (the work email, else the personal one), as
+    // "Email" always showed one; each of the two on its own below.
     { id: "email", label: "Email", type: "string" },
+    { id: "workEmail", label: "Work email", type: "string" },
+    { id: "personalEmail", label: "Personal email", type: "string" },
     { id: "lastPunch", label: "Last punch", type: "string" },
     { id: "daysSinceLastPunch", label: "Days since last punch", type: "number", exportLabel: "Days since last punch (or hire, if never)" },
     { id: "hoursInRange", label: "Hours worked in these dates", type: "number", total: true },
@@ -184,7 +189,7 @@ export const employeesSource: DataSourceDefinition = {
         terminationReason: true,
         timeZone: true,
         jobTitle: true,
-        user: { select: { name: true, email: true } },
+        user: { select: { name: true, email: true, workEmail: true } },
         site: { select: { name: true, timezone: true } },
         department: { select: { name: true } },
         agencyRef: { select: { code: true, description: true } },
@@ -268,7 +273,9 @@ export const employeesSource: DataSourceDefinition = {
         terminatedAt: day(e.terminatedAt),
         terminationReason: e.terminationReason ?? null,
         timeZone: e.timeZone ? timeZoneLabel(e.timeZone) : `Site's (${timeZoneLabel(e.site.timezone)})`,
-        email: e.user?.email ?? null,
+        email: mailAddress(e.user),
+        workEmail: e.user?.workEmail ?? null,
+        personalEmail: e.user?.email ?? null,
         lastPunch: last
           ? new Intl.DateTimeFormat("en-US", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "numeric", minute: "2-digit" }).format(last)
           : "Never",

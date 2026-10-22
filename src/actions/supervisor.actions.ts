@@ -25,7 +25,9 @@ import { dayRange, readOpenExceptions } from "@/lib/exceptions/read-open-excepti
 import type { PunchState, PunchType } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 
-const PAYROLL_ROLES: Role[] = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"];
+// A super admin sees the whole company too. They only reach these with a
+// company: their own, as their employee record there (see auth.ts).
+const PAYROLL_ROLES: Role[] = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN", "SUPER_ADMIN"];
 
 /** Pay periods are stored at UTC midnight, so one day is that whole UTC day. */
 

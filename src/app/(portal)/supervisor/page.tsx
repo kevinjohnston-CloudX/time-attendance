@@ -70,7 +70,7 @@ export default async function TeamOverviewPage() {
   const employeeId = session.user.employeeId ?? null;
   const tenantId = (session.user as { tenantId?: string }).tenantId;
   if (!tenantId) redirect("/dashboard");
-  const isPayroll = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"].includes(session.user.role);
+  const isPayroll = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN", "SUPER_ADMIN"].includes(session.user.role);
   const now = new Date();
 
   const [queues, exceptionTypes, timeOff, presence, payPeriod, me, canSeeOnSite] = await Promise.all([

@@ -38,7 +38,10 @@ export async function POST(req: NextRequest) {
     where: {
       tenantId: auth.tenantId,
       isActive: true,
-      ...(employeeCode ? { employeeCode } : { user: { email } }),
+      // Either email: the personal one as spelled, the work one is saved
+      // lowercase. Exact on purpose: a case-insensitive match runs ILIKE, where
+      // a sent % would match somebody else.
+      ...(employeeCode ? { employeeCode } : { user: { OR: [{ email }, { workEmail: email?.toLowerCase() }] } }),
     },
     select: { id: true },
   });

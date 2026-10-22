@@ -22,9 +22,22 @@ const LEAVE_CATEGORIES = [
 
 const nullableStr = z.string().nullable().optional().transform((v) => v === undefined ? undefined : (v || null));
 
+/** An optional email field: blank means none, anything else must be an address. */
+const optionalEmail = (message: string) =>
+  z.string().trim().email(message).optional().or(z.literal("")).transform((v) => v || undefined);
+
+/**
+ * A field that clears to nothing on purpose: blank saves as none (null), left
+ * out leaves it as it is (undefined).
+ */
+const clearableEmail = (message: string) =>
+  z.string().trim().email(message).nullable().optional().or(z.literal("")).transform((v) => v === undefined ? undefined : (v || null));
+
 export const createEmployeeSchema = z.object({
   name: z.string().min(1),
-  email: z.string().email("A valid email address is required"),
+  // Either email signs the person in; at least one is needed (checked below).
+  email: optionalEmail("Enter a valid personal email"),
+  workEmail: optionalEmail("Enter a valid work email"),
   employeeCode: z.string().nullable().optional().transform((v) => (!v || v === "null") ? undefined : v),
   role: z.enum(ROLES).default("EMPLOYEE"),
   customRoleId: z.string().optional(),
@@ -64,7 +77,9 @@ export const createEmployeeSchema = z.object({
 export const updateEmployeeSchema = z.object({
   employeeId: z.string().min(1),
   name: z.string().min(1).optional(),
-  email: z.string().email().optional().or(z.literal("")).transform((v) => v || undefined),
+  // Blank clears that email; the action keeps at least one of the two.
+  email: clearableEmail("Enter a valid personal email"),
+  workEmail: clearableEmail("Enter a valid work email"),
   role: z.enum(ROLES).optional(),
   customRoleId: z.string().nullable().optional(),
   supervisorId: z.string().nullable().optional(),
@@ -305,7 +320,8 @@ export const adjustLeaveBalanceSchema = z.object({
 export const csvEmployeeRowSchema = z.object({
   name: z.string().min(1, "Name is required"),
   employeeCode: z.string().min(1, "Employee code is required"),
-  email: z.string().email("Must be a valid email").optional().or(z.literal("")).transform((v) => v || undefined),
+  email: optionalEmail("Must be a valid email"),
+  workEmail: optionalEmail("Must be a valid work email"),
   role: z.string().default("EMPLOYEE").transform((v) => v.trim()),
   customRole: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
   site: z.string().min(1, "Site is required"),

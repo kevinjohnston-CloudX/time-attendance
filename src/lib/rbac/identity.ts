@@ -31,6 +31,15 @@ export interface LiveIdentity {
   mustChangePassword: boolean;
   /** When the password was last set or reset; a sign in from before it is ended. */
   passwordChangedAt: Date | null;
+  /**
+   * A super admin's own employee record and its company, when it is active;
+   * null for everyone else. While the super admin is inside that company they
+   * act as that employee there too (their own pages, their own name on what
+   * they do). Decided per request in auth.ts, from the company cookie, never
+   * here: this answer is cached across requests.
+   */
+  ownEmployeeId: string | null;
+  ownTenantId: string | null;
 }
 
 const TTL_MS = 10_000;
@@ -74,6 +83,8 @@ export async function liveIdentity(userId: string): Promise<LiveIdentity | null>
       isActive: true,
       mustChangePassword: false,
       passwordChangedAt: user.passwordChangedAt,
+      ownEmployeeId: user.employee?.isActive ? user.employee.id : null,
+      ownTenantId: user.employee?.isActive ? user.employee.tenantId : null,
     };
   } else if (user) {
     const e = user.employee;
@@ -93,6 +104,8 @@ export async function liveIdentity(userId: string): Promise<LiveIdentity | null>
       isActive: !!e && e.isActive,
       mustChangePassword: user.mustChangePassword,
       passwordChangedAt: user.passwordChangedAt,
+      ownEmployeeId: null,
+      ownTenantId: null,
     };
   }
   cache.set(userId, { at: Date.now(), value });

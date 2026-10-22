@@ -378,7 +378,7 @@ export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl:
             <Fields
               rows={[
                 { name: "employeeCode", type: "string", text: "Employee's code. Use this or email. At least one is required." },
-                { name: "email", type: "string", text: "Employee's email address. Use this or employeeCode. At least one is required." },
+                { name: "email", type: "string", text: "Employee's work or personal email address. Use this or employeeCode. At least one is required." },
                 { name: "leaveTypeCode", type: "integer", required: true, text: "The leave type's externalCode (from /api/external/leave-types)." },
                 { name: "selectedDays", type: "array", required: true, text: "Array of day objects. Each must include a date and type." },
                 { name: "note", type: "string", text: "Optional note attached to the request." },

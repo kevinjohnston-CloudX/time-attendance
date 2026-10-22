@@ -12,7 +12,7 @@ export default async function SupervisorDashboardPage() {
   if (!await userHasPermission(session.user, "TIMESHEET_APPROVE_TEAM")) redirect("/dashboard");
 
   const employeeId = session.user.employeeId ?? "";
-  const isPayroll = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"].includes(
+  const isPayroll = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN", "SUPER_ADMIN"].includes(
     session.user.role
   );
 

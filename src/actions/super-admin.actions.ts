@@ -8,7 +8,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createTenantSchema, type CreateTenantInput } from "@/lib/validators/super-admin.schema";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
-import { writeAuditLog } from "@/lib/audit/logger";
+import { enterCompany } from "@/lib/super-admin/enter-company";
 
 type ActionResult<T> = { success: true; data: T } | { success: false; error: string };
 
@@ -140,22 +140,8 @@ export async function createTenant(
 
 export async function enterTenant(tenantId: string): Promise<never> {
   const admin = await requireSuperAdmin();
-  const tenant = await db.tenant.findUnique({ where: { id: tenantId }, select: { id: true } });
-  if (!tenant) redirect("/super-admin/tenants");
-  // A super admin working inside a customer's company is on its record.
-  await writeAuditLog({
-    tenantId,
-    action: "SUPER_ADMIN_ENTERED",
-    entityType: "USER",
-    entityId: admin.user.id ?? "super-admin",
-  });
-  const cookieStore = await cookies();
-  cookieStore.set(SUPER_ADMIN_TENANT_COOKIE, tenantId, {
-    path: "/",
-    httpOnly: true,
-    sameSite: "lax",
-    maxAge: 60 * 60 * 8, // 8 hours
-  });
+  // Also remembered as their last company (see enterCompany).
+  if (!admin.user.id || !(await enterCompany(admin.user.id, tenantId))) redirect("/super-admin/tenants");
   redirect("/dashboard");
 }
 

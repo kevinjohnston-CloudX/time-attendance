@@ -149,7 +149,7 @@ Authorization: Bearer ta_a1b2c3d4...`} />
         </p>
         <div className="mt-2 rounded-lg border border-zinc-200 dark:border-zinc-800">
           <Field name="employeeCode" type="string" description="Employee's code. Use this or email — at least one required." />
-          <Field name="email" type="string" description="Employee's email address. Use this or employeeCode — at least one required." />
+          <Field name="email" type="string" description="Employee's work or personal email address. Use this or employeeCode. At least one is required." />
           <Field name="leaveTypeCode" type="integer" required description="Numeric code of the leave type (from /api/external/leave-types)." />
           <Field name="selectedDays" type="array" required description="Array of day objects. Each must include a date and type." />
           <Field name="note" type="string" description="Optional note attached to the request." />

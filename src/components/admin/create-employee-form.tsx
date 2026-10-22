@@ -186,6 +186,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
       const result = await createEmployee({
         name: fd.get("name") as string,
         email: fd.get("email") as string,
+        workEmail: fd.get("workEmail") as string,
         employeeCode: (fd.get("employeeCode") as string) || "",
         role,
         customRoleId,
@@ -277,7 +278,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                 </h3>
                 <p style={{ margin: 0, font: "var(--type-subtitle)", color: "var(--text-secondary)" }}>
                   {copy
-                    ? `Setup copied from ${copy.sourceName}. Name, email, badge, hire date, personal details and pay rate start blank.`
+                    ? `Setup copied from ${copy.sourceName}. Name, emails, badge, hire date, personal details and pay rate start blank.`
                     : "All three tabs are submitted together"}
                 </p>
               </div>
@@ -323,8 +324,11 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                 {/* ── General ───────────────────────────────────────────── */}
                 <div data-tab="general" style={panelStyle("general")}>
                   <Input label="Full Name" name="name" required />
-                  <Input label="Email (Google login)" name="email" type="email" required />
                   <Input label="Hire Date" name="hireDate" type="date" required />
+                  {/* Either one signs the person in (password or Google); at
+                      least one is needed, which the save says if both are blank. */}
+                  <Input label="Work Email" name="workEmail" type="email" hint="Signs in. Invites go here first." />
+                  <Input label="Personal Email" name="email" type="email" hint="Also signs in." />
 
                   <SelectField label="Role" name="role" defaultValue={copy?.role}>
                     {BUILTIN_ROLES.map((r) => (

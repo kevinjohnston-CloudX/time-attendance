@@ -69,7 +69,7 @@ import { TIME_ZONE_OPTIONS, timeZoneLabel } from "@/lib/utils/person-time-zone";
  * also carries the password hash: typing it that way is what let the whole
  * row be selected and serialised into the page.
  */
-type UserSummary = { id: string; name: string | null; email: string | null };
+type UserSummary = { id: string; name: string | null; email: string | null; workEmail?: string | null };
 
 type MoneyCols = "payRate" | "chargeRate" | "holidayRate" | "overtimeRate";
 type Money = { payRate: number | null; chargeRate: number | null; holidayRate: number | null; overtimeRate: number | null };
@@ -128,7 +128,9 @@ const MARITAL = ["Single", "Married", "Divorced", "Widowed", "Other"];
 /** Every value the record edits, as the text its field holds. */
 type Values = {
   name: string;
+  /** The personal email; with the work email, either signs the person in. */
   email: string;
+  workEmail: string;
   /** The free text title older records carry; shown, no longer edited. */
   jobTitle: string;
   jobTitleId: string;
@@ -361,6 +363,7 @@ export function EditEmployeeForm({
     () => ({
       name: employee.user.name ?? "",
       email: employee.user.email ?? "",
+      workEmail: employee.user.workEmail ?? "",
       jobTitle: employee.jobTitle ?? "",
       jobTitleId: employee.jobTitleId ?? "",
       agencyId: employee.agencyId ?? "",
@@ -900,7 +903,12 @@ export function EditEmployeeForm({
                 <Field label="Full name" htmlFor="f-name" read={v.name} required>
                   {text("name", { required: true })}
                 </Field>
-                <Field label="Email (Google login)" htmlFor="f-email" read={v.email}>
+                {/* Either email signs the person in, by password or Google.
+                    Blank clears one; the save keeps at least one. */}
+                <Field label="Work email" htmlFor="f-workEmail" read={v.workEmail} hint="Signs in. Invites go here first.">
+                  {text("workEmail", { type: "email" })}
+                </Field>
+                <Field label="Personal email" htmlFor="f-email" read={v.email} hint="Also signs in.">
                   {text("email", { type: "email" })}
                 </Field>
                 {/* Picked from the company's Job Titles. A record from before

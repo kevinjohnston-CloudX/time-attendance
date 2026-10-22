@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { mailAddress } from "@/lib/email-address";
 import Link from "next/link";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { useCondensingBar } from "@/components/layout/use-condensing-bar";
@@ -53,7 +54,7 @@ interface Employee {
   isActive: boolean;
   onLeave: boolean;
   shiftId: string | null;
-  user: { name: string | null; email: string | null };
+  user: { name: string | null; email: string | null; workEmail?: string | null };
   site: { name: string };
   department: { name: string };
   customRole: { id: string; name: string } | null;
@@ -310,8 +311,9 @@ export function EmployeesTable({
                         </span>
                         <span className={styles.cell}>
                           <span className={styles.name} title={name}>{name}</span>
-                          {emp.user.email && (
-                            <span className={`${styles.sub} ${styles.email}`} title={emp.user.email}>{emp.user.email}</span>
+                          {/* The work email first, else the personal one */}
+                          {mailAddress(emp.user) && (
+                            <span className={`${styles.sub} ${styles.email}`} title={mailAddress(emp.user)!}>{mailAddress(emp.user)}</span>
                           )}
                           {/* A phone has no department or badge columns, so
                               they read under the name instead of the email. */}

@@ -1,4 +1,5 @@
 import { redirect, notFound } from "next/navigation";
+import { mailAddress } from "@/lib/email-address";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
@@ -56,7 +57,7 @@ export default async function EditEmployeePage({
             {employee.user.name}
           </h1>
           <p className="mt-0.5 text-sm text-zinc-500">
-            {employee.user.email} · Badge ID: {employee.wmsId ?? employee.employeeCode} · Hired{" "}
+            {mailAddress(employee.user)} · Badge ID: {employee.wmsId ?? employee.employeeCode} · Hired{" "}
             {format(parseUtcDate(employee.hireDate), "MMM d, yyyy")}
           </p>
         </div>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { mailAddress } from "@/lib/email-address";
 import { db } from "@/lib/db";
 import { authenticateMobile, AuthError } from "@/lib/mobile-auth";
 
@@ -10,7 +11,7 @@ export async function GET(req: NextRequest) {
     const employee = await db.employee.findUniqueOrThrow({
       where: { id: actor.employeeId },
       include: {
-        user: { select: { name: true, email: true } },
+        user: { select: { name: true, email: true, workEmail: true } },
         site: { select: { id: true, name: true, timezone: true } },
         department: { select: { id: true, name: true } },
       },
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
         userId: actor.userId,
         employeeId: actor.employeeId,
         name: employee.user.name,
-        email: employee.user.email,
+        email: mailAddress(employee.user),
         role: employee.role,
         site: employee.site,
         department: employee.department,

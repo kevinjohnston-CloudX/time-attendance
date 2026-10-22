@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 /**
  * Finds the login someone typed, ignoring capitals: "NJ-Security@x.com" and
  * "nj-security@x.com" are the same address, as every mail provider treats them.
+ * An email matches either of the person's two, the work one or the personal one.
  *
  * Plain SQL on purpose. Prisma's `mode: "insensitive"` runs ILIKE, where a typed
  * % or _ is a wildcard, so "nj%@x.com" would match a real account.
@@ -20,15 +21,15 @@ export async function findLoginUserId(
 
   const byEmail = match.email ?? false;
   const byUsername = match.username ?? false;
-  const rows = await db.$queryRaw<{ id: string; email: string | null; username: string | null }[]>`
-    SELECT id, email, username FROM users
-    WHERE (${byEmail}::boolean AND lower(email) = lower(${value}::text))
+  const rows = await db.$queryRaw<{ id: string; email: string | null; workEmail: string | null; username: string | null }[]>`
+    SELECT id, email, "workEmail", username FROM users
+    WHERE (${byEmail}::boolean AND (lower(email) = lower(${value}::text) OR lower("workEmail") = lower(${value}::text)))
        OR (${byUsername}::boolean AND lower(username) = lower(${value}::text))
     LIMIT 5`;
 
   if (rows.length <= 1) return rows[0]?.id ?? null;
   const spelled = (s: string) =>
-    rows.filter((r) => (byEmail && r.email === s) || (byUsername && r.username === s));
+    rows.filter((r) => (byEmail && (r.email === s || r.workEmail === s)) || (byUsername && r.username === s));
   const exact = spelled(value);
   if (exact.length === 1) return exact[0].id;
   const lower = spelled(value.toLowerCase());

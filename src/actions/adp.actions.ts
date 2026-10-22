@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
+import { emailHolders } from "@/lib/login-email";
 import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { AdpClient, getAdpConfig } from "@/lib/integrations/adp/client";
@@ -200,7 +201,20 @@ export const syncAdpEmployees = withRBAC(
           const userUpdates: Record<string, unknown> = {};
 
           if (existing.user.name !== mapped.name) userUpdates.name = mapped.name;
-          if (existing.user.email !== mapped.email) userUpdates.email = mapped.email;
+          // Both emails follow ADP. One already someone else's (in either of
+          // theirs) is left as it is and reported, so it never holds up the
+          // name or the status in the same save.
+          const emailChanges: Partial<Record<"email" | "workEmail", string | null>> = {};
+          if ((existing.user.email ?? null) !== mapped.email) emailChanges.email = mapped.email;
+          if ((existing.user.workEmail ?? null) !== mapped.workEmail) emailChanges.workEmail = mapped.workEmail;
+          const taken = await emailHolders(Object.values(emailChanges), existing.userId);
+          for (const [field, address] of Object.entries(emailChanges) as ["email" | "workEmail", string | null][]) {
+            if (address && taken.has(address.toLowerCase())) {
+              result.errors.push(`${mapped.name}: the email ${address} is already used by another account, so it was not saved`);
+            } else {
+              userUpdates[field] = address;
+            }
+          }
           if (existing.isActive !== mapped.isActive) {
             updates.isActive = mapped.isActive;
             if (!mapped.isActive && mapped.terminatedAt) {
@@ -255,11 +269,22 @@ export const syncAdpEmployees = withRBAC(
 
           const { plaintext, hash } = await generateTempPassword();
 
+          // An email already someone else's is left off and reported, as above.
+          const takenNew = await emailHolders([mapped.email, mapped.workEmail]);
+          const freeEmail = (address: string | null) => {
+            if (!address || !takenNew.has(address.toLowerCase())) return address;
+            result.errors.push(`${mapped.name}: the email ${address} is already used by another account, so it was not saved`);
+            return null;
+          };
+          const newEmail = freeEmail(mapped.email);
+          const newWorkEmail = freeEmail(mapped.workEmail);
+
           await db.$transaction(async (tx) => {
             const user = await tx.user.create({
               data: {
                 name: mapped.name,
-                email: mapped.email,
+                email: newEmail,
+                workEmail: newWorkEmail,
                 username,
                 passwordHash: hash,
               },

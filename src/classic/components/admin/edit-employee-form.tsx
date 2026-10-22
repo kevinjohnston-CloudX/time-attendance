@@ -15,8 +15,8 @@ import type { Site, Department, RuleSet, Employee, User } from "@prisma/client";
 import { TIME_ZONE_OPTIONS, timeZoneLabel } from "@/lib/utils/person-time-zone";
 
 // The user row arrives without its password fields (the shared action only
-// sends id, name and email), which is all this form reads.
-type SafeUser = Pick<User, "id" | "name" | "email">;
+// sends id, name and the two emails), which is all this form reads.
+type SafeUser = Pick<User, "id" | "name" | "email"> & { workEmail?: string | null };
 
 type MoneyCols = "payRate" | "chargeRate" | "holidayRate" | "overtimeRate";
 type Money = { payRate: number | null; chargeRate: number | null; holidayRate: number | null; overtimeRate: number | null };
@@ -138,6 +138,7 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
     return {
       name: fd.get("name") as string,
       email: fd.get("email") as string,
+      workEmail: fd.get("workEmail") as string,
       customRoleId: (fd.get("customRoleId") as string) || null,
       siteId: fd.get("siteId") as string,
       timeZone: (fd.get("timeZone") as string) || null,
@@ -268,8 +269,14 @@ export function EditEmployeeForm({ employee, sites, departments, ruleSets, emplo
               <input name="name" defaultValue={employee.user.name ?? ""} required className={inputCls} />
             </div>
 
+            {/* Either one signs the person in; blank clears one, the save keeps at least one. */}
             <div>
-              <label className={labelCls}>Email (Google login)</label>
+              <label className={labelCls}>Work Email</label>
+              <input name="workEmail" type="email" defaultValue={employee.user.workEmail ?? ""} className={inputCls} />
+            </div>
+
+            <div>
+              <label className={labelCls}>Personal Email</label>
               <input name="email" type="email" defaultValue={employee.user.email ?? ""} className={inputCls} />
             </div>
 

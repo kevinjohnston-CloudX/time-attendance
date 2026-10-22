@@ -17,6 +17,7 @@ const CSV_HEADERS = [
   "name",
   "employeeCode",
   "email",
+  "workEmail",
   "role",
   "customRole",
   "site",
@@ -29,7 +30,8 @@ const CSV_HEADERS = [
   "payRate",
 ] as const;
 
-const OPTIONAL_HEADERS = new Set<string>(["customRole", "payType", "payRate"]);
+// workEmail is new: a file from before it still imports.
+const OPTIONAL_HEADERS = new Set<string>(["workEmail", "customRole", "payType", "payRate"]);
 const REQUIRED_HEADERS = CSV_HEADERS.filter((h) => !OPTIONAL_HEADERS.has(h));
 
 function parseCsvLine(line: string): string[] {
@@ -101,6 +103,7 @@ function parseCsv(text: string): { rows: CsvEmployeeRow[]; parseErrors: string[]
       name: fields[colIndex.name] ?? "",
       employeeCode: fields[colIndex.employeeCode] ?? "",
       email: fields[colIndex.email] ?? "",
+      workEmail: colIndex.workEmail >= 0 ? (fields[colIndex.workEmail] ?? "") : "",
       role: (fields[colIndex.role] ?? "EMPLOYEE") || "EMPLOYEE",
       customRole: colIndex.customRole >= 0 ? (fields[colIndex.customRole] ?? "") : "",
       site: fields[colIndex.site] ?? "",
@@ -137,8 +140,8 @@ export function CsvUploadForm({ sites, departments, ruleSets }: Props) {
     const rs = ruleSets[0] ?? "Default";
 
     const header = CSV_HEADERS.join(",");
-    const example1 = `John Smith,EMP001,jsmith@acme.com,EMPLOYEE,,${site},${dept},${rs},2024-03-15,,B001,HOURLY,25.00`;
-    const example2 = `Jane Doe,EMP002,jdoe@acme.com,EMPLOYEE,MyCustomRole,${site},${dept},${rs},2023-01-10,EMP001,B002,SALARY,65000`;
+    const example1 = `John Smith,EMP001,jsmith@gmail.com,john.smith@acme.com,EMPLOYEE,,${site},${dept},${rs},2024-03-15,,B001,HOURLY,25.00`;
+    const example2 = `Jane Doe,EMP002,,jane.doe@acme.com,EMPLOYEE,MyCustomRole,${site},${dept},${rs},2023-01-10,EMP001,B002,SALARY,65000`;
     const csv = [header, example1, example2].join("\n");
 
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });

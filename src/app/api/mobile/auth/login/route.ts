@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { mailAddress } from "@/lib/email-address";
 import { WINDOW_MIN, clientAddress, isLockedOut, recordFailedLogin } from "@/lib/login-limit";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
         user: {
           id: user.id,
           name: user.name,
-          email: user.email,
+          email: mailAddress(user),
           role: user.employee.role,
           employeeId: user.employee.id,
           tenantId: user.employee.tenantId,

@@ -4,7 +4,10 @@ import type { AdpWorker } from "./types";
 export interface MappedEmployee {
   adpWorkerId: string;
   name: string;
+  /** The personal email (ADP's person communication). */
   email: string | null;
+  /** The work email (ADP's business communication), lowercase. */
+  workEmail: string | null;
   employeeCode: string;
   hireDate: Date;
   isActive: boolean;
@@ -23,10 +26,12 @@ export function mapAdpWorker(worker: AdpWorker): MappedEmployee {
   const familyName = worker.person.legalName.familyName1 ?? "";
   const name = `${givenName} ${familyName}`.trim();
 
-  // Prefer business email, fall back to personal
-  const bizEmail = worker.businessCommunication?.emails?.[0]?.emailUri;
-  const personalEmail = worker.person.communication?.emails?.[0]?.emailUri;
-  const email = bizEmail || personalEmail || null;
+  // Each into its own field: either one signs the person in. The same
+  // address in both is kept once, as the work email.
+  const bizEmail = worker.businessCommunication?.emails?.[0]?.emailUri?.trim().toLowerCase() || null;
+  const personal = worker.person.communication?.emails?.[0]?.emailUri?.trim() || null;
+  const workEmail = bizEmail;
+  const email = personal && personal.toLowerCase() !== bizEmail ? personal : null;
 
   const statusCode = worker.workerStatus?.statusCode?.codeValue ?? "";
   const isActive = statusCode.toLowerCase() === "active";
@@ -56,6 +61,7 @@ export function mapAdpWorker(worker: AdpWorker): MappedEmployee {
     adpWorkerId: worker.workerID.idValue,
     name,
     email,
+    workEmail,
     employeeCode: worker.workerID.idValue, // ADP worker ID as employee code
     hireDate,
     isActive,

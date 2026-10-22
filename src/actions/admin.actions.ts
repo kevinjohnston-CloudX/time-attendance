@@ -6,6 +6,7 @@ import { moveTimecardsToRuleSet } from "@/lib/timesheet-migration";
 import { z, type ZodError } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
+import { cleanEmail, emailHolders } from "@/lib/login-email";
 import { Prisma, type AuditEntityType } from "@prisma/client";
 import { publicError, withRBAC } from "@/lib/rbac/guard";
 import { zodMessage } from "@/lib/zod-message";
@@ -319,6 +320,7 @@ export const getEmployees = withRBAC(
       where.OR = [
         { user: { name: { contains: q, mode: "insensitive" } } },
         { user: { email: { contains: q, mode: "insensitive" } } },
+        { user: { workEmail: { contains: q, mode: "insensitive" } } },
         { employeeCode: { contains: q, mode: "insensitive" } },
         // A badge number or barcode, matched the way the kiosks match a scan
         // (zero padding and re-issued cards included), as Live Attendance does.
@@ -343,7 +345,7 @@ export const getEmployees = withRBAC(
           shiftId: true,
           // The classic design's list shows it.
           hireDate: true,
-          user:       { select: { name: true, email: true } },
+          user:       { select: { name: true, email: true, workEmail: true } },
           site:       { select: { name: true } },
           department: { select: { name: true } },
           customRole: { select: { id: true, name: true } },
@@ -383,9 +385,9 @@ export const getEmployeeById = withRBAC(
     const emp = await db.employee.findUniqueOrThrow({
       where: { id: input.employeeId },
       include: {
-        // Name and email are the only user fields the edit form draws, and
-        // the whole row carries the password hash into the page source.
-        user: { select: { id: true, name: true, email: true } },
+        // Name and the two emails are the only user fields the edit form
+        // draws, and the whole row carries the password hash into the page source.
+        user: { select: { id: true, name: true, email: true, workEmail: true } },
         site: true,
         department: true,
         ruleSet: true,
@@ -396,6 +398,37 @@ export const getEmployeeById = withRBAC(
     return { ...serialized, supervisor: serialized.supervisor ? serializePayRate(serialized.supervisor) : null };
   }
 );
+
+/**
+ * A person's two sign in emails, checked before a save: at least one, not the
+ * same address twice, and neither one already someone else's (in either of
+ * their two, ignoring capitals). The database refuses a clash too; this says
+ * who has it. A name only from this company; anyone else stays unnamed.
+ *
+ * <p>`changed` is what to look up: only the addresses being set now. An
+ * address already on the person is never held against them, which matters for
+ * the few old logins that differ from another only by capitals.
+ */
+async function assertEmailsFree(
+  personal: string | null,
+  work: string | null,
+  exceptUserId: string | null,
+  tenantId: string,
+  changed: (string | null)[] = [work, personal],
+) {
+  if (!personal && !work) throw new Error("Add a work email or a personal email. The person signs in with either one.");
+  if (personal && work && personal.toLowerCase() === work.toLowerCase()) {
+    throw new Error("The work email and the personal email are the same address. Keep it in one of them.");
+  }
+  const holders = await emailHolders(changed, exceptUserId);
+  for (const address of changed) {
+    const owner = address ? holders.get(address.toLowerCase()) : undefined;
+    if (owner) {
+      const who = owner.tenantId === tenantId && owner.name ? owner.name : "another account";
+      throw new Error(`The email ${address} is already used by ${who}.`);
+    }
+  }
+}
 
 export const createEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
@@ -446,23 +479,18 @@ export const createEmployee = withRBAC(
         );
       }
     }
-    if (parsed.email) {
-      const owner = await db.user.findUnique({
-        where: { email: parsed.email },
-        select: { name: true, employee: { select: { tenantId: true } } },
-      });
-      if (owner) {
-        // A name only from this company; anyone else's account stays unnamed.
-        const who = owner.employee?.tenantId === tenantId && owner.name ? owner.name : "another account";
-        throw new Error(`The email ${parsed.email} is already used by ${who}.`);
-      }
-    }
+    // Either email signs the person in, so one is needed, and neither may
+    // belong to anyone else (in either of their two, ignoring capitals).
+    const personalEmail = cleanEmail(parsed.email, "personal");
+    const workEmail = cleanEmail(parsed.workEmail, "work");
+    await assertEmailsFree(personalEmail, workEmail, null, tenantId);
 
     const employee = await db.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
           name: parsed.name,
-          email: parsed.email,
+          email: personalEmail,
+          workEmail,
         },
       });
 
@@ -524,7 +552,7 @@ export const updateEmployee = withRBAC(
   async (actor, input: UpdateEmployeeInput) => {
     const { employeeId: actorId, tenantId } = actor;
     const {
-      employeeId, name, email, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, payTypeId, isActive, onLeave, wmsId, barcode, adpWorkerId,
+      employeeId, name, email, workEmail, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, payTypeId, isActive, onLeave, wmsId, barcode, adpWorkerId,
       adjustedHireDate, jobTitle, jobTitleId, agencyId, terminationReason, terminatedAt: terminatedAtInput, timeZone, payType, payRate, chargeRate, holidayRate, overtimeRate,
       phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
@@ -557,10 +585,17 @@ export const updateEmployee = withRBAC(
     }
     if (terminatedAt !== undefined && terminatedAt === currentTermDay) terminatedAt = undefined;
 
+    // The two sign in emails as they will be after this save. Blank clears
+    // one; at least one stays, and a new address must not be anyone else's.
+    const nextPersonal = email === undefined ? current.user.email : cleanEmail(email, "personal");
+    const nextWork = workEmail === undefined ? current.user.workEmail : cleanEmail(workEmail, "work");
+    const personalChanged = (nextPersonal ?? null) !== (current.user.email ?? null);
+    const workChanged = (nextWork ?? null) !== (current.user.workEmail ?? null);
+
     // Who may change what. Nobody changes their own role, status, pay or
     // supervisor. Nobody edits someone senior to them. With a peer, only the
-    // everyday fields: not their email (a Google sign-in follows the email),
-    // role, status or pay. A super admin may do anything.
+    // everyday fields: not their emails (either one signs them in), role,
+    // status or pay. A super admin may do anything.
     const me = await currentIdentity();
     if (!me) throw new Error("FORBIDDEN");
     const roleChanges =
@@ -586,12 +621,18 @@ export const updateEmployee = withRBAC(
       } else {
         const theirs = await employeeRank(employeeId, tenantId);
         if (theirs === null || theirs > me.rank) throw new Error("Only someone more senior can edit this person");
-        if (theirs === me.rank && (sensitive || (email !== undefined && email !== current.user.email))) {
+        if (theirs === me.rank && (sensitive || personalChanged || workChanged)) {
           throw new Error("Only someone more senior can change this person's email, role, status or pay");
         }
       }
     }
     if (roleChanges) await assertAssignable(me, tenantId, role, customRoleId);
+    if (personalChanged || workChanged) {
+      await assertEmailsFree(nextPersonal, nextWork, current.userId, tenantId, [
+        personalChanged ? nextPersonal : null,
+        workChanged ? nextWork : null,
+      ]);
+    }
 
     // Derive the role enum from the custom role when customRoleId is being set
     let derivedRole: string | undefined = role;
@@ -610,10 +651,14 @@ export const updateEmployee = withRBAC(
     }
 
     await db.$transaction(async (tx) => {
-      if (name !== undefined || email !== undefined) {
+      if (name !== undefined || personalChanged || workChanged) {
         await tx.user.update({
           where: { id: current.userId },
-          data: { ...(name !== undefined && { name }), ...(email !== undefined && { email }) },
+          data: {
+            ...(name !== undefined && { name }),
+            ...(personalChanged && { email: nextPersonal }),
+            ...(workChanged && { workEmail: nextWork }),
+          },
         });
       }
       const encPii = encryptPiiFields({
@@ -716,7 +761,8 @@ export const updateEmployee = withRBAC(
     }
 
     if (name !== undefined) diff("Full Name", current.user.name, name);
-    if (email !== undefined) diff("Email", current.user.email, email);
+    if (personalChanged) diff("Personal email", current.user.email, nextPersonal);
+    if (workChanged) diff("Work email", current.user.workEmail, nextWork);
     if (newRoleName !== undefined) {
       diff("Role", current.customRole?.name ?? current.role, newRoleName ?? derivedRole ?? current.role);
     } else if (derivedRole !== undefined) {
@@ -2000,13 +2046,11 @@ export const bulkCreateEmployees = withRBAC(
     // every company) or an employee code (unique in this one). Checked here so
     // each clash shows on its row, naming the person who has it; the database
     // refusal it used to wait for named the row's own person instead.
-    const fileEmails = parsed.map((r) => r.email?.trim()).filter((e): e is string => !!e);
+    // Both emails of every row, against both of everyone's (ignoring capitals).
+    const fileEmails = parsed.flatMap((r) => [r.email?.trim(), r.workEmail?.trim()]).filter((e): e is string => !!e);
     const fileBadges = parsed.map((r) => r.wmsId?.trim()).filter((w): w is string => !!w);
-    const [emailHolders, badgeHolders] = await Promise.all([
-      db.user.findMany({
-        where: { email: { in: fileEmails, mode: "insensitive" } },
-        select: { email: true, name: true, employee: { select: { tenantId: true, employeeCode: true } } },
-      }),
+    const [emailOwners, badgeHolders] = await Promise.all([
+      emailHolders(fileEmails),
       db.employee.findMany({
         where: { wmsId: { in: fileBadges } },
         select: { wmsId: true, tenantId: true, employeeCode: true, user: { select: { name: true } } },
@@ -2015,7 +2059,7 @@ export const bulkCreateEmployees = withRBAC(
     // Somebody in another company is not named.
     const holder = (tenant: string | null | undefined, name: string | null | undefined, code: string | null | undefined) =>
       tenant === tenantId ? `${name ?? "another employee"}${code ? ` (employee code ${code})` : ""}` : "an account in another company";
-    const emailHolder = new Map(emailHolders.map((u) => [u.email!.toLowerCase(), holder(u.employee?.tenantId ?? null, u.name, u.employee?.employeeCode)]));
+    const emailHolder = new Map([...emailOwners].map(([address, u]) => [address, holder(u.tenantId, u.name, u.employeeCode)]));
     const badgeHolder = new Map(badgeHolders.map((e) => [e.wmsId!, holder(e.tenantId, e.user.name, e.employeeCode)]));
     const codeHolderName = new Map(
       (await db.employee.findMany({
@@ -2037,13 +2081,18 @@ export const bulkCreateEmployees = withRBAC(
       const ruleSetId = ruleSetMap.get(r.ruleSet.toLowerCase());
       if (!ruleSetId) errors.push(`Rule set "${r.ruleSet}" not found`);
 
-      if (r.email) {
-        if (seenEmails.has(r.email.toLowerCase())) {
-          errors.push(`The email "${r.email}" is on another row of this file too`);
+      if (r.email && r.workEmail && r.email.toLowerCase() === r.workEmail.toLowerCase()) {
+        errors.push(`The work email and the personal email are both "${r.email}". Keep it in one of them`);
+      } else {
+        for (const address of [r.workEmail, r.email]) {
+          if (!address) continue;
+          if (seenEmails.has(address.toLowerCase())) {
+            errors.push(`The email "${address}" is on another row of this file too`);
+          }
+          seenEmails.add(address.toLowerCase());
+          const has = emailHolder.get(address.trim().toLowerCase());
+          if (has) errors.push(`The email "${address}" is already used by ${has}`);
         }
-        seenEmails.add(r.email.toLowerCase());
-        const has = emailHolder.get(r.email.trim().toLowerCase());
-        if (has) errors.push(`The email "${r.email}" is already used by ${has}`);
       }
 
       if (seenCodes.has(r.employeeCode)) {
@@ -2117,13 +2166,15 @@ export const bulkCreateEmployees = withRBAC(
             user = await tx.user.create({
               data: {
                 name: r.name,
-                ...(r.email && { email: r.email }),
+                ...(r.email && { email: cleanEmail(r.email, "personal") }),
+                ...(r.workEmail && { workEmail: cleanEmail(r.workEmail, "work") }),
               },
             });
           } catch (createErr: unknown) {
             const msg = createErr instanceof Error ? createErr.message : String(createErr);
-            if (msg.includes("Unique constraint") && r.email) {
-              throw new Error(`The email "${r.email}" (for ${r.name}) is already used by another account. Nothing was imported.`);
+            // The unique index, or the database's one address, one person rule
+            if ((msg.includes("Unique constraint") || msg.includes("already used by another person")) && (r.email || r.workEmail)) {
+              throw new Error(`An email of ${r.name} (${[r.workEmail, r.email].filter(Boolean).join(", ")}) is already used by another account. Nothing was imported.`);
             }
             throw createErr;
           }

@@ -90,6 +90,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
       const result = await createEmployee({
         name: fd.get("name") as string,
         email: fd.get("email") as string,
+        workEmail: fd.get("workEmail") as string,
         employeeCode: (fd.get("employeeCode") as string) || "",
         role,
         customRoleId,
@@ -161,7 +162,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                 <h3 className="text-base font-semibold text-zinc-900 dark:text-white">New Employee</h3>
                 {copy && (
                   <p className="mt-0.5 text-xs text-zinc-500">
-                    Setup copied from {copy.sourceName}. Name, email, badge, hire date, personal details and pay rate start blank.
+                    Setup copied from {copy.sourceName}. Name, emails, badge, hire date, personal details and pay rate start blank.
                   </p>
                 )}
               </div>
@@ -209,9 +210,15 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                       <input name="name" required className={inputCls} />
                     </div>
 
+                    {/* Either one signs the person in; the save asks for at least one. */}
                     <div>
-                      <label className={labelCls}>Email (Google login)</label>
-                      <input name="email" type="email" required className={inputCls} />
+                      <label className={labelCls}>Work Email</label>
+                      <input name="workEmail" type="email" className={inputCls} />
+                    </div>
+
+                    <div>
+                      <label className={labelCls}>Personal Email</label>
+                      <input name="email" type="email" className={inputCls} />
                     </div>
 
                     <div>

@@ -22,7 +22,7 @@ export default async function ApprovalsPage() {
 
   const tenantId = (session.user as { tenantId?: string }).tenantId;
   if (!tenantId) redirect("/dashboard");
-  const isPayroll = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN"].includes(session.user.role);
+  const isPayroll = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN", "SUPER_ADMIN"].includes(session.user.role);
 
   const queues = await getTeamQueues(tenantId, session.user.employeeId ?? null, isPayroll, new Date());
   const rows = workQueueRows(queues, isPayroll);

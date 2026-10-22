@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { sendPasswordInviteEmail } from "@/lib/email/send-invite";
+import { mailAddress } from "@/lib/login-email";
 import { employeeRank } from "@/lib/rbac/identity";
 import { currentIdentity } from "@/lib/rbac/current";
 import { getEffectiveRole } from "@/lib/rbac/check-permission";
@@ -34,7 +35,7 @@ async function manageableLogin(employeeId: string) {
   }
   const target = await db.employee.findFirst({
     where: { id: employeeId, ...(caller.isSuperAdmin ? {} : { tenantId: caller.tenantId ?? "" }) },
-    select: { id: true, tenantId: true, userId: true, user: { select: { id: true, name: true, email: true } } },
+    select: { id: true, tenantId: true, userId: true, user: { select: { id: true, name: true, email: true, workEmail: true } } },
   });
   if (!target) return { error: "This employee isn't available to you. Reload the page and try again." } as const;
   if (!caller.isSuperAdmin) {
@@ -84,7 +85,9 @@ export async function sendPasswordInvite(employeeId: string): Promise<{ success:
   if ("error" in allowed) return { success: false, message: allowed.error! };
   const employee = allowed.target;
 
-  if (!employee?.user?.email) {
+  // The work email first, else the personal one.
+  const to = mailAddress(employee?.user);
+  if (!employee?.user || !to) {
     return { success: false, message: "This employee has no email address, so no invite can be sent. Add one to their profile, or set a temporary password instead." };
   }
 
@@ -109,7 +112,7 @@ export async function sendPasswordInvite(employeeId: string): Promise<{ success:
   const appUrl = process.env.NEXTAUTH_URL ?? process.env.APP_URL ?? "http://localhost:3000";
 
   const { sent } = await sendPasswordInviteEmail({
-    to: employee.user.email,
+    to,
     name: employee.user.name ?? "there",
     token: rawToken,
     appUrl,

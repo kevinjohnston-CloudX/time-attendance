@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { mailAddress } from "@/lib/email-address";
 import { tenantWeekStart } from "@/lib/reports/moving-period";
 import { Prisma } from "@prisma/client";
 import { withRBAC } from "@/lib/rbac/guard";
@@ -275,7 +276,7 @@ export const getReport = withRBAC(
       include: {
         folder: true,
         owner: { select: { id: true, name: true } },
-        shares: { include: { user: { select: { id: true, name: true, email: true } } } },
+        shares: { include: { user: { select: { id: true, name: true, email: true, workEmail: true } } } },
         schedules: true,
         runs: { orderBy: { startedAt: "desc" }, take: 10 },
       },
@@ -284,7 +285,9 @@ export const getReport = withRBAC(
     // What the page may offer this person. The actions check it again.
     const isOwner = report.ownerId === session;
     const canEdit = isOwner || report.shares.some((s) => s.user.id === session && s.canEdit);
-    return { ...report, access: { isOwner, canEdit } };
+    // Each person by their main address: the work email, else the personal one.
+    const shares = report.shares.map(({ user, ...share }) => ({ ...share, user: { id: user.id, name: user.name, email: mailAddress(user) } }));
+    return { ...report, shares, access: { isOwner, canEdit } };
   }
 );
 
@@ -655,13 +658,15 @@ export const getTenantUsers = withRBAC(
   async ({ tenantId }) => {
     if (!tenantId) throw new Error("Tenant context required");
 
-    return db.user.findMany({
+    const users = await db.user.findMany({
       where: {
         employee: { tenantId },
       },
-      select: { id: true, name: true, email: true },
+      select: { id: true, name: true, email: true, workEmail: true },
       orderBy: { name: "asc" },
     });
+    // Each person by their main address: the work email, else the personal one.
+    return users.map((u) => ({ id: u.id, name: u.name, email: mailAddress(u) }));
   }
 );
 

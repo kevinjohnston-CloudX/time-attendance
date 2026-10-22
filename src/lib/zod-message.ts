@@ -44,6 +44,7 @@ const FIELD_LABEL: Record<string, string> = {
   endDate: "End date",
   dateOfBirth: "Date of birth",
   email: "Email",
+  workEmail: "Work email",
   name: "Name",
   note: "Note",
 };

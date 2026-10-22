@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { mailAddress } from "@/lib/email-address";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
@@ -30,7 +31,7 @@ interface Employee {
   isActive: boolean;
   onLeave: boolean;
   hireDate: Date;
-  user: { name: string | null; email: string | null };
+  user: { name: string | null; email: string | null; workEmail?: string | null };
   site: { name: string };
   department: { name: string };
   customRole: { id: string; name: string } | null;
@@ -176,8 +177,8 @@ export function EmployeesTable({ employees, total, page, pageSize, sites, depart
               >
                 <td className="px-4 py-3 font-medium text-zinc-900 dark:text-white">
                   {emp.user.name}
-                  {emp.user.email && (
-                    <span className="ml-2 text-xs text-zinc-400">{emp.user.email}</span>
+                  {mailAddress(emp.user) && (
+                    <span className="ml-2 text-xs text-zinc-400">{mailAddress(emp.user)}</span>
                   )}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-zinc-500">
