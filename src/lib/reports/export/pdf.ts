@@ -38,18 +38,23 @@ export async function generatePdf(
     result.columns.map((c) => ({
       text: c.label,
       bold: true,
-      fontSize: 8,
+      fontSize: size + 1,
       fillColor: "#f4f4f5",
     }));
 
   const cut = result.rows.length > MAX_PDF_ROWS;
+  // A wide report (a column for each day of a month) gets smaller type, and
+  // its number columns only as wide as their figures, leaving the names room.
+  const wide = result.columns.length > 12;
+  const size = wide ? 6 : 7;
+  const widths = result.columns.map((c) => (wide && c.type === "number" ? "auto" : "*"));
   const align = (col: { type: string }) => (col.type === "number" ? "right" : "left") as "right" | "left";
   const dataRow = (row: Record<string, unknown>): TableCell[] =>
-    result.columns.map((col) => ({ text: displayText(row[col.id], col), fontSize: 7, alignment: align(col) }));
+    result.columns.map((col) => ({ text: displayText(row[col.id], col), fontSize: size, alignment: align(col) }));
   const totalRow = (label: string, sums: Record<string, number>, fill: string): TableCell[] =>
     result.columns.map((col, i) => ({
       text: col.id in sums ? cellText(sums[col.id], col) || "0" : i === 0 ? label : "",
-      fontSize: 7,
+      fontSize: size,
       bold: true,
       fillColor: fill,
       alignment: align(col),
@@ -79,7 +84,7 @@ export async function generatePdf(
   const flush = () => {
     if (body.length === 0) return;
     blocks.push({
-      table: { headerRows: 1, widths: result.columns.map(() => "*"), body: [headers(), ...body] },
+      table: { headerRows: 1, widths, body: [headers(), ...body] },
       layout: tableLayout,
       ...(breakBefore ? { pageBreak: "before" as const } : {}),
     });

@@ -1,5 +1,6 @@
 import type { DataSourceId, FilterDef, SortDef } from "@/lib/validators/report.schema";
 import type { PrintLayout } from "./grouping";
+import type { AcrossSpec } from "./across";
 
 /**
  * The ready-made reports: NovaTime's report templates that CloudTime's report
@@ -20,6 +21,7 @@ export type StandardDates =
   | "currentPayPeriod"
   | "previousPayPeriod"
   | "currentWeek"
+  | "previousMonth"
   | "yesterday";
 
 export interface StandardReport {
@@ -42,6 +44,8 @@ export interface StandardReport {
   sortBy?: SortDef[];
   /** A page per group and signature lines, for the reports people sign. */
   layout?: PrintLayout;
+  /** One field spread across the columns: days, dates or pay codes. */
+  across?: AcrossSpec;
   dates: StandardDates;
 }
 
@@ -162,6 +166,19 @@ export const STANDARD_REPORTS: StandardReport[] = [
     groupBy: BY_SITE_AND_DEPARTMENT,
     sortBy: BY_NAME_THEN_DAY,
     layout: { pageBreak: "department", signature: { text: CERTIFY, employee: false, supervisor: true } },
+    dates: "currentPayPeriod",
+  },
+  {
+    id: "daily-hours",
+    folder: "Time and attendance",
+    name: "Daily hours report",
+    novaTimeName: "Daily Hours Report",
+    description: "One line for each employee and week, with the hours of each day of the week side by side, the week's total, and its regular and overtime hours.",
+    source: "DAILY_HOURS",
+    columns: ["employeeName", "employeeCode", "week", "totalMinutes", "regMinutes", "otMinutes"],
+    groupBy: BY_SITE_AND_DEPARTMENT,
+    sortBy: BY_NAME_THEN_DAY,
+    across: { field: "weekday", value: "totalMinutes" },
     dates: "currentPayPeriod",
   },
   {
@@ -297,6 +314,32 @@ export const STANDARD_REPORTS: StandardReport[] = [
     groupBy: BY_SITE_AND_DEPARTMENT,
     sortBy: BY_NAME_THEN_DAY,
     layout: { pageBreak: "department", signature: { text: CERTIFY, employee: false, supervisor: true } },
+    dates: "previousPayPeriod",
+  },
+  {
+    id: "monthly-payroll",
+    folder: "Payroll",
+    name: "Monthly payroll report",
+    novaTimeName: "Monthly Payroll Report.PR",
+    description: "Last month's paid hours for each employee and pay code, one column for each day of the month, with totals.",
+    source: "ATTENDANCE_DETAIL",
+    columns: ["employeeName", "employeeCode", "payCodeLabel", "paidMinutes"],
+    groupBy: ["department"],
+    sortBy: [{ field: "employeeName", direction: "asc" }, { field: "payCodeLabel", direction: "asc" }],
+    across: { field: "date", value: "paidMinutes" },
+    dates: "previousMonth",
+  },
+  {
+    id: "paycode-summary",
+    folder: "Payroll",
+    name: "Summary report by pay code",
+    novaTimeName: "Summary Report By PayCode.PR",
+    description: "The last pay period's paid hours for each employee, one column for each pay code, with its regular and overtime hours and totals by department.",
+    source: "ATTENDANCE_DETAIL",
+    columns: ["employeeName", "employeeCode", "paidMinutes", "regularMinutes", "overtimeMinutes"],
+    groupBy: ["department"],
+    sortBy: [{ field: "employeeName", direction: "asc" }],
+    across: { field: "payCodeLabel", value: "paidMinutes" },
     dates: "previousPayPeriod",
   },
   {

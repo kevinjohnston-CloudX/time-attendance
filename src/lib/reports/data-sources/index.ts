@@ -11,6 +11,7 @@ import { securityScanSource, timeClockScanSource } from "./scan-report";
 import { employeesSource } from "./employees";
 import { laborCostSource } from "./labor-cost";
 import { daysOf, REPORT_ZONE, todayIn } from "../period";
+import { spreadAcross } from "../across";
 import { groupRows, type ReportGroups } from "../grouping";
 import { resolveMovingPayPeriod, tenantWeekStart } from "../moving-period";
 
@@ -28,6 +29,8 @@ export interface ColumnDef {
   total?: boolean;
   /** Groups on this column are ordered by this other row field (a week by its first day). */
   groupOrder?: string;
+  /** Can be spread across the columns, one column for each of its values (see across.ts). */
+  across?: boolean;
 }
 
 export interface FilterFieldDef {
@@ -41,7 +44,9 @@ export interface FilterFieldDef {
 }
 
 export interface ReportResult {
-  columns: { id: string; label: string; type: string; exportLabel?: string }[];
+  columns: { id: string; label: string; type: string; exportLabel?: string; total?: boolean }[];
+  /** Rows were combined from a report that stopped at its limit, so they are short. */
+  truncated?: boolean;
   rows: Record<string, unknown>[];
   totalRows: number;
   /** The days the rows cover, for reports that work them out themselves. */
@@ -136,10 +141,10 @@ function withGroups(def: DataSourceDefinition): DataSourceDefinition {
       const totalOf = new Map(def.columns.map((c) => [c.id, c.total]));
       const grouped = groupRows(
         result.rows,
-        result.columns.map((c) => ({ ...c, total: totalOf.get(c.id) })),
+        result.columns.map((c) => ({ ...c, total: c.total ?? totalOf.get(c.id) })),
         groupBy,
         {
-          complete: !(config.limit && result.rows.length >= config.limit),
+          complete: !result.truncated && !(config.limit && result.rows.length >= config.limit),
           fieldLabels: Object.fromEntries(def.columns.map((c) => [c.id, c.label])),
           groupOrder: Object.fromEntries(def.columns.filter((c) => c.groupOrder).map((c) => [c.id, c.groupOrder!])),
           layout: config.layout,
@@ -150,8 +155,41 @@ function withGroups(def: DataSourceDefinition): DataSourceDefinition {
   };
 }
 
+/** How many lines a report spread across columns may read before it is combined. */
+export const ACROSS_SOURCE_ROWS = 50000;
+
+/**
+ * A field spread across the columns (see across.ts). The report runs in full
+ * and is combined afterwards, so the row limit applies to the combined rows:
+ * a preview of 100 lines would otherwise combine into a handful of short ones.
+ */
+function withAcross(def: DataSourceDefinition): DataSourceDefinition {
+  return {
+    ...def,
+    execute: async (config, tenantId, ctx) => {
+      const spec = config.across;
+      const ok =
+        spec &&
+        def.columns.some((c) => c.id === spec.field && c.across) &&
+        def.columns.some((c) => c.id === spec.value && c.type === "number");
+      if (!ok) return def.execute(config, tenantId, ctx);
+      const result = await def.execute({ ...config, limit: ACROSS_SOURCE_ROWS }, tenantId, ctx);
+      const spread = spreadAcross(result, def.columns, spec);
+      if (!spread) return result;
+      const rows = config.limit ? spread.rows.slice(0, config.limit) : spread.rows;
+      return {
+        ...result,
+        columns: spread.columns,
+        rows,
+        totalRows: spread.rows.length,
+        truncated: result.rows.length >= ACROSS_SOURCE_ROWS || rows.length < spread.rows.length,
+      };
+    },
+  };
+}
+
 const dataSources = Object.fromEntries(
-  Object.entries(sources).map(([id, def]) => [id, withGroups(withCalendarDates(def))])
+  Object.entries(sources).map(([id, def]) => [id, withGroups(withAcross(withCalendarDates(def)))])
 ) as Record<DataSourceId, DataSourceDefinition>;
 
 export function getDataSource(id: DataSourceId): DataSourceDefinition {

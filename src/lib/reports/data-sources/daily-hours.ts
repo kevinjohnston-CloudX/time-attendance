@@ -28,9 +28,10 @@ export const dailyHoursSource: DataSourceDefinition = {
     { id: "employeeCode",    label: "Badge ID",       type: "string",  defaultVisible: false },
     { id: "department",      label: "Department",     type: "string",  defaultVisible: true },
     { id: "site",            label: "Site",           type: "string",  defaultVisible: false },
-    { id: "date",            label: "Date",           type: "date",    defaultVisible: true },
+    { id: "date",            label: "Date",           type: "date",    defaultVisible: true, across: true },
     // For grouping a timesheet by week; weeks start on the company's day.
-    { id: "week",            label: "Week",           type: "string",  defaultVisible: false, groupOrder: "weekStart" },
+    { id: "week",            label: "Week",           type: "string",  defaultVisible: false, groupOrder: "weekStart", across: true },
+    { id: "weekday",         label: "Day of the week", type: "string", defaultVisible: false, groupOrder: "weekdayOrder", across: true },
     { id: "clockIn",         label: "Clock in",       type: "string",  defaultVisible: true },
     { id: "clockOut",        label: "Clock out",      type: "string",  defaultVisible: true },
     { id: "regMinutes",      label: "Regular",      type: "number",  defaultVisible: true },
@@ -232,14 +233,20 @@ export const dailyHoursSource: DataSourceDefinition = {
   },
 };
 
-/** The week a day falls in, "Sep 27 – Oct 3, 2026", with its first day to order weeks by. */
-function weekOf(day: string, weekStart: number): { week: string; weekStart: string } {
+/** The week a day falls in, "Sep 27 – Oct 3, 2026", with its first day to order weeks by, and its day of the week. */
+function weekOf(day: string, weekStart: number): { week: string; weekStart: string; weekday: string; weekdayOrder: number } {
   const at = Date.parse(day + "T12:00:00Z");
   const back = (new Date(at).getUTCDay() - weekStart + 7) % 7;
   const first = new Date(at - back * 86_400_000);
   const last = new Date(first.getTime() + 6 * 86_400_000);
   const short = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-  return { week: `${short(first)} – ${short(last)}, ${last.getUTCFullYear()}`, weekStart: first.toISOString().slice(0, 10) };
+  return {
+    week: `${short(first)} – ${short(last)}, ${last.getUTCFullYear()}`,
+    weekStart: first.toISOString().slice(0, 10),
+    weekday: new Date(at).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }),
+    // The company's first day of the week first.
+    weekdayOrder: back,
+  };
 }
 
 /** One employee's day, while the report is being put together. */

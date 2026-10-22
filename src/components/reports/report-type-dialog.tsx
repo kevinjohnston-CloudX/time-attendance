@@ -334,6 +334,7 @@ const STANDARD_DATES: Record<StandardReport["dates"], string> = {
   currentPayPeriod: "Current pay period, moving on by itself",
   previousPayPeriod: "Previous pay period, moving on by itself",
   currentWeek: "This week, moving on by itself",
+  previousMonth: "Last month, moving on by itself",
   yesterday: "Yesterday, moving on by itself",
 };
 
@@ -376,6 +377,12 @@ function StandardDetail({ report, type }: { report: StandardReport; type?: Repor
 
       <div className="mt-7 flex flex-col" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
         <DetailRow title="Dates">{STANDARD_DATES[report.dates]}</DetailRow>
+        {report.across && (
+          <DetailRow title="Across">
+            A column for each {(labelOf.get(report.across.field) ?? report.across.field).toLowerCase()}, showing{" "}
+            {(labelOf.get(report.across.value) ?? report.across.value).toLowerCase()}, with a total
+          </DetailRow>
+        )}
         <DetailRow title="Columns">
           <span className="flex flex-wrap gap-1.5">
             {columns.map((label) => (
