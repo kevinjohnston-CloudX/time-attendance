@@ -1,11 +1,11 @@
 "use client";
 
-import { createElement, useState, useTransition, type ReactNode } from "react";
+import { createElement, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { usePhoneBack } from "@/components/layout/phone-back";
 import { usePhoneLayout } from "@/lib/phone";
 import { format } from "date-fns";
-import { ArrowLeft, Copy, Download, Mail, Pause, Pencil, Play, Share2, Trash2, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Copy, Download, Mail, Pause, Pencil, Play, RefreshCw, Share2, Trash2, type LucideIcon } from "lucide-react";
 import { Badge, Banner, Button, EmptyState, Input, LinkButton, PageHeader } from "@/components/ui";
 import { ResultsTable } from "./report-results/results-table";
 import { DateRangePicker, defaultPayPeriodRange, describeRange, type PayPeriodOption } from "./report-builder/date-range-picker";
@@ -166,6 +166,19 @@ export function ReportViewer({
     router.refresh();
   }
 
+  // The report runs as it opens, and again on its own when the dates change,
+  // after a breath so stepping through a list of pay periods runs once. It
+  // used to open on "Not run yet", which every visit had to get past.
+  const rangeKey = JSON.stringify(dateRange);
+  const firstRun = useRef(true);
+  useEffect(() => {
+    const wait = firstRun.current ? 0 : 600;
+    firstRun.current = false;
+    const t = setTimeout(() => void handleRun(), wait);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rangeKey]);
+
   const exportHref = (fmt: "xlsx" | "csv" | "pdf") =>
     `/api/reports/${report.id}/export?format=${fmt}&range=${encodeURIComponent(JSON.stringify(dateRange))}`;
 
@@ -238,19 +251,24 @@ export function ReportViewer({
             <LinkButton href="/reports" hierarchy="tertiary" className="ta-phone-hide" leadingIcon={<ArrowLeft className="h-4 w-4" />}>
               Reports
             </LinkButton>
-            {isOwner && !report.isTemplate && (
-              <LinkButton href={`/reports/${report.id}/edit`} hierarchy="secondary" leadingIcon={<Pencil className="h-4 w-4" />}>
-                Edit report
-              </LinkButton>
-            )}
+            <Button hierarchy="secondary" onClick={() => setDialog("copy")} leadingIcon={<Copy className="h-4 w-4" />}>
+              Make a copy
+            </Button>
             {canEdit && (
               <Button hierarchy="secondary" onClick={() => setDialog("share")} leadingIcon={<Share2 className="h-4 w-4" />}>
                 Share
               </Button>
             )}
-            <Button hierarchy="primary" className="ta-header-primary" onClick={() => void handleRun()} disabled={isRunning} leadingIcon={<Play className="h-4 w-4" />}>
-              {isRunning ? "Running" : "Run report"}
-            </Button>
+            {canEdit && (
+              <Button hierarchy="secondary" onClick={() => setDialog("schedule")} leadingIcon={<Mail className="h-4 w-4" />}>
+                {schedule ? "Email schedule" : "Email it"}
+              </Button>
+            )}
+            {isOwner && !report.isTemplate && (
+              <LinkButton href={`/reports/${report.id}/edit`} hierarchy="primary" className="ta-header-primary" leadingIcon={<Pencil className="h-4 w-4" />}>
+                Edit report
+              </LinkButton>
+            )}
           </>
         }
       />
@@ -267,7 +285,7 @@ export function ReportViewer({
       {/* ── Dates ───────────────────────────────────────────────────── */}
       <Panel
         title="Dates"
-        subtitle="Run report and the downloads use these dates. The report keeps its saved dates for next time."
+        subtitle="Change them to see other days; the report keeps its own dates for next time."
       >
         <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={payPeriods} scan={isScanReport(report.dataSource)} weekStart={filterOptions?.weekStart} />
       </Panel>
@@ -277,16 +295,19 @@ export function ReportViewer({
         title="Results"
         flush
         subtitle={
-          stale
-            ? "You changed the dates. Run the report again to see the new rows."
+          stale || (isRunning && !result)
+            ? "Running with these dates"
             : result
               ? `${result.totalRows.toLocaleString("en-US")} ${result.totalRows === 1 ? "row" : "rows"} · ${describeRange(dateRange, payPeriods, filterOptions?.weekStart)}`
               : "Run the report to see the rows here."
         }
-        subtitleTone={stale ? "warning" : undefined}
+        subtitleTone={undefined}
         action={
           <span className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+            <Button size="sm" hierarchy="tertiary" onClick={() => void handleRun()} disabled={isRunning} leadingIcon={<RefreshCw className="h-3.5 w-3.5" />}>
+              {isRunning ? "Running" : "Run again"}
+            </Button>
+            <span className="mx-1 whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
               Download
             </span>
             <DownloadLink href={exportHref("xlsx")} label="Excel" />
@@ -307,11 +328,11 @@ export function ReportViewer({
         ) : (
           <EmptyState
             icon={createElement(dataSourceIcon(report.dataSource), { className: "h-8 w-8" })}
-            title="Not run yet"
-            body="Check the dates above, then run the report. You can also download it without running it here."
+            title="The report did not run"
+            body="Try again, or pick other dates above. The downloads still work."
             action={
               <Button size="sm" hierarchy="primary" onClick={() => void handleRun()} leadingIcon={<Play className="h-3.5 w-3.5" />}>
-                Run report
+                Try again
               </Button>
             }
           />
@@ -324,9 +345,6 @@ export function ReportViewer({
           title="About this report"
           action={
             <span className="flex items-center gap-1.5">
-              <Button size="sm" hierarchy="secondary" onClick={() => setDialog("copy")} leadingIcon={<Copy className="h-3.5 w-3.5" />}>
-                Make a copy
-              </Button>
               {isOwner && !report.isTemplate && (
                 <Button
                   size="sm"
