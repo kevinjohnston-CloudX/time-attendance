@@ -1606,8 +1606,10 @@ async function syncMissingPunchExceptions(
   periodEndStr: string,
   punches: Punch[]
 ): Promise<void> {
-  if (punches.length === 0) return;
-
+  // No early return when the timecard has no punches left: removing a day's
+  // last clock in must still clear its missed punch, or the day stays out of
+  // the totals (Erika Vera de Romero, 10/15: hours entered by hand, then
+  // removed, then the day coded Unpaid time off).
   const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
   const localDateOf = (d: Date) =>
     new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(d);
@@ -1716,6 +1718,32 @@ async function syncMissingPunchExceptions(
         });
       }
     }
+  }
+
+  // A placeholder clock out on a past day that has no punches left (its clock
+  // in was removed) has nothing to close. Left in place, the day still reads
+  // as a missed punch to payroll.
+  const placeholderDays: Date[] = [];
+  for (let ds = periodStartStr; ds < todayStr && ds <= periodEndStr; ) {
+    if (!punchesByDay.has(ds)) placeholderDays.push(endOfDayInTz(ds, "America/New_York"));
+    const d = new Date(ds + "T00:00:00.000Z");
+    d.setUTCDate(d.getUTCDate() + 1);
+    ds = d.toISOString().slice(0, 10);
+  }
+  if (placeholderDays.length > 0) {
+    await db.punch.deleteMany({
+      where: {
+        timesheetId,
+        source: "SYSTEM",
+        punchType: "CLOCK_OUT",
+        isApproved: false,
+        isRejected: false,
+        roundedTime: { in: placeholderDays },
+        correctedBy: null,
+        scanEvent: null,
+        sourcedLeaveRequest: null,
+      },
+    });
   }
 
   // Auto-resolve open MISSING_PUNCH exceptions for days where the shift is now complete.
