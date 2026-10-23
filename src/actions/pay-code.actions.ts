@@ -5,6 +5,7 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { editableTimesheetInScope } from "@/lib/rbac/scope";
 import { TIMECARD_EDITORS } from "@/lib/rbac/permissions";
 import { reconcileLeaveDeductions, reconcileSalarySegmentDeduction } from "@/lib/engines/leave-deduction";
+import { openClockInOnDay, shiftClockIn } from "@/lib/engines/shift-clock-in";
 import { z } from "zod";
 
 // ─── List pay codes for tenant ──────────────────────────────────────────────
@@ -257,26 +258,18 @@ export const setSegmentPayCode = withRBAC(
     const segment = await db.workSegment.update({
       where: { id: segmentId },
       data: { payCodeId },
-      select: { timesheetId: true, startTime: true, segmentDate: true },
+      select: { timesheetId: true, startTime: true, segmentDate: true, segmentType: true },
     });
 
-    // Salary and auto-pay hours start at midnight of their day and come from
-    // no punch. Their code is kept as the day's code, which a recalculation
-    // reads when it makes them again; written to the last clock in instead, it
-    // landed on whatever punch came before (an earlier day's) and the hours
-    // went back to Salary at the next recalculation.
-    const atMidnight = segment.startTime.getTime() === segment.segmentDate.getTime();
-    const clockIn = await db.punch.findFirst({
-      where: {
-        timesheetId: segment.timesheetId,
-        punchType: "CLOCK_IN",
-        isApproved: true,
-        correctedById: null,
-        ...(atMidnight ? { roundedTime: segment.startTime } : { roundedTime: { lte: segment.startTime } }),
-      },
-      orderBy: { roundedTime: "desc" },
-      select: { id: true },
+    // The code is kept on the clock in that started this line's shift, and
+    // only a worked line from punches has one (see shift-clock-in). Leave
+    // lines and salary or auto-pay hours keep it as the day's code instead.
+    const punches = await db.punch.findMany({
+      where: { timesheetId: segment.timesheetId, isApproved: true, correctedById: null, punchType: { in: ["CLOCK_IN", "CLOCK_OUT"] } },
+      select: { id: true, punchType: true, roundedTime: true },
     });
+    const clockInId = shiftClockIn(segment, punches);
+    const clockIn = clockInId ? { id: clockInId } : null;
     if (!clockIn) {
       await setDayCode(segment.timesheetId, segment.segmentDate, payCodeId);
     } else {
@@ -416,21 +409,15 @@ export const setAbsentDayPayCode = withRBAC(
           await db.workSegment.delete({ where: { id: existing.id } });
         }
       }
-      // Clear the pay code from any lone CLOCK_IN on this day (no WORK segments yet)
-      const clearDayEnd = new Date(date.getTime() + 24 * 60 * 60 * 1000);
-      const loneClockIn = await db.punch.findFirst({
-        where: {
-          timesheetId,
-          punchType: "CLOCK_IN",
-          isApproved: true,
-          correctedById: null,
-          roundedTime: { gte: date, lt: clearDayEnd },
-          payCodeId: { not: null },
-        },
-        select: { id: true },
+      // Clear the pay code from a clock in on this day that has no clock out
+      // yet (no hours made from it), not from a closed shift's.
+      const clearPunches = await db.punch.findMany({
+        where: { timesheetId, isApproved: true, correctedById: null, punchType: { in: ["CLOCK_IN", "CLOCK_OUT"] } },
+        select: { id: true, punchType: true, roundedTime: true },
       });
+      const loneClockIn = openClockInOnDay(date, clearPunches);
       if (loneClockIn) {
-        await db.punch.update({ where: { id: loneClockIn.id }, data: { payCodeId: null } });
+        await db.punch.update({ where: { id: loneClockIn }, data: { payCodeId: null } });
       }
       return { success: true };
     }
@@ -477,22 +464,17 @@ export const setAbsentDayPayCode = withRBAC(
       }
     }
 
-    // Also propagate to any existing CLOCK_IN on this day that hasn't been paired yet
-    // (handles the case where In time was entered before the pay code was set)
-    const dayEnd = new Date(date.getTime() + 24 * 60 * 60 * 1000);
-    const clockIn = await db.punch.findFirst({
-      where: {
-        timesheetId,
-        punchType: "CLOCK_IN",
-        isApproved: true,
-        correctedById: null,
-        roundedTime: { gte: date, lt: dayEnd },
-      },
-      select: { id: true },
+    // Also onto a clock in on this day that has no clock out yet (an In time
+    // entered before the code was set), which the hours take when they are
+    // made. It went onto any clock in on the day, a closed shift's included.
+    const dayPunches = await db.punch.findMany({
+      where: { timesheetId, isApproved: true, correctedById: null, punchType: { in: ["CLOCK_IN", "CLOCK_OUT"] } },
+      select: { id: true, punchType: true, roundedTime: true },
     });
-    if (clockIn) {
+    const openClockIn = openClockInOnDay(date, dayPunches);
+    if (openClockIn) {
       await db.punch.update({
-        where: { id: clockIn.id },
+        where: { id: openClockIn },
         data: { payCodeId },
       });
     }
