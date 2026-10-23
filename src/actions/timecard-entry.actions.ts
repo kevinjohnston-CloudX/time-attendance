@@ -182,35 +182,64 @@ export const addSingleManualPunch = withRBAC(
   async (ctx, input: unknown) => {
     const { timesheetId, punchType, punchTime, reason } =
       singleManualPunchSchema.parse(input);
-    const { employeeId: actorId, tenantId } = ctx;
-    // Only a timecard in the caller's company, and never their own.
-    const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
-    if (sheet.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
+    await saveManualPunches(ctx, timesheetId, [{ punchType, punchTime, reason }]);
+  }
+);
 
-    const punchDate = new Date(punchTime);
+/**
+ * A day's new punches from the timecard, saved together: one transaction and
+ * one recalculation, under the same rules as one punch at a time. Saved one
+ * request each, all at once, the clock in's recalculation could run before
+ * the clock out was in and see a missed punch, leaving the system's 11:59 PM
+ * clock out behind (Stephanie Resendiz, 10/19).
+ */
+export const addManualPunches = withRBAC(
+  TIMECARD_EDITORS,
+  async (ctx, input: unknown) => {
+    const { timesheetId, punches } = z.object({
+      timesheetId: z.string().min(1),
+      punches: z.array(singleManualPunchSchema.omit({ timesheetId: true })).min(1).max(20),
+    }).parse(input);
+    await saveManualPunches(ctx, timesheetId, punches);
+  }
+);
 
-    const ts = await db.timesheet.findUniqueOrThrow({
-      where: { id: timesheetId },
-      include: {
-        employee: {
-          include: {
-            ruleSet: true,
-            shift: { select: { startTime: true, endTime: true, workDays: true } },
-            site: { select: { timezone: true } },
-          },
+async function saveManualPunches(
+  ctx: Parameters<typeof timesheetInScope>[0],
+  timesheetId: string,
+  punches: { punchType: "CLOCK_IN" | "CLOCK_OUT"; punchTime: string; reason?: string }[],
+): Promise<void> {
+  const { employeeId: actorId, tenantId } = ctx;
+  // Only a timecard in the caller's company, and never their own.
+  const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
+  if (sheet.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
+
+  const ts = await db.timesheet.findUniqueOrThrow({
+    where: { id: timesheetId },
+    include: {
+      employee: {
+        include: {
+          ruleSet: true,
+          shift: { select: { startTime: true, endTime: true, workDays: true } },
+          site: { select: { timezone: true } },
         },
       },
-    });
+    },
+  });
 
-    if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
-      throw new Error("This timecard is locked or approved by payroll, so it can't be changed. Unlock it first, then make the correction.");
-    }
+  if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
+    throw new Error("This timecard is locked or approved by payroll, so it can't be changed. Unlock it first, then make the correction.");
+  }
 
-    const { ruleSet, shift } = ts.employee;
+  const { ruleSet, shift } = ts.employee;
+  const rows: { punchType: "CLOCK_IN" | "CLOCK_OUT"; punchTime: string; reason?: string; punchDate: Date; roundedTime: Date; inheritedPayCodeId: string | null }[] = [];
+  for (const { punchType, punchTime, reason } of punches) {
+    const punchDate = new Date(punchTime);
     const roundedTime = computeRoundedTime(punchDate, punchType, ruleSet, shift, personTimeZone(ts.employee, "UTC"));
 
-    // Reject if another approved punch already lands at the exact same rounded time
-    const conflicting = await db.punch.findFirst({
+    // Reject if another approved punch, or another one saved with it,
+    // already lands at the exact same rounded time
+    const conflicting = rows.some((r) => r.roundedTime.getTime() === roundedTime.getTime()) || await db.punch.findFirst({
       where: { timesheetId, isApproved: true, correctedById: null, roundedTime },
     });
     if (conflicting) {
@@ -235,9 +264,12 @@ export const addSingleManualPunch = withRBAC(
       });
       inheritedPayCodeId = absentMarker?.payCodeId ?? ruleSet.defaultPayCodeId ?? null;
     }
+    rows.push({ punchType, punchTime, reason, punchDate, roundedTime, inheritedPayCodeId });
+  }
 
-    await db.$transaction(async (tx) => {
-      const p = await tx.punch.create({
+  await db.$transaction(async (tx) => {
+    for (const { punchType, punchTime, reason, punchDate, roundedTime, inheritedPayCodeId } of rows) {
+      await tx.punch.create({
         data: {
           employeeId: ts.employeeId,
           timesheetId,
@@ -262,13 +294,12 @@ export const addSingleManualPunch = withRBAC(
         entityId: timesheetId,
         changes: { after: { punchType, punchTime, reason, source: "MANUAL" } },
       });
-      return p;
-    });
+    }
+  });
 
-    await rebuildSegments(timesheetId, ruleSet);
-    revalidatePath("/payroll/timecards");
-  }
-);
+  await rebuildSegments(timesheetId, ruleSet);
+  revalidatePath("/payroll/timecards");
+}
 
 // ─── Add a payroll-entered leave entry to a timesheet day ────────────────────
 

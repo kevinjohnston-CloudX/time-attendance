@@ -2,13 +2,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
-const { fn } = vi.hoisted(() => ({ fn: () => vi.fn(async () => ({ success: true, data: {} })) }));
+const { fn, addManualPunches, ensureTimesheet } = vi.hoisted(() => ({
+  fn: () => vi.fn(async () => ({ success: true, data: {} })),
+  addManualPunches: vi.fn(async () => ({ success: true, data: undefined })),
+  ensureTimesheet: vi.fn(async () => ({ success: true, data: { timesheetId: "t1" } })),
+}));
 vi.mock("@/actions/punch.actions", () => ({ correctPunch: fn(), deletePunch: fn() }));
 vi.mock("@/actions/timesheet.actions", () => ({ toggleMealWaiver: fn(), toggleMealPremiumWaiver: fn(), authorizeTimecardOt: fn(), recalculateSegmentsAdmin: fn() }));
-vi.mock("@/actions/timecard-entry.actions", () => ({ removePayrollLeaveEntry: fn(), getLeaveTypesForTimecard: vi.fn(async () => ({ success: true, data: [] })), saveTimesheetNote: fn(), addManualPunchPair: fn(), addSingleManualPunch: fn(), deleteManualPunchPair: fn(), addManualHoursEntry: fn() }));
+vi.mock("@/actions/timecard-entry.actions", () => ({ removePayrollLeaveEntry: fn(), getLeaveTypesForTimecard: vi.fn(async () => ({ success: true, data: [] })), saveTimesheetNote: fn(), addManualPunchPair: fn(), addManualPunches, deleteManualPunchPair: fn(), addManualHoursEntry: fn() }));
 vi.mock("@/actions/pay-code.actions", () => ({ setSegmentPayCode: fn(), setSegmentPayBucket: fn(), setAbsentDayPayBucket: fn(), setAbsentDayPayCode: fn() }));
 vi.mock("@/actions/reason-code.actions", () => ({ setDayReasonCode: fn() }));
-vi.mock("@/actions/timecard.actions", () => ({ ensureTimesheet: fn() }));
+vi.mock("@/actions/timecard.actions", () => ({ ensureTimesheet }));
 vi.mock("@/components/payroll/add-timecard-entry", () => ({ AddTimecardEntry: () => null }));
 vi.mock("@/components/payroll/refused-scans-notice", () => ({ RefusedScansNotice: () => null }));
 vi.mock("@/components/payroll/timecard-lock-control", () => ({ TimecardLockControl: () => null }));
@@ -57,6 +61,46 @@ describe("typing a first time for someone with no timecard", () => {
     const after = rows.find((r) => /Sun, Oct 11/.test(r.textContent ?? ""))!;
     expect(after.textContent).toContain("7:00 AM");
     expect(screen.queryByText("Save changes")).not.toBeNull();
+    vi.useRealTimers();
+  });
+
+  // Saved one request each, the clock in's recalculation could run before the
+  // clock out was in and leave a missed punch's 11:59 PM clock out behind
+  // (Stephanie Resendiz, 10/19).
+  it("saves the In and the Out typed on a day together, in one request", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-12T16:00:00Z"));
+    render(
+      <TimecardViewer
+        payPeriods={[{ id: "p1", startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: "OPEN" }]}
+        selectedPeriodId="p1"
+        employees={[{ employeeId: "e1", name: "Test Person", employeeCode: "T1", wmsId: "9999832", department: "It", siteId: "s1", siteName: "Site", isActive: true, payType: "HOURLY" }]}
+        selectedEmployeeId="e1"
+        timecard={null}
+        payFrequency="BIWEEKLY"
+        payCodes={[]}
+        reasonCodes={[]}
+        sites={[]}
+        selectedSiteId={null}
+        departments={[]}
+        selectedDepartmentId={null}
+        userRole="SYSTEM_ADMIN"
+        siteTimezone="America/New_York"
+      />,
+    );
+    const sun = () => screen.getAllByRole("row").find((r) => /Sun, Oct 11/.test(r.textContent ?? ""))!;
+    const type = (value: string) => {
+      fireEvent.click([...sun().querySelectorAll("button")].find((b) => b.textContent === "—")!);
+      const input = sun().querySelector("input")!;
+      fireEvent.change(input, { target: { value } });
+      fireEvent.blur(input);
+    };
+    type("7:00");
+    type("11:00");
+    fireEvent.click(screen.getByText("Save changes"));
+    await vi.waitFor(() => expect(addManualPunches).toHaveBeenCalledTimes(1));
+    const [{ punches }] = addManualPunches.mock.calls[0] as unknown as [{ punches: { punchType: string }[] }];
+    expect(punches.map((p) => p.punchType)).toEqual(["CLOCK_IN", "CLOCK_OUT"]);
     vi.useRealTimers();
   });
 });
