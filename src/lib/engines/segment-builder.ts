@@ -407,8 +407,10 @@ export function applyAutoMealDeduction(
       continue;
     }
 
+    // "Work at least 6 hours": exactly 6 takes the meal too, as NovaTime does
+    // (Milagros Mogollon, 9/30: 8:35 to 2:35, 5.5 hours paid there and 6 here).
     const totalWork = workSegs.reduce((s, seg) => s + seg.durationMinutes, 0);
-    if (totalWork <= cfg.mealBreakAfterMinutes) continue;
+    if (totalWork < cfg.mealBreakAfterMinutes) continue;
 
     // Sort by start time
     const sorted = [...workSegs].sort(
@@ -424,7 +426,7 @@ export function applyAutoMealDeduction(
     let mealStartMs = 0;
     let workedBefore = 0;
     for (const seg of sorted) {
-      if (workedBefore + seg.durationMinutes > cfg.mealBreakAfterMinutes) {
+      if (workedBefore + seg.durationMinutes >= cfg.mealBreakAfterMinutes) {
         target = seg;
         mealStartMs = seg.startTime.getTime() + (cfg.mealBreakAfterMinutes - workedBefore) * 60_000;
         break;

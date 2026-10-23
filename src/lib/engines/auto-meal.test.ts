@@ -49,6 +49,21 @@ describe("automatic meal with a lunch punched out and back in", () => {
     expect(out.find((s) => s.segmentType === "MEAL")?.endTime.toISOString()).toBe("2026-10-12T18:04:00.000Z");
   });
 
+  it("takes the meal off exactly 6 hours worked, as 'work at least 6 hours' reads (Milagros Mogollon, 9/30)", () => {
+    // 8:35 to 2:35 Eastern, no lunch: NovaTime paid 5.5.
+    expect(paid(applyAutoMealDeduction([work("12:35", "18:35")] as never, cfg, new Set()) as never)).toBe(360 - 30);
+  });
+
+  it("takes nothing off a minute short of 6 hours", () => {
+    expect(paid(applyAutoMealDeduction([work("12:35", "18:34")] as never, cfg, new Set()) as never)).toBe(359);
+  });
+
+  it("does not count a break over an hour as the meal (Yamilex Larrea, 10/2: 75 minutes off)", () => {
+    // 8:53 to 12:51 and 2:07 to 5:31 Eastern: NovaTime still took its 30 minutes, 6.87 h paid.
+    const segs = [work("12:53", "16:51"), work("18:07", "21:31")];
+    expect(paid(applyAutoMealDeduction(segs as never, { ...cfg, minMealMinutes: 15, maxMealMinutes: 60 }, new Set()) as never)).toBe(238 + 204 - 30);
+  });
+
   it("takes the rest of the meal off a short lunch when the shift deducts the full length", () => {
     const segs = [work("08:00", "12:00"), work("12:20", "16:30")];
     expect(paid(applyAutoMealDeduction(segs as never, { ...cfg, disableMinDeduction: false }, new Set()) as never)).toBe(240 + 250 - 10);
