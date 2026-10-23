@@ -12,6 +12,7 @@ import { validateTransition } from "@/lib/state-machines/punch-state";
 import { recordPunchSchema } from "@/lib/validators/punch.schema";
 import type { PunchSource, Punch } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { WEB_PUNCH_OFF } from "@/lib/web-punch";
 
 interface PunchServiceContext {
   employeeId: string;
@@ -34,6 +35,9 @@ export async function recordPunchCore(
       site: { select: { timezone: true } },
     },
   });
+  // The Punch Clock page and the phone app, for those allowed them. Hiding
+  // the buttons alone would not stop the request.
+  if ((source === "WEB" || source === "MOBILE") && !employee.webPunchEnabled) throw new Error(WEB_PUNCH_OFF);
 
   const payPeriod = await findOpenPayPeriod(tenantId, employee.ruleSetId, { timezone: personTimeZone(employee) });
   if (!payPeriod) {

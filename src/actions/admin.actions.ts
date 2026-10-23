@@ -7,13 +7,13 @@ import { z, type ZodError } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { cleanEmail, emailHolders } from "@/lib/login-email";
-import { Prisma, type AuditEntityType } from "@prisma/client";
+import { Prisma, type AuditEntityType, type Role } from "@prisma/client";
 import { publicError, withRBAC } from "@/lib/rbac/guard";
 import { zodMessage } from "@/lib/zod-message";
 import { photoUrls } from "@/lib/presence/photos";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
 import { looksLikeBadge } from "@/lib/presence/people-search.service";
-import { MISSING_OPTIONS, PAY_OPTIONS, PERIOD_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
+import { MISSING_OPTIONS, PAY_OPTIONS, PERIOD_OPTIONS, PUNCH_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { ENTITY_TYPES, actionsMatching, isGateAlertSwitch } from "@/lib/audit/labels";
 import { startOfDayInTz } from "@/lib/utils/date";
@@ -24,6 +24,7 @@ import { ROLE_RANK, isValidRole, givesLiveAttendanceRoles } from "@/lib/rbac/rol
 import { todayKey } from "@/lib/pay-rates";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
+import { webPunchByDefault } from "@/lib/web-punch";
 import { assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach } from "@/lib/rbac/scope";
 
 // Maps system custom role names to their legacy enum values
@@ -264,7 +265,7 @@ export const getEmployees = withRBAC(
     { tenantId, employeeId: actorEmpId, role: actorRole },
     input?: {
       page?: number; q?: string; site?: string; dept?: string; role?: string;
-      status?: string; shift?: string; pay?: string; period?: string; missing?: string; sort?: string;
+      status?: string; shift?: string; pay?: string; period?: string; punch?: string; missing?: string; sort?: string;
     },
   ) => {
     const { page = 0, q, site, dept, role, shift } = input ?? {};
@@ -272,6 +273,7 @@ export const getEmployees = withRBAC(
     const status = pick(STATUS_OPTIONS, input?.status);
     const pay = pick(PAY_OPTIONS, input?.pay);
     const period = pick(PERIOD_OPTIONS, input?.period);
+    const punch = pick(PUNCH_OPTIONS, input?.punch);
     const missing = pick(MISSING_OPTIONS, input?.missing);
     const sort = pick(SORT_OPTIONS, input?.sort);
 
@@ -291,6 +293,7 @@ export const getEmployees = withRBAC(
     if (status === "inactive") where.isActive = false;
     if (shift) where.shiftId = shift;
     if (pay) where.payType = pay;
+    if (punch) where.webPunchEnabled = punch === "web";
     // Paid on their rule set's pay period, or on the company's when the rule
     // set sets none (most do not: the company's is biweekly).
     if (period) {
@@ -509,6 +512,8 @@ export const createEmployee = withRBAC(
           employeeCode,
           role: resolvedRole,
           customRoleId: resolvedCustomRoleId,
+          // Admins start able to punch from the web; everyone else at the time clock.
+          webPunchEnabled: webPunchByDefault(resolvedRole),
           siteId: parsed.siteId,
           departmentId: parsed.departmentId,
           ruleSetId: parsed.ruleSetId,
@@ -552,7 +557,7 @@ export const updateEmployee = withRBAC(
   async (actor, input: UpdateEmployeeInput) => {
     const { employeeId: actorId, tenantId } = actor;
     const {
-      employeeId, name, email, workEmail, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, payTypeId, isActive, onLeave, wmsId, barcode, adpWorkerId,
+      employeeId, name, email, workEmail, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, payTypeId, isActive, onLeave, webPunchEnabled, wmsId, barcode, adpWorkerId,
       adjustedHireDate, jobTitle, jobTitleId, agencyId, terminationReason, terminatedAt: terminatedAtInput, timeZone, payType, payRate, chargeRate, holidayRate, overtimeRate,
       phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
@@ -681,6 +686,7 @@ export const updateEmployee = withRBAC(
           ...(payTypeId !== undefined && { payTypeLookup: payTypeId ? { connect: { id: payTypeId } } : { disconnect: true } }),
           ...(isActive !== undefined && { isActive }),
           ...(onLeave !== undefined && { onLeave }),
+          ...(webPunchEnabled !== undefined && { webPunchEnabled }),
           ...(wmsId !== undefined && { wmsId }),
           // A barcode set by hand is marked as an override so the Oracle sync
           // leaves it alone — otherwise a deliberate correction would be undone
@@ -774,6 +780,8 @@ export const updateEmployee = withRBAC(
       const newLeave = onLeave ?? current.onLeave;
       diff("Status", statusLabel(current.isActive, current.onLeave), statusLabel(newActive, newLeave));
     }
+    const punchLabel = (on: boolean) => (on ? "Allowed" : "Time clock only");
+    if (webPunchEnabled !== undefined) diff("Punching from the web", punchLabel(current.webPunchEnabled), punchLabel(webPunchEnabled));
     if (jobTitle !== undefined) diff("Job Title", current.jobTitle, jobTitle);
     if (wmsId !== undefined) diff("Badge ID (WMS)", current.wmsId, wmsId);
     if (barcode !== undefined) diff("Badge barcode", current.barcode, barcode);
@@ -2189,6 +2197,7 @@ export const bulkCreateEmployees = withRBAC(
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               role: (r.resolvedCustomRoleId ? "EMPLOYEE" : r.resolvedRole) as any,
               customRoleId: r.resolvedCustomRoleId ?? null,
+              webPunchEnabled: webPunchByDefault(r.resolvedCustomRoleId ? "EMPLOYEE" : (r.resolvedRole as Role)),
               siteId: r.siteId,
               departmentId: r.departmentId,
               ruleSetId: r.ruleSetId,

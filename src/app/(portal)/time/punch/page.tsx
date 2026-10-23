@@ -34,7 +34,7 @@ export default async function PunchPage() {
   const [employee, payPeriod] = await Promise.all([
     db.employee.findUnique({
       where: { id: employeeId },
-      select: { timeZone: true, site: { select: { name: true, timezone: true } }, shift: { select: { name: true } } },
+      select: { timeZone: true, webPunchEnabled: true, site: { select: { name: true, timezone: true } }, shift: { select: { name: true } } },
     }),
     tenantId
       ? db.payPeriod.findFirst({
@@ -148,7 +148,7 @@ export default async function PunchPage() {
     <div className="flex flex-col gap-4">
       <PageHeader pinned title="Punch Clock" subtitle="Clock in and out, and record your meal break" />
 
-      <PunchHero state={today.state as PunchStateValue} context={context} stats={stats} />
+      <PunchHero state={today.state as PunchStateValue} context={context} stats={stats} canPunch={employee?.webPunchEnabled ?? false} />
 
       <div className="grid gap-4 items-stretch [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(380px,46%)),1fr))]">
         <Card title="Today's Punches" subtitle={today.since} padding={0}>

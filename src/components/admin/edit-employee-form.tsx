@@ -142,6 +142,8 @@ type Values = {
   departmentId: string;
   supervisorId: string;
   status: "active" | "on-leave" | "inactive";
+  /** Punching from the Punch Clock page: allowed, or the time clock only. */
+  webPunch: "on" | "off";
   terminationReason: string;
   terminatedAt: string;
   adjustedHireDate: string;
@@ -373,6 +375,7 @@ export function EditEmployeeForm({
       departmentId: employee.departmentId,
       supervisorId: employee.supervisorId ?? "",
       status: !employee.isActive ? "inactive" : employee.onLeave ? "on-leave" : "active",
+      webPunch: employee.webPunchEnabled ? "on" : "off",
       terminationReason: employee.terminationReason ?? "",
       // Stored as the day at midnight UTC; read as that day, not the viewer's clock.
       terminatedAt: employee.terminatedAt ? new Date(employee.terminatedAt).toISOString().slice(0, 10) : "",
@@ -537,6 +540,9 @@ export function EditEmployeeForm({
         case "status":
           out.isActive = val !== "inactive";
           out.onLeave = val === "on-leave";
+          break;
+        case "webPunch":
+          out.webPunchEnabled = val === "on";
           break;
         case "payRate":
         case "chargeRate":
@@ -1261,7 +1267,7 @@ export function EditEmployeeForm({
             </Section>
 
             {/* ── Badges & IDs ───────────────────────────────────────────── */}
-            <Section icon={ScanLine} title="Badges & IDs" subtitle="What the kiosks, the WMS and ADP know this person by">
+            <Section icon={ScanLine} title="Badges & IDs" subtitle="What the kiosks, the WMS and ADP know this person by, and where they punch">
               <div className={styles.grid}>
                 <Field label="Badge ID (WMS)" htmlFor="f-wmsId" read={v.wmsId} mono>
                   {text("wmsId", { placeholder: "QR code badge ID" })}
@@ -1278,6 +1284,20 @@ export function EditEmployeeForm({
                 </Field>
                 <Field label="ADP Worker ID" htmlFor="f-adpWorkerId" read={v.adpWorkerId} mono>
                   {text("adpWorkerId", { placeholder: "ADP Workforce Now ID" })}
+                </Field>
+                <Field
+                  label="Punching from the web"
+                  htmlFor="f-webPunch"
+                  read={v.webPunch === "on" ? "Allowed" : "Time clock only"}
+                  hint="Time clock only: the Punch Clock page shows their day but has no punch buttons. Missed punch requests still work."
+                >
+                  {pick(
+                    "webPunch",
+                    <>
+                      <option value="off">Time clock only</option>
+                      <option value="on">Allowed</option>
+                    </>,
+                  )}
                 </Field>
               </div>
             </Section>

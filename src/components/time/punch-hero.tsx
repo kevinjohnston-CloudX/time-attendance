@@ -41,11 +41,14 @@ export function PunchHero({
   state,
   context,
   stats,
+  canPunch,
 }: {
   state: PunchStateValue;
   /** "Tuesday, 15 September 2026 · Site 5903 · Shift 08:00 – 16:30" */
   context: string;
   stats: PunchStat[];
+  /** Whether this person may punch from here (Employee.webPunchEnabled); if not, the time clock is the way in. */
+  canPunch: boolean;
 }) {
   const now = useCurrentTime();
   const router = useRouter();
@@ -111,7 +114,16 @@ export function PunchHero({
       </div>
 
       <div className="ta-punch-hero-actions flex w-[220px] flex-none flex-col gap-2">
-        {available.length === 0 ? (
+        {!canPunch ? (
+          <>
+            <p style={{ margin: 0, font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-primary)" }}>
+              You punch at the time clock.
+            </p>
+            <p style={{ margin: 0, font: "var(--type-caption1)", color: "var(--text-secondary)", textWrap: "pretty" }}>
+              Missed a punch? Report it below and your supervisor will add it.
+            </p>
+          </>
+        ) : available.length === 0 ? (
           <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
             No actions available.
           </p>
@@ -128,7 +140,7 @@ export function PunchHero({
             </Button>
           ))
         )}
-        {error ? (
+        {!canPunch ? null : error ? (
           <p style={{ margin: 0, font: "var(--type-caption1)", color: "var(--text-error)" }}>{error}</p>
         ) : (
           <p style={{ margin: 0, font: "var(--type-caption1)", color: "var(--text-secondary)", textWrap: "pretty" }}>
