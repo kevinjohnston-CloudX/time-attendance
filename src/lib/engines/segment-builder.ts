@@ -2,6 +2,7 @@ import { format, eachDayOfInterval, isWeekend, addDays } from "date-fns";
 import { db } from "@/lib/db";
 import { applyOvertime } from "@/lib/engines/overtime-engine";
 import { reconcileLeaveDeductions, relinkCreditLeave } from "@/lib/engines/leave-deduction";
+import { dropSupersededDayCodes } from "@/lib/engines/leave-segment-builder";
 import { startOfDayInTz, nextMidnightInTz, endOfDayInTz, roundDurationMinutes } from "@/lib/utils/date";
 import { periodBoundsInZone, periodDateBounds } from "@/lib/pay-period-days";
 import type { Punch, RuleSet, PayBucket, SegmentType, HolidayCreditMethod } from "@prisma/client";
@@ -1371,6 +1372,11 @@ export async function rebuildSegments(
       }
     }
   }
+
+  // A day code the day's leave now carries is used up (leave-segment-builder).
+  // Leave added before that was done there still has its code line, so the
+  // recalculation clears it too.
+  await dropSupersededDayCodes(timesheetId);
 
   // Guaranteed hours / auto-pay: fill in configured daily credits for uncovered days.
   // When autoPayEnabled, uses the rule set's configurable settings.

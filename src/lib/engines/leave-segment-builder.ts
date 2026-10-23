@@ -272,11 +272,37 @@ export async function syncLeaveSegments(
       ...new Set(segments.map((s) => s.timesheetId)),
     ];
     for (const tsId of newTimesheetIds) {
+      await dropSupersededDayCodes(tsId, tx);
       await refreshLeaveBuckets(tsId, tx);
     }
   };
   if (outer) return run(outer);
   await db.$transaction(run);
+}
+
+/**
+ * A day's code picked before its hours (the 0 minute line, see setDayCode in
+ * pay-code.actions.ts) is used up once leave with hours and the same code is
+ * on that day: the leave line carries the code from then on. Left in place it
+ * showed as a 0.00 Regular line under the leave, and gave any hours added to
+ * the day later its code (Erika Vera de Romero, 10/15). A day code that
+ * differs from the leave's, or that holds a pay bucket choice, stays.
+ */
+export async function dropSupersededDayCodes(timesheetId: string, tx: TxClient = db): Promise<void> {
+  const [markers, leaveLines] = await Promise.all([
+    tx.workSegment.findMany({
+      where: { timesheetId, segmentType: "LEAVE", durationMinutes: 0, leaveRequestId: null, payBucketOverride: null, payCodeId: { not: null } },
+      select: { id: true, segmentDate: true, payCodeId: true },
+    }),
+    tx.workSegment.findMany({
+      where: { timesheetId, segmentType: "LEAVE", durationMinutes: { gt: 0 }, leaveRequestId: { not: null }, payCodeId: { not: null } },
+      select: { segmentDate: true, payCodeId: true },
+    }),
+  ]);
+  const day = (d: Date) => d.toISOString().slice(0, 10);
+  const covered = new Set(leaveLines.map((l) => `${day(l.segmentDate)} ${l.payCodeId}`));
+  const used = markers.filter((m) => covered.has(`${day(m.segmentDate)} ${m.payCodeId}`)).map((m) => m.id);
+  if (used.length > 0) await tx.workSegment.deleteMany({ where: { id: { in: used } } });
 }
 
 /**
