@@ -765,6 +765,31 @@ async function ensureSalarySegments(
 }
 
 /**
+ * Hours entered with Add time (Punch.hoursOnly) set apart from the times
+ * worked. Their clock in and out only carry the hours, from 12:00 AM, so
+ * they count as entered: no automatic meal, no meal punch check, no pair
+ * rounding and no meal premium. 8 hours entered was paid 7.5 on a shift that
+ * takes its meal automatically (Karla Hernandez, 10/12). Exported for its test.
+ */
+export function setEnteredHoursApart(
+  segments: SegmentInput[],
+  punches: Pick<Punch, "punchType" | "roundedTime" | "hoursOnly">[],
+): { entered: SegmentInput[]; worked: SegmentInput[] } {
+  const clocks = punches
+    .filter((p) => p.hoursOnly && (p.punchType === "CLOCK_IN" || p.punchType === "CLOCK_OUT"))
+    .sort((a, b) => a.roundedTime.getTime() - b.roundedTime.getTime());
+  const spans: [number, number][] = [];
+  for (const [i, p] of clocks.entries()) {
+    if (p.punchType !== "CLOCK_IN") continue;
+    const out = clocks.slice(i + 1).find((q) => q.punchType === "CLOCK_OUT");
+    if (out) spans.push([p.roundedTime.getTime(), out.roundedTime.getTime()]);
+  }
+  const isEntered = (s: SegmentInput) =>
+    s.segmentType === "WORK" && spans.some(([from, to]) => s.startTime.getTime() >= from && s.endTime.getTime() <= to);
+  return { entered: segments.filter(isEntered), worked: segments.filter((s) => !isEntered(s)) };
+}
+
+/**
  * How long a meal was, in whole minutes of the clock: the seconds of the two
  * punches are dropped first, as NovaTime keeps punches and as the timecard
  * shows them. Measured to the second, 11:33:21 to 12:03:04 was 29.72 minutes,
@@ -1163,7 +1188,13 @@ export async function rebuildSegments(
     carryIn = { openStart, openState: firstPunch.stateBefore as ActiveState };
   }
 
-  const rawSegments = computeSegments(timesheetId, punches, timezone, bounds.start, carryIn);
+  // Hours entered with Add time count as entered: the meal rules below see
+  // only the times worked, and the entered hours rejoin after them.
+  const { entered: enteredSegments, worked: rawSegments } = setEnteredHoursApart(
+    computeSegments(timesheetId, punches, timezone, bounds.start, carryIn),
+    punches,
+  );
+  const workedPunches = punches.filter((p) => !p.hoursOnly);
 
   // Meals come from the shift alone: a shift with no meal set up, or no shift,
   // takes nothing off. The rule set's meal fields are no longer read; they
@@ -1206,7 +1237,7 @@ export async function rebuildSegments(
       select: { id: true, segmentDate: true, rowIndex: true, segmentStart: true },
     });
     const learned = new Map<string, number>();
-    const premiumSegs = computeMealPremiums(timesheetId, segments, punches, ruleSet, timezone, premiumWaivedTest(premiumWaivers, learned));
+    const premiumSegs = computeMealPremiums(timesheetId, segments, workedPunches, ruleSet, timezone, premiumWaivedTest(premiumWaivers, learned));
     // Waivers saved before rows were recorded, matched by their start time this
     // once: keep their row, so a later change to the day cannot undo them.
     for (const [id, rowIndex] of learned) {
@@ -1214,6 +1245,7 @@ export async function rebuildSegments(
     }
     segments = [...segments, ...premiumSegs];
   }
+  segments = [...segments, ...enteredSegments];
 
   // Apply pay code to all punch-derived WORK segments.
   // When the rule set has autopay enabled, use autoPayPayCodeId (falling back to
