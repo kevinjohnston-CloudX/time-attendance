@@ -22,22 +22,6 @@ const TRANSITIONS: Record<PunchState, Partial<Record<PunchType, PunchState>>> =
     },
   };
 
-/** Where the employee is, and the punch tried, as the refusal says them (to them, and in the refused punches list). */
-const STATE_WORDS: Record<PunchState, string> = {
-  OUT: "Already clocked out",
-  WORK: "Already clocked in",
-  MEAL: "On a meal",
-  BREAK: "On a break",
-};
-const PUNCH_WORDS: Record<PunchType, string> = {
-  CLOCK_IN: "clock in",
-  CLOCK_OUT: "clock out",
-  MEAL_START: "meal start",
-  MEAL_END: "meal end",
-  BREAK_START: "break start",
-  BREAK_END: "break end",
-};
-
 export function validateTransition(
   currentState: PunchState,
   punchType: PunchType
@@ -46,7 +30,10 @@ export function validateTransition(
   if (newState === undefined) {
     return {
       valid: false,
-      error: `${STATE_WORDS[currentState] ?? "In the wrong state"}, so the ${PUNCH_WORDS[punchType] ?? "punch"} wasn't recorded.`,
+      // Word for word: the gate tablets read "current state is OUT" in this
+      // sentence as "already clocked out". Reworded, their guards were told
+      // most of a normal evening's crew needed a look.
+      error: `Cannot ${punchType} when current state is ${currentState}`,
     };
   }
   return { valid: true, newState };
