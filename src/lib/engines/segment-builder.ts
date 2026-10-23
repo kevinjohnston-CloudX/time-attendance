@@ -1726,12 +1726,14 @@ async function syncMissingPunchExceptions(
     }
   }
 
-  // A placeholder clock out on a past day that has no punches left (its clock
-  // in was removed) has nothing to close. Left in place, the day still reads
-  // as a missed punch to payroll.
+  // A placeholder clock out on a past day that no longer misses a punch has
+  // nothing to close: its clock in was removed, or the clock out came in
+  // after it. A clock in and out saved as two requests left one behind
+  // whenever the clock in's recalculation ran first (Stephanie Resendiz,
+  // 10/19). Left in place, it waits in Punch History for payroll to confirm.
   const placeholderDays: Date[] = [];
   for (let ds = periodStartStr; ds < todayStr && ds <= periodEndStr; ) {
-    if (!punchesByDay.has(ds)) placeholderDays.push(endOfDayInTz(ds, "America/New_York"));
+    if (!missingPunchDays.has(ds)) placeholderDays.push(endOfDayInTz(ds, "America/New_York"));
     const d = new Date(ds + "T00:00:00.000Z");
     d.setUTCDate(d.getUTCDate() + 1);
     ds = d.toISOString().slice(0, 10);
