@@ -61,6 +61,7 @@ export function PhotoEditor({
   currentSrc,
   onClose,
   onSaved,
+  onRemove,
 }: {
   siteId: string;
   employeeId: string;
@@ -70,6 +71,8 @@ export function PhotoEditor({
   onClose: () => void;
   /** The new photo's link, to draw at once everywhere on the page. */
   onSaved: (photoUrl: string | null) => void;
+  /** Draws Remove photo, for viewers who may also remove it; asks first, outside this window. */
+  onRemove?: () => void;
 }) {
   const [mode, setMode] = useState<Mode>("current");
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -543,6 +546,11 @@ export function PhotoEditor({
         <div className={styles.peFoot}>
           <span className={styles.peNote}>The photo it replaces is kept.</span>
           <div className="flex items-center gap-2">
+            {onRemove && mode === "current" && (
+              <Button hierarchy="secondary" tone="error" onClick={onRemove} disabled={saving}>
+                Remove photo
+              </Button>
+            )}
             <Button hierarchy="secondary" onClick={onClose} disabled={saving}>
               Cancel
             </Button>

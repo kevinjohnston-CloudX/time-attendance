@@ -59,7 +59,7 @@ import { TabletsWindow } from "./tablets-window";
 import type { GateAlertsSetting } from "@/actions/gate-refusals.actions";
 import { useOnPulseChange, useSitePulse } from "./use-site-pulse";
 import { useScreenWatch } from "./screen-watch";
-import { PhotoSwaps, PhotoViewer } from "./face";
+import { PhotoSwaps, PhotoViewer, removedMark } from "./face";
 import { PeopleSearch, pickedLabel } from "./people-search";
 import { useCondensingBar } from "@/components/layout/use-condensing-bar";
 import { clampDay, dayLabel, recentDays } from "@/lib/presence/days";
@@ -156,6 +156,7 @@ export function OnSiteBoard({
   initialBoard,
   initialFilters,
   canEditPhotos = false,
+  canRemovePhotos = false,
   canOpenReports = false,
   scheduling = null,
   gateAlerts = false,
@@ -183,6 +184,8 @@ export function OnSiteBoard({
   };
   /** Draws Update photo on the employee panel. The save checks again on the server. */
   canEditPhotos?: boolean;
+  /** Draws Remove photo on the employee panel. The server checks again. */
+  canRemovePhotos?: boolean;
   /** Whether the Export window may point at the Reports page for longer date ranges. */
   canOpenReports?: boolean;
   /**
@@ -1497,9 +1500,14 @@ export function OnSiteBoard({
           onClose={() => setSelectedId(null)}
           onZoom={(src, who) => setViewing({ src, ...who })}
           canEditPhoto={canEditPhotos}
+          canRemovePhoto={canRemovePhotos}
           onPhotoSaved={(id, url) => {
             if (url) setPhotoSwaps((m) => new Map(m).set(id, url));
             toast.flash("Photo updated");
+          }}
+          onPhotoRemoved={(id, oldSrc) => {
+            setPhotoSwaps((m) => new Map(m).set(id, removedMark(oldSrc)));
+            toast.flash("Photo removed. Their next time clock scan takes a new one.");
           }}
           scheduling={scheduling}
           onScheduled={() => {

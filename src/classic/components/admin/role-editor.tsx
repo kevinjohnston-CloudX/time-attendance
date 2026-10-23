@@ -28,6 +28,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   audit: "Audit Log",
   // Added after prod: the Live Attendance permission, which the new design's page uses.
   presence: "Live Attendance",
+  photo: "Time Clock Photos",
   role: "Roles",
 };
 
@@ -144,6 +145,12 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
       "read:all": "See everyone at a site on Live Attendance, with their gate and time clock scans.",
       "write:all": "Update an employee's photo from Live Attendance. The photo it replaces is kept.",
       "execute:all": "Get an alert on Live Attendance when the gate turns away somebody with no shift today, and add them to today's schedule. Only in buildings where an admin has turned gate alerts on in Live Attendance.",
+    },
+  },
+  photo: {
+    summary: "Controls who can remove an employee's time clock photo. Updating a photo is Live Attendance Write.",
+    cells: {
+      "write:all": "Remove an employee's photo from Live Attendance, so their next scan at a time clock takes a new one. A copy of the removed photo is kept.",
     },
   },
   role: {

@@ -43,6 +43,7 @@ import {
 import { useBreadcrumbLeaf } from "@/components/layout/breadcrumb-leaf";
 import { PhotoViewer, ZoomableFace } from "@/components/presence/face";
 import { PhotoEditor } from "@/components/presence/photo-editor";
+import { RemovePhotoDialog } from "@/components/presence/remove-photo-dialog";
 import styles from "./employee-record.module.css";
 import { PayRatesTable } from "./pay-rates-table";
 import type { PayRateRow } from "@/actions/pay-rate.actions";
@@ -88,6 +89,8 @@ interface Props {
   photo: string | null;
   /** Whether this viewer may replace the photo (PRESENCE_PHOTO_EDIT). */
   canEditPhoto: boolean;
+  /** Whether this viewer may remove it (PRESENCE_PHOTO_REMOVE), from the photo window. */
+  canRemovePhoto?: boolean;
   sites: Site[];
   departments: (Department & { sites: { site: Pick<Site, "id" | "name"> }[] })[];
   ruleSets: RuleSet[];
@@ -308,6 +311,7 @@ export function EditEmployeeForm({
   employee,
   photo: photoFromServer,
   canEditPhoto,
+  canRemovePhoto = false,
   sites,
   departments,
   ruleSets,
@@ -341,6 +345,7 @@ export function EditEmployeeForm({
   const [logDays, setLogDays] = useState(0);
   const [zoomed, setZoomed] = useState<string | null>(null);
   const [editingPhoto, setEditingPhoto] = useState(false);
+  const [removingPhoto, setRemovingPhoto] = useState(false);
   // The photo just saved here, until the server's own link catches up.
   const [photoSaved, setPhotoSaved] = useState<{ url: string | null } | null>(null);
   const photo = photoSaved ? photoSaved.url : photoFromServer;
@@ -1542,6 +1547,29 @@ export function EditEmployeeForm({
             toast.flash("Photo saved");
             // The sidebar shows the signed-in person's own photo from the
             // layout, so a refresh keeps it in step when that is who this is.
+            router.refresh();
+          }}
+          onRemove={
+            canRemovePhoto && photo
+              ? () => {
+                  setEditingPhoto(false);
+                  setRemovingPhoto(true);
+                }
+              : undefined
+          }
+        />
+      )}
+      {removingPhoto && (
+        <RemovePhotoDialog
+          siteId={employee.siteId}
+          employeeId={employee.id}
+          name={employee.user.name ?? employee.employeeCode}
+          photoSrc={photo}
+          onClose={() => setRemovingPhoto(false)}
+          onRemoved={() => {
+            setRemovingPhoto(false);
+            setPhotoSaved({ url: null });
+            toast.flash("Photo removed. Their next time clock scan takes a new one.");
             router.refresh();
           }}
         />

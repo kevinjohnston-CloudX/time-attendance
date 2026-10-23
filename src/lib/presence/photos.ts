@@ -1,4 +1,4 @@
-import { GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/lib/db";
 
@@ -288,4 +288,84 @@ export async function savePhoto(tenantId: string, person: PhotoPerson, bytes: Ui
   ).catch(() => null);
 
   return { key, versionId: put.VersionId ?? null, previousVersionId, url };
+}
+
+/* ── Removing a photo from CloudTime ─────────────────────────────────────── */
+
+/** Where a removed photo is kept: never a name the lookup, the WMS or a tablet reads. */
+const REMOVED_PREFIX = "removed/";
+
+export interface RemovedPhoto {
+  /** Each file taken away, and where its copy was kept. */
+  removed: { key: string; savedAs: string }[];
+  /** Files left in place because another employee could own the same name. */
+  kept: string[];
+}
+
+/**
+ * Takes a person's photo away, so CloudTime shows their initials and the next
+ * time clock scan, which takes a photo for a badge that has none, takes a new
+ * one. Every file that is theirs goes, not only the one shown first, or the
+ * next one would simply appear in its place.
+ *
+ * <p>Nothing is lost: each file is copied under `removed/` first (a name
+ * nothing else reads), and only then deleted. A file whose name another
+ * employee could also own (their badge, barcode or employee code, or a badge
+ * they scanned with lately) is left alone and reported, because removing it
+ * could take somebody else's photo.
+ *
+ * <p>Works from a fresh read of the bucket, never the 15 minute list, so a
+ * photo a tablet took a minute ago is not missed. If the bucket cannot be read
+ * nothing is removed.
+ */
+export async function removePhoto(tenantId: string, person: PhotoPerson): Promise<RemovedPhoto> {
+  const store = s3();
+  if (!store) throw new Error("PHOTOS_OFF");
+  badgeCache.delete(person.id);
+  await readList(store).catch(() => {
+    throw new Error("PHOTOS_UNREADABLE");
+  });
+  const names = files?.names;
+  if (!names) throw new Error("PHOTOS_UNREADABLE");
+
+  const badges = (await scannedBadges(tenantId, [person.id])).get(person.id) ?? [];
+  const mine: { key: string; name: string; ext: string }[] = [];
+  for (const name of candidatesFor(person, badges))
+    for (const ext of EXTENSIONS) if (names.has(name + ext)) mine.push({ key: name + ext, name, ext });
+  if (mine.length === 0) return { removed: [], kept: [] };
+
+  // Names someone else could own, in any company: the bucket is shared.
+  const wanted = [...new Set(mine.map((m) => m.name))];
+  const shared = await db.$queryRaw<{ name: string }[]>`
+    SELECT e."employeeCode" AS name FROM employees e WHERE e.id <> ${person.id} AND e."employeeCode" = ANY(${wanted})
+    UNION SELECT e."wmsId" FROM employees e WHERE e.id <> ${person.id} AND e."wmsId" = ANY(${wanted})
+    UNION SELECT e.barcode FROM employees e WHERE e.id <> ${person.id} AND e.barcode = ANY(${wanted})
+    UNION SELECT s."badgeCode" FROM scan_events s
+      WHERE s."badgeCode" = ANY(${wanted}) AND s."employeeId" IS NOT NULL AND s."employeeId" <> ${person.id}
+        AND s."scanTime" >= ${new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)}`;
+  const notOnlyTheirs = new Set(shared.map((r) => r.name));
+
+  const out: RemovedPhoto = { removed: [], kept: [] };
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  for (const m of mine) {
+    if (notOnlyTheirs.has(m.name)) {
+      out.kept.push(m.key);
+      continue;
+    }
+    const savedAs = `${REMOVED_PREFIX}${m.name}-${stamp}${m.ext}`;
+    await store.client.send(
+      new CopyObjectCommand({
+        Bucket: store.bucket,
+        Key: savedAs,
+        CopySource: `${store.bucket}/${encodeURIComponent(m.key)}`,
+        MetadataDirective: "REPLACE",
+        ContentType: m.ext === ".png" ? "image/png" : "image/jpeg",
+        Metadata: { source: "cloudtime", removedfrom: m.key },
+      }),
+    );
+    await store.client.send(new DeleteObjectCommand({ Bucket: store.bucket, Key: m.key }));
+    names.delete(m.key);
+    out.removed.push({ key: m.key, savedAs });
+  }
+  return out;
 }

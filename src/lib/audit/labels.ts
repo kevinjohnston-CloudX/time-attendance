@@ -70,6 +70,7 @@ const NAMED: Record<string, string> = {
   EMPLOYEES_BULK_CREATED: "Employees added in bulk",
   EMPLOYEE_UPDATED: "Employee updated",
   EMPLOYEE_PHOTO_UPDATED: "Employee photo updated",
+  EMPLOYEE_PHOTO_REMOVED: "Employee photo removed",
   LEAVE_BALANCE_ADJUSTED: "Leave balance adjusted",
   LEAVE_BALANCE_RESET_TO_ACCRUAL: "Leave balance reset to accrual",
   BALANCE_RESET: "Leave balance reset",

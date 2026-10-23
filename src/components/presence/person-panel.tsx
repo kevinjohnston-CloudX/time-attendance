@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { CalendarPlus, Camera, ChevronLeft, ChevronRight, Clock, Coffee, DoorClosed, DoorOpen, UserCircle, X } from "lucide-react";
+import { CalendarPlus, Camera, ChevronLeft, ChevronRight, Clock, Coffee, DoorClosed, DoorOpen, ImageOff, UserCircle, X } from "lucide-react";
 import { Badge, Button } from "@/components/ui";
 import { getOnSitePerson } from "@/actions/presence.actions";
 import { addDays, dayLabel, DAYS_BACK } from "@/lib/presence/days";
@@ -27,6 +27,7 @@ import { usePhoneBack } from "@/components/layout/phone-back";
 import { usePhoneLayout } from "@/lib/phone";
 import { usePhoto, ZoomableFace } from "./face";
 import { PhotoEditor } from "./photo-editor";
+import { RemovePhotoDialog } from "./remove-photo-dialog";
 import { ScheduleDayDialog } from "./schedule-day-dialog";
 import { ProfileCard } from "./profile-card";
 import { HomeSiteBadge } from "./home-site";
@@ -61,7 +62,9 @@ export function PersonPanel({
   onClose,
   onZoom,
   canEditPhoto = false,
+  canRemovePhoto = false,
   onPhotoSaved,
+  onPhotoRemoved,
   scheduling = null,
   onScheduled,
 }: {
@@ -84,7 +87,15 @@ export function PersonPanel({
    * the button is drawn; the save checks the permission again on the server.
    */
   canEditPhoto?: boolean;
+  /**
+   * Whether the viewer may remove this person's photo (loss prevention can,
+   * without being able to replace it). Only decides what is drawn; the server
+   * checks again.
+   */
+  canRemovePhoto?: boolean;
   onPhotoSaved?: (employeeId: string, photoUrl: string | null) => void;
+  /** The photo was removed; `oldSrc` is the server's link it had. */
+  onPhotoRemoved?: (employeeId: string, oldSrc: string | null) => void;
   /**
    * Whether the viewer may add somebody to today's schedule, and whether that
    * is switched on yet. Null draws nothing; the save checks both again on the
@@ -95,6 +106,7 @@ export function PersonPanel({
 }) {
   const [day, setDay] = useState(initialDay ?? today);
   const [editingPhoto, setEditingPhoto] = useState(false);
+  const [removingPhoto, setRemovingPhoto] = useState(false);
   const [addingShift, setAddingShift] = useState(false);
   const [showingProfile, setShowingProfile] = useState(false);
   // Bumped after a save, so the day is read again with its new shift.
@@ -262,6 +274,19 @@ export function PersonPanel({
                   onClick={() => setEditingPhoto(true)}
                 >
                   <Camera className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              )}
+              {/* Remove only (loss prevention): there is something to remove.
+                  Someone who may also update gets Remove inside Update photo. */}
+              {!canEditPhoto && canRemovePhoto && name && currentPhoto && (
+                <button
+                  type="button"
+                  className={styles.ppPhotoEdit}
+                  aria-label={`Remove photo of ${name}`}
+                  title="Remove photo"
+                  onClick={() => setRemovingPhoto(true)}
+                >
+                  <ImageOff className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               )}
             </span>
@@ -564,6 +589,27 @@ export function PersonPanel({
           onSaved={(url) => {
             setEditingPhoto(false);
             onPhotoSaved?.(employeeId, url);
+          }}
+          onRemove={
+            canRemovePhoto && currentPhoto
+              ? () => {
+                  setEditingPhoto(false);
+                  setRemovingPhoto(true);
+                }
+              : undefined
+          }
+        />
+      )}
+      {removingPhoto && (
+        <RemovePhotoDialog
+          siteId={siteId}
+          employeeId={employeeId}
+          name={name}
+          photoSrc={currentPhoto}
+          onClose={() => setRemovingPhoto(false)}
+          onRemoved={() => {
+            setRemovingPhoto(false);
+            onPhotoRemoved?.(employeeId, person?.photoUrl ?? detail?.photoUrl ?? null);
           }}
         />
       )}

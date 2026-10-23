@@ -49,6 +49,10 @@ export const PERMISSIONS = [
   "PRESENCE_VIEW_ANY",
   // Live Attendance: replace a person's time clock photo
   "PRESENCE_PHOTO_EDIT",
+  // Live Attendance: remove a person's time clock photo, so their next time
+  // clock scan takes a new one. Its own grant, so a role can remove without
+  // being able to put a photo of its own choosing in.
+  "PRESENCE_PHOTO_REMOVE",
   // Live Attendance: hear when the gate turns away somebody with no shift
   // today, and add them to today's schedule
   "PRESENCE_SCHEDULE_ADD",
@@ -137,6 +141,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "ACCRUAL_ADJUST_ANY",
     "PRESENCE_VIEW_ANY",
     "PRESENCE_PHOTO_EDIT",
+    "PRESENCE_PHOTO_REMOVE",
   ],
   SYSTEM_ADMIN: [...PERMISSIONS],
   SUPER_ADMIN: [...PERMISSIONS],

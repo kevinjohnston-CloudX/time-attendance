@@ -6,16 +6,32 @@ import { Button } from "@/components/ui";
 import styles from "./on-site.module.css";
 
 /**
- * Photos replaced on this page, by person id, until the server's own link
- * catches up. Every face on the page reads it, so a new photo shows on the
- * tile, the row and the panel the moment it is saved, not at the next poll.
+ * Photos replaced or removed on this page, by person id, until the server's
+ * own link catches up. Every face on the page reads it, so a new photo shows on
+ * the tile, the row and the panel the moment it is saved, not at the next poll.
+ * A removed photo is {@link removedMark} of the link it had.
  */
 export const PhotoSwaps = createContext<ReadonlyMap<string, string>>(new Map());
 
-/** The photo to draw for a person: the one just saved here, else the server's. */
+const REMOVED = "removed:";
+
+/** The swap for a photo removed here, remembering the link it had then. */
+export function removedMark(srcAtRemoval: string | null | undefined): string {
+  return REMOVED + (srcAtRemoval ?? "");
+}
+
+/**
+ * The photo to draw for a person: the one just saved here, else the server's.
+ * After a removal, initials while the server still hands out the old link;
+ * any other link is the new photo the next time clock scan took (a link to the
+ * removed file just fails and shows initials, so a stale one is harmless).
+ */
 export function usePhoto(personId: string | null | undefined, src: string | null | undefined) {
   const swaps = useContext(PhotoSwaps);
-  return (personId && swaps.get(personId)) || src;
+  const swap = personId ? swaps.get(personId) : undefined;
+  if (swap === undefined) return src;
+  if (!swap.startsWith(REMOVED)) return swap;
+  return src && src !== swap.slice(REMOVED.length) ? src : null;
 }
 
 /**

@@ -3863,6 +3863,19 @@
   outline-offset: 2px;
 }
 
+/* The photo in Remove photo's question: the tablets' landscape 4:3, the size of
+   the panel's portrait, so it reads as "this one". */
+.rpPhoto {
+  display: block;
+  width: 168px;
+  aspect-ratio: 4 / 3;
+  margin-top: 10px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--stroke-divider);
+  background: var(--surface-subtle, var(--surface-card));
+}
+
 .peScrim {
   position: fixed;
   inset: 0;

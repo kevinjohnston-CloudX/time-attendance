@@ -51,6 +51,8 @@ const RESOURCE_LABELS: Record<string, string> = {
   report: "Reports",
   audit: "Audit Log",
   role: "Roles",
+  presence: "Live Attendance",
+  photo: "Time Clock Photos",
 };
 
 const ACTION_LABELS: Record<string, string> = {

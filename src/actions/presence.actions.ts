@@ -5,7 +5,7 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { getPresenceBoard, getPresenceDetail, getViewableSites } from "@/lib/presence/on-site.service";
 import { getScanLog, type ScanLogInput } from "@/lib/presence/scan-log.service";
 import { getSiteDay } from "@/lib/presence/movements.service";
-import { MAX_PHOTO_BYTES, savePhoto } from "@/lib/presence/photos";
+import { MAX_PHOTO_BYTES, removePhoto, savePhoto } from "@/lib/presence/photos";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { MAX_PICKED, peopleByIds, reachable, resolveNames, suggestPeople } from "@/lib/presence/people-search.service";
 import { gateReadsCloudTimeSchedule } from "@/lib/presence/gate-schedule";
@@ -202,6 +202,63 @@ export const updateEmployeePhoto = withRBAC("PRESENCE_PHOTO_EDIT", async ({ tena
   });
   return { photoUrl: saved.url };
 });
+
+/**
+ * Removes a person's time clock photo, from the employee panel, so their next
+ * scan at a time clock takes a new one (the tablets take a photo for a badge
+ * that has none). Live Attendance and the employee record show initials until
+ * then.
+ *
+ * <p>Gated on PRESENCE_PHOTO_REMOVE ("Time Clock Photos, Write" on the Roles
+ * page), its own grant so a role such as loss prevention can remove a photo
+ * without being able to put one of its own choosing in. System admins hold it
+ * with everything. The site is checked like every other action here, and the
+ * person is looked up inside the caller's company, so an id from elsewhere
+ * answers NOT_FOUND.
+ *
+ * <p>Every removed file is copied first (see removePhoto), and the audit log
+ * says who removed which file and where the copy is, so a mistake can be put
+ * back.
+ */
+export const removeEmployeePhoto = withRBAC(
+  "PRESENCE_PHOTO_REMOVE",
+  async ({ tenantId, employeeId, role }, input: { siteId: string; employeeId: string }) => {
+    if (!tenantId) throw new Error("NOT_FOUND");
+    if (typeof input?.siteId !== "string" || typeof input?.employeeId !== "string") throw new Error("NOT_FOUND");
+    await assertSite(tenantId, { employeeId, role }, input.siteId);
+    // Only somebody this building's board can show (based here, or scanned
+    // here lately), so opening one building is never a way to reach another's people.
+    const person = await db.employee.findFirst({
+      where: { AND: [{ id: input.employeeId, tenantId }, await reachable(tenantId, input.siteId)] },
+      select: { id: true, barcode: true, wmsId: true, employeeCode: true },
+    });
+    if (!person) throw new Error("NOT_FOUND");
+
+    let result;
+    try {
+      result = await removePhoto(tenantId, person);
+    } catch (err) {
+      const code = err instanceof Error ? err.message : "";
+      if (code === "PHOTOS_OFF") throw new Error("Photos are not set up here, so there is nothing to remove.");
+      if (code === "PHOTOS_UNREADABLE") throw new Error("The photo store could not be read just now, so nothing was removed. Try again in a minute.");
+      // Most likely the photo store refusing the change. Nothing is lost:
+      // a copy is made before anything is deleted.
+      console.error("[photo remove]", err);
+      throw new Error("The photo could not be removed just now. Nothing was lost. Try again in a minute.");
+    }
+    if (result.removed.length > 0) {
+      await writeAuditLog({
+        tenantId,
+        actorId: employeeId || null,
+        action: "EMPLOYEE_PHOTO_REMOVED",
+        entityType: "EMPLOYEE",
+        entityId: person.id,
+        changes: { removed: result.removed, kept: result.kept, siteId: input.siteId },
+      });
+    }
+    return { removed: result.removed.length, kept: result.kept.length };
+  },
+);
 
 /**
  * Add to schedule: puts somebody on today's schedule from Live Attendance,

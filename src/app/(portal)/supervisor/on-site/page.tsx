@@ -52,8 +52,9 @@ export default async function OnSitePage({
   const siteId = sites.some((s) => s.id === params.site) ? params.site! : defaultSiteId;
 
   const boardResult = siteId ? await getOnSiteBoard({ siteId }) : null;
-  const [canEditPhotos, canManageEmployees, gateAlerts, gateSwitch, canOpenReports] = await Promise.all([
+  const [canEditPhotos, canRemovePhotos, canManageEmployees, gateAlerts, gateSwitch, canOpenReports] = await Promise.all([
     userHasPermission(session.user, "PRESENCE_PHOTO_EDIT"),
+    userHasPermission(session.user, "PRESENCE_PHOTO_REMOVE"),
     userHasPermission(session.user, "EMPLOYEE_MANAGE"),
     userHasPermission(session.user, "PRESENCE_SCHEDULE_ADD"),
     // System Admins only: anybody else is refused, and gets no switch. One per building.
@@ -72,6 +73,7 @@ export default async function OnSitePage({
       initialSiteId={siteId}
       initialBoard={boardResult?.success ? boardResult.data : null}
       canEditPhotos={canEditPhotos}
+      canRemovePhotos={canRemovePhotos}
       canOpenReports={canOpenReports}
       scheduling={canSchedule ? { live: gateReadsCloudTimeSchedule() } : null}
       gateAlerts={gateAlerts}
