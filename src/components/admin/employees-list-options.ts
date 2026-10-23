@@ -29,6 +29,12 @@ export const PERIOD_OPTIONS = [
   { id: "MONTHLY", name: "Monthly" },
 ] as const;
 
+/** Where someone may punch: from the web as well (Employee.webPunchEnabled), or the time clock only. */
+export const PUNCH_OPTIONS = [
+  { id: "web", name: "Web allowed" },
+  { id: "clock", name: "Time clock only" },
+] as const;
+
 /** Records missing something they need: a badge to punch, a shift, a supervisor, a pay method. */
 export const MISSING_OPTIONS = [
   { id: "badge", name: "Badge" },
@@ -59,4 +65,4 @@ export function pick<T extends string>(options: readonly { id: T }[], value: str
 }
 
 /** Every query string key the list understands, for carrying a remembered list over. */
-export const LIST_KEYS = ["q", "site", "dept", "role", "status", "shift", "pay", "period", "missing", "sort", "page"] as const;
+export const LIST_KEYS = ["q", "site", "dept", "role", "status", "shift", "pay", "period", "punch", "missing", "sort", "page"] as const;

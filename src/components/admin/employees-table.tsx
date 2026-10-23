@@ -19,7 +19,7 @@ import {
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Users } from "lucide-react";
 import { Face } from "@/components/presence/face";
 import { LIST_COOKIE } from "./employees-list-cookie";
-import { LIST_KEYS, MISSING_OPTIONS, PAY_OPTIONS, PERIOD_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS } from "./employees-list-options";
+import { LIST_KEYS, MISSING_OPTIONS, PAY_OPTIONS, PERIOD_OPTIONS, PUNCH_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS } from "./employees-list-options";
 import styles from "./employees.module.css";
 import { usePhoneLayout } from "@/lib/phone";
 
@@ -62,7 +62,7 @@ interface Employee {
   photo: string | null;
 }
 
-type Filters = Record<"q" | "site" | "dept" | "role" | "status" | "shift" | "pay" | "period" | "missing" | "sort", string>;
+type Filters = Record<"q" | "site" | "dept" | "role" | "status" | "shift" | "pay" | "period" | "punch" | "missing" | "sort", string>;
 
 interface Props {
   employees: Employee[];
@@ -151,7 +151,7 @@ export function EmployeesTable({
   // The sort is not a filter: it hides nobody, so it does not count here.
   const isFiltered = Boolean(
     currentFilters.q || currentFilters.site || currentFilters.dept || currentFilters.role ||
-    currentFilters.status || currentFilters.shift || currentFilters.pay || currentFilters.period || currentFilters.missing,
+    currentFilters.status || currentFilters.shift || currentFilters.pay || currentFilters.period || currentFilters.punch || currentFilters.missing,
   );
 
   const shiftById = new Map(shifts.map((s) => [s.id, s]));
@@ -242,6 +242,12 @@ export function EmployeesTable({
               value={currentFilters.period}
               options={PERIOD_OPTIONS}
               onChange={(v) => onFilterChange("period", v)}
+            />
+            <FilterSelectChip
+              label="Punching"
+              value={currentFilters.punch}
+              options={PUNCH_OPTIONS}
+              onChange={(v) => onFilterChange("punch", v)}
             />
             <FilterSelectChip
               label="Missing"

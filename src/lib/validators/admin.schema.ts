@@ -91,6 +91,7 @@ export const updateEmployeeSchema = z.object({
   payCategoryId: nullableStr,
   isActive: z.boolean().optional(),
   onLeave: z.boolean().optional(),
+  webPunchEnabled: z.boolean().optional(),
   wmsId: nullableStr,
   barcode: nullableStr,
   adpWorkerId: nullableStr,

@@ -56,7 +56,9 @@ export async function createCorrectionPunch(
     }
   }
 
-  const roundedTime = computeRoundedTime(
+  // Hours entered with Add time stay entered hours, at the exact time typed:
+  // they carry hours, not a time worked to round.
+  const roundedTime = original.hoursOnly ? newPunchTime : computeRoundedTime(
     newPunchTime,
     original.punchType,
     original.employee.ruleSet,
@@ -80,6 +82,7 @@ export async function createCorrectionPunch(
       note: reason ?? null,
       correctsId: original.id,
       payCodeId: original.payCodeId ?? null,
+      hoursOnly: original.hoursOnly,
     },
   });
 

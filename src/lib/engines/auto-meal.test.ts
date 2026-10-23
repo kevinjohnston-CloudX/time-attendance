@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/db", () => ({ db: {} }));
-import { applyAutoMealDeduction } from "./segment-builder";
+import { applyAutoMealDeduction, setEnteredHoursApart } from "./segment-builder";
 
 // Times are UTC; the day key is read from segmentDate.
 const day = new Date("2026-10-12T00:00:00.000Z");
@@ -49,8 +49,50 @@ describe("automatic meal with a lunch punched out and back in", () => {
     expect(out.find((s) => s.segmentType === "MEAL")?.endTime.toISOString()).toBe("2026-10-12T18:04:00.000Z");
   });
 
+  it("takes the meal off exactly 6 hours worked, as 'work at least 6 hours' reads (Milagros Mogollon, 9/30)", () => {
+    // 8:35 to 2:35 Eastern, no lunch: NovaTime paid 5.5.
+    expect(paid(applyAutoMealDeduction([work("12:35", "18:35")] as never, cfg, new Set()) as never)).toBe(360 - 30);
+  });
+
+  it("takes nothing off a minute short of 6 hours", () => {
+    expect(paid(applyAutoMealDeduction([work("12:35", "18:34")] as never, cfg, new Set()) as never)).toBe(359);
+  });
+
+  it("does not count a break over an hour as the meal (Yamilex Larrea, 10/2: 75 minutes off)", () => {
+    // 8:53 to 12:51 and 2:07 to 5:31 Eastern: NovaTime still took its 30 minutes, 6.87 h paid.
+    const segs = [work("12:53", "16:51"), work("18:07", "21:31")];
+    expect(paid(applyAutoMealDeduction(segs as never, { ...cfg, minMealMinutes: 15, maxMealMinutes: 60 }, new Set()) as never)).toBe(238 + 204 - 30);
+  });
+
   it("takes the rest of the meal off a short lunch when the shift deducts the full length", () => {
     const segs = [work("08:00", "12:00"), work("12:20", "16:30")];
     expect(paid(applyAutoMealDeduction(segs as never, { ...cfg, disableMinDeduction: false }, new Set()) as never)).toBe(240 + 250 - 10);
+  });
+});
+
+// Hours entered with Add time are a clock in and out from 12:00 AM that only
+// carry the hours: they count as entered.
+describe("hours entered with Add time", () => {
+  const entered = (from: string, to: string) => [
+    { punchType: "CLOCK_IN" as const, roundedTime: new Date(`2026-10-12T${from}:00.000Z`), hoursOnly: true },
+    { punchType: "CLOCK_OUT" as const, roundedTime: new Date(`2026-10-12T${to}:00.000Z`), hoursOnly: true },
+  ];
+  const run = (segs: ReturnType<typeof work>[], punches: ReturnType<typeof entered>) => {
+    const { entered: kept, worked } = setEnteredHoursApart(segs as never, punches);
+    return paid([...(applyAutoMealDeduction(worked as never, cfg, new Set()) as never as ReturnType<typeof work>[]), ...(kept as never as ReturnType<typeof work>[])]);
+  };
+
+  it("take no meal off 8 hours entered (Karla Hernandez, 10/12: paid 7.5)", () => {
+    expect(run([work("00:00", "08:00")], entered("00:00", "08:00"))).toBe(480);
+  });
+
+  it("leave the meal rules to the shift worked the same day", () => {
+    // 2 hours entered, then 7:00 to 3:30 worked with no lunch: the meal comes off the shift alone.
+    expect(run([work("00:00", "02:00"), work("07:00", "15:30")], entered("00:00", "02:00"))).toBe(120 + 510 - 30);
+  });
+
+  it("do not count toward the 6 hours a shift's meal waits for", () => {
+    // 4 hours entered and 5 worked: the 5 alone take no meal.
+    expect(run([work("00:00", "04:00"), work("08:00", "13:00")], entered("00:00", "04:00"))).toBe(240 + 300);
   });
 });

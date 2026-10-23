@@ -2,6 +2,7 @@ import { format, eachDayOfInterval, isWeekend, addDays } from "date-fns";
 import { db } from "@/lib/db";
 import { applyOvertime } from "@/lib/engines/overtime-engine";
 import { reconcileLeaveDeductions, relinkCreditLeave } from "@/lib/engines/leave-deduction";
+import { dropSupersededDayCodes } from "@/lib/engines/leave-segment-builder";
 import { startOfDayInTz, nextMidnightInTz, endOfDayInTz, roundDurationMinutes } from "@/lib/utils/date";
 import { periodBoundsInZone, periodDateBounds } from "@/lib/pay-period-days";
 import type { Punch, RuleSet, PayBucket, SegmentType, HolidayCreditMethod } from "@prisma/client";
@@ -407,8 +408,10 @@ export function applyAutoMealDeduction(
       continue;
     }
 
+    // "Work at least 6 hours": exactly 6 takes the meal too, as NovaTime does
+    // (Milagros Mogollon, 9/30: 8:35 to 2:35, 5.5 hours paid there and 6 here).
     const totalWork = workSegs.reduce((s, seg) => s + seg.durationMinutes, 0);
-    if (totalWork <= cfg.mealBreakAfterMinutes) continue;
+    if (totalWork < cfg.mealBreakAfterMinutes) continue;
 
     // Sort by start time
     const sorted = [...workSegs].sort(
@@ -424,7 +427,7 @@ export function applyAutoMealDeduction(
     let mealStartMs = 0;
     let workedBefore = 0;
     for (const seg of sorted) {
-      if (workedBefore + seg.durationMinutes > cfg.mealBreakAfterMinutes) {
+      if (workedBefore + seg.durationMinutes >= cfg.mealBreakAfterMinutes) {
         target = seg;
         mealStartMs = seg.startTime.getTime() + (cfg.mealBreakAfterMinutes - workedBefore) * 60_000;
         break;
@@ -759,6 +762,31 @@ async function ensureSalarySegments(
   if (toCreate.length > 0) {
     await db.workSegment.createMany({ data: toCreate });
   }
+}
+
+/**
+ * Hours entered with Add time (Punch.hoursOnly) set apart from the times
+ * worked. Their clock in and out only carry the hours, from 12:00 AM, so
+ * they count as entered: no automatic meal, no meal punch check, no pair
+ * rounding and no meal premium. 8 hours entered was paid 7.5 on a shift that
+ * takes its meal automatically (Karla Hernandez, 10/12). Exported for its test.
+ */
+export function setEnteredHoursApart(
+  segments: SegmentInput[],
+  punches: Pick<Punch, "punchType" | "roundedTime" | "hoursOnly">[],
+): { entered: SegmentInput[]; worked: SegmentInput[] } {
+  const clocks = punches
+    .filter((p) => p.hoursOnly && (p.punchType === "CLOCK_IN" || p.punchType === "CLOCK_OUT"))
+    .sort((a, b) => a.roundedTime.getTime() - b.roundedTime.getTime());
+  const spans: [number, number][] = [];
+  for (const [i, p] of clocks.entries()) {
+    if (p.punchType !== "CLOCK_IN") continue;
+    const out = clocks.slice(i + 1).find((q) => q.punchType === "CLOCK_OUT");
+    if (out) spans.push([p.roundedTime.getTime(), out.roundedTime.getTime()]);
+  }
+  const isEntered = (s: SegmentInput) =>
+    s.segmentType === "WORK" && spans.some(([from, to]) => s.startTime.getTime() >= from && s.endTime.getTime() <= to);
+  return { entered: segments.filter(isEntered), worked: segments.filter((s) => !isEntered(s)) };
 }
 
 /**
@@ -1160,7 +1188,13 @@ export async function rebuildSegments(
     carryIn = { openStart, openState: firstPunch.stateBefore as ActiveState };
   }
 
-  const rawSegments = computeSegments(timesheetId, punches, timezone, bounds.start, carryIn);
+  // Hours entered with Add time count as entered: the meal rules below see
+  // only the times worked, and the entered hours rejoin after them.
+  const { entered: enteredSegments, worked: rawSegments } = setEnteredHoursApart(
+    computeSegments(timesheetId, punches, timezone, bounds.start, carryIn),
+    punches,
+  );
+  const workedPunches = punches.filter((p) => !p.hoursOnly);
 
   // Meals come from the shift alone: a shift with no meal set up, or no shift,
   // takes nothing off. The rule set's meal fields are no longer read; they
@@ -1203,7 +1237,7 @@ export async function rebuildSegments(
       select: { id: true, segmentDate: true, rowIndex: true, segmentStart: true },
     });
     const learned = new Map<string, number>();
-    const premiumSegs = computeMealPremiums(timesheetId, segments, punches, ruleSet, timezone, premiumWaivedTest(premiumWaivers, learned));
+    const premiumSegs = computeMealPremiums(timesheetId, segments, workedPunches, ruleSet, timezone, premiumWaivedTest(premiumWaivers, learned));
     // Waivers saved before rows were recorded, matched by their start time this
     // once: keep their row, so a later change to the day cannot undo them.
     for (const [id, rowIndex] of learned) {
@@ -1211,6 +1245,7 @@ export async function rebuildSegments(
     }
     segments = [...segments, ...premiumSegs];
   }
+  segments = [...segments, ...enteredSegments];
 
   // Apply pay code to all punch-derived WORK segments.
   // When the rule set has autopay enabled, use autoPayPayCodeId (falling back to
@@ -1369,6 +1404,11 @@ export async function rebuildSegments(
       }
     }
   }
+
+  // A day code the day's leave now carries is used up (leave-segment-builder).
+  // Leave added before that was done there still has its code line, so the
+  // recalculation clears it too.
+  await dropSupersededDayCodes(timesheetId);
 
   // Guaranteed hours / auto-pay: fill in configured daily credits for uncovered days.
   // When autoPayEnabled, uses the rule set's configurable settings.
@@ -1604,8 +1644,10 @@ async function syncMissingPunchExceptions(
   periodEndStr: string,
   punches: Punch[]
 ): Promise<void> {
-  if (punches.length === 0) return;
-
+  // No early return when the timecard has no punches left: removing a day's
+  // last clock in must still clear its missed punch, or the day stays out of
+  // the totals (Erika Vera de Romero, 10/15: hours entered by hand, then
+  // removed, then the day coded Unpaid time off).
   const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
   const localDateOf = (d: Date) =>
     new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(d);
@@ -1714,6 +1756,34 @@ async function syncMissingPunchExceptions(
         });
       }
     }
+  }
+
+  // A placeholder clock out on a past day that no longer misses a punch has
+  // nothing to close: its clock in was removed, or the clock out came in
+  // after it. A clock in and out saved as two requests left one behind
+  // whenever the clock in's recalculation ran first (Stephanie Resendiz,
+  // 10/19). Left in place, it waits in Punch History for payroll to confirm.
+  const placeholderDays: Date[] = [];
+  for (let ds = periodStartStr; ds < todayStr && ds <= periodEndStr; ) {
+    if (!missingPunchDays.has(ds)) placeholderDays.push(endOfDayInTz(ds, "America/New_York"));
+    const d = new Date(ds + "T00:00:00.000Z");
+    d.setUTCDate(d.getUTCDate() + 1);
+    ds = d.toISOString().slice(0, 10);
+  }
+  if (placeholderDays.length > 0) {
+    await db.punch.deleteMany({
+      where: {
+        timesheetId,
+        source: "SYSTEM",
+        punchType: "CLOCK_OUT",
+        isApproved: false,
+        isRejected: false,
+        roundedTime: { in: placeholderDays },
+        correctedBy: null,
+        scanEvent: null,
+        sourcedLeaveRequest: null,
+      },
+    });
   }
 
   // Auto-resolve open MISSING_PUNCH exceptions for days where the shift is now complete.

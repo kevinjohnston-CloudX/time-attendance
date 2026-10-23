@@ -60,7 +60,7 @@ import {
   getLeaveTypesForTimecard,
   saveTimesheetNote,
   addManualPunchPair,
-  addSingleManualPunch,
+  addManualPunches,
   deleteManualPunchPair,
   addManualHoursEntry,
 } from "@/actions/timecard-entry.actions";
@@ -1787,8 +1787,14 @@ export function TimecardViewer({
         for (const [punchId, newDate] of pendingPunchEdits.entries()) {
           ops.push({ run: correctPunch({ originalPunchId: punchId, newPunchTime: toMoment(newDate).toISOString() }), saved: dropKey(setPendingPunchEdits, punchId) });
         }
-        for (const entry of pendingNewPunches) {
-          ops.push({ run: addSingleManualPunch({ timesheetId, punchType: entry.punchType, punchTime: toMoment(entry.punchDate).toISOString() }), saved: dropItem(setPendingNewPunches, entry) });
+        // A day's new punches go in one request, so a clock in is never
+        // recalculated without the clock out typed beside it (addManualPunches).
+        for (const dayKey of new Set(pendingNewPunches.map((p) => p.dayKey))) {
+          const entries = pendingNewPunches.filter((p) => p.dayKey === dayKey);
+          ops.push({
+            run: addManualPunches({ timesheetId, punches: entries.map((e) => ({ punchType: e.punchType, punchTime: toMoment(e.punchDate).toISOString() })) }),
+            saved: () => setPendingNewPunches((a) => a.filter((x) => !entries.includes(x))),
+          });
         }
         for (const segmentDate of pendingWaiverToggles) {
           ops.push({

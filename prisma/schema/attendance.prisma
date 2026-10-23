@@ -73,6 +73,9 @@ model Punch {
   approvedAt   DateTime?
   note         String?
   payCodeId    String?
+  /// Hours entered with Add time, not times worked: the pair is placed from
+  /// 12:00 AM only to carry the hours, so the meal rules leave it alone.
+  hoursOnly    Boolean     @default(false)
 
   /// ID of the punch this record corrects (null if original)
   correctsId    String? @unique

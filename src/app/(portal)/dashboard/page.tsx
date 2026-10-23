@@ -114,7 +114,7 @@ export default async function DashboardPage({
     employeeId
       ? db.employee.findUnique({
           where: { id: employeeId },
-          select: { timeZone: true, site: { select: { name: true, timezone: true } } },
+          select: { timeZone: true, webPunchEnabled: true, site: { select: { name: true, timezone: true } } },
         })
       : null,
 
@@ -394,7 +394,9 @@ export default async function DashboardPage({
                 {today.since}
               </p>
 
-              {canPunch && <TodayPunchActions state={today.state as PunchStateValue} />}
+              {/* Clock In here only for those allowed to punch from the web;
+                  the rest punch at the time clock (Employee.webPunchEnabled). */}
+              {canPunch && me?.webPunchEnabled && <TodayPunchActions state={today.state as PunchStateValue} />}
 
               {today.punches.length > 0 && (
                 <div

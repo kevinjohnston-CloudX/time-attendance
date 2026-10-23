@@ -162,6 +162,9 @@ model Employee {
   shiftId      String?
   isActive     Boolean  @default(true)
   onLeave      Boolean  @default(false)
+  /// May punch from the Punch Clock page (and the phone app). Off, the time
+  /// clock tablets are the only way in; missed punch requests still work.
+  webPunchEnabled Boolean @default(false)
   hireDate         DateTime
   adjustedHireDate DateTime?  /// Seniority date override — used when serviceMonthBasis = ADJUSTED_HIRE_DATE
   titleChangeDate  DateTime?  /// Date of last title/role change

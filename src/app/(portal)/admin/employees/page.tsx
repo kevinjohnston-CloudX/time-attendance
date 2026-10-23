@@ -9,7 +9,7 @@ import { toCopyFromEmployee } from "@/lib/employee-copy";
 import { CsvUploadForm } from "@/components/admin/csv-upload-form";
 import { EmployeesTable } from "@/components/admin/employees-table";
 import { LIST_COOKIE } from "@/components/admin/employees-list-cookie";
-import { LIST_KEYS, MISSING_OPTIONS, PAY_OPTIONS, PERIOD_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
+import { LIST_KEYS, MISSING_OPTIONS, PAY_OPTIONS, PERIOD_OPTIONS, PUNCH_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 
 /**
@@ -61,6 +61,7 @@ export default async function EmployeesPage({
   const status = pick(STATUS_OPTIONS, sp?.status);
   const pay = pick(PAY_OPTIONS, sp?.pay);
   const period = pick(PERIOD_OPTIONS, sp?.period);
+  const punch = pick(PUNCH_OPTIONS, sp?.punch);
   const missing = pick(MISSING_OPTIONS, sp?.missing);
   const sort = pick(SORT_OPTIONS, sp?.sort);
 
@@ -69,7 +70,7 @@ export default async function EmployeesPage({
   const [employeesResult, refDataResult, copySourceResult] = await Promise.all([
     getEmployees({
       page, q: q || undefined, site: site || undefined, dept: dept || undefined, role: role || undefined,
-      status, shift: shift || undefined, pay, period, missing, sort,
+      status, shift: shift || undefined, pay, period, punch, missing, sort,
     }),
     // The supervisor list is left out: the Create window asks when it opens.
     getAdminRefData({ withEmployees: false }),
@@ -140,7 +141,7 @@ export default async function EmployeesPage({
         // shiftId but does not join the shift, and widening that join would be
         // a query change.
         shifts={shifts}
-        currentFilters={{ q, site, dept, role, status, shift, pay, period, missing, sort }}
+        currentFilters={{ q, site, dept, role, status, shift, pay, period, punch, missing, sort }}
       />
     </div>
   );
