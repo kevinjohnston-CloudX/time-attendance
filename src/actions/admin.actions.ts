@@ -25,7 +25,7 @@ import { todayKey } from "@/lib/pay-rates";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { webPunchByDefault } from "@/lib/web-punch";
-import { assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach } from "@/lib/rbac/scope";
+import { assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
 
 // Maps system custom role names to their legacy enum values
 /**
@@ -165,13 +165,17 @@ export const getSupervisorOptions = withRBAC(
 
 export const getAdminRefData = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ tenantId }, input: { withEmployees?: boolean } | void) => {
+  async ({ tenantId, employeeId: actorEmpId, role: actorRole }, input: { withEmployees?: boolean } | void) => {
     const t = tenantId ?? undefined;
+    // A Payroll or HR Admin held to some sites is offered only those, on the
+    // Create window and the employee record (createEmployee and updateEmployee
+    // refuse the rest: assertSiteInReach).
+    const limit = await siteLimit({ employeeId: actorEmpId, role: actorRole });
     // Every page but the new Employees list still takes the supervisor list
     // from here; that one asks getSupervisorOptions when its window opens.
     const withEmployees = (input && input.withEmployees) ?? true;
     const [sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies] = await Promise.all([
-      db.site.findMany({ where: { isActive: true, tenantId: t }, orderBy: { name: "asc" } }),
+      db.site.findMany({ where: { isActive: true, tenantId: t, ...(limit ? { id: { in: limit } } : {}) }, orderBy: { name: "asc" } }),
       // Each department's buildings by id and name, which is all the employee
       // forms read (to offer the departments of the building picked). The
       // whole site row on every one of the ~800 links was most of the page.
@@ -435,9 +439,11 @@ async function assertEmailsFree(
 
 export const createEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId, tenantId }, input: CreateEmployeeInput) => {
+  async (actor, input: CreateEmployeeInput) => {
+    const { employeeId: actorId, tenantId } = actor;
     if (!tenantId) throw new Error("Tenant context required");
     const parsed = createEmployeeSchema.parse(input);
+    await assertSiteInReach(actor, parsed.siteId);
     await assertAssignable(await currentIdentity(), tenantId, parsed.role, parsed.customRoleId);
     await assertOwnAssignments(tenantId, parsed.jobTitleId, parsed.agencyId);
 
@@ -572,6 +578,7 @@ export const updateEmployee = withRBAC(
     });
     await assertOwnAssignments(tenantId, jobTitleId, agencyId);
     if (!current) throw new Error("NOT_FOUND");
+    if (siteId !== undefined && siteId !== current.siteId) await assertSiteInReach(actor, siteId);
 
     // The termination date follows the status. Made inactive: the date given,
     // or today at their site. Made active again: cleared, since the time clock
@@ -1026,7 +1033,19 @@ export const updateHrSiteAccess = withRBAC(
       select: { id: true },
     });
     const validIds = new Set(validSites.map((s) => s.id));
-    const safeIds = siteIds.filter((id) => validIds.has(id));
+    let safeIds = siteIds.filter((id) => validIds.has(id));
+
+    // An HR Admin held to some sites gives access to those alone, and is
+    // shown no others (getAdminRefData): the person's sites beyond them are
+    // kept, not dropped. Nor may they leave someone with no sites, which
+    // means every site.
+    const limit = await siteLimit(actor);
+    if (limit) {
+      if (safeIds.some((id) => !limit.includes(id))) throw new Error("You can only give access to your own sites.");
+      const beyond = await db.hrSiteAccess.findMany({ where: { employeeId, siteId: { notIn: limit } }, select: { siteId: true } });
+      safeIds = [...safeIds, ...beyond.map((r) => r.siteId)];
+      if (safeIds.length === 0) throw new Error("Pick at least one site. No sites means every site, which is more than you can reach.");
+    }
 
     // Replace: delete existing, create new
     await db.$transaction([
@@ -1994,7 +2013,8 @@ export const getHoursReport = withRBAC(
 
 export const bulkCreateEmployees = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId, tenantId }, input: { rows: CsvEmployeeRow[] }) => {
+  async (actor, input: { rows: CsvEmployeeRow[] }) => {
+    const { employeeId: actorId, tenantId } = actor;
     if (!tenantId) throw new Error("Tenant context required");
     // 1. Validate every row with Zod
     const rowErrors: { row: number; message: string }[] = [];
@@ -2082,6 +2102,10 @@ export const bulkCreateEmployees = withRBAC(
 
       const siteId = siteMap.get(r.site.toLowerCase());
       if (!siteId) errors.push(`Site "${r.site}" not found`);
+      else {
+        const reach = await siteInReach(actor, siteId);
+        if (!reach.ok) errors.push(reach.message);
+      }
 
       const departmentId = deptMap.get(r.department.toLowerCase());
       if (!departmentId) errors.push(`Department "${r.department}" not found`);
