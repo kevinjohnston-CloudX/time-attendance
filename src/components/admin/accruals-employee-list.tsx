@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
+import { useSearchBox } from "@/hooks/use-search-box";
 import Link from "next/link";
 import { ChevronRight, Hourglass } from "lucide-react";
 import styles from "./accruals.module.css";
@@ -84,13 +85,6 @@ export function AccrualsEmployeeList({
   const router = useRouter();
   const phone = usePhoneLayout();
 
-  // Typing has to feel immediate, so the box is local and the URL catches up.
-  const [searchValue, setSearchValue] = useState(filters.q);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Browser back changes the URL without remounting this component.
-  useEffect(() => { setSearchValue(filters.q); }, [filters.q]);
-
   const buildUrl = useCallback(
     (overrides: Partial<Filters>) => {
       const params = new URLSearchParams();
@@ -114,11 +108,9 @@ export function AccrualsEmployeeList({
     router.push(buildUrl(overrides));
   }
 
-  function onSearchChange(val: string) {
-    setSearchValue(val);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => navigate({ q: val }), 350);
-  }
+  // Typing has to feel immediate, so the box is local and the address catches
+  // up; what is typed stays typed while results arrive (useSearchBox).
+  const searchBox = useSearchBox(filters.q, (q) => router.replace(buildUrl({ q })));
 
   const isFiltered = Boolean(
     filters.q || filters.site || filters.dept || filters.status !== "active",
@@ -132,8 +124,8 @@ export function AccrualsEmployeeList({
           <ToolsBar
             search={
               <SearchInput
-                value={searchValue}
-                onValueChange={onSearchChange}
+                value={searchBox.value}
+                onValueChange={searchBox.onChange}
                 placeholder={phone ? "Name or badge" : "Name, badge ID or department"}
                 width={320}
               />
@@ -141,7 +133,7 @@ export function AccrualsEmployeeList({
             end={
               <>
                 {isFiltered && (
-                  <Button hierarchy="link" size="sm" onClick={() => router.push("/accruals")}>
+                  <Button hierarchy="link" size="sm" onClick={() => { searchBox.reset(""); router.push("/accruals"); }}>
                     Clear all
                   </Button>
                 )}
