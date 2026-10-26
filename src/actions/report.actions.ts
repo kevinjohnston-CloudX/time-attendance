@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { mailAddress } from "@/lib/email-address";
+import { isEmailConfigured } from "@/lib/email/send-mail";
 import { tenantWeekStart } from "@/lib/reports/moving-period";
 import { Prisma } from "@prisma/client";
 import { withRBAC } from "@/lib/rbac/guard";
@@ -549,7 +550,7 @@ export const checkEmailConfigured = withRBAC(
   "REPORT_SCHEDULE",
   async () => {
     return {
-      configured: !!(process.env.SENDGRID_API_KEY && process.env.SENDGRID_FROM_EMAIL),
+      configured: isEmailConfigured(),
     };
   }
 );

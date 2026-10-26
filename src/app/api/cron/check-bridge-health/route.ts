@@ -3,6 +3,7 @@ import { cronAuthorized } from "@/lib/cron-auth";
 import { db } from "@/lib/db";
 import type { SyncKind } from "@prisma/client";
 import { BRIDGE_AGENT, BRIDGE_JOB_KINDS } from "@/lib/services/bridge.service";
+import { isEmailConfigured, sendMail } from "@/lib/email/send-mail";
 
 /**
  * Says out loud when the WMS bridge has stopped working.
@@ -239,16 +240,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
  */
 async function notifyIfConfigured(findings: Finding[]): Promise<void> {
   const to = process.env.BRIDGE_ALERT_EMAIL;
-  const key = process.env.SENDGRID_API_KEY;
-  const from = process.env.SENDGRID_FROM_EMAIL;
-  if (!to || !key || !from) return;
+  if (!to || !isEmailConfigured()) return;
 
   try {
-    const sgMail = (await import("@sendgrid/mail")).default;
-    sgMail.setApiKey(key);
-    await sgMail.send({
-      to: to.split(",").map((s) => s.trim()).filter(Boolean),
-      from,
+    await sendMail({
+      to: to.split(","),
       subject: "CloudTime: WMS bridge is not healthy",
       text:
         "The bridge between CloudTime and Oracle has stopped working as expected.\n\n" +

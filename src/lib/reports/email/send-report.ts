@@ -1,9 +1,7 @@
-import sgMail from "@sendgrid/mail";
+import { sendMail } from "@/lib/email/send-mail";
 import { generateReportEmailHtml } from "./templates";
 
-if (process.env.SENDGRID_API_KEY) {
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-}
+export { isEmailConfigured } from "@/lib/email/send-mail";
 
 interface SendReportParams {
   recipients: string[];
@@ -19,10 +17,6 @@ interface SendReportParams {
   periodLabel?: string;
   /** The product's name, put first in the subject so the sender is plain. */
   brand?: string | null;
-}
-
-export function isEmailConfigured(): boolean {
-  return !!(process.env.SENDGRID_API_KEY && process.env.SENDGRID_FROM_EMAIL);
 }
 
 /**
@@ -41,11 +35,6 @@ export async function sendReportEmail({
   periodLabel,
   brand,
 }: SendReportParams): Promise<void> {
-  const fromEmail = process.env.SENDGRID_FROM_EMAIL;
-  if (!process.env.SENDGRID_API_KEY || !fromEmail) {
-    throw new Error("Email is not set up on this server, so nothing was sent.");
-  }
-
   const ext = format.toLowerCase();
   const mimeTypes: Record<string, string> = {
     csv: "text/csv",
@@ -56,20 +45,10 @@ export async function sendReportEmail({
   const safeName = fileStem ?? reportName.replace(/[^a-z0-9]/gi, "-");
   const subject = `${brand ? `${brand} ` : ""}${reportName}${periodLabel ? `, ${periodLabel}` : ""}`;
 
-  const msg = {
+  await sendMail({
     to: recipients,
-    from: fromEmail,
     subject,
     html: generateReportEmailHtml({ reportName, rowCount, shownRows, format, generatedAt: new Date(), periodLabel }),
-    attachments: [
-      {
-        content: fileBuffer.toString("base64"),
-        filename: `${safeName}.${ext}`,
-        type: mimeTypes[ext] || "application/octet-stream",
-        disposition: "attachment" as const,
-      },
-    ],
-  };
-
-  await sgMail.send(msg);
+    attachments: [{ content: fileBuffer, filename: `${safeName}.${ext}`, type: mimeTypes[ext] || "application/octet-stream" }],
+  });
 }

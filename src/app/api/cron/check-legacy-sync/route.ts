@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cronAuthorized } from "@/lib/cron-auth";
 import { db } from "@/lib/db";
+import { isEmailConfigured, sendMail } from "@/lib/email/send-mail";
 
 /**
  * Says out loud when punches CloudTime accepted never reached Oracle.
@@ -240,16 +241,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 /** Best-effort email. The 500 is the signal that always works. */
 async function notifyIfConfigured(findings: Finding[]): Promise<void> {
   const to = process.env.BRIDGE_ALERT_EMAIL;
-  const key = process.env.SENDGRID_API_KEY;
-  const from = process.env.SENDGRID_FROM_EMAIL;
-  if (!to || !key || !from) return;
+  if (!to || !isEmailConfigured()) return;
 
   try {
-    const sgMail = (await import("@sendgrid/mail")).default;
-    sgMail.setApiKey(key);
-    await sgMail.send({
-      to: to.split(",").map((s) => s.trim()).filter(Boolean),
-      from,
+    await sendMail({
+      to: to.split(","),
       subject: "CloudTime: punches may be missing from Oracle",
       text:
         "Punches recorded in CloudTime have not reached Oracle. Payroll runs off\n" +

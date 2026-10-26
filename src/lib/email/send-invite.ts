@@ -1,12 +1,6 @@
-import sgMail from "@sendgrid/mail";
+import { isEmailConfigured, sendMail } from "@/lib/email/send-mail";
 
-if (process.env.SENDGRID_API_KEY) {
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-}
-
-export function isEmailConfigured(): boolean {
-  return !!(process.env.SENDGRID_API_KEY && process.env.SENDGRID_FROM_EMAIL);
-}
+export { isEmailConfigured };
 
 export async function sendPasswordInviteEmail({
   to,
@@ -19,16 +13,15 @@ export async function sendPasswordInviteEmail({
   token: string;
   appUrl: string;
 }): Promise<{ sent: boolean }> {
-  if (!process.env.SENDGRID_API_KEY || !process.env.SENDGRID_FROM_EMAIL) {
-    console.warn("[invite] SendGrid not configured, skipping invite email to:", to);
+  if (!isEmailConfigured()) {
+    console.warn("[invite] Email not configured, skipping invite email to:", to);
     return { sent: false };
   }
 
   const setupUrl = `${appUrl}/setup-password?token=${token}`;
 
-  await sgMail.send({
-    to,
-    from: process.env.SENDGRID_FROM_EMAIL,
+  await sendMail({
+    to: [to],
     subject: "Set up your TimeAtten account",
     text: `Hi ${name},\n\nYou've been invited to TimeAtten. Click the link below to set your password. This link expires in 24 hours and can only be used once.\n\n${setupUrl}\n\nIf you didn't expect this email, you can ignore it.`,
     html: `

@@ -321,8 +321,7 @@ export function ScheduleForm({
             <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
             <span>
               Email delivery is not configured yet. Schedules will be saved but emails
-              won&apos;t be sent until <strong>SENDGRID_API_KEY</strong> and{" "}
-              <strong>SENDGRID_FROM_EMAIL</strong> environment variables are set.
+              won&apos;t be sent until an administrator turns email on.
             </span>
           </div>
         )}
