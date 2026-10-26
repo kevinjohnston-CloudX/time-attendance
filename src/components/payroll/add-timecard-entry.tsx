@@ -196,7 +196,7 @@ export function AddTimecardEntry({
               label="Hours"
               type="number"
               min="0.01"
-              max="24"
+              max="999"
               step="0.01"
               value={durationHours}
               onChange={(e) => setDurationHours(e.target.value)}

@@ -1476,8 +1476,10 @@ export function TimecardViewer({
     setNewEntryError(null);
     const hours = parseFloat(newEntryHours);
     // 0 is allowed: it marks the day with the pay code and adds no hours.
-    if (isNaN(hours) || hours < 0 || hours > 24) {
-      setNewEntryError("Enter hours between 0 and 24");
+    // Over 24 is for leave codes (a PTO payout); the server holds worked
+    // hours to 24 a day and says so.
+    if (isNaN(hours) || hours < 0 || hours > 999) {
+      setNewEntryError("Enter hours between 0 and 999");
       return;
     }
     startTransition(async () => {
@@ -1869,8 +1871,8 @@ export function TimecardViewer({
     const raw = editingHours.value.trim();
     if (!raw) { setEditingHours(null); return; }
     const hours = parseFloat(raw);
-    if (isNaN(hours) || hours < 0.25 || hours > 24) {
-      setHoursError("Enter hours between 0.25 and 24");
+    if (isNaN(hours) || hours < 0.25 || hours > 999) {
+      setHoursError("Enter hours between 0.25 and 999");
       return;
     }
     const dayKey = editingHours.dayKey;
@@ -4520,7 +4522,7 @@ export function TimecardViewer({
                       label="Regular hours"
                       type="number"
                       min="0"
-                      max="24"
+                      max="999"
                       step="0.01"
                       value={newEntryHours}
                       onChange={(e) => setNewEntryHours(e.target.value)}
