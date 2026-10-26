@@ -9,6 +9,7 @@ import { currentIdentity } from "@/lib/rbac/current";
 import { employeeRank } from "@/lib/rbac/identity";
 import { assertRecordInReach } from "@/lib/rbac/scope";
 import { chargeFor, dateKey, syncCurrentPayRates } from "@/lib/pay-rates";
+import { editsPeers } from "@/lib/rbac/roles";
 
 /**
  * An employee's pay rate history, as NovaTime's Pay Rates table. Rate 1 is the
@@ -111,7 +112,9 @@ export const savePayRates = withRBAC("EMPLOYEE_MANAGE", async (actor, input: z.i
   if (!me.isSuperAdmin) {
     if (me.employeeId === employeeId) throw new Error("You can't change your own pay");
     const theirs = await employeeRank(employeeId, tenantId ?? "");
-    if (theirs === null || theirs >= me.rank) throw new Error("Only someone more senior can change this person's pay");
+    if (theirs === null || theirs > me.rank || (theirs === me.rank && !editsPeers(me.rank))) {
+      throw new Error("Only someone more senior can change this person's pay");
+    }
   }
 
   const before = (await db.employeePayRate.findMany({ where: { employeeId } })).map(toRow);

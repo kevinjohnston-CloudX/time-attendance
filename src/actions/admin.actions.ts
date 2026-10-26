@@ -20,7 +20,7 @@ import { startOfDayInTz } from "@/lib/utils/date";
 import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
 import { currentIdentity } from "@/lib/rbac/current";
 import { employeeRank, forgetIdentity, type LiveIdentity } from "@/lib/rbac/identity";
-import { ROLE_RANK, isValidRole, givesLiveAttendanceRoles } from "@/lib/rbac/roles";
+import { ROLE_RANK, isValidRole, givesLiveAttendanceRoles, editsPeers } from "@/lib/rbac/roles";
 import { todayKey } from "@/lib/pay-rates";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
@@ -626,7 +626,7 @@ export const updateEmployee = withRBAC(
       } else {
         const theirs = await employeeRank(employeeId, tenantId);
         if (theirs === null || theirs > me.rank) throw new Error("Only someone more senior can edit this person");
-        if (theirs === me.rank && (sensitive || personalChanged || workChanged)) {
+        if (theirs === me.rank && !editsPeers(me.rank) && (sensitive || personalChanged || workChanged)) {
           throw new Error("Only someone more senior can change this person's email, role, status or pay");
         }
       }
