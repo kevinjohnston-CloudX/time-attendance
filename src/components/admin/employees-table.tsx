@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, type ReactNode } from "react";
 import { mailAddress } from "@/lib/email-address";
 import Link from "next/link";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { useCondensingBar } from "@/components/layout/use-condensing-bar";
+import { useSearchBox } from "@/hooks/use-search-box";
 import {
   Button,
   EmptyState,
@@ -97,13 +98,6 @@ export function EmployeesTable({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const phone = usePhoneLayout();
-  // Local state for search input so typing feels instant (debounced URL push)
-  const [searchValue, setSearchValue] = useState(currentFilters.q);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Keep local search in sync if the server-driven filter changes (e.g. browser back)
-  useEffect(() => { setSearchValue(currentFilters.q); }, [currentFilters.q]);
-
   const buildUrl = useCallback((overrides: Partial<Filters & { page: number }>) => {
     const params = new URLSearchParams();
     for (const k of LIST_KEYS) {
@@ -123,9 +117,17 @@ export function EmployeesTable({
     router.push(url);
   }
 
+  // The search box: what is typed stays typed while results arrive, and a
+  // search replaces the address rather than adding to the history.
+  const searchBox = useSearchBox(currentFilters.q, (q) => {
+    const url = buildUrl({ q, page: 0 });
+    rememberList(url);
+    router.replace(url);
+  });
+
   // Clears the search and filters. The sort stays, since it hides nobody.
   function clearAll() {
-    setSearchValue("");
+    searchBox.reset("");
     const url = currentFilters.sort ? `/admin/employees?sort=${encodeURIComponent(currentFilters.sort)}` : "/admin/employees";
     rememberList(url);
     router.push(url);
@@ -138,11 +140,6 @@ export function EmployeesTable({
     rememberList(currentUrl);
   }, [currentUrl]);
 
-  function onSearchChange(val: string) {
-    setSearchValue(val);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => navigate({ q: val, page: 0 }), 350);
-  }
 
   function onFilterChange(key: Exclude<keyof Filters, "q">, val: string) {
     navigate({ [key]: val, page: 0 });
@@ -172,8 +169,8 @@ export function EmployeesTable({
         <ToolsBar
           search={
             <SearchInput
-              value={searchValue}
-              onValueChange={onSearchChange}
+              value={searchBox.value}
+              onValueChange={searchBox.onChange}
               placeholder={phone ? "Name or badge" : "Name, employee ID or badge"}
               width={250}
             />

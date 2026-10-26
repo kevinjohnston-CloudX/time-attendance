@@ -384,7 +384,10 @@ model WorkSegment {
   segmentType     SegmentType
   startTime       DateTime
   endTime         DateTime
-  durationMinutes Int
+  durationMinutes Int @default(0)
+  /// Exact, in seconds: hours to the hundredth, as NovaTime keeps them (0.56 h = 2016 s).
+  /// A trigger keeps the minutes beside it in step, rounded, for whatever still reads minutes.
+  durationSeconds Int @default(0)
   segmentDate     DateTime    @db.Date
   isPaid          Boolean
   payBucket         PayBucket

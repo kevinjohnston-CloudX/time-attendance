@@ -25,7 +25,10 @@ export const payrollLeaveEntrySchema = z.object({
   timesheetId: z.string().min(1),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be yyyy-MM-dd"),
   leaveTypeId: z.string().min(1),
-  durationMinutes: z.number().int().min(1).max(1440),
+  // In hours, kept to the hundredth (lib/leave-time). More than a day's 24
+  // hours is allowed: payroll enters a PTO payout or carryover here as one
+  // line (27.72 hours on one day).
+  hours: z.number().min(0.01, "Enter at least 0.01 hours").max(999, "Enter at most 999 hours"),
   note: z.string().max(500).optional(),
 });
 

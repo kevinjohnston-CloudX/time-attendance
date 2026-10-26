@@ -13,6 +13,7 @@ import { getEffectiveRole } from "@/lib/rbac/check-permission";
 import { forgetIdentity } from "@/lib/rbac/identity";
 import { revokeAllUserTokens } from "@/lib/mobile-auth";
 import { zodMessage } from "@/lib/zod-message";
+import { editsPeers } from "@/lib/rbac/roles";
 
 const LOGIN_MANAGERS = ["SYSTEM_ADMIN", "HR_ADMIN", "PAYROLL_ADMIN", "SUPER_ADMIN"];
 
@@ -43,7 +44,7 @@ async function manageableLogin(employeeId: string) {
       return { error: "To change your own password, use Change password in your profile." } as const;
     }
     const rank = await employeeRank(target.id, target.tenantId);
-    if (rank === null || rank >= caller.rank) {
+    if (rank === null || rank > caller.rank || (rank === caller.rank && !editsPeers(caller.rank))) {
       return { error: "Only someone more senior than this person can reset their password." } as const;
     }
   }

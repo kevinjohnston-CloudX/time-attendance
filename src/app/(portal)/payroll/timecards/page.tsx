@@ -258,7 +258,9 @@ export default async function TimecardsPage({
           segmentType: s.segmentType,
           startTime: s.startTime.toISOString(),
           endTime: s.endTime.toISOString(),
-          durationMinutes: s.durationMinutes,
+          // Exact: leave is kept to the hundredth of an hour (lib/leave-time), so
+          // a 0.56 hour line shows 0.56. Worked lines are whole minutes.
+          durationMinutes: s.durationSeconds / 60,
           segmentDate: s.segmentDate.toISOString(),
           payBucket: s.payBucket,
           payBucketOverride: s.payBucketOverride ?? null,
@@ -272,7 +274,7 @@ export default async function TimecardsPage({
         })),
         overtimeBuckets: timecard.overtimeBuckets.map((b) => ({
           bucket: b.bucket,
-          totalMinutes: b.totalMinutes,
+          totalMinutes: b.totalSeconds / 60,
         })),
         mealWaivers: timecard.mealWaivers,
         mealPremiumWaivers: timecard.mealPremiumWaivers,

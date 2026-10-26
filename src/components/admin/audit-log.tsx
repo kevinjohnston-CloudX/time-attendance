@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, useTransition, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { useSearchBox } from "@/hooks/use-search-box";
 import { format, isToday, isYesterday } from "date-fns";
 import { ArrowLeft, ArrowRight, Bot, Check, ChevronDown, ChevronRight, ChevronUp, Copy, FileSearch, Lock, Search, X } from "lucide-react";
 import type { AuditEntityType } from "@prisma/client";
@@ -259,20 +260,13 @@ export function AuditLog({
   const hydrated = useHydrated();
   const [navigating, startNav] = useTransition();
   const { barRef, markerRef, condensed } = useCondensingBar();
-  const [q, setQ] = useState(filters.q);
-  const [seenQ, setSeenQ] = useState(filters.q);
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
   const [view, setView] = useState("fields");
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
 
-  // Back and forward bring a different search in from the address bar.
-  if (seenQ !== filters.q) {
-    setSeenQ(filters.q);
-    setQ(filters.q);
-  }
-
-  const go = (next: Partial<Filters> & { page?: number }) => {
+  // A search typed replaces the address; a filter, a chip or a page adds to
+  // the history.
+  const go = (next: Partial<Filters> & { page?: number }, how: "push" | "replace" = "push") => {
     const f = { ...filters, ...next };
     const p = new URLSearchParams();
     if (f.q.trim()) p.set("q", f.q.trim());
@@ -285,17 +279,22 @@ export function AuditLog({
     if (next.page && next.page > 1) p.set("page", String(next.page));
     const qs = p.toString();
     setSelId(null);
-    startNav(() => router.push(`/admin/audit${qs ? `?${qs}` : ""}`, { scroll: false }));
+    const url = `/admin/audit${qs ? `?${qs}` : ""}`;
+    startNav(() => {
+      if (how === "replace") router.replace(url, { scroll: false });
+      else router.push(url, { scroll: false });
+    });
   };
 
-  const onSearch = (value: string) => {
-    setQ(value);
-    if (debounce.current) clearTimeout(debounce.current);
-    debounce.current = setTimeout(() => go({ q: value }), 350);
+  // What is typed stays typed while results arrive, back and forward bring
+  // their search in, and the address keeps the search trimmed (useSearchBox).
+  const searchBox = useSearchBox(filters.q, (value) => go({ q: value }, "replace"), { normalize: (s) => s.trim() });
+  // A chip or Clear all that clears the search sets the box too, and drops
+  // a search still waiting to be sent.
+  const clearFilters = (next: Partial<Filters>) => {
+    if (next.q !== undefined) searchBox.reset(next.q);
+    go(next);
   };
-  useEffect(() => () => {
-    if (debounce.current) clearTimeout(debounce.current);
-  }, []);
 
   const typeOptions = [{ id: "", name: "All types" }, ...ENTITY_TYPES.map((t) => ({ id: t, name: ENTITY_LABEL[t] }))];
   const actorOptions = [{ id: "", name: "Anyone" }, { id: "system", name: "System" }, ...actors];
@@ -398,8 +397,8 @@ export function AuditLog({
             <Search className="h-[18px] w-[18px] flex-none" style={{ color: "var(--icon-secondary)" }} aria-hidden />
             <input
               type="search"
-              value={q}
-              onChange={(e) => onSearch(e.target.value)}
+              value={searchBox.value}
+              onChange={(e) => searchBox.onChange(e.target.value)}
               placeholder="Search action or record ID"
               aria-label="Search action or record ID"
               className={`${phone.search} h-[34px] min-w-[120px] max-w-[320px] flex-[1_1_200px] border-0 bg-transparent px-2 outline-none`}
@@ -417,11 +416,11 @@ export function AuditLog({
           {filtered && (
             <div className="-mt-1 flex flex-wrap items-center gap-1.5">
               {chips.map((c) => (
-                <Chip key={c.label} label={c.label} value={c.value} onClear={() => go(c.clear)} />
+                <Chip key={c.label} label={c.label} value={c.value} onClear={() => clearFilters(c.clear)} />
               ))}
               <button
                 type="button"
-                onClick={() => go({ q: "", type: "", actor: "", range: "any" })}
+                onClick={() => clearFilters({ q: "", type: "", actor: "", range: "any" })}
                 className="h-7 whitespace-nowrap rounded-lg px-2"
                 style={{ border: 0, background: "transparent", cursor: "pointer", font: "var(--weight-medium) 12px/1 var(--font-sans)", color: "var(--text-accent)" }}
               >
@@ -450,7 +449,7 @@ export function AuditLog({
               {filters.type && chips.length === 1 ? "Nothing of this type has been recorded." : filtered ? "Nothing in the log matches these filters." : "Nothing has been recorded yet."}
             </span>
             {filtered && (
-              <Button hierarchy="secondary" size="sm" onClick={() => go({ q: "", type: "", actor: "", range: "any" })}>
+              <Button hierarchy="secondary" size="sm" onClick={() => clearFilters({ q: "", type: "", actor: "", range: "any" })}>
                 Show all entries
               </Button>
             )}

@@ -29,29 +29,29 @@ async function debitBalance(
   employeeId: string,
   leaveTypeId: string,
   leaveRequestId: string,
-  durationMinutes: number,
+  durationSeconds: number,
   accrualYear: number,
   actorId?: string | null
 ): Promise<void> {
   const balance = await db.leaveBalance.upsert({
     where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear } },
     update: {},
-    create: { employeeId, leaveTypeId, accrualYear, balanceMinutes: 0, usedMinutes: 0 },
+    create: { employeeId, leaveTypeId, accrualYear, balanceSeconds: 0, usedSeconds: 0 },
   });
-  const delta = -durationMinutes;
-  const newBalance = balance.balanceMinutes + delta;
+  const delta = -durationSeconds;
+  const newBalance = balance.balanceSeconds + delta;
   await db.$transaction([
     db.leaveBalance.update({
       where: { id: balance.id },
-      data: { balanceMinutes: newBalance, usedMinutes: { increment: durationMinutes } },
+      data: { balanceSeconds: newBalance, usedSeconds: { increment: durationSeconds } },
     }),
     db.leaveAccrualLedger.create({
       data: {
         employeeId,
         leaveTypeId,
         action: "TIMECARD_DEDUCTION",
-        deltaMinutes: delta,
-        balanceAfter: newBalance,
+        deltaSeconds: delta,
+        balanceAfterSeconds: newBalance,
         leaveRequestId,
         createdById: actorId ?? null,
         note: "Timecard entry",
@@ -79,20 +79,20 @@ async function reverseDebit(
   });
   if (!balance) return;
 
-  const reversal = -usageEntry.deltaMinutes;
-  const newBalance = balance.balanceMinutes + reversal;
+  const reversal = -usageEntry.deltaSeconds;
+  const newBalance = balance.balanceSeconds + reversal;
   await db.$transaction([
     db.leaveBalance.update({
       where: { id: balance.id },
-      data: { balanceMinutes: newBalance, usedMinutes: { decrement: reversal } },
+      data: { balanceSeconds: newBalance, usedSeconds: { decrement: reversal } },
     }),
     db.leaveAccrualLedger.create({
       data: {
         employeeId,
         leaveTypeId,
         action: "ADJUSTMENT",
-        deltaMinutes: reversal,
-        balanceAfter: newBalance,
+        deltaSeconds: reversal,
+        balanceAfterSeconds: newBalance,
         leaveRequestId,
         createdById: actorId ?? null,
         note: note ?? "Timecard entry",
@@ -224,7 +224,7 @@ export async function reconcileSalarySegmentDeduction(
         postedAt: new Date(),
       },
     });
-    await debitBalance(employeeId, newLeaveType.id, req.id, newDuration, accrualYear, actorId);
+    await debitBalance(employeeId, newLeaveType.id, req.id, newDuration * 60, accrualYear, actorId);
     await db.workSegment.update({ where: { id: segmentId }, data: { leaveRequestId: req.id } });
     return;
   }
@@ -251,7 +251,7 @@ export async function reconcileSalarySegmentDeduction(
         postedAt: new Date(),
       },
     });
-    await debitBalance(employeeId, newLeaveType.id, req.id, newDuration, accrualYear, actorId);
+    await debitBalance(employeeId, newLeaveType.id, req.id, newDuration * 60, accrualYear, actorId);
     await db.workSegment.update({ where: { id: segmentId }, data: { leaveRequestId: req.id } });
     return;
   }
@@ -262,7 +262,7 @@ export async function reconcileSalarySegmentDeduction(
       await reverseDebit(employeeId, existing.leaveTypeId, existing.id, accrualYear, actorId);
     }
     await db.leaveRequest.update({ where: { id: existing.id }, data: { durationMinutes: newDuration } });
-    await debitBalance(employeeId, newLeaveType.id, existing.id, newDuration, accrualYear, actorId);
+    await debitBalance(employeeId, newLeaveType.id, existing.id, newDuration * 60, accrualYear, actorId);
   }
   // Same leave type + same duration → nothing to do
 }
@@ -415,7 +415,7 @@ export async function reconcileLeaveDeductions(
               postedAt: new Date(),
             },
           });
-          await debitBalance(employeeId, leaveType.id, req.id, newDuration, accrualYear, clockIn.approvedById);
+          await debitBalance(employeeId, leaveType.id, req.id, newDuration * 60, accrualYear, clockIn.approvedById);
           handledRequestIds.add(req.id);
         } catch (err: unknown) {
           // P2002: a concurrent rebuild already created this leave request — skip.
@@ -463,7 +463,7 @@ export async function reconcileLeaveDeductions(
             postedAt: new Date(),
           },
         });
-        await debitBalance(employeeId, leaveType.id, newReq.id, newDuration, newAccrualYear, clockIn.approvedById);
+        await debitBalance(employeeId, leaveType.id, newReq.id, newDuration * 60, newAccrualYear, clockIn.approvedById);
         handledRequestIds.add(newReq.id);
       } else if (newDuration !== existing.durationMinutes) {
         if (existing.status === "POSTED") {
@@ -473,7 +473,7 @@ export async function reconcileLeaveDeductions(
           where: { id: existing.id },
           data: { durationMinutes: newDuration },
         });
-        await debitBalance(employeeId, existing.leaveTypeId, existing.id, newDuration, accrualYear, clockIn.approvedById);
+        await debitBalance(employeeId, existing.leaveTypeId, existing.id, newDuration * 60, accrualYear, clockIn.approvedById);
       }
     }
   }

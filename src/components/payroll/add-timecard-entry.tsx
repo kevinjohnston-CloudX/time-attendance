@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from "react";
 import { addManualPunchPair, addPayrollLeaveEntry } from "@/actions/timecard-entry.actions";
-import { minutesToHoursDecimal } from "@/lib/utils/duration";
 import { fromSiteClock } from "@/lib/utils/date";
 import { Banner, Button, Input, SegmentedControl, Select } from "@/components/ui";
 
@@ -81,8 +80,9 @@ export function AddTimecardEntry({
   function handleAddLeave(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const durationMinutes = Math.round(parseFloat(durationHours) * 60);
-    if (isNaN(durationMinutes) || durationMinutes <= 0) {
+    // Sent as hours: leave is kept to the hundredth (lib/leave-time).
+    const hours = Math.round(parseFloat(durationHours) * 100) / 100;
+    if (isNaN(hours) || hours <= 0) {
       setError("Duration must be greater than 0.");
       return;
     }
@@ -91,7 +91,7 @@ export function AddTimecardEntry({
         timesheetId,
         date,
         leaveTypeId,
-        durationMinutes,
+        hours,
         note: leaveNote || undefined,
       });
       if (!result.success) {
@@ -104,7 +104,7 @@ export function AddTimecardEntry({
 
   const leavePreview =
     durationHours && !isNaN(parseFloat(durationHours))
-      ? `${minutesToHoursDecimal(Math.round(parseFloat(durationHours) * 60))} h will be credited`
+      ? `${(Math.round(parseFloat(durationHours) * 100) / 100).toFixed(2)} h will be credited`
       : undefined;
 
   return (
@@ -196,7 +196,7 @@ export function AddTimecardEntry({
               label="Hours"
               type="number"
               min="0.01"
-              max="24"
+              max="999"
               step="0.01"
               value={durationHours}
               onChange={(e) => setDurationHours(e.target.value)}

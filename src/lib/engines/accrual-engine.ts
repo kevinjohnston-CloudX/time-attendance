@@ -3,6 +3,7 @@ import { AccrualPostingFreq, AccrualRateMode, ServiceMonthBasis } from "@prisma/
 import { db } from "@/lib/db";
 import type { TxClient } from "@/types/prisma";
 import { parseUtcDate } from "@/lib/utils/date";
+import { hoursToSeconds } from "@/lib/leave-time";
 
 /** Derive how many pay periods fit in a year from a single period's date range. */
 function periodsPerYear(startDate: Date, endDate: Date): number {
@@ -145,34 +146,35 @@ function freqIntervalDays(freq: AccrualPostingFreq, lastPostingDate: Date): numb
   }
 }
 
-/** Compute per-posting rate in minutes.
+/** Compute the per-posting rate in seconds, to the hundredth of an hour, as
+ *  NovaTime posts it: 6.16 hours is 22176 seconds, where whole minutes made
+ *  it 370 (6.17).
  *  PER_POSTING mode: effectiveHours IS the per-posting amount — no division needed.
  *  YEARLY mode: divide annual total by the appropriate number of postings.
  */
-function computeRate(
+export function computeRate(
   freq: AccrualPostingFreq,
   rateMode: AccrualRateMode,
   effectiveHours: number,
   ppy: number
 ): number {
   if (rateMode === "PER_POSTING") {
-    return Math.round(effectiveHours * 60);
+    return hoursToSeconds(effectiveHours);
   }
-  const annualMins = effectiveHours * 60;
   switch (freq) {
-    case "PER_PAY_PERIOD":  return Math.round(annualMins / ppy);
-    case "DAILY":           return Math.round(annualMins / 365);
-    case "WEEKLY":          return Math.round(annualMins / 52);
-    case "BI_WEEKLY":       return Math.round(annualMins / 26);
-    case "SEMI_MONTHLY":    return Math.round(annualMins / 24);
-    case "MONTHLY":         return Math.round(annualMins / 12);
-    case "EVERY_2_MONTHS":  return Math.round(annualMins / 6);
-    case "QUARTERLY":       return Math.round(annualMins / 4);
-    case "EVERY_4_MONTHS":  return Math.round(annualMins / 3);
-    case "SEMI_ANNUALLY":   return Math.round(annualMins / 2);
+    case "PER_PAY_PERIOD":  return hoursToSeconds(effectiveHours / ppy);
+    case "DAILY":           return hoursToSeconds(effectiveHours / 365);
+    case "WEEKLY":          return hoursToSeconds(effectiveHours / 52);
+    case "BI_WEEKLY":       return hoursToSeconds(effectiveHours / 26);
+    case "SEMI_MONTHLY":    return hoursToSeconds(effectiveHours / 24);
+    case "MONTHLY":         return hoursToSeconds(effectiveHours / 12);
+    case "EVERY_2_MONTHS":  return hoursToSeconds(effectiveHours / 6);
+    case "QUARTERLY":       return hoursToSeconds(effectiveHours / 4);
+    case "EVERY_4_MONTHS":  return hoursToSeconds(effectiveHours / 3);
+    case "SEMI_ANNUALLY":   return hoursToSeconds(effectiveHours / 2);
     case "ANNUALLY":
     case "ANNUALLY_HIRE":
-    case "ANNUALLY_FIXED":  return annualMins;
+    case "ANNUALLY_FIXED":  return hoursToSeconds(effectiveHours);
   }
 }
 
@@ -253,12 +255,12 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
       payPeriodEnd: { gte: yearStart, lt: yearEnd },
       employeeId: { in: employees.map((e) => e.id) },
     },
-    _sum: { deltaMinutes: true },
+    _sum: { deltaSeconds: true },
   });
 
   // "employeeId:leaveTypeId" → total minutes already accrued this year
   const accrualSumMap = new Map(
-    accrualSums.map((s) => [`${s.employeeId}:${s.leaveTypeId}`, s._sum.deltaMinutes ?? 0])
+    accrualSums.map((s) => [`${s.employeeId}:${s.leaveTypeId}`, s._sum.deltaSeconds ?? 0])
   );
 
   // Employees whose balance was already reset this year — prevents double-reset on re-run
@@ -400,13 +402,13 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
               accrualYear: accrualYear - 1,
             },
           },
-          select: { balanceMinutes: true },
+          select: { balanceSeconds: true },
         });
-        if (prevYear && prevYear.balanceMinutes > 0 && pConfig?.carryOverEnabled !== false) {
-          const capMinutes = rule.carryOverHours != null ? rule.carryOverHours * 60 : null;
-          openingCarryOver = capMinutes != null
-            ? Math.min(prevYear.balanceMinutes, capMinutes)
-            : prevYear.balanceMinutes;
+        if (prevYear && prevYear.balanceSeconds > 0 && pConfig?.carryOverEnabled !== false) {
+          const capSeconds = rule.carryOverHours != null ? hoursToSeconds(rule.carryOverHours) : null;
+          openingCarryOver = capSeconds != null
+            ? Math.min(prevYear.balanceSeconds, capSeconds)
+            : prevYear.balanceSeconds;
         }
       }
 
@@ -418,8 +420,8 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
           employeeId: employee.id,
           leaveTypeId: leaveType.id,
           accrualYear,
-          balanceMinutes: openingCarryOver,
-          usedMinutes: 0,
+          balanceSeconds: openingCarryOver,
+          usedSeconds: 0,
         },
       });
 
@@ -430,8 +432,8 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
             employeeId: employee.id,
             leaveTypeId: leaveType.id,
             action: "ADJUSTMENT",
-            deltaMinutes: openingCarryOver,
-            balanceAfter: openingCarryOver,
+            deltaSeconds: openingCarryOver,
+            balanceAfterSeconds: openingCarryOver,
           },
         });
       }
@@ -440,22 +442,22 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
       // e.g. carry-over = 5 hrs → employee finishes the reset with 5 hrs available.
       // Only fires once per year (alreadyResetThisYear prevents double-reset on re-run).
       const resetKey = `${employee.id}:${leaveType.id}`;
-      let balanceAfterReset = existing.balanceMinutes;
+      let balanceAfterReset = existing.balanceSeconds;
       if (isResetPeriod && !alreadyResetThisYear.has(resetKey)) {
-        const coMins = rule?.carryOverHours != null ? rule.carryOverHours * 60 : null;
+        const coSeconds = rule?.carryOverHours != null ? hoursToSeconds(rule.carryOverHours) : null;
         const resetCarryOver = pConfig?.carryOverEnabled === false
           ? 0
-          : coMins != null
-            ? Math.min(existing.balanceMinutes, coMins)
-            : existing.balanceMinutes; // unlimited carry-over = preserve full balance
-        if (existing.balanceMinutes > 0) {
+          : coSeconds != null
+            ? Math.min(existing.balanceSeconds, coSeconds)
+            : existing.balanceSeconds; // unlimited carry-over = preserve full balance
+        if (existing.balanceSeconds > 0) {
           await db.$transaction([
-            db.leaveBalance.update({ where: { id: existing.id }, data: { balanceMinutes: 0 } }),
+            db.leaveBalance.update({ where: { id: existing.id }, data: { balanceSeconds: 0 } }),
             db.leaveAccrualLedger.create({
               data: {
                 employeeId: employee.id, leaveTypeId: leaveType.id,
                 action: "BALANCE_RESET",
-                deltaMinutes: -existing.balanceMinutes, balanceAfter: 0,
+                deltaSeconds: -existing.balanceSeconds, balanceAfterSeconds: 0,
                 payPeriodEnd: payPeriod.endDate,
               },
             }),
@@ -468,7 +470,7 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
             const targetBalance = await db.leaveBalance.upsert({
               where: { employeeId_leaveTypeId_accrualYear: { employeeId: employee.id, leaveTypeId: targetLtId, accrualYear } },
               update: {},
-              create: { employeeId: employee.id, leaveTypeId: targetLtId, accrualYear, balanceMinutes: 0, usedMinutes: 0 },
+              create: { employeeId: employee.id, leaveTypeId: targetLtId, accrualYear, balanceSeconds: 0, usedSeconds: 0 },
             });
             // If carryOverRespectMaxBalance, clamp to the destination's max balance
             let actualCarryOver = resetCarryOver;
@@ -482,19 +484,19 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
                 (t) => t.minTenureMonths <= tenureMonths && (t.maxTenureMonths === null || tenureMonths < t.maxTenureMonths)
               ) ?? null;
               if (destRule?.maxBalanceHours != null) {
-                const destMaxMins = Math.round(destRule.maxBalanceHours * 60);
-                actualCarryOver = Math.max(0, Math.min(resetCarryOver, destMaxMins - targetBalance.balanceMinutes));
+                const destMaxSeconds = hoursToSeconds(destRule.maxBalanceHours);
+                actualCarryOver = Math.max(0, Math.min(resetCarryOver, destMaxSeconds - targetBalance.balanceSeconds));
               }
             }
             if (actualCarryOver > 0) {
-              const newTargetBalance = targetBalance.balanceMinutes + actualCarryOver;
+              const newTargetBalance = targetBalance.balanceSeconds + actualCarryOver;
               await db.$transaction([
-                db.leaveBalance.update({ where: { id: targetBalance.id }, data: { balanceMinutes: newTargetBalance } }),
+                db.leaveBalance.update({ where: { id: targetBalance.id }, data: { balanceSeconds: newTargetBalance } }),
                 db.leaveAccrualLedger.create({
                   data: {
                     employeeId: employee.id, leaveTypeId: targetLtId,
                     action: "CARRY_OVER",
-                    deltaMinutes: actualCarryOver, balanceAfter: newTargetBalance,
+                    deltaSeconds: actualCarryOver, balanceAfterSeconds: newTargetBalance,
                     payPeriodEnd: payPeriod.endDate,
                   },
                 }),
@@ -503,12 +505,12 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
             balanceAfterReset = 0;
           } else {
             await db.$transaction([
-              db.leaveBalance.update({ where: { id: existing.id }, data: { balanceMinutes: resetCarryOver } }),
+              db.leaveBalance.update({ where: { id: existing.id }, data: { balanceSeconds: resetCarryOver } }),
               db.leaveAccrualLedger.create({
                 data: {
                   employeeId: employee.id, leaveTypeId: leaveType.id,
                   action: "CARRY_OVER",
-                  deltaMinutes: resetCarryOver, balanceAfter: resetCarryOver,
+                  deltaSeconds: resetCarryOver, balanceAfterSeconds: resetCarryOver,
                   payPeriodEnd: payPeriod.endDate,
                 },
               }),
@@ -525,32 +527,32 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
       // In PER_POSTING mode the stored value IS the per-posting amount, so there
       // is no meaningful yearly cap — the posting frequency controls cadence.
       let rate: number;
-      const annualCapMinutes =
+      const annualCapSeconds =
         effectiveAnnualHours > 0 && rateMode === "YEARLY"
-          ? effectiveAnnualHours * 60
+          ? hoursToSeconds(effectiveAnnualHours)
           : null;
 
       if (effectiveAnnualHours > 0) {
         rate = computeRate(activeFreq, rateMode, effectiveAnnualHours, ppy) * postingCount;
       } else {
         // Flat LeaveType fallback (backward compat) — always posts per pay period
-        rate = leaveType.accrualRateMinutes;
+        rate = leaveType.accrualRateMinutes * 60;
       }
 
       if (rate <= 0) continue;
 
       // Enforce annual cap — don't accrue beyond hoursPerYear for the year
-      if (annualCapMinutes !== null) {
+      if (annualCapSeconds !== null) {
         const alreadyAccrued = accrualSumMap.get(`${employee.id}:${leaveType.id}`) ?? 0;
-        if (alreadyAccrued >= annualCapMinutes) continue;
-        rate = Math.min(rate, annualCapMinutes - alreadyAccrued);
+        if (alreadyAccrued >= annualCapSeconds) continue;
+        rate = Math.min(rate, annualCapSeconds - alreadyAccrued);
       }
 
       // Use post-reset balance as the starting point for this accrual
       const currentBalance = balanceAfterReset;
       const cap = rule?.maxBalanceHours != null
-        ? Math.round(rule.maxBalanceHours * 60)
-        : leaveType.maxBalanceMinutes;
+        ? hoursToSeconds(rule.maxBalanceHours)
+        : leaveType.maxBalanceMinutes != null ? leaveType.maxBalanceMinutes * 60 : null;
       const newBalance = cap !== null
         ? Math.min(currentBalance + rate, cap)
         : currentBalance + rate;
@@ -561,15 +563,15 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
       await db.$transaction([
         db.leaveBalance.update({
           where: { id: existing.id },
-          data: { balanceMinutes: newBalance },
+          data: { balanceSeconds: newBalance },
         }),
         db.leaveAccrualLedger.create({
           data: {
             employeeId: employee.id,
             leaveTypeId: leaveType.id,
             action: "ACCRUAL",
-            deltaMinutes: actualDelta,
-            balanceAfter: newBalance,
+            deltaSeconds: actualDelta,
+            balanceAfterSeconds: newBalance,
             payPeriodEnd: payPeriod.endDate,
           },
         }),
@@ -649,10 +651,10 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
       payPeriodEnd: { gte: yearStart, lt: yearEnd },
       employeeId: { in: employeeIds },
     },
-    _sum: { deltaMinutes: true },
+    _sum: { deltaSeconds: true },
   });
   const accrualSumMap = new Map(
-    accrualSums.map((s) => [`${s.employeeId}:${s.leaveTypeId}`, s._sum.deltaMinutes ?? 0])
+    accrualSums.map((s) => [`${s.employeeId}:${s.leaveTypeId}`, s._sum.deltaSeconds ?? 0])
   );
 
   // Dedup: find any ACCRUAL entries already posted on today's date — skip those pairs
@@ -821,13 +823,13 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
               accrualYear: accrualYear - 1,
             },
           },
-          select: { balanceMinutes: true },
+          select: { balanceSeconds: true },
         });
-        if (prevYear && prevYear.balanceMinutes > 0 && pConfig?.carryOverEnabled !== false) {
-          const capMinutes = rule.carryOverHours != null ? rule.carryOverHours * 60 : null;
-          openingCarryOver = capMinutes != null
-            ? Math.min(prevYear.balanceMinutes, capMinutes)
-            : prevYear.balanceMinutes;
+        if (prevYear && prevYear.balanceSeconds > 0 && pConfig?.carryOverEnabled !== false) {
+          const capSeconds = rule.carryOverHours != null ? hoursToSeconds(rule.carryOverHours) : null;
+          openingCarryOver = capSeconds != null
+            ? Math.min(prevYear.balanceSeconds, capSeconds)
+            : prevYear.balanceSeconds;
         }
       }
 
@@ -838,8 +840,8 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
           employeeId: employee.id,
           leaveTypeId: leaveType.id,
           accrualYear,
-          balanceMinutes: openingCarryOver,
-          usedMinutes: 0,
+          balanceSeconds: openingCarryOver,
+          usedSeconds: 0,
         },
       });
 
@@ -849,8 +851,8 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
             employeeId: employee.id,
             leaveTypeId: leaveType.id,
             action: "ADJUSTMENT",
-            deltaMinutes: openingCarryOver,
-            balanceAfter: openingCarryOver,
+            deltaSeconds: openingCarryOver,
+            balanceAfterSeconds: openingCarryOver,
           },
         });
       }
@@ -859,22 +861,22 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
       // e.g. carry-over = 5 hrs → employee finishes the reset with 5 hrs available.
       // Only fires once per year (alreadyResetThisYear prevents double-reset on re-run).
       const resetKey = `${employee.id}:${leaveType.id}`;
-      let balanceAfterReset = existing.balanceMinutes;
+      let balanceAfterReset = existing.balanceSeconds;
       if (isResetDay && !alreadyResetThisYear.has(resetKey)) {
-        const coMins = rule?.carryOverHours != null ? rule.carryOverHours * 60 : null;
+        const coSeconds = rule?.carryOverHours != null ? hoursToSeconds(rule.carryOverHours) : null;
         const resetCarryOver = pConfig?.carryOverEnabled === false
           ? 0
-          : coMins != null
-            ? Math.min(existing.balanceMinutes, coMins)
-            : existing.balanceMinutes; // unlimited carry-over = preserve full balance
-        if (existing.balanceMinutes > 0) {
+          : coSeconds != null
+            ? Math.min(existing.balanceSeconds, coSeconds)
+            : existing.balanceSeconds; // unlimited carry-over = preserve full balance
+        if (existing.balanceSeconds > 0) {
           await db.$transaction([
-            db.leaveBalance.update({ where: { id: existing.id }, data: { balanceMinutes: 0 } }),
+            db.leaveBalance.update({ where: { id: existing.id }, data: { balanceSeconds: 0 } }),
             db.leaveAccrualLedger.create({
               data: {
                 employeeId: employee.id, leaveTypeId: leaveType.id,
                 action: "BALANCE_RESET",
-                deltaMinutes: -existing.balanceMinutes, balanceAfter: 0,
+                deltaSeconds: -existing.balanceSeconds, balanceAfterSeconds: 0,
                 payPeriodEnd: postingDate,
               },
             }),
@@ -887,7 +889,7 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
             const targetBalance = await db.leaveBalance.upsert({
               where: { employeeId_leaveTypeId_accrualYear: { employeeId: employee.id, leaveTypeId: targetLtId, accrualYear } },
               update: {},
-              create: { employeeId: employee.id, leaveTypeId: targetLtId, accrualYear, balanceMinutes: 0, usedMinutes: 0 },
+              create: { employeeId: employee.id, leaveTypeId: targetLtId, accrualYear, balanceSeconds: 0, usedSeconds: 0 },
             });
             // If carryOverRespectMaxBalance, clamp to the destination's max balance
             let actualCarryOver = resetCarryOver;
@@ -901,19 +903,19 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
                 (t) => t.minTenureMonths <= tenureMonths && (t.maxTenureMonths === null || tenureMonths < t.maxTenureMonths)
               ) ?? null;
               if (destRule?.maxBalanceHours != null) {
-                const destMaxMins = Math.round(destRule.maxBalanceHours * 60);
-                actualCarryOver = Math.max(0, Math.min(resetCarryOver, destMaxMins - targetBalance.balanceMinutes));
+                const destMaxSeconds = hoursToSeconds(destRule.maxBalanceHours);
+                actualCarryOver = Math.max(0, Math.min(resetCarryOver, destMaxSeconds - targetBalance.balanceSeconds));
               }
             }
             if (actualCarryOver > 0) {
-              const newTargetBalance = targetBalance.balanceMinutes + actualCarryOver;
+              const newTargetBalance = targetBalance.balanceSeconds + actualCarryOver;
               await db.$transaction([
-                db.leaveBalance.update({ where: { id: targetBalance.id }, data: { balanceMinutes: newTargetBalance } }),
+                db.leaveBalance.update({ where: { id: targetBalance.id }, data: { balanceSeconds: newTargetBalance } }),
                 db.leaveAccrualLedger.create({
                   data: {
                     employeeId: employee.id, leaveTypeId: targetLtId,
                     action: "CARRY_OVER",
-                    deltaMinutes: actualCarryOver, balanceAfter: newTargetBalance,
+                    deltaSeconds: actualCarryOver, balanceAfterSeconds: newTargetBalance,
                     payPeriodEnd: postingDate,
                   },
                 }),
@@ -922,12 +924,12 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
             balanceAfterReset = 0;
           } else {
             await db.$transaction([
-              db.leaveBalance.update({ where: { id: existing.id }, data: { balanceMinutes: resetCarryOver } }),
+              db.leaveBalance.update({ where: { id: existing.id }, data: { balanceSeconds: resetCarryOver } }),
               db.leaveAccrualLedger.create({
                 data: {
                   employeeId: employee.id, leaveTypeId: leaveType.id,
                   action: "CARRY_OVER",
-                  deltaMinutes: resetCarryOver, balanceAfter: resetCarryOver,
+                  deltaSeconds: resetCarryOver, balanceAfterSeconds: resetCarryOver,
                   payPeriodEnd: postingDate,
                 },
               }),
@@ -948,18 +950,18 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
       if (rate <= 0) continue;
 
       // Annual cap (YEARLY mode only — PER_POSTING has no cap by design)
-      const annualCapMinutes = rateMode === "YEARLY" ? effectiveAnnualHours * 60 : null;
-      if (annualCapMinutes !== null) {
+      const annualCapSeconds = rateMode === "YEARLY" ? hoursToSeconds(effectiveAnnualHours) : null;
+      if (annualCapSeconds !== null) {
         const alreadyAccrued = accrualSumMap.get(`${employee.id}:${leaveType.id}`) ?? 0;
-        if (alreadyAccrued >= annualCapMinutes) continue;
-        rate = Math.min(rate, annualCapMinutes - alreadyAccrued);
+        if (alreadyAccrued >= annualCapSeconds) continue;
+        rate = Math.min(rate, annualCapSeconds - alreadyAccrued);
       }
 
       // Use post-reset balance as the starting point for this accrual
       const currentBalance = balanceAfterReset;
       const cap = rule?.maxBalanceHours != null
-        ? Math.round(rule.maxBalanceHours * 60)
-        : leaveType.maxBalanceMinutes;
+        ? hoursToSeconds(rule.maxBalanceHours)
+        : leaveType.maxBalanceMinutes != null ? leaveType.maxBalanceMinutes * 60 : null;
       const newBalance = cap !== null
         ? Math.min(currentBalance + rate, cap)
         : currentBalance + rate;
@@ -970,15 +972,15 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
       await db.$transaction([
         db.leaveBalance.update({
           where: { id: existing.id },
-          data: { balanceMinutes: newBalance },
+          data: { balanceSeconds: newBalance },
         }),
         db.leaveAccrualLedger.create({
           data: {
             employeeId: employee.id,
             leaveTypeId: leaveType.id,
             action: "ACCRUAL",
-            deltaMinutes: actualDelta,
-            balanceAfter: newBalance,
+            deltaSeconds: actualDelta,
+            balanceAfterSeconds: newBalance,
             payPeriodEnd: postingDate,
           },
         }),
@@ -1014,7 +1016,7 @@ export async function postLeaveUsage(leaveRequestId: string, tx?: TxClient): Pro
     include: { leaveType: { select: { accrualTracked: true } } },
   });
   if (!request.leaveType.accrualTracked) return;
-  if ((await debitedMinutes(tx, leaveRequestId)) > 0) return;
+  if ((await debitedSeconds(tx, leaveRequestId)) > 0) return;
 
   const accrualYear = getYear(request.startDate);
   const key = { employeeId: request.employeeId, leaveTypeId: request.leaveTypeId, accrualYear };
@@ -1024,14 +1026,14 @@ export async function postLeaveUsage(leaveRequestId: string, tx?: TxClient): Pro
     update: {},
   });
 
-  const delta = -request.durationMinutes;
-  const newBalance = balance.balanceMinutes + delta;
+  const delta = -request.durationSeconds;
+  const newBalance = balance.balanceSeconds + delta;
 
   await tx.leaveBalance.update({
     where: { id: balance.id },
     data: {
-      balanceMinutes: newBalance,
-      usedMinutes: { increment: request.durationMinutes },
+      balanceSeconds: newBalance,
+      usedSeconds: { increment: request.durationSeconds },
     },
   });
   await tx.leaveAccrualLedger.create({
@@ -1039,8 +1041,8 @@ export async function postLeaveUsage(leaveRequestId: string, tx?: TxClient): Pro
       employeeId: request.employeeId,
       leaveTypeId: request.leaveTypeId,
       action: "USAGE",
-      deltaMinutes: delta,
-      balanceAfter: newBalance,
+      deltaSeconds: delta,
+      balanceAfterSeconds: newBalance,
       leaveRequestId: request.id,
     },
   });
@@ -1050,12 +1052,12 @@ export async function postLeaveUsage(leaveRequestId: string, tx?: TxClient): Pro
  * What is off the balance for a request now: its debits less what was put
  * back (a reversal is an ADJUSTMENT on the same request).
  */
-async function debitedMinutes(client: TxClient | typeof db, leaveRequestId: string): Promise<number> {
+async function debitedSeconds(client: TxClient | typeof db, leaveRequestId: string): Promise<number> {
   const net = await client.leaveAccrualLedger.aggregate({
     where: { leaveRequestId, action: { in: ["USAGE", "TIMECARD_DEDUCTION", "ADJUSTMENT"] } },
-    _sum: { deltaMinutes: true },
+    _sum: { deltaSeconds: true },
   });
-  return -(net._sum.deltaMinutes ?? 0);
+  return -(net._sum.deltaSeconds ?? 0);
 }
 
 /**
@@ -1068,7 +1070,7 @@ export async function reverseLeaveUsage(leaveRequestId: string): Promise<void> {
   });
   if (!usageEntry) return;
   // Only what is still off: reversing twice used to put the hours back twice.
-  const outstanding = await debitedMinutes(db, leaveRequestId);
+  const outstanding = await debitedSeconds(db, leaveRequestId);
   if (outstanding <= 0) return;
 
   const accrualYear = getYear(
@@ -1086,14 +1088,14 @@ export async function reverseLeaveUsage(leaveRequestId: string): Promise<void> {
   });
 
   const reversal = outstanding;
-  const newBalance = balance.balanceMinutes + reversal;
+  const newBalance = balance.balanceSeconds + reversal;
 
   await db.$transaction([
     db.leaveBalance.update({
       where: { id: balance.id },
       data: {
-        balanceMinutes: newBalance,
-        usedMinutes: { decrement: reversal },
+        balanceSeconds: newBalance,
+        usedSeconds: { decrement: reversal },
       },
     }),
     db.leaveAccrualLedger.create({
@@ -1101,8 +1103,8 @@ export async function reverseLeaveUsage(leaveRequestId: string): Promise<void> {
         employeeId: usageEntry.employeeId,
         leaveTypeId: usageEntry.leaveTypeId,
         action: "ADJUSTMENT",
-        deltaMinutes: reversal,
-        balanceAfter: newBalance,
+        deltaSeconds: reversal,
+        balanceAfterSeconds: newBalance,
         leaveRequestId,
       },
     }),

@@ -20,12 +20,13 @@ import { startOfDayInTz } from "@/lib/utils/date";
 import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
 import { currentIdentity } from "@/lib/rbac/current";
 import { employeeRank, forgetIdentity, type LiveIdentity } from "@/lib/rbac/identity";
-import { ROLE_RANK, isValidRole, givesLiveAttendanceRoles } from "@/lib/rbac/roles";
+import { ROLE_RANK, isValidRole, givesLiveAttendanceRoles, editsPeers } from "@/lib/rbac/roles";
 import { todayKey } from "@/lib/pay-rates";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { webPunchByDefault } from "@/lib/web-punch";
-import { assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach } from "@/lib/rbac/scope";
+import { hoursToSeconds, secondsToMinutes } from "@/lib/leave-time";
+import { assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
 
 // Maps system custom role names to their legacy enum values
 /**
@@ -165,13 +166,17 @@ export const getSupervisorOptions = withRBAC(
 
 export const getAdminRefData = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ tenantId }, input: { withEmployees?: boolean } | void) => {
+  async ({ tenantId, employeeId: actorEmpId, role: actorRole }, input: { withEmployees?: boolean } | void) => {
     const t = tenantId ?? undefined;
+    // A Payroll or HR Admin held to some sites is offered only those, on the
+    // Create window and the employee record (createEmployee and updateEmployee
+    // refuse the rest: assertSiteInReach).
+    const limit = await siteLimit({ employeeId: actorEmpId, role: actorRole });
     // Every page but the new Employees list still takes the supervisor list
     // from here; that one asks getSupervisorOptions when its window opens.
     const withEmployees = (input && input.withEmployees) ?? true;
     const [sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies] = await Promise.all([
-      db.site.findMany({ where: { isActive: true, tenantId: t }, orderBy: { name: "asc" } }),
+      db.site.findMany({ where: { isActive: true, tenantId: t, ...(limit ? { id: { in: limit } } : {}) }, orderBy: { name: "asc" } }),
       // Each department's buildings by id and name, which is all the employee
       // forms read (to offer the departments of the building picked). The
       // whole site row on every one of the ~800 links was most of the page.
@@ -435,9 +440,11 @@ async function assertEmailsFree(
 
 export const createEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId, tenantId }, input: CreateEmployeeInput) => {
+  async (actor, input: CreateEmployeeInput) => {
+    const { employeeId: actorId, tenantId } = actor;
     if (!tenantId) throw new Error("Tenant context required");
     const parsed = createEmployeeSchema.parse(input);
+    await assertSiteInReach(actor, parsed.siteId);
     await assertAssignable(await currentIdentity(), tenantId, parsed.role, parsed.customRoleId);
     await assertOwnAssignments(tenantId, parsed.jobTitleId, parsed.agencyId);
 
@@ -572,6 +579,7 @@ export const updateEmployee = withRBAC(
     });
     await assertOwnAssignments(tenantId, jobTitleId, agencyId);
     if (!current) throw new Error("NOT_FOUND");
+    if (siteId !== undefined && siteId !== current.siteId) await assertSiteInReach(actor, siteId);
 
     // The termination date follows the status. Made inactive: the date given,
     // or today at their site. Made active again: cleared, since the time clock
@@ -626,7 +634,7 @@ export const updateEmployee = withRBAC(
       } else {
         const theirs = await employeeRank(employeeId, tenantId);
         if (theirs === null || theirs > me.rank) throw new Error("Only someone more senior can edit this person");
-        if (theirs === me.rank && (sensitive || personalChanged || workChanged)) {
+        if (theirs === me.rank && !editsPeers(me.rank) && (sensitive || personalChanged || workChanged)) {
           throw new Error("Only someone more senior can change this person's email, role, status or pay");
         }
       }
@@ -912,7 +920,7 @@ export const updateEmployee = withRBAC(
 
               const currentBalance = await db.leaveBalance.findUnique({
                 where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear } },
-                select: { balanceMinutes: true },
+                select: { balanceSeconds: true },
               });
 
               await db.leaveAccrualLedger.create({
@@ -920,8 +928,8 @@ export const updateEmployee = withRBAC(
                   employeeId,
                   leaveTypeId,
                   action: "POLICY_CHANGE",
-                  deltaMinutes: Math.round(effectiveAnnualHours * 60),
-                  balanceAfter: currentBalance?.balanceMinutes ?? 0,
+                  deltaSeconds: hoursToSeconds(effectiveAnnualHours),
+                  balanceAfterSeconds: currentBalance?.balanceSeconds ?? 0,
                   note: `Policy changed to ${policy.name}`,
                   createdById: actorId,
                 },
@@ -1026,7 +1034,19 @@ export const updateHrSiteAccess = withRBAC(
       select: { id: true },
     });
     const validIds = new Set(validSites.map((s) => s.id));
-    const safeIds = siteIds.filter((id) => validIds.has(id));
+    let safeIds = siteIds.filter((id) => validIds.has(id));
+
+    // An HR Admin held to some sites gives access to those alone, and is
+    // shown no others (getAdminRefData): the person's sites beyond them are
+    // kept, not dropped. Nor may they leave someone with no sites, which
+    // means every site.
+    const limit = await siteLimit(actor);
+    if (limit) {
+      if (safeIds.some((id) => !limit.includes(id))) throw new Error("You can only give access to your own sites.");
+      const beyond = await db.hrSiteAccess.findMany({ where: { employeeId, siteId: { notIn: limit } }, select: { siteId: true } });
+      safeIds = [...safeIds, ...beyond.map((r) => r.siteId)];
+      if (safeIds.length === 0) throw new Error("Pick at least one site. No sites means every site, which is more than you can reach.");
+    }
 
     // Replace: delete existing, create new
     await db.$transaction([
@@ -1618,17 +1638,24 @@ export const adjustLeaveBalance = withRBAC(
   "EMPLOYEE_MANAGE",
   async (actor, input: AdjustLeaveBalanceInput) => {
     const { employeeId: actorId, tenantId } = actor;
-    const { employeeId, leaveTypeId, year, mode, enteredMinutes, newBalanceMinutes, note } =
+    const { employeeId, leaveTypeId, year, mode, enteredMinutes, note } =
       adjustLeaveBalanceSchema.parse(input);
     await assertBalanceChangeAllowed(actor, employeeId, leaveTypeId);
 
     const existing = await db.leaveBalance.upsert({
       where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear: year } },
       update: {},
-      create: { employeeId, leaveTypeId, accrualYear: year, balanceMinutes: 0, usedMinutes: 0 },
+      create: { employeeId, leaveTypeId, accrualYear: year, balanceSeconds: 0, usedSeconds: 0 },
     });
 
-    const delta = newBalanceMinutes - existing.balanceMinutes;
+    // From the exact balance (lib/leave-time), not the minutes the page shows:
+    // adding 2 hours to 6.16 is 8.16, where adding to the 6h 10m shown was 8.17.
+    const entered = enteredMinutes * 60;
+    const newBalanceSeconds =
+      mode === "ADD" ? existing.balanceSeconds + entered :
+      mode === "SUBTRACT" ? existing.balanceSeconds - entered :
+      entered;
+    const delta = newBalanceSeconds - existing.balanceSeconds;
 
     const h = Math.floor(enteredMinutes / 60);
     const m = enteredMinutes % 60;
@@ -1642,15 +1669,15 @@ export const adjustLeaveBalance = withRBAC(
     await db.$transaction([
       db.leaveBalance.update({
         where: { id: existing.id },
-        data: { balanceMinutes: newBalanceMinutes },
+        data: { balanceSeconds: newBalanceSeconds },
       }),
       db.leaveAccrualLedger.create({
         data: {
           employeeId,
           leaveTypeId,
           action: "ADJUSTMENT",
-          deltaMinutes: delta,
-          balanceAfter: newBalanceMinutes,
+          deltaSeconds: delta,
+          balanceAfterSeconds: newBalanceSeconds,
           note: ledgerNote,
           createdById: actorId,
         },
@@ -1665,7 +1692,7 @@ export const adjustLeaveBalance = withRBAC(
       action: "LEAVE_BALANCE_ADJUSTED",
       changes: {
         before: { balanceMinutes: existing.balanceMinutes },
-        after: { balanceMinutes: newBalanceMinutes, note: ledgerNote },
+        after: { balanceMinutes: secondsToMinutes(newBalanceSeconds), note: ledgerNote },
       },
     });
 
@@ -1686,23 +1713,24 @@ export const postAccrualCorrection = withRBAC(
     const existing = await db.leaveBalance.upsert({
       where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear: year } },
       update: {},
-      create: { employeeId, leaveTypeId, accrualYear: year, balanceMinutes: 0, usedMinutes: 0 },
+      create: { employeeId, leaveTypeId, accrualYear: year, balanceSeconds: 0, usedSeconds: 0 },
     });
 
-    const newBalance = existing.balanceMinutes + deltaMinutes;
+    const deltaSeconds = deltaMinutes * 60;
+    const newBalance = existing.balanceSeconds + deltaSeconds;
 
     await db.$transaction([
       db.leaveBalance.update({
         where: { id: existing.id },
-        data: { balanceMinutes: newBalance },
+        data: { balanceSeconds: newBalance },
       }),
       db.leaveAccrualLedger.create({
         data: {
           employeeId,
           leaveTypeId,
           action: "ACCRUAL",
-          deltaMinutes,
-          balanceAfter: newBalance,
+          deltaSeconds,
+          balanceAfterSeconds: newBalance,
           payPeriodEnd: new Date(),
           note: "[Accrual Reset]",
           createdById: actorId,
@@ -1718,7 +1746,7 @@ export const postAccrualCorrection = withRBAC(
       action: "LEAVE_BALANCE_ADJUSTED",
       changes: {
         before: { balanceMinutes: existing.balanceMinutes },
-        after:  { balanceMinutes: newBalance, note: `Accrual correction: ${note}` },
+        after:  { balanceMinutes: secondsToMinutes(newBalance), note: `Accrual correction: ${note}` },
       },
     });
 
@@ -1749,7 +1777,7 @@ export const resetLeaveBalanceToAccrual = withRBAC(
       }),
       db.leaveAccrualLedger.aggregate({
         where: { employeeId, leaveTypeId, action: { in: ["ACCRUAL", "EARNED_ADJUSTMENT"] }, payPeriodEnd: { gte: yearStart, lt: yearEnd } },
-        _sum: { deltaMinutes: true },
+        _sum: { deltaSeconds: true },
       }),
     ]);
 
@@ -1757,21 +1785,21 @@ export const resetLeaveBalanceToAccrual = withRBAC(
 
     // balanceMinutes is the remaining balance (accrued minus used), so subtract usedMinutes
     // so the employee's total on the dashboard reconstructs correctly as accruedMinutes.
-    const newBalance = (accrualSum._sum.deltaMinutes ?? 0) - existing.usedMinutes;
-    const delta = newBalance - existing.balanceMinutes;
+    const newBalance = (accrualSum._sum.deltaSeconds ?? 0) - existing.usedSeconds;
+    const delta = newBalance - existing.balanceSeconds;
 
     await db.$transaction([
       db.leaveBalance.update({
         where: { id: existing.id },
-        data: { balanceMinutes: newBalance },
+        data: { balanceSeconds: newBalance },
       }),
       db.leaveAccrualLedger.create({
         data: {
           employeeId,
           leaveTypeId,
           action: "ADJUSTMENT",
-          deltaMinutes: delta,
-          balanceAfter: newBalance,
+          deltaSeconds: delta,
+          balanceAfterSeconds: newBalance,
           note: "[Accrual Reset]",
           createdById: actorId,
         },
@@ -1786,7 +1814,7 @@ export const resetLeaveBalanceToAccrual = withRBAC(
       action: "LEAVE_BALANCE_RESET_TO_ACCRUAL",
       changes: {
         before: { balanceMinutes: existing.balanceMinutes },
-        after: { balanceMinutes: newBalance },
+        after: { balanceMinutes: secondsToMinutes(newBalance) },
       },
     });
 
@@ -1994,7 +2022,8 @@ export const getHoursReport = withRBAC(
 
 export const bulkCreateEmployees = withRBAC(
   "EMPLOYEE_MANAGE",
-  async ({ employeeId: actorId, tenantId }, input: { rows: CsvEmployeeRow[] }) => {
+  async (actor, input: { rows: CsvEmployeeRow[] }) => {
+    const { employeeId: actorId, tenantId } = actor;
     if (!tenantId) throw new Error("Tenant context required");
     // 1. Validate every row with Zod
     const rowErrors: { row: number; message: string }[] = [];
@@ -2082,6 +2111,10 @@ export const bulkCreateEmployees = withRBAC(
 
       const siteId = siteMap.get(r.site.toLowerCase());
       if (!siteId) errors.push(`Site "${r.site}" not found`);
+      else {
+        const reach = await siteInReach(actor, siteId);
+        if (!reach.ok) errors.push(reach.message);
+      }
 
       const departmentId = deptMap.get(r.department.toLowerCase());
       if (!departmentId) errors.push(`Department "${r.department}" not found`);
@@ -2305,33 +2338,35 @@ export const postManualAccrualEntry = withRBAC(
     const existing = await db.leaveBalance.upsert({
       where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear: year } },
       update: {},
-      create: { employeeId, leaveTypeId, accrualYear: year, balanceMinutes: 0, usedMinutes: 0 },
+      create: { employeeId, leaveTypeId, accrualYear: year, balanceSeconds: 0, usedSeconds: 0 },
     });
 
+    // Entered in hours and minutes; kept in seconds on the exact balance (lib/leave-time).
+    const accrualSeconds = accrualMinutes * 60, adjustEarnSeconds = adjustEarnMinutes * 60, adjustSeconds = adjustMinutes * 60;
     const effectiveDateObj = new Date(`${effectiveDate}T00:00:00Z`);
-    const newBalance = existing.balanceMinutes + accrualMinutes + adjustEarnMinutes + adjustMinutes;
+    const newBalance = existing.balanceSeconds + accrualSeconds + adjustEarnSeconds + adjustSeconds;
 
     const ledgerEntries: {
       employeeId: string; leaveTypeId: string; action: "ACCRUAL" | "EARNED_ADJUSTMENT" | "ADJUSTMENT";
-      deltaMinutes: number; balanceAfter: number; payPeriodEnd: Date; note: string; createdById: string | null;
+      deltaSeconds: number; balanceAfterSeconds: number; payPeriodEnd: Date; note: string; createdById: string | null;
     }[] = [];
-    let running = existing.balanceMinutes;
+    let running = existing.balanceSeconds;
 
     if (accrualMinutes !== 0) {
-      running += accrualMinutes;
-      ledgerEntries.push({ employeeId, leaveTypeId, action: "ACCRUAL", deltaMinutes: accrualMinutes, balanceAfter: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
+      running += accrualSeconds;
+      ledgerEntries.push({ employeeId, leaveTypeId, action: "ACCRUAL", deltaSeconds: accrualSeconds, balanceAfterSeconds: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
     }
     if (adjustEarnMinutes !== 0) {
-      running += adjustEarnMinutes;
-      ledgerEntries.push({ employeeId, leaveTypeId, action: "EARNED_ADJUSTMENT", deltaMinutes: adjustEarnMinutes, balanceAfter: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
+      running += adjustEarnSeconds;
+      ledgerEntries.push({ employeeId, leaveTypeId, action: "EARNED_ADJUSTMENT", deltaSeconds: adjustEarnSeconds, balanceAfterSeconds: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
     }
     if (adjustMinutes !== 0) {
-      running += adjustMinutes;
-      ledgerEntries.push({ employeeId, leaveTypeId, action: "ADJUSTMENT", deltaMinutes: adjustMinutes, balanceAfter: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
+      running += adjustSeconds;
+      ledgerEntries.push({ employeeId, leaveTypeId, action: "ADJUSTMENT", deltaSeconds: adjustSeconds, balanceAfterSeconds: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
     }
 
     await db.$transaction([
-      db.leaveBalance.update({ where: { id: existing.id }, data: { balanceMinutes: newBalance } }),
+      db.leaveBalance.update({ where: { id: existing.id }, data: { balanceSeconds: newBalance } }),
       db.leaveAccrualLedger.createMany({ data: ledgerEntries }),
     ]);
 
@@ -2343,7 +2378,7 @@ export const postManualAccrualEntry = withRBAC(
       action: "LEAVE_BALANCE_ADJUSTED",
       changes: {
         before: { balanceMinutes: existing.balanceMinutes },
-        after:  { balanceMinutes: newBalance, note, accrualMinutes, adjustEarnMinutes, adjustMinutes },
+        after:  { balanceMinutes: secondsToMinutes(newBalance), note, accrualMinutes, adjustEarnMinutes, adjustMinutes },
       },
     });
 

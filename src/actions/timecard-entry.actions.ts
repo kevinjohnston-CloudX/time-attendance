@@ -18,6 +18,7 @@ import { z } from "zod";
 import type { LeaveType } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { placeEnteredHours } from "@/lib/entered-hours";
+import { hoursToSeconds } from "@/lib/leave-time";
 
 // ─── Get leave types for timecard entry modal ─────────────────────────────────
 
@@ -307,7 +308,7 @@ async function saveManualPunches(
 export const addPayrollLeaveEntry = withRBAC(
   TIMECARD_EDITORS,
   async (ctx, input: unknown) => {
-    const { timesheetId, date, leaveTypeId, durationMinutes, note } =
+    const { timesheetId, date, leaveTypeId, hours, note } =
       payrollLeaveEntrySchema.parse(input);
     const { employeeId: actorId, tenantId } = ctx;
     // Only a timecard in the caller's company, and never their own.
@@ -333,7 +334,7 @@ export const addPayrollLeaveEntry = withRBAC(
           status: "APPROVED",
           startDate: leaveDate,
           endDate: leaveDate,
-          durationMinutes,
+          durationSeconds: hoursToSeconds(hours),
           note: note ?? null,
           submittedAt: new Date(),
           reviewedAt: new Date(),
@@ -348,7 +349,7 @@ export const addPayrollLeaveEntry = withRBAC(
         entityType: "TIMESHEET",
         entityId: timesheetId,
         changes: {
-          after: { leaveRequestId: req.id, leaveTypeId, date, durationMinutes },
+          after: { leaveRequestId: req.id, leaveTypeId, date, hours },
         },
       });
 
@@ -540,7 +541,10 @@ export const addManualHoursEntry = withRBAC(
     const { timesheetId, date, hours, payCodeId, note } = z.object({
       timesheetId: z.string(),
       date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-      hours: z.number().min(0).max(24),
+      // Leave codes take more than a day's 24 hours (a PTO payout or
+      // carryover is time off moved or paid, not time on one day); worked
+      // hours are held to 24 below, where they are placed on the day.
+      hours: z.number().min(0).max(999, "Enter at most 999 hours"),
       payCodeId: z.string().optional(),
       note: z.string().optional(),
     }).parse(input);
@@ -643,7 +647,8 @@ export const addManualHoursEntry = withRBAC(
             status: "POSTED",
             startDate: leaveDate,
             endDate: leaveDate,
-            durationMinutes: minutes,
+            // Exact to the hundredth: 0.56 hours stays 0.56 (lib/leave-time).
+            durationSeconds: hoursToSeconds(hours),
             note: note ?? null,
             submittedAt: new Date(),
             reviewedAt: new Date(),
@@ -695,7 +700,9 @@ export const addManualHoursEntry = withRBAC(
       const placed = placeEnteredHours(dayStart, minutes, payCodeId ?? defaultCode, existing);
       const dayLabel = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`));
       if ("refused" in placed) {
-        if (placed.refused === "over-24h") throw new Error(`That would put more than 24 hours on ${dayLabel}.`);
+        if (placed.refused === "over-24h") {
+          throw new Error(`That would put more than 24 worked hours on ${dayLabel}. Time off over 24 hours goes in with a leave code, such as PTO payout.`);
+        }
         const code = placed.entry.payCodeId
           ? (await db.payCode.findUnique({ where: { id: placed.entry.payCodeId }, select: { label: true } }))?.label
           : null;

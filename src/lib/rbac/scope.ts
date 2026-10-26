@@ -58,6 +58,24 @@ export async function assertRecordInReach(ctx: { employeeId: string; tenantId: s
 }
 
 /**
+ * A site the caller may put someone at, creating them, moving them or
+ * importing them: for a Payroll or HR Admin held to some sites, one of those.
+ * Saved anywhere else, the person dropped out of their reach the moment the
+ * record was saved, and they could not undo it.
+ */
+export async function siteInReach(ctx: { employeeId: string; role: string }, siteId: string): Promise<{ ok: true } | { ok: false; message: string }> {
+  const sites = await siteLimit(ctx);
+  if (!sites || sites.includes(siteId)) return { ok: true };
+  const names = await db.site.findMany({ where: { id: { in: sites } }, select: { name: true }, orderBy: { name: "asc" } });
+  return { ok: false, message: `You can only put people at your own sites: ${names.map((s) => s.name).join(", ")}` };
+}
+
+export async function assertSiteInReach(ctx: { employeeId: string; role: string }, siteId: string): Promise<void> {
+  const reach = await siteInReach(ctx, siteId);
+  if (!reach.ok) throw new Error(`${reach.message}.`);
+}
+
+/**
  * A leave balance the caller may change: someone in their company and at
  * their sites (as their record is), not ranked above them, and a leave type of
  * this company. Their own only for HR and System Admins; a Payroll Admin could

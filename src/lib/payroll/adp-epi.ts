@@ -168,8 +168,8 @@ export async function buildAdpEpi(opts: {
         employee: { select: { wmsId: true, user: { select: { name: true } } } },
         exceptions: { where: { resolvedAt: null }, select: { exceptionType: true } },
         segments: {
-          where: { isPaid: true, durationMinutes: { gt: 0 } },
-          select: { durationMinutes: true, payBucket: true, payBucketOverride: true, segmentType: true, payCodeId: true },
+          where: { isPaid: true, durationSeconds: { gt: 0 } },
+          select: { durationSeconds: true, payBucket: true, payBucketOverride: true, segmentType: true, payCodeId: true },
         },
       },
     }),
@@ -249,7 +249,10 @@ export async function buildAdpEpi(opts: {
     };
 
     for (const seg of ts.segments) {
-      const m = seg.durationMinutes;
+      // Minutes with the fraction kept: leave is exact to the hundredth of an
+      // hour (lib/leave-time), so a 0.56 hour PTO payout goes out as 0.56,
+      // not the 0.57 whole minutes made it. Worked lines are whole minutes.
+      const m = seg.durationSeconds / 60;
       const bucket = (seg.payBucketOverride ?? seg.payBucket) as PayBucket;
       const pc = seg.payCodeId ? codeById.get(seg.payCodeId) : undefined;
 

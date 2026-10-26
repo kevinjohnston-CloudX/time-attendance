@@ -92,6 +92,23 @@ describe("an employee record on the Employees screens", () => {
   });
 });
 
+describe("the site a Payroll Admin held to some sites puts someone at", () => {
+  it("is one of their sites, or refused with the sites they have", async () => {
+    const { db } = (await import("@/lib/db")) as unknown as { db: Record<string, unknown> };
+    db.site = { findMany: async () => [{ name: "0299 Rutherford" }] };
+    const { assertSiteInReach, siteInReach } = await import("./scope");
+    await expect(assertSiteInReach(ctx, "rutherford")).resolves.toBeUndefined();
+    await expect(assertSiteInReach(ctx, "georgia")).rejects.toThrow("You can only put people at your own sites: 0299 Rutherford.");
+    expect(await siteInReach(ctx, "georgia")).toEqual({ ok: false, message: "You can only put people at your own sites: 0299 Rutherford" });
+  });
+
+  it("is any site for an admin with no site limit, or a System Admin", async () => {
+    const { assertSiteInReach } = await import("./scope");
+    await expect(assertSiteInReach({ ...ctx, employeeId: "other" }, "georgia")).resolves.toBeUndefined();
+    await expect(assertSiteInReach({ ...ctx, role: "SYSTEM_ADMIN" }, "georgia")).resolves.toBeUndefined();
+  });
+});
+
 describe("changing a leave balance", () => {
   async function setup() {
     const { db } = (await import("@/lib/db")) as unknown as { db: Record<string, unknown> };

@@ -1,10 +1,11 @@
 "use client";
 
 import { format, parseISO } from "date-fns";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { ChevronRight, Users, X } from "lucide-react";
 import { useRouter } from "@/components/layout/navigation-progress";
+import { useSearchBox } from "@/hooks/use-search-box";
 import {
   Badge,
   Card,
@@ -38,34 +39,21 @@ export function TeamMembersScreen({ data, canViewTimecards }: { data: TeamMember
   /** On a phone, the person whose details are open in a sheet. */
   const [openId, setOpenId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
-  const [query, setQuery] = useState(data.search);
-  const typed = useRef(false);
 
-  const navigate = useCallback(
-    (patch: { q?: string; show?: string }) => {
-      const next = { q: data.search || undefined, show: data.showInactive ? "all" : undefined, ...patch };
+  // Search runs on the server. What is typed stays typed while results
+  // arrive, Back brings its search in, and a search replaces the address
+  // rather than adding to the history (useSearchBox).
+  const searchBox = useSearchBox(
+    data.search,
+    (value) => {
       const params = new URLSearchParams();
-      for (const [key, value] of Object.entries(next)) if (value) params.set(key, value);
+      if (value.trim()) params.set("q", value.trim());
+      if (data.showInactive) params.set("show", "all");
       const qs = params.toString();
-      startTransition(() => router.push(`/supervisor/team${qs ? `?${qs}` : ""}`, { scroll: false }));
+      startTransition(() => router.replace(`/supervisor/team${qs ? `?${qs}` : ""}`, { scroll: false }));
     },
-    [router, data.search, data.showInactive],
+    { delayMs: 300, normalize: (s) => s.trim() },
   );
-
-  const onType = useCallback((v: string) => {
-    typed.current = true;
-    setQuery(v);
-  }, []);
-  useEffect(() => {
-    if (!typed.current) return;
-    const q = query.trim();
-    if (q === data.search) return;
-    const t = setTimeout(() => {
-      typed.current = false;
-      navigate({ q: q || undefined });
-    }, 300);
-    return () => clearTimeout(t);
-  }, [query, data.search, navigate]);
 
   const showHref = (show?: string) => {
     const params = new URLSearchParams();
@@ -85,7 +73,7 @@ export function TeamMembersScreen({ data, canViewTimecards }: { data: TeamMember
     <div className="flex flex-col gap-4">
       <PageHeader title="Team Members" subtitle="Your people's details, read only" />
       <ToolsBar
-        search={<SearchInput value={query} onValueChange={onType} placeholder="Name or badge ID" />}
+        search={<SearchInput value={searchBox.value} onValueChange={searchBox.onChange} placeholder="Name or badge ID" />}
         end={
           <SegmentedLinks
             ariaLabel="Who to show"

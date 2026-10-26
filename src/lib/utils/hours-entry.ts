@@ -9,5 +9,7 @@ export function roundedHoursNote(typed: string): string | null {
   if (typed.trim() === "" || !Number.isFinite(hours) || hours <= 0) return null;
   const shown = Math.round(hours * 60) / 60;
   if (Math.abs(Number(shown.toFixed(2)) - hours) < 0.0001) return null;
-  return `Saved as ${shown.toFixed(2)} hours: CloudTime keeps hours to the minute, and ${hours} hours falls between two minutes.`;
+  // Leave is kept to the hundredth (lib/leave-time); worked hours, placed
+  // as a clock in and out, are still kept to the minute.
+  return `As worked hours this saves as ${shown.toFixed(2)}: worked time is kept to the minute. Under a leave code such as PTO it stays ${hours}.`;
 }

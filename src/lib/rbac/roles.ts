@@ -33,6 +33,16 @@ export function givesLiveAttendanceRoles(me: { isSuperAdmin: boolean; rank: numb
   return me.isSuperAdmin || me.rank >= ROLE_RANK.SYSTEM_ADMIN;
 }
 
+/**
+ * Whether someone at this rank may change a peer's record in full (email,
+ * role, status, pay and password): HR Admins each other's, System Admins each
+ * other's. Below them a peer's record takes someone more senior. Giving a role
+ * at or above one's own stays refused either way (assertAssignable).
+ */
+export function editsPeers(rank: number): boolean {
+  return rank === ROLE_RANK.HR_ADMIN || rank === ROLE_RANK.SYSTEM_ADMIN;
+}
+
 export function hasMinRole(userRole: string, minRole: Role): boolean {
   if (!isValidRole(userRole)) return false;
   return ROLE_RANK[userRole] >= ROLE_RANK[minRole];
