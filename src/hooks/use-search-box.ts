@@ -17,10 +17,18 @@ import { useEffect, useRef, useState } from "react";
  *
  * @param urlQ   the search in the page address, as the server rendered it
  * @param search sends a search (replacing the address: typing is not history)
+ * @param opts.normalize how a search reads in the address, for a screen that
+ *   trims it: "john " typed comes back as "john", and is still the box's own
+ *   search, so the space stays for the "smith" that follows (the Audit Log).
  */
-export function useSearchBox(urlQ: string, search: (q: string) => void, delayMs = 350) {
+export function useSearchBox(
+  urlQ: string,
+  search: (q: string) => void,
+  { delayMs = 350, normalize = (q: string) => q }: { delayMs?: number; normalize?: (q: string) => string } = {},
+) {
   const [value, setValue] = useState(urlQ);
-  // The searches this box has sent since it last took the address, latest last.
+  // The searches this box has sent since it last took the address, latest
+  // last, as they read in the address.
   const [sent, setSent] = useState<string[]>([]);
   const [seenQ, setSeenQ] = useState(urlQ);
   // Whether the latest search's results have arrived.
@@ -28,13 +36,14 @@ export function useSearchBox(urlQ: string, search: (q: string) => void, delayMs 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retried = useRef<string | null>(null);
   const latest = sent.length > 0 ? sent[sent.length - 1] : null;
+  const arrived = normalize(urlQ);
 
   // The address changed: one of this box's searches landing leaves the box
   // alone; anything else (Back, Clear all, a link) becomes the box.
   if (urlQ !== seenQ) {
     setSeenQ(urlQ);
-    if (urlQ === latest) setLatestLanded(true);
-    if (!sent.includes(urlQ)) {
+    if (arrived === latest) setLatestLanded(true);
+    if (!sent.includes(arrived)) {
       setSent([]);
       setValue(urlQ);
     }
@@ -43,10 +52,10 @@ export function useSearchBox(urlQ: string, search: (q: string) => void, delayMs 
   // The latest search's results arrived, then an older one's landed on top:
   // results came back out of order. Ask once more for the latest.
   useEffect(() => {
-    if (!latestLanded || latest === null || urlQ === latest || !sent.includes(urlQ) || retried.current === latest) return;
+    if (!latestLanded || latest === null || arrived === latest || !sent.includes(arrived) || retried.current === latest) return;
     retried.current = latest;
     search(latest);
-  }, [latestLanded, latest, urlQ, sent, search]);
+  }, [latestLanded, latest, arrived, sent, search]);
 
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current);
@@ -56,7 +65,8 @@ export function useSearchBox(urlQ: string, search: (q: string) => void, delayMs 
     setValue(next);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
-      setSent((s) => [...s.filter((q) => q !== next), next]);
+      const q = normalize(next);
+      setSent((s) => [...s.filter((x) => x !== q), q]);
       setLatestLanded(false);
       search(next);
     }, delayMs);

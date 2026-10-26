@@ -52,6 +52,16 @@ describe("a list's search box, typed slowly", () => {
     expect(hook.result.current.value).toBe("smith");
   });
 
+  it("keeps a trailing space on a screen that trims the search it sends (the Audit Log)", () => {
+    vi.useFakeTimers();
+    const search = vi.fn();
+    const hook = renderHook(({ urlQ }) => useSearchBox(urlQ, search, { normalize: (q) => q.trim() }), { initialProps: { urlQ: "" } });
+    act(() => hook.result.current.onChange("john "));
+    act(() => vi.advanceTimersByTime(350));
+    hook.rerender({ urlQ: "john" });
+    expect(hook.result.current.value).toBe("john ");
+  });
+
   it("sends nothing typed before a reset", () => {
     const { hook, search } = box();
     act(() => hook.result.current.onChange("abc"));

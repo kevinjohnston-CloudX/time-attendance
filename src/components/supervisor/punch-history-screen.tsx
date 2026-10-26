@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useTransition, type CSSProperties } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "@/components/layout/navigation-progress";
+import { useSearchBox } from "@/hooks/use-search-box";
 import {
   CheckCircle2,
   ChevronLeft,
@@ -138,7 +139,6 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [calendarOpen, setCalendarOpen] = useState(false);
-  const [query, setQuery] = useState(data.search);
   const { message: toast, flash } = useToast();
   const [exporting, setExporting] = useState(false);
   const [zoomed, setZoomed] = useState<string | null>(null);
@@ -231,13 +231,15 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
   };
 
   const navigate = useCallback(
-    (patch: PunchHistoryParams) => {
+    (patch: PunchHistoryParams, how: "push" | "replace" = "push") => {
       const next = { ...current, ...patch };
       const params = new URLSearchParams();
       for (const [key, value] of Object.entries(next)) if (value) params.set(key, value);
       const qs = params.toString();
+      const url = `/supervisor/punch-history${qs ? `?${qs}` : ""}`;
       startTransition(() => {
-        router.push(`/supervisor/punch-history${qs ? `?${qs}` : ""}`, { scroll: false });
+        if (how === "replace") router.replace(url, { scroll: false });
+        else router.push(url, { scroll: false });
       });
     },
     // `current` is rebuilt from `data` each render; data is the real dependency.
@@ -246,25 +248,15 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
   );
 
   // Search runs on the server, because payroll's list is the whole company.
-  // Typing waits for a pause rather than sending a request per key. Only
-  // typing starts the timer: when Clear all empties the box, the timer must
-  // not fire afterwards with the old filters and put them back, which it would
-  // on any connection slower than 300ms.
-  const typed = useRef(false);
-  const onType = useCallback((v: string) => {
-    typed.current = true;
-    setQuery(v);
-  }, []);
-  useEffect(() => {
-    if (!typed.current) return;
-    const q = query.trim();
-    if (q === data.search) return;
-    const t = setTimeout(() => {
-      typed.current = false;
-      navigate({ q: q || undefined });
-    }, 300);
-    return () => clearTimeout(t);
-  }, [query, data.search, navigate]);
+  // Typing waits for a pause rather than sending a request per key. What is
+  // typed stays typed while results arrive, Back brings its search in, and a
+  // search replaces the address rather than adding to the history
+  // (useSearchBox). Clear all drops a search still waiting to be sent, so it
+  // cannot put the old one back afterwards.
+  const searchBox = useSearchBox(data.search, (value) => navigate({ q: value.trim() || undefined }, "replace"), {
+    delayMs: 300,
+    normalize: (s) => s.trim(),
+  });
 
   function pickRange(from: string, to: string) {
     setCalendarOpen(false);
@@ -301,8 +293,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
     data.isCustomRange || !!data.selectedSiteId || !!data.selectedDepartmentId || !!data.search || data.attentionOnly;
 
   function clearAll() {
-    typed.current = false;
-    setQuery("");
+    searchBox.reset("");
     // The person you have open is a record, not a filter, and stays open.
     navigate({ startDate: undefined, endDate: undefined, siteId: undefined, departmentId: undefined, q: undefined, show: undefined });
   }
@@ -428,7 +419,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
               </button>
             </>
           }
-          search={<SearchInput value={query} onValueChange={onType} placeholder="Name, badge ID or department" />}
+          search={<SearchInput value={searchBox.value} onValueChange={searchBox.onChange} placeholder="Name, badge ID or department" />}
           end={
             dirty && (
               <Button hierarchy="link" size="sm" onClick={clearAll}>
