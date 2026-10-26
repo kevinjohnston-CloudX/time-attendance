@@ -18,6 +18,7 @@ import { z } from "zod";
 import type { LeaveType } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { placeEnteredHours } from "@/lib/entered-hours";
+import { hoursToSeconds } from "@/lib/leave-time";
 
 // ─── Get leave types for timecard entry modal ─────────────────────────────────
 
@@ -307,7 +308,7 @@ async function saveManualPunches(
 export const addPayrollLeaveEntry = withRBAC(
   TIMECARD_EDITORS,
   async (ctx, input: unknown) => {
-    const { timesheetId, date, leaveTypeId, durationMinutes, note } =
+    const { timesheetId, date, leaveTypeId, hours, note } =
       payrollLeaveEntrySchema.parse(input);
     const { employeeId: actorId, tenantId } = ctx;
     // Only a timecard in the caller's company, and never their own.
@@ -333,7 +334,7 @@ export const addPayrollLeaveEntry = withRBAC(
           status: "APPROVED",
           startDate: leaveDate,
           endDate: leaveDate,
-          durationMinutes,
+          durationSeconds: hoursToSeconds(hours),
           note: note ?? null,
           submittedAt: new Date(),
           reviewedAt: new Date(),
@@ -348,7 +349,7 @@ export const addPayrollLeaveEntry = withRBAC(
         entityType: "TIMESHEET",
         entityId: timesheetId,
         changes: {
-          after: { leaveRequestId: req.id, leaveTypeId, date, durationMinutes },
+          after: { leaveRequestId: req.id, leaveTypeId, date, hours },
         },
       });
 
@@ -646,7 +647,8 @@ export const addManualHoursEntry = withRBAC(
             status: "POSTED",
             startDate: leaveDate,
             endDate: leaveDate,
-            durationMinutes: minutes,
+            // Exact to the hundredth: 0.56 hours stays 0.56 (lib/leave-time).
+            durationSeconds: hoursToSeconds(hours),
             note: note ?? null,
             submittedAt: new Date(),
             reviewedAt: new Date(),

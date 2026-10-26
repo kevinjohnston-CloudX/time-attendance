@@ -3,6 +3,9 @@ model OvertimeBucket {
   timesheetId    String
   bucket         PayBucket
   totalMinutes   Int       @default(0)
+  /// Exact, in seconds: hours to the hundredth, as NovaTime keeps them (0.56 h = 2016 s).
+  /// A trigger keeps the minutes beside it in step, rounded, for whatever still reads minutes.
+  totalSeconds   Int       @default(0)
   updatedAt      DateTime  @updatedAt
 
   timesheet Timesheet @relation(fields: [timesheetId], references: [id])

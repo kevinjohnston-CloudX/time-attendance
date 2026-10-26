@@ -34,6 +34,10 @@ model LeaveBalance {
   leaveTypeId         String
   balanceMinutes      Int      @default(0)
   usedMinutes         Int      @default(0)
+  /// Exact, in seconds: hours to the hundredth, as NovaTime keeps them (0.56 h = 2016 s).
+  /// A trigger keeps the minutes beside it in step, rounded, for whatever still reads minutes.
+  balanceSeconds      Int      @default(0)
+  usedSeconds         Int      @default(0)
   accrualYear         Int
   updatedAt           DateTime @updatedAt
 
@@ -51,7 +55,10 @@ model LeaveRequest {
   status       LeaveRequestStatus @default(DRAFT)
   startDate    DateTime           @db.Date
   endDate      DateTime           @db.Date
-  durationMinutes Int
+  durationMinutes Int @default(0)
+  /// Exact, in seconds: hours to the hundredth, as NovaTime keeps them (0.56 h = 2016 s).
+  /// A trigger keeps the minutes beside it in step, rounded, for whatever still reads minutes.
+  durationSeconds Int @default(0)
   selectedDays Json?              /// [{ date: "YYYY-MM-DD", type: "FULL" | "PARTIAL", leaveFrom?: "HH:mm" }]
   note         String?
   submittedAt  DateTime?
@@ -83,8 +90,12 @@ model LeaveAccrualLedger {
   employeeId     String
   leaveTypeId    String
   action         AccrualAction
-  deltaMinutes   Int           // positive = credit, negative = debit
-  balanceAfter   Int
+  deltaMinutes   Int           @default(0) // positive = credit, negative = debit
+  balanceAfter   Int           @default(0)
+  /// Exact, in seconds: hours to the hundredth, as NovaTime keeps them (0.56 h = 2016 s).
+  /// A trigger keeps the minutes beside it in step, rounded, for whatever still reads minutes.
+  deltaSeconds        Int      @default(0)
+  balanceAfterSeconds Int      @default(0)
   leaveRequestId String?
   payPeriodEnd   DateTime?     @db.Date
   note           String?

@@ -116,7 +116,9 @@ export default async function TimesheetPage({
           segmentDate: s.segmentDate.toISOString(),
           startTime: s.startTime.toISOString(),
           endTime: s.endTime.toISOString(),
-          durationMinutes: s.durationMinutes,
+          // Exact: leave is kept to the hundredth of an hour (lib/leave-time), so
+          // a 0.56 hour line shows 0.56. Worked lines are whole minutes.
+          durationMinutes: s.durationSeconds / 60,
           payBucket: s.payBucket,
           payBucketOverride: s.payBucketOverride,
           isPaid: s.isPaid,
@@ -129,7 +131,7 @@ export default async function TimesheetPage({
         })),
         overtimeBuckets: rawDetail.overtimeBuckets.map((b) => ({
           bucket: b.bucket,
-          totalMinutes: b.totalMinutes,
+          totalMinutes: b.totalSeconds / 60,
         })),
         exceptionCount: rawDetail.exceptions.length,
       }

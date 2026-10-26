@@ -25,6 +25,7 @@ import { todayKey } from "@/lib/pay-rates";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { webPunchByDefault } from "@/lib/web-punch";
+import { hoursToSeconds, secondsToMinutes } from "@/lib/leave-time";
 import { assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
 
 // Maps system custom role names to their legacy enum values
@@ -919,7 +920,7 @@ export const updateEmployee = withRBAC(
 
               const currentBalance = await db.leaveBalance.findUnique({
                 where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear } },
-                select: { balanceMinutes: true },
+                select: { balanceSeconds: true },
               });
 
               await db.leaveAccrualLedger.create({
@@ -927,8 +928,8 @@ export const updateEmployee = withRBAC(
                   employeeId,
                   leaveTypeId,
                   action: "POLICY_CHANGE",
-                  deltaMinutes: Math.round(effectiveAnnualHours * 60),
-                  balanceAfter: currentBalance?.balanceMinutes ?? 0,
+                  deltaSeconds: hoursToSeconds(effectiveAnnualHours),
+                  balanceAfterSeconds: currentBalance?.balanceSeconds ?? 0,
                   note: `Policy changed to ${policy.name}`,
                   createdById: actorId,
                 },
@@ -1637,17 +1638,24 @@ export const adjustLeaveBalance = withRBAC(
   "EMPLOYEE_MANAGE",
   async (actor, input: AdjustLeaveBalanceInput) => {
     const { employeeId: actorId, tenantId } = actor;
-    const { employeeId, leaveTypeId, year, mode, enteredMinutes, newBalanceMinutes, note } =
+    const { employeeId, leaveTypeId, year, mode, enteredMinutes, note } =
       adjustLeaveBalanceSchema.parse(input);
     await assertBalanceChangeAllowed(actor, employeeId, leaveTypeId);
 
     const existing = await db.leaveBalance.upsert({
       where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear: year } },
       update: {},
-      create: { employeeId, leaveTypeId, accrualYear: year, balanceMinutes: 0, usedMinutes: 0 },
+      create: { employeeId, leaveTypeId, accrualYear: year, balanceSeconds: 0, usedSeconds: 0 },
     });
 
-    const delta = newBalanceMinutes - existing.balanceMinutes;
+    // From the exact balance (lib/leave-time), not the minutes the page shows:
+    // adding 2 hours to 6.16 is 8.16, where adding to the 6h 10m shown was 8.17.
+    const entered = enteredMinutes * 60;
+    const newBalanceSeconds =
+      mode === "ADD" ? existing.balanceSeconds + entered :
+      mode === "SUBTRACT" ? existing.balanceSeconds - entered :
+      entered;
+    const delta = newBalanceSeconds - existing.balanceSeconds;
 
     const h = Math.floor(enteredMinutes / 60);
     const m = enteredMinutes % 60;
@@ -1661,15 +1669,15 @@ export const adjustLeaveBalance = withRBAC(
     await db.$transaction([
       db.leaveBalance.update({
         where: { id: existing.id },
-        data: { balanceMinutes: newBalanceMinutes },
+        data: { balanceSeconds: newBalanceSeconds },
       }),
       db.leaveAccrualLedger.create({
         data: {
           employeeId,
           leaveTypeId,
           action: "ADJUSTMENT",
-          deltaMinutes: delta,
-          balanceAfter: newBalanceMinutes,
+          deltaSeconds: delta,
+          balanceAfterSeconds: newBalanceSeconds,
           note: ledgerNote,
           createdById: actorId,
         },
@@ -1684,7 +1692,7 @@ export const adjustLeaveBalance = withRBAC(
       action: "LEAVE_BALANCE_ADJUSTED",
       changes: {
         before: { balanceMinutes: existing.balanceMinutes },
-        after: { balanceMinutes: newBalanceMinutes, note: ledgerNote },
+        after: { balanceMinutes: secondsToMinutes(newBalanceSeconds), note: ledgerNote },
       },
     });
 
@@ -1705,23 +1713,24 @@ export const postAccrualCorrection = withRBAC(
     const existing = await db.leaveBalance.upsert({
       where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear: year } },
       update: {},
-      create: { employeeId, leaveTypeId, accrualYear: year, balanceMinutes: 0, usedMinutes: 0 },
+      create: { employeeId, leaveTypeId, accrualYear: year, balanceSeconds: 0, usedSeconds: 0 },
     });
 
-    const newBalance = existing.balanceMinutes + deltaMinutes;
+    const deltaSeconds = deltaMinutes * 60;
+    const newBalance = existing.balanceSeconds + deltaSeconds;
 
     await db.$transaction([
       db.leaveBalance.update({
         where: { id: existing.id },
-        data: { balanceMinutes: newBalance },
+        data: { balanceSeconds: newBalance },
       }),
       db.leaveAccrualLedger.create({
         data: {
           employeeId,
           leaveTypeId,
           action: "ACCRUAL",
-          deltaMinutes,
-          balanceAfter: newBalance,
+          deltaSeconds,
+          balanceAfterSeconds: newBalance,
           payPeriodEnd: new Date(),
           note: "[Accrual Reset]",
           createdById: actorId,
@@ -1737,7 +1746,7 @@ export const postAccrualCorrection = withRBAC(
       action: "LEAVE_BALANCE_ADJUSTED",
       changes: {
         before: { balanceMinutes: existing.balanceMinutes },
-        after:  { balanceMinutes: newBalance, note: `Accrual correction: ${note}` },
+        after:  { balanceMinutes: secondsToMinutes(newBalance), note: `Accrual correction: ${note}` },
       },
     });
 
@@ -1768,7 +1777,7 @@ export const resetLeaveBalanceToAccrual = withRBAC(
       }),
       db.leaveAccrualLedger.aggregate({
         where: { employeeId, leaveTypeId, action: { in: ["ACCRUAL", "EARNED_ADJUSTMENT"] }, payPeriodEnd: { gte: yearStart, lt: yearEnd } },
-        _sum: { deltaMinutes: true },
+        _sum: { deltaSeconds: true },
       }),
     ]);
 
@@ -1776,21 +1785,21 @@ export const resetLeaveBalanceToAccrual = withRBAC(
 
     // balanceMinutes is the remaining balance (accrued minus used), so subtract usedMinutes
     // so the employee's total on the dashboard reconstructs correctly as accruedMinutes.
-    const newBalance = (accrualSum._sum.deltaMinutes ?? 0) - existing.usedMinutes;
-    const delta = newBalance - existing.balanceMinutes;
+    const newBalance = (accrualSum._sum.deltaSeconds ?? 0) - existing.usedSeconds;
+    const delta = newBalance - existing.balanceSeconds;
 
     await db.$transaction([
       db.leaveBalance.update({
         where: { id: existing.id },
-        data: { balanceMinutes: newBalance },
+        data: { balanceSeconds: newBalance },
       }),
       db.leaveAccrualLedger.create({
         data: {
           employeeId,
           leaveTypeId,
           action: "ADJUSTMENT",
-          deltaMinutes: delta,
-          balanceAfter: newBalance,
+          deltaSeconds: delta,
+          balanceAfterSeconds: newBalance,
           note: "[Accrual Reset]",
           createdById: actorId,
         },
@@ -1805,7 +1814,7 @@ export const resetLeaveBalanceToAccrual = withRBAC(
       action: "LEAVE_BALANCE_RESET_TO_ACCRUAL",
       changes: {
         before: { balanceMinutes: existing.balanceMinutes },
-        after: { balanceMinutes: newBalance },
+        after: { balanceMinutes: secondsToMinutes(newBalance) },
       },
     });
 
@@ -2329,33 +2338,35 @@ export const postManualAccrualEntry = withRBAC(
     const existing = await db.leaveBalance.upsert({
       where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear: year } },
       update: {},
-      create: { employeeId, leaveTypeId, accrualYear: year, balanceMinutes: 0, usedMinutes: 0 },
+      create: { employeeId, leaveTypeId, accrualYear: year, balanceSeconds: 0, usedSeconds: 0 },
     });
 
+    // Entered in hours and minutes; kept in seconds on the exact balance (lib/leave-time).
+    const accrualSeconds = accrualMinutes * 60, adjustEarnSeconds = adjustEarnMinutes * 60, adjustSeconds = adjustMinutes * 60;
     const effectiveDateObj = new Date(`${effectiveDate}T00:00:00Z`);
-    const newBalance = existing.balanceMinutes + accrualMinutes + adjustEarnMinutes + adjustMinutes;
+    const newBalance = existing.balanceSeconds + accrualSeconds + adjustEarnSeconds + adjustSeconds;
 
     const ledgerEntries: {
       employeeId: string; leaveTypeId: string; action: "ACCRUAL" | "EARNED_ADJUSTMENT" | "ADJUSTMENT";
-      deltaMinutes: number; balanceAfter: number; payPeriodEnd: Date; note: string; createdById: string | null;
+      deltaSeconds: number; balanceAfterSeconds: number; payPeriodEnd: Date; note: string; createdById: string | null;
     }[] = [];
-    let running = existing.balanceMinutes;
+    let running = existing.balanceSeconds;
 
     if (accrualMinutes !== 0) {
-      running += accrualMinutes;
-      ledgerEntries.push({ employeeId, leaveTypeId, action: "ACCRUAL", deltaMinutes: accrualMinutes, balanceAfter: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
+      running += accrualSeconds;
+      ledgerEntries.push({ employeeId, leaveTypeId, action: "ACCRUAL", deltaSeconds: accrualSeconds, balanceAfterSeconds: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
     }
     if (adjustEarnMinutes !== 0) {
-      running += adjustEarnMinutes;
-      ledgerEntries.push({ employeeId, leaveTypeId, action: "EARNED_ADJUSTMENT", deltaMinutes: adjustEarnMinutes, balanceAfter: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
+      running += adjustEarnSeconds;
+      ledgerEntries.push({ employeeId, leaveTypeId, action: "EARNED_ADJUSTMENT", deltaSeconds: adjustEarnSeconds, balanceAfterSeconds: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
     }
     if (adjustMinutes !== 0) {
-      running += adjustMinutes;
-      ledgerEntries.push({ employeeId, leaveTypeId, action: "ADJUSTMENT", deltaMinutes: adjustMinutes, balanceAfter: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
+      running += adjustSeconds;
+      ledgerEntries.push({ employeeId, leaveTypeId, action: "ADJUSTMENT", deltaSeconds: adjustSeconds, balanceAfterSeconds: running, payPeriodEnd: effectiveDateObj, note, createdById: actorId ?? null });
     }
 
     await db.$transaction([
-      db.leaveBalance.update({ where: { id: existing.id }, data: { balanceMinutes: newBalance } }),
+      db.leaveBalance.update({ where: { id: existing.id }, data: { balanceSeconds: newBalance } }),
       db.leaveAccrualLedger.createMany({ data: ledgerEntries }),
     ]);
 
@@ -2367,7 +2378,7 @@ export const postManualAccrualEntry = withRBAC(
       action: "LEAVE_BALANCE_ADJUSTED",
       changes: {
         before: { balanceMinutes: existing.balanceMinutes },
-        after:  { balanceMinutes: newBalance, note, accrualMinutes, adjustEarnMinutes, adjustMinutes },
+        after:  { balanceMinutes: secondsToMinutes(newBalance), note, accrualMinutes, adjustEarnMinutes, adjustMinutes },
       },
     });
 

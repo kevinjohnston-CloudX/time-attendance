@@ -212,7 +212,8 @@ export async function syncLeaveSegments(
       start: toLocalDay(request.startDate),
       end: toLocalDay(request.endDate),
     });
-    const minutesPerDay = Math.round(request.durationMinutes / leaveDays.length);
+    // In seconds, as leave is kept (lib/leave-time): a 0.56 hour line is 0.56.
+    const secondsPerDay = Math.round(request.durationSeconds / leaveDays.length);
     const bucket = CATEGORY_TO_BUCKET[request.leaveType.category];
 
     const timesheetsByDate = new Map<string, string>();
@@ -246,14 +247,15 @@ export async function syncLeaveSegments(
         const dayStart = startOfDay(day);
         // Nominal 09:00-17:00 for display purposes
         const start = new Date(dayStart.getTime() + 9 * 60 * 60_000);
-        const end = new Date(start.getTime() + minutesPerDay * 60_000);
+        const end = new Date(start.getTime() + secondsPerDay * 1000);
 
         return {
           timesheetId: timesheetsByDate.get(format(day, "yyyy-MM-dd"))!,
           segmentType: "LEAVE" as const,
           startTime: start,
           endTime: end,
-          durationMinutes: minutesPerDay,
+          durationMinutes: Math.round(secondsPerDay / 60),
+          durationSeconds: secondsPerDay,
           segmentDate: dayStart,
           isPaid: request.leaveType.isPaid,
           payBucket: bucket,
@@ -322,7 +324,7 @@ async function refreshLeaveBuckets(
   for (const seg of leaveSegments) {
     bucketTotals.set(
       seg.payBucket,
-      (bucketTotals.get(seg.payBucket) ?? 0) + seg.durationMinutes
+      (bucketTotals.get(seg.payBucket) ?? 0) + seg.durationSeconds
     );
   }
 
@@ -334,10 +336,10 @@ async function refreshLeaveBuckets(
   // Create new ones
   const bucketData = [...bucketTotals.entries()]
     .filter(([, mins]) => mins > 0)
-    .map(([bucket, totalMinutes]) => ({
+    .map(([bucket, totalSeconds]) => ({
       timesheetId,
       bucket,
-      totalMinutes,
+      totalSeconds,
     }));
 
   if (bucketData.length > 0) {

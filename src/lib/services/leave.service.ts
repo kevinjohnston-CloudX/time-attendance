@@ -5,6 +5,7 @@ import { shiftMeal } from "@/lib/shift-meal";
 import { validateLeaveTransition } from "@/lib/state-machines/leave-state";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
 import { reverseLeaveUsage } from "@/lib/engines/accrual-engine";
+import { hoursToSeconds, secondsToHours } from "@/lib/leave-time";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { requestLeaveSchema, type DaySelectionInput } from "@/lib/validators/leave.schema";
 
@@ -145,23 +146,25 @@ type PolicyForValidation = {
 export async function validateBalanceForApproval(leaveRequestId: string): Promise<void> {
   const request = await db.leaveRequest.findUniqueOrThrow({
     where: { id: leaveRequestId },
-    select: { employeeId: true, leaveTypeId: true, durationMinutes: true, startDate: true, leaveType: { select: { accrualTracked: true } } },
+    select: { employeeId: true, leaveTypeId: true, durationSeconds: true, startDate: true, leaveType: { select: { accrualTracked: true } } },
   });
   // Leave that keeps no balance (Bereavement) has none to run short of. It
   // used to be read as 0 hours available, and refused.
   if (!request.leaveType.accrualTracked) return;
 
-  const { employeeId, leaveTypeId, durationMinutes, startDate } = request;
+  const { employeeId, leaveTypeId, durationSeconds, startDate } = request;
   const accrualYear = getYear(startDate);
 
   const balance = await db.leaveBalance.findUnique({
     where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear } },
-    select: { balanceMinutes: true, usedMinutes: true },
+    select: { balanceSeconds: true, usedSeconds: true },
   });
 
-  const currentMins   = balance?.balanceMinutes ?? 0;
-  const usedMins      = balance?.usedMinutes    ?? 0;
-  const projectedMins = currentMins - durationMinutes;
+  // In seconds, as leave is kept (lib/leave-time): a 0.56 hour balance does
+  // not cover a 34 minute request, which whole minutes made it look to.
+  const current   = balance?.balanceSeconds ?? 0;
+  const used      = balance?.usedSeconds    ?? 0;
+  const projected = current - durationSeconds;
 
   const employee = await db.employee.findUniqueOrThrow({
     where: { id: employeeId },
@@ -223,7 +226,7 @@ export async function validateBalanceForApproval(leaveRequestId: string): Promis
     if (siteRow) policy = siteRow.ptoPolicy;
   }
 
-  const fmt = (mins: number) => `${Math.round(Math.abs(mins) / 60 * 10) / 10}h`;
+  const fmt = (seconds: number) => `${secondsToHours(Math.abs(seconds))}h`;
 
   // ── Annual usage cap check ──────────────────────────────────────────────────
   if (policy) {
@@ -243,9 +246,9 @@ export async function validateBalanceForApproval(leaveRequestId: string): Promis
       );
 
       if (tier?.maxAnnualHours != null) {
-        const capMins       = Math.round(tier.maxAnnualHours * 60);
-        const projectedUsed = usedMins + durationMinutes;
-        if (projectedUsed > capMins) {
+        const cap           = hoursToSeconds(tier.maxAnnualHours);
+        const projectedUsed = used + durationSeconds;
+        if (projectedUsed > cap) {
           throw new Error(
             `Annual usage limit: approving this request would bring total usage to ${fmt(projectedUsed)} this year, exceeding the ${tier.maxAnnualHours}h annual maximum for this leave type.`
           );
@@ -255,22 +258,22 @@ export async function validateBalanceForApproval(leaveRequestId: string): Promis
   }
 
   // ── Borrow / negative balance check ────────────────────────────────────────
-  if (projectedMins >= 0) return;
+  if (projected >= 0) return;
 
   const allowBorrow = policy?.allowNegativeBalance ?? false;
   const maxNegHours = policy?.maxNegativeHours     ?? null;
 
   if (!allowBorrow) {
     throw new Error(
-      `Insufficient balance: employee has ${fmt(currentMins)} available but this request requires ${fmt(durationMinutes)}. Borrowing against future accruals is not enabled for this leave type.`
+      `Insufficient balance: employee has ${fmt(current)} available but this request requires ${fmt(durationSeconds)}. Borrowing against future accruals is not enabled for this leave type.`
     );
   }
 
   if (maxNegHours !== null) {
-    const maxNegMins = Math.round(maxNegHours * 60);
-    if (projectedMins < -maxNegMins) {
+    const maxNeg = hoursToSeconds(maxNegHours);
+    if (projected < -maxNeg) {
       throw new Error(
-        `Insufficient balance: approving this request would leave the employee ${fmt(-projectedMins)} in deficit, exceeding the ${maxNegHours}h borrow limit.`
+        `Insufficient balance: approving this request would leave the employee ${fmt(-projected)} in deficit, exceeding the ${maxNegHours}h borrow limit.`
       );
     }
   }

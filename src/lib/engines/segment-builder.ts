@@ -2244,9 +2244,12 @@ async function syncHolidayCredits(
             accrualYear,
           },
         },
-        select: { balanceMinutes: true },
+        select: { balanceSeconds: true },
       });
-      const balanceAfter = (currentBalance?.balanceMinutes ?? 0) + totalToPost;
+      // The balance in seconds, as leave is kept (lib/leave-time); the hours
+      // worked are whole minutes.
+      const postSeconds = totalToPost * 60;
+      const balanceAfterSeconds = (currentBalance?.balanceSeconds ?? 0) + postSeconds;
       await db.$transaction([
         db.leaveBalance.upsert({
           where: {
@@ -2260,18 +2263,18 @@ async function syncHolidayCredits(
             employeeId: employee.id,
             leaveTypeId: leaveType.id,
             accrualYear,
-            balanceMinutes: totalToPost,
-            usedMinutes: 0,
+            balanceSeconds: postSeconds,
+            usedSeconds: 0,
           },
-          update: { balanceMinutes: { increment: totalToPost } },
+          update: { balanceSeconds: { increment: postSeconds } },
         }),
         db.leaveAccrualLedger.create({
           data: {
             employeeId: employee.id,
             leaveTypeId: leaveType.id,
             action: "EARNED_ADJUSTMENT",
-            deltaMinutes: totalToPost,
-            balanceAfter,
+            deltaSeconds: postSeconds,
+            balanceAfterSeconds,
             payPeriodEnd: payPeriodEnd,
             note: "Holiday worked hours",
           },
