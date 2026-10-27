@@ -6,8 +6,10 @@ import { LifeBuoy } from "lucide-react";
 
 /**
  * The Help & feedback button, in the shape each place draws it: a round button
- * in the top bar's icon pill, a finger-sized one in the phone's top bar, and a
- * row (or, folded, an icon) at the foot of the Classic sidebar.
+ * in the top bar's icon pill, and a finger-sized one in the phone's top bar.
+ *
+ * <p>New design only: the window is built on the new design's tokens, which
+ * the Classic design deliberately never loads.
  *
  * <p>The window and its editor load the first time it is opened, so no page
  * pays for them up front.
@@ -18,7 +20,7 @@ export function HelpButton({
   variant,
   className,
 }: {
-  variant: "pill" | "phone" | "classic" | "classicIcon";
+  variant: "pill" | "phone";
   /** The phone bar's own button class, so it matches its neighbours. */
   className?: string;
 }) {
@@ -38,30 +40,9 @@ export function HelpButton({
       >
         <LifeBuoy className="h-4 w-4" />
       </button>
-    ) : variant === "phone" ? (
+    ) : (
       <button type="button" onClick={() => setOpen(true)} aria-label={label} aria-haspopup="dialog" className={className}>
         <LifeBuoy className="h-5 w-5" aria-hidden="true" />
-      </button>
-    ) : variant === "classicIcon" ? (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        title={label}
-        aria-label={label}
-        aria-haspopup="dialog"
-        className="rounded-lg p-2 text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
-      >
-        <LifeBuoy className="h-4 w-4" />
-      </button>
-    ) : (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-haspopup="dialog"
-        className="flex w-full items-center gap-3 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
-      >
-        <LifeBuoy className="h-4 w-4 shrink-0" />
-        {label}
       </button>
     );
 
