@@ -35,6 +35,30 @@
   max-width: 460px;
 }
 
+/* On a larger screen the window settles in; on a phone the sheet rises
+   (ta-sheet in globals.css). */
+@media (min-width: 761px) and (prefers-reduced-motion: no-preference) {
+  .scrim {
+    animation: help-fade 160ms ease-out;
+  }
+  .window {
+    animation: help-settle 220ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+}
+
+@keyframes help-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes help-settle {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
 .head {
   display: flex;
   flex: none;
@@ -146,11 +170,19 @@
   color: var(--text-secondary);
 }
 
+.fieldError {
+  font: var(--type-caption1);
+  color: var(--text-error);
+}
+
 /* ---- The details editor ---- */
 
+/* A long message or a few screenshots scroll inside the box; the window
+   keeps its size. */
 .editor {
   display: flex;
   min-height: 220px;
+  max-height: min(400px, 48dvh);
   flex: 1;
   flex-direction: column;
   overflow: hidden;
@@ -167,6 +199,10 @@
 
 .editor[data-disabled="true"] {
   background: var(--fill-disabled);
+}
+
+.editor[data-invalid] {
+  border-color: var(--stroke-error);
 }
 
 .tools {
@@ -450,6 +486,11 @@
   text-wrap: pretty;
 }
 
+/* Room for the longest note, so picking an impact never moves the window. */
+.impactNote {
+  min-height: 2lh;
+}
+
 .railNote[data-tone="warning"] {
   color: var(--text-warning);
 }
@@ -498,10 +539,13 @@
 
 /* ---- Sent ---- */
 
+/* As tall as the form it replaces, so the window doesn't jump when it's sent. */
 .sent {
   display: flex;
+  min-height: 480px;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   padding: 36px 24px 32px;
   border-radius: 14px;
@@ -526,6 +570,19 @@
   height: 22px;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .sentMark {
+    animation: help-mark 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+}
+
+@keyframes help-mark {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
 .sentTitle {
   margin: 0;
   font: var(--type-h3);
@@ -536,6 +593,15 @@
   font: var(--weight-semibold) 14px/20px var(--font-sans);
   font-variant-numeric: tabular-nums;
   color: var(--text-accent);
+}
+
+.sentSubject {
+  max-width: 420px;
+  overflow: hidden;
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sentBody {
@@ -568,6 +634,9 @@
   }
   .subtitle {
     white-space: normal;
+  }
+  .sent {
+    min-height: 0;
   }
 }
 

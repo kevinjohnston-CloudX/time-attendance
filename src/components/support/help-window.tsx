@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
@@ -18,6 +18,7 @@ import {
   Lightbulb,
   List,
   ListOrdered,
+  Loader2,
   OctagonAlert,
   Paperclip,
   Send,
@@ -70,10 +71,18 @@ const IMPACT_NOTE: Record<Impact, string> = {
 };
 
 type Attached = { key: string; file: File };
+type FieldError = { field: "subject" | "details"; message: string };
 type Context = { email: string | null; name: string | null; company: string | null; available: boolean };
 type Sent = { ticketNumber: string; confirmationTo: string; confirmationSent: boolean };
 
-const formatBytes = (n: number) =>
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]):not([type="file"]), select:not([disabled]), textarea:not([disabled]), [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
+
+/** The send shortcut as this computer writes it. */
+const SEND_KEYS =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘ Enter" : "Ctrl Enter";
+
+const formatBytes =(n: number) =>
   n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
 
 const readAsDataUrl = (file: File) =>
@@ -107,11 +116,12 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
   const [files, setFiles] = useState<Attached[]>([]);
   const [bodySize, setBodySize] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<FieldError | null>(null);
   const [checkingCritical, setCheckingCritical] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [sent, setSent] = useState<Sent | null>(null);
-  const [sending, startSending] = useTransition();
+  const [sending, setSending] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const [editorKey, setEditorKey] = useState(0);
 
@@ -165,15 +175,24 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
     setFiles([]);
     setBodySize(0);
     setFailure(null);
+    setFieldError(null);
     setSent(null);
     setEditorKey((k) => k + 1);
-    requestAnimationFrame(() => document.getElementById("help-summary")?.focus());
   }
+
+  // Back on the form after a send, the cursor waits in the summary.
+  const wasSent = useRef(false);
+  useEffect(() => {
+    if (wasSent.current && !sent) document.getElementById("help-summary")?.focus();
+    wasSent.current = !!sent;
+  }, [sent]);
 
   // The editor reports what it holds; the send reads it from here.
   const editorRef = useRef<Editor | null>(null);
 
-  function check(): string | null {
+  // A missing summary or details is said under that field, and the cursor goes
+  // there; anything else is said at the top of the request.
+  function check(): boolean {
     const ed = editorRef.current;
     const parsed = supportRequestSchema.safeParse({
       requestType: type,
@@ -182,9 +201,23 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
       html: ed?.getHTML() ?? "",
       text: ed?.getText() ?? "",
     });
-    if (!parsed.success) return parsed.error.issues[0]?.message ?? "Check the request.";
-    if (overBudget) return "The files and screenshots are over 9 MB together. Remove some and try again.";
-    return null;
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      const message = issue?.message ?? "Check the request.";
+      const at = issue?.path[0];
+      if (at === "subject" || at === "text") {
+        const field = at === "subject" ? "subject" : "details";
+        setFieldError({ field, message });
+        if (field === "subject") document.getElementById("help-summary")?.focus();
+        else ed?.commands.focus("end");
+      } else setFailure(message);
+      return false;
+    }
+    if (overBudget) {
+      setFailure("The files and screenshots are over 9 MB together. Remove some and try again.");
+      return false;
+    }
+    return true;
   }
 
   function send(level: Impact) {
@@ -204,27 +237,34 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
     );
     for (const f of files) fd.append("files", f.file, f.file.name);
     setFailure(null);
-    startSending(async () => {
-      const res = await sendSupportRequest(fd);
-      setCheckingCritical(false);
-      if (res.success) setSent(res.data);
-      else setFailure(res.error);
-    });
-  }
-
-  function onSend() {
-    const problem = check();
-    if (problem) {
-      setFailure(problem);
-      return;
-    }
-    if (impact === "blocking") setCheckingCritical(true);
-    else send(impact);
+    setSending(true);
+    // Not a transition on purpose: Next keeps a transition pending until it has
+    // re-rendered the page underneath, which can take far longer than the send.
+    sendSupportRequest(fd)
+      .then((res) => {
+        setCheckingCritical(false);
+        if (res.success) setSent(res.data);
+        else setFailure(res.error);
+      })
+      .catch(() => {
+        setCheckingCritical(false);
+        setFailure("Support couldn't be reached. Try again in a minute, or email support@cloudxsystems.net.");
+      })
+      .finally(() => setSending(false));
   }
 
   const available = context?.available ?? true;
   const noEmail = context ? !context.email : false;
   const blocked = !!contextError || !available || noEmail;
+  const canSend = !sending && !blocked && !!context;
+
+  function onSend() {
+    if (!canSend || checkingCritical || confirmDiscard) return;
+    setFailure(null);
+    if (!check()) return;
+    if (impact === "blocking") setCheckingCritical(true);
+    else send(impact);
+  }
 
   const hint = sent
     ? ""
@@ -238,6 +278,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
       subtitle="Send a problem, a question or an idea to CloudTime Support."
       icon={<LifeBuoy />}
       onClose={requestClose}
+      onSubmit={sent ? undefined : onSend}
       onDrag={setDragging}
       onDropFiles={sent ? undefined : addFiles}
       foot={
@@ -247,7 +288,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
             <Button hierarchy="secondary" onClick={reset}>
               New request
             </Button>
-            <Button hierarchy="primary" onClick={onClose}>
+            <Button hierarchy="primary" onClick={onClose} autoFocus>
               Done
             </Button>
           </>
@@ -266,8 +307,15 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
             <Button
               hierarchy="primary"
               onClick={onSend}
-              disabled={sending || blocked || !context}
-              leadingIcon={<Send className="h-4 w-4" aria-hidden="true" />}
+              disabled={!canSend}
+              title={`Send (${SEND_KEYS})`}
+              leadingIcon={
+                sending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Send className="h-4 w-4" aria-hidden="true" />
+                )
+              }
             >
               {sending ? "Sending" : "Send request"}
             </Button>
@@ -284,6 +332,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
           </span>
           <h3 className={styles.sentTitle}>Request sent</h3>
           <span className={styles.sentNumber}>Request #{sent.ticketNumber}</span>
+          <span className={styles.sentSubject}>{subject.trim()}</span>
           <p className={styles.sentBody}>
             {sent.confirmationSent
               ? `We emailed a confirmation to ${sent.confirmationTo}. Reply to that email to add anything or follow up. Our answer comes to the same place.`
@@ -319,7 +368,12 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
               maxLength={300}
               autoFocus
               disabled={sending}
-              onChange={(e) => setSubject(e.target.value)}
+              error={fieldError?.field === "subject" ? fieldError.message : undefined}
+              aria-invalid={fieldError?.field === "subject" || undefined}
+              onChange={(e) => {
+                setSubject(e.target.value);
+                if (fieldError?.field === "subject") setFieldError(null);
+              }}
             />
 
             <div className={styles.field}>
@@ -329,12 +383,21 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
               <DetailsEditor
                 key={editorKey}
                 disabled={sending}
+                invalid={fieldError?.field === "details"}
                 onReady={(ed) => (editorRef.current = ed)}
-                onSize={setBodySize}
+                onSize={(n) => {
+                  setBodySize(n);
+                  setFieldError((prev) => (prev?.field === "details" ? null : prev));
+                }}
                 onNonImageFiles={addFiles}
                 onTooBig={() => setFailure("That picture is over 9 MB together with everything else. Attach a smaller one.")}
                 budgetLeft={() => SUPPORT_LIMITS.totalBytes - filesSizeRef.current}
               />
+              {fieldError?.field === "details" && (
+                <span className={styles.fieldError} id="help-details-error">
+                  {fieldError.message}
+                </span>
+              )}
             </div>
 
             <div className={styles.files}>
@@ -420,7 +483,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
                 onChange={(v) => setImpact(v as Impact)}
                 items={type === "system_issue" ? IMPACT_ITEMS : IMPACT_ITEMS.filter((i) => i.value !== "blocking")}
               />
-              <p className={styles.railNote}>{IMPACT_NOTE[impact]}</p>
+              <p className={`${styles.railNote} ${styles.impactNote}`}>{IMPACT_NOTE[impact]}</p>
             </div>
 
             <div className={styles.railBlock}>
@@ -478,6 +541,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
  */
 function DetailsEditor({
   disabled,
+  invalid,
   onReady,
   onSize,
   onNonImageFiles,
@@ -485,6 +549,7 @@ function DetailsEditor({
   budgetLeft,
 }: {
   disabled: boolean;
+  invalid: boolean;
   onReady: (editor: Editor) => void;
   onSize: (bytes: number) => void;
   onNonImageFiles: (files: File[]) => void;
@@ -502,7 +567,13 @@ function DetailsEditor({
           onTooBig();
           return;
         }
-        editor.chain().focus().setImage({ src, alt: file.name }).run();
+        // A line after the picture, with the cursor on it, so typing goes on
+        // below it rather than replacing it.
+        editor
+          .chain()
+          .focus()
+          .insertContent([{ type: "image", attrs: { src, alt: file.name } }, { type: "paragraph" }])
+          .run();
       }
     },
     [budgetLeft, onTooBig],
@@ -511,12 +582,25 @@ function DetailsEditor({
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit.configure({ heading: false, codeBlock: false, code: false, blockquote: false, horizontalRule: false }),
+      StarterKit.configure({
+        heading: false,
+        codeBlock: false,
+        code: false,
+        blockquote: false,
+        horizontalRule: false,
+        // A link in the message is text being written, not somewhere to go.
+        link: { openOnClick: false, autolink: true },
+      }),
       Image.configure({ allowBase64: true }),
       Placeholder.configure({ placeholder: "Describe what happened, what you expected, and the steps to get there." }),
     ],
     editorProps: {
-      attributes: { "aria-labelledby": "help-details-label", role: "textbox", "aria-multiline": "true" },
+      attributes: {
+        "aria-labelledby": "help-details-label",
+        "aria-describedby": "help-details-error",
+        role: "textbox",
+        "aria-multiline": "true",
+      },
       handlePaste: (_view, event) => {
         const pasted = Array.from(event.clipboardData?.files ?? []);
         if (pasted.length === 0) return false;
@@ -562,6 +646,9 @@ function DetailsEditor({
       aria-pressed={active}
       title={label}
       disabled={disabled}
+      // Tab goes from the summary straight into the text; the keys (⌘B, ⌘I,
+      // ⌘U, "- " for a list) do the same as these buttons.
+      tabIndex={-1}
       onMouseDown={(e) => e.preventDefault()}
       onClick={run}
     >
@@ -570,7 +657,7 @@ function DetailsEditor({
   );
 
   return (
-    <div className={styles.editor} data-disabled={disabled}>
+    <div className={styles.editor} data-disabled={disabled} data-invalid={invalid || undefined}>
       <div className={styles.tools} role="toolbar" aria-label="Formatting">
         {tool("Bold", Bold, !!editor?.isActive("bold"), () => editor?.chain().focus().toggleBold().run())}
         {tool("Italic", Italic, !!editor?.isActive("italic"), () => editor?.chain().focus().toggleItalic().run())}
@@ -612,9 +699,10 @@ function CriticalCheck({
       icon={<TriangleAlert />}
       tone="warning"
       onClose={onBack}
+      onSubmit={sending ? undefined : () => onSend(level)}
       foot={
         <>
-          <span className={styles.footHint}>Back keeps everything you wrote.</span>
+          <span className={styles.footHint}>Back keeps what you wrote.</span>
           <Button hierarchy="tertiary" onClick={onBack} disabled={sending}>
             Back
           </Button>
@@ -622,7 +710,13 @@ function CriticalCheck({
             hierarchy="primary"
             onClick={() => onSend(level)}
             disabled={sending}
-            leadingIcon={<Send className="h-4 w-4" aria-hidden="true" />}
+            leadingIcon={
+              sending ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Send className="h-4 w-4" aria-hidden="true" />
+              )
+            }
           >
             {sending ? "Sending" : level === "blocking" ? "Send as critical" : "Send as moderate"}
           </Button>
@@ -672,6 +766,7 @@ function Shell({
   size,
   foot,
   onClose,
+  onSubmit,
   onDrag,
   onDropFiles,
   children,
@@ -683,26 +778,54 @@ function Shell({
   size?: "small";
   foot: ReactNode;
   onClose: () => void;
+  /** Command (or Ctrl) and Enter. */
+  onSubmit?: () => void;
   onDrag?: (over: boolean) => void;
   onDropFiles?: (files: File[]) => void;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
+  const submitRef = useRef(onSubmit);
   useEffect(() => {
     closeRef.current = onClose;
-  }, [onClose]);
+    submitRef.current = onSubmit;
+  }, [onClose, onSubmit]);
   const titleId = `help-${size ?? "main"}-title`;
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     if (!ref.current?.contains(document.activeElement)) ref.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
       // Only the window on top answers.
       const windows = document.querySelectorAll("[data-help-window]");
-      if (windows[windows.length - 1] !== ref.current) return;
-      e.stopPropagation();
-      closeRef.current();
+      const win = ref.current;
+      if (!win || windows[windows.length - 1] !== win) return;
+      // A confirm box open on top (Discard this request?) has the keys.
+      if (document.querySelector('[role="alertdialog"]')) return;
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        closeRef.current();
+      } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && submitRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        submitRef.current();
+      } else if (e.key === "Tab") {
+        // Tab goes round the window, never out to the page behind it.
+        const stops = Array.from(win.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+          (el) => el.offsetParent !== null || el === document.activeElement,
+        );
+        if (stops.length === 0) return;
+        const first = stops[0]!;
+        const last = stops[stops.length - 1]!;
+        const at = document.activeElement;
+        if (e.shiftKey && (at === first || at === win || !win.contains(at))) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && (at === last || !win.contains(at))) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     window.addEventListener("keydown", onKey, true);
     return () => {
@@ -740,8 +863,19 @@ function Shell({
       }
     : {};
 
+  // A click on the backdrop closes only when it also started there, so a text
+  // selection that ends outside the window doesn't.
+  const pressedBackdrop = useRef(false);
+
   return createPortal(
-    <div className={`${styles.scrim} ta-sheet-scrim`} onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div
+      className={`${styles.scrim} ta-sheet-scrim`}
+      onMouseDown={(e) => (pressedBackdrop.current = e.target === e.currentTarget)}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && pressedBackdrop.current) onClose();
+        pressedBackdrop.current = false;
+      }}
+    >
       <div
         ref={ref}
         tabIndex={-1}
