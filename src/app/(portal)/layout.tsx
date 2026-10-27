@@ -18,7 +18,7 @@ import { INACTIVE_PATHS } from "@/lib/rbac/identity";
 import { validViewAsId } from "@/lib/rbac/check-permission";
 import { EmployeesListForget } from "@/components/admin/employees-list-forget";
 import { exitTenant } from "@/actions/super-admin.actions";
-import { LIVE_ATTENDANCE_HREF, REQUEST_PATH_HEADER, SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
+import { LIVE_ATTENDANCE_HREF, LIVE_ATTENDANCE_ONLY_HREFS, REQUEST_PATH_HEADER, SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { getPermissions } from "@/lib/rbac/permissions";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { getLegacyPermissions, isLiveAttendanceOnly } from "@/lib/rbac/permission-resolver";
@@ -92,7 +92,7 @@ export default async function PortalLayout({
   const liveAttendanceOnly = await liveAttendanceOnlyRead;
   if (liveAttendanceOnly) {
     const path = (await headers()).get(REQUEST_PATH_HEADER) ?? "";
-    const onPage = path === LIVE_ATTENDANCE_HREF || path.startsWith(`${LIVE_ATTENDANCE_HREF}/`);
+    const onPage = LIVE_ATTENDANCE_ONLY_HREFS.some((h) => path === h || path.startsWith(`${h}/`));
     if (!onPage) redirect(LIVE_ATTENDANCE_HREF);
   }
 
@@ -187,7 +187,7 @@ export default async function PortalLayout({
    * either way.
    */
   const can = (permission?: string | string[], href?: string) => {
-    if (liveAttendanceOnly) return href === LIVE_ATTENDANCE_HREF;
+    if (liveAttendanceOnly) return !!href && LIVE_ATTENDANCE_ONLY_HREFS.includes(href);
     if (!permission) return true;
     if (Array.isArray(permission)) return permission.some((p) => userPermissions.includes(p));
     return userPermissions.includes(permission);
@@ -292,7 +292,7 @@ export default async function PortalLayout({
           canViewAs={canUseViewAs && isEmployeeActive}
           viewAsOptions={viewAsOptions.map((r) => ({ id: r.id, name: r.name }))}
           isInactive={!isEmployeeActive}
-          onlyHrefs={liveAttendanceOnly ? [LIVE_ATTENDANCE_HREF] : undefined}
+          onlyHrefs={liveAttendanceOnly ? LIVE_ATTENDANCE_ONLY_HREFS : undefined}
         />
         </div>
         {/* Breadcrumb bar sits inside the content column, not above the

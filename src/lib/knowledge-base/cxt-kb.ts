@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { mailAddress } from "@/lib/email-address";
-import { getEffectiveRole, userHasPermission } from "@/lib/rbac/check-permission";
+import { getEffectiveRole, userHasPermission, validViewAsId } from "@/lib/rbac/check-permission";
+import { isLiveAttendanceOnly } from "@/lib/rbac/permission-resolver";
+import { isValidRole } from "@/lib/rbac/roles";
 
 /**
  * The Knowledge Base page's line to our ticketing system (CXT), where the
@@ -35,23 +37,37 @@ type SessionUser = { id?: string; role: string; customRoleId?: string | null; ca
 
 /**
  * CXT's CloudTime audiences this person is in. Everyone is in "everyone";
- * the rest follow what the person can do here:
- * supervisors approve their team's timesheets or leave, payroll manages pay
- * periods, HR manages employees, admins are system administrators.
+ * the rest follow what the person can do here, as "View as" shows it:
+ * - supervisors approve their team's timesheets or leave;
+ * - payroll manages pay periods; HR manages employees;
+ * - admins are system administrators (CXT then shows them every guide);
+ * - agency sees a team's punches or timecards but approves nothing;
+ * - lossPrevention is on a role limited to Live Attendance.
  */
 export async function readerAudiences(user: SessionUser): Promise<string[]> {
-  const [approveTime, approveLeave, payroll, hr, role] = await Promise.all([
+  const viewAsId = await validViewAsId(user);
+  // The role whose limits apply right now: the one being viewed as, else
+  // their own. An old-style View as names a built-in role, which is never
+  // limited to Live Attendance.
+  const roleId = viewAsId ? (isValidRole(viewAsId) ? null : viewAsId) : (user.customRoleId ?? null);
+  const [approveTime, approveLeave, payroll, hr, teamPunches, teamTimecards, role, liveOnly] = await Promise.all([
     userHasPermission(user, "TIMESHEET_APPROVE_TEAM"),
     userHasPermission(user, "LEAVE_APPROVE_TEAM"),
     userHasPermission(user, "PAY_PERIOD_MANAGE"),
     userHasPermission(user, "EMPLOYEE_MANAGE"),
+    userHasPermission(user, "PUNCH_VIEW_TEAM"),
+    userHasPermission(user, "TIMECARD_VIEW_TEAM"),
     getEffectiveRole(user),
+    isLiveAttendanceOnly(roleId).catch(() => false),
   ]);
+  const approves = approveTime || approveLeave;
   const out = ["everyone"];
-  if (approveTime || approveLeave) out.push("supervisors");
+  if (approves) out.push("supervisors");
   if (payroll) out.push("payroll");
   if (hr) out.push("hr");
   if (role === "SYSTEM_ADMIN" || role === "SUPER_ADMIN") out.push("admins");
+  if ((teamPunches || teamTimecards) && !approves) out.push("agency");
+  if (liveOnly) out.push("lossPrevention");
   return out;
 }
 

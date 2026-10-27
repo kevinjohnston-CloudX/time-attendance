@@ -10,6 +10,7 @@ import { useRouter } from "@/components/layout/navigation-progress";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { SegmentedControl } from "@/components/ui";
 import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
+import { LIVE_ATTENDANCE_ONLY_HREFS } from "@/lib/constants";
 import { BrandTile, CloudTimeWordmark } from "./cloudtime-logo";
 import { openCommandPalette } from "./command-palette";
 import { NotificationBell } from "./notification-bell";
@@ -249,7 +250,7 @@ function PhoneMenu({
   const sections = visibleSections({
     permissions,
     isInactive,
-    onlyHrefs: liveAttendanceOnly ? ["/supervisor/on-site"] : undefined,
+    onlyHrefs: liveAttendanceOnly ? LIVE_ATTENDANCE_ONLY_HREFS : undefined,
   });
   const current = activeHref(pathname, sections.flatMap((s) => s.items.map((i) => i.href)));
   const roleLabel = ROLE_LABEL[realRole ?? ""] ?? realRole ?? "";
