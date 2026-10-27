@@ -1062,22 +1062,29 @@ async function debitedSeconds(client: TxClient | typeof db, leaveRequestId: stri
 
 /**
  * Reverse a previously posted leave debit when a request is cancelled.
- * No-ops if no USAGE ledger entry exists for this request (i.e. it was never debited).
+ * No-ops if the request was never debited (NovaTime's imported leave, which
+ * its balances already counted) or was already given back.
+ *
+ * <p>The debit is the USAGE of an approval or of Add time, or the
+ * TIMECARD_DEDUCTION of a pay code change; either is given back.
  */
-export async function reverseLeaveUsage(leaveRequestId: string): Promise<void> {
-  const usageEntry = await db.leaveAccrualLedger.findFirst({
-    where: { leaveRequestId, action: "USAGE" },
+export async function reverseLeaveUsage(leaveRequestId: string, tx?: TxClient): Promise<void> {
+  if (!tx) return db.$transaction((t) => reverseLeaveUsage(leaveRequestId, t));
+
+  const usageEntry = await tx.leaveAccrualLedger.findFirst({
+    where: { leaveRequestId, action: { in: ["USAGE", "TIMECARD_DEDUCTION"] } },
+    orderBy: { createdAt: "desc" },
   });
   if (!usageEntry) return;
   // Only what is still off: reversing twice used to put the hours back twice.
-  const outstanding = await debitedSeconds(db, leaveRequestId);
+  const outstanding = await debitedSeconds(tx, leaveRequestId);
   if (outstanding <= 0) return;
 
   const accrualYear = getYear(
-    (await db.leaveRequest.findUniqueOrThrow({ where: { id: leaveRequestId } })).startDate
+    (await tx.leaveRequest.findUniqueOrThrow({ where: { id: leaveRequestId } })).startDate
   );
 
-  const balance = await db.leaveBalance.findUniqueOrThrow({
+  const balance = await tx.leaveBalance.findUniqueOrThrow({
     where: {
       employeeId_leaveTypeId_accrualYear: {
         employeeId: usageEntry.employeeId,
@@ -1090,23 +1097,21 @@ export async function reverseLeaveUsage(leaveRequestId: string): Promise<void> {
   const reversal = outstanding;
   const newBalance = balance.balanceSeconds + reversal;
 
-  await db.$transaction([
-    db.leaveBalance.update({
-      where: { id: balance.id },
-      data: {
-        balanceSeconds: newBalance,
-        usedSeconds: { decrement: reversal },
-      },
-    }),
-    db.leaveAccrualLedger.create({
-      data: {
-        employeeId: usageEntry.employeeId,
-        leaveTypeId: usageEntry.leaveTypeId,
-        action: "ADJUSTMENT",
-        deltaSeconds: reversal,
-        balanceAfterSeconds: newBalance,
-        leaveRequestId,
-      },
-    }),
-  ]);
+  await tx.leaveBalance.update({
+    where: { id: balance.id },
+    data: {
+      balanceSeconds: newBalance,
+      usedSeconds: { decrement: reversal },
+    },
+  });
+  await tx.leaveAccrualLedger.create({
+    data: {
+      employeeId: usageEntry.employeeId,
+      leaveTypeId: usageEntry.leaveTypeId,
+      action: "ADJUSTMENT",
+      deltaSeconds: reversal,
+      balanceAfterSeconds: newBalance,
+      leaveRequestId,
+    },
+  });
 }

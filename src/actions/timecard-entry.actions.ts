@@ -19,6 +19,7 @@ import type { LeaveType } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { placeEnteredHours } from "@/lib/entered-hours";
 import { hoursToSeconds } from "@/lib/leave-time";
+import { postLeaveUsage, reverseLeaveUsage } from "@/lib/engines/accrual-engine";
 
 // ─── Get leave types for timecard entry modal ─────────────────────────────────
 
@@ -353,6 +354,10 @@ export const addPayrollLeaveEntry = withRBAC(
         },
       });
 
+      // Off the balance now, as HR approval takes it; the period lock leaves
+      // a request already taken alone.
+      await postLeaveUsage(req.id, tx);
+
       return req;
     });
 
@@ -396,9 +401,14 @@ export const removePayrollLeaveEntry = withRBAC(
       }
     }
 
-    await db.leaveRequest.update({
-      where: { id: leaveRequestId },
-      data: { status: "CANCELLED", cancelledAt: new Date() },
+    // What it took off the balance goes back with it. NovaTime's imported
+    // leave took nothing here (its balances counted it), so gets nothing back.
+    await db.$transaction(async (tx) => {
+      await tx.leaveRequest.update({
+        where: { id: leaveRequestId },
+        data: { status: "CANCELLED", cancelledAt: new Date() },
+      });
+      await reverseLeaveUsage(leaveRequestId, tx);
     });
 
     await writeAuditLog({
@@ -665,6 +675,10 @@ export const addManualHoursEntry = withRBAC(
           entityId: timesheetId,
           changes: { after: { date, hours, leaveTypeId, source: "MANUAL_HOURS_LEAVE" } },
         });
+
+        // Posted, so the period lock (which posts approved leave) never takes
+        // it: off the balance here, or it never comes off.
+        await postLeaveUsage(req.id, tx);
 
         return req;
       });

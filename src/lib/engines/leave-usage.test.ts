@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/db", () => ({ db: {} }));
-import { postLeaveUsage } from "./accrual-engine";
+import { postLeaveUsage, reverseLeaveUsage } from "./accrual-engine";
 
 type Entry = { leaveRequestId: string; action: string; deltaSeconds: number };
 
@@ -22,9 +22,12 @@ function fakeTx(opts: { tracked?: boolean; balance?: number | null; ledger?: Ent
         _sum: { deltaSeconds: ledger.filter((e) => e.leaveRequestId === where.leaveRequestId && where.action.in.includes(e.action)).reduce((a, e) => a + e.deltaSeconds, 0) || null },
       }),
       create: async ({ data }: { data: Entry }) => { ledger.push(data); },
+      findFirst: async ({ where }: { where: { leaveRequestId: string; action: { in: string[] } } }) =>
+        ledger.filter((e) => e.leaveRequestId === where.leaveRequestId && where.action.in.includes(e.action)).map((e) => ({ ...e, employeeId: "e1", leaveTypeId: "lt" })).at(-1) ?? null,
     },
     leaveBalance: {
       upsert: async () => { if (balance === null) balance = 0; return { id: "b1", balanceSeconds: balance }; },
+      findUniqueOrThrow: async () => { if (balance === null) throw new Error("Not found"); return { id: "b1", balanceSeconds: balance }; },
       update: async ({ data }: { data: { balanceSeconds: number } }) => { balance = data.balanceSeconds; },
     },
   };
@@ -66,5 +69,38 @@ describe("taking approved leave off the balance", () => {
     const t = fakeTx({ balance: 22176, duration: 2016 });
     await postLeaveUsage("r1", t.tx);
     expect(t.balance()).toBe(20160);
+  });
+});
+
+describe("giving leave back when its row is removed", () => {
+  it("gives back what Add time took", async () => {
+    const t = fakeTx({ balance: 7200 });
+    t.ledger.push({ leaveRequestId: "r1", action: "USAGE", deltaSeconds: -28800 });
+    await reverseLeaveUsage("r1", t.tx);
+    expect(t.balance()).toBe(36000);
+    await reverseLeaveUsage("r1", t.tx); // removed twice: back once
+    expect(t.balance()).toBe(36000);
+  });
+
+  it("gives back what a pay code change took", async () => {
+    const t = fakeTx({ balance: 7200, ledger: [{ leaveRequestId: "r1", action: "TIMECARD_DEDUCTION", deltaSeconds: -28800 }] });
+    await reverseLeaveUsage("r1", t.tx);
+    expect(t.balance()).toBe(36000);
+  });
+
+  it("gives nothing back for leave never taken off (NovaTime's imported leave)", async () => {
+    const t = fakeTx({ balance: 7200 });
+    await reverseLeaveUsage("r1", t.tx);
+    expect(t.balance()).toBe(7200);
+    expect(t.ledger).toHaveLength(0);
+  });
+
+  it("entered, removed and entered again comes off once", async () => {
+    const t = fakeTx({});
+    await postLeaveUsage("r1", t.tx);
+    await reverseLeaveUsage("r1", t.tx);
+    expect(t.balance()).toBe(36000);
+    await postLeaveUsage("r1", t.tx);
+    expect(t.balance()).toBe(7200);
   });
 });
