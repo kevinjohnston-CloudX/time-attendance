@@ -45,6 +45,7 @@ check("/payroll/timecards", activeHref("/payroll/timecards", ALL_HREFS), "/payro
 // A child route with no destination of its own falls back to its parent.
 check("/time/timesheet/abc123", activeHref("/time/timesheet/abc123", ALL_HREFS), "/time/timesheet");
 check("/supervisor/leave/x", activeHref("/supervisor/leave/x", ALL_HREFS), "/supervisor/leave");
+check("/knowledge-base/abc123", activeHref("/knowledge-base/abc123", ALL_HREFS), "/knowledge-base");
 // A Team page that is not a supervisor queue still lights its own row, not
 // Team Overview's, even though /supervisor prefixes it.
 check("/supervisor/on-site", activeHref("/supervisor/on-site", ALL_HREFS), "/supervisor/on-site");
@@ -77,6 +78,7 @@ check("/admin/audit", where("/admin/audit"), "Administration > Audit Log");
 check("/admin/sites/abc123", where("/admin/sites/abc123"), "Administration");
 check("/admin/employees/abc123", where("/admin/employees/abc123"), "Administration > Employees");
 check("/accruals/abc123", where("/accruals/abc123"), "Me > Accruals");
+check("/knowledge-base/abc123", where("/knowledge-base/abc123"), "Me > Knowledge Base");
 check("/reports/abc123", where("/reports/abc123"), "Payroll > Reports");
 // Approvals is not in the sidebar (the phone's bottom bar opens it), but on a
 // computer it still names the section it belongs to.

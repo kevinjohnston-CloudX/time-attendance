@@ -48,6 +48,8 @@ const CASES: [query: string, expectedTopHit: string][] = [
   ["holid", "Holidays"],
   ["dash", "Dashboard"],
   ["reason", "Reason Codes"],
+  ["kb", "Knowledge Base"],
+  ["knowledge", "Knowledge Base"],
 ];
 
 let failures = 0;

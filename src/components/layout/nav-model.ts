@@ -26,6 +26,7 @@ import {
   DoorOpen,
   House,
   ClipboardCheck,
+  LibraryBig,
 } from "lucide-react";
 
 /**
@@ -91,7 +92,7 @@ export const SECTIONS: NavSection[] = [
     icon: CircleUser,
     railLabel: "Me",
     label: "Me",
-    prefixes: ["/dashboard", "/time", "/leave", "/documents", "/accruals"],
+    prefixes: ["/dashboard", "/time", "/leave", "/documents", "/accruals", "/knowledge-base"],
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Punch Clock", href: "/time/punch", icon: Clock, permission: "PUNCH_OWN" },
@@ -105,6 +106,9 @@ export const SECTIONS: NavSection[] = [
         icon: Hourglass,
         permission: ["ACCRUAL_VIEW_OWN", "ACCRUAL_VIEW_TEAM", "ACCRUAL_VIEW_ANY"],
       },
+      // Everyone's: which guides each person sees is decided per article by
+      // their role, in the ticketing system where the guides are written.
+      { label: "Knowledge Base", href: "/knowledge-base", icon: LibraryBig },
     ],
   },
   {
