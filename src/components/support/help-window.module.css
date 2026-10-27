@@ -566,4 +566,14 @@
   .editor {
     min-height: 180px;
   }
+  .subtitle {
+    white-space: normal;
+  }
+}
+
+/* The paste and drop tip means nothing on a touch screen. */
+@media (pointer: coarse) {
+  .footHint[data-tip="true"] {
+    display: none;
+  }
 }

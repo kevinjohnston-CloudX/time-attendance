@@ -253,7 +253,11 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
           </>
         ) : (
           <>
-            <span className={styles.footHint} data-tone={overBudget ? "warning" : undefined}>
+            <span
+              className={styles.footHint}
+              data-tone={overBudget ? "warning" : undefined}
+              data-tip={overBudget ? undefined : "true"}
+            >
               {hint}
             </span>
             <Button hierarchy="tertiary" onClick={requestClose} disabled={sending}>
