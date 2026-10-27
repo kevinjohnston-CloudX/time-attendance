@@ -13,6 +13,7 @@ import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
 import { BrandTile, CloudTimeWordmark } from "./cloudtime-logo";
 import { openCommandPalette } from "./command-palette";
 import { NotificationBell } from "./notification-bell";
+import { HelpButton } from "@/components/support/help-button";
 import { usePhoneBackState } from "./phone-back";
 import { Avatar } from "./sidebar";
 import {
@@ -40,7 +41,7 @@ const APPROVAL_QUEUES = ["/supervisor/leave", "/supervisor/exceptions"];
 const noSubscribe = () => () => {};
 const useHydrated = () => useSyncExternalStore(noSubscribe, () => true, () => false);
 
-export function PhoneTopBar({ waiting }: { waiting: WaitingItem[] }) {
+export function PhoneTopBar({ waiting, helpOffered = true }: { waiting: WaitingItem[]; helpOffered?: boolean }) {
   const pathname = usePathname();
   const back = usePhoneBackState();
   const { title, folded, scrolled } = useFoldingTitle(pathname);
@@ -74,6 +75,7 @@ export function PhoneTopBar({ waiting }: { waiting: WaitingItem[] }) {
           <button type="button" className={styles.iconBtn} onClick={openCommandPalette} aria-label="Search pages">
             <Search className="h-5 w-5" aria-hidden="true" />
           </button>
+          {helpOffered && <HelpButton variant="phone" className={styles.iconBtn} />}
           <div className={styles.bell}>
             <NotificationBell items={waiting} />
           </div>

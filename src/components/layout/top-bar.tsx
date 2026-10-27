@@ -10,6 +10,7 @@ import { ThemeToggle } from "./theme-toggle";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { NotificationBell } from "./notification-bell";
 import { DesignSwitch } from "./design-switch";
+import { HelpButton } from "@/components/support/help-button";
 import { SegmentedControl } from "@/components/ui";
 import { navModeStore, useNavMode, collapseStore, useSidebarCollapsed, type NavMode } from "./nav-mode";
 import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
@@ -37,6 +38,7 @@ export function TopBar({
   classicOffered = false,
   classicUntil = null,
   signInId,
+  helpOffered = true,
 }: {
   reachableHrefs: string[];
   waiting: WaitingItem[];
@@ -45,6 +47,8 @@ export function TopBar({
   /** The classic design's last day, as words; null for no end date. */
   classicUntil?: string | null;
   signInId?: string;
+  /** Whether to draw Help & feedback; a wall screen (live attendance only) doesn't. */
+  helpOffered?: boolean;
 }) {
   const pathname = usePathname();
   const navMode = useNavMode();
@@ -175,6 +179,7 @@ export function TopBar({
         style={{ background: "var(--surface-card)", boxShadow: "var(--ta-pill-shadow)" }}
       >
         <ThemeToggle />
+        {helpOffered && <HelpButton variant="pill" />}
         <KeyboardShortcuts reachableHrefs={reachableHrefs} />
         <NotificationBell items={waiting} />
       </div>

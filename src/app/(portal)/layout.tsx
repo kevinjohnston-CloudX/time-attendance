@@ -312,11 +312,12 @@ export default async function PortalLayout({
               classicOffered={!liveAttendanceOnly && !classicDesignEnded(classicUntil)}
               classicUntil={classicUntil?.label ?? null}
               signInId={session.user.signInId}
+              helpOffered={!liveAttendanceOnly}
             />
           </div>
           {/* Phones: this bar instead of the one above, and no design switch,
               since a phone is always on the new design. */}
-          <PhoneTopBar waiting={waiting} />
+          <PhoneTopBar waiting={waiting} helpOffered={!liveAttendanceOnly} />
           <main className="ta-page-scroll min-h-0 flex-1 overflow-y-auto">
             <PageScrollReveal />
             <InactiveRouteGuard isInactive={!isEmployeeActive} />
