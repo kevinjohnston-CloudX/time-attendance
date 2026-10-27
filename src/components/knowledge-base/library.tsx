@@ -83,6 +83,9 @@ export function KnowledgeBaseLibrary({ topics, groups }: { topics: KbTopic[]; gr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, found, where, topic]);
 
+  // The server's answer for what is typed hasn't arrived yet. Until it has,
+  // "nothing matches" would be a guess from the titles alone.
+  const searching = q.length >= 2 && !searchError && (!found || found.q !== q);
   const shownGroups = groups.filter(inTopic);
   const shown = results ? results.length : shownGroups.reduce((n, g) => n + g.articles.length, 0);
 
@@ -165,7 +168,11 @@ export function KnowledgeBaseLibrary({ topics, groups }: { topics: KbTopic[]; gr
         </p>
       )}
 
-      {shown === 0 ? (
+      {shown === 0 && searching ? (
+        <div className="ta-card rounded-xl" aria-busy="true">
+          <EmptyState title="Searching the articles" body="Looking through the text of every guide you can read." />
+        </div>
+      ) : shown === 0 ? (
         <div className="ta-card rounded-xl">
           <EmptyState
             title="Nothing matches that search"
