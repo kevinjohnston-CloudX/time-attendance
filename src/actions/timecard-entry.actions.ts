@@ -670,10 +670,14 @@ export const addManualHoursEntry = withRBAC(
       let leaveType = await db.leaveType.findFirst({
         where: { payCodeId, isActive: true, tenantId },
       });
-      // Fall back: payBucket is a leave bucket → find matching leaveType by category
+      // Fall back: payBucket is a leave bucket → find matching leaveType by category.
+      // The oldest of its category, the main one: a PTO payout or PTO retro
+      // line comes off PTO, never PTO Carry Over or Comp Time, which share its
+      // category; with no order the database could hand back either.
       if (!leaveType && payCode?.payBucket && LEAVE_BUCKETS.has(payCode.payBucket)) {
         leaveType = await db.leaveType.findFirst({
           where: { category: payCode.payBucket as never, isActive: true, tenantId },
+          orderBy: { createdAt: "asc" },
         });
       }
       if (leaveType) {
