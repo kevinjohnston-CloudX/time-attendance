@@ -2515,6 +2515,76 @@ function ledgerLabel(action: string): string {
   }
 }
 
+/** One leave type's figures as at a date, in minutes with the fraction kept. */
+export type LeaveBalanceAsOf = {
+  balanceMinutes: number;
+  accruedMinutes: number;
+  netAdjustmentMinutes: number | null;
+  approvedMinutes: number;
+  pendingMinutes: number;
+  postedMinutes: number;
+};
+
+/**
+ * Each leave type's balance and totals as they stood at the end of a day, for
+ * the accruals page when a date range ends on it.
+ *
+ * <p>The balance is today's with everything dated after that day taken back
+ * out. Leave counts on its own day, not the day it was entered: Massiel Esaa's
+ * PTO for 11/11–11/13, imported and entered weeks ahead, is still hers on
+ * 10/27 (58.19 then, 34.19 now). Accruals count from their pay period's end,
+ * as the page's Accrued does; booked leave from the day it starts.
+ */
+export const getLeaveBalancesAsOf = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async (actor, input: { employeeId: string; date: string }): Promise<Record<string, LeaveBalanceAsOf>> => {
+    const { employeeId, date } = z.object({ employeeId: z.string(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).parse(input);
+    await assertRecordInReach(actor, employeeId);
+    const year = new Date().getFullYear();
+    const yearStart = new Date(`${year}-01-01T00:00:00Z`);
+    const yearEnd = new Date(`${year + 1}-01-01T00:00:00Z`);
+    const dayOf = (d: Date) => d.toISOString().slice(0, 10);
+
+    const [balances, ledger, requests] = await Promise.all([
+      db.leaveBalance.findMany({ where: { employeeId, accrualYear: year }, select: { leaveTypeId: true, balanceSeconds: true } }),
+      db.leaveAccrualLedger.findMany({
+        where: { employeeId, createdAt: { gte: yearStart, lt: yearEnd }, action: { not: "EOD_SNAPSHOT" } },
+        select: { leaveTypeId: true, action: true, deltaSeconds: true, createdAt: true, payPeriodEnd: true, leaveRequestId: true, leaveRequest: { select: { startDate: true } } },
+      }),
+      db.leaveRequest.findMany({
+        where: { employeeId, status: { in: ["APPROVED", "PENDING", "POSTED"] }, startDate: { gte: yearStart, lte: new Date(`${date}T00:00:00Z`) } },
+        select: { leaveTypeId: true, status: true, durationSeconds: true },
+      }),
+    ]);
+    // Adjustments that only undo a timecard deduction are left out of Net Adj., as on the page.
+    const timecardRequests = new Set(ledger.filter((e) => e.action === "TIMECARD_DEDUCTION" && e.leaveRequestId).map((e) => e.leaveRequestId!));
+
+    const out: Record<string, LeaveBalanceAsOf> = {};
+    const row = (id: string) =>
+      (out[id] ??= { balanceMinutes: 0, accruedMinutes: 0, netAdjustmentMinutes: null, approvedMinutes: 0, pendingMinutes: 0, postedMinutes: 0 });
+    for (const b of balances) row(b.leaveTypeId).balanceMinutes = b.balanceSeconds / 60;
+    for (const e of ledger) {
+      const r = row(e.leaveTypeId);
+      const effective = dayOf(e.leaveRequest?.startDate ?? e.createdAt);
+      if (effective > date) r.balanceMinutes -= e.deltaSeconds / 60;
+      if ((e.action === "ACCRUAL" || e.action === "EARNED_ADJUSTMENT") && e.payPeriodEnd && dayOf(e.payPeriodEnd) <= date) {
+        r.accruedMinutes += e.deltaSeconds / 60;
+      }
+      if (e.action === "ADJUSTMENT" && dayOf(e.createdAt) <= date && !(e.leaveRequestId && timecardRequests.has(e.leaveRequestId))) {
+        r.netAdjustmentMinutes = (r.netAdjustmentMinutes ?? 0) + e.deltaSeconds / 60;
+      }
+    }
+    for (const q of requests) {
+      const r = row(q.leaveTypeId);
+      const m = q.durationSeconds / 60;
+      if (q.status === "APPROVED") r.approvedMinutes += m;
+      else if (q.status === "PENDING") r.pendingMinutes += m;
+      else r.postedMinutes += m;
+    }
+    return out;
+  }
+);
+
 export type LedgerDetailEntry = {
   id: string;
   date: string;

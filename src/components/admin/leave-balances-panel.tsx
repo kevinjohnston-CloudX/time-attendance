@@ -9,6 +9,8 @@ import {
   postAccrualCorrection,
   postManualAccrualEntry,
   getLeaveTypeLedgerDetail,
+  getLeaveBalancesAsOf,
+  type LeaveBalanceAsOf,
   type LedgerDetailEntry,
 } from "@/actions/admin.actions";
 import {
@@ -472,12 +474,15 @@ function LedgerCard({
   canManage,
   fromDate,
   toDate,
+  asOfBalanceMinutes,
 }: {
   row: BalanceRow;
   employeeId: string;
   canManage: boolean;
   fromDate?: string;
   toDate?: string;
+  /** The balance at the end date as the table above shows it, so the two agree. */
+  asOfBalanceMinutes?: number;
 }) {
   const [selectedYear, setSelectedYear] = useState(row.year);
   const [result, setResult] = useState<DetailResult | null>(null);
@@ -544,7 +549,7 @@ function LedgerCard({
     isFiltered && toDate
       ? {
           label: `Balance as at ${fmtDate(toDate)}`,
-          value: result ? `${hrs(asOfBalance)}` : "—",
+          value: asOfBalanceMinutes != null ? hrs(asOfBalanceMinutes) : result ? `${hrs(asOfBalance)}` : "—",
         }
       : {
           label: "Available",
@@ -888,8 +893,50 @@ export function LeaveBalancesPanel({ employeeId, balances, canManage }: Props) {
     setActiveTo("");
   }
 
-  const tracked   = balances.filter((r) => r.accrualTracked);
-  const untracked = balances.filter((r) => !r.accrualTracked);
+  // With an end date applied, the table shows each leave type as it stood at
+  // the end of that day; the forecast, which runs from today, is left out.
+  const [asOf, setAsOf] = useState<{ date: string; rows: Record<string, LeaveBalanceAsOf> } | null>(null);
+  const [asOfError, setAsOfError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!activeTo) {
+      setAsOf(null);
+      setAsOfError(null);
+      return;
+    }
+    let live = true;
+    getLeaveBalancesAsOf({ employeeId, date: activeTo }).then((r) => {
+      if (!live) return;
+      if (r.success) {
+        setAsOf({ date: activeTo, rows: r.data });
+        setAsOfError(null);
+      } else {
+        setAsOf(null);
+        setAsOfError(`Balances as at ${fmtDate(activeTo)} could not be worked out, so today's are shown.`);
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, [activeTo, employeeId]);
+  const atDate = (r: BalanceRow): BalanceRow => {
+    if (!asOf) return r;
+    const a = asOf.rows[r.leaveTypeId];
+    return {
+      ...r,
+      balanceMinutes: a?.balanceMinutes ?? 0,
+      accruedMinutes: a?.accruedMinutes ?? 0,
+      netAdjustmentMinutes: a?.netAdjustmentMinutes ?? null,
+      approvedMinutes: a?.approvedMinutes ?? 0,
+      pendingMinutes: a?.pendingMinutes ?? 0,
+      postedMinutes: a?.postedMinutes ?? 0,
+      forecastedMinutes: null,
+      // Behind/Ahead compares with today's expected accrual; not at a past date.
+      expectedAccrualMinutes: null,
+    };
+  };
+
+  const tracked   = balances.filter((r) => r.accrualTracked).map(atDate);
+  const untracked = balances.filter((r) => !r.accrualTracked).map(atDate);
   const selected  = balances.find((r) => r.leaveTypeId === selectedId) ?? null;
   const year = balances[0]?.year;
 
@@ -899,7 +946,7 @@ export function LeaveBalancesPanel({ employeeId, balances, canManage }: Props) {
     <>
       <Card
         title="Date Range"
-        subtitle="Narrows the ledger below and reports the balance as at the end date."
+        subtitle="Shows the balances as at the end date, and narrows the ledger below."
       >
         <div className="flex flex-wrap items-end gap-3">
           <div style={{ width: 180 }}>
@@ -940,11 +987,16 @@ export function LeaveBalancesPanel({ employeeId, balances, canManage }: Props) {
         title="Leave Balances"
         subtitle={
           balances.length > 0
-            ? `Hours${year ? ` · ${year} accrual year` : ""} · open a row for its ledger`
+            ? `Hours${year ? ` · ${year} accrual year` : ""}${asOf ? ` · as at ${fmtDate(asOf.date)}` : ""} · open a row for its ledger`
             : undefined
         }
         padding={0}
       >
+        {asOfError && (
+          <div className="px-4 pt-3">
+            <Banner tone="warning" title={asOfError} />
+          </div>
+        )}
         {balances.length === 0 ? (
           <EmptyState
             icon={<Hourglass className="h-8 w-8" />}
@@ -1046,6 +1098,7 @@ export function LeaveBalancesPanel({ employeeId, balances, canManage }: Props) {
           canManage={canManage}
           fromDate={activeFrom || undefined}
           toDate={activeTo || undefined}
+          asOfBalanceMinutes={asOf ? (asOf.rows[selected.leaveTypeId]?.balanceMinutes ?? 0) : undefined}
         />
       ) : (
         balances.length > 0 && (
