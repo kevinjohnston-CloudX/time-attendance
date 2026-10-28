@@ -11,6 +11,7 @@ import { postLeaveUsage, reverseLeaveUsage } from "@/lib/engines/accrual-engine"
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { getSubordinateIds } from "@/lib/get-subordinate-ids";
+import { availabilityFor, leaveTypeAllowed } from "@/lib/pay-code-availability";
 import {
   getLeaveRequestsCore,
   getLeaveTypesCore,
@@ -40,11 +41,12 @@ export const getMyLeaveRequests = withRBAC(
   }
 );
 
-/** List active leave types (for the request form drop-down). */
+/** List the leave types the person's own policies give them (for the request form drop-down). */
 export const getLeaveTypes = withRBAC(
   "LEAVE_REQUEST_OWN",
-  async ({ tenantId }, _input: void) => {
-    return getLeaveTypesCore(tenantId);
+  async ({ tenantId, employeeId }, _input: void) => {
+    const [types, available] = await Promise.all([getLeaveTypesCore(tenantId), availabilityFor(employeeId)]);
+    return types.filter((t) => leaveTypeAllowed(available, t.id));
   }
 );
 

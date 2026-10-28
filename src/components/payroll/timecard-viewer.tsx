@@ -1518,12 +1518,11 @@ export function TimecardViewer({
 
   async function handleOpenAddEntry(dayStr: string) {
     setAddEntryDay(dayStr);
-    // Fetch leave types lazily once
-    if (leaveTypes.length === 0) {
-      const result = await getLeaveTypesForTimecard({});
-      if (result.success && result.data) {
-        setLeaveTypes(result.data as LeaveTypeOption[]);
-      }
+    // The person's own leave types, asked each time: the list depends on
+    // whose timecard is open, and the page keeps this state between people.
+    const result = await getLeaveTypesForTimecard({ employeeId: selectedEmployeeId ?? undefined });
+    if (result.success && result.data) {
+      setLeaveTypes(result.data as LeaveTypeOption[]);
     }
   }
 

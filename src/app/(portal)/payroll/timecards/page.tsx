@@ -10,6 +10,7 @@ import {
   getTimecardByEmployeeAndPeriod,
 } from "@/actions/timecard.actions";
 import { getPayCodes } from "@/actions/pay-code.actions";
+import { availabilityFor, payCodeAllowed } from "@/lib/pay-code-availability";
 import { getReasonCodes } from "@/actions/reason-code.actions";
 import { TimecardViewer } from "@/components/payroll/timecard-viewer";
 import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
@@ -199,7 +200,14 @@ export default async function TimecardsPage({
   }
 
   const [payCodesResult, reasonCodesResult, siteOfEmployee] = await sheetRefsRead;
-  const payCodes = payCodesResult.success ? payCodesResult.data : [];
+  // The codes the person's leave policies give them (CA Sick only for those
+  // on SICKCA), and any a line on this timecard already has, so that line
+  // still shows its code (lib/pay-code-availability).
+  const available = await availabilityFor(selectedEmployeeId);
+  const usedHere = new Set((timecard?.segments ?? []).map((s) => s.payCodeId).filter(Boolean));
+  const payCodes = (payCodesResult.success ? payCodesResult.data : []).filter(
+    (pc) => payCodeAllowed(available, pc.id) || usedHere.has(pc.id),
+  );
   const reasonCodes = reasonCodesResult.success ? reasonCodesResult.data : [];
 
   // The pay rate in effect during this period, from the pay rate history.

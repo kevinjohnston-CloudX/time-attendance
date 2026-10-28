@@ -20,16 +20,24 @@ import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { placeEnteredHours } from "@/lib/entered-hours";
 import { hoursToSeconds } from "@/lib/leave-time";
 import { postLeaveUsage, reverseLeaveUsage } from "@/lib/engines/accrual-engine";
+import { assertLeaveTypeAllowed, assertPayCodeAllowed, availabilityFor, leaveTypeAllowed } from "@/lib/pay-code-availability";
 
 // ─── Get leave types for timecard entry modal ─────────────────────────────────
 
+/** The leave types for the timecard's leave entry: with a person named, only theirs. */
 export const getLeaveTypesForTimecard = withRBAC(
   TIMECARD_EDITORS,
-  async ({ tenantId }): Promise<LeaveType[]> => {
-    return db.leaveType.findMany({
+  async ({ tenantId }, input?: { employeeId?: string }): Promise<LeaveType[]> => {
+    const types = await db.leaveType.findMany({
       where: { tenantId: tenantId!, isActive: true },
       orderBy: { name: "asc" },
     });
+    const employeeId = input?.employeeId;
+    if (!employeeId) return types;
+    const person = await db.employee.findFirst({ where: { id: employeeId, tenantId: tenantId! }, select: { id: true } });
+    if (!person) return types;
+    const available = await availabilityFor(person.id);
+    return types.filter((t) => leaveTypeAllowed(available, t.id));
   }
 );
 
@@ -46,6 +54,7 @@ export const addManualPunchPair = withRBAC(
     // Only a timecard in the caller's company, and never their own.
     const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
     if (sheet.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
+    if (payCodeId) await assertPayCodeAllowed(sheet.employeeId, payCodeId);
 
     const inDate = new Date(inTime);
     const outDate = new Date(outTime);
@@ -304,6 +313,7 @@ export const addPayrollLeaveEntry = withRBAC(
     // Only a timecard in the caller's company, and never their own.
     const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
     if (sheet.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
+    await assertLeaveTypeAllowed(sheet.employeeId, leaveTypeId);
 
     // Verify timesheet is editable
     const ts = await db.timesheet.findUniqueOrThrow({
@@ -555,6 +565,7 @@ export const addManualHoursEntry = withRBAC(
     // Before either path below, the 0 hour one included: a locked or payroll
     // approved timecard takes no new entries.
     assertEditable(sheet.status);
+    if (payCodeId) await assertPayCodeAllowed(sheet.employeeId, payCodeId);
 
     const minutes = Math.round(hours * 60);
 
