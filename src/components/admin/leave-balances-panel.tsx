@@ -79,22 +79,26 @@ interface Props {
 const BALANCE_COLS = 9;
 
 /**
- * Minutes as hours and minutes ("1h 32m", "-3h 49m", "8h"); HR asked for these over decimal hours, which read 1h 32m
- * as 1.53 and a NovaTime 6.16 h posting as 6.17.
+ * Minutes as hours and minutes, with the decimal hours NovaTime shows beside
+ * them: "112h 31m (112.51)", "-3h 49m (-3.82)", "8h (8.00)". HR reads both:
+ * hours and minutes on the floor, the decimal against NovaTime. The minutes
+ * carry their fraction (exact to the hundredth of an hour), so the decimal is
+ * exact and only the minutes are rounded.
  */
-function hrs(minutes: number): string {
+function hrs(minutes: number, sign = ""): string {
   const total = Math.round(Math.abs(minutes));
-  if (total === 0) return "0h";
+  const decimal = (Math.abs(minutes) / 60).toFixed(2);
+  if (total === 0 && decimal === "0.00") return "0h";
   const h = Math.floor(total / 60);
   const m = total % 60;
   const val = m === 0 ? `${h}h` : h === 0 ? `${m}m` : `${h}h ${m}m`;
-  return minutes < 0 ? `-${val}` : val;
+  const s = minutes < 0 ? "-" : sign;
+  return `${s}${val} (${s}${decimal})`;
 }
 
 /** A change rather than a level: the sign is the whole meaning, so it is kept. */
 function delta(minutes: number): string {
-  const s = hrs(minutes);
-  return minutes > 0 ? `+${s}` : s;
+  return hrs(minutes, minutes > 0 ? "+" : "");
 }
 
 /** Green up, red down — for figures that are a movement, never for a level. */

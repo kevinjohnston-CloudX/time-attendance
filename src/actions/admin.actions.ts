@@ -2547,17 +2547,17 @@ export const getLeaveTypeLedgerDetail = withRBAC(
       db.leaveAccrualLedger.findFirst({
         where: { employeeId, leaveTypeId, createdAt: { lt: yearStart }, action: { not: "EOD_SNAPSHOT" } },
         orderBy: { createdAt: "desc" },
-        select: { balanceAfter: true },
+        select: { balanceAfterSeconds: true },
       }),
       db.leaveAccrualLedger.findMany({
         where: { employeeId, leaveTypeId, createdAt: { gte: yearStart, lt: yearEnd }, action: { not: "EOD_SNAPSHOT" } },
         orderBy: { createdAt: "asc" },
-        select: { id: true, action: true, deltaMinutes: true, balanceAfter: true, createdAt: true, note: true, createdById: true },
+        select: { id: true, action: true, deltaSeconds: true, balanceAfterSeconds: true, createdAt: true, note: true, createdById: true },
       }),
       db.leaveRequest.findMany({
         where: { employeeId, leaveTypeId, status: { in: ["APPROVED", "PENDING"] }, startDate: { gte: yearStart, lt: yearEnd } },
         orderBy: { startDate: "asc" },
-        select: { id: true, startDate: true, durationMinutes: true, status: true },
+        select: { id: true, startDate: true, durationSeconds: true, status: true },
       }),
       db.leaveAccrualLedger.findMany({
         where: { employeeId, leaveTypeId, action: { not: "EOD_SNAPSHOT" } },
@@ -2579,7 +2579,9 @@ export const getLeaveTypeLedgerDetail = withRBAC(
     yearSet.add(today.getUTCFullYear());
     const availableYears = [...yearSet].sort((a, b) => b - a);
 
-    const openingBalance = openingEntry?.balanceAfter ?? 0;
+    // Minutes with the fraction kept, from the seconds columns, so the ledger
+    // shows a 6.16 h posting as 6.16 (lib/leave-time).
+    const openingBalance = (openingEntry?.balanceAfterSeconds ?? 0) / 60;
 
     // Batch-fetch names for users who appear in these ledger entries
     const creatorIds = [...new Set(yearEntries.map((e) => e.createdById).filter(Boolean))] as string[];
@@ -2594,8 +2596,8 @@ export const getLeaveTypeLedgerDetail = withRBAC(
       date: e.createdAt.toISOString().slice(0, 10),
       type: e.action,
       label: ledgerLabel(e.action),
-      deltaMinutes: e.deltaMinutes,
-      runningBalance: e.balanceAfter,
+      deltaMinutes: e.deltaSeconds / 60,
+      runningBalance: e.balanceAfterSeconds / 60,
       isFuture: false,
       note: e.note,
       createdByName: e.createdById ? (creatorNameById.get(e.createdById) ?? null) : null,
@@ -2683,12 +2685,12 @@ export const getLeaveTypeLedgerDetail = withRBAC(
           | { kind: "forecast"; date: Date; deltaMinutes: number };
 
         const futureItems: FutureItem[] = [
-          ...futureRequests.map((r) => ({ kind: "leave" as const, date: r.startDate, id: r.id, durationMinutes: r.durationMinutes, status: r.status })),
+          ...futureRequests.map((r) => ({ kind: "leave" as const, date: r.startDate, id: r.id, durationMinutes: r.durationSeconds / 60, status: r.status })),
           ...forecastItems.map((f) => ({ kind: "forecast" as const, date: f.date, deltaMinutes: f.deltaMinutes })),
         ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
         let runningBal = yearEntries.length > 0
-          ? yearEntries[yearEntries.length - 1].balanceAfter
+          ? yearEntries[yearEntries.length - 1].balanceAfterSeconds / 60
           : openingBalance;
         let fcIdx = 0;
 
@@ -2723,15 +2725,15 @@ export const getLeaveTypeLedgerDetail = withRBAC(
       }
     } else {
       // Past year: just add future-approved requests that fall in the year (shouldn't happen but guard)
-      let runningBal = yearEntries.length > 0 ? yearEntries[yearEntries.length - 1].balanceAfter : openingBalance;
+      let runningBal = yearEntries.length > 0 ? yearEntries[yearEntries.length - 1].balanceAfterSeconds / 60 : openingBalance;
       for (const r of futureRequests) {
-        runningBal -= r.durationMinutes;
+        runningBal -= r.durationSeconds / 60;
         entries.push({
           id: r.id,
           date: r.startDate.toISOString().slice(0, 10),
           type: "LEAVE_REQUEST",
           label: r.status === "APPROVED" ? "Approved Leave" : "Pending Leave",
-          deltaMinutes: -r.durationMinutes,
+          deltaMinutes: -r.durationSeconds / 60,
           runningBalance: runningBal,
           isFuture: true,
           status: r.status,

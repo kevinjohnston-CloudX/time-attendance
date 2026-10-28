@@ -83,7 +83,7 @@ export default async function EmployeeAccrualsPage({
       db.leaveAccrualLedger.groupBy({
         by: ["leaveTypeId"],
         where: { employeeId: id, action: { in: ["ACCRUAL", "EARNED_ADJUSTMENT"] }, payPeriodEnd: { gte: yearStart, lt: yearEnd } },
-        _sum: { deltaMinutes: true },
+        _sum: { deltaSeconds: true },
         _count: { id: true },
       }),
       db.leaveAccrualLedger.findMany({
@@ -92,11 +92,11 @@ export default async function EmployeeAccrualsPage({
       }),
       db.leaveRequest.findMany({
         where: { employeeId: id, status: { in: ["APPROVED", "PENDING"] } },
-        select: { leaveTypeId: true, durationMinutes: true, status: true },
+        select: { leaveTypeId: true, durationSeconds: true, status: true },
       }),
       db.leaveRequest.findMany({
         where: { employeeId: id, status: "POSTED" },
-        select: { leaveTypeId: true, durationMinutes: true },
+        select: { leaveTypeId: true, durationSeconds: true },
       }),
       db.leaveBalance.findMany({
         where: { employeeId: id, accrualYear: { lt: year } },
@@ -123,7 +123,7 @@ export default async function EmployeeAccrualsPage({
         ? { notIn: [...timecardRequestIds] as string[] }
         : undefined,
     },
-    _sum: { deltaMinutes: true },
+    _sum: { deltaSeconds: true },
   });
 
   const payCategoryWithPolicies = employee.payCategoryId
@@ -467,23 +467,26 @@ export default async function EmployeeAccrualsPage({
     }
   }
 
-  const accrualSumMap   = new Map(accrualSums.map((s) => [s.leaveTypeId, s._sum.deltaMinutes ?? 0]));
+  // Minutes with the fraction kept, from the seconds columns: leave is exact to
+  // the hundredth of an hour, so a 112.51 h balance shows as 112.51, where whole
+  // minutes made it 112.52 (lib/leave-time).
+  const accrualSumMap   = new Map(accrualSums.map((s) => [s.leaveTypeId, (s._sum.deltaSeconds ?? 0) / 60]));
   const accrualCountMap = new Map(accrualSums.map((s) => [s.leaveTypeId, s._count.id ?? 0]));
-  const adjustmentSumMap = new Map(adjustmentSums.map((s) => [s.leaveTypeId, s._sum.deltaMinutes ?? 0]));
+  const adjustmentSumMap = new Map(adjustmentSums.map((s) => [s.leaveTypeId, (s._sum.deltaSeconds ?? 0) / 60]));
 
   const approvedMinutesMap = new Map<string, number>();
   const pendingMinutesMap  = new Map<string, number>();
   for (const r of approvedRequests) {
     if (r.status === "APPROVED") {
-      approvedMinutesMap.set(r.leaveTypeId, (approvedMinutesMap.get(r.leaveTypeId) ?? 0) + r.durationMinutes);
+      approvedMinutesMap.set(r.leaveTypeId, (approvedMinutesMap.get(r.leaveTypeId) ?? 0) + r.durationSeconds / 60);
     } else {
-      pendingMinutesMap.set(r.leaveTypeId, (pendingMinutesMap.get(r.leaveTypeId) ?? 0) + r.durationMinutes);
+      pendingMinutesMap.set(r.leaveTypeId, (pendingMinutesMap.get(r.leaveTypeId) ?? 0) + r.durationSeconds / 60);
     }
   }
 
   const postedMinutesMap = new Map<string, number>();
   for (const r of postedRequests) {
-    postedMinutesMap.set(r.leaveTypeId, (postedMinutesMap.get(r.leaveTypeId) ?? 0) + r.durationMinutes);
+    postedMinutesMap.set(r.leaveTypeId, (postedMinutesMap.get(r.leaveTypeId) ?? 0) + r.durationSeconds / 60);
   }
 
   const balances = leaveTypes.map((lt) => {
@@ -494,8 +497,8 @@ export default async function EmployeeAccrualsPage({
       leaveTypeId: lt.id,
       leaveTypeName: lt.name,
       category: lt.category as string,
-      balanceMinutes: bal?.balanceMinutes ?? 0,
-      usedMinutes: bal?.usedMinutes ?? 0,
+      balanceMinutes: (bal?.balanceSeconds ?? 0) / 60,
+      usedMinutes: (bal?.usedSeconds ?? 0) / 60,
       accruedMinutes: alreadyAccruedThisYear,
       approvedMinutes: approvedMinutesMap.get(lt.id) ?? 0,
       pendingMinutes: pendingMinutesMap.get(lt.id) ?? 0,
